@@ -6,12 +6,12 @@ Create a **reproducible, self-contained session-start hook** that automatically 
 
 ## Context
 
-Claude Code web runs in ephemeral gVisor containers. Each session starts fresh, so any development tools (nix, direnv, devenv, uv) must be installed/configured by the hook before the agent can work effectively.
+Claude Code web runs in ephemeral gVisor containers. Each session starts fresh, so any development tools (nix, direnv, devenv) must be installed/configured by the hook before the agent can work effectively.
 
 The repository uses:
+- **Bazel** as the unified build system (via Aspect CLI for linting)
 - **devenv** (via nix) for reproducible dev environments
 - **direnv** to automatically load `.envrc` when entering directories
-- **uv** for Python package management
 - A workspace-level `.envrc` that calls `use devenv`
 
 ## Current State (2025-12-29)
@@ -90,7 +90,7 @@ To verify the hook works, check:
 # These should all succeed after session start:
 which direnv && direnv version
 which devenv && devenv version
-which uv && uv version
+which bazel && bazel version
 
 # Environment should be loaded:
 echo $DIRENV_DIR  # Should be set if .envrc loaded

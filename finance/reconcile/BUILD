@@ -1,9 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:python.bzl", "py_binary")
 
-# Note: finance/reconcile is not in the UV workspace - deps not available in default builds
-# TODO: add pyproject.toml and include in UV workspace
-
 py_library(
     name = "external_system",
     srcs = ["external_system.py"],

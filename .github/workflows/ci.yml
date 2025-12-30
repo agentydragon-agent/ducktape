@@ -1,5 +1,4 @@
-# This workflow is compatible with both GitHub Actions and Gitea Actions
-# It runs pre-commit hooks and pytest for all Python projects with pyproject.toml
+# This workflow runs pre-commit hooks, Bazel build/test, and other checks
 name: CI
 
 on:
@@ -16,26 +15,6 @@ permissions:
   contents: read
 
 jobs:
-  discover:
-    name: Discover Python projects
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      projects: ${{ steps.find-projects.outputs.projects }}
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Find projects with pyproject.toml
-        id: find-projects
-        run: |
-          projects=$(find . -name 'pyproject.toml' -not -path '*/\.*' -not -path './pyproject.toml' | \
-            sed 's|^\./||' | \
-            sed 's|/pyproject.toml$||' | \
-            jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "projects=$projects" >> $GITHUB_OUTPUT
-          echo "Found projects: $projects"
-
   pre-commit:
     name: Pre-commit checks
     runs-on: ubuntu-latest
@@ -187,16 +166,11 @@ jobs:
             echo "❌ Frontend build failed" >> $GITHUB_STEP_SUMMARY
           fi
 
-  pytest:
-    name: Pytest (${{ matrix.project }})
+  bazel-build:
+    name: Bazel build and test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: discover
-    strategy:
-      fail-fast: false
-      matrix:
-        project: ${{ fromJson(needs.discover.outputs.projects) }}
-    # PostgreSQL service for gatelet and props/core tests
+    # PostgreSQL service for tests that need it
     services:
       postgres:
         image: postgres:15
@@ -211,7 +185,6 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-    # PostgreSQL connection settings for props/core tests
     env:
       PGHOST: localhost
       PGPORT: "5432"
@@ -222,40 +195,43 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-env
-
-      - name: Cache pip and uv
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pip
-            ~/.cache/uv
-          key: >-
-            ${{ runner.os }}-pip-uv-${{ matrix.project }}-${{
-            hashFiles(format('{0}/pyproject.toml', matrix.project)) }}
-          restore-keys: |
-            ${{ runner.os }}-pip-uv-${{ matrix.project }}-
-            ${{ runner.os }}-pip-uv-
+      - name: Install system dependencies for native Python packages
+        run: |
+          sudo apt-get update
+          # libdbus-1-dev: required for dbus-python
+          # libgirepository-2.0-dev: required for PyGObject (girepository-2.0 API)
+          # libcairo2-dev: required for pycairo (PyGObject dependency)
+          sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
 
       - name: Install gitstatusd for wt tests
-        if: matrix.project == 'wt'
         run: |
           wget -qO- \
             https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz \
             | tar xz -C /tmp
           sudo install -m 755 /tmp/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
-          which gitstatusd
 
-      - name: Install dependencies and run tests
-        id: pytest
-        run: .github/scripts/run-pytest.sh "${{ matrix.project }}"
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
+      - name: Build all targets
+        run: bazel build //...
+
+      - name: Run tests
+        run: bazel test //... --test_output=errors
 
       - name: Generate test summary
         if: always()
         run: |
-          echo "### Test Results: ${{ matrix.project }}" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.pytest.outcome }}" = "success" ]; then
-            echo "✅ Tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "### Bazel Build & Test Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All targets built and tests passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Tests failed or skipped" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Build or tests failed" >> $GITHUB_STEP_SUMMARY
           fi

@@ -121,56 +121,52 @@ These components exist but see minimal recent changes:
 - **Website** (`website/`): Personal website (Hakyll/Haskell)
 - **Kubernetes** (`k8s/`): k3s cluster configurations
 
-## Build Systems
+## Build System
 
-### Python / UV Workspace
+This repository uses **Bazel** as the unified build system for all Python packages and most other components.
 
-The repository uses a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) for Python packages:
+### Python (Bazel with rules_python)
 
 ```
 ducktape/
-├── pyproject.toml          # Workspace root (defines members)
-├── uv.lock                  # Single lockfile for all packages
-├── adgn/                    # Main LLM/agent package
-├── tana/                    # Tana export utilities
-└── agent_pkg/               # Agent package infrastructure
-    ├── host/                # Host-side (image building, init runner)
-    └── runtime/             # Container-side utilities (no adgn deps)
+├── MODULE.bazel             # Bazel module definition
+├── requirements_bazel.txt   # Single source of truth for Python deps
+├── adgn/BUILD.bazel         # Main LLM/agent package
+├── agent_core/BUILD.bazel   # Core agent loop machinery
+├── mcp_infra/BUILD.bazel    # MCP infrastructure
+└── ...                      # Other packages with BUILD.bazel files
 ```
 
 **Key points:**
-- Single `uv.lock` at repo root with all resolved dependencies
-- Run `uv sync` from `ducktape/` to install all workspace members
-- Each package has its own `pyproject.toml` but shares the lockfile
-- `agent_pkg/host` provides host-side image building and init runner
-- `agent_pkg/runtime` is designed for Docker containers (minimal deps)
+- `requirements_bazel.txt` is the single source of truth for Python dependencies
+- All Python packages have `BUILD.bazel` files defining targets
+- Aspect CLI provides `bazel lint` command for ruff/mypy integration
+- Python 3.12+ is the target runtime version
 
 **Development workflow:**
-- Each package (adgn, tana) has its own `.envrc` + `devenv.nix` that manages a local venv
-- Run `direnv allow` in the package directory to set up the environment
-- The workspace `uv.lock` ensures consistent dependency versions across packages
-- devenv uses `uv sync` under the hood to install from the shared lockfile
-
 ```bash
-# Per-package (recommended):
-cd adgn && direnv allow      # Sets up venv at .devenv/state/venv
+# Build all targets
+bazel build //...
 
-# Or workspace-level:
-cd ducktape && uv sync       # Installs all members
+# Run tests
+bazel test //...
+
+# Lint (ruff + mypy via aspect_rules_lint)
+bazel lint //...
+
+# Build specific target
+bazel build //adgn:adgn
 ```
 
-- Target runtime version: Python 3.12+.
+**Adding dependencies:**
+1. Add to `requirements_bazel.txt`
+2. Run `bazel run //:requirements.update` to regenerate lockfile
+3. Use `@pypi//package_name` in BUILD.bazel deps
 
 ### Rust (Finance tools)
 ```bash
 cargo build
 cargo test
-```
-
-### Bazel (Various components)
-```bash
-bazel build //target:name
-bazel test //target:name
 ```
 
 ## Development Practices

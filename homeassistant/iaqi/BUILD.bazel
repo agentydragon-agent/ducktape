@@ -1,7 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 # Home Assistant custom component for Indoor Air Quality
-# Note: homeassistant is a heavy dependency not in the UV workspace
 py_library(
     name = "indoor_aqi",
     srcs = glob(["custom_components/indoor_aqi/**/*.py"]),

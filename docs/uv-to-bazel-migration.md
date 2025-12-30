@@ -209,11 +209,11 @@ Resolved circular dependency by moving bootstrap_handler.py from agent-core to m
 - [ ] Add rules_js for Node.js frontends (optional)
 - [ ] Add rules_oci for Docker images (optional)
 
-### Phase 9: Cleanup
-- [ ] Remove UV workspace configuration from root pyproject.toml
-- [ ] Update CI/CD to use Bazel
-- [ ] Update developer documentation
-- [ ] Remove individual package pyproject.toml files (or keep for IDE support)
+### Phase 9: Cleanup ✅
+- [x] Remove UV workspace configuration from root pyproject.toml (using minimal Bazel-only config)
+- [x] Update CI/CD to use Bazel (`.github/workflows/ci.yml` now uses `bazel build //...` and `bazel test //...`)
+- [x] Update developer documentation (AGENTS.md, .github/COPILOT_INSTRUCTIONS.md updated)
+- [ ] Remove individual package pyproject.toml files (keeping for pytest configs)
 
 ## Technical Decisions
 

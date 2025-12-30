@@ -13,29 +13,28 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md)
 - **Development Tools** (`wt/`, `gatelet/`) - Worktree management and gateway services
 - **Dotfiles** (`dotfiles/`) - Centrally managed via rcm (DO NOT modify files in `~/.` directly)
 
-## Build Systems
+## Build System
 
-### Python (UV Workspace)
-The repository uses a UV workspace with a single `uv.lock` at the root:
+The repository uses **Bazel** as the unified build system:
+
 ```bash
-# Install all workspace members
-uv sync
+# Build all targets
+bazel build //...
 
-# Or use per-package devenv
-cd adgn && direnv allow
+# Run tests
+bazel test //...
+
+# Lint (ruff + mypy via aspect_rules_lint)
+bazel lint //...
 ```
+
+**Python dependencies**: Managed via `requirements_bazel.txt` (single source of truth).
 Target: Python 3.12+
 
 ### Rust
 ```bash
 cargo build
 cargo test
-```
-
-### Bazel
-```bash
-bazel build //target:name
-bazel test //target:name
 ```
 
 ## Code Style

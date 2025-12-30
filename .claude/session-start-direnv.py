@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Session start hook for Claude Code web: sets up nix, direnv, devenv, uv, and Bazel proxy."""
+"""Session start hook for Claude Code web: sets up nix, direnv, devenv, and Bazel proxy."""
 
 from datetime import datetime
 import json
@@ -17,7 +17,7 @@ import traceback
 from urllib.parse import urlparse
 
 LOG_FILE = Path("/tmp/session-start-direnv.log")
-TOOLS = ["direnv", "devenv", "uv"]
+TOOLS = ["direnv", "devenv"]
 
 # Bazel proxy configuration - files stored in ~/.cache/bazel-proxy/
 BAZEL_PROXY_PORT = 18081
