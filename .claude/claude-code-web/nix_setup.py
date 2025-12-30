@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-log = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def find_nix_bin() -> Path | None:
@@ -33,7 +33,7 @@ def setup_nix_path(nix_store_bin: Path) -> None:
     paths = [p for p in paths if p.exists()]
     if paths:
         os.environ["PATH"] = ":".join(map(str, paths)) + ":" + os.environ.get("PATH", "")
-        log.info("Added to PATH: %s", ", ".join(map(str, paths)))
+        logger.info("Added to PATH: %s", ", ".join(map(str, paths)))
 
 
 def install_nix(project_dir: Path, run_streaming: Callable[..., int]) -> Path:
@@ -41,16 +41,16 @@ def install_nix(project_dir: Path, run_streaming: Callable[..., int]) -> Path:
     nix_conf = project_dir / ".claude" / "claude-code-web" / "nix.conf"
     if nix_conf.exists():
         os.environ["NIX_USER_CONF_FILES"] = str(nix_conf)
-        log.info("Using nix.conf: %s", nix_conf)
+        logger.info("Using nix.conf: %s", nix_conf)
 
     # Check if nix is already in the store
     nix_store_bin = find_nix_bin()
     if nix_store_bin:
-        log.info("nix already in store: %s", nix_store_bin)
+        logger.info("nix already in store: %s", nix_store_bin)
         setup_nix_path(nix_store_bin)
         return nix_store_bin
 
-    log.info("Installing nix...")
+    logger.info("Installing nix...")
 
     # Download with progress bar
     run_streaming(
@@ -81,7 +81,7 @@ def install_nix(project_dir: Path, run_streaming: Callable[..., int]) -> Path:
     if not nix_store_bin:
         raise RuntimeError("Failed to install nix - no nix binary found in store")
 
-    log.info("nix installed: %s", nix_store_bin)
+    logger.info("nix installed: %s", nix_store_bin)
     setup_nix_path(nix_store_bin)
     return nix_store_bin
 
@@ -98,10 +98,10 @@ def install_tools(nix_store_bin: Path, tools: list[str], run_streaming: Callable
     # Filter out tools that are already available
     missing_tools = [t for t in tools if not shutil.which(t)]
     if not missing_tools:
-        log.info("All tools already available: %s", ", ".join(tools))
+        logger.info("All tools already available: %s", ", ".join(tools))
         return
 
-    log.info("Installing tools: %s", ", ".join(missing_tools))
+    logger.info("Installing tools: %s", ", ".join(missing_tools))
 
     # Install all missing tools in one command with verbose output
     # -v: verbose, --print-build-logs: show build output
@@ -109,7 +109,7 @@ def install_tools(nix_store_bin: Path, tools: list[str], run_streaming: Callable
 
     run_streaming(cmd)
 
-    log.info("Tools installed successfully")
+    logger.info("Tools installed successfully")
 
 
 def persist_environment(env_file: str | None, nix_store_bin: Path, project_dir: Path) -> None:
@@ -119,7 +119,7 @@ def persist_environment(env_file: str | None, nix_store_bin: Path, project_dir: 
     profile bin (for user-installed tools like direnv, devenv).
     """
     if not env_file:
-        log.warning("CLAUDE_ENV_FILE is empty, PATH changes will not persist")
+        logger.warning("CLAUDE_ENV_FILE is empty, PATH changes will not persist")
         return
 
     nix_conf = project_dir / ".claude" / "claude-code-web" / "nix.conf"
@@ -131,4 +131,4 @@ export NIX_USER_CONF_FILES="{nix_conf}"
 [ -d ~/.nix-profile/bin ] && export PATH="$HOME/.nix-profile/bin:$PATH"
 '''
     Path(env_file).write_text(content)
-    log.info("Wrote environment to CLAUDE_ENV_FILE=%s", env_file)
+    logger.info("Wrote environment to CLAUDE_ENV_FILE=%s", env_file)
