@@ -1,31 +1,22 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import os
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import logging
+import os
 from typing import TYPE_CHECKING, cast
 
 import aiodocker
-from agent_core.agent import Agent
-from agent_core.loop_control import RequireAnyTool
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
-from mcp_infra.compositor.clients import CompositorMetaClient
-from mcp_infra.compositor.server import Compositor
-from mcp_infra.container_session import ContainerOptions
-from mcp_infra.enhanced import EnhancedFastMCP
-from mcp_infra.notifications.buffer import NotificationsBuffer
-from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
-from openai_utils.client_factory import build_client
-from openai_utils.model import OpenAIModelProto, SystemMessage
 from pydantic import BaseModel, Field
 
+from agent_core.agent import Agent
+from agent_core.loop_control import RequireAnyTool
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.mcp.chat.server import attach_persisted_chat_servers
@@ -41,13 +32,21 @@ from agent_server.server.bus import ServerBus
 from agent_server.server.runtime import AgentSession, UiEventHandler
 from agent_server.server.system_message import get_ui_system_message
 from agent_server.types import AgentID
+from mcp_infra.compositor.clients import CompositorMetaClient
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.container_session import ContainerOptions
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.notifications.buffer import NotificationsBuffer
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
+from openai_utils.client_factory import build_client
+from openai_utils.model import OpenAIModelProto, SystemMessage
 
 from .handlers import build_handlers
 
 if TYPE_CHECKING:
-    from mcp_infra.mounted import Mounted
-
     from agent_server.mcp.approval_policy.engine import PolicyProposerServer, PolicyReaderServer
+    from mcp_infra.mounted import Mounted
 
 # ---- Agent Container Compositor ---------------------------------------------
 

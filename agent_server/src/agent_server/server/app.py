@@ -2,21 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from contextlib import AsyncExitStack
 import logging
 import os
-from contextlib import AsyncExitStack
 from pathlib import Path
 
 import aiodocker
-import uvicorn
-from fastapi import FastAPI, Response
-from fastapi import FastAPI as SubApp
+from fastapi import FastAPI, FastAPI as SubApp, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastmcp.mcp_config import MCPConfig
-from openai_utils.client_factory import build_client
-from openai_utils.model import OpenAIModelProto
+import uvicorn
 
 from agent_server.mcp_bridge.auth import TokensConfig
 from agent_server.mcp_bridge.compositor_factory import create_global_compositor
@@ -24,6 +21,8 @@ from agent_server.mcp_bridge.registry import InfrastructureRegistry
 from agent_server.persist.sqlite import SQLitePersistence
 from agent_server.runtime.registry import AgentRegistry
 from agent_server.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
+from openai_utils.client_factory import build_client
+from openai_utils.model import OpenAIModelProto
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
 

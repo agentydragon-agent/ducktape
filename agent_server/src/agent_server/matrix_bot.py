@@ -7,10 +7,15 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import aiodocker
+from fastmcp.client import Client
+from pydantic import TypeAdapter
 import typer
+
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
-from fastmcp.client import Client
+from agent_server.logging_config import configure_logging_info
+from agent_server.server.bus import ServerBus, UiEndTurn
+from agent_server.server.mode_handler import ServerModeHandler
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.container_session import ContainerOptions
@@ -24,11 +29,6 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.types import NetworkMode
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
-from pydantic import TypeAdapter
-
-from agent_server.logging_config import configure_logging_info
-from agent_server.server.bus import ServerBus, UiEndTurn
-from agent_server.server.mode_handler import ServerModeHandler
 
 
 class MatrixBotCompositor(Compositor):

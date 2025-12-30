@@ -89,6 +89,9 @@ combine-as-imports = true
 split-on-trailing-comma = false
 
 [lint.per-file-ignores]
+# Vendored third-party code - ignore all rules (excluded from `exclude` when files passed directly)
+"**/third_party/**" = ["ALL"]
+
 # Project-specific ignores (consolidated from individual pyproject.toml files)
 "gatelet/tasks.py" = ["INP001", "PT028"]  # Task script doesn't need __init__.py; pytest param default for CLI
 "rspcache/src/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern

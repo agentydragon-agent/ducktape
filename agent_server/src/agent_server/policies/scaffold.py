@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable, Sequence
+import sys
 
 from .policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 
