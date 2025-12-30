@@ -145,11 +145,13 @@ cat ~/.cache/bazel-proxy/proxy.log
 
 All proxy-related files are stored in `~/.cache/bazel-proxy/`:
 
-- `~/.cache/bazel-proxy/anthropic_ca.pem` - Extracted TLS inspection CA
-- `~/.cache/bazel-proxy/cacerts.jks` - Java truststore with CA
-- `~/.cache/bazel-proxy/proxy.log` - Proxy output log
-- `.claude/claude-code-web/bazel_proxy.py` - Proxy script (checked in)
-- `~/.bazelrc` - Bazel configuration with proxy settings
+- `anthropic_ca.pem` - Extracted TLS inspection CA
+- `cacerts.jks` - Java truststore with CA
+- `bazelrc` - Proxy startup options (try-imported from ~/.bazelrc)
+- `proxy.log` - Proxy output log
+
+Checked into repo:
+- `.claude/claude-code-web/bazel_proxy.py` - Async proxy server
 
 ## Non-Goals
 
