@@ -8,8 +8,6 @@ import json
 import logging
 import os
 from pathlib import Path
-import shutil
-import subprocess
 import sys
 import traceback
 
@@ -58,17 +56,22 @@ def main() -> int:
     # Set up Bazel proxy for TLS-inspecting proxy
     bazel_proxy_setup.setup_bazel_proxy()
 
+    # Install bazel wrapper that sets proxy env vars
+    bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT)
+
+    # Persist PATH modification via CLAUDE_ENV_FILE
+    env_file = os.environ.get("CLAUDE_ENV_FILE")
+    if env_file:
+        env_content = bazelisk_setup.get_env_script()
+        Path(env_file).write_text(env_content)
+        log.info("Wrote PATH update to CLAUDE_ENV_FILE: %s", env_file)
+    else:
+        log.warning("CLAUDE_ENV_FILE not set, bazel wrapper won't be on PATH")
+
     # Summary
     log.info("=" * 60)
     log.info("Environment ready:")
-    for tool in ["bazel"]:
-        path = shutil.which(tool)
-        if path:
-            result = subprocess.run([tool, "--version"], capture_output=True, text=True, check=False)
-            version = result.stdout.strip().split("\n")[0] if result.returncode == 0 else "?"
-            log.info("  %-10s %s (%s)", tool + ":", version, path)
-        else:
-            log.info("  %-10s not installed", tool + ":")
+    log.info("  bazel:       %s", bazelisk_setup.get_status())
     log.info("  Bazel proxy: %s", bazel_proxy_setup.get_status())
     log.info("=" * 60)
     return 0
