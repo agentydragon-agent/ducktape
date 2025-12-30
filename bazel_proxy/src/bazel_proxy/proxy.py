@@ -296,6 +296,7 @@ async def handle_client(
             return
 
         method, target = parts[0], parts[1]
+        log.info("Request: %s %s", method, target)
 
         while (await client_reader.readline()) != b"\r\n":
             pass

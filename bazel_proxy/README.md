@@ -4,17 +4,29 @@ A local proxy that adds authentication headers for upstream TLS-inspecting proxi
 
 ## Why This Exists
 
-Claude Code web uses a TLS-inspecting proxy that breaks Bazel's access to BCR:
+[Claude Code on the web](https://docs.anthropic.com/en/docs/claude-code/claude-code-on-the-web) runs in ephemeral containers with a TLS-inspecting proxy for network egress. This breaks Bazel's access to BCR due to multiple Java/JVM limitations:
 
-1. The proxy does TLS inspection with a custom CA
-2. Proxy uses JWT-based authentication in proxy credentials
-3. Bazel's Java-based BCR client uses JVM properties, not env vars
-4. Java's Authenticator only responds to HTTP 407, but the proxy returns 401
+### The Problem
 
-This package provides a workaround by running a local proxy that:
-- Accepts unauthenticated CONNECT requests from Bazel
-- Forwards them to the upstream proxy with proper authentication headers
-- Allows Bazel to access BCR through the TLS-inspecting proxy
+1. **TLS Inspection**: The proxy does TLS inspection with a custom Anthropic CA certificate
+2. **JWT Authentication**: Proxy credentials include a JWT token for authentication (see [network docs](https://docs.anthropic.com/en/docs/claude-code/security#network-access))
+3. **Java doesn't read env vars**: Standard Java networking uses system properties (`https.proxyHost`), not `HTTPS_PROXY` environment variables
+4. **HTTP 401 vs 407**: Java's `Authenticator` class only triggers on HTTP 407 (Proxy Authentication Required), but Claude Code's proxy returns 401 (Unauthorized)
+5. **Basic auth disabled by default**: Since [Java 8u111](https://confluence.atlassian.com/kb/basic-authentication-fails-for-outgoing-proxy-in-java-8u111-909643110.html), Basic authentication for HTTPS tunneling is disabled via `jdk.http.auth.tunneling.disabledSchemes=Basic`
+
+### The Solution
+
+This local proxy acts as an authentication intermediary:
+- Accepts unauthenticated CONNECT requests from Bazel on `localhost:18081`
+- Forwards them to the upstream proxy with proper `Proxy-Authorization: Basic` headers
+- Handles credential refresh when JWTs are rotated (reads from file on each connection)
+- Allows Bazel to access BCR without any Java authentication workarounds
+
+## References
+
+- [Claude Code on the Web](https://docs.anthropic.com/en/docs/claude-code/claude-code-on-the-web) - Container environment overview
+- [Network Configuration](https://docs.anthropic.com/en/docs/claude-code/security#network-access) - Proxy and network egress details
+- [Enterprise Configuration](https://docs.anthropic.com/en/docs/claude-code/enterprise) - TLS certificate configuration
 
 ## Important Constraint
 

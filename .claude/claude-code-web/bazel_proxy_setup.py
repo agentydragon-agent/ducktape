@@ -41,22 +41,13 @@ def _parse_proxy_url(proxy_url: str) -> tuple[str, int, str | None, str | None]:
 def _extract_proxy_ca() -> bool:
     """Extract the TLS inspection CA certificate from the proxy.
 
+    Uses our local proxy (localhost:18081) which handles auth to upstream.
     Returns True if CA was extracted successfully.
     """
-    https_proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
-    if not https_proxy:
-        log.info("No https_proxy set, skipping CA extraction")
-        return False
-
-    host, port, _, _ = _parse_proxy_url(https_proxy)
-    if not host:
-        log.warning("Could not parse proxy URL: %s", https_proxy)
-        return False
-
-    log.info("Extracting TLS inspection CA from proxy %s:%d", host, port)
+    log.info("Extracting TLS inspection CA via local proxy localhost:%d", BAZEL_PROXY_PORT)
 
     result = subprocess.run(
-        ["openssl", "s_client", "-proxy", f"{host}:{port}", "-connect", "bcr.bazel.build:443", "-showcerts"],
+        ["openssl", "s_client", "-proxy", f"localhost:{BAZEL_PROXY_PORT}", "-connect", "bcr.bazel.build:443", "-showcerts"],
         input="",
         capture_output=True,
         text=True,
@@ -237,9 +228,9 @@ def setup_bazel_proxy() -> None:
 
     This is needed when running behind Anthropic's TLS-inspecting proxy
     (Claude Code web). Steps:
-    1. Extract the TLS inspection CA certificate
-    2. Create Java truststore with the CA
-    3. Start local proxy wrapper that adds auth headers
+    1. Update credentials and start local proxy (handles auth to upstream)
+    2. Extract the TLS inspection CA (via local proxy)
+    3. Create Java truststore with the CA
     4. Write bazelrc configuration to use the proxy
     """
     https_proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
@@ -250,25 +241,23 @@ def setup_bazel_proxy() -> None:
     log.info("Setting up Bazel proxy for TLS-inspecting proxy...")
     BAZEL_PROXY_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Extract the TLS inspection CA
-    if not _extract_proxy_ca():
-        log.warning("Could not extract proxy CA, Bazel BCR access may fail")
-        return
-
-    # Step 2: Create Java truststore with the CA
-    if not _create_java_truststore():
-        log.warning("Could not create Java truststore")
-        return
-
-    # Step 3: Start the local proxy wrapper
+    # Step 1: Update credentials and start local proxy first (needed for CA extraction)
+    _update_proxy_credentials()
     if not _start_proxy_server():
         log.warning("Could not start Bazel proxy")
         return
 
-    # Step 4: Update credentials file (allows refresh without proxy restart)
-    _update_proxy_credentials()
+    # Step 2: Extract the TLS inspection CA (via local proxy)
+    if not _extract_proxy_ca():
+        log.warning("Could not extract proxy CA, Bazel BCR access may fail")
+        return
 
-    # Step 5: Write bazelrc configuration
+    # Step 3: Create Java truststore with the CA
+    if not _create_java_truststore():
+        log.warning("Could not create Java truststore")
+        return
+
+    # Step 4: Write bazelrc configuration
     _write_bazel_config()
 
     log.info("Bazel proxy setup complete")
