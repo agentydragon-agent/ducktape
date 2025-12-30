@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 """Session start hook for Claude Code web: sets up nix, direnv, devenv, uv, and Bazel proxy."""
 
-import base64
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime
 import json
 import logging
 import os
 from pathlib import Path
 import re
+import select
 import shutil
 import socket
 import subprocess
 import sys
-import threading
+import time
 import traceback
-from typing import IO
 from urllib.parse import urlparse
 
 LOG_FILE = Path("/tmp/session-start-direnv.log")
@@ -38,38 +35,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_SECONDS = 5.0
-
-
-@contextmanager
-def heartbeat(operation: str) -> Iterator[None]:
-    """Log heartbeat messages during long-running operations with no output."""
-    stop_event = threading.Event()
-    start_time = datetime.now()
-
-    def heartbeat_thread() -> None:
-        beat_count = 0
-        while not stop_event.wait(HEARTBEAT_INTERVAL_SECONDS):
-            beat_count += 1
-            elapsed = (datetime.now() - start_time).total_seconds()
-            log.info("heartbeat: %s still running (%.1fs elapsed, beat #%d)", operation, elapsed, beat_count)
-
-    thread = threading.Thread(target=heartbeat_thread, daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        stop_event.set()
-        thread.join(timeout=1.0)
-        elapsed = (datetime.now() - start_time).total_seconds()
-        log.info("heartbeat: %s completed (%.1fs total)", operation, elapsed)
-
-
-def stream_output(stream: IO[str], prefix: str) -> None:
-    """Stream output line by line, logging each line as it arrives."""
-    for raw_line in stream:
-        line = raw_line.rstrip("\n\r")
-        if line:
-            log.info("%s %s", prefix, line)
 
 
 def run_streaming(cmd: list[str], operation: str, check: bool = True, env: dict[str, str] | None = None) -> int:
@@ -100,8 +65,6 @@ def run_streaming(cmd: list[str], operation: str, check: bool = True, env: dict[
 
     while True:
         # Use a timeout so we can emit heartbeats during long silences
-        import select
-
         ready, _, _ = select.select([proc.stdout], [], [], HEARTBEAT_INTERVAL_SECONDS)
 
         if ready:
@@ -267,14 +230,6 @@ export NIX_USER_CONF_FILES="{nix_conf}"
     log.info("Wrote environment to CLAUDE_ENV_FILE=%s", env_file)
 
 
-# ============================================================================
-# Bazel Proxy Setup
-# ============================================================================
-# Claude Code web uses a TLS-inspecting proxy that breaks Bazel's BCR access.
-# This section sets up a local proxy wrapper that handles JWT authentication
-# and a custom Java truststore for the proxy's TLS inspection CA.
-
-
 def parse_proxy_url(proxy_url: str) -> tuple[str, int, str | None, str | None]:
     """Parse proxy URL into (host, port, user, password)."""
     parsed = urlparse(proxy_url)
@@ -299,9 +254,6 @@ def extract_proxy_ca() -> bool:
     if not host:
         log.warning("Could not parse proxy URL: %s", https_proxy)
         return False
-
-    # Ensure cache directory exists
-    BAZEL_PROXY_DIR.mkdir(parents=True, exist_ok=True)
 
     log.info("Extracting TLS inspection CA from proxy %s:%d", host, port)
 
@@ -449,9 +401,6 @@ def start_bazel_proxy() -> bool:
     except Exception:
         pass
 
-    # Ensure cache directory exists
-    BAZEL_PROXY_DIR.mkdir(parents=True, exist_ok=True)
-
     # Kill any existing proxy
     subprocess.run(["pkill", "-f", "bazel_proxy.py"], capture_output=True)
 
@@ -465,7 +414,6 @@ def start_bazel_proxy() -> bool:
     )
 
     # Wait for it to start
-    import time
     for _ in range(10):
         time.sleep(0.5)
         try:
@@ -520,6 +468,7 @@ def setup_bazel_proxy() -> None:
         return
 
     log.info("Setting up Bazel proxy for TLS-inspecting proxy...")
+    BAZEL_PROXY_DIR.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Extract the TLS inspection CA
     if not extract_proxy_ca():
