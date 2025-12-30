@@ -21,8 +21,9 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "slow: marks tests as slow")
     config.addinivalue_line("markers", "e2e: end-to-end UI tests using playwright")
 
-    # External requirements
-    config.addinivalue_line("markers", "live_llm: tests requiring live LLM API (network + API key)")
+    # External requirements - LLM APIs
+    config.addinivalue_line("markers", "live_openai_api: tests requiring OPENAI_API_KEY")
+    config.addinivalue_line("markers", "live_anthropic_api: tests requiring ANTHROPIC_API_KEY")
     config.addinivalue_line("markers", "real_github: tests requiring network access to GitHub")
     config.addinivalue_line("markers", "requires_docker: tests requiring Docker daemon")
     config.addinivalue_line("markers", "requires_postgres: tests requiring PostgreSQL database")
@@ -58,10 +59,14 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         except Exception as exc:
             pytest.skip(f"Docker not available: {exc}")
 
-    # Live LLM tests need API key
-    if item.get_closest_marker("live_llm") is not None:
-        if not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
-            pytest.skip("No LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY)")
+    # LLM API key requirements
+    if item.get_closest_marker("live_openai_api") is not None:
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OPENAI_API_KEY not set")
+
+    if item.get_closest_marker("live_anthropic_api") is not None:
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            pytest.skip("ANTHROPIC_API_KEY not set")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

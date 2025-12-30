@@ -194,7 +194,7 @@ def test_validator_prediction_matches_expectation(
         validate_openai_strict_mode_schema(schema, model_name=model_name)
 
 
-@pytest.mark.live_llm
+@pytest.mark.live_openai_api
 @pytest.mark.parametrize(("model_class", "schema_generator", "expected", "gen_name"), TEST_SCHEMAS, ids=_test_id)
 async def test_validator_matches_openai_reality(
     openai_client,

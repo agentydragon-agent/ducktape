@@ -10,7 +10,7 @@ from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 
 
 @pytest.mark.parametrize(
-    "client_mode", [pytest.param("mock", id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_llm)]
+    "client_mode", [pytest.param("mock", id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_openai_api)]
 )
 async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     responses_factory, live_openai, client_mode, mcp_client_echo, test_handlers, recording_handler, make_step_runner

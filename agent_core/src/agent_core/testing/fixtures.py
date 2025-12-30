@@ -258,18 +258,16 @@ def make_tool_call_output(
 
 @pytest.fixture
 def live_openai(request):
-    """Provide a live AsyncOpenAI client for tests marked with `live_llm`.
+    """Provide a live AsyncOpenAI client for tests marked with `live_openai_api`.
 
-    - For non-`live_llm` tests that include this fixture in the signature but
+    - For non-`live_openai_api` tests that include this fixture in the signature but
       do not actually use it (e.g., parameterized tests with a mock branch),
       return a lightweight no-op placeholder to avoid network work and keep
       those tests running.
-    - For `live_llm` tests, require OPENAI_API_KEY and construct AsyncOpenAI;
-      skip if the key is not available.
+    - For `live_openai_api` tests, construct AsyncOpenAI (marker skip logic
+      ensures OPENAI_API_KEY is set).
     """
-    if request.node.get_closest_marker("live_llm") is not None:
-        if not os.getenv("OPENAI_API_KEY"):
-            pytest.skip("OPENAI_API_KEY not set; skipping live LLM test")
+    if request.node.get_closest_marker("live_openai_api") is not None:
         return AsyncOpenAI()
 
     class _Noop:

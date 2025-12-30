@@ -100,10 +100,8 @@ async def typed_docker_client(make_typed_mcp, docker_exec_server_py312slim):
 
 @pytest.fixture
 def live_openai(request):
-    """Provide a live AsyncOpenAI client for tests marked with `live_llm`."""
-    if request.node.get_closest_marker("live_llm") is not None:
-        if not os.getenv("OPENAI_API_KEY"):
-            pytest.skip("OPENAI_API_KEY not set; skipping live LLM test")
+    """Provide a live AsyncOpenAI client for tests marked with `live_openai_api`."""
+    if request.node.get_closest_marker("live_openai_api") is not None:
         return AsyncOpenAI()
 
     class _Noop:

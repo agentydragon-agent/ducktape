@@ -60,7 +60,7 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, marke
 
 ### UI E2E Tests (Playwright)
 - Install browsers once: `python -m playwright install`
-- Run: `pytest -q tests/agent/e2e -m "not live_llm"`
+- Run: `pytest -q tests/agent/e2e -m "not live_openai_api"`
 
 ## High‑Level Module Map
 - Packaging: name `adgn`, Python `>=3.12,<3.14`, src layout under `src/`
@@ -112,9 +112,9 @@ See `[project.scripts]` in `pyproject.toml` for the full list of CLI entry point
 - Quick start: `props run --snapshot <slug>` or `props snapshot exec <snapshot-slug>`
 
 ### Testing LLM Code
-- Typical: `direnv exec adgn pytest -q -m "not live_llm"`
+- Typical: `direnv exec adgn pytest -q -m "not live_openai_api"`
 - Excluding a suite: `-k "not sandboxed_jupyter"`
-- `live_llm` tests require API keys and network access
+- `live_openai_api` tests require OPENAI_API_KEY and network access
 
 ### Bootstrap Handlers (Agent Initialization)
 Bootstrap handlers inject synthetic function calls before the agent's first sampling cycle, providing initial context without requiring explicit agent requests.
@@ -260,7 +260,7 @@ Approval Policy
 ## Notes and Caveats
 - GNOME console script deps require system libraries and are not in the default install; use the `[gnome]` extra as needed
 - See `tana/export/lib` for the low-level parser modules (some use lazy imports to avoid cycles).
-- Tests marked `real_github` or `live_llm` talk to network/services; run explicitly
+- Tests marked `real_github` or `live_openai_api` talk to network/services; run explicitly
 
 ## References and Further Reading
 - Bootstrap type safety: `src/adgn/agent/docs/bootstrap_type_safety.md`
