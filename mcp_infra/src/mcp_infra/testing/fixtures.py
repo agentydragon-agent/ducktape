@@ -6,18 +6,18 @@ Register in downstream packages via:
 
 from __future__ import annotations
 
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-import sys
 
 import aiodocker
+import pytest
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 from mcp import types
 from pydantic import AnyUrl
-import pytest
 
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced import EnhancedFastMCP

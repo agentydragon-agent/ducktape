@@ -9,20 +9,20 @@ Manages:
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import logging
 
 import aiodocker
 from fastmcp.mcp_config import MCPConfig
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.model import OpenAIModelProto
 
 from agent_server.persist.sqlite import SQLitePersistence
 from agent_server.presets import create_agent_from_preset
 from agent_server.runtime.container import AgentContainer, build_container
 from agent_server.types import AgentID
-from openai_utils.model import OpenAIModelProto
 
 # Mount prefix for agent control (send_prompt, abort)
 AGENT_CONTROL_MOUNT_PREFIX = MCPMountPrefix("agent_control")

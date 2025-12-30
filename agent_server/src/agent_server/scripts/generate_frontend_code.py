@@ -12,15 +12,14 @@ Or via npm: npm run codegen
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
-from pydantic import TypeAdapter
-
 from agent_core.events import ToolCall
+from pydantic import TypeAdapter
 
 # Import models to export
 from agent_server.approvals import ApprovalRequest

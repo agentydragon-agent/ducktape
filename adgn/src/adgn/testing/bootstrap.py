@@ -18,10 +18,7 @@ from mcp_infra.calltool import extract_structured_content
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, Killed, TimedOut, TruncatedStream
 from mcp_infra.naming import parse_tool_name
-
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, ResponsesResult
-
-from openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 
 logger = logging.getLogger(__name__)
 

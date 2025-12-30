@@ -5,6 +5,17 @@ These tests verify that the policy gateway correctly gates tool calls based on p
 
 import asyncio
 
+import pytest
+from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
+from fastmcp.server import FastMCP
+from mcp import McpError
+from mcp import types as mtypes
+from mcp_infra.enhanced.flat_mixin import FlatModelMixin
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.resource_utils import read_text_json_typed
+
 from agent_server.mcp.approval_policy.engine import (
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
     POLICY_DENIED_ABORT_CODE,
@@ -15,15 +26,6 @@ from agent_server.mcp.approval_policy.engine import (
     PendingCallsResponse,
 )
 from agent_server.policies.policy_types import ApprovalDecision
-from fastmcp.client import Client
-from fastmcp.exceptions import ToolError
-from fastmcp.server import FastMCP
-from mcp import McpError, types as mtypes
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
-from mcp_infra.naming import build_mcp_function
-from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.resource_utils import read_text_json_typed
-import pytest
 
 
 @pytest.fixture

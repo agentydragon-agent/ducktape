@@ -53,9 +53,9 @@ _PYPROJECT_SRCS = [
 
 # Generate requirements_bazel.txt from all pyproject.toml files
 # Run: bazel run //:requirements.update
-# Note: PROXY_ENV is loaded from //.claude/claude-code-web:proxy_env.bzl
-# and is empty by default. On Claude Code web, the session-start hook
-# overwrites it with actual proxy settings.
+# Note: PROXY_ENV is loaded from proxy_env.bzl (gitignored). The bazelisk wrapper
+# copies from proxy_env_default.bzl if it doesn't exist. On Claude Code web,
+# the session hook generates proxy_env.bzl with actual proxy settings.
 lock(
     name = "requirements",
     srcs = _PYPROJECT_SRCS,

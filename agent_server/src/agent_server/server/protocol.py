@@ -4,11 +4,12 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from agent_core.events import ToolCall, UserText
+from mcp import types as mcp_types
+from pydantic import BaseModel, ConfigDict, Field
+
 from agent_server.models.policy_error import PolicyTestsSummary
 from agent_server.models.proposal_status import ProposalStatus
 from agent_server.server.bus import MimeType
-from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field
 
 # --------------------------
 # Core state

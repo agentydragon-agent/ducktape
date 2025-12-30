@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import pytest
 from _markers import REQUIRES_SANDBOX_EXEC
+
 from mcp_infra.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from mcp_infra.seatbelt.runner import run_sandboxed_async
 from mcp_infra.seatbelt.validate import make_runtime_context, validate
-import pytest
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 

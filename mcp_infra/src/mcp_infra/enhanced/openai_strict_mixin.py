@@ -10,7 +10,6 @@ import logging
 
 from fastmcp.server import FastMCP
 from fastmcp.tools.tool import Tool
-
 from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema
 
 logger = logging.getLogger(__name__)

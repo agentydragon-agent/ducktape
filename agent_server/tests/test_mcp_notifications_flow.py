@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import pytest
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing import ResponsesFactory, make_mock
-from agent_server.notifications.handler import NotificationsHandler
 from fastmcp import Context
 from fastmcp.server import FastMCP
 from mcp_infra.enhanced import EnhancedFastMCP
@@ -13,12 +13,13 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
 from mcp_infra.types import SimpleOk
 from mcp_infra.urls import parse_any_url
-from pydantic import BaseModel, ConfigDict
-import pytest
 
 # Note: build_mcp_function still needed for ToolStub construction (line 66) and direct call_tool (line 159)
 from openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from pydantic import BaseModel, ConfigDict
+
+from agent_server.notifications.handler import NotificationsHandler
 
 # Test MCP server/tool constants for this test
 NOTIFIER_MOUNT_PREFIX = MCPMountPrefix("notifier")

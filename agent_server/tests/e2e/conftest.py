@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
 import os
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 
-from agent_server.server.app import create_app
-from agent_server.types import AgentID
 import pytest
 
+from agent_server.server.app import create_app
+from agent_server.types import AgentID
 from tests.helpers import ServerHandle, start_uvicorn_app
 
 # Auto-apply e2e marker to all tests in this directory

@@ -12,7 +12,6 @@ import pytest
 from git_commit_ai import cli
 from git_commit_ai.cli import build_cache_key, get_commit_diff
 from git_commit_ai.core import build_prompt
-
 from tests.git_repo_utils import _commit, _init_repo, _stage
 
 # Fixtures moved to tests/llm/conftest.py

@@ -3,10 +3,8 @@ from __future__ import annotations
 from typing import Final
 
 from fastmcp.tools import FunctionTool
-
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.types import SimpleOk
-
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Mount prefix constant (used in compositor mount configuration)

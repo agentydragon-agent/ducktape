@@ -4,14 +4,14 @@ import inspect
 import json
 from typing import Literal
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.server.context import Context
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from pydantic import Field, field_validator
+
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.stubs.typed_stubs import TypedClient
-from pydantic import Field, field_validator
-import pytest
-
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
 class InModel(OpenAIStrictModeBaseModel):

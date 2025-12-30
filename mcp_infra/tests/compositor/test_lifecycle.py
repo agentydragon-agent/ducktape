@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
+import pytest
 from fastmcp.server import FastMCP
+
 from mcp_infra.compositor.mount import Mount, MountState
 from mcp_infra.compositor.server import Compositor, CompositorState
 from mcp_infra.prefix import MCPMountPrefix
-import pytest
 
 
 async def test_compositor_state_transitions():

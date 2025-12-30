@@ -12,16 +12,17 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from agent_server.mcp_bridge.agents import AgentsManagementServer
-from agent_server.mcp_bridge.auth import TokenRoutingASGI, TokensConfig
-from agent_server.mcp_bridge.registry import InfrastructureRegistry
+import pytest
 from fastmcp import FastMCP
 from fastmcp.mcp_config import MCPConfig
-import pytest
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
+
+from agent_server.mcp_bridge.agents import AgentsManagementServer
+from agent_server.mcp_bridge.auth import TokenRoutingASGI, TokensConfig
+from agent_server.mcp_bridge.registry import InfrastructureRegistry
 
 # ---------------------------------------------------------------------------
 # Shared Fixtures

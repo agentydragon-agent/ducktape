@@ -3,7 +3,6 @@ from pathlib import Path
 from difftree.config import SortMode
 from difftree.parser import parse_unified_diff
 from difftree.tree import build_tree, sort_tree
-
 from tests.conftest import create_file, git_add_commit
 
 

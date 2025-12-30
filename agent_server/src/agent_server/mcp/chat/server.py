@@ -10,10 +10,10 @@ from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.tools import FunctionTool
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import BaseModel, Field
 
 from agent_server.persist.sqlite import SQLitePersistence
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Mount prefixes (mounted in-proc with a shared store)
 CHAT_HUMAN_MOUNT_PREFIX = MCPMountPrefix("chat_human")

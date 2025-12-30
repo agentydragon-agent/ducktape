@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_infra.exec.models import BaseExecResult, TruncatedStream
+    from mcp_infra.exec.models import BaseExecResult
 
 __all__ = ["InitFailedError"]
 

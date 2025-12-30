@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from io import StringIO
 import json
+from io import StringIO
 from typing import cast
 
+import pytest
 from agent_core.events import ToolCall, ToolCallOutput
 from mcp.types import (
     CallToolResult,
@@ -15,15 +16,15 @@ from mcp.types import (
     ServerCapabilities,
     TextResourceContents,
 )
+from pydantic import AnyUrl, BaseModel
+from rich.console import Console
+from syrupy.assertion import SnapshotAssertion
+
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from pydantic import AnyUrl, BaseModel
-import pytest
-from rich.console import Console
-from syrupy.assertion import SnapshotAssertion
 
 
 def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str = "Agent") -> str:

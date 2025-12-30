@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
+from collections.abc import Callable
 
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, NoAction
 from mcp_infra.notifications.types import NotificationsBatch, ResourcesServerNotice
-from openai_utils.model import UserMessage
-
 from openai_utils.model import UserMessage
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,6 @@ import pytest
 
 from difftree.config import DEFAULT_CONFIG, Column, RenderConfig, SortMode
 from difftree.parser import FileChange
-
 from tests.conftest import make_diff_tree, render_to_string as render_renderable
 
 

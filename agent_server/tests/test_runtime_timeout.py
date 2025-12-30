@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import pytest
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, TimedOut, make_exec_input
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
 from mcp_infra.testing.fixtures import make_container_opts
-import pytest
 
 
 def _runtime_spec_persession(docker_client, image: str = "python:3.12-slim"):

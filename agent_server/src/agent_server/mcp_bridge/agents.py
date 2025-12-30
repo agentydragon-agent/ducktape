@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING, Literal, cast
 from fastmcp.resources import FunctionResource
 from fastmcp.tools import FunctionTool
 from mcp_infra.enhanced import EnhancedFastMCP
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import BaseModel, Field
 
 from agent_server.presets import discover_presets
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:
     from agent_server.mcp_bridge.registry import InfrastructureRegistry

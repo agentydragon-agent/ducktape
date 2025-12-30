@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastmcp.client import Client
+
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.urls import parse_any_url
 

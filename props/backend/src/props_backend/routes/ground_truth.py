@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from datetime import datetime
 import io
 import tarfile
+from collections import Counter, defaultdict
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import func
-from sqlalchemy.orm import selectinload
-
 from props_core.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
@@ -27,6 +23,9 @@ from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 from props_core.models.true_positive import LineRange
 from props_core.splits import Split
+from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -459,6 +458,6 @@ def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileConten
 
                     return FileContentResponse(path=file_path, content=content, line_count=snapshot_file.line_count)
                 except KeyError:
-                    raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}")
+                    raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}") from None
         except tarfile.TarError as e:
-            raise HTTPException(status_code=500, detail=f"Error reading tar archive: {e}")
+            raise HTTPException(status_code=500, detail=f"Error reading tar archive: {e}") from e

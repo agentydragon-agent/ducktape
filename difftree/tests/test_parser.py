@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from difftree.parser import FileChange, parse_git_diff, parse_unified_diff
-
 from tests.conftest import PNG_HEADER, create_file, git_add_commit
 
 

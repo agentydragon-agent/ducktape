@@ -70,7 +70,6 @@ nix/**/result
 # Project-specific
 **/.claude/settings.local.json
 **/.claude/session-start.log
-.claude/claude-code-web/proxy_env.bzl
 adgn/openai_openapi.yaml
 worktrees
 

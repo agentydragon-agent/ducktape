@@ -16,10 +16,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pydantic_core
 from fastmcp.tools import FunctionTool
+from openai_utils.model import FunctionCallItem
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
-import pydantic_core
 
 from mcp_infra.bootstrap_handler import BootstrapHandler
 from mcp_infra.exec.models import ExecInput
@@ -27,7 +28,6 @@ from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesReadArgs, ResourcesServer
 from mcp_infra.stubs.typed_stubs import _resolve_output_type
-from openai_utils.model import FunctionCallItem
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP

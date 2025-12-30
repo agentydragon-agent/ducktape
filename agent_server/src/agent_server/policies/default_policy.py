@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
-from agent_server.policies.scaffold import run
 from mcp_infra.constants import RESOURCES_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.naming import build_mcp_function, server_matches
+
+from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from agent_server.policies.scaffold import run
 
 # NOTE: Standalone policy program - these constants are acceptable here as it runs
 # in isolation without compositor access. Alternative would be env vars.
