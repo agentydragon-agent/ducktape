@@ -10,8 +10,4 @@ dependencies = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
-# Paths relative to repo root (where pre-commit runs mypy from)
 mypy_path = "agent_pkg/host/src:mcp_infra/src:mcp_utils/src"

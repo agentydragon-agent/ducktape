@@ -10,7 +10,3 @@ dependencies = [
     "tenacity>=8.0",
 ]
 
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
