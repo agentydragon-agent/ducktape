@@ -39,9 +39,3 @@ dev = [
     "mypy>=1.0",
     "PyHamcrest>=2.1",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-addopts = "-v --cov=ducktape_llm_common --cov-report=term-missing"
-norecursedirs = ["__pycache__", "*.egg", "dist", "build", ".git"]

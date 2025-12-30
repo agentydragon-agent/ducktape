@@ -71,9 +71,6 @@ dev = [
     "pytest-playwright",
     "invoke",
 ]
-
-[tool.pytest.ini_options]
-minversion = "8.0"
-testpaths = ["server"]
+["server"]
 filterwarnings = ["ignore::DeprecationWarning"]
 

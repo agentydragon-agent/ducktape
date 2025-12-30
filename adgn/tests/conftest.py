@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 import os
-import platform
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
@@ -14,8 +13,6 @@ from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.types import McpServerSpecs
 from openai import AsyncOpenAI
 import pytest
-
-import docker  # Only used for pytest_runtest_setup health check (sync hook)
 
 # Register shared fixture modules for parallel workers and subset runs
 pytest_plugins = (
@@ -42,29 +39,6 @@ def pytest_configure(config: pytest.Config) -> None:
         os.environ["ADGN_TEST_TRACE_WS"] = "0"
     else:
         os.environ["ADGN_TEST_TRACE_WS"] = "1"
-
-
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    for item in items:
-        if item.get_closest_marker("requires_sandbox_exec") is not None:
-            item.add_marker(pytest.mark.macos)
-
-
-def pytest_runtest_setup(item: pytest.Item) -> None:
-    if item.get_closest_marker("requires_sandbox_exec") is not None and platform.system() != "Darwin":
-        pytest.skip("seatbelt sandbox tests require macOS (sandbox-exec unavailable)")
-    if item.get_closest_marker("macos") is not None and platform.system() != "Darwin":
-        pytest.skip("macOS-only test")
-    if item.get_closest_marker("requires_docker") is None:
-        return
-    try:
-        client = docker.from_env()
-        client.ping()
-    except docker.errors.DockerException as exc:
-        pytest.skip(f"Docker not available: {exc}")
-    else:
-        with suppress(Exception):
-            client.close()
 
 
 @pytest.fixture(autouse=True)

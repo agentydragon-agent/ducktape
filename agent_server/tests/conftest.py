@@ -61,20 +61,6 @@ pytest_plugins = (
 )
 
 
-def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Skip tests that require Docker if Docker is not available."""
-    if item.get_closest_marker("requires_docker") is None:
-        return
-    try:
-        client = docker.from_env()
-        client.ping()
-    except docker.errors.DockerException as exc:
-        pytest.skip(f"Docker not available: {exc}")
-    else:
-        with suppress(Exception):
-            client.close()
-
-
 # --- Pytest fixtures ---
 
 

@@ -22,11 +22,3 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-timeout = 30
-addopts = "-m 'not live_llm'"
-markers = [
-    "live_llm: tests that require a live LLM (API key and network access)",
-]

@@ -28,10 +28,3 @@ dev = [
     "playwright>=1.40",
     "docker>=7.0",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-markers = [
-    "requires_docker: tests that require Docker to run",
-    "live_llm: tests that require a live LLM API",
-]

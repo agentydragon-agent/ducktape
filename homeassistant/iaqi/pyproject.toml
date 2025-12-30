@@ -17,6 +17,3 @@ test = [
     "pytest-homeassistant-custom-component==0.13.45",
     "PyHamcrest>=2.0.4",
 ]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"

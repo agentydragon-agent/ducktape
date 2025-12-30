@@ -23,6 +23,3 @@ dev = [
     "syrupy>=4.0",  # For snapshot testing
     "PyHamcrest>=2.0",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

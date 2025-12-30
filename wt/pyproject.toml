@@ -40,24 +40,3 @@ dev = [
 
 [project.entry-points."wt.plugins"]
 wt_demo = "wt.demo_plugin"
-
-[tool.pytest.ini_options]
-timeout = 30
-timeout_method = "thread"
-addopts = [
-    "-m",
-    "not real_github",
-    "-v",
-    "--tb=short",
-    "--strict-markers",
-    "--disable-warnings",
-]
-markers = [
-    "integration: integration tests that talk to real git repositories",
-    "unit: fast unit tests",
-    "shell: shell integration tests using fd3 redirection",
-    "real_github: tests that require network access to GitHub",
-    "asyncio: tests that use pytest-asyncio",
-    "slow: slow tests",
-]
-testpaths = ["tests"]

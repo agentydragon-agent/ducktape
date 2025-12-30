@@ -7,7 +7,3 @@ dependencies = [
     "pytest",
     "pytest-asyncio",
 ]
-
-[tool.pytest.ini_options]
-addopts = "-vv"
-asyncio_mode = "auto"
