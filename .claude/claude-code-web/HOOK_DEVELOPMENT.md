@@ -106,6 +106,49 @@ Check `/tmp/session-start-direnv.log` for hook execution details.
 - `.envrc` - Repository-level direnv config (uses devenv)
 - `devenv.nix` - devenv configuration
 
+## Bazel Proxy Setup (Added 2025-12-30)
+
+Claude Code web uses a TLS-inspecting proxy that breaks Bazel's access to the
+Bazel Central Registry (BCR). The hook now automatically sets up a workaround:
+
+### The Problem
+
+1. Claude Code proxy does TLS inspection with a custom CA
+2. Proxy uses JWT-based authentication in proxy credentials
+3. Bazel's Java-based BCR client uses JVM properties, not env vars
+4. Java's Authenticator only responds to HTTP 407, but proxy returns 401
+
+### The Solution
+
+The hook automatically:
+
+1. **Extracts the TLS inspection CA** from the proxy via openssl
+2. **Creates a Java truststore** with the CA at `/tmp/custom_cacerts.jks`
+3. **Starts a local proxy wrapper** at `127.0.0.1:18081` that adds auth headers
+4. **Writes ~/.bazelrc** with JVM properties for proxy and truststore
+
+### Verification
+
+After session start, check:
+```bash
+# Proxy should be running
+curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
+
+# Bazel should be able to access BCR
+bazel info
+
+# Check proxy log
+cat /tmp/bazel_proxy.log
+```
+
+### Files Created
+
+- `/tmp/anthropic_ca.pem` - Extracted TLS inspection CA
+- `/tmp/custom_cacerts.jks` - Java truststore with CA
+- `/tmp/bazel_proxy.py` - Local proxy wrapper script
+- `/tmp/bazel_proxy.log` - Proxy output log
+- `~/.bazelrc` - Bazel configuration with proxy settings
+
 ## Non-Goals
 
 - Getting a single session working manually
