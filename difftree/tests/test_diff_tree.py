@@ -13,7 +13,7 @@ from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
 
-from .conftest import make_diff_tree, render_to_string
+from tests.conftest import make_diff_tree, render_to_string
 
 
 def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:

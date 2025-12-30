@@ -28,6 +28,7 @@ py_test(
         "tests/**/*.txt",
         "tests/**/*.diff",
     ]),
+    imports = ["."],
     main = "tests/test_diff_tree.py",
     deps = [
         ":difftree",

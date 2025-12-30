@@ -1,6 +1,7 @@
 """Python detectors package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
 py_library(
@@ -31,9 +32,15 @@ py_test(
     name = "test_py_detectors",
     srcs = glob(["tests/**/*.py"]),
     data = glob(["tests/**/*.md"]),
+    imports = ["."],
     main = "tests/test_detectors.py",
     deps = [
         ":py_detectors",
         "@pypi//pytest",
     ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":py_detectors"],
 )

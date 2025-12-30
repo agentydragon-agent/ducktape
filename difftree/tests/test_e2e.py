@@ -4,7 +4,7 @@ from difftree.config import SortMode
 from difftree.parser import parse_unified_diff
 from difftree.tree import build_tree, sort_tree
 
-from .conftest import create_file, git_add_commit
+from tests.conftest import create_file, git_add_commit
 
 
 def test_e2e_git_diff_unstaged(temp_git_repo: Path, run_git):

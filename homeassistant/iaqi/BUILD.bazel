@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
 load("@rules_python//python/uv:lock.bzl", "lock")
 
 exports_files([
@@ -35,4 +36,9 @@ py_test(
         "@pypi_homeassistant//pytest",
         "@pypi_homeassistant//pytest_homeassistant_custom_component",
     ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":indoor_aqi"],
 )

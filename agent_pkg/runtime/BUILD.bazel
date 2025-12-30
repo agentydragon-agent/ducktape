@@ -1,6 +1,8 @@
 load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
+
 py_library(
     name = "agent_pkg_runtime",
     srcs = glob(["src/agent_pkg_runtime/**/*.py"]),
@@ -12,4 +14,9 @@ py_library(
         "@pypi//fastmcp",
         "@pypi//jinja2",
     ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":agent_pkg_runtime"],
 )

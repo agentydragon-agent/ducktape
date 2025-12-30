@@ -4,7 +4,7 @@ from pathlib import Path
 
 from difftree.parser import FileChange, parse_git_diff, parse_unified_diff
 
-from .conftest import PNG_HEADER, create_file, git_add_commit
+from tests.conftest import PNG_HEADER, create_file, git_add_commit
 
 
 def test_file_change_dataclass():

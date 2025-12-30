@@ -1,6 +1,7 @@
 """Sandboxed Jupyter execution package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
 py_library(
@@ -43,4 +44,9 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_timeout",
     ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":sandboxed_jupyter"],
 )

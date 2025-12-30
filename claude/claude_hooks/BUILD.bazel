@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
 py_library(
@@ -25,9 +26,15 @@ py_binary(
 py_test(
     name = "test_claude_hooks",
     srcs = glob(["tests/**/*.py"]),
+    imports = ["."],
     main = "tests/conftest.py",
     deps = [
         ":claude_hooks",
         "@pypi//pytest",
     ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":claude_hooks"],
 )
