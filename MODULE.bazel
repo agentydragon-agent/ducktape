@@ -5,6 +5,8 @@ module(
 
 bazel_dep(name = "rules_python", version = "1.4.1")
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
+bazel_dep(name = "aspect_rules_lint", version = "1.0.0")
+bazel_dep(name = "rules_multitool", version = "1.0.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
@@ -19,13 +21,6 @@ pip.parse(
 )
 use_repo(pip, "pypi")
 
-# uv toolchain for lock() rule - generates requirements.txt from pyproject.toml
-uv = use_extension(
-    "@rules_python//python/uv:uv.bzl",
-    "uv",
-    dev_dependency = True,
-)
-uv.configure(version = "0.5.24")
 
 # Rust rules
 bazel_dep(name = "rules_rust", version = "0.61.0")  # latest 2025-05-19
