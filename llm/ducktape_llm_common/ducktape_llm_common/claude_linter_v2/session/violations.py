@@ -57,11 +57,7 @@ class ViolationTracker:
         self._violations[session_id][key] = violation_dict
 
     def add_violations(
-        self,
-        session_id: SessionID,
-        violations: list[Violation],
-        file_path: str,
-        severity: str = "error",
+        self, session_id: SessionID, violations: list[Violation], file_path: str, severity: str = "error"
     ) -> None:
         """Add multiple violations from a linter."""
         for v in violations:

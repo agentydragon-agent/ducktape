@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING, Literal
 from editor_agent_runtime import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import FunctionTool
-from mcp_infra.enhanced import EnhancedFastMCP
 
+from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:

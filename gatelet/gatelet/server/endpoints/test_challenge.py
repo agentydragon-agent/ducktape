@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 import html
 from http import HTTPStatus
 
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from gatelet.server.config import Settings
 from gatelet.server.endpoints.challenge import COMPUTE_OPTION_SOURCE, compute_correct_option
 from gatelet.server.models import (  # type: ignore[import] - Runtime-only import (SQLAlchemy models)
@@ -11,9 +15,6 @@ from gatelet.server.models import (  # type: ignore[import] - Runtime-only impor
     AuthKey,
     AuthNonce,
 )
-from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def test_start_challenge_creates_nonce(client: AsyncClient, db_session: AsyncSession, test_auth_key: AuthKey):

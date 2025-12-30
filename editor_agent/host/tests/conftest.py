@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from agent_pkg_host import ensure_image
-from editor_agent.cli import _DOCKERFILE, _REPO_ROOT
 import pytest
+
+from editor_agent.cli import _DOCKERFILE, _REPO_ROOT
 
 EDITOR_IMAGE_TAG = "adgn-editor:test"
 

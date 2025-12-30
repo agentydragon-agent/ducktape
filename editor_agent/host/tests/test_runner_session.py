@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from editor_agent.runner import editor_docker_session, writeback_success
 from editor_agent.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
-import pytest
 
 
 @pytest.mark.requires_docker

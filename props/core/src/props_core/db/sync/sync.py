@@ -824,12 +824,12 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
 
     for slug, files_hash in to_delete:
         # Clear graders_match_only_if_reported_on on occurrences before deleting file_set (FK RESTRICT)
-        session.query(TruePositiveOccurrenceORM).filter_by(snapshot_slug=slug, graders_match_only_if_reported_on=files_hash).update(
-            {TruePositiveOccurrenceORM.graders_match_only_if_reported_on: None}
-        )
-        session.query(FalsePositiveOccurrenceORM).filter_by(snapshot_slug=slug, graders_match_only_if_reported_on=files_hash).update(
-            {FalsePositiveOccurrenceORM.graders_match_only_if_reported_on: None}
-        )
+        session.query(TruePositiveOccurrenceORM).filter_by(
+            snapshot_slug=slug, graders_match_only_if_reported_on=files_hash
+        ).update({TruePositiveOccurrenceORM.graders_match_only_if_reported_on: None})
+        session.query(FalsePositiveOccurrenceORM).filter_by(
+            snapshot_slug=slug, graders_match_only_if_reported_on=files_hash
+        ).update({FalsePositiveOccurrenceORM.graders_match_only_if_reported_on: None})
         session.query(FileSet).filter_by(snapshot_slug=slug, files_hash=files_hash).delete()
         file_sets_deleted += 1
 
@@ -842,7 +842,9 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
 
     for slug, tp_id, occurrence_id, files_hash in triggers_to_add:
         session.add(
-            CriticScopeExpectedToRecall(snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash)
+            CriticScopeExpectedToRecall(
+                snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash
+            )
         )
         critic_scopes_expected_to_recall_added += 1
 

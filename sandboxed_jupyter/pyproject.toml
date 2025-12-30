@@ -2,7 +2,7 @@
 name = "sandboxed-jupyter"
 version = "0.1.0"
 description = "Sandboxed Jupyter execution with seatbelt and Docker modes"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.13"
 dependencies = [
     "net-util",          # for pick_free_port, wait_for_port
     "mcp-infra",         # seatbelt policy compilation
@@ -33,7 +33,7 @@ build-backend = "hatchling.build"
 packages = ["src/sandboxed_jupyter"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 # Paths relative to repo root (where pre-commit runs mypy from)

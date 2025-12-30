@@ -21,11 +21,7 @@ class TestMultilinePredicates:
         """Create test context."""
         return PredicateContext(
             tool="Bash",
-            args={
-                "file_path": "/home/user/test.py",
-                "content": "print('hello')",
-                "command": "grep -r pattern",
-            },
+            args={"file_path": "/home/user/test.py", "content": "print('hello')", "command": "grep -r pattern"},
             session_id=SessionID("test-session"),
             timestamp=datetime.now(),
         )
@@ -101,10 +97,7 @@ def is_safe_pipeline(ctx):
 
         # Unsafe command
         context_unsafe = PredicateContext(
-            tool="Bash",
-            args={"command": "rm -rf /"},
-            session_id=SessionID("test-session"),
-            timestamp=datetime.now(),
+            tool="Bash", args={"command": "rm -rf /"}, session_id=SessionID("test-session"), timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate, context_unsafe) is False
 
@@ -150,10 +143,7 @@ def check_broker_limits(ctx):
 """
         # Create context for broker MCP
         broker_context = PredicateContext(
-            tool="mcp_broker_place_order",
-            args={},
-            session_id=SessionID("broker-session"),
-            timestamp=datetime.now(),
+            tool="mcp_broker_place_order", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
         )
 
         # Add tool_input to context (simulating MCP tool input)
@@ -162,30 +152,21 @@ def check_broker_limits(ctx):
 
         # Exceed amount limit
         broker_context_high_amount = PredicateContext(
-            tool="mcp_broker_place_order",
-            args={},
-            session_id=SessionID("broker-session"),
-            timestamp=datetime.now(),
+            tool="mcp_broker_place_order", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
         )
         broker_context_high_amount.tool_input = {"amount": 1000, "margin_multiplier": 2}
         assert evaluator.evaluate(predicate, broker_context_high_amount) is False
 
         # Exceed margin limit
         broker_context_high_margin = PredicateContext(
-            tool="mcp_broker_place_order",
-            args={},
-            session_id=SessionID("broker-session"),
-            timestamp=datetime.now(),
+            tool="mcp_broker_place_order", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
         )
         broker_context_high_margin.tool_input = {"amount": 100, "margin_multiplier": 10}
         assert evaluator.evaluate(predicate, broker_context_high_margin) is False
 
         # Forbidden operation
         broker_context_forbidden = PredicateContext(
-            tool="mcp_broker_withdraw",
-            args={},
-            session_id=SessionID("broker-session"),
-            timestamp=datetime.now(),
+            tool="mcp_broker_withdraw", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
         )
         broker_context_forbidden.tool_input = {"amount": 100, "margin_multiplier": 2}
         assert evaluator.evaluate(predicate, broker_context_forbidden) is False
@@ -234,10 +215,7 @@ def check_recent_activity(ctx):
 """
         # Recent timestamp
         context_recent = PredicateContext(
-            tool="Bash",
-            args={"command": "test"},
-            session_id=SessionID("test-session"),
-            timestamp=datetime.now(),
+            tool="Bash", args={"command": "test"}, session_id=SessionID("test-session"), timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate, context_recent) is True
 
@@ -278,7 +256,7 @@ def check_tool(ctx):
     return ctx.tool == 'Bash'
 """
         assert evaluator.evaluate(predicate_simple, context) is True
-        
+
         # More complex function
         predicate_git = """
 def safe_git_commands(ctx):
@@ -293,9 +271,6 @@ def safe_git_commands(ctx):
 
         # Test with git command
         context_git = PredicateContext(
-            tool="Bash",
-            args={"command": "git status"},
-            session_id=SessionID("test-session"),
-            timestamp=datetime.now(),
+            tool="Bash", args={"command": "git status"}, session_id=SessionID("test-session"), timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate_git, context_git) is True

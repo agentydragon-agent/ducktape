@@ -12,13 +12,13 @@ from uuid import UUID
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
-from mcp_infra.enhanced import EnhancedFastMCP
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props_core.db.session import get_session
 from props_core.db.snapshots import DBLocationAnchor
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleSpec
 
+from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 logger = logging.getLogger(__name__)

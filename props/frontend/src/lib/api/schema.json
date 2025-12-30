@@ -8,9 +8,7 @@
   "paths": {
     "/api/stats/overview": {
       "get": {
-        "tags": [
-          "stats"
-        ],
+        "tags": ["stats"],
         "summary": "Get Overview",
         "operationId": "get_overview_api_stats_overview_get",
         "responses": {
@@ -29,9 +27,7 @@
     },
     "/api/stats/definitions": {
       "get": {
-        "tags": [
-          "stats"
-        ],
+        "tags": ["stats"],
         "summary": "List Definitions",
         "description": "List all agent definitions, optionally filtered by type.",
         "operationId": "list_definitions_api_stats_definitions_get",
@@ -79,9 +75,7 @@
     },
     "/api/stats/definitions/{definition_id}": {
       "get": {
-        "tags": [
-          "stats"
-        ],
+        "tags": ["stats"],
         "summary": "Get Definition Detail",
         "description": "Get detailed stats for a single definition including per-example breakdown.",
         "operationId": "get_definition_detail_api_stats_definitions__definition_id__get",
@@ -122,9 +116,7 @@
     },
     "/api/stats/examples": {
       "get": {
-        "tags": [
-          "stats"
-        ],
+        "tags": ["stats"],
         "summary": "Get Example Detail",
         "description": "Get detailed information about a specific example.\n\nQuery parameters:\n    snapshot_slug: Snapshot identifier (e.g., \"ducktape/2025-11-20-00\")\n    example_kind: Example kind (whole_snapshot or file_set)\n    files_hash: Files hash (required for file_set, must be None for whole_snapshot)\n\nReturns:\n    Detailed example information including:\n    - Example metadata (split, recall_denominator)\n    - File list (for file_set examples)\n    - Per-definition run statistics\n    - Aggregate metrics",
         "operationId": "get_example_detail_api_stats_examples_get",
@@ -192,9 +184,7 @@
     },
     "/api/runs/active": {
       "get": {
-        "tags": [
-          "runs"
-        ],
+        "tags": ["runs"],
         "summary": "List Active Runs",
         "description": "List all active agent runs.\n\nReturns runs from both:\n- In-memory registry (currently executing)\n- Database (IN_PROGRESS status, for runs that may have started before we connected)",
         "operationId": "list_active_runs_api_runs_active_get",
@@ -214,9 +204,7 @@
     },
     "/api/runs/jobs": {
       "get": {
-        "tags": [
-          "runs"
-        ],
+        "tags": ["runs"],
         "summary": "List Jobs",
         "description": "List all validation jobs.",
         "operationId": "list_jobs_api_runs_jobs_get",
@@ -236,9 +224,7 @@
     },
     "/api/runs": {
       "get": {
-        "tags": [
-          "runs"
-        ],
+        "tags": ["runs"],
         "summary": "List Runs",
         "description": "List all agent runs with optional filters and pagination.\n\nQuery parameters:\n- status: Filter by run status\n- definition_id: Filter by definition ID\n- agent_type: Filter by agent type (critic, grader, etc.)\n- split: Filter by data split (train, valid, test)\n- example_kind: Filter by example kind (whole_snapshot, file_set)\n- offset: Pagination offset (default: 0)\n- limit: Pagination limit (default: 100, max: 500)",
         "operationId": "list_runs_api_runs_get",
@@ -370,9 +356,7 @@
     },
     "/api/runs/validation": {
       "post": {
-        "tags": [
-          "runs"
-        ],
+        "tags": ["runs"],
         "summary": "Trigger Validation Runs",
         "description": "Trigger validation runs: sample N examples, run 1 critic->grader per example.\n\nRuns are started in the background in parallel. Poll /api/runs/jobs for status.\nRegistry semaphore limits actual concurrency.",
         "operationId": "trigger_validation_runs_api_runs_validation_post",
@@ -412,9 +396,7 @@
     },
     "/api/runs/run/{run_id}": {
       "get": {
-        "tags": [
-          "runs"
-        ],
+        "tags": ["runs"],
         "summary": "Get Run",
         "description": "Get details of a specific agent run.",
         "operationId": "get_run_api_runs_run__run_id__get",
@@ -456,9 +438,7 @@
     },
     "/api/runs/run/{run_id}/events": {
       "get": {
-        "tags": [
-          "runs"
-        ],
+        "tags": ["runs"],
         "summary": "Get Run Events",
         "description": "Get events for a specific agent run.\n\nSupports pagination via offset/limit. Events are ordered by sequence_num.",
         "operationId": "get_run_events_api_runs_run__run_id__events_get",
@@ -520,9 +500,7 @@
     },
     "/api/gt/snapshots": {
       "get": {
-        "tags": [
-          "ground_truth"
-        ],
+        "tags": ["ground_truth"],
         "summary": "List Snapshots",
         "description": "List all snapshots with issue counts.",
         "operationId": "list_snapshots_api_gt_snapshots_get",
@@ -542,9 +520,7 @@
     },
     "/api/gt/snapshots/{snapshot_slug}": {
       "get": {
-        "tags": [
-          "ground_truth"
-        ],
+        "tags": ["ground_truth"],
         "summary": "Get Snapshot Detail",
         "description": "Get detailed snapshot info with all TPs and FPs.",
         "operationId": "get_snapshot_detail_api_gt_snapshots__snapshot_slug__get",
@@ -588,9 +564,7 @@
     },
     "/api/gt/snapshots/{snapshot_slug}/tree": {
       "get": {
-        "tags": [
-          "ground_truth"
-        ],
+        "tags": ["ground_truth"],
         "summary": "Get Snapshot Tree",
         "description": "Get directory tree with issue occurrence counts.",
         "operationId": "get_snapshot_tree_api_gt_snapshots__snapshot_slug__tree_get",
@@ -634,9 +608,7 @@
     },
     "/api/gt/snapshots/{snapshot_slug}/files/{file_path}": {
       "get": {
-        "tags": [
-          "ground_truth"
-        ],
+        "tags": ["ground_truth"],
         "summary": "Get Snapshot File",
         "description": "Get file content from snapshot tar archive.",
         "operationId": "get_snapshot_file_api_gt_snapshots__snapshot_slug__files__file_path__get",
@@ -737,13 +709,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "agent_run_id",
-          "definition_id",
-          "model",
-          "status",
-          "created_at"
-        ],
+        "required": ["agent_run_id", "definition_id", "model", "status", "created_at"],
         "title": "ActiveRunInfo"
       },
       "ActiveRunsResponse": {
@@ -757,9 +723,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "runs"
-        ],
+        "required": ["runs"],
         "title": "ActiveRunsResponse"
       },
       "AgentRunDetail": {
@@ -904,26 +868,13 @@
       },
       "AgentRunStatus": {
         "type": "string",
-        "enum": [
-          "in_progress",
-          "completed",
-          "max_turns_exceeded",
-          "context_length_exceeded",
-          "reported_failure"
-        ],
+        "enum": ["in_progress", "completed", "max_turns_exceeded", "context_length_exceeded", "reported_failure"],
         "title": "AgentRunStatus",
         "description": "Agent run status enumeration.\n\nUnified status for all agent types (critic, grader, prompt_optimizer, etc.)."
       },
       "AgentType": {
         "type": "string",
-        "enum": [
-          "critic",
-          "grader",
-          "snapshot_grader",
-          "prompt_optimizer",
-          "improvement",
-          "freeform"
-        ],
+        "enum": ["critic", "grader", "snapshot_grader", "prompt_optimizer", "improvement", "freeform"],
         "title": "AgentType",
         "description": "Types of agents in the system.\n\nEach agent type has different:\n- MCP server class attached via MCP-over-HTTP\n- Handler configuration (run-to-completion vs conversational)\n- Database access (RLS policies)\n- Mount requirements"
       },
@@ -953,12 +904,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "request",
-          "model",
-          "request_id",
-          "phase_number"
-        ],
+        "required": ["request", "model", "request_id", "phase_number"],
         "title": "ApiRequest",
         "description": "Full OpenAI API request payload (before sending).\n\nCaptures the complete request including fully-evaluated instructions."
       },
@@ -1014,9 +960,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "AssistantText"
       },
       "BaseExecResult": {
@@ -1073,12 +1017,7 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "exit",
-          "stdout",
-          "stderr",
-          "duration_ms"
-        ],
+        "required": ["exit", "stdout", "stderr", "duration_ms"],
         "title": "BaseExecResult",
         "description": "Standard MCP exec response - basic servers return this directly (output model).\n\nPreserves str | TruncatedStream distinction to encode truncation information."
       },
@@ -1097,11 +1036,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "agent_run_id",
-          "agent_type",
-          "status"
-        ],
+        "required": ["agent_run_id", "agent_type", "status"],
         "title": "ChildRunInfo",
         "description": "Brief info about a child agent run."
       },
@@ -1143,11 +1078,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "resolved_files",
-          "grader_runs",
-          "reported_issues"
-        ],
+        "required": ["resolved_files", "grader_runs", "reported_issues"],
         "title": "CriticRunSpecifics",
         "description": "Critic-specific fields."
       },
@@ -1179,9 +1110,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "example"
-        ],
+        "required": ["example"],
         "title": "CriticTypeConfig",
         "description": "Critic-specific configuration.\n\nCritics analyze code snapshots and report issues.\nThe example specifies which snapshot and scope (whole-snapshot or single-trigger-set) to evaluate."
       },
@@ -1224,13 +1153,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "definition_id",
-          "agent_type",
-          "created_at",
-          "stats",
-          "examples"
-        ],
+        "required": ["definition_id", "agent_type", "created_at", "stats", "examples"],
         "title": "DefinitionDetailResponse"
       },
       "DefinitionInfo": {
@@ -1249,11 +1172,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "definition_id",
-          "agent_type",
-          "created_at"
-        ],
+        "required": ["definition_id", "agent_type", "created_at"],
         "title": "DefinitionInfo"
       },
       "DefinitionRow": {
@@ -1285,11 +1204,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "definition_id",
-          "created_at",
-          "stats"
-        ],
+        "required": ["definition_id", "created_at", "stats"],
         "title": "DefinitionRow"
       },
       "DefinitionStatsForExample": {
@@ -1328,13 +1243,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "definition_id",
-          "model",
-          "n_runs",
-          "status_counts",
-          "credit_stats"
-        ],
+        "required": ["definition_id", "model", "n_runs", "status_counts", "credit_stats"],
         "title": "DefinitionStatsForExample",
         "description": "Stats for a single definition on this example."
       },
@@ -1349,9 +1258,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "definitions"
-        ],
+        "required": ["definitions"],
         "title": "DefinitionsResponse"
       },
       "DockerExecCallPayload": {
@@ -1371,10 +1278,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "call_id",
-          "input"
-        ],
+        "required": ["call_id", "input"],
         "title": "DockerExecCallPayload",
         "description": "Parsed docker_exec tool call."
       },
@@ -1395,10 +1299,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "call_id",
-          "result"
-        ],
+        "required": ["call_id", "result"],
         "title": "DockerExecOutputPayload",
         "description": "Parsed docker_exec tool output."
       },
@@ -1422,11 +1323,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "agent_run_id",
-          "events",
-          "total_count"
-        ],
+        "required": ["agent_run_id", "events", "total_count"],
         "title": "EventsResponse",
         "description": "Response for events endpoint."
       },
@@ -1505,10 +1402,7 @@
       },
       "ExampleKind": {
         "type": "string",
-        "enum": [
-          "whole_snapshot",
-          "file_set"
-        ],
+        "enum": ["whole_snapshot", "file_set"],
         "title": "ExampleKind",
         "description": "Discriminator values for ExampleSpec union.\n\nMatches the PostgreSQL example_kind_enum type values exactly."
       },
@@ -1638,13 +1532,7 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "cmd",
-          "cwd",
-          "env",
-          "user",
-          "timeout_ms"
-        ],
+        "required": ["cmd", "cwd", "env", "user", "timeout_ms"],
         "title": "ExecInput",
         "description": "Typed payload for container exec tool.\n\nNote: TTY is not allocated for processes to ensure stdout/stderr separation."
       },
@@ -1662,9 +1550,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "exit_code"
-        ],
+        "required": ["exit_code"],
         "title": "Exited",
         "description": "Process exited normally with an exit code."
       },
@@ -1684,11 +1570,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "path",
-          "content",
-          "line_count"
-        ],
+        "required": ["path", "content", "line_count"],
         "title": "FileContentResponse",
         "description": "File content from snapshot."
       },
@@ -1714,10 +1596,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "path",
-          "ranges"
-        ],
+        "required": ["path", "ranges"],
         "title": "FileLocationInfo",
         "description": "File with optional line ranges."
       },
@@ -1761,11 +1640,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "path",
-          "name",
-          "is_dir"
-        ],
+        "required": ["path", "name", "is_dir"],
         "title": "FileTreeNode",
         "description": "Node in file tree (file or directory)."
       },
@@ -1780,9 +1655,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "tree"
-        ],
+        "required": ["tree"],
         "title": "FileTreeResponse",
         "description": "Directory tree with issue counts."
       },
@@ -1810,12 +1683,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "fp_id",
-          "rationale",
-          "occurrences",
-          "created_at"
-        ],
+        "required": ["fp_id", "rationale", "occurrences", "created_at"],
         "title": "FpInfo",
         "description": "False positive issue info."
       },
@@ -1841,11 +1709,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "fp_id",
-          "occurrence_id",
-          "credit"
-        ],
+        "required": ["fp_id", "occurrence_id", "credit"],
         "title": "FpTarget",
         "description": "FP match target."
       },
@@ -1914,10 +1778,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "name",
-          "call_id"
-        ],
+        "required": ["name", "call_id"],
         "title": "FunctionCallItem"
       },
       "FunctionCallOutputItem": {
@@ -1956,10 +1817,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "call_id",
-          "output"
-        ],
+        "required": ["call_id", "output"],
         "title": "FunctionCallOutputItem"
       },
       "FunctionOutputImageContent": {
@@ -1996,11 +1854,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "low",
-                  "high",
-                  "auto"
-                ]
+                "enum": ["low", "high", "auto"]
               },
               {
                 "type": "null"
@@ -2029,9 +1883,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "FunctionOutputTextContent",
         "description": "Text content in function call output (sent to OpenAI API as input_text)."
       },
@@ -2076,9 +1928,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "title": "FunctionToolParam",
         "description": "Typed mirror of OpenAI Responses function tool schema.\n\nShape compatible with the Responses API tools list items."
       },
@@ -2111,11 +1961,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "name",
-          "call_id",
-          "args_json"
-        ],
+        "required": ["name", "call_id", "args_json"],
         "title": "GenericToolCallPayload",
         "description": "Unparsed tool call (fallback)."
       },
@@ -2138,10 +1984,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "call_id",
-          "content"
-        ],
+        "required": ["call_id", "content"],
         "title": "GenericToolOutputPayload",
         "description": "Unparsed tool output (fallback)."
       },
@@ -2164,11 +2007,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "agent_run_id",
-          "status",
-          "grading_edges"
-        ],
+        "required": ["agent_run_id", "status", "grading_edges"],
         "title": "GraderRunInfo",
         "description": "Info about a grader run that graded this critic."
       },
@@ -2189,9 +2028,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "grading_edges"
-        ],
+        "required": ["grading_edges"],
         "title": "GraderRunSpecifics",
         "description": "Grader-specific fields."
       },
@@ -2222,9 +2059,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "graded_agent_run_id"
-        ],
+        "required": ["graded_agent_run_id"],
         "title": "GraderTypeConfig",
         "description": "Grader-specific configuration.\n\nGraders evaluate critic output against ground truth.\n\nThe snapshot_slug for RLS is derived at runtime from the graded critic's type_config\nvia SQL: (SELECT type_config->>'snapshot_slug' FROM agent_runs WHERE agent_run_id = graded_agent_run_id).\n\nThe canonical_issues_snapshot is populated at grading time and stores the TPs/FPs\nused during grading. This enables detecting stale grader runs after editing issue files."
       },
@@ -2258,11 +2093,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "critique_issue_id",
-          "target",
-          "rationale"
-        ],
+        "required": ["critique_issue_id", "target", "rationale"],
         "title": "GradingEdgeInfo",
         "description": "Individual grading edge for API response."
       },
@@ -2327,9 +2158,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "model"
-        ],
+        "required": ["model"],
         "title": "GroundTruthUsage"
       },
       "HTTPValidationError": {
@@ -2427,9 +2256,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "InputTextPart"
       },
       "InputTokensDetails": {
@@ -2441,9 +2268,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "cached_tokens"
-        ],
+        "required": ["cached_tokens"],
         "title": "InputTokensDetails",
         "description": "Token usage details for input (wrapped from OpenAI SDK)."
       },
@@ -2478,25 +2303,13 @@
           }
         },
         "type": "object",
-        "required": [
-          "job_id",
-          "definition_id",
-          "example_kind",
-          "n_samples",
-          "status",
-          "completed",
-          "failed"
-        ],
+        "required": ["job_id", "definition_id", "example_kind", "n_samples", "status", "completed", "failed"],
         "title": "JobInfo",
         "description": "Information about a validation job."
       },
       "JobStatus": {
         "type": "string",
-        "enum": [
-          "running",
-          "completed",
-          "failed"
-        ],
+        "enum": ["running", "completed", "failed"],
         "title": "JobStatus",
         "description": "Validation job status."
       },
@@ -2511,9 +2324,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "jobs"
-        ],
+        "required": ["jobs"],
         "title": "JobsResponse",
         "description": "Response for jobs endpoint."
       },
@@ -2531,9 +2342,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "signal"
-        ],
+        "required": ["signal"],
         "title": "Killed",
         "description": "Process was killed by a signal."
       },
@@ -2572,10 +2381,7 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "start_line",
-          "end_line"
-        ],
+        "required": ["start_line", "end_line"],
         "title": "LineRange"
       },
       "OccurrenceInfo": {
@@ -2649,12 +2455,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "occurrence_id",
-          "files",
-          "note",
-          "graders_match_only_if_reported_on"
-        ],
+        "required": ["occurrence_id", "files", "note", "graders_match_only_if_reported_on"],
         "title": "OccurrenceInfo",
         "description": "Unified occurrence info for both TPs and FPs."
       },
@@ -2662,19 +2463,12 @@
         "properties": {
           "agent_type": {
             "type": "string",
-            "enum": [
-              "snapshot_grader",
-              "prompt_optimizer",
-              "improvement",
-              "freeform"
-            ],
+            "enum": ["snapshot_grader", "prompt_optimizer", "improvement", "freeform"],
             "title": "Agent Type"
           }
         },
         "type": "object",
-        "required": [
-          "agent_type"
-        ],
+        "required": ["agent_type"],
         "title": "OtherRunSpecifics",
         "description": "Other agent types have no specific fields."
       },
@@ -2693,9 +2487,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "OutputTextPart",
         "description": "Text content from assistant messages.\n\nWhen assistant messages appear in the input (multi-turn conversations),\nthey use type='output_text' not 'input_text'."
       },
@@ -2708,9 +2500,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "reasoning_tokens"
-        ],
+        "required": ["reasoning_tokens"],
         "title": "OutputTokensDetails",
         "description": "Token usage details for output (wrapped from OpenAI SDK)."
       },
@@ -2745,11 +2535,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "definitions",
-          "example_counts",
-          "total_definitions"
-        ],
+        "required": ["definitions", "example_counts", "total_definitions"],
         "title": "OverviewResponse"
       },
       "ParsedEventInfo": {
@@ -2815,12 +2601,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "id",
-          "sequence_num",
-          "timestamp",
-          "payload"
-        ],
+        "required": ["id", "sequence_num", "timestamp", "payload"],
         "title": "ParsedEventInfo",
         "description": "Event with parsed payload for API response."
       },
@@ -2857,23 +2638,13 @@
           }
         },
         "type": "object",
-        "required": [
-          "target_metric",
-          "optimizer_model",
-          "critic_model",
-          "grader_model",
-          "budget_limit"
-        ],
+        "required": ["target_metric", "optimizer_model", "critic_model", "grader_model", "budget_limit"],
         "title": "PromptOptimizerTypeConfig",
         "description": "Prompt optimizer configuration.\n\nThe target_metric controls validation split access:\n- WHOLE_REPO: TRAIN ground truth only, VALID metrics via SECURITY DEFINER function\n              (full-snapshot aggregates only)\n- TARGETED: TRAIN ground truth + VALID examples table (filenames only, no ground truth),\n            VALID metrics via SECURITY DEFINER function (includes per-file aggregates)\n\nBoth modes use SECURITY DEFINER functions for VALID metrics because:\n- Ground truth tables have TRAIN-only RLS\n- Aggregate views join ground truth tables, so inherit TRAIN-only restriction\n- Only SECURITY DEFINER can bypass RLS to compute VALID aggregates\n\nRLS uses current_prompt_optimizer_target_metric() to gate direct data access."
       },
       "ReasoningEffort": {
         "type": "string",
-        "enum": [
-          "low",
-          "medium",
-          "high"
-        ],
+        "enum": ["low", "medium", "high"],
         "title": "ReasoningEffort"
       },
       "ReasoningItem": {
@@ -2917,11 +2688,7 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "low",
-                  "medium",
-                  "high"
-                ]
+                "enum": ["low", "medium", "high"]
               }
             ],
             "title": "Effort"
@@ -2933,11 +2700,7 @@
               },
               {
                 "type": "string",
-                "enum": [
-                  "auto",
-                  "concise",
-                  "detailed"
-                ]
+                "enum": ["auto", "concise", "detailed"]
               }
             ],
             "title": "Summary"
@@ -2949,11 +2712,7 @@
       },
       "ReasoningSummary": {
         "type": "string",
-        "enum": [
-          "auto",
-          "concise",
-          "detailed"
-        ],
+        "enum": ["auto", "concise", "detailed"],
         "title": "ReasoningSummary",
         "description": "Canonical values for Responses API reasoning summary selection."
       },
@@ -2971,9 +2730,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "ReasoningSummaryItem",
         "description": "Summary item within a reasoning block."
       },
@@ -2996,11 +2753,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "issue_id",
-          "rationale",
-          "occurrences"
-        ],
+        "required": ["issue_id", "rationale", "occurrences"],
         "title": "ReportedIssueInfo",
         "description": "Issue reported by a critic run."
       },
@@ -3030,11 +2783,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "occurrence_id",
-          "note",
-          "files"
-        ],
+        "required": ["occurrence_id", "note", "files"],
         "title": "ReportedIssueOccurrenceInfo",
         "description": "Occurrence of a reported issue."
       },
@@ -3094,11 +2843,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "response_id",
-          "usage",
-          "model"
-        ],
+        "required": ["response_id", "usage", "model"],
         "title": "Response",
         "description": "One OpenAI responses.create result (non-streaming) with usage.\n\nEmitted once per model call to avoid duplicating usage across assistant/tool events."
       },
@@ -3166,11 +2911,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": [
-                  "auto",
-                  "required",
-                  "none"
-                ]
+                "enum": ["auto", "required", "none"]
               },
               {
                 "$ref": "#/components/schemas/ToolChoiceFunction"
@@ -3232,9 +2973,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "input"
-        ],
+        "required": ["input"],
         "title": "ResponsesRequest",
         "description": "Thin, tolerant request model for OpenAI Responses API calls we make."
       },
@@ -3312,15 +3051,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "agent_run_id",
-          "definition_id",
-          "type_config",
-          "model",
-          "status",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["agent_run_id", "definition_id", "type_config", "model", "status", "created_at", "updated_at"],
         "title": "RunInfo",
         "description": "Run information for list view."
       },
@@ -3347,12 +3078,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "runs",
-          "total_count",
-          "offset",
-          "limit"
-        ],
+        "required": ["runs", "total_count", "offset", "limit"],
         "title": "RunsListResponse",
         "description": "Response for paginated runs list."
       },
@@ -3377,10 +3103,7 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "snapshot_slug",
-          "files_hash"
-        ],
+        "required": ["snapshot_slug", "files_hash"],
         "title": "SingleFileSetExample",
         "description": "Review files from a specific file set.\n\nFiles are resolved via files_hash FK join in the database.\nCorresponds to per-file training examples."
       },
@@ -3414,13 +3137,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "slug",
-          "split",
-          "created_at",
-          "true_positives",
-          "false_positives"
-        ],
+        "required": ["slug", "split", "created_at", "true_positives", "false_positives"],
         "title": "SnapshotDetailResponse",
         "description": "Detailed snapshot info with all issues."
       },
@@ -3439,9 +3156,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "snapshot_slug"
-        ],
+        "required": ["snapshot_slug"],
         "title": "SnapshotGraderTypeConfig",
         "description": "Snapshot grader daemon configuration.\n\nPersistent grader that reconciles all critiques for a snapshot. Unlike per-critique\nGraderTypeConfig, this daemon:\n- Grades ALL critiques for the snapshot (not just one)\n- Sleeps when no drift, wakes on pg_notify\n- Maintains GT context for token efficiency\n\nRLS uses current_grader_snapshot_slug() to extract snapshot_slug from type_config."
       },
@@ -3469,13 +3184,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "slug",
-          "split",
-          "tp_count",
-          "fp_count",
-          "created_at"
-        ],
+        "required": ["slug", "split", "tp_count", "fp_count", "created_at"],
         "title": "SnapshotSummary",
         "description": "Summary info for a snapshot in list view."
       },
@@ -3490,19 +3199,13 @@
           }
         },
         "type": "object",
-        "required": [
-          "snapshots"
-        ],
+        "required": ["snapshots"],
         "title": "SnapshotsListResponse",
         "description": "Response for listing snapshots."
       },
       "Split": {
         "type": "string",
-        "enum": [
-          "train",
-          "valid",
-          "test"
-        ],
+        "enum": ["train", "valid", "test"],
         "title": "Split"
       },
       "SplitScopeStats": {
@@ -3541,13 +3244,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "recall_stats",
-          "n_examples",
-          "zero_count",
-          "status_counts",
-          "total_available"
-        ],
+        "required": ["recall_stats", "n_examples", "zero_count", "status_counts", "total_available"],
         "title": "SplitScopeStats"
       },
       "StatsWithCI": {
@@ -3592,14 +3289,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "n",
-          "mean",
-          "min",
-          "max",
-          "lcb95",
-          "ucb95"
-        ],
+        "required": ["n", "mean", "min", "max", "lcb95", "ucb95"],
         "title": "StatsWithCI",
         "description": "Statistics with 95% confidence interval bounds.\n\nMaps to PostgreSQL composite type stats_with_ci.\n\nAttributes:\n    n: sample count\n    mean: sample mean\n    min: minimum value\n    max: maximum value\n    lcb95: lower 95% confidence bound (mean - 1.96 * stddev/sqrt(n)); NULL if n < 2\n    ucb95: upper 95% confidence bound (mean + 1.96 * stddev/sqrt(n)); NULL if n < 2"
       },
@@ -3621,17 +3311,12 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "content"
-        ],
+        "required": ["content"],
         "title": "SystemMessage"
       },
       "TargetMetric": {
         "type": "string",
-        "enum": [
-          "whole-repo",
-          "targeted"
-        ],
+        "enum": ["whole-repo", "targeted"],
         "title": "TargetMetric",
         "description": "Prompt optimizer terminal metric mode.\n\nDetermines which validation examples are used for optimization:\n- WHOLE_REPO: Only full-snapshot validation examples (black-box validation)\n- TARGETED: Both per-file and full-snapshot validation examples (allows iteration)"
       },
@@ -3663,9 +3348,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "name"
-        ],
+        "required": ["name"],
         "title": "ToolChoiceFunction"
       },
       "TpInfo": {
@@ -3692,12 +3375,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "tp_id",
-          "rationale",
-          "occurrences",
-          "created_at"
-        ],
+        "required": ["tp_id", "rationale", "occurrences", "created_at"],
         "title": "TpInfo",
         "description": "True positive issue info."
       },
@@ -3723,11 +3401,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "tp_id",
-          "occurrence_id",
-          "credit"
-        ],
+        "required": ["tp_id", "occurrence_id", "credit"],
         "title": "TpTarget",
         "description": "TP match target."
       },
@@ -3743,10 +3417,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "truncated_text",
-          "total_bytes"
-        ],
+        "required": ["truncated_text", "total_bytes"],
         "title": "TruncatedStream",
         "description": "Truncated stream output with metadata about the original size.\n\nOnly used when output exceeds byte limits. Complete output uses plain str instead."
       },
@@ -3768,9 +3439,7 @@
         },
         "additionalProperties": true,
         "type": "object",
-        "required": [
-          "content"
-        ],
+        "required": ["content"],
         "title": "UserMessage"
       },
       "UserText": {
@@ -3787,9 +3456,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "title": "UserText"
       },
       "ValidationError": {
@@ -3818,11 +3485,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
+        "required": ["loc", "msg", "type"],
         "title": "ValidationError"
       },
       "ValidationRunRequest": {
@@ -3857,10 +3520,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "definition_id",
-          "example_kind"
-        ],
+        "required": ["definition_id", "example_kind"],
         "title": "ValidationRunRequest"
       },
       "ValidationRunResponse": {
@@ -3883,12 +3543,7 @@
           }
         },
         "type": "object",
-        "required": [
-          "job_id",
-          "status",
-          "n_examples_sampled",
-          "message"
-        ],
+        "required": ["job_id", "status", "n_examples_sampled", "message"],
         "title": "ValidationRunResponse"
       },
       "WholeSnapshotExample": {
@@ -3907,9 +3562,7 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "snapshot_slug"
-        ],
+        "required": ["snapshot_slug"],
         "title": "WholeSnapshotExample",
         "description": "Review all files in the snapshot.\n\nCorresponds to whole-snapshot evaluation examples."
       }

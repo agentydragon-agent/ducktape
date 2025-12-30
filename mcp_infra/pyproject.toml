@@ -3,7 +3,7 @@ name = "mcp-infra"
 version = "0.1.0"
 description = "MCP infrastructure - compositor, exec backends, and shared utilities"
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.13"
 dependencies = [
     "openai-utils",
     "agent-core",
@@ -35,7 +35,7 @@ build-backend = "hatchling.build"
 packages = ["src/mcp_infra"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 # Paths relative to repo root (where pre-commit runs mypy from)

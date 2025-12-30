@@ -12,10 +12,11 @@ Comprehensive tests verify:
 
 from __future__ import annotations
 
-from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, DockerExecCall, Step
 from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props_core.db.session import get_session
 import pytest
+
+from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, DockerExecCall, Step
 
 
 def _make_critic_steps_zero_issues() -> list[Step]:

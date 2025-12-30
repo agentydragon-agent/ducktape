@@ -2,7 +2,7 @@
 name = "editor-agent-runtime"
 version = "0.1.0"
 description = "Container-side utilities for editor agent"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "agent-pkg-runtime",
     "cli-util",
@@ -27,7 +27,7 @@ packages = ["src/editor_agent_runtime"]
 "src/editor_agent_runtime/docs" = "editor_agent_runtime/docs"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 mypy_path = "mcp_utils/src:cli_util/src:agent_pkg/runtime/src"

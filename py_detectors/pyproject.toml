@@ -2,7 +2,7 @@
 name = "py-detectors"
 version = "0.1.0"
 description = "AST-based Python code detectors for style/quality issues"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = ["pydantic>=2.0"]
 
 [project.optional-dependencies]
@@ -20,7 +20,7 @@ build-backend = "hatchling.build"
 packages = ["src/py_detectors"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 

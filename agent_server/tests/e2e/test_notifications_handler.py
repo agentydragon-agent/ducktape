@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-from agent_core.testing import AssistantMessage, CapturingOpenAIModel
 from fastmcp.mcp_config import MCPConfig
-from openai_utils.model import InputTextPart
+import pytest
 
+from agent_core.testing import AssistantMessage, CapturingOpenAIModel
 from agent_server.runtime.container import build_container
 from agent_server.testing.steps import ApprovalPolicyAdminSetPolicyCall
+from openai_utils.model import InputTextPart
 
 
 @pytest.mark.requires_docker

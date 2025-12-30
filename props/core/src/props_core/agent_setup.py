@@ -34,14 +34,14 @@ import secrets
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from agent_core.handler import BaseHandler
 from agent_pkg_host import ensure_image_from_archive
 from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
-from mcp_infra.compositor.server import Compositor
-from mcp_infra.display import CompactDisplayHandler
 import uvicorn
 
+from agent_core.handler import BaseHandler
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.display import CompactDisplayHandler
 from net_util import get_docker_network_gateway_async, pick_free_port, wait_for_port
 from props_core.agent_handle import load_definition_archive
 from props_core.agent_workspace import WorkspaceManager

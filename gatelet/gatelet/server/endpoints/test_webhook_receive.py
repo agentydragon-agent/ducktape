@@ -2,12 +2,13 @@
 
 from http import HTTPStatus
 
-from gatelet.server.models import WebhookIntegration, WebhookPayload
-from gatelet.server.tests.utils import persist
 from hamcrest import anything, assert_that, equal_to, has_entries, has_properties, is_, none
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from gatelet.server.models import WebhookIntegration, WebhookPayload
+from gatelet.server.tests.utils import persist
 
 
 async def test_receive_webhook_no_auth(client: AsyncClient, db_session: AsyncSession):

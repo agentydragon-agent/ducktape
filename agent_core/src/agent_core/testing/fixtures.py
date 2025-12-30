@@ -19,9 +19,6 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from fastmcp.tools import FunctionTool
 import mcp.types
-from mcp_infra.enhanced import EnhancedFastMCP
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
-from mcp_infra.testing.simple_servers import SendMessageInput
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 import pytest
@@ -35,6 +32,9 @@ from agent_core.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 
 # Re-export fixtures from responses module for downstream use
 from agent_core.testing.responses import make_step_runner, reasoning_model, responses_factory
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.flat_mixin import FlatModelMixin
+from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import ResponsesResult
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

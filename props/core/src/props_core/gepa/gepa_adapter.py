@@ -45,7 +45,6 @@ import tempfile
 from typing import Any, cast
 from uuid import UUID
 
-from agent_core.events import REFLECTION_EVENT_TYPES, EventType
 import aiodocker
 import gepa
 from gepa.core.result import GEPAResult
@@ -64,6 +63,7 @@ from props_core.splits import Split
 from pydantic import BaseModel
 from sqlalchemy import func
 
+from agent_core.events import REFLECTION_EVENT_TYPES, EventType
 from openai_utils.model import OpenAIModelProto
 
 logger = logging.getLogger(__name__)

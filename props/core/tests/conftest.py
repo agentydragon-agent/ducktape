@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
-from agent_core.testing import FakeOpenAIModel, Step
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
@@ -46,6 +45,7 @@ import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
+from agent_core.testing import FakeOpenAIModel, Step
 from openai_utils.model import ResponsesResult
 
 # Register shared fixtures from other packages

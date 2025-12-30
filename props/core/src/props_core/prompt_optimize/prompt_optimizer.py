@@ -5,18 +5,18 @@ import logging
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from agent_core.handler import AbortIf, RedirectOnTextMessageHandler
-from agent_core.turn_limit import MaxTurnsExceededError
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
-from mcp_infra.display import CompactDisplayHandler
-from mcp_infra.enhanced import EnhancedFastMCP
 from pydantic import Field
 from sqlalchemy import func
 
+from agent_core.handler import AbortIf, RedirectOnTextMessageHandler
+from agent_core.turn_limit import MaxTurnsExceededError
+from mcp_infra.display import CompactDisplayHandler
+from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.types import ReasoningSummary
@@ -338,9 +338,7 @@ class PromptEvalServer(EnhancedFastMCP):
                     f"{_trace_advice_for_snapshot(SnapshotSlug(snapshot_slug))}"
                 ) from e
             except AgentDidNotSubmitError as e:
-                raise ToolError(
-                    f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id)}"
-                ) from e
+                raise ToolError(f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id)}") from e
 
             # Check status to provide specific error messages
             with get_session() as session:
@@ -392,8 +390,7 @@ class PromptEvalServer(EnhancedFastMCP):
                 ) from e
             except MaxTurnsExceededError as e:
                 raise ToolError(
-                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
-                    f"{_AGENT_STUCK_ADVICE}"
+                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n{_AGENT_STUCK_ADVICE}"
                 ) from e
 
             # Verify grader run succeeded

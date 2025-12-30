@@ -7,9 +7,9 @@ with proper type hints for better IDE support and type checking.
 from __future__ import annotations
 
 import ast
+from collections.abc import Awaitable
 import inspect
 import textwrap
-from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:

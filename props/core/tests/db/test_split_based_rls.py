@@ -32,7 +32,6 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from agent_core.events import ToolCall
 from props_core.agent_types import PromptOptimizerTypeConfig
 from props_core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
 from props_core.db.config import DatabaseConfig
@@ -46,6 +45,7 @@ import pytest_asyncio
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from agent_core.events import ToolCall
 from tests.conftest import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

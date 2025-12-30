@@ -2,8 +2,9 @@ from http import HTTPStatus
 from pathlib import Path
 import re
 
-from gatelet.server.config import Settings
 from httpx import AsyncClient
+
+from gatelet.server.config import Settings
 
 
 def _extract_csrf(page_text: str) -> str:

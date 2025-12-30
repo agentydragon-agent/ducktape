@@ -12,12 +12,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
+from pydantic import ConfigDict
+
 from mcp_infra.compositor.server import Compositor, Mounted
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.prefix import MCPMountPrefix
-from pydantic import ConfigDict
-
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 from .config import EnforcedSleepUntilUserMessagePolicy, LegacySleepUntilUserMessagePolicy, SleepUntilUserMessagePolicy

@@ -44,10 +44,7 @@ def test_modular_config_rule_override():
 
     # Override a rule
     config.rules["python.bare_except"] = RuleConfig(
-        enabled=False,
-        blocks_pre_hook=False,
-        blocks_stop_hook=True,
-        message="Custom message",
+        enabled=False, blocks_pre_hook=False, blocks_stop_hook=True, message="Custom message"
     )
 
     # Check the override
@@ -96,7 +93,7 @@ def test_modular_config_save_load(tmp_path):
     bare_except_rule = loaded.rules["python.bare_except"]
     assert bare_except_rule.enabled is False
     assert bare_except_rule.message == "Custom message"
-    
+
     e722_rule = loaded.rules["ruff.E722"]
     assert e722_rule.blocks_stop_hook is False
 

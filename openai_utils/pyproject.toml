@@ -2,7 +2,7 @@
 name = "openai-utils"
 version = "0.1.0"
 description = "Pure OpenAI/Pydantic utilities for LLM tooling"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "openai>=1.0",
     "pydantic>=2.0",
@@ -18,6 +18,6 @@ build-backend = "hatchling.build"
 packages = ["src/openai_utils"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true

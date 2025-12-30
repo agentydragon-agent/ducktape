@@ -2,7 +2,7 @@
 name = "agent-core"
 version = "0.1.0"
 description = "Core agent loop machinery for LLM agents with MCP tool wiring"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "openai-utils",
     "agent-pkg-host",
@@ -52,6 +52,6 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true

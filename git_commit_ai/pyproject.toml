@@ -2,7 +2,7 @@
 name = "git-commit-ai"
 version = "0.1.0"
 description = "AI-powered git commit message generator"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "agent-core",
     "mcp-infra",
@@ -23,7 +23,7 @@ build-backend = "hatchling.build"
 packages = ["src/git_commit_ai"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 mypy_path = "../mcp_infra/src:../openai_utils/src:../agent_core/src"

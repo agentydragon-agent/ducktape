@@ -10,7 +10,6 @@ from typing import Final
 
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.naming import MCPMountPrefix
-
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Test server constants (SSOT for test fixtures)

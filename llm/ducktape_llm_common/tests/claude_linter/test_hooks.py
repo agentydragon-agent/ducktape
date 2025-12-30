@@ -103,12 +103,14 @@ sys.exit(0)
 
 def create_pre_hook_payload(file_path: str, content: str) -> str:
     """Create a PreToolUse hook payload."""
-    return json.dumps({
-        "hook_event_name": "PreToolUse",
-        "session_id": "test-session-id",
-        "tool_name": "Write",
-        "tool_input": {"file_path": file_path, "content": content}
-    })
+    return json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "session_id": "test-session-id",
+            "tool_name": "Write",
+            "tool_input": {"file_path": file_path, "content": content},
+        }
+    )
 
 
 def create_post_hook_payload(file_path: str, content: str | None = None) -> str:
@@ -117,7 +119,7 @@ def create_post_hook_payload(file_path: str, content: str | None = None) -> str:
         "hook_event_name": "PostToolUse",
         "session_id": "test-session-id",
         "tool_name": "Write",
-        "tool_input": {"file_path": file_path}
+        "tool_input": {"file_path": file_path},
     }
     if content:
         payload["tool_input"]["content"] = content

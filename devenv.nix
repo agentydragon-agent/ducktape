@@ -16,7 +16,7 @@
   # Python with uv for workspace-wide venv management
   languages.python = {
     enable = true;
-    package = pkgs.python312;
+    package = pkgs.python313;
     uv = {
       enable = true;
       sync.enable = true;

@@ -6,16 +6,16 @@ import platform
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
+from openai import AsyncOpenAI
+import pytest
+
+import docker  # Only used for pytest_runtest_setup health check (sync hook)
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.types import McpServerSpecs
-from openai import AsyncOpenAI
-import pytest
-
-import docker  # Only used for pytest_runtest_setup health check (sync hook)
 
 # Register shared fixture modules for parallel workers and subset runs
 pytest_plugins = (

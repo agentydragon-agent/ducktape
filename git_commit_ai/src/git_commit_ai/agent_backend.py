@@ -3,20 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import sys
 
-from agent_core.agent import Agent
-from agent_core.handler import BaseHandler, SequenceHandler
-from agent_core.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
 from fastmcp.client import Client
-from mcp_infra.bootstrap import TypedBootstrapBuilder
-from mcp_infra.compositor.server import Compositor
-from mcp_infra.display import DisplayEventsHandler
-from mcp_infra.enhanced import EnhancedFastMCP
-from mcp_infra.mounted import Mounted
-from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.types import SimpleOk
 from pydantic import BaseModel, Field
 import pygit2
 
+from agent_core.agent import Agent
+from agent_core.handler import BaseHandler, SequenceHandler
+from agent_core.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
 from git_commit_ai.git_ro.server import (
     GIT_RO_MOUNT_PREFIX,
     DiffFormat,
@@ -27,6 +20,13 @@ from git_commit_ai.git_ro.server import (
     StatusInput,
     TextSlice,
 )
+from mcp_infra.bootstrap import TypedBootstrapBuilder
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.display import DisplayEventsHandler
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.mounted import Mounted
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.types import SimpleOk
 from openai_utils.client_factory import build_client
 from openai_utils.model import FunctionCallItem, UserMessage
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import patch
 
-import pytest
 from fastmcp.server import FastMCP
+import pytest
 
 from mcp_infra.compositor.mount import Mount, MountState
 from mcp_infra.compositor.server import Compositor, CompositorState

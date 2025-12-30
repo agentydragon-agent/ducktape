@@ -9,11 +9,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from props_core.db.session import get_session
 from sqlalchemy import text
 
+from agent_core.handler import BaseHandler
+from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
 
 logger = logging.getLogger(__name__)

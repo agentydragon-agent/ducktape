@@ -1,41 +1,29 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import re
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
+import json
+import re
 from typing import Any
 from unittest.mock import MagicMock
 
-import docker
-import mcp.types
-import pytest
-from agent_core.agent import Agent
-from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
-from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
-from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import CapturingOpenAIModel, FakeOpenAIModel, RecordingHandler
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from fastmcp.server import FastMCP
 from fastmcp.tools import FunctionTool
-from mcp_infra.compositor.server import Compositor
-from mcp_infra.enhanced import EnhancedFastMCP
-from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.naming import build_mcp_function
-from mcp_infra.notifications.buffer import NotificationsBuffer
-from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.testing.fixtures import make_container_opts
-from mcp_infra.testing.simple_servers import SendMessageInput
-from mcp_infra.types import McpServerSpecs
-from openai_utils.model import OpenAIModelProto, ResponsesResult
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+import mcp.types
 from pydantic import BaseModel
+import pytest
 
+from agent_core.agent import Agent
+from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
+from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
+from agent_core.loop_control import RequireAnyTool
+from agent_core.testing import CapturingOpenAIModel, FakeOpenAIModel, RecordingHandler
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.persist import AgentMetadata
@@ -48,6 +36,18 @@ from agent_server.runtime.container import AgentContainerCompositor
 from agent_server.server.app import create_app
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
+import docker
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.notifications.buffer import NotificationsBuffer
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.testing.fixtures import make_container_opts
+from mcp_infra.testing.simple_servers import SendMessageInput
+from mcp_infra.types import McpServerSpecs
+from openai_utils.model import OpenAIModelProto, ResponsesResult
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from tests.testdata.approval_policy import fetch_policy, make_policy
 
 # Test server mount name used in fixtures

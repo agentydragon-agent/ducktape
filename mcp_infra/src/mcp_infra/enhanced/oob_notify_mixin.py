@@ -6,9 +6,9 @@ Provides session capturing and broadcast methods for protocol notifications.
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
+import logging
 from typing import Any
 from weakref import WeakSet
 

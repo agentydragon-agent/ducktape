@@ -3,7 +3,7 @@ name = "props-backend"
 version = "0.1.0"
 description = "Props dashboard backend - FastAPI server for training/evaluation metrics"
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.13"
 dependencies = [
     "props-core",
     "fastapi>=0.115.0",
@@ -30,7 +30,7 @@ build-backend = "hatchling.build"
 packages = ["src/props_backend"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 

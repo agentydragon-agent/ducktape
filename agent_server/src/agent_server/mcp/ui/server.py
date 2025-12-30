@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Literal
 
 from fastmcp.tools import FunctionTool
-from mcp_infra.enhanced import EnhancedFastMCP
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import ConfigDict, Field
 
 from agent_server.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
+from mcp_infra.enhanced import EnhancedFastMCP
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # UI MCP server: lightweight tools to instruct the HTML UI rendering layer.
 # Tools are declarative; the agent can call them to emit UI messages and to

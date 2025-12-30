@@ -14,11 +14,11 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from sqlalchemy.orm import Session
+
 from agent_core.events import AssistantText
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, ForbidAllTools, InjectItems, LoopDecision, NoAction
-from sqlalchemy.orm import Session
-
 from openai_utils.model import UserMessage
 from props_core.db import query_builders as qb
 from props_core.db.session import get_session

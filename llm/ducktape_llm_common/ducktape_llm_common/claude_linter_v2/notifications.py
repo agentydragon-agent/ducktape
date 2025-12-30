@@ -8,9 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def send_desktop_notification(
-    title: str, message: str, urgency: str = "critical", replaces_id: int = 0
-) -> int:
+def send_desktop_notification(title: str, message: str, urgency: str = "critical", replaces_id: int = 0) -> int:
     """Send desktop notification via D-Bus.
 
     Args:
@@ -29,11 +27,7 @@ def send_desktop_notification(
         return 0
 
     # Map urgency strings to D-Bus urgency levels
-    urgency_map = {
-        "low": 0,
-        "normal": 1,
-        "critical": 2,
-    }
+    urgency_map = {"low": 0, "normal": 1, "critical": 2}
 
     try:
         # Get session bus
@@ -44,20 +38,16 @@ def send_desktop_notification(
         notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
 
         # Send notification
-        notification_id = notify_iface.Notify(
+        return notify_iface.Notify(
             "Claude Linter",  # app_name
             replaces_id,  # replaces_id (0 = new notification)
             "",  # app_icon (empty = default)
             title,
             message[:200],  # body (truncated)
             [],  # actions
-            {
-                "urgency": dbus.Byte(urgency_map.get(urgency, 2)),
-            },  # hints
+            {"urgency": dbus.Byte(urgency_map.get(urgency, 2))},  # hints
             -1,  # expire_timeout (-1 = default)
         )
-
-        return notification_id
     except Exception as e:
         logger.debug(f"Failed to send notification: {e}")
         return 0

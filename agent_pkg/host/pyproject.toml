@@ -2,7 +2,7 @@
 name = "agent-pkg-host"
 version = "0.1.0"
 description = "Host-side agent package infrastructure: image building, init runner"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "aiodocker>=0.23",
     "fastmcp>=2.0",
@@ -20,7 +20,7 @@ build-backend = "hatchling.build"
 packages = ["src/agent_pkg_host"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 # Paths relative to repo root (where pre-commit runs mypy from)

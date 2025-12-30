@@ -2,7 +2,7 @@
 name = "mcp-utils"
 version = "0.1.0"
 description = "Minimal MCP utilities for resource content extraction"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "mcp>=1.0",
 ]
@@ -15,6 +15,6 @@ build-backend = "hatchling.build"
 packages = ["src/mcp_utils"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true

@@ -1,9 +1,10 @@
 import asyncio
 import shutil
 
-import pytest
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
+import pytest
+
 from mcp_infra.exec.direct import DirectExecArgs, DirectExecServer
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited

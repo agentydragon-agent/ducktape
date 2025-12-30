@@ -2,7 +2,7 @@
 name = "editor-agent"
 version = "0.1.0"
 description = "Host-side orchestration for editor agent"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "editor-agent-runtime",
     "agent-pkg-host",
@@ -38,7 +38,7 @@ packages = ["src/editor_agent"]
 "src/editor_agent/definition" = "editor_agent/definition"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 mypy_path = "editor_agent/runtime/src:mcp_utils/src:cli_util/src:agent_pkg/runtime/src:mcp_infra/src:agent_core/src:openai_utils/src:agent_pkg/host/src"

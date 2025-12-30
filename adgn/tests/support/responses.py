@@ -1,7 +1,8 @@
 """Fixtures for adgn tests not in agent_core.testing."""
 
-from agent_core.testing import LIVE, make_mock
 import pytest
+
+from agent_core.testing import LIVE, make_mock
 
 __all__ = ["openai_client_param"]
 

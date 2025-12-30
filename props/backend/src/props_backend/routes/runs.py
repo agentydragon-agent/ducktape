@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
-import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+import json
+import logging
+import random
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from mcp.types import EmbeddedResource, ImageContent, TextContent
-from mcp_infra.exec.models import BaseExecResult, ExecInput
-from openai_utils.client_factory import build_client
-from openai_utils.model import ReasoningItem
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props_core.db.examples import Example
@@ -29,6 +25,10 @@ from props_core.models.true_positive import LineRange
 from props_core.splits import Split
 from pydantic import BaseModel, Field, ValidationError
 
+from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
+from mcp_infra.exec.models import BaseExecResult, ExecInput
+from openai_utils.client_factory import build_client
+from openai_utils.model import ReasoningItem
 from props_backend.routes.ground_truth import FileLocationInfo
 
 router = APIRouter()
