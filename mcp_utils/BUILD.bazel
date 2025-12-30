@@ -1,6 +1,7 @@
 """MCP utilities package."""
 
 load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
 py_library(
@@ -11,4 +12,9 @@ py_library(
     deps = [
         "@pypi//mcp",
     ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":mcp_utils"],
 )

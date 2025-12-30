@@ -1,0 +1,26 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+py_library(
+    name = "claude_web_hooks",
+    srcs = glob(["src/claude_web_hooks/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    # No external deps - this runs before package installation in session hooks
+)
+
+py_test(
+    name = "test_claude_web_hooks",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_proxy.py",
+    deps = [
+        ":claude_web_hooks",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":claude_web_hooks"],
+)

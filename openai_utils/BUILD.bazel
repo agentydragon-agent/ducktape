@@ -1,6 +1,7 @@
 """OpenAI utilities package."""
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
 py_library(
@@ -25,4 +26,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":openai_utils"],
 )

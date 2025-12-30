@@ -13,7 +13,7 @@ import subprocess
 import sys
 import traceback
 
-from claude_web_hooks import bazel_proxy_setup
+from claude_web_hooks import bazel_proxy_setup, bazelisk_setup
 
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
@@ -51,6 +51,9 @@ def main() -> int:
     log.info("Project: %s", project_dir)
     log.info("Environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
     log.info("Setting up dev environment...")
+
+    # Install Bazelisk (downloads correct Bazel version automatically)
+    bazelisk_setup.install_bazelisk()
 
     # Set up Bazel proxy for TLS-inspecting proxy
     bazel_proxy_setup.setup_bazel_proxy()
