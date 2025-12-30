@@ -103,9 +103,7 @@ def run_streaming(cmd: list[str], operation: str, check: bool = True, env: dict[
 
 
 def which(cmd: str) -> str | None:
-    """Find command in PATH."""
-    result = subprocess.run(["which", cmd], capture_output=True, text=True, check=False)
-    return result.stdout.strip() if result.returncode == 0 else None
+    return shutil.which(cmd)
 
 
 def find_nix_bin() -> Path | None:
@@ -257,71 +255,34 @@ def extract_proxy_ca() -> bool:
 
     log.info("Extracting TLS inspection CA from proxy %s:%d", host, port)
 
-    # Use openssl to connect through proxy and extract certificates
-    try:
-        result = subprocess.run(
-            [
-                "openssl", "s_client",
-                "-proxy", f"{host}:{port}",
-                "-connect", "bcr.bazel.build:443",
-                "-showcerts",
-            ],
-            input="",
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+    result = subprocess.run(
+        ["openssl", "s_client", "-proxy", f"{host}:{port}", "-connect", "bcr.bazel.build:443", "-showcerts"],
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
 
-        # Extract all certificates from the chain
-        certs = re.findall(
-            r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
-            result.stdout,
-            re.DOTALL,
-        )
+    certs = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", result.stdout, re.DOTALL)
+    if len(certs) < 2:
+        log.warning("Expected at least 2 certs in chain, got %d", len(certs))
+        return False
 
-        if len(certs) < 2:
-            log.warning("Expected at least 2 certs in chain, got %d", len(certs))
-            return False
-
-        # The TLS inspection CA is typically the second-to-last cert in the chain
-        # (the last one is the root CA, the one before is the inspection CA)
-        inspection_ca = certs[-1]  # Try the root CA first
-
-        # Verify it's the Anthropic CA
+    # Find the Anthropic TLS inspection CA in the chain
+    for i, cert in enumerate(certs):
         verify_result = subprocess.run(
-            ["openssl", "x509", "-noout", "-subject", "-issuer"],
-            input=inspection_ca,
+            ["openssl", "x509", "-noout", "-subject"],
+            input=cert,
             capture_output=True,
             text=True,
         )
-
         if "Anthropic" in verify_result.stdout or "TLS Inspection" in verify_result.stdout:
-            log.info("Found Anthropic TLS inspection CA")
-            BAZEL_CA_FILE.write_text(inspection_ca)
+            log.info("Found Anthropic TLS inspection CA at position %d", i)
+            BAZEL_CA_FILE.write_text(cert)
             return True
 
-        # Try other certs in the chain
-        for i, cert in enumerate(certs):
-            verify_result = subprocess.run(
-                ["openssl", "x509", "-noout", "-subject"],
-                input=cert,
-                capture_output=True,
-                text=True,
-            )
-            if "Anthropic" in verify_result.stdout or "TLS Inspection" in verify_result.stdout:
-                log.info("Found Anthropic TLS inspection CA at position %d", i)
-                BAZEL_CA_FILE.write_text(cert)
-                return True
-
-        log.warning("Could not find Anthropic TLS inspection CA in chain")
-        return False
-
-    except subprocess.TimeoutExpired:
-        log.warning("Timeout extracting CA from proxy")
-        return False
-    except Exception as e:
-        log.warning("Error extracting CA: %s", e)
-        return False
+    log.warning("Could not find Anthropic TLS inspection CA in chain")
+    return False
 
 
 def create_java_truststore() -> bool:
@@ -430,34 +391,36 @@ def start_bazel_proxy() -> bool:
     return False
 
 
+BAZEL_PROXY_RC = BAZEL_PROXY_DIR / "bazelrc"
+
+
 def write_bazel_config() -> None:
-    """Write Bazel configuration for the proxy."""
+    """Write Bazel proxy config to separate file and add try-import to ~/.bazelrc."""
     if not BAZEL_TRUSTSTORE.exists():
         log.warning("No truststore, skipping bazelrc")
         return
 
-    # Write user bazelrc with proxy settings
-    bazelrc_content = f"""# Bazel proxy configuration for Claude Code web (auto-generated)
-# This configures Bazel to use the local proxy wrapper and custom truststore
-
-# JVM args for proxy and TLS
+    # Write proxy config to dedicated file
+    proxy_rc = f"""\
+# Bazel proxy configuration for Claude Code web (auto-generated)
 startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
 startup --host_jvm_args=-Dhttps.proxyPort={BAZEL_PROXY_PORT}
 startup --host_jvm_args=-Djavax.net.ssl.trustStore={BAZEL_TRUSTSTORE}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
 """
+    BAZEL_PROXY_RC.write_text(proxy_rc)
+    log.info("Wrote proxy config to %s", BAZEL_PROXY_RC)
 
-    # Append to existing bazelrc or create new
+    # Add try-import to user bazelrc (idempotent)
+    import_line = f"try-import {BAZEL_PROXY_RC}\n"
     if BAZEL_USER_BAZELRC.exists():
         existing = BAZEL_USER_BAZELRC.read_text()
-        if "Claude Code web" in existing:
-            log.info("Bazel proxy config already in ~/.bazelrc")
+        if str(BAZEL_PROXY_RC) in existing:
             return
-        BAZEL_USER_BAZELRC.write_text(existing + "\n" + bazelrc_content)
+        BAZEL_USER_BAZELRC.write_text(existing.rstrip() + "\n" + import_line)
     else:
-        BAZEL_USER_BAZELRC.write_text(bazelrc_content)
-
-    log.info("Wrote Bazel proxy config to %s", BAZEL_USER_BAZELRC)
+        BAZEL_USER_BAZELRC.write_text(import_line)
+    log.info("Added try-import to %s", BAZEL_USER_BAZELRC)
 
 
 def setup_bazel_proxy() -> None:
