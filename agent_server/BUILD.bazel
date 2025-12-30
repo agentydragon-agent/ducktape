@@ -53,6 +53,7 @@ py_binary(
 py_test(
     name = "test_agent_server",
     srcs = glob(["tests/**/*.py"]),
+    imports = ["."],
     main = "tests/test_default_approval_policy.py",
     deps = [
         ":agent_server",
