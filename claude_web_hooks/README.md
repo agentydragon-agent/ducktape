@@ -1,3 +1,24 @@
+# Claude Web Hooks
+
+Session hooks and Bazel proxy for Claude Code web environments.
+
+## Components
+
+- **Session Start Hook**: Sets up the development environment for Claude Code web sessions
+- **Bazel Proxy**: Local proxy that adds authentication for TLS-inspecting proxies
+
+## Session Start Hook
+
+The hook runs at the start of each Claude Code web session and:
+1. Starts a local auth proxy for Bazel BCR access
+2. Extracts TLS inspection CA certificates
+3. Creates Java truststores
+4. Configures bazelrc for proxy usage
+
+See `.claude/settings.json` for hook configuration.
+
+---
+
 # Bazel Proxy
 
 A local proxy that adds authentication headers for upstream TLS-inspecting proxies, enabling Bazel to access the Bazel Central Registry (BCR).
@@ -40,10 +61,10 @@ It's used by session-start hooks which run before package installation. The hook
 
 ```bash
 # Start proxy in background (kills any existing proxy first)
-python -m bazel_proxy.proxy -d
+python -m claude_web_hooks.proxy -d
 
 # Kill existing proxy
-python -m bazel_proxy.proxy -k
+python -m claude_web_hooks.proxy -k
 ```
 
 ### CLI options
@@ -144,8 +165,8 @@ This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.att
 
 ```bash
 # Run tests
-pytest bazel_proxy/tests/
+pytest claude_web_hooks/tests/
 
 # With Bazel (if Bazel can access BCR)
-bazel test //bazel_proxy:test_bazel_proxy
+bazel test //claude_web_hooks:test_proxy
 ```

@@ -32,11 +32,11 @@ BAZEL_USER_BAZELRC = Path.home() / ".bazelrc"
 ANTHROPIC_CA_PREINSTALLED = Path("/usr/local/share/ca-certificates/swp-ca-production.crt")
 
 def _get_repo_root() -> Path:
-    """Get the repo root (parent of .claude/claude-code-web/)."""
-    return Path(__file__).parent.parent.parent
+    """Get the repo root (parent of claude_web_hooks/src/claude_web_hooks/)."""
+    return Path(__file__).parent.parent.parent.parent
 
 # Proxy env .bzl file - in repo, gitignored
-BAZEL_PROXY_ENV_BZL = _get_repo_root() / ".claude" / "claude-code-web" / "proxy_env.bzl"
+BAZEL_PROXY_ENV_BZL = _get_repo_root() / ".claude" / "proxy_env.bzl"
 
 
 def _parse_proxy_url(proxy_url: str) -> tuple[str, int, str | None, str | None]:
@@ -139,13 +139,8 @@ def _create_java_truststore() -> bool:
 
 
 def _get_proxy_script_path() -> Path:
-    """Get the path to the bazel proxy script.
-
-    The proxy lives in the bazel_proxy package at the repo root.
-    """
-    # Navigate from .claude/claude-code-web/ to bazel_proxy/
-    repo_root = Path(__file__).parent.parent.parent
-    return repo_root / "bazel_proxy" / "src" / "bazel_proxy" / "proxy.py"
+    """Get the path to the bazel proxy script (colocated in this package)."""
+    return Path(__file__).parent / "proxy.py"
 
 
 def _update_proxy_credentials() -> None:

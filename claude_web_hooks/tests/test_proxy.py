@@ -1,4 +1,4 @@
-"""Tests for bazel_proxy.proxy module."""
+"""Tests for claude_web_hooks.proxy module."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from urllib.parse import urlparse
 
 import pytest
 
-import bazel_proxy.proxy as proxy_module
-from bazel_proxy.proxy import kill_existing, load_credentials, make_auth_header, parse_proxy_url, write_credentials
+import claude_web_hooks.proxy as proxy_module
+from claude_web_hooks.proxy import kill_existing, load_credentials, make_auth_header, parse_proxy_url, write_credentials
 
 
 class TestParseProxyUrl:

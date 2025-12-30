@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Session start hook for Claude Code web: sets up nix, direnv, devenv, and Bazel proxy."""
+"""Session start hook for Claude Code web: sets up Bazel proxy for TLS-inspecting proxies."""
 
 from __future__ import annotations
 
 from datetime import datetime
-import importlib.util
 import json
 import logging
 import os
@@ -14,9 +13,10 @@ import subprocess
 import sys
 import traceback
 
+from claude_web_hooks import bazel_proxy_setup
+
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
-TOOLS = ["direnv", "devenv"]
 
 
 def setup_logging() -> logging.Logger:
@@ -30,20 +30,8 @@ def setup_logging() -> logging.Logger:
     return logging.getLogger(__name__)
 
 
-def load_module(name: str, path: Path):
-    """Load a Python module from filesystem path."""
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load module from {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 def main() -> int:
     log = setup_logging()
-    hook_dir = Path(__file__).parent / "claude-code-web"
 
     log.info("=" * 60)
     log.info("Hook: %s", __file__)
@@ -62,38 +50,15 @@ def main() -> int:
 
     log.info("Project: %s", project_dir)
     log.info("Environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
-
-    # Load modules lazily to avoid import-time side effects
-    streaming = load_module("streaming", hook_dir / "streaming.py")
-    nix_setup = load_module("nix_setup", hook_dir / "nix_setup.py")
-    bazel_proxy = load_module("bazel_proxy_setup", hook_dir / "bazel_proxy_setup.py")
-
     log.info("Setting up dev environment...")
 
-    # NOTE: direnv+devenv installation temporarily disabled - takes too long in session-start hooks
-    # and blocks Bazel proxy setup. Re-enable when nix profile install is faster or cached.
-    # # Install nix and get the store bin path
-    # nix_store_bin = nix_setup.install_nix(project_dir, streaming.run_streaming)
-    #
-    # # Install tools
-    # nix_setup.install_tools(nix_store_bin, TOOLS, streaming.run_streaming)
-    #
-    # # Allow .envrc files
-    # if shutil.which("direnv"):
-    #     for envrc in project_dir.rglob(".envrc"):
-    #         log.info("Allowing direnv: %s", envrc.parent)
-    #         streaming.run_streaming(["direnv", "allow", str(envrc.parent)], check=False)
-    #
-    # # Persist environment
-    # nix_setup.persist_environment(os.environ.get("CLAUDE_ENV_FILE"), nix_store_bin, project_dir)
-
     # Set up Bazel proxy for TLS-inspecting proxy
-    bazel_proxy.setup_bazel_proxy()
+    bazel_proxy_setup.setup_bazel_proxy()
 
     # Summary
     log.info("=" * 60)
     log.info("Environment ready:")
-    for tool in ["nix", *TOOLS, "bazel"]:
+    for tool in ["bazel"]:
         path = shutil.which(tool)
         if path:
             result = subprocess.run([tool, "--version"], capture_output=True, text=True, check=False)
@@ -101,7 +66,7 @@ def main() -> int:
             log.info("  %-10s %s (%s)", tool + ":", version, path)
         else:
             log.info("  %-10s not installed", tool + ":")
-    log.info("  Bazel proxy: %s", bazel_proxy.get_status())
+    log.info("  Bazel proxy: %s", bazel_proxy_setup.get_status())
     log.info("=" * 60)
     return 0
 

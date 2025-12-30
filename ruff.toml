@@ -77,23 +77,11 @@ keep-runtime-typing = false
 [lint.isort]
 # Teach Ruff which packages are first-party so sectioning stays stable
 known-first-party = [
-    # Core packages
-    "adgn", "agent_core", "agent_server",
-    # Agent infrastructure
-    "agent_pkg", "agent_pkg_host", "agent_pkg_runtime",
-    # MCP infrastructure
-    "mcp_infra", "mcp_starter", "mcp_utils",
-    # Editor agent
-    "editor_agent", "editor_agent_runtime",
-    # Props
-    "props_backend", "props_core",
-    # Utilities
-    "bazel_proxy", "cli_util", "difftree", "ember", "net_util", "rspcache",
-    # Domain packages
-    "ducktape", "finance", "gatelet", "git_commit_ai", "gnome_terminal_profile_switcher",
-    "homeassistant", "llm", "openai_utils", "py_detectors", "sandboxed_jupyter", "tana", "wt",
-    # Other (from original config, may be deprecated)
-    "claude_hooks", "clustering_util", "critic_util", "editor_util", "grader_util", "props_agent_util",
+    "adgn", "agent_core", "agent_pkg_host", "agent_pkg_runtime", "agent_server",
+    "claude_web_hooks", "cli_util", "difftree", "ducktape", "editor_agent", "editor_agent_runtime",
+    "ember", "finance", "gatelet", "git_commit_ai", "gnome_terminal_profile_switcher",
+    "mcp_infra", "mcp_starter", "mcp_utils", "net_util", "openai_utils",
+    "props_backend", "props_core", "py_detectors", "rspcache", "sandboxed_jupyter", "tana", "wt",
 ]
 force-sort-within-sections = true
 combine-as-imports = true
@@ -130,10 +118,10 @@ split-on-trailing-comma = false
 "props/backend/src/props_backend/app.py" = ["PLC0415"]  # conditional imports based on config
 
 # Bazel proxy: daemonization requires unclosed file descriptors, global state for singleton
-"bazel_proxy/src/bazel_proxy/proxy.py" = ["PLW0603", "SIM115", "PTH123"]
+"claude_web_hooks/src/claude_web_hooks/proxy.py" = ["PLW0603", "SIM115", "PTH123"]
 
-# Claude Code web hook directory - not a valid Python package name
-".claude/claude-code-web/**" = ["N999", "PLW1510"]  # subprocess.run check= not required for infra scripts
+# Claude Code session hook wrapper
+".claude/session-start.py" = ["PLW1510"]  # subprocess.run check= not required for infra scripts
 
 # Trilium scripts are standalone utilities
 "trilium/*.py" = ["PLC0415"]

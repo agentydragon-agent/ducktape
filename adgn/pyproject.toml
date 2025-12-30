@@ -2,7 +2,7 @@
 name = "adgn"
 version = "0.0.0"
 authors = [{name = "Rai"}]
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.12"
 dependencies = [
   "pydantic>=2.0.0",
   "fastapi>=0.115.0",
