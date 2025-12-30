@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 import shutil
 
-from .streaming import run_streaming
+# streaming module must be loaded first by the parent before importing this module
+from streaming import run_streaming
 
 log = logging.getLogger(__name__)
 
