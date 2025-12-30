@@ -4,7 +4,6 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from mcp_infra.naming import build_mcp_function
-
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ReasoningItem, UserMessage
 
 

@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from agent_core.events import ApiRequest, AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from props_core.agent_types import AgentType, CriticTypeConfig
 from props_core.db.models import AgentRun, AgentRunStatus, Event, GradingEdge
 from props_core.db.session import get_session
@@ -18,6 +17,7 @@ from props_core.ids import DefinitionId, SnapshotSlug
 from rich.console import Console
 from sqlalchemy import func, text
 
+from agent_core.events import ApiRequest, AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from openai_utils.model import ReasoningItem
 
 

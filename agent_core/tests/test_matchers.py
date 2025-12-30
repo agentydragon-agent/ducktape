@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_core.events import ToolCall, ToolCallOutput
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 from mcp import types as mcp_types
+
+from agent_core.events import ToolCall, ToolCallOutput
 
 # ------------------------
 # Hamcrest matcher helpers

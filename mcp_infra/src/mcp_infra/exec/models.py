@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from signal import SIGKILL, SIGTERM
 from typing import Annotated, Final, Literal
 
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import BaseModel, ConfigDict, Field
+
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Signal exit codes for process termination
 SIGNAL_EXIT_OFFSET: Final[int] = 128

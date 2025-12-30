@@ -10,9 +10,9 @@ from typing import Annotated
 
 import aiodocker
 import typer
-from cli_util import async_run
 from typer_di import TyperDI
 
+from cli_util import async_run
 from mcp_infra.container_session import BindMount, ContainerOptions
 from mcp_infra.types import NetworkMode
 

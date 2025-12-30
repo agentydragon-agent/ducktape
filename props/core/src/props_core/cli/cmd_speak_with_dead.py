@@ -4,13 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from agent_core.agent import Agent, TranscriptItem
-from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
-from agent_core.loop_control import ForbidAllTools
 from fastmcp.client import Client as MCPClient
-from mcp_infra.compositor.server import Compositor
-from mcp_infra.display import DisplayEventsHandler
-from mcp_infra.display.rich_display import CompactDisplayHandler
 from props_core.cli.common_options import OPT_MAX_LINES
 from props_core.db.models import AgentRun
 from props_core.db.session import get_session
@@ -18,7 +12,13 @@ from rich.console import Console
 from sqlalchemy import String, cast, select
 import typer
 
+from agent_core.agent import Agent, TranscriptItem
+from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
+from agent_core.loop_control import ForbidAllTools
 from cli_util import async_run
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.display import DisplayEventsHandler
+from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client
 from openai_utils.model import AssistantMessage, FunctionCallItem, ReasoningItem, UserMessage
 
