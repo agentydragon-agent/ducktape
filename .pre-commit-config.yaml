@@ -15,7 +15,7 @@ repos:
 
       # Syntax checks
       - id: check-ast  # valid Python parse
-        language_version: python3.12
+        language_version: python3.13
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip Helm (contains Go templating, not valid YAML)
@@ -58,7 +58,7 @@ repos:
 
   # Ruff = linter + import sorter + formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.10
+    rev: v0.14.6
     hooks:
       - id: ruff-check
         args: [--fix, --config, ruff.toml]
@@ -69,14 +69,14 @@ repos:
 
   # Static type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.19.1
     hooks:
       # agent_pkg/runtime: Per-package config, minimal deps
       - id: mypy
         alias: mypy-agent-pkg-runtime
         name: mypy (agent_pkg_runtime)
         files: "^agent_pkg/runtime/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=agent_pkg/runtime/pyproject.toml"]
         additional_dependencies:
           - "fastmcp>=2.13"
@@ -89,7 +89,7 @@ repos:
         alias: mypy-agent-pkg
         name: mypy (agent_pkg)
         files: "^agent_pkg/host/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=agent_pkg/host/mypy.ini"]
         additional_dependencies:
           - "fastmcp>=2.13"
@@ -105,7 +105,7 @@ repos:
         alias: mypy-critic-util
         name: mypy (critic_util)
         files: "^agent_runtimes/critic_util/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=mypy.ini"]
         additional_dependencies:
           # Same as adgn (imports from adgn.props.db, adgn.props.agent_helpers)
@@ -129,7 +129,7 @@ repos:
         alias: mypy-editor-util
         name: mypy (editor_util)
         files: "^agent_runtimes/editor_util/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=agent_runtimes/editor_util/pyproject.toml"]
         additional_dependencies:
           - "fastmcp>=2.13"
@@ -144,17 +144,18 @@ repos:
         name: mypy (py_detectors)
         files: "^py_detectors/.*\\.py$"
         exclude: "/fixtures/"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=py_detectors/pyproject.toml"]
         additional_dependencies:
           - pydantic>=2
+          - pytest
 
       # rspcache: OpenAI Responses API caching proxy
       - id: mypy
         alias: mypy-rspcache
         name: mypy (rspcache)
         files: "^rspcache/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=rspcache/pyproject.toml"]
         additional_dependencies:
           - pydantic>=2
@@ -174,7 +175,7 @@ repos:
         alias: mypy-mcp-infra
         name: mypy (mcp_infra)
         files: "^mcp_infra/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=mcp_infra/pyproject.toml"]
         additional_dependencies:
           - pydantic>=2
@@ -190,13 +191,14 @@ repos:
           - "syrupy>=4.0"
           - "compact-json>=1.4.0"
           - structlog
+          - pytest
 
       # sandboxed_jupyter: Sandboxed Jupyter execution with seatbelt and Docker
       - id: mypy
         alias: mypy-sandboxed-jupyter
         name: mypy (sandboxed_jupyter)
         files: "^sandboxed_jupyter/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=sandboxed_jupyter/pyproject.toml"]
         additional_dependencies:
           - pydantic>=2
@@ -210,13 +212,14 @@ repos:
           - types-docker
           - types-PyYAML
           - aiodocker
+          - pytest
 
       # agent_server: FastAPI backend, runtime, MCP infrastructure
       - id: mypy
         alias: mypy-agent-server
         name: mypy (agent_server)
         files: "^agent_server/src/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=agent_server/pyproject.toml"]
         additional_dependencies:
           - pydantic>=2
@@ -239,6 +242,8 @@ repos:
           - types-docker
           - types-PyYAML
           - mautrix
+          - pytest
+          - platformdirs
 
       # adgn: Full monolith with all dependencies
       - id: mypy
@@ -246,7 +251,7 @@ repos:
         name: mypy (adgn)
         files: "^adgn/.*\\.py$"
         exclude: "(/third_party/|/testdata/|/fixtures/|/vendor/|/migrations/)"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=mypy.ini"]
         additional_dependencies:
           # Core dependencies
@@ -308,7 +313,7 @@ repos:
         alias: mypy-homeassistant
         name: mypy (homeassistant iaqi)
         files: "^homeassistant/iaqi/.*\\.py$"
-        language_version: python3.12
+        language_version: python3.13
         args: ["--config-file=mypy-homeassistant.ini"]
         additional_dependencies:
           # Needed because PyYAML 6.0 (pulled via homeassistant) must be cythonized on Python 3.12

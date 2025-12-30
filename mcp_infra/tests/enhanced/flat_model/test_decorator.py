@@ -6,11 +6,11 @@ from typing import Literal
 
 from fastmcp.client import Client
 from fastmcp.server.context import Context
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.stubs.typed_stubs import TypedClient
 from pydantic import Field, field_validator
 import pytest
 
-from mcp_infra.enhanced import EnhancedFastMCP
-from mcp_infra.stubs.typed_stubs import TypedClient
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 

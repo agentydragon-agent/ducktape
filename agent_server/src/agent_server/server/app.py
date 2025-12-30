@@ -7,6 +7,12 @@ import logging
 import os
 from pathlib import Path
 
+from agent_server.mcp_bridge.auth import TokensConfig
+from agent_server.mcp_bridge.compositor_factory import create_global_compositor
+from agent_server.mcp_bridge.registry import InfrastructureRegistry
+from agent_server.persist.sqlite import SQLitePersistence
+from agent_server.runtime.registry import AgentRegistry
+from agent_server.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
 import aiodocker
 from fastapi import FastAPI, FastAPI as SubApp, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +21,6 @@ from fastapi.staticfiles import StaticFiles
 from fastmcp.mcp_config import MCPConfig
 import uvicorn
 
-from agent_server.mcp_bridge.auth import TokensConfig
-from agent_server.mcp_bridge.compositor_factory import create_global_compositor
-from agent_server.mcp_bridge.registry import InfrastructureRegistry
-from agent_server.persist.sqlite import SQLitePersistence
-from agent_server.runtime.registry import AgentRegistry
-from agent_server.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
 from openai_utils.client_factory import build_client
 from openai_utils.model import OpenAIModelProto
 

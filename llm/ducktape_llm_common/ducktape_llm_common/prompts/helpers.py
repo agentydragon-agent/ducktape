@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Any
 
 from .constants import PromptName
@@ -146,8 +147,6 @@ def validate_prompt_variables(prompt_name: PromptName, provided_vars: dict[str, 
         error_msg = str(e)
         if "Missing required variable" in error_msg:
             # Parse the variable name from the error
-            import re
-
             match = re.search(r"'(\w+)'", error_msg)
             if match:
                 return False, [match.group(1)]
@@ -166,8 +165,6 @@ def get_prompt_variables(prompt_name: PromptName) -> list[str]:
         return []
 
     # Extract variables using regex
-    import re
-
     # Find {variable} style
     format_vars = re.findall(r"\{(\w+)\}", content)
 

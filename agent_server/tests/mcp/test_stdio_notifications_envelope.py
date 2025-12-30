@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 
+from agent_server.notifications.handler import format_notifications_message
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 

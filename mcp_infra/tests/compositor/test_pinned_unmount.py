@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from mcp_infra.prefix import MCPMountPrefix
+import pytest
 
 
 async def test_unmount_pinned_server_errors_and_kept(compositor, make_simple_mcp):

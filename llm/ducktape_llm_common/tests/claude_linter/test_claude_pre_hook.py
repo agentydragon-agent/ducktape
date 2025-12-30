@@ -74,8 +74,6 @@ class TestPreHook:
         assert result.exit_code == 0
         assert call_count == 2  # Verify both passes ran
         # Parse JSON output and check fields
-        import json
-
         output = json.loads(result.output)
         assert output["decision"] == "block"
         assert "non-fixable errors" in output["reason"].lower()

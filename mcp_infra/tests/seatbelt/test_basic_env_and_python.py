@@ -4,9 +4,8 @@ import os
 import sys
 
 from _markers import REQUIRES_SANDBOX_EXEC
-import pytest
-
 from mcp_infra.seatbelt.runner import run_sandboxed_async
+import pytest
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 

@@ -2,25 +2,19 @@
 
 from contextlib import suppress
 
-import pytest
-
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.testing.fixtures import make_container_opts
+import pytest
+
+import docker
 
 # Register mcp_infra and agent_core fixtures
 pytest_plugins = ["mcp_infra.testing.fixtures", "agent_core.testing.fixtures"]
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Skip Docker tests when Docker is not available or images are missing."""
+    """Skip Docker tests when Docker daemon is not available or images are missing."""
     if item.get_closest_marker("requires_docker") is None:
-        return
-
-    # Import docker inside the function to avoid module-level issues
-    try:
-        import docker
-    except ImportError:
-        pytest.skip("docker package not installed")
         return
 
     client = None

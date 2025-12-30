@@ -1,5 +1,4 @@
 from _markers import REQUIRES_SANDBOX_EXEC
-
 from mcp_infra.seatbelt.compile import compile_sbpl
 from mcp_infra.seatbelt.model import (
     DefaultBehavior,

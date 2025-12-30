@@ -3,8 +3,13 @@ name = "agent-server"
 version = "0.1.0"
 description = "Agent server - FastAPI backend, runtime, and MCP infrastructure for LLM agents"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
+    "cli-util",
+    "net-util",
+    "mcp-infra",
+    "agent-core",
+    "openai-utils",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "aiodocker>=0.22.0",
@@ -16,7 +21,13 @@ dependencies = [
     "pydantic>=2.0",
     "jinja2>=3.1",
     "typer>=0.12",
+    "platformdirs>=3.0",
 ]
+
+[project.scripts]
+adgn-agent-serve = "agent_server.cli:main"
+agent-server-matrix-bot = "agent_server.matrix_bot:main"
+agent-server-generate-frontend-code = "agent_server.scripts.generate_frontend_code:main"
 
 [project.optional-dependencies]
 dev = [
@@ -28,3 +39,42 @@ dev = [
     "playwright>=1.40",
     "docker>=7.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_server"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+check_untyped_defs = true
+# Paths relative to repo root (where pre-commit runs mypy from)
+mypy_path = "adgn/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src:mcp_utils/src"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "requires_docker: tests that require Docker to run",
+    "live_llm: tests that require a live LLM API",
+]
+
+[tool.uv.sources]
+cli-util = { workspace = true }
+net-util = { workspace = true }
+mcp-infra = { workspace = true }
+agent-core = { workspace = true }
+openai-utils = { workspace = true }

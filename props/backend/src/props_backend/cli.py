@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -21,8 +22,6 @@ def serve(
     """Start the props dashboard server."""
     # Set static dir via environment for app.py to pick up
     if static_dir:
-        import os
-
         os.environ["PROPS_DASHBOARD_STATIC_DIR"] = str(static_dir.absolute())
 
     uvicorn.run("props_backend.app:app", host=host, port=port, reload=reload)

@@ -72,7 +72,7 @@ def reset_db(c):
 
 
 @task
-def test(c, args=""):
+def run_tests(c, args=""):
     """Run tests."""
     docker_compose_exec(c, "gatelet", f"pytest {args}")
 

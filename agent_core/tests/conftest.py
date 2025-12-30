@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mcp import types as mcp_types
 import pytest
 
 # Register testing fixtures:
@@ -13,6 +14,4 @@ pytest_plugins = ["agent_core.testing.fixtures", "mcp_infra.testing.fixtures", "
 @pytest.fixture
 def text_content():
     """Helper to create MCP TextContent blocks."""
-    from mcp import types as mcp_types
-
     return lambda text: mcp_types.TextContent(type="text", text=text)

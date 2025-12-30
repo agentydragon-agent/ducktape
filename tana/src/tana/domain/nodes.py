@@ -6,9 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from tana.domain.constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID
+from tana.domain.constants import LANGUAGE_KEY_ID
 from tana.domain.types import NodeId
-from tana.query.core import get_tuple_value
 
 
 class Props(BaseModel):
@@ -88,24 +87,10 @@ class TagDefNode(BaseNode):
 
 
 class VisualNode(BaseNode):
-    """Node representing visual content (images)."""
+    """Node representing visual content (images).
 
-    def get_image_url(self) -> str | None:
-        """Extract image URL from visual node's metadata."""
-        if not self._graph:
-            raise RuntimeError("Node not attached to a graph")
-
-        if not self.props.meta_node_id:
-            return None
-
-        metanode = self._graph.get(self.props.meta_node_id)
-        if not metanode:
-            return None
-
-        val_node = get_tuple_value(metanode, MEDIA_KEY_ID)
-        if isinstance(val_node, BaseNode):
-            return val_node.name
-        return None
+    Use tana.operations.get_image_url(node) to extract image URLs.
+    """
 
 
 class CodeBlockNode(BaseNode):

@@ -4,10 +4,10 @@ from typing import Literal
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
+from mcp_infra.enhanced import EnhancedFastMCP
 from pydantic import Field
 import pytest
 
-from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 

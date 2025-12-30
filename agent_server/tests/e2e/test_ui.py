@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from agent_server.testing.steps import UiEndTurnCall, UiSendMessageCall
+import pytest
 
 pytestmark = pytest.mark.usefixtures()
 

@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import traceback
 
 import click
 import humanize
@@ -189,8 +190,6 @@ def hook(request_json: str | None) -> None:
         raise
     except Exception as e:
         # Unexpected error - log it
-        import traceback
-
         logger.error(f"FATAL: Unexpected hook processing error: {e}")
         logger.error(traceback.format_exc())
 

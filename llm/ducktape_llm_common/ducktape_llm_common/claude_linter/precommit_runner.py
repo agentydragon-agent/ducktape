@@ -1,4 +1,5 @@
 import datetime
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -30,8 +31,6 @@ class PreCommitRunner:
         current_working_dir = Path(cwd) if cwd else Path.cwd()
 
         # Only create debug logs if explicitly requested via environment variable
-        import os
-
         debug_enabled = os.environ.get("CLAUDE_LINTER_DEBUG", "").lower() in ("1", "true", "yes")
         log_file = None
         if debug_enabled:

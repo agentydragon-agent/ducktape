@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -12,15 +13,10 @@ import random
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
+from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from mcp.types import EmbeddedResource, ImageContent, TextContent
-from pydantic import BaseModel, Field, ValidationError
-
-from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from mcp_infra.exec.models import BaseExecResult, ExecInput
-from openai_utils.client_factory import build_client
-from openai_utils.model import ReasoningItem
-from props_backend.routes.ground_truth import FileLocationInfo
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props_core.db.examples import Example
@@ -30,6 +26,11 @@ from props_core.ids import DefinitionId
 from props_core.models.examples import ExampleKind, ExampleSpec
 from props_core.models.true_positive import LineRange
 from props_core.splits import Split
+from pydantic import BaseModel, Field, ValidationError
+
+from openai_utils.client_factory import build_client
+from openai_utils.model import ReasoningItem
+from props_backend.routes.ground_truth import FileLocationInfo
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -716,8 +717,6 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             # Get reported issues for critic runs
             def _group_locations_by_file(locations: list) -> list[FileLocationInfo]:
                 """Group flat location anchors by file into FileLocationInfo structure."""
-                from collections import defaultdict
-
                 by_file: dict[str, list[LineRange]] = defaultdict(list)
                 for loc in locations:
                     file_path = loc["file"]

@@ -11,7 +11,6 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from agent_core.agent import _openai_to_mcp_result
 from agent_core.testing import DockerExecCall, MakeCall, ResponsesFactory
@@ -20,8 +19,7 @@ from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, Killed, TimedOut, TruncatedStream
 from mcp_infra.naming import parse_tool_name
 
-if TYPE_CHECKING:
-    from openai_utils.model import ResponsesRequest, ResponsesResult
+from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, ResponsesResult
 
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 

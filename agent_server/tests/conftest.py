@@ -2,22 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 import json
 import re
 from typing import Any
 from unittest.mock import MagicMock
-
-from fastapi.testclient import TestClient
-from fastmcp.client import Client
-from fastmcp.exceptions import ToolError
-from fastmcp.mcp_config import MCPConfig, MCPServerTypes
-from fastmcp.server import FastMCP
-from fastmcp.tools import FunctionTool
-import mcp.types
-from pydantic import BaseModel
-import pytest
 
 from agent_core.agent import Agent
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
@@ -36,7 +26,13 @@ from agent_server.runtime.container import AgentContainerCompositor
 from agent_server.server.app import create_app
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
-import docker
+from fastapi.testclient import TestClient
+from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
+from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from fastmcp.server import FastMCP
+from fastmcp.tools import FunctionTool
+import mcp.types
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -46,6 +42,10 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.testing.simple_servers import SendMessageInput
 from mcp_infra.types import McpServerSpecs
+from pydantic import BaseModel
+import pytest
+
+import docker
 from openai_utils.model import OpenAIModelProto, ResponsesResult
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from tests.testdata.approval_policy import fetch_policy, make_policy
@@ -59,6 +59,20 @@ pytest_plugins = (
     "agent_core.testing.fixtures",  # Core agent fixtures (make_step_runner, etc.)
     "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Skip tests that require Docker if Docker is not available."""
+    if item.get_closest_marker("requires_docker") is None:
+        return
+    try:
+        client = docker.from_env()
+        client.ping()
+    except docker.errors.DockerException as exc:
+        pytest.skip(f"Docker not available: {exc}")
+    else:
+        with suppress(Exception):
+            client.close()
 
 
 # --- Pytest fixtures ---

@@ -11,6 +11,7 @@ from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
+import pytest
 
 # FastMCP stdio client (hard import)
 

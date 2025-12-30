@@ -1,9 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "props-core"
 version = "0.0.0"
 authors = [{name = "Rai"}]
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
+  # Workspace dependencies (container-compatible)
+  "agent-core",
+  "agent-pkg-host",
+  "agent-pkg-runtime",
+  "cli-util",
+  "mcp-infra",
+  "openai-utils",
   # Core dependencies
   "pydantic>=2.0.0",
   "typer>=0.12.0",
@@ -27,6 +38,8 @@ dependencies = [
   "rich>=13.0.0",
   "canonicaljson>=1.6.0",
   "jinja2>=3.1",
+  # Docker network gateway detection, port discovery (agent_setup)
+  "net-util",
 ]
 
 [project.optional-dependencies]
@@ -49,3 +62,62 @@ gepa = [
   "litellm>=1.0.0",
   "nest-asyncio>=1.5.0",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/props_core"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/props_core/docs" = "props_core/docs"
+
+[tool.hatch.build]
+exclude = [
+  "*.pyc",
+  "__pycache__",
+  ".git",
+]
+
+[tool.pytest.ini_options]
+timeout = 30
+timeout_method = "thread"
+log_cli_format = "%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s"
+log_cli_date_format = "%H:%M:%S"
+addopts = [
+    "-n=4",
+    "--dist=loadscope",
+    "-m",
+    "not live_llm and not requires_production_specimens",
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--disable-warnings",
+    "--durations=25",
+]
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "live_llm: live LLM tests requiring network/API keys",
+    "requires_docker: tests that require Docker to run",
+    "requires_postgres: tests that require PostgreSQL database to run",
+    "requires_production_specimens: tests that sync production specimens",
+    "timeout: pytest-timeout marker for test duration limits",
+]
+env = [
+    "GIT_CONFIG_NOSYSTEM=1",
+    "GIT_CONFIG_GLOBAL=/dev/null",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[project.scripts]
+props = "props_core.cli.main:app"
+
+[tool.uv.sources]
+agent-core = { workspace = true }
+agent-pkg-host = { workspace = true }
+agent-pkg-runtime = { workspace = true }
+cli-util = { workspace = true }
+mcp-infra = { workspace = true }
+net-util = { workspace = true }
+openai-utils = { workspace = true }

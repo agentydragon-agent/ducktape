@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastmcp.client import Client
-
 from mcp_infra.exec.direct import DirectExecArgs, DirectExecServer
 from mcp_infra.exec.models import Exited
 from mcp_infra.testing.exec_stubs import DirectExecServerStub

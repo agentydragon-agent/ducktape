@@ -1,8 +1,10 @@
 import datetime
 import json
 from pathlib import Path
+import random
 
 from absl import app, flags
+import numpy as np
 import openai
 
 # needs: pip install plotly sklearn
@@ -68,8 +70,6 @@ def index():
         )
         results = response.json()
         # print(results)
-        import random
-
         r = results["results"]
         random.shuffle(r)
 
@@ -187,8 +187,6 @@ def search(query):
     )
 
     # return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-    import numpy as np
-
     results_df["similarities"] = results_df.embedding.apply(
         lambda x: cosine_similarity(x or np.zeros_like(embedding), embedding)
     )
