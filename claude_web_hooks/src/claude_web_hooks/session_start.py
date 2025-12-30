@@ -59,10 +59,14 @@ def main() -> int:
     # Install bazel wrapper that sets proxy env vars
     bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
 
-    # Persist PATH modification via CLAUDE_ENV_FILE
+    # Persist PATH modification and proxy env vars via CLAUDE_ENV_FILE
+    # The proxy config is exported so the Bazel module extension can generate
+    # @proxy_config//:proxy_env.bzl with the correct values at repository resolution time
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
-        env_content = bazelisk_setup.get_env_script()
+        proxy_port = bazel_proxy_setup.BAZEL_PROXY_PORT if bazel_proxy_setup.is_configured() else None
+        combined_ca = str(bazel_proxy_setup.BAZEL_COMBINED_CA) if bazel_proxy_setup.is_configured() else None
+        env_content = bazelisk_setup.get_env_script(proxy_port=proxy_port, combined_ca=combined_ca)
         Path(env_file).write_text(env_content)
         log.info("Wrote PATH update to CLAUDE_ENV_FILE: %s", env_file)
     else:

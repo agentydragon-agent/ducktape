@@ -91,17 +91,11 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
 
     The wrapper is in ~/.cache/bazel-proxy/bin/bazel and calls the real
     bazelisk at ~/.cache/bazel-proxy/bazelisk.
-
-    Also ensures proxy_env.bzl exists (copies from default if missing).
     """
+    _ = repo_root  # No longer used - proxy config is handled by module extension
     WRAPPER_DIR.mkdir(parents=True, exist_ok=True)
 
     local_proxy = f"http://localhost:{proxy_port}"
-
-    # Build path to proxy_env files - wrapper will ensure override exists
-    proxy_env_dir = ""
-    if repo_root:
-        proxy_env_dir = str(repo_root / ".claude" / "claude-code-web")
 
     wrapper_content = f'''#!/bin/bash
 # Bazel wrapper for Claude Code web - sets proxy env vars
@@ -112,14 +106,6 @@ export HTTP_PROXY="{local_proxy}"
 export https_proxy="{local_proxy}"
 export http_proxy="{local_proxy}"
 
-# Ensure proxy_env.bzl exists (copy from default if missing)
-PROXY_ENV_DIR="{proxy_env_dir}"
-if [ -n "$PROXY_ENV_DIR" ] && [ -d "$PROXY_ENV_DIR" ]; then
-    if [ ! -f "$PROXY_ENV_DIR/proxy_env.bzl" ] && [ -f "$PROXY_ENV_DIR/proxy_env_default.bzl" ]; then
-        cp "$PROXY_ENV_DIR/proxy_env_default.bzl" "$PROXY_ENV_DIR/proxy_env.bzl"
-    fi
-fi
-
 exec "{BAZELISK_PATH}" "$@"
 '''
     WRAPPER_PATH.write_text(wrapper_content)
@@ -128,14 +114,24 @@ exec "{BAZELISK_PATH}" "$@"
     return WRAPPER_PATH
 
 
-def get_env_script() -> str:
-    """Get bash script fragment to add wrapper dir to PATH.
+def get_env_script(proxy_port: int | None = None, combined_ca: str | None = None) -> str:
+    """Get bash script fragment to add wrapper dir to PATH and set proxy env vars.
 
     This should be appended to CLAUDE_ENV_FILE.
+
+    Args:
+        proxy_port: The local proxy port (e.g., 18081). If set, exports BAZEL_PROXY_PORT.
+        combined_ca: Path to combined CA bundle. If set, exports BAZEL_COMBINED_CA.
     """
-    return f'''# Bazel wrapper (sets proxy for TLS-inspecting proxy)
-[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"
-'''
+    lines = [
+        "# Bazel wrapper (sets proxy for TLS-inspecting proxy)",
+        f'[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"',
+    ]
+    if proxy_port:
+        lines.append(f'export BAZEL_PROXY_PORT="{proxy_port}"')
+    if combined_ca:
+        lines.append(f'export BAZEL_COMBINED_CA="{combined_ca}"')
+    return "\n".join(lines) + "\n"
 
 
 def is_installed() -> bool:
