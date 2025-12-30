@@ -262,6 +262,71 @@ Options:
 2. May not support all Dockerfile features
 3. Consider keeping Dockerfiles for now
 
+### Claude Code Web Environment - Bazel Proxy Configuration
+
+When running Bazel in Claude Code's web-based container environment, there are unique proxy/TLS challenges:
+
+**Problem**: Claude Code uses a TLS-inspecting proxy that:
+1. Intercepts HTTPS connections with a self-signed CA ("sandbox-egress-production TLS Inspection CA")
+2. Returns HTTP 401 for unauthenticated proxy requests (not standard 407)
+3. Uses JWT-based authentication in proxy credentials
+
+**Symptoms**:
+- `bazel info` fails with "Unable to tunnel through proxy. Proxy returns HTTP/1.1 401 Unauthorized"
+- Or "PKIX path building failed" (certificate trust error)
+
+**Solution** (requires session start hook to automate):
+
+1. **Extract and trust the TLS inspection CA**:
+   ```bash
+   # Extract CA from proxy
+   echo | openssl s_client -proxy 127.0.0.1:PORT -connect example.com:443 -showcerts 2>/dev/null | \
+     awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' | tail -n+$(awk '/BEGIN/{n++}END{print (n-1)*21+1}') > /tmp/anthropic_ca.pem
+
+   # Create custom truststore
+   cp /etc/ssl/certs/java/cacerts /tmp/custom_cacerts.jks
+   keytool -importcert -trustcacerts -alias anthropic-tls-inspection \
+     -file /tmp/anthropic_ca.pem -keystore /tmp/custom_cacerts.jks \
+     -storepass changeit -noprompt
+   ```
+
+2. **Start a local auth-forwarding proxy**:
+   ```python
+   # See /tmp/bazel_proxy.py for implementation
+   # Proxy listens on 127.0.0.1:18081, forwards to upstream with JWT auth
+   ```
+
+3. **Run Bazel with proxy and truststore**:
+   ```bash
+   export https_proxy=http://127.0.0.1:18081
+   bazel \
+     --host_jvm_args="-Dhttps.proxyHost=127.0.0.1" \
+     --host_jvm_args="-Dhttps.proxyPort=18081" \
+     --host_jvm_args="-Djavax.net.ssl.trustStore=/tmp/custom_cacerts.jks" \
+     --host_jvm_args="-Djavax.net.ssl.trustStorePassword=changeit" \
+     build //...
+   ```
+
+**TODO**: Create `.claude/hooks/session-start.sh` to automate this setup.
+
+### Non-Workspace Package Dependencies
+
+The UV workspace `requirements_bazel.txt` is generated from `uv export --all-packages`, which only includes workspace member packages. Non-workspace packages (gatelet, finance/reconcile, etc.) have dependencies that are NOT automatically included.
+
+**Missing packages** (need to be manually added to `requirements_bazel.txt`):
+- `absl-py` (finance/reconcile)
+- `splitwise` (finance/reconcile)
+- `xdg` (finance/reconcile) ✓ Added
+- `tomlkit` (gatelet) ✓ Added
+- `aw-client`, `aw-core` (gatelet)
+- `oura`, `homeassistant-api` (gatelet)
+- Plus ~20 more including test dependencies (pytest plugins, types-* stubs)
+
+**Recommended fix**: Either:
+1. Add gatelet and finance packages to UV workspace
+2. Create a separate `requirements_nonworkspace.txt` and merge in MODULE.bazel
+3. Maintain a manual section in `requirements_bazel.txt` for non-workspace deps
+
 ### Python Packages with System Library Dependencies
 
 Some Python packages (dbus-python, PyGObject) are bindings to C libraries and require system dependencies. These don't work well with pure `rules_python`:

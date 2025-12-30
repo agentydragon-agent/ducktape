@@ -3,7 +3,10 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "gatelet",
     srcs = glob(["gatelet/**/*.py"]),
-    data = glob(["gatelet/**/*.html", "gatelet/**/*.jinja2"]),
+    data = glob([
+        "gatelet/**/*.html",
+        "gatelet/**/*.jinja2",
+    ]),
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//alembic",

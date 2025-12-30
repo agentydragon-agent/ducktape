@@ -3,17 +3,17 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "mcp_infra",
     srcs = glob(["src/mcp_infra/**/*.py"]),
-    imports = ["src"],
     data = glob([
         "src/mcp_infra/**/*.j2",
         "src/mcp_infra/**/*.md",
     ]),
+    imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core:agent_core",
-        "//cli_util:cli_util",
-        "//mcp_utils:mcp_utils",
-        "//openai_utils:openai_utils",
+        "//agent_core",
+        "//cli_util",
+        "//mcp_utils",
+        "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//anyio",
         "@pypi//compact_json",

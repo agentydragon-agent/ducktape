@@ -8,9 +8,9 @@ py_library(
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core:agent_core",
-        "//mcp_infra:mcp_infra",
-        "//openai_utils:openai_utils",
+        "//agent_core",
+        "//mcp_infra",
+        "//openai_utils",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pygit2",

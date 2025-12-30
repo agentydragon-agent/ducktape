@@ -3,7 +3,10 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 # Experimental LLM RL scripts - not a proper package, just standalone scripts
 py_library(
     name = "cotrl",
-    srcs = glob(["*.py"], exclude = ["test_*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_*.py"],
+    ),
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",

@@ -22,7 +22,10 @@ py_binary(
 py_test(
     name = "test_all",
     srcs = glob(["tests/**/*.py"]),
-    data = glob(["tests/**/*.txt", "tests/**/*.diff"]),
+    data = glob([
+        "tests/**/*.txt",
+        "tests/**/*.diff",
+    ]),
     deps = [
         ":difftree",
         "@pypi//pyhamcrest",

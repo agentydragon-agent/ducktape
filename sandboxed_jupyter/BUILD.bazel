@@ -8,8 +8,8 @@ py_library(
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        "//mcp_infra:mcp_infra",
-        "//net_util:net_util",
+        "//mcp_infra",
+        "//net_util",
         "@pypi//ipykernel",
         "@pypi//jupyter_mcp_server",
         "@pypi//jupyter_server",

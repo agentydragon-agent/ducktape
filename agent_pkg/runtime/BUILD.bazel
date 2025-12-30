@@ -3,11 +3,11 @@ load("@rules_python//python:defs.bzl", "py_library")
 py_library(
     name = "agent_pkg_runtime",
     srcs = glob(["src/agent_pkg_runtime/**/*.py"]),
-    imports = ["src"],
     data = glob(["src/agent_pkg_runtime/**/*.md"]),
+    imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        "//mcp_utils:mcp_utils",
+        "//mcp_utils",
         "@pypi//fastmcp",
         "@pypi//jinja2",
     ],

@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "rspcache",
@@ -6,17 +6,17 @@ py_library(
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        "//openai_utils:openai_utils",
-        "@pypi//fastapi",
-        "@pypi//uvicorn",
-        "@pypi//httpx",
+        "//openai_utils",
         "@pypi//asyncpg",
-        "@pypi//sqlalchemy",
-        "@pypi//pydantic",
-        "@pypi//typer",
         "@pypi//canonicaljson",
+        "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//openai",
+        "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
+        "@pypi//uvicorn",
     ],
 )
 

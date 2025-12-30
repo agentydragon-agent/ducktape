@@ -5,17 +5,17 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "ember",
     srcs = glob(["src/ember/**/*.py"]),
-    imports = ["src"],
     data = glob([
         "src/ember/**/*.md",
         "src/ember/**/*.j2",
         "src/ember/resources/**/*",
     ]),
+    imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core:agent_core",
-        "//mcp_infra:mcp_infra",
-        "//openai_utils:openai_utils",
+        "//agent_core",
+        "//mcp_infra",
+        "//openai_utils",
         "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//ipykernel",
