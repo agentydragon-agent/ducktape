@@ -50,7 +50,7 @@ py_binary(
 py_test(
     name = "test_tana",
     srcs = glob(["tests/**/*.py"]),
-    main = "tests/conftest.py",
+    main = "tests/tana/test_convert.py",
     deps = [
         ":tana",
         "@pypi//pytest",

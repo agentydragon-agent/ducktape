@@ -9,6 +9,7 @@ exports_files([
 ])
 
 # All pyproject.toml files that contribute to requirements_bazel.txt
+# NOTE: homeassistant/iaqi excluded - its deps (pydantic 1.x, old pytest) conflict with repo
 _PYPROJECT_SRCS = [
     "//adgn:pyproject.toml",
     "//agent_core:pyproject.toml",
@@ -30,7 +31,6 @@ _PYPROJECT_SRCS = [
     "//git_commit_ai:pyproject.toml",
     "//gmail-archiver:pyproject.toml",
     "//gnome-terminal-profile-switcher:pyproject.toml",
-    "//homeassistant/iaqi:pyproject.toml",
     "//llm/ducktape_llm_common:pyproject.toml",
     "//llm/html:pyproject.toml",
     "//llm/mcp/habitify:pyproject.toml",

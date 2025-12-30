@@ -21,7 +21,13 @@ pip.parse(
     python_version = "3.12",
     requirements_lock = "//:requirements_bazel.txt",
 )
-use_repo(pip, "pypi")
+# Separate pip hub for homeassistant - has pydantic 1.x, incompatible with main repo
+pip.parse(
+    hub_name = "pypi_homeassistant",
+    python_version = "3.12",
+    requirements_lock = "//homeassistant/iaqi:requirements_lock.txt",
+)
+use_repo(pip, "pypi", "pypi_homeassistant")
 
 # uv toolchain for requirements locking
 uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
