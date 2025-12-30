@@ -96,17 +96,13 @@ split-on-trailing-comma = false
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "py_detectors/src/py_detectors/det_*.py" = ["N802"]
-# Test fixtures are intentionally bad code for detector testing
-"py_detectors/tests/fixtures/**" = ["ALL"]
 "adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]
 
 # Late imports to avoid circular dependencies (per STYLE.md)
 "props/src/props/db/sync/sync.py" = ["PLC0415"]
-"tana/src/tana/domain/nodes.py" = ["PLC0415"]  # tana.query.core cycle
-"tana/src/tana/export/convert.py" = ["PLC0415"]  # tana.workspace cycle
-"tana/src/tana/workspace.py" = ["PLC0415"]  # tana.export.convert cycle
-"props/core/src/props_core/grader/daemon_manager.py" = ["PLC0415"]  # db models import
+"tana/src/tana/export/convert.py" = ["PLC0415"]  # convert.main() imports Workspace
+"tana/src/tana/workspace.py" = ["PLC0415"]  # Workspace.export_tanapaste() imports convert
 
 # Late imports in test fixtures and conftest
 "**/conftest.py" = ["PLC0415"]  # test fixtures often need lazy imports
@@ -116,12 +112,6 @@ split-on-trailing-comma = false
 "ansible/roles/*/files/*.py" = ["PLC0415"]
 "props/backend/src/props_backend/cli.py" = ["PLC0415"]
 "props/backend/src/props_backend/app.py" = ["PLC0415"]  # conditional imports based on config
-
-# Bazel proxy: daemonization requires unclosed file descriptors, global state for singleton
-"claude_web_hooks/src/claude_web_hooks/proxy.py" = ["PLW0603", "SIM115", "PTH123"]
-
-# Claude Code session hook wrapper
-".claude/session-start.py" = ["PLW1510"]  # subprocess.run check= not required for infra scripts
 
 # Trilium scripts are standalone utilities
 "trilium/*.py" = ["PLC0415"]

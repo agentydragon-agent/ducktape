@@ -39,9 +39,7 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
         for i in range(1, num_issues + 1):
             issue_id = f"input-{i:03d}"
             reported_issue = ReportedIssue(
-                agent_run_id=critic_run.agent_run_id,
-                issue_id=issue_id,
-                rationale=f"Test input issue {i}",
+                agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test input issue {i}"
             )
             session.add(reported_issue)
 
@@ -52,10 +50,7 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
         return critic_run_id
 
 
-def make_test_grader_run(
-    critic_run_id: UUID,
-    status: AgentRunStatus = AgentRunStatus.COMPLETED,
-) -> UUID:
+def make_test_grader_run(critic_run_id: UUID, status: AgentRunStatus = AgentRunStatus.COMPLETED) -> UUID:
     """Create a test grader run.
 
     Args:

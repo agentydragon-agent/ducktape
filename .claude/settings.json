@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/session-start.py"
+            "command": "PYTHONPATH=claude_web_hooks/src python3 -m claude_web_hooks.session_start"
           }
         ]
       }

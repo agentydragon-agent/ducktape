@@ -53,9 +53,7 @@ def install_nix(project_dir: Path, run_streaming: Callable[..., int]) -> Path:
     logger.info("Installing nix...")
 
     # Download with progress bar
-    run_streaming(
-        ["curl", "--progress-bar", "-L", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
-    )
+    run_streaming(["curl", "--progress-bar", "-L", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"])
 
     # The nix-env step fails in gVisor containers due to a PTY bug.
     # nix-env opens /dev/ptmx, forks a sandbox process, then reads from the PTY master.

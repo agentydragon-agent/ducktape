@@ -25,7 +25,7 @@ class Workspace:
         return self.graph[node_id]
 
     def export_tanapaste(self, node_id: NodeId) -> str:
-        from tana.export.convert import export_node_as_tanapaste
+        from tana.export.convert import export_node_as_tanapaste  # convert.main() imports Workspace
 
         return export_node_as_tanapaste(self.graph, self.node(node_id))
 

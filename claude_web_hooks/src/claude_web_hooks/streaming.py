@@ -15,10 +15,7 @@ HEARTBEAT_INTERVAL_SECONDS = 0.5
 
 
 def run_streaming(
-    cmd: list[str | Path],
-    operation: str | None = None,
-    check: bool = True,
-    env: dict[str, str] | None = None,
+    cmd: list[str | Path], operation: str | None = None, check: bool = True, env: dict[str, str] | None = None
 ) -> int:
     """Run command with real-time streaming output.
 
@@ -36,7 +33,9 @@ def run_streaming(
 
     merged_env = {**os.environ, **(env or {})}
 
-    proc = subprocess.Popen(cmd_strs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=merged_env)
+    proc = subprocess.Popen(
+        cmd_strs, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=merged_env
+    )
 
     assert proc.stdout is not None
 

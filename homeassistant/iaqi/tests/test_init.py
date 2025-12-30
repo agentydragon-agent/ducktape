@@ -4,9 +4,8 @@ from unittest.mock import patch
 
 from custom_components.indoor_aqi import DOMAIN, async_setup_entry, async_unload_entry
 from hamcrest import assert_that, has_entries
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant.setup import async_setup_component
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 async def test_setup_component(hass):

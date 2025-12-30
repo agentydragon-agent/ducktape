@@ -3,12 +3,11 @@
 from pathlib import Path
 from uuid import uuid4
 
+from claude_hooks.inputs import PostToolInput, PreToolInput, UserPromptSubmitInput
+from claude_hooks.tool_models import BashInput, EditInput, WriteInput
 from hamcrest import assert_that, has_properties
 from pydantic import ValidationError
 import pytest
-
-from claude_hooks.inputs import PostToolInput, PreToolInput, UserPromptSubmitInput
-from claude_hooks.tool_models import BashInput, EditInput, WriteInput
 
 
 def test_edit_input_valid():

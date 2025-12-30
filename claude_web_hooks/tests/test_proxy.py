@@ -33,9 +33,7 @@ class TestParseProxyUrl:
 
     def test_url_with_complex_password(self) -> None:
         # JWT tokens contain special chars
-        result = parse_proxy_url(
-            "http://container:jwt_eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.abc@proxy:15004"
-        )
+        result = parse_proxy_url("http://container:jwt_eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.abc@proxy:15004")
         assert result.hostname == "proxy"
         assert result.port == 15004
         assert result.username == "container"
@@ -93,9 +91,7 @@ class TestKillExisting:
     def test_kills_running_process(self, tmp_path: Path) -> None:
         # Start a sleep process
         proc = subprocess.Popen(
-            [sys.executable, "-c", "import time; time.sleep(60)"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            [sys.executable, "-c", "import time; time.sleep(60)"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         pid_file = tmp_path / "running.pid"
         pid_file.write_text(str(proc.pid))

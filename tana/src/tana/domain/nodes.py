@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from tana.domain.constants import LANGUAGE_KEY_ID, MEDIA_KEY_ID
 from tana.domain.types import NodeId
+from tana.query.core import get_tuple_value
 
 
 class Props(BaseModel):
@@ -100,8 +101,6 @@ class VisualNode(BaseNode):
         metanode = self._graph.get(self.props.meta_node_id)
         if not metanode:
             return None
-
-        from tana.query.core import get_tuple_value  # late import to avoid cycles
 
         val_node = get_tuple_value(metanode, MEDIA_KEY_ID)
         if isinstance(val_node, BaseNode):

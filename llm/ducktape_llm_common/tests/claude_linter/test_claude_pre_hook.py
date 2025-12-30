@@ -18,12 +18,14 @@ def run_pre_hook(test_input: str):
 
 def create_write_input(file_path: str | Path, content: str) -> str:
     """Create a standard Write tool input structure for PreToolUse."""
-    return json.dumps({
-        "hook_event_name": "PreToolUse",
-        "session_id": "test-session-id",
-        "tool_name": "Write",
-        "tool_input": {"file_path": str(file_path), "content": content}
-    })
+    return json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "session_id": "test-session-id",
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(file_path), "content": content},
+        }
+    )
 
 
 PYTHON_MYPY_NONFIXABLE = """import requests

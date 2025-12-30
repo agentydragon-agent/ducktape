@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import atexit
 import base64
+from dataclasses import dataclass, field
 import fcntl
 import logging
 import os
@@ -22,6 +23,7 @@ from pathlib import Path
 import signal
 import sys
 import time
+from typing import IO
 from urllib.parse import ParseResult, urlparse
 
 DEFAULT_STATE_DIR = Path.home() / ".cache" / "bazel-proxy"
@@ -30,13 +32,23 @@ CREDENTIALS_FILE = "upstream_proxy"  # Relative to state_dir
 
 log = logging.getLogger(__name__)
 
-# Cached credentials with file mtime for invalidation
-_cached_proxy: ParseResult | None = None
-_cached_auth_header: str = ""
-_cached_mtime: float = 0
 
-# Global lock file handle - kept open to hold the lock
-_lock_fd: int | None = None
+@dataclass
+class CredentialCache:
+    """Cached credentials with file mtime for invalidation."""
+
+    proxy: ParseResult | None = None
+    auth_header: str = ""
+    mtime: float = 0
+
+
+@dataclass
+class ProxyState:
+    """Mutable state for the proxy singleton."""
+
+    lock_file: IO[bytes] | None = None
+    pid_file: Path | None = None
+    credentials: CredentialCache = field(default_factory=CredentialCache)
 
 
 def setup_logging(log_file: Path | None) -> None:
@@ -49,50 +61,49 @@ def setup_logging(log_file: Path | None) -> None:
     else:
         handlers.append(logging.StreamHandler(sys.stderr))
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        handlers=handlers,
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=handlers)
 
 
-def acquire_singleton_lock(pid_file: Path) -> bool:
+def acquire_singleton_lock(pid_file: Path, state: ProxyState) -> bool:
     """Acquire exclusive lock on pidfile, making this the singleton instance.
 
     Uses flock() which is atomic and automatically released on process exit.
     Returns True if lock acquired, False if another instance is running.
     """
-    global _lock_fd
-
     pid_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Open file for writing (create if needed)
-    _lock_fd = os.open(str(pid_file), os.O_RDWR | os.O_CREAT, 0o644)
+    # Open file for read/write (create if needed)
+    lock_file = pid_file.open("w+b")
 
     try:
         # Try to acquire exclusive lock (non-blocking)
-        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         # Another instance holds the lock
-        os.close(_lock_fd)
-        _lock_fd = None
+        lock_file.close()
         return False
 
     # We have the lock - write our PID
-    os.ftruncate(_lock_fd, 0)
-    os.write(_lock_fd, f"{os.getpid()}\n".encode())
-    os.fsync(_lock_fd)
+    lock_file.truncate(0)
+    lock_file.seek(0)
+    lock_file.write(f"{os.getpid()}\n".encode())
+    lock_file.flush()
+
+    # Store in state for cleanup
+    state.lock_file = lock_file
+    state.pid_file = pid_file
 
     # Register cleanup (though lock releases automatically on exit)
     def cleanup() -> None:
-        if _lock_fd is not None:
+        if state.lock_file is not None:
             try:
-                os.close(_lock_fd)
-                pid_file.unlink(missing_ok=True)
+                state.lock_file.close()
+                if state.pid_file:
+                    state.pid_file.unlink(missing_ok=True)
             except OSError:
                 pass
-    atexit.register(cleanup)
 
+    atexit.register(cleanup)
     return True
 
 
@@ -159,14 +170,12 @@ def get_upstream_proxy() -> ParseResult:
     return parse_proxy_url(proxy_url)
 
 
-def load_credentials(state_dir: Path) -> tuple[ParseResult, str]:
+def load_credentials(state_dir: Path, cache: CredentialCache) -> tuple[ParseResult, str]:
     """Load credentials from file, with caching based on file mtime.
 
     Returns (proxy, auth_header) tuple.
     Caches results until the credentials file is modified.
     """
-    global _cached_proxy, _cached_auth_header, _cached_mtime
-
     creds_file = state_dir / CREDENTIALS_FILE
     if not creds_file.exists():
         raise RuntimeError(f"Credentials file not found: {creds_file}")
@@ -174,8 +183,8 @@ def load_credentials(state_dir: Path) -> tuple[ParseResult, str]:
     current_mtime = creds_file.stat().st_mtime
 
     # Return cached if file hasn't changed
-    if _cached_proxy is not None and current_mtime == _cached_mtime:
-        return _cached_proxy, _cached_auth_header
+    if cache.proxy is not None and current_mtime == cache.mtime:
+        return cache.proxy, cache.auth_header
 
     # Reload from file
     proxy_url = creds_file.read_text().strip()
@@ -186,9 +195,9 @@ def load_credentials(state_dir: Path) -> tuple[ParseResult, str]:
     auth_header = make_auth_header(proxy)
 
     # Update cache
-    _cached_proxy = proxy
-    _cached_auth_header = auth_header
-    _cached_mtime = current_mtime
+    cache.proxy = proxy
+    cache.auth_header = auth_header
+    cache.mtime = current_mtime
 
     log.info("Loaded credentials for %s:%d", proxy.hostname, proxy.port or 80)
     return proxy, auth_header
@@ -238,15 +247,11 @@ async def handle_connect(
     auth_header: str,
 ) -> None:
     """Handle CONNECT by tunneling through upstream proxy."""
-    upstream_reader, upstream_writer = await asyncio.open_connection(
-        proxy.hostname, proxy.port or 80
-    )
+    upstream_reader, upstream_writer = await asyncio.open_connection(proxy.hostname, proxy.port or 80)
 
     try:
         connect_req = (
-            f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
-            f"Host: {target_host}:{target_port}\r\n"
-            f"{auth_header}\r\n"
+            f"CONNECT {target_host}:{target_port} HTTP/1.1\r\nHost: {target_host}:{target_port}\r\n{auth_header}\r\n"
         )
         upstream_writer.write(connect_req.encode())
         await upstream_writer.drain()
@@ -268,19 +273,14 @@ async def handle_connect(
         client_writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         await client_writer.drain()
 
-        await asyncio.gather(
-            pipe(client_reader, upstream_writer),
-            pipe(upstream_reader, client_writer),
-        )
+        await asyncio.gather(pipe(client_reader, upstream_writer), pipe(upstream_reader, client_writer))
     finally:
         upstream_writer.close()
         await upstream_writer.wait_closed()
 
 
 async def handle_client(
-    client_reader: asyncio.StreamReader,
-    client_writer: asyncio.StreamWriter,
-    state_dir: Path,
+    client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter, state_dir: Path, cache: CredentialCache
 ) -> None:
     """Handle incoming client connection.
 
@@ -312,7 +312,7 @@ async def handle_client(
             host, port = target, 443
 
         # Load credentials fresh (with caching based on file mtime)
-        proxy, auth_header = load_credentials(state_dir)
+        proxy, auth_header = load_credentials(state_dir, cache)
         await handle_connect(client_reader, client_writer, host, port, proxy, auth_header)
     except Exception as e:
         log.exception("Error handling client: %s", e)
@@ -321,7 +321,7 @@ async def handle_client(
         await client_writer.wait_closed()
 
 
-async def run_server(host: str, port: int, state_dir: Path) -> None:
+async def run_server(host: str, port: int, state_dir: Path, cache: CredentialCache) -> None:
     """Run the proxy server.
 
     Writes initial credentials from environment, then reads from file for
@@ -334,10 +334,10 @@ async def run_server(host: str, port: int, state_dir: Path) -> None:
     write_credentials(state_dir, proxy_url)
 
     # Load once to log initial configuration
-    proxy, _ = load_credentials(state_dir)
+    proxy, _ = load_credentials(state_dir, cache)
 
     async def on_connect(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        await handle_client(reader, writer, state_dir)
+        await handle_client(reader, writer, state_dir, cache)
 
     server = await asyncio.start_server(on_connect, host, port)
     log.info("Listening on %s:%d", host, port)
@@ -349,16 +349,19 @@ async def run_server(host: str, port: int, state_dir: Path) -> None:
 
 
 def daemonize() -> None:
-    """Fork to background using double-fork."""
+    """Fork to background using double-fork with proper fd redirection."""
     if os.fork() > 0:
         sys.exit(0)
     os.setsid()
     if os.fork() > 0:
         sys.exit(0)
-    # Redirect stdin/stdout/stderr to /dev/null
-    sys.stdin = open(os.devnull)
-    sys.stdout = open(os.devnull, "w")
-    sys.stderr = open(os.devnull, "w")
+
+    # Redirect stdin/stdout/stderr to /dev/null using dup2
+    null_fd = os.open(os.devnull, os.O_RDWR)
+    os.dup2(null_fd, 0)  # stdin
+    os.dup2(null_fd, 1)  # stdout
+    os.dup2(null_fd, 2)  # stderr
+    os.close(null_fd)
 
 
 def main() -> int:
@@ -366,14 +369,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Local proxy for Bazel BCR access")
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR,
-                        help="Directory for pidfile and log")
-    parser.add_argument("--daemonize", "-d", action="store_true",
-                        help="Fork to background")
-    parser.add_argument("--kill", "-k", action="store_true",
-                        help="Kill existing proxy and exit")
-    parser.add_argument("--replace", "-r", action="store_true",
-                        help="Kill existing proxy before starting (default behavior)")
+    parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR, help="Directory for pidfile and log")
+    parser.add_argument("--daemonize", "-d", action="store_true", help="Fork to background")
+    parser.add_argument("--kill", "-k", action="store_true", help="Kill existing proxy and exit")
+    parser.add_argument(
+        "--replace", "-r", action="store_true", help="Kill existing proxy before starting (default behavior)"
+    )
     args = parser.parse_args()
 
     pid_file = args.state_dir / "proxy.pid"
@@ -391,14 +392,17 @@ def main() -> int:
 
     setup_logging(log_file)
 
+    # Create mutable state
+    state = ProxyState()
+
     # Try to acquire singleton lock
-    if not acquire_singleton_lock(pid_file):
+    if not acquire_singleton_lock(pid_file, state):
         # Another instance is running
         if args.replace:
             # Kill it and retry
             kill_existing(pid_file)
             time.sleep(0.2)  # Give the lock a moment to release
-            if not acquire_singleton_lock(pid_file):
+            if not acquire_singleton_lock(pid_file, state):
                 log.error("Failed to acquire lock after killing existing proxy")
                 return 1
         else:
@@ -406,7 +410,7 @@ def main() -> int:
             return 0
 
     try:
-        asyncio.run(run_server(args.listen_host, args.listen_port, args.state_dir))
+        asyncio.run(run_server(args.listen_host, args.listen_port, args.state_dir, state.credentials))
     except KeyboardInterrupt:
         log.info("Shutting down")
     return 0

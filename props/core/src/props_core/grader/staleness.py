@@ -165,7 +165,9 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             targeted_files = resolve_scope_files(example_spec, session)
 
             # Filter stored snapshot to TPs in expected recall scope and relevant FPs (same filtering applied at grading time)
-            stored_tps_in_scope = filter_tps_in_expected_recall_scope(stored_snapshot_model.true_positives, targeted_files)
+            stored_tps_in_scope = filter_tps_in_expected_recall_scope(
+                stored_snapshot_model.true_positives, targeted_files
+            )
             relevant_stored_fps = filter_relevant_db_fps(stored_snapshot_model.false_positives, targeted_files)
 
             # Create filtered snapshot model and serialize

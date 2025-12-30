@@ -612,12 +612,7 @@ class HookHandler:
             "old_content": request.tool_input.old_content,
             "command": request.tool_input.command,
         }
-        context = PredicateContext(
-            tool=request.tool_name,
-            args=args,
-            session_id=session_id,
-            timestamp=datetime.now(),
-        )
+        context = PredicateContext(tool=request.tool_name, args=args, session_id=session_id, timestamp=datetime.now())
 
         return self.rule_engine.evaluate_access(context, session_id)
 

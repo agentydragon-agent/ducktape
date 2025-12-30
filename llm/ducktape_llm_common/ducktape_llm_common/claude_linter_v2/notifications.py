@@ -8,9 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def send_desktop_notification(
-    title: str, message: str, urgency: str = "critical", replaces_id: int = 0
-) -> int:
+def send_desktop_notification(title: str, message: str, urgency: str = "critical", replaces_id: int = 0) -> int:
     """Send desktop notification via D-Bus.
 
     Args:
@@ -29,11 +27,7 @@ def send_desktop_notification(
         return 0
 
     # Map urgency strings to D-Bus urgency levels
-    urgency_map = {
-        "low": 0,
-        "normal": 1,
-        "critical": 2,
-    }
+    urgency_map = {"low": 0, "normal": 1, "critical": 2}
 
     try:
         # Get session bus
@@ -51,9 +45,7 @@ def send_desktop_notification(
             title,
             message[:200],  # body (truncated)
             [],  # actions
-            {
-                "urgency": dbus.Byte(urgency_map.get(urgency, 2)),
-            },  # hints
+            {"urgency": dbus.Byte(urgency_map.get(urgency, 2))},  # hints
             -1,  # expire_timeout (-1 = default)
         )
     except Exception as e:

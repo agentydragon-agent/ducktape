@@ -3,10 +3,9 @@
 import json
 import subprocess
 
-import pytest
-
 from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
+import pytest
 
 
 def test_environment_setup(integration_env):

@@ -31,9 +31,11 @@ BAZEL_USER_BAZELRC = Path.home() / ".bazelrc"
 # Pre-installed Anthropic CA on Claude Code web containers
 ANTHROPIC_CA_PREINSTALLED = Path("/usr/local/share/ca-certificates/swp-ca-production.crt")
 
+
 def _get_repo_root() -> Path:
     """Get the repo root (parent of claude_web_hooks/src/claude_web_hooks/)."""
     return Path(__file__).parent.parent.parent.parent
+
 
 # Proxy env .bzl file - in repo, gitignored
 BAZEL_PROXY_ENV_BZL = _get_repo_root() / ".claude" / "proxy_env.bzl"
@@ -58,8 +60,17 @@ def _extract_proxy_ca() -> bool:
     log.info("Extracting TLS inspection CA via local proxy localhost:%d", BAZEL_PROXY_PORT)
 
     result = subprocess.run(
-        ["openssl", "s_client", "-proxy", f"localhost:{BAZEL_PROXY_PORT}", "-connect", "bcr.bazel.build:443", "-showcerts"],
-        check=False, input="",
+        [
+            "openssl",
+            "s_client",
+            "-proxy",
+            f"localhost:{BAZEL_PROXY_PORT}",
+            "-connect",
+            "bcr.bazel.build:443",
+            "-showcerts",
+        ],
+        check=False,
+        input="",
         capture_output=True,
         text=True,
         timeout=30,
@@ -73,10 +84,7 @@ def _extract_proxy_ca() -> bool:
     # Find the Anthropic TLS inspection CA in the chain
     for i, cert in enumerate(certs):
         verify_result = subprocess.run(
-            ["openssl", "x509", "-noout", "-subject"],
-            check=False, input=cert,
-            capture_output=True,
-            text=True,
+            ["openssl", "x509", "-noout", "-subject"], check=False, input=cert, capture_output=True, text=True
         )
         if "Anthropic" in verify_result.stdout or "TLS Inspection" in verify_result.stdout:
             log.info("Found Anthropic TLS inspection CA at position %d", i)
@@ -100,10 +108,7 @@ def _create_java_truststore() -> bool:
     system_cacerts = Path("/etc/ssl/certs/java/cacerts")
     if not system_cacerts.exists():
         # Try alternative locations
-        for alt in [
-            Path("/etc/pki/java/cacerts"),
-            Path("/usr/lib/jvm/default-java/lib/security/cacerts"),
-        ]:
+        for alt in [Path("/etc/pki/java/cacerts"), Path("/usr/lib/jvm/default-java/lib/security/cacerts")]:
             if alt.exists():
                 system_cacerts = alt
                 break
@@ -119,14 +124,21 @@ def _create_java_truststore() -> bool:
     # Import the proxy CA
     result = subprocess.run(
         [
-            "keytool", "-importcert", "-trustcacerts",
-            "-alias", "anthropic-tls-inspection",
-            "-file", str(BAZEL_CA_FILE),
-            "-keystore", str(BAZEL_TRUSTSTORE),
-            "-storepass", "changeit",
+            "keytool",
+            "-importcert",
+            "-trustcacerts",
+            "-alias",
+            "anthropic-tls-inspection",
+            "-file",
+            str(BAZEL_CA_FILE),
+            "-keystore",
+            str(BAZEL_TRUSTSTORE),
+            "-storepass",
+            "changeit",
             "-noprompt",
         ],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
     )
 
@@ -176,7 +188,8 @@ def _start_proxy_server() -> bool:
     # -d: daemonize, -r: replace any existing instance
     result = subprocess.run(
         ["python3", str(proxy_script), "-d", "-r", "--listen-port", str(BAZEL_PROXY_PORT)],
-        check=False, capture_output=True,
+        check=False,
+        capture_output=True,
         text=True,
     )
     if result.returncode != 0:
@@ -255,10 +268,7 @@ def _create_combined_ca_bundle() -> bool:
     # Find system CA bundle
     system_ca_bundle = Path("/etc/ssl/certs/ca-certificates.crt")
     if not system_ca_bundle.exists():
-        for alt in [
-            Path("/etc/pki/tls/certs/ca-bundle.crt"),
-            Path("/etc/ssl/ca-bundle.pem"),
-        ]:
+        for alt in [Path("/etc/pki/tls/certs/ca-bundle.crt"), Path("/etc/ssl/ca-bundle.pem")]:
             if alt.exists():
                 system_ca_bundle = alt
                 break
@@ -348,8 +358,6 @@ exec {real_bazel} "$@"
     wrapper_path.write_text(wrapper_content)
     wrapper_path.chmod(0o755)
     log.info("Installed bazel wrapper at %s (wraps %s)", wrapper_path, real_bazel)
-
-
 
 
 def setup_bazel_proxy() -> None:

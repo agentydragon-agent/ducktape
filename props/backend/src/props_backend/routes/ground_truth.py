@@ -238,7 +238,11 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         for tp in tps:
             occ_infos = []
             for occ in tp.occurrences:
-                matchable_files = matchable_files_by_hash.get(occ.graders_match_only_if_reported_on) if occ.graders_match_only_if_reported_on else None
+                matchable_files = (
+                    matchable_files_by_hash.get(occ.graders_match_only_if_reported_on)
+                    if occ.graders_match_only_if_reported_on
+                    else None
+                )
                 occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
@@ -257,7 +261,11 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         for fp in fps:
             occ_infos = []
             for occ in fp.occurrences:
-                matchable_files = matchable_files_by_hash.get(occ.graders_match_only_if_reported_on) if occ.graders_match_only_if_reported_on else None
+                matchable_files = (
+                    matchable_files_by_hash.get(occ.graders_match_only_if_reported_on)
+                    if occ.graders_match_only_if_reported_on
+                    else None
+                )
                 occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,

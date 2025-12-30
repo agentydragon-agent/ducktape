@@ -386,7 +386,7 @@ def main():
     src = Path(args.dump)
     base = Path(args.out_base or src.with_suffix("").name + ".converted")
 
-    from tana.workspace import Workspace
+    from tana.workspace import Workspace  # Workspace.export_tanapaste() imports this module
 
     workspace = Workspace.load(src)
 

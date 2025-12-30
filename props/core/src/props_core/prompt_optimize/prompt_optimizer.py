@@ -338,9 +338,7 @@ class PromptEvalServer(EnhancedFastMCP):
                     f"{_trace_advice_for_snapshot(SnapshotSlug(snapshot_slug))}"
                 ) from e
             except AgentDidNotSubmitError as e:
-                raise ToolError(
-                    f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id)}"
-                ) from e
+                raise ToolError(f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id)}") from e
 
             # Check status to provide specific error messages
             with get_session() as session:
@@ -392,8 +390,7 @@ class PromptEvalServer(EnhancedFastMCP):
                 ) from e
             except MaxTurnsExceededError as e:
                 raise ToolError(
-                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
-                    f"{_AGENT_STUCK_ADVICE}"
+                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n{_AGENT_STUCK_ADVICE}"
                 ) from e
 
             # Verify grader run succeeded
