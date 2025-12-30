@@ -36,8 +36,7 @@ pip.parse(
     python_version = "3.13",
     requirements_lock = "//:requirements_bazel.txt",
 )
-# Separate pip hub for homeassistant - pytest-homeassistant-custom-component
-# pulls in specific HA versions with pinned transitive deps
+# Separate pip hub for homeassistant - requires Python 3.13.2+
 pip.parse(
     hub_name = "pypi_homeassistant",
     python_version = "3.13",

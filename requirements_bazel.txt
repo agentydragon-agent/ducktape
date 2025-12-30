@@ -1085,7 +1085,7 @@ fastapi-sessions==0.3.2 \
     --hash=sha256:5159023fd548f8a9c198a966cf1086a73a43038cf3b9b79175fe33129f15e64c \
     --hash=sha256:b7f5642224b8f03661428e9fb45c9d96c4e61a9cdf963c9ba36ce8428629b0bc
     # via gatelet (gatelet/pyproject.toml)
-fastapi-users[sqlalchemy]==15.0.3 \
+fastapi-users==15.0.3 \
     --hash=sha256:94b24f8889b51ca3d8da92a88bced2bca2764cb1dd21c7d6d838890ff57b6472 \
     --hash=sha256:cea3da00ba1bfdd04ce61dcb4515a0914f19d9609d3ba68cf54367c876f380c3
     # via

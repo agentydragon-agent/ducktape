@@ -22,6 +22,7 @@ py_library(
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastapi_sessions",
         "@pypi//fastapi_users",
+        "@pypi//fastapi_users_db_sqlalchemy",
         "@pypi//geopy",
         "@pypi//google_api_python_client",
         "@pypi//google_auth",

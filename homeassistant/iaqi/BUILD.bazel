@@ -16,15 +16,12 @@ lock(
 )
 
 # Home Assistant custom component for Indoor Air Quality
-# Uses @pypi_homeassistant hub (separate from main @pypi due to pydantic 1.x vs 2.x)
 py_library(
     name = "indoor_aqi",
     srcs = glob(["custom_components/indoor_aqi/**/*.py"]),
     data = glob(["custom_components/indoor_aqi/**/*.json"]),
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi_homeassistant//homeassistant",
-    ],
+    deps = ["@pypi_homeassistant//homeassistant"],
 )
 
 py_test(

@@ -6,6 +6,8 @@ py_library(
     name = "gnome_terminal_profile_switcher",
     srcs = glob(["src/gnome_terminal_profile_switcher/**/*.py"]),
     imports = ["src"],
+    # Requires system libraries (libgirepository1.0-dev, libdbus-1-dev) - manual only
+    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//absl_py",
@@ -19,10 +21,12 @@ py_binary(
     name = "switch_gnome_terminal_profile",
     srcs = ["src/gnome_terminal_profile_switcher/__init__.py"],
     main = "src/gnome_terminal_profile_switcher/__init__.py",
+    tags = ["manual"],
     deps = [":gnome_terminal_profile_switcher"],
 )
 
 ruff_test(
     name = "ruff",
     srcs = [":gnome_terminal_profile_switcher"],
+    tags = ["manual"],
 )
