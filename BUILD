@@ -23,6 +23,7 @@ _PYPROJECT_SRCS = [
     "//editor_agent/runtime:pyproject.toml",
     "//ember:pyproject.toml",
     "//experimental/claude-history:pyproject.toml",
+    "//finance:pyproject.toml",
     "//experimental/cotrl:pyproject.toml",
     "//experimental/dbus_fast_example:pyproject.toml",
     "//gatelet:pyproject.toml",

@@ -4,7 +4,6 @@ load("@rules_python//python:python.bzl", "py_binary")
 py_library(
     name = "external_system",
     srcs = ["external_system.py"],
-    tags = ["manual"],
     deps = [
     ],
 )
@@ -12,7 +11,6 @@ py_library(
 py_library(
     name = "ubs_lib",
     srcs = ["ubs_lib.py"],
-    tags = ["manual"],
     deps = [
         ":external_system",
     ],
@@ -21,7 +19,6 @@ py_library(
 py_library(
     name = "ubs_credit_card_lib",
     srcs = ["ubs_credit_card_lib.py"],
-    tags = ["manual"],
     deps = [
         ":external_system",
     ],
@@ -30,22 +27,19 @@ py_library(
 py_library(
     name = "splitwise_lib",
     srcs = ["splitwise_lib.py"],
-    tags = ["manual"],
     deps = [
+        ":external_system",
         "@pypi//absl_py",
         "@pypi//fastapi",
         "@pypi//splitwise",
         "@pypi//uvicorn",
-        # TODO: get rid of xdg requirement
         "@pypi//xdg",
-        ":external_system",
     ],
 )
 
 py_binary(
     name = "reconcile",
     srcs = ["reconcile.py"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         ":splitwise_lib",

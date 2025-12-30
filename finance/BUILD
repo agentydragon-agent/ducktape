@@ -1,5 +1,7 @@
 load("@rules_python//python:python.bzl", "py_library")
 
+exports_files(["pyproject.toml"])
+
 py_library(
     name = "gnucash_util",
     srcs = ["gnucash_util.py"],
