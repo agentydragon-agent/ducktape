@@ -7,6 +7,7 @@ import importlib.util
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import traceback
@@ -70,18 +71,16 @@ def main() -> int:
     log.info("Setting up dev environment...")
 
     # Install nix and get the store bin path
-    nix_store_bin = nix_setup.install_nix(project_dir)
+    nix_store_bin = nix_setup.install_nix(project_dir, streaming.run_streaming)
 
     # Install tools
-    nix_setup.install_tools(nix_store_bin, TOOLS)
+    nix_setup.install_tools(nix_store_bin, TOOLS, streaming.run_streaming)
 
     # Allow .envrc files
-    if nix_setup.which("direnv"):
+    if shutil.which("direnv"):
         for envrc in project_dir.rglob(".envrc"):
             log.info("Allowing direnv: %s", envrc.parent)
-            streaming.run_streaming(
-                ["direnv", "allow", str(envrc.parent)], f"direnv allow {envrc.parent.name}", check=False
-            )
+            streaming.run_streaming(["direnv", "allow", str(envrc.parent)], check=False)
 
     # Persist environment
     nix_setup.persist_environment(os.environ.get("CLAUDE_ENV_FILE"), nix_store_bin, project_dir)
@@ -93,7 +92,7 @@ def main() -> int:
     log.info("=" * 60)
     log.info("Environment ready:")
     for tool in ["nix", *TOOLS, "bazel"]:
-        path = nix_setup.which(tool)
+        path = shutil.which(tool)
         if path:
             result = subprocess.run([tool, "--version"], capture_output=True, text=True, check=False)
             version = result.stdout.strip().split("\n")[0] if result.returncode == 0 else "?"

@@ -1,18 +1,17 @@
 """Nix installation and tool setup for Claude Code web sessions."""
 
+from __future__ import annotations
+
 import logging
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-# streaming module must be loaded first by the parent before importing this module
-from streaming import run_streaming
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 log = logging.getLogger(__name__)
-
-
-def which(cmd: str) -> str | None:
-    return shutil.which(cmd)
 
 
 def find_nix_bin() -> Path | None:
@@ -37,7 +36,7 @@ def setup_nix_path(nix_store_bin: Path) -> None:
         log.info("Added to PATH: %s", ", ".join(map(str, paths)))
 
 
-def install_nix(project_dir: Path) -> Path:
+def install_nix(project_dir: Path, run_streaming: Callable[..., int]) -> Path:
     """Install nix if not present. Returns the nix store bin path."""
     nix_conf = project_dir / ".claude" / "claude-code-web" / "nix.conf"
     if nix_conf.exists():
@@ -56,7 +55,6 @@ def install_nix(project_dir: Path) -> Path:
     # Download with progress bar
     run_streaming(
         ["curl", "--progress-bar", "-L", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
-        "downloading nix installer",
     )
 
     # The nix-env step fails in gVisor containers due to a PTY bug.
@@ -76,7 +74,6 @@ def install_nix(project_dir: Path) -> Path:
     # We use the store path directly instead of relying on profiles.
     run_streaming(
         ["sh", "-x", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
-        "running nix installer",
         check=False,  # Installer may fail on nix-env step, that's OK
     )
 
@@ -89,7 +86,7 @@ def install_nix(project_dir: Path) -> Path:
     return nix_store_bin
 
 
-def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
+def install_tools(nix_store_bin: Path, tools: list[str], run_streaming: Callable[..., int]) -> None:
     """Install tools via nix profile using the store path directly.
 
     Uses the nix binary from the store path, NOT from PATH or profile.
@@ -99,7 +96,7 @@ def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
     nix_cmd = nix_store_bin / "nix"
 
     # Filter out tools that are already available
-    missing_tools = [t for t in tools if not which(t)]
+    missing_tools = [t for t in tools if not shutil.which(t)]
     if not missing_tools:
         log.info("All tools already available: %s", ", ".join(tools))
         return
@@ -110,7 +107,7 @@ def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
     # -v: verbose, --print-build-logs: show build output
     cmd = [str(nix_cmd), "profile", "install", "-v", "--print-build-logs"] + [f"nixpkgs#{t}" for t in missing_tools]
 
-    run_streaming(cmd, f"installing {', '.join(missing_tools)}")
+    run_streaming(cmd)
 
     log.info("Tools installed successfully")
 
