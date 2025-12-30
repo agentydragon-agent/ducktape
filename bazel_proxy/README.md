@@ -108,6 +108,38 @@ Setup files (created by `bazel_proxy_setup.py`):
 - `cacerts.jks` - Java truststore with CA
 - `bazelrc` - Proxy startup options
 
+## Known Limitations
+
+### rules_python lock() doesn't inherit --action_env
+
+The `lock()` rule from `@rules_python//python/uv:lock.bzl` has a bug/limitation: it doesn't inherit `--action_env` values because it sets an explicit `env` attribute on `ctx.actions.run_shell()`.
+
+**Impact**: The `uv pip compile` sandbox action doesn't receive proxy environment variables set via `--action_env=HTTPS_PROXY=...`.
+
+**Workaround**: Pass proxy env vars directly to the `lock()` rule's `env` attribute:
+
+```starlark
+lock(
+    name = "requirements",
+    srcs = [...],
+    out = "requirements_bazel.txt",
+    env = {
+        "HTTPS_PROXY": "http://localhost:18081",
+        "SSL_CERT_FILE": "/path/to/combined_ca.pem",  # For TLS inspection
+    },
+)
+```
+
+**Root cause**: In `python/uv/private/lock.bzl`:
+```starlark
+ctx.actions.run_shell(
+    ...
+    env = ctx.attr.env,  # <-- Explicit env overrides --action_env inheritance
+)
+```
+
+This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.attr.env)` to merge `--action_env` with rule-specific env.
+
 ## Development
 
 ```bash
