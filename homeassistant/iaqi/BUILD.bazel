@@ -1,6 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 exports_files(["pyproject.toml"])
+
 # Home Assistant custom component for Indoor Air Quality
 py_library(
     name = "indoor_aqi",
