@@ -279,35 +279,30 @@ When running Bazel in Claude Code's web-based container environment, there are u
 
 1. **Extract and trust the TLS inspection CA**:
    ```bash
-   # Extract CA from proxy
-   echo | openssl s_client -proxy 127.0.0.1:PORT -connect example.com:443 -showcerts 2>/dev/null | \
-     awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' | tail -n+$(awk '/BEGIN/{n++}END{print (n-1)*21+1}') > /tmp/anthropic_ca.pem
+   # Extract CA from proxy (automated by session hook)
+   # Files stored in ~/.cache/bazel-proxy/
+   openssl s_client -proxy HOST:PORT -connect bcr.bazel.build:443 -showcerts | ...
+   # Creates ~/.cache/bazel-proxy/anthropic_ca.pem
 
    # Create custom truststore
-   cp /etc/ssl/certs/java/cacerts /tmp/custom_cacerts.jks
-   keytool -importcert -trustcacerts -alias anthropic-tls-inspection \
-     -file /tmp/anthropic_ca.pem -keystore /tmp/custom_cacerts.jks \
-     -storepass changeit -noprompt
+   # Creates ~/.cache/bazel-proxy/cacerts.jks
    ```
 
 2. **Start a local auth-forwarding proxy**:
-   ```python
-   # See /tmp/bazel_proxy.py for implementation
-   # Proxy listens on 127.0.0.1:18081, forwards to upstream with JWT auth
+   ```bash
+   # Proxy script at .claude/claude-code-web/bazel_proxy.py
+   # Reads https_proxy from environment
+   # Listens on 127.0.0.1:18081, forwards to upstream with JWT auth
+   # Log at ~/.cache/bazel-proxy/proxy.log
    ```
 
 3. **Run Bazel with proxy and truststore**:
    ```bash
-   export https_proxy=http://127.0.0.1:18081
-   bazel \
-     --host_jvm_args="-Dhttps.proxyHost=127.0.0.1" \
-     --host_jvm_args="-Dhttps.proxyPort=18081" \
-     --host_jvm_args="-Djavax.net.ssl.trustStore=/tmp/custom_cacerts.jks" \
-     --host_jvm_args="-Djavax.net.ssl.trustStorePassword=changeit" \
-     build //...
+   # Automatically configured in ~/.bazelrc by session hook
+   # Uses startup options for JVM proxy and truststore
    ```
 
-**TODO**: Create `.claude/hooks/session-start.sh` to automate this setup.
+**Status**: Automated via `.claude/session-start-direnv.py` hook.
 
 ### Non-Workspace Package Dependencies
 

@@ -22,11 +22,12 @@ from urllib.parse import urlparse
 LOG_FILE = Path("/tmp/session-start-direnv.log")
 TOOLS = ["direnv", "devenv", "uv"]
 
-# Bazel proxy configuration
+# Bazel proxy configuration - files stored in ~/.cache/bazel-proxy/
 BAZEL_PROXY_PORT = 18081
-BAZEL_PROXY_SCRIPT = Path("/tmp/bazel_proxy.py")
-BAZEL_CA_FILE = Path("/tmp/anthropic_ca.pem")
-BAZEL_TRUSTSTORE = Path("/tmp/custom_cacerts.jks")
+BAZEL_PROXY_DIR = Path.home() / ".cache" / "bazel-proxy"
+BAZEL_PROXY_LOG = BAZEL_PROXY_DIR / "proxy.log"
+BAZEL_CA_FILE = BAZEL_PROXY_DIR / "anthropic_ca.pem"
+BAZEL_TRUSTSTORE = BAZEL_PROXY_DIR / "cacerts.jks"
 BAZEL_USER_BAZELRC = Path.home() / ".bazelrc"
 
 logging.basicConfig(
@@ -299,6 +300,9 @@ def extract_proxy_ca() -> bool:
         log.warning("Could not parse proxy URL: %s", https_proxy)
         return False
 
+    # Ensure cache directory exists
+    BAZEL_PROXY_DIR.mkdir(parents=True, exist_ok=True)
+
     log.info("Extracting TLS inspection CA from proxy %s:%d", host, port)
 
     # Use openssl to connect through proxy and extract certificates
@@ -419,163 +423,9 @@ def create_java_truststore() -> bool:
     return True
 
 
-def write_bazel_proxy_script() -> None:
-    """Write the local proxy wrapper script."""
-    https_proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
-    if not https_proxy:
-        return
-
-    host, port, user, password = parse_proxy_url(https_proxy)
-
-    script = f'''#!/usr/bin/env python3
-"""Local proxy that adds authentication for the upstream proxy."""
-
-import base64
-import socket
-import threading
-import sys
-
-LISTEN_HOST = "127.0.0.1"
-LISTEN_PORT = {BAZEL_PROXY_PORT}
-UPSTREAM_HOST = "{host}"
-UPSTREAM_PORT = {port}
-UPSTREAM_USER = "{user or ''}"
-UPSTREAM_PASS = "{password or ''}"
-
-
-def make_auth_header() -> str:
-    """Create Proxy-Authorization header."""
-    if not UPSTREAM_USER:
-        return ""
-    creds = f"{{UPSTREAM_USER}}:{{UPSTREAM_PASS}}"
-    encoded = base64.b64encode(creds.encode()).decode()
-    return f"Proxy-Authorization: Basic {{encoded}}\\r\\n"
-
-
-def handle_connect(client_sock: socket.socket, target_host: str, target_port: int) -> None:
-    """Handle CONNECT request by tunneling through upstream proxy."""
-    try:
-        upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        upstream.connect((UPSTREAM_HOST, UPSTREAM_PORT))
-
-        # Send CONNECT with auth to upstream
-        connect_req = (
-            f"CONNECT {{target_host}}:{{target_port}} HTTP/1.1\\r\\n"
-            f"Host: {{target_host}}:{{target_port}}\\r\\n"
-            f"{{make_auth_header()}}"
-            f"\\r\\n"
-        )
-        upstream.sendall(connect_req.encode())
-
-        # Read response
-        response = b""
-        while b"\\r\\n\\r\\n" not in response:
-            chunk = upstream.recv(4096)
-            if not chunk:
-                break
-            response += chunk
-
-        # Check if connection established
-        if b"200" in response.split(b"\\r\\n")[0]:
-            client_sock.sendall(b"HTTP/1.1 200 Connection Established\\r\\n\\r\\n")
-
-            # Tunnel data bidirectionally
-            def forward(src: socket.socket, dst: socket.socket) -> None:
-                try:
-                    while True:
-                        data = src.recv(65536)
-                        if not data:
-                            break
-                        dst.sendall(data)
-                except:
-                    pass
-                finally:
-                    try:
-                        dst.shutdown(socket.SHUT_WR)
-                    except:
-                        pass
-
-            t1 = threading.Thread(target=forward, args=(client_sock, upstream))
-            t2 = threading.Thread(target=forward, args=(upstream, client_sock))
-            t1.start()
-            t2.start()
-            t1.join()
-            t2.join()
-        else:
-            client_sock.sendall(response)
-
-    except Exception as e:
-        print(f"Error: {{e}}", file=sys.stderr)
-    finally:
-        try:
-            upstream.close()
-        except:
-            pass
-        try:
-            client_sock.close()
-        except:
-            pass
-
-
-def handle_client(client_sock: socket.socket) -> None:
-    """Handle incoming client connection."""
-    try:
-        # Read the request
-        request = b""
-        while b"\\r\\n\\r\\n" not in request:
-            chunk = client_sock.recv(4096)
-            if not chunk:
-                return
-            request += chunk
-
-        first_line = request.split(b"\\r\\n")[0].decode()
-        parts = first_line.split()
-        if len(parts) < 3:
-            return
-
-        method = parts[0]
-        target = parts[1]
-
-        if method == "CONNECT":
-            # Parse host:port
-            if ":" in target:
-                host, port = target.rsplit(":", 1)
-                port = int(port)
-            else:
-                host = target
-                port = 443
-            handle_connect(client_sock, host, port)
-        else:
-            # Forward non-CONNECT requests (shouldn't happen for HTTPS)
-            client_sock.close()
-
-    except Exception as e:
-        print(f"Error handling client: {{e}}", file=sys.stderr)
-        try:
-            client_sock.close()
-        except:
-            pass
-
-
-def main() -> None:
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((LISTEN_HOST, LISTEN_PORT))
-    server.listen(10)
-    print(f"Bazel proxy listening on {{LISTEN_HOST}}:{{LISTEN_PORT}}")
-    print(f"Forwarding to {{UPSTREAM_HOST}}:{{UPSTREAM_PORT}}")
-
-    while True:
-        client_sock, addr = server.accept()
-        threading.Thread(target=handle_client, args=(client_sock,), daemon=True).start()
-
-
-if __name__ == "__main__":
-    main()
-'''
-    BAZEL_PROXY_SCRIPT.write_text(script)
-    BAZEL_PROXY_SCRIPT.chmod(0o755)
-    log.info("Wrote Bazel proxy script to %s", BAZEL_PROXY_SCRIPT)
+def get_bazel_proxy_script() -> Path:
+    """Get the path to the bazel proxy script (bundled with the hook)."""
+    return Path(__file__).parent / "claude-code-web" / "bazel_proxy.py"
 
 
 def start_bazel_proxy() -> bool:
@@ -583,8 +433,9 @@ def start_bazel_proxy() -> bool:
 
     Returns True if proxy was started successfully.
     """
-    if not BAZEL_PROXY_SCRIPT.exists():
-        log.warning("Bazel proxy script not found")
+    proxy_script = get_bazel_proxy_script()
+    if not proxy_script.exists():
+        log.warning("Bazel proxy script not found at %s", proxy_script)
         return False
 
     # Check if already running
@@ -595,17 +446,20 @@ def start_bazel_proxy() -> bool:
         if result == 0:
             log.info("Bazel proxy already running on port %d", BAZEL_PROXY_PORT)
             return True
-    except:
+    except Exception:
         pass
+
+    # Ensure cache directory exists
+    BAZEL_PROXY_DIR.mkdir(parents=True, exist_ok=True)
 
     # Kill any existing proxy
     subprocess.run(["pkill", "-f", "bazel_proxy.py"], capture_output=True)
 
-    # Start the proxy
+    # Start the proxy (reads https_proxy from environment)
     log.info("Starting Bazel proxy on port %d", BAZEL_PROXY_PORT)
     subprocess.Popen(
-        ["python3", str(BAZEL_PROXY_SCRIPT)],
-        stdout=open("/tmp/bazel_proxy.log", "w"),
+        ["python3", str(proxy_script), "--listen-port", str(BAZEL_PROXY_PORT)],
+        stdout=open(BAZEL_PROXY_LOG, "w"),
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
@@ -621,7 +475,7 @@ def start_bazel_proxy() -> bool:
             if result == 0:
                 log.info("Bazel proxy started successfully")
                 return True
-        except:
+        except Exception:
             pass
 
     log.warning("Failed to start Bazel proxy")
@@ -677,8 +531,7 @@ def setup_bazel_proxy() -> None:
         log.warning("Could not create Java truststore")
         return
 
-    # Step 3: Write and start the local proxy wrapper
-    write_bazel_proxy_script()
+    # Step 3: Start the local proxy wrapper
     if not start_bazel_proxy():
         log.warning("Could not start Bazel proxy")
         return

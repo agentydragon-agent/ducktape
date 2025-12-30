@@ -123,7 +123,7 @@ Bazel Central Registry (BCR). The hook now automatically sets up a workaround:
 The hook automatically:
 
 1. **Extracts the TLS inspection CA** from the proxy via openssl
-2. **Creates a Java truststore** with the CA at `/tmp/custom_cacerts.jks`
+2. **Creates a Java truststore** with the CA
 3. **Starts a local proxy wrapper** at `127.0.0.1:18081` that adds auth headers
 4. **Writes ~/.bazelrc** with JVM properties for proxy and truststore
 
@@ -138,15 +138,17 @@ curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -
 bazel info
 
 # Check proxy log
-cat /tmp/bazel_proxy.log
+cat ~/.cache/bazel-proxy/proxy.log
 ```
 
-### Files Created
+### Files
 
-- `/tmp/anthropic_ca.pem` - Extracted TLS inspection CA
-- `/tmp/custom_cacerts.jks` - Java truststore with CA
-- `/tmp/bazel_proxy.py` - Local proxy wrapper script
-- `/tmp/bazel_proxy.log` - Proxy output log
+All proxy-related files are stored in `~/.cache/bazel-proxy/`:
+
+- `~/.cache/bazel-proxy/anthropic_ca.pem` - Extracted TLS inspection CA
+- `~/.cache/bazel-proxy/cacerts.jks` - Java truststore with CA
+- `~/.cache/bazel-proxy/proxy.log` - Proxy output log
+- `.claude/claude-code-web/bazel_proxy.py` - Proxy script (checked in)
 - `~/.bazelrc` - Bazel configuration with proxy settings
 
 ## Non-Goals
