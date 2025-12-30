@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from ..habitify_client import HabitifyClient
-from ..types import HabitStatus
+from habitify_mcp_server.habitify_client import HabitifyClient
+from habitify_mcp_server.types import HabitStatus
 
 
 @pytest.fixture

@@ -26,6 +26,7 @@ py_binary(
 py_test(
     name = "test_habitify",
     srcs = glob(["habitify_mcp_server/tests/**/*.py"]),
+    imports = ["."],
     main = "habitify_mcp_server/tests/conftest.py",
     deps = [
         ":habitify_mcp_server",

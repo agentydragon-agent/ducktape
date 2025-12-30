@@ -7,8 +7,8 @@ from pathlib import Path
 import pygit2
 import pytest
 
-from ..git_helpers import add_and_commit, worktree_exists
-from ..test_utils import wait_until
+from tests.git_helpers import add_and_commit, worktree_exists
+from tests.test_utils import wait_until
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
 

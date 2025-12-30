@@ -11,7 +11,7 @@ from wt.server.github_client import GitHubInterface
 from wt.server.worktree_service import WorktreeService
 from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusResponse
 
-from .test_data import MockBehaviors
+from tests.test_data import MockBehaviors
 
 
 class MockFactory:

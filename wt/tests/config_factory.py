@@ -9,7 +9,7 @@ import yaml
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
 
-from .test_data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
+from tests.test_data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
 
 
 class ConfigFactory:

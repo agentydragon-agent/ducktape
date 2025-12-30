@@ -3,7 +3,7 @@ import os
 import pygit2
 import pytest
 
-from ..git_helpers import add_worktree
+from tests.git_helpers import add_worktree
 
 pytestmark = pytest.mark.timeout(10)
 

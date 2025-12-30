@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from ..conftest import kill_daemon_at_wt_dir
+from tests.conftest import kill_daemon_at_wt_dir
 
 
 @pytest.fixture

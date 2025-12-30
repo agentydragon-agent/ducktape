@@ -11,8 +11,8 @@ from hamcrest import all_of, assert_that, greater_than, has_length, has_properti
 import httpx
 import pytest
 
-from ..habitify_client import HabitifyError
-from ..types import Area, Habit, HabitStatus, Status
+from habitify_mcp_server.habitify_client import HabitifyError
+from habitify_mcp_server.types import Area, Habit, HabitStatus, Status
 
 
 async def test_get_habits(client, mock_async_response, patch_client_method):

@@ -16,7 +16,7 @@ import pytest
 
 from wt.shared.fixtures import PRFixtureEntry
 
-from ..test_utils import wait_until
+from tests.test_utils import wait_until
 
 # Global conftest disables gh token via get_github_token
 

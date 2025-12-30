@@ -1,7 +1,7 @@
 from datetime import timedelta
 from pathlib import Path
 
-from ..git_helpers import add_and_commit
+from tests.git_helpers import add_and_commit
 
 
 def test_copy_dirty_state_cli(wt_cli, real_temp_repo):

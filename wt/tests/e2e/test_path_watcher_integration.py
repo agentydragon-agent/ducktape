@@ -7,9 +7,9 @@ from datetime import timedelta
 
 import pytest
 
-from ..git_helpers import worktree_exists
-from ..test_data import WATCHER_DEBOUNCE_SECS
-from ..test_utils import wait_until
+from tests.git_helpers import worktree_exists
+from tests.test_data import WATCHER_DEBOUNCE_SECS
+from tests.test_utils import wait_until
 
 
 def _status(wt_cli) -> str:

@@ -41,6 +41,7 @@ py_binary(
 py_test(
     name = "test_wt",
     srcs = glob(["tests/**/*.py"]),
+    imports = ["."],
     main = "tests/conftest.py",
     deps = [
         ":wt",

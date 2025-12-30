@@ -17,7 +17,7 @@ from .types import (
     Status,
     StatusResult,
 )
-from .utils import with_client
+from .utils.decorators import with_client
 from .utils.error_utils import create_error_response, create_validation_error
 from .utils.habit_resolver import resolve_habit
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pygit2
 
-from .test_data import TestData
+from tests.test_data import TestData
 
 
 class GitRepoFactory:

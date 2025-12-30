@@ -26,11 +26,11 @@ from wt.shared.fixtures import write_pr_fixtures_file
 from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusItem, StatusResponse
 from wt.shell import install
 
-from .config_factory import ConfigFactory
-from .mock_factory import MockFactory, ServiceBuilder
-from .repo_factory import GitRepoFactory
-from .test_data import TestData
-from .test_utils import run_cli_command, wait_until
+from tests.config_factory import ConfigFactory
+from tests.mock_factory import MockFactory, ServiceBuilder
+from tests.repo_factory import GitRepoFactory
+from tests.test_data import TestData
+from tests.test_utils import run_cli_command, wait_until
 
 
 @pytest.fixture(scope="session", autouse=True)
