@@ -9,9 +9,6 @@ dependencies = [
     "jinja2>=3.0",
 ]
 
-[tool.uv.sources]
-mcp-utils = { workspace = true }
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

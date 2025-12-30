@@ -70,10 +70,3 @@ markers = [
     "requires_docker: tests that require Docker to run",
     "live_llm: tests that require a live LLM API",
 ]
-
-[tool.uv.sources]
-cli-util = { workspace = true }
-net-util = { workspace = true }
-mcp-infra = { workspace = true }
-agent-core = { workspace = true }
-openai-utils = { workspace = true }

@@ -60,9 +60,3 @@ markers = [
     "macos: Tests that only run on macOS",
     "shell: Tests that use shell execution",
 ]
-
-[tool.uv.sources]
-openai-utils = { workspace = true }
-agent-core = { workspace = true }
-cli-util = { workspace = true }
-mcp-utils = { workspace = true }

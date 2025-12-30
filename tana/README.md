@@ -7,15 +7,12 @@ parsers/renderers under the `tana.export` namespace.
 ## Getting Started
 
 ```bash
-cd tana
-direnv allow        # loads devenv, creates a uv-managed venv
-uv sync --extra dev # install runtime + dev dependencies
+# Build and run with Bazel
+bazel build //tana:tana
+bazel run //tana:tana-export-convert -- --help
 
-# Run the main conversion CLI
-uv run tana-export-convert --help
-
-# Execute tests
-uv run pytest
+# Run tests
+bazel test //tana:test_tana
 ```
 
 Key layout (`src/tana/`):

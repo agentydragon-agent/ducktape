@@ -52,12 +52,9 @@ If you can't use devenv, you need to:
    export PGPASSWORD=your_password
    export PGDATABASE=postgres
    ```
-3. Create virtual environment and install dependencies:
+3. Run tests with Bazel:
    ```bash
-   uv venv --python=python3.12 .venv
-   source .venv/bin/activate
-   uv pip install -e ".[dev,orchestration]"
-   pytest
+   bazel test //props/core:test_props_core
    ```
 
 ### Test Organization

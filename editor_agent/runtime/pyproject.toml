@@ -9,10 +9,6 @@ dependencies = [
     "typer>=0.9",
 ]
 
-[tool.uv.sources]
-agent-pkg-runtime = { workspace = true }
-cli-util = { workspace = true }
-
 [project.scripts]
 editor-submit = "editor_agent_runtime.cli:main"
 

@@ -13,7 +13,7 @@ COPY agent_pkg_runtime /build/agent_pkg_runtime
 COPY cli_util /build/cli_util
 COPY editor_agent/runtime /build/editor_agent_runtime
 
-# Install in dependency order: pip doesn't understand [tool.uv.sources] workspace refs
+# Install in dependency order
 RUN pip install --no-cache-dir /build/mcp_utils && \
     pip install --no-cache-dir /build/agent_pkg_runtime && \
     pip install --no-cache-dir /build/cli_util && \

@@ -3,16 +3,13 @@
 Focused instructions for the Tana export toolkit that now lives as its own project.
 
 ## Environment
-- Requirements: direnv + devenv (see `.envrc`) and Python 3.12+ managed by uv.
-- First-time setup:
-  - `cd tana`
-  - `direnv allow`
-  - `uv sync --extra dev`
-- Standard commands (inside the project directory):
-  - `uv run pytest`
-  - `uv run ruff check .`
-  - `uv run mypy`
-  - Run the CLI: `uv run tana-export-convert --help`
+- Requirements: Bazel (via bazelisk) and Python 3.12+
+- Build and test with Bazel:
+  ```bash
+  bazel build //tana:tana
+  bazel test //tana:test_tana
+  bazel run //tana:tana-export-convert -- --help
+  ```
 
 ## Package Layout (`src/tana/`)
 - `domain/` — immutable data models (`Props`, `BaseNode`, `TupleNode`, …) and shared constants/types.
@@ -24,7 +21,7 @@ Focused instructions for the Tana export toolkit that now lives as its own proje
 
 ## Tests & Fixtures
 - Tests live under `tests/`; existing suite focuses on conversion golden files.
-  - `uv run pytest` (or `pytest` once direnv activates the env).
+  - Run with: `bazel test //tana:test_tana`
   - Golden fixtures stored in `tests/tana/testdata/`.
 
 ## Gotchas
