@@ -18,10 +18,10 @@ import base64
 import fcntl
 import logging
 import os
+from pathlib import Path
 import signal
 import sys
 import time
-from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
 DEFAULT_STATE_DIR = Path.home() / ".cache" / "bazel-proxy"

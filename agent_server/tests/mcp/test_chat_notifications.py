@@ -1,10 +1,9 @@
 import asyncio
 
+from agent_server.mcp.chat.server import attach_chat_servers
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
-
-from agent_server.mcp.chat.server import attach_chat_servers
 
 
 class _Capture(MessageHandler):

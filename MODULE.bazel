@@ -17,28 +17,20 @@ python.toolchain(
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 
-# Proxy env vars for pip - uses our local bazel_proxy on localhost:18081
-# The proxy is started by .claude/hooks/session-start.sh and forwards to
-# Claude Code's upstream proxy with JWT auth
-_PIP_PROXY_ENV = {
-    "http_proxy": "http://localhost:18081",
-    "https_proxy": "http://localhost:18081",
-    "HTTP_PROXY": "http://localhost:18081",
-    "HTTPS_PROXY": "http://localhost:18081",
-}
+# Proxy env for pip downloads is injected via .bazelrc --action_env by the
+# session-start hook on Claude Code web. No hardcoded proxy here - this file
+# should work both on local dev machines and on CC web.
 
 pip.parse(
     hub_name = "pypi",
     python_version = "3.12",
     requirements_lock = "//:requirements_bazel.txt",
-    environment = _PIP_PROXY_ENV,
 )
 # Separate pip hub for homeassistant - has pydantic 1.x, incompatible with main repo
 pip.parse(
     hub_name = "pypi_homeassistant",
     python_version = "3.12",
     requirements_lock = "//homeassistant/iaqi:requirements_lock.txt",
-    environment = _PIP_PROXY_ENV,
 )
 use_repo(pip, "pypi", "pypi_homeassistant")
 

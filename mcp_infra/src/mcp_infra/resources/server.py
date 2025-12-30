@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Iterator, Sequence
 from enum import StrEnum
+import logging
 from typing import TYPE_CHECKING, Annotated, Final, Literal, cast
 
 from fastmcp.exceptions import ToolError
@@ -11,7 +11,6 @@ from fastmcp.resources import FunctionResource
 from fastmcp.tools import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_infra.compositor.mount import MountEvent
@@ -22,6 +21,7 @@ from mcp_infra.resources.types import ListSubscriptionSummary, ResourceEntry, Su
 from mcp_infra.snapshots import RunningServerEntry
 from mcp_infra.types import SimpleOk
 from mcp_infra.urls import ANY_URL
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:
     from mcp_infra.compositor.server import Compositor

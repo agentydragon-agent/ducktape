@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from io import StringIO
 
+from mcp_infra.display.rich_display import MaxHeight
 from rich.console import Console
 from rich.text import Text
 from syrupy.assertion import SnapshotAssertion
-
-from mcp_infra.display.rich_display import MaxHeight
 
 
 def test_max_height_with_wrapping():

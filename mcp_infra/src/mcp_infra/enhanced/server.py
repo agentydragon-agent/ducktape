@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack
+import logging
 from typing import Any
 
 import anyio

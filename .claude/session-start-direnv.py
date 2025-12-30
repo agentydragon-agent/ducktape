@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import importlib.util
 import json
 import logging
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 import traceback
-from datetime import datetime
-from pathlib import Path
 
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
@@ -70,20 +70,22 @@ def main() -> int:
 
     log.info("Setting up dev environment...")
 
-    # Install nix and get the store bin path
-    nix_store_bin = nix_setup.install_nix(project_dir, streaming.run_streaming)
-
-    # Install tools
-    nix_setup.install_tools(nix_store_bin, TOOLS, streaming.run_streaming)
-
-    # Allow .envrc files
-    if shutil.which("direnv"):
-        for envrc in project_dir.rglob(".envrc"):
-            log.info("Allowing direnv: %s", envrc.parent)
-            streaming.run_streaming(["direnv", "allow", str(envrc.parent)], check=False)
-
-    # Persist environment
-    nix_setup.persist_environment(os.environ.get("CLAUDE_ENV_FILE"), nix_store_bin, project_dir)
+    # NOTE: direnv+devenv installation temporarily disabled - takes too long in session-start hooks
+    # and blocks Bazel proxy setup. Re-enable when nix profile install is faster or cached.
+    # # Install nix and get the store bin path
+    # nix_store_bin = nix_setup.install_nix(project_dir, streaming.run_streaming)
+    #
+    # # Install tools
+    # nix_setup.install_tools(nix_store_bin, TOOLS, streaming.run_streaming)
+    #
+    # # Allow .envrc files
+    # if shutil.which("direnv"):
+    #     for envrc in project_dir.rglob(".envrc"):
+    #         log.info("Allowing direnv: %s", envrc.parent)
+    #         streaming.run_streaming(["direnv", "allow", str(envrc.parent)], check=False)
+    #
+    # # Persist environment
+    # nix_setup.persist_environment(os.environ.get("CLAUDE_ENV_FILE"), nix_store_bin, project_dir)
 
     # Set up Bazel proxy for TLS-inspecting proxy
     bazel_proxy.setup_bazel_proxy()

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 from pathlib import Path
+import shutil
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

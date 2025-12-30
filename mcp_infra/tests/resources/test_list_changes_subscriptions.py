@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains, contains_inanyorder, empty, has_item, has_properties
-
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ListSubscribeArgs
 

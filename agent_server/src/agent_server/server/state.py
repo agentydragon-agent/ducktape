@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
-
-from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field
+import uuid
 
 from agent_server.server.protocol import ToolCall
+from mcp import types as mcp_types
+from pydantic import BaseModel, ConfigDict, Field
 
 # ---- Display items (normalized, UI-friendly) ----
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import os
+import platform
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP

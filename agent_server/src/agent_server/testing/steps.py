@@ -17,6 +17,7 @@ from agent_server.mcp.ui.server import SendMessageInput
 
 if TYPE_CHECKING:
     from agent_core.testing import ResponsesFactory
+
     from openai_utils.model import ResponsesRequest, ResponsesResult
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from hamcrest import assert_that, empty, has_item, has_properties
-
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesSubscribeArgs
 

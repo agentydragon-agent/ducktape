@@ -59,7 +59,7 @@ def _extract_proxy_ca() -> bool:
 
     result = subprocess.run(
         ["openssl", "s_client", "-proxy", f"localhost:{BAZEL_PROXY_PORT}", "-connect", "bcr.bazel.build:443", "-showcerts"],
-        input="",
+        check=False, input="",
         capture_output=True,
         text=True,
         timeout=30,
@@ -74,7 +74,7 @@ def _extract_proxy_ca() -> bool:
     for i, cert in enumerate(certs):
         verify_result = subprocess.run(
             ["openssl", "x509", "-noout", "-subject"],
-            input=cert,
+            check=False, input=cert,
             capture_output=True,
             text=True,
         )
@@ -126,7 +126,7 @@ def _create_java_truststore() -> bool:
             "-storepass", "changeit",
             "-noprompt",
         ],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
     )
 
@@ -181,7 +181,7 @@ def _start_proxy_server() -> bool:
     # -d: daemonize, -r: replace any existing instance
     result = subprocess.run(
         ["python3", str(proxy_script), "-d", "-r", "--listen-port", str(BAZEL_PROXY_PORT)],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
     )
     if result.returncode != 0:

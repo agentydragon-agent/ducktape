@@ -3,34 +3,32 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
+import logging
 from typing import Any, Final, cast
+import uuid
 
-import aiodocker
-import pydantic_core
 from agent_core.handler import AbortTurnDecision, ContinueDecision
+import aiodocker
 from fastmcp.client import Client
 from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import ServerSession
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import FunctionTool, ToolResult
 from jinja2 import Template
-from mcp import McpError
-from mcp import types as mtypes
+from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 from mcp_infra.constants import RUNTIME_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.types import SimpleOk
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import AnyUrl, BaseModel
+import pydantic_core
 
 from agent_server.approvals import ApprovalRequest, ApprovalToolCall
 from agent_server.models.proposal_status import ProposalStatus
@@ -39,6 +37,7 @@ from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, 
 from agent_server.policy_eval.container import ContainerPolicyEvaluator
 from agent_server.policy_eval.runner import run_policy_source
 from agent_server.types import AgentID
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 logger = logging.getLogger(__name__)
 

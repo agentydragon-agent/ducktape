@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
 from agent_core.testing import MakeCall
-from mcp_infra.constants import POLICY_PROPOSER_MOUNT_PREFIX
-
 from agent_server.mcp.approval_policy.engine import CreateProposalArgs
 from agent_server.testing.steps import UiEndTurnCall
+from mcp_infra.constants import POLICY_PROPOSER_MOUNT_PREFIX
+import pytest
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")

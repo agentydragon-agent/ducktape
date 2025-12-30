@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
 from agent_core.agent import Agent, AgentResult
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
@@ -10,6 +9,8 @@ from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
+import pytest
+
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 

@@ -3,11 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from agent_server.server.state import ExecContent, JsonContent
 from hamcrest import assert_that, has_item, has_items, has_length, has_properties, instance_of, is_not
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
-
-from agent_server.server.state import ExecContent, JsonContent
 
 
 def is_user_message(text: str | None = None):

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import logging
 import os
+from pathlib import Path
 import sys
 import traceback
-from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiodocker

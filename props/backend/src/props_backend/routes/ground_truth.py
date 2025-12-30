@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import io
-import tarfile
 from collections import Counter, defaultdict
 from datetime import datetime
+import io
+import tarfile
 
 from fastapi import APIRouter, HTTPException
 from props_core.db.models import (

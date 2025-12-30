@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import functools
 import inspect
 import json
 import logging
-from collections.abc import Callable
 from types import UnionType
 from typing import Annotated, Any, TypeVar, Union, cast, get_args, get_origin, get_type_hints
 
@@ -14,9 +14,10 @@ from fastmcp.server.context import Context
 from fastmcp.tools.tool import FunctionTool
 from mcp import types as mcp_types
 from mcp.types import ToolAnnotations
-from openai_utils.json_schema import openai_json_schema
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_core import PydanticUndefined
+
+from openai_utils.json_schema import openai_json_schema
 
 logger = logging.getLogger(__name__)
 

@@ -14,10 +14,10 @@ Features (MVP):
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
+import logging
 from typing import Any, cast
 
 from aiohttp import ClientSession
@@ -29,10 +29,10 @@ from mautrix.client import Client as MautrixClient
 from mautrix.client.state_store import FileStateStore, StateStore
 from mautrix.types import EventType, MessageEvent, RoomAlias, RoomID, TextMessageEventContent, UserID
 from mcp_infra.enhanced import EnhancedFastMCP
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import BaseModel, Field
 
 from agent_server.server.bus import ServerBus, UiEndTurn
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Matrix SDK uses millisecond timeouts for sync; keep constants explicit
 SYNC_PRIME_TIMEOUT_MS = 1_000

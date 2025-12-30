@@ -84,7 +84,7 @@ split-on-trailing-comma = false
 
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
-"gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
+"gatelet/tasks.py" = ["INP001", "PT028"]  # Task script doesn't need __init__.py; pytest param default for CLI
 "rspcache/src/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
@@ -94,5 +94,37 @@ split-on-trailing-comma = false
 "py_detectors/tests/fixtures/**" = ["ALL"]
 "adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]
-# Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
+
+# Late imports to avoid circular dependencies (per STYLE.md)
 "props/src/props/db/sync/sync.py" = ["PLC0415"]
+"tana/src/tana/domain/nodes.py" = ["PLC0415"]  # tana.query.core cycle
+"tana/src/tana/export/convert.py" = ["PLC0415"]  # tana.workspace cycle
+"tana/src/tana/workspace.py" = ["PLC0415"]  # tana.export.convert cycle
+"props/core/src/props_core/grader/daemon_manager.py" = ["PLC0415"]  # db models import
+
+# Late imports in test fixtures and conftest
+"**/conftest.py" = ["PLC0415"]  # test fixtures often need lazy imports
+"**/tests/*.py" = ["PLC0415"]  # tests sometimes need test-only imports inside functions
+
+# Late imports in CLI entrypoints (argparse, etc. imported in main())
+"ansible/roles/*/files/*.py" = ["PLC0415"]
+"props/backend/src/props_backend/cli.py" = ["PLC0415"]
+"props/backend/src/props_backend/app.py" = ["PLC0415"]  # conditional imports based on config
+
+# Bazel proxy: daemonization requires unclosed file descriptors, global state for singleton
+"bazel_proxy/src/bazel_proxy/proxy.py" = ["PLW0603", "SIM115", "PTH123"]
+
+# Claude Code web hook directory - not a valid Python package name
+".claude/claude-code-web/**" = ["N999", "PLW1510"]  # subprocess.run check= not required for infra scripts
+
+# Trilium scripts are standalone utilities
+"trilium/*.py" = ["PLC0415"]
+
+# Late imports for optional/conditional dependencies
+"llm/ducktape_llm_common/**/*.py" = ["PLC0415"]  # optional dbus, traceback in error handlers, etc.
+"llm/mcp/habitify/**/*.py" = ["PLC0415"]  # test fixtures
+"mcp_infra/tests/**/*.py" = ["PLC0415"]  # docker import with skip
+
+# Routes may use local late imports for helper functions
+"props/backend/src/props_backend/routes/*.py" = ["PLC0415"]
+

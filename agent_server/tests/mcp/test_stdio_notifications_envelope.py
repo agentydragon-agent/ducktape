@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import sys
 
+from agent_server.notifications.handler import format_notifications_message
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.notifications import parse_system_notification_payload
-
-from agent_server.notifications.handler import format_notifications_message
 
 
 async def test_stdio_child_notifications_envelope(compositor):

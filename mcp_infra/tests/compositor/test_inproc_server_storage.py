@@ -8,7 +8,6 @@ server state without going through the MCP client protocol.
 from __future__ import annotations
 
 from fastmcp.server import FastMCP
-
 from mcp_infra.compositor.mount import Mount
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.prefix import MCPMountPrefix

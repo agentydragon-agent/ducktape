@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from hamcrest import all_of, assert_that, has_item, has_properties, instance_of
-
 from agent_server.server.state import AssistantMarkdownItem, DisplayItem, EndTurnItem, UiState, UserMessageItem
+from hamcrest import all_of, assert_that, has_item, has_properties, instance_of
 
 
 def item_user_message(text: str | None = None):

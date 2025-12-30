@@ -1,11 +1,11 @@
 """Test end_turn UI integration - ensures tool doesn't double-emit and renders as thick HR."""
 
-from hamcrest import assert_that, has_length, instance_of
-
 from agent_server.server.bus import ServerBus, UiEndTurn
 from agent_server.server.protocol import UiEndTurnEvt
 from agent_server.server.reducer import Reducer
 from agent_server.server.state import new_state
+from hamcrest import assert_that, has_length, instance_of
+
 from tests.ui.typed_asserts import assert_empty, assert_items_count, is_end_turn_item, is_tool_item
 
 

@@ -24,6 +24,7 @@ py_binary(
 py_test(
     name = "test_mcp_starter",
     srcs = ["test_server.py"],
+    main = "test_server.py",
     deps = [
         ":adgn_mcp_starter",
         "@pypi//pytest",

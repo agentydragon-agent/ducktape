@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 import os
+from pathlib import Path
 import select
 import subprocess
-from datetime import datetime
-from pathlib import Path
 
 log = logging.getLogger(__name__)
 

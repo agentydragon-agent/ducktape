@@ -1,14 +1,6 @@
 import asyncio
 from typing import Any
 
-import pytest
-from fastmcp.client import Client
-from hamcrest import anything, assert_that, empty, has_properties
-from hamcrest.core.matcher import Matcher
-from mcp_infra.stubs.typed_stubs import TypedClient
-from mcp_infra.testing.fixtures import ResourceUpdatedCapture
-from mcp_utils import extract_single_text_content
-
 from agent_server.mcp.chat.server import (
     ChatAuthor,
     ChatMessage,
@@ -19,6 +11,14 @@ from agent_server.mcp.chat.server import (
     ReadPendingInput,
 )
 from agent_server.testing.chat_stubs import ChatServerStub
+from fastmcp.client import Client
+from hamcrest import anything, assert_that, empty, has_properties
+from hamcrest.core.matcher import Matcher
+from mcp_infra.stubs.typed_stubs import TypedClient
+from mcp_infra.testing.fixtures import ResourceUpdatedCapture
+import pytest
+
+from mcp_utils import extract_single_text_content
 
 
 @pytest.fixture

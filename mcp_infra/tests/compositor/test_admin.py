@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import pytest
 from fastmcp.client import Client
-
 from mcp_infra.compositor.admin import CompositorAdminServer, convert_mcp_server_types_to_spec
 from mcp_infra.constants import COMPOSITOR_META_MOUNT_PREFIX
+import pytest
 
 
 @pytest.fixture

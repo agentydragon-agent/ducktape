@@ -44,7 +44,7 @@ def send_desktop_notification(
         notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
 
         # Send notification
-        notification_id = notify_iface.Notify(
+        return notify_iface.Notify(
             "Claude Linter",  # app_name
             replaces_id,  # replaces_id (0 = new notification)
             "",  # app_icon (empty = default)
@@ -56,8 +56,6 @@ def send_desktop_notification(
             },  # hints
             -1,  # expire_timeout (-1 = default)
         )
-
-        return notification_id
     except Exception as e:
         logger.debug(f"Failed to send notification: {e}")
         return 0

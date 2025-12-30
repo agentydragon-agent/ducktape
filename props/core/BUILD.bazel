@@ -61,8 +61,5 @@ py_test(
         "@pypi//pytest_mock",
         "@pypi//pytest_timeout",
         "@pypi//pytest_xdist",
-        "@pypi//types_docker",
-        "@pypi//types_jinja2",
-        "@pypi//types_pyyaml",
     ],
 )

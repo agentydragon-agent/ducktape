@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 from urllib.parse import urlparse
 
-import pytest
-
 import bazel_proxy.proxy as proxy_module
-from bazel_proxy.proxy import (
-    kill_existing,
-    load_credentials,
-    make_auth_header,
-    parse_proxy_url,
-    write_credentials,
-)
+from bazel_proxy.proxy import kill_existing, load_credentials, make_auth_header, parse_proxy_url, write_credentials
+import pytest
 
 
 class TestParseProxyUrl:

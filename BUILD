@@ -43,7 +43,8 @@ _PYPROJECT_SRCS = [
     "//props/backend:pyproject.toml",
     "//props/core:pyproject.toml",
     "//py_detectors:pyproject.toml",
-    "//:pyproject.toml",
+    # NOTE: Root pyproject.toml excluded - contains only tool configs (ruff, etc.),
+    # not Python package deps. Including it causes setuptools flat-layout error.
     "//rspcache:pyproject.toml",
     "//sandboxed_jupyter:pyproject.toml",
     "//tana:pyproject.toml",

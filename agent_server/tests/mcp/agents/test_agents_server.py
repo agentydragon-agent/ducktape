@@ -7,13 +7,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
+from agent_server.mcp_bridge.agents import AgentInfo, AgentsManagementServer, PresetInfo
+from agent_server.persist import AgentMetadata
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 from mcp_infra.resource_utils import read_text_json_typed
-
-from agent_server.mcp_bridge.agents import AgentInfo, AgentsManagementServer, PresetInfo
-from agent_server.persist import AgentMetadata
+import pytest
 
 # Note: mock_registry fixture comes from tests/mcp/conftest.py
 

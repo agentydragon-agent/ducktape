@@ -6,9 +6,9 @@ Per-package conftest.py files can extend this with package-specific fixtures.
 
 from __future__ import annotations
 
+from contextlib import suppress
 import os
 import platform
-from contextlib import suppress
 
 import pytest
 
@@ -43,9 +43,8 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         pytest.skip("macOS-only test")
 
     # sandbox-exec requires macOS
-    if item.get_closest_marker("requires_sandbox_exec") is not None:
-        if platform.system() != "Darwin":
-            pytest.skip("sandbox-exec requires macOS")
+    if item.get_closest_marker("requires_sandbox_exec") is not None and platform.system() != "Darwin":
+        pytest.skip("sandbox-exec requires macOS")
 
     # Docker availability check
     if item.get_closest_marker("requires_docker") is not None:
@@ -60,13 +59,11 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
             pytest.skip(f"Docker not available: {exc}")
 
     # LLM API key requirements
-    if item.get_closest_marker("live_openai_api") is not None:
-        if not os.getenv("OPENAI_API_KEY"):
-            pytest.skip("OPENAI_API_KEY not set")
+    if item.get_closest_marker("live_openai_api") is not None and not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
 
-    if item.get_closest_marker("live_anthropic_api") is not None:
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            pytest.skip("ANTHROPIC_API_KEY not set")
+    if item.get_closest_marker("live_anthropic_api") is not None and not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable
 import json
-import os
 from typing import Any
 
 from fastmcp.exceptions import ToolError
