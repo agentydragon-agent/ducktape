@@ -1,0 +1,2 @@
+# Git hooks - install with: ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+exports_files(["pre-commit"])

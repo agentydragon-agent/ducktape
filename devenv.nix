@@ -3,32 +3,14 @@
   # stdenv.cc.cc.lib provides libstdc++.so.6 needed by numpy, etc.
   packages = [
     pkgs.git
+    pkgs.bazelisk
     pkgs.stdenv.cc.cc.lib
     pkgs.zlib
-    pkgs.ninja
-    pkgs.pkg-config
-    pkgs.dbus
-    pkgs.glib
-    pkgs.gobject-introspection
-    pkgs.cairo
   ];
 
-  # Python with uv for workspace-wide venv management
-  languages.python = {
-    enable = true;
-    package = pkgs.python312;
-    uv = {
-      enable = true;
-      sync.enable = true;
-      # Don't use allExtras - it pulls in adgn[gnome] which requires dbus-python
-      # and complex system dependencies. Specify needed extras explicitly.
-      sync.extras = ["dev"];
-    };
-  };
-
   enterShell = ''
-    # Add native library paths for Python C extensions (numpy, etc.)
+    # Add native library paths for C extensions
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    python --version
+    echo "Bazel dev environment ready. Use 'bazel build //...' to build."
   '';
 }

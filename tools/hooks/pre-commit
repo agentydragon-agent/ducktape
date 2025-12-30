@@ -1,0 +1,51 @@
+#!/bin/bash
+# Git pre-commit hook using Aspect CLI for linting
+# Install with: ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+set -e
+
+# Get list of staged Python files
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+
+if [ -z "$STAGED_PY" ]; then
+    echo "No Python files staged, skipping lint."
+    exit 0
+fi
+
+echo "Running Bazel lint on staged Python files..."
+
+# Convert file paths to Bazel targets
+# This finds the nearest BUILD file and uses the package
+TARGETS=""
+for file in $STAGED_PY; do
+    dir=$(dirname "$file")
+    # Find the package containing this file
+    while [ "$dir" != "." ] && [ ! -f "$dir/BUILD" ] && [ ! -f "$dir/BUILD.bazel" ]; do
+        dir=$(dirname "$dir")
+    done
+    if [ -f "$dir/BUILD" ] || [ -f "$dir/BUILD.bazel" ]; then
+        pkg="//${dir}"
+        if [ "$dir" = "." ]; then
+            pkg="//"
+        fi
+        TARGETS="$TARGETS $pkg:all"
+    fi
+done
+
+# Deduplicate targets
+TARGETS=$(echo "$TARGETS" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+
+if [ -z "$TARGETS" ]; then
+    echo "No Bazel packages found for staged files, skipping."
+    exit 0
+fi
+
+echo "Linting targets: $TARGETS"
+
+# Run bazel lint (Aspect CLI)
+# If bazel lint isn't available, fall back to build with lint config
+if bazel lint --help >/dev/null 2>&1; then
+    bazel lint $TARGETS
+else
+    echo "Aspect CLI not available, using bazel build --config=check"
+    bazel build --config=check $TARGETS
+fi

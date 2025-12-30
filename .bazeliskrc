@@ -1,0 +1,4 @@
+# Use Aspect CLI instead of standard Bazel
+# This provides `bazel lint` command and better DX
+BAZELISK_BASE_URL=https://github.com/aspect-build/aspect-cli/releases/download
+USE_BAZEL_VERSION=aspect/2025.41.11
