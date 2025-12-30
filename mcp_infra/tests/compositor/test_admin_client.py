@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from fastmcp.exceptions import ToolError
+import pytest
+
 from mcp_infra.compositor.admin import DetachServerArgs
 from mcp_infra.constants import COMPOSITOR_META_MOUNT_PREFIX
 from mcp_infra.prefix import MCPMountPrefix
-import pytest
 
 
 async def test_admin_server_detach(compositor, compositor_admin_tool, make_simple_mcp):

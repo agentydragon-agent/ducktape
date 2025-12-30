@@ -28,7 +28,6 @@ from agent_server.server.reducer import Reducer
 from agent_server.server.state import UiState, new_state
 from agent_server.types import AgentID
 from mcp_infra.mounted import Mounted
-
 from openai_utils.model import UserMessage as OAIUserMessage
 
 logger = logging.getLogger(__name__)

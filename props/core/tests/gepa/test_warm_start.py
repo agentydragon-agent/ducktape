@@ -7,11 +7,11 @@ to use agent_definitions instead.
 
 from __future__ import annotations
 
+import pytest
+
 from props_core.db.examples import Example
 from props_core.db.session import get_session
 from props_core.gepa.warm_start import build_historical_gepa_state
-import pytest
-
 from tests.conftest import get_tp_occurrences_for_snapshot, make_critic_and_grader_run
 
 pytestmark = pytest.mark.skip(reason="GEPA warm-start broken: needs migration from prompts to agent_definitions")

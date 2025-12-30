@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import click
-from props_core.ids import _SnapshotSlugBase
 from pydantic import TypeAdapter, ValidationError
+
+from props_core.ids import _SnapshotSlugBase
 
 
 class SnapshotSlugParamType(click.ParamType):

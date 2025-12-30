@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from mcp_infra.stubs.server_stubs import ServerStub
-
 from agent_server.mcp.approval_policy.engine import DecideProposalArgs, SetPolicyTextArgs
 from agent_server.policies.policy_types import PolicyRequest, PolicyResponse
+from mcp_infra.stubs.server_stubs import ServerStub
 
 
 class PolicyReaderStub(ServerStub):

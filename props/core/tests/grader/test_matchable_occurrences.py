@@ -8,9 +8,10 @@ The filtering is based on graders_match_only_if_reported_on:
 
 from __future__ import annotations
 
-from props_core.db.session import get_session
 import pytest
 from sqlalchemy import text
+
+from props_core.db.session import get_session
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

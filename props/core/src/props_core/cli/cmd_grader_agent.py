@@ -19,6 +19,12 @@ import re
 from typing import Annotated
 from uuid import UUID
 
+from rich import box
+from rich.console import Console
+from rich.table import Table
+import typer
+
+from agent_pkg_runtime.output import render_agent_prompt
 from props_core.agent_helpers import get_current_agent_run
 from props_core.agent_types import GraderTypeConfig, SnapshotGraderTypeConfig
 from props_core.db.models import (
@@ -34,12 +40,6 @@ from props_core.db.models import (
 from props_core.db.session import get_session
 from props_core.display import short_uuid
 from props_core.grader.edge_helpers import delete_edges_for_issue, get_pending_edges, insert_edge, submit_grading
-from rich import box
-from rich.console import Console
-from rich.table import Table
-import typer
-
-from agent_pkg_runtime.output import render_agent_prompt
 
 HELP_TEXT = """Grader agent CLI for matching critique issues to ground truth.
 

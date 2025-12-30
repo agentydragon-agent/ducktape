@@ -1,8 +1,9 @@
 from pathlib import Path
 
+import pygit2
+
 from git_commit_ai.git_ro.formatting import ListSlice, TextSlice
 from git_commit_ai.git_ro.server import DiffFormat, DiffInput, GitRoServer
-import pygit2
 
 
 async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:

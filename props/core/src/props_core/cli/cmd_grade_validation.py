@@ -10,6 +10,11 @@ import traceback
 from uuid import UUID
 
 import aiodocker
+from sqlalchemy import func
+import typer
+
+from cli_util import async_run
+from openai_utils.client_factory import build_client
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import AgentType
 from props_core.agent_workspace import WorkspaceManager
@@ -30,11 +35,6 @@ from props_core.display import short_uuid
 from props_core.ids import DefinitionId
 from props_core.models.examples import ExampleKind, ExampleSpec
 from props_core.splits import Split
-from sqlalchemy import func
-import typer
-
-from cli_util import async_run
-from openai_utils.client_factory import build_client
 
 logger = logging.getLogger(__name__)
 

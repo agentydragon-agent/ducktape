@@ -10,11 +10,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+
 from agent_core.events import AgentEvent, AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, LoopDecision, NoAction
-from pydantic import BaseModel, ConfigDict, TypeAdapter
-
 from openai_utils.model import ReasoningItem
 
 

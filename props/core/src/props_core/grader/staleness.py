@@ -8,6 +8,7 @@ from typing import Any
 from uuid import UUID
 
 import canonicaljson
+
 from props_core.agent_types import AgentType
 from props_core.db.models import AgentRun, CanonicalIssuesSnapshot, FileSet, Snapshot as DBSnapshot
 from props_core.db.session import Session, get_session

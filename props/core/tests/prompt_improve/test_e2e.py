@@ -12,15 +12,16 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from agent_core.testing import AssertDockerExecThenFinish, DockerExecCall, Step
 from hamcrest import contains_string
+import pytest
+
+from agent_core.testing import AssertDockerExecThenFinish, DockerExecCall, Step
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun
 from props_core.db.session import get_session
 from props_core.prompt_improve.improve_agent import run_improvement_agent
 from props_core.prompt_improve.reminder_handler import BlockingStatus
-import pytest
 
 # Define the improved agent.md content used across tests
 # Note: The improvement agent creates a package with Dockerfile + init + agent.md

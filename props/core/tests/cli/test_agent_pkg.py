@@ -10,6 +10,9 @@ from io import BytesIO
 from pathlib import Path
 import tarfile
 
+import pytest
+from typer.testing import CliRunner
+
 from props_core.agent_pkg_utils import (
     DOCKERFILE_FILE,
     AgentPkgValidationError,
@@ -17,8 +20,6 @@ from props_core.agent_pkg_utils import (
     validate_packed_agent_pkg,
 )
 from props_core.cli.cmd_agent_pkg import app
-import pytest
-from typer.testing import CliRunner
 
 
 @pytest.fixture

@@ -9,6 +9,12 @@ import logging
 import os
 from typing import TYPE_CHECKING, cast
 
+import aiodocker
+from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
+from fastmcp.mcp_config import MCPConfig
+from pydantic import BaseModel, Field
+
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_server.approvals import load_default_policy_source
@@ -20,15 +26,12 @@ from agent_server.mcp.ui.server import UiServer
 from agent_server.persist import ApprovalOutcome
 from agent_server.persist.handler import RunPersistenceHandler
 from agent_server.persist.sqlite import SQLitePersistence
+from agent_server.presets import discover_presets
 from agent_server.runtime.images import resolve_runtime_image
 from agent_server.server.bus import ServerBus
 from agent_server.server.runtime import AgentSession, UiEventHandler
 from agent_server.server.system_message import get_ui_system_message
 from agent_server.types import AgentID
-import aiodocker
-from fastmcp.client import Client
-from fastmcp.exceptions import ToolError
-from fastmcp.mcp_config import MCPConfig
 from mcp_infra.compositor.clients import CompositorMetaClient
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.container_session import ContainerOptions
@@ -36,9 +39,6 @@ from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
-from pydantic import BaseModel, Field
-
-from agent_server.presets import discover_presets
 from openai_utils.client_factory import build_client
 from openai_utils.model import OpenAIModelProto, SystemMessage
 

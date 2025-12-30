@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from git_commit_ai.editor_template import SCISSORS_MARK, build_commit_template
 import pygit2
+
+from git_commit_ai.editor_template import SCISSORS_MARK, build_commit_template
 
 
 def _write(repo: pygit2.Repository, relpath: str, content: str) -> Path:

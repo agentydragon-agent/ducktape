@@ -22,9 +22,8 @@ from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 
 if TYPE_CHECKING:
-    from props_core.agent_registry import AgentRegistry
-
     from openai_utils.model import OpenAIModelProto
+    from props_core.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 

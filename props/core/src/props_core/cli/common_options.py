@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import typer
+
 from props_core.cli.types import DEFINITION_ID, SNAPSHOT_SLUG
 from props_core.docker_env import WORKING_DIR as CRITIC_WORKDIR
-import typer
 
 # Arguments
 ARG_WORKDIR = typer.Argument(..., exists=True, file_okay=False, resolve_path=True)

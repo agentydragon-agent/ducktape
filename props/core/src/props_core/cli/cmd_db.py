@@ -9,13 +9,14 @@ from pathlib import Path
 import subprocess
 
 import aiodocker
+from rich.console import Console
+from rich.table import Table
+import typer
+
 from props_core.db.config import DatabaseConfig, get_database_config
 from props_core.db.session import get_session, recreate_database
 from props_core.db.setup import ensure_database_exists
 from props_core.db.sync.sync import FullSyncResult, build_definition_images, sync_all
-from rich.console import Console
-from rich.table import Table
-import typer
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")

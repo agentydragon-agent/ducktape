@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import pytest
+
 from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, DockerExecCall, Step
 from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
@@ -26,7 +28,6 @@ from props_core.db.session import get_session
 from props_core.models.examples import ExampleKind
 from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props_core.prompt_optimize.target_metric import TargetMetric
-import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

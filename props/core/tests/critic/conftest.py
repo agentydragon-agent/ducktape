@@ -5,6 +5,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import pytest
+import pytest_asyncio
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+
 from props_core.critic.submit_server import CriticSubmitServer
 from props_core.db.examples import Example
 from props_core.db.models import AgentRunStatus
@@ -12,11 +17,6 @@ from props_core.db.session import get_session
 from props_core.db.snapshots import DBLocationAnchor
 from props_core.db.temp_user_manager import TempUserManager
 from props_core.models.examples import WholeSnapshotExample
-import pytest
-import pytest_asyncio
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine
-
 from tests.conftest import make_critic_run
 
 if TYPE_CHECKING:

@@ -2,9 +2,10 @@
 
 from contextlib import suppress
 
+import pytest
+
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.testing.fixtures import make_container_opts
-import pytest
 
 # Register mcp_infra and agent_core fixtures
 pytest_plugins = ["mcp_infra.testing.fixtures", "agent_core.testing.fixtures"]

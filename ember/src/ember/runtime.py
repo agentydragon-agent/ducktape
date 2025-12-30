@@ -9,11 +9,11 @@ import asyncio
 import contextlib
 import logging
 
+from fastmcp.client import Client
+
 from agent_core.agent import Agent
 from agent_core.handler import RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from fastmcp.client import Client
-
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 

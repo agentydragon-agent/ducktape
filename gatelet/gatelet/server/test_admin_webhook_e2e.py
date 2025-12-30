@@ -9,11 +9,12 @@ from pathlib import Path
 import subprocess
 import time
 
-from gatelet.manage import reset_db
-from gatelet.server.models import Base
 from playwright.sync_api import Page
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from gatelet.manage import reset_db
+from gatelet.server.models import Base
 
 
 @pytest.fixture(scope="session")

@@ -7,6 +7,7 @@ null/None values and list all resources when filters are not provided.
 from __future__ import annotations
 
 from hamcrest import assert_that, contains_inanyorder, has_length
+
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesListArgs

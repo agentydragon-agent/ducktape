@@ -3,14 +3,15 @@
 from dataclasses import replace
 import re
 
-from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
-from difftree.diff_tree import DiffTree
-from difftree.parser import FileChange
-from difftree.progress_bar import BlockChars
 import pytest
 from rich.console import Console
 from rich.segment import Segment
 from rich.text import Text
+
+from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
+from difftree.diff_tree import DiffTree
+from difftree.parser import FileChange
+from difftree.progress_bar import BlockChars
 
 from .conftest import make_diff_tree, render_to_string
 

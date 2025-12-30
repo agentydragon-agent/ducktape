@@ -9,15 +9,15 @@ Verifies that database constraints correctly enforce:
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from props_core.db.examples import Example
 from props_core.db.models import ReportedIssue, ReportedIssueOccurrence
 from props_core.db.session import get_session
 from props_core.db.snapshots import DBLocationAnchor
 from props_core.ids import SnapshotSlug
-from pydantic import ValidationError
-import pytest
-from sqlalchemy.exc import IntegrityError
-
 from tests.conftest import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

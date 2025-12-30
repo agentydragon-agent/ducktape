@@ -6,15 +6,15 @@ from pathlib import Path
 import time
 from typing import Annotated
 
-from props_core.agent_workspace import WorkspaceManager
-from props_core.cli import common_options as opt
-from props_core.db.config import get_database_config
-from props_core.gepa.gepa_adapter import optimize_with_gepa
 from rich.console import Console
 import typer
 
 from cli_util import async_run
 from openai_utils.client_factory import build_client
+from props_core.agent_workspace import WorkspaceManager
+from props_core.cli import common_options as opt
+from props_core.db.config import get_database_config
+from props_core.gepa.gepa_adapter import optimize_with_gepa
 
 
 @async_run

@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from agent_core.events import EventType
 from pydantic import BaseModel, ConfigDict
+
+from agent_core.events import EventType
 
 
 class EventRecord(BaseModel):

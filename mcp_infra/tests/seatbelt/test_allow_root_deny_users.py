@@ -1,4 +1,5 @@
 from _markers import REQUIRES_SANDBOX_EXEC
+
 from mcp_infra.seatbelt.model import SBPLPolicy
 from mcp_infra.seatbelt.runner import run_sandboxed_async
 

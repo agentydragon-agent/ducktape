@@ -15,11 +15,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+
+from props_backend.routes import ground_truth, runs, stats
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.resources import get_database_config
-
-from props_backend.routes import ground_truth, runs, stats
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

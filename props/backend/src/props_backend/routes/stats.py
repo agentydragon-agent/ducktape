@@ -6,6 +6,8 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
 from props_core.agent_types import AgentType
 from props_core.db.examples import Example, count_available_examples_by_scope_all
 from props_core.db.models import (
@@ -21,7 +23,6 @@ from props_core.db.session import get_session
 from props_core.ids import DefinitionId, SnapshotSlug
 from props_core.models.examples import ExampleKind
 from props_core.splits import Split
-from pydantic import BaseModel
 
 router = APIRouter()
 

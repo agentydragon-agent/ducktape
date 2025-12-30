@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from _markers import REQUIRES_SANDBOX_EXEC
+
 from mcp_infra.seatbelt.runner import run_sandboxed_async
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]

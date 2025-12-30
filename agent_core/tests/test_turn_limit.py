@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing import AssistantMessage, EchoCall, Step
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
-import pytest
-
 from openai_utils.model import UserMessage
 
 

@@ -42,13 +42,8 @@ from pathlib import Path
 import signal
 import sys
 
-from agent_core.agent import Agent
-from agent_core.loop_control import RequireAnyTool
-from agent_core.transcript_handler import TranscriptHandler
 import aiodocker
 from fastmcp.client import Client
-from mcp_infra.compositor.server import Compositor
-from mcp_infra.prefix import MCPMountPrefix
 
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
@@ -70,6 +65,11 @@ from adgn.inop.prompting.prompt_engineer import (
 )
 from adgn.inop.prompting.summarizer import PatternSummarizer
 from adgn.inop.prompting.truncation_utils import TruncationManager
+from agent_core.agent import Agent
+from agent_core.loop_control import RequireAnyTool
+from agent_core.transcript_handler import TranscriptHandler
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, UserMessage
 
 # TODO: consider showing grader text Assistant messages, not just code

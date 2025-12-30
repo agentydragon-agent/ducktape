@@ -8,7 +8,6 @@ import logging
 from agent_core.events import AssistantText, ReasoningItem, Response, ToolCall
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
-
 from openai_utils.model import SystemMessage
 
 logger = logging.getLogger(__name__)

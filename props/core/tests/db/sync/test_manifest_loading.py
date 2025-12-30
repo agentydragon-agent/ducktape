@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from props_core.db.sync.loader import discover_snapshots
-from props_core.ids import SnapshotSlug
 from pydantic import ValidationError
 import pytest
 import yaml
+
+from props_core.db.sync.loader import discover_snapshots
+from props_core.ids import SnapshotSlug
 
 
 def test_load_git_fixtures(test_specimens_base: Path) -> None:

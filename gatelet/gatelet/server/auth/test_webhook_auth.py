@@ -2,9 +2,10 @@
 
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
+import pytest
+
 from gatelet.server.auth.webhook_auth import AuthError, BearerAuthHandler, NoAuthHandler, create_auth_handler
 from gatelet.server.config import BearerAuth, NoAuth
-import pytest
 
 
 @pytest.fixture

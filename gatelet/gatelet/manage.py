@@ -8,12 +8,13 @@ from collections.abc import Iterable
 import getpass
 import tomllib
 
-from gatelet.server.config import CONFIG_PATH, get_settings
-from gatelet.server.models import Base, WebhookIntegration, WebhookPayload
-from gatelet.server.security import hash_password
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from tomlkit import dumps
+
+from gatelet.server.config import CONFIG_PATH, get_settings
+from gatelet.server.models import Base, WebhookIntegration, WebhookPayload
+from gatelet.server.security import hash_password
 
 
 def _confirm(prompt: str) -> bool:

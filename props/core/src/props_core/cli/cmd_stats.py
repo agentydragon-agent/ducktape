@@ -10,6 +10,12 @@ import statistics
 from typing import Any
 
 import plotext as plt  # type: ignore[import-untyped]
+from rich import box
+from rich.console import Console
+from rich.table import Table
+from sqlalchemy import func
+import typer
+
 from props_core.agent_types import AgentType, CriticTypeConfig
 from props_core.db.examples import count_available_examples_by_scope_all, count_available_examples_for_split
 from props_core.db.models import (
@@ -36,11 +42,6 @@ from props_core.display import (
 from props_core.grader.staleness import identify_stale_runs
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props_core.splits import Split
-from rich import box
-from rich.console import Console
-from rich.table import Table
-from sqlalchemy import func
-import typer
 
 # Stats subcommand group
 stats_app = typer.Typer(help="Statistics and metrics commands")

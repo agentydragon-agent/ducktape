@@ -7,12 +7,13 @@ but SQLAlchemy's .isnot(None) filter only excludes SQL NULL, not JSON null.
 
 from __future__ import annotations
 
-from props_core.db.models import PydanticColumn
-from props_core.db.session import get_session
 from pydantic import BaseModel
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from props_core.db.models import PydanticColumn
+from props_core.db.session import get_session
 
 
 class Base(DeclarativeBase):

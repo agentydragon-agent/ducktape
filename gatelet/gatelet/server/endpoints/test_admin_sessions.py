@@ -1,10 +1,11 @@
 from http import HTTPStatus
 import re
 
-from gatelet.server.models import AdminSession
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from gatelet.server.models import AdminSession
 
 
 def _extract_csrf(page_text: str) -> str:

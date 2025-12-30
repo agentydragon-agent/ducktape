@@ -8,9 +8,10 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
+import pytest
+
 import bazel_proxy.proxy as proxy_module
 from bazel_proxy.proxy import kill_existing, load_credentials, make_auth_header, parse_proxy_url, write_credentials
-import pytest
 
 
 class TestParseProxyUrl:

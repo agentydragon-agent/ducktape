@@ -10,10 +10,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from agent_server.mcp_bridge.agents import AgentsManagementServer
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.prefix import MCPMountPrefix
-
-from agent_server.mcp_bridge.agents import AgentsManagementServer
 
 if TYPE_CHECKING:
     from agent_server.mcp_bridge.registry import InfrastructureRegistry

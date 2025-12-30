@@ -10,15 +10,15 @@ Tests the end-to-end SQL workflow where critic agents:
 from __future__ import annotations
 
 from fastmcp.exceptions import ToolError
+import pytest
+from sqlalchemy import text
+
 from props_core.critic.submit_server import CriticSubmitInput
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props_core.db.session import get_session
 from props_core.db.snapshots import DBLocationAnchor
 from props_core.ids import SnapshotSlug
-import pytest
-from sqlalchemy import text
-
 from tests.conftest import make_critic_run
 from tests.critic.conftest import insert_issue, insert_occurrence
 

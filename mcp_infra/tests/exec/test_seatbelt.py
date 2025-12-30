@@ -5,6 +5,8 @@ import secrets
 
 from _markers import REQUIRES_SANDBOX_EXEC
 from fastmcp.client import Client
+import pytest
+
 from mcp_infra.exec.models import Exited, TimedOut
 from mcp_infra.exec.seatbelt import SandboxExecArgs, SeatbeltExecServer
 from mcp_infra.seatbelt.model import (
@@ -19,7 +21,6 @@ from mcp_infra.seatbelt.model import (
     TraceConfig,
 )
 from mcp_infra.testing.exec_stubs import SeatbeltExecServerStub
-import pytest
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 

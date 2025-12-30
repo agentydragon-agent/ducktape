@@ -5,9 +5,10 @@ from pathlib import Path
 import shutil
 
 from _markers import REQUIRES_SANDBOX_EXEC
+import pytest
+
 from mcp_infra.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
 from mcp_infra.seatbelt.runner import apopen, run_sandboxed_async
-import pytest
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC]
 
