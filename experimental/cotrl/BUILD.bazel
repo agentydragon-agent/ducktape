@@ -30,6 +30,8 @@ py_binary(
 py_test(
     name = "test_llm_rl_minimal",
     srcs = ["test_llm_rl_minimal.py"],
+    # Requires gymnasium which isn't in main requirements
+    tags = ["manual"],
     deps = [
         ":cotrl",
         "@pypi//pytest",
