@@ -427,7 +427,7 @@ async fn main() {
     let opt = Opt::from_args();
     trace!("Options: {:?}", opt);
 
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("worthy").unwrap();
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("worthy");
     let config = load_config(&xdg_dirs).unwrap();
     trace!("Config: {:?}", config);
 
@@ -489,44 +489,6 @@ async fn main() {
                 let mut file = File::create(&output_path).unwrap();
                 file.write_all(s.bytes().collect::<Vec<_>>().as_slice())
                     .unwrap();
-            }
-
-            let snapshot = graph_output::Snapshot {
-                source_snapshots: source_snapshots
-                    .iter()
-                    .map(|ss| graph_output::SourceSnapshot {
-                        source_id: ss.id.clone(),
-                        timestamp: now,
-                        assets: ss.snapshot.clone(),
-                    })
-                    .collect(),
-                converter_snapshots: converter_snapshots
-                    .iter()
-                    .map(|cs| graph_output::ConverterSnapshot {
-                        converter_id: cs.id.clone(),
-                        exchange_rates: cs.snapshot.clone(),
-                    })
-                    .collect(),
-                total,
-            };
-
-            // The name of new file POSTed may not contain : | or /
-            let slug = now.to_rfc3339().replace(':', "-");
-
-            match config.solid_issuer {
-                Some(issuer) => {
-                    solid_io::write_to_solid(
-                        &issuer,
-                        &xdg_dirs.place_cache_file("solid_provider.json").unwrap(),
-                        snapshot,
-                        slug,
-                    )
-                    .await
-                    .unwrap();
-                }
-                None => {
-                    info!("Not writing into Solid, solid_issuer not set.");
-                }
             }
         }
         ModelLastSnapshot => {

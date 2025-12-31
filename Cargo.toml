@@ -31,8 +31,6 @@ rand = "*"
 base64 = "*"
 openssl = "*"
 jwt = {version="*", features=["openssl"]}
-sophia = "*"
-sophia_term = "*"
 rusty-money = "*"
 serde_yaml = "*"
 structopt = "*"
@@ -40,7 +38,7 @@ xdg = "*"
 alphavantage = "*"
 shellexpand = "*"
 coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="01cabaa6fdd0fed87b44b38f218b1068f4914b39"}
-bigdecimal = "*" # needs to be matched to coinbase-rs
+bigdecimal = "=0.3.1" # must match coinbase-rs dependency
 currency_layer = {git="https://github.com/agentydragon/currency-layer-rs", rev="1f2f9af4dfb569808ca195f673452337b5e5d0be"}
 serde-xml-rs = "*"
 async-trait = "*"

@@ -44,6 +44,12 @@ impl FloatMeasure for MultiplyDecimal {
     fn infinite() -> Self {
         Infinite
     }
+    fn from_f32(val: f32) -> Self {
+        Decimal::try_from(val).map(Finite).unwrap_or(Infinite)
+    }
+    fn from_f64(val: f64) -> Self {
+        Decimal::try_from(val).map(Finite).unwrap_or(Infinite)
+    }
 }
 
 impl Add for MultiplyDecimal {
