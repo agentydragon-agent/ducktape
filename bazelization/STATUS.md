@@ -76,7 +76,7 @@ Run `./bazelization/audit.py` to get updated counts.
 - Mypy integrated via rules_mypy (`--config=typecheck`)
 - Rust linting (clippy/rustfmt) integrated via rules_rust (`bazel lint //finance/...`)
 - Removed all re-export patterns from Python packages (direct imports only)
-- ESLint binary in `//tools/lint:eslint` via npm_translate_lock bins config
+- ESLint integrated into `bazel lint //...` via aspect_rules_lint
 - Buildifier targets: `bazel run //tools/lint:buildifier` (fix) and `buildifier.check`
 - Documentation updated to be Bazel-first (AGENTS.md, README.md files)
 - Consolidated duplicate ruff config (removed from per-package pyproject.toml)
@@ -595,7 +595,7 @@ Root `pyproject.toml` contains:
 | buildifier | `tools/lint/BUILD.bazel` | `bazel run //tools/lint:buildifier` |
 | yamllint | `.yamllint.yaml` | Not yet (pre-commit framework) |
 | alejandra | Nix files | Not yet (pre-commit framework) |
-| ESLint | `adgn/src/adgn/agent/web/`, `props/frontend/` | Not yet (pre-commit framework) |
+| ESLint | `props/frontend/eslint.config.js` | `bazel lint //...` via aspect_rules_lint |
 | Prettier | Same as ESLint | Not yet (pre-commit framework) |
 
 ### Pre-commit Framework (`.pre-commit-config.yaml`) — DEPRECATED
@@ -622,7 +622,7 @@ The `.pre-commit-config.yaml` file still exists for:
 | `mypy` (12 configs) | Type checking | `bazel build --config=typecheck` | ✅ Migrated |
 | `buildifier` | BUILD formatting | `bazel run //tools/lint:buildifier` | ✅ Migrated |
 | `alejandra` | Nix formatting | N/A (nix-specific) | Keep in pre-commit |
-| `eslint` | JS/TS linting | TODO: rules_js aspect | Keep in pre-commit |
+| `eslint` | JS/TS linting | `bazel lint //...` | ✅ Migrated |
 | `prettier` | JS/TS formatting | TODO: rules_js aspect | Keep in pre-commit |
 | `svelte-check` | Svelte types | TODO: rules_js aspect | Keep in pre-commit |
 

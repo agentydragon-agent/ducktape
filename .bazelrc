@@ -16,9 +16,10 @@ common --enable_bzlmod
 # cargo-raze-generated platform-specific dependencies in BUILD files
 build --platforms //:linux_x64
 
-# Lint configuration
+# Lint configuration (Python ruff + JS/TS eslint)
 # Run with: bazel build --config=lint //...
-build:lint --aspects=//tools/lint:linters.bzl%ruff
+# Or use Aspect CLI: bazel lint //...
+build:lint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint
 build:lint --output_groups=+rules_lint_report
 
 # Type checking configuration
@@ -46,12 +47,7 @@ build:rustfmt --output_groups=+rustfmt_checks
 build:rust-check --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build:rust-check --output_groups=+clippy_checks,+rustfmt_checks
 
-# ESLint for JS/TS linting
+# ESLint only (for JS/TS without Python)
 # Run with: bazel build --config=eslint //props/frontend:all
 build:eslint --aspects=//tools/lint:linters.bzl%eslint
 build:eslint --output_groups=+rules_lint_report
-
-# Combined all lints (Python + JS/TS)
-# Run with: bazel build --config=alllint //...
-build:alllint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint
-build:alllint --output_groups=+rules_lint_report
