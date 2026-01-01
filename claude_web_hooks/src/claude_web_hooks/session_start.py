@@ -82,35 +82,36 @@ def main() -> int:
         log.info("Not remote environment, skipping")
         return 0
 
-    project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
-    if not project_dir_str:
-        raise RuntimeError("CLAUDE_PROJECT_DIR not set")
-    project_dir = Path(project_dir_str)
-
-    log.info("Project: %s", project_dir)
     log.info("Environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
     log.info("Setting up dev environment...")
 
     # Install Bazelisk (downloads correct Bazel version automatically)
     bazelisk_setup.install_bazelisk()
 
-    # Set up Bazel proxy for TLS-inspecting proxy
+    # Set up Bazel proxy for TLS-inspecting proxy (doesn't need project dir)
     bazel_proxy_setup.setup_bazel_proxy()
 
-    # Install bazel wrapper that sets proxy env vars
-    bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
+    # Project-specific setup (requires CLAUDE_PROJECT_DIR)
+    project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
+    if project_dir_str:
+        project_dir = Path(project_dir_str)
+        log.info("Project: %s", project_dir)
 
-    # Install git pre-commit hook that runs bazel lint
-    install_git_precommit_hook(project_dir, log)
+        # Install bazel wrapper that sets proxy env vars
+        bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
 
-    # Persist PATH modification and proxy env vars via CLAUDE_ENV_FILE
-    # The proxy config is exported so the Bazel module extension can generate
-    # @proxy_config//:proxy_env.bzl with the correct values at repository resolution time
+        # Install git pre-commit hook that runs bazel lint
+        install_git_precommit_hook(project_dir, log)
+    else:
+        log.warning("CLAUDE_PROJECT_DIR not set, skipping project-specific setup")
+        # Still install wrapper without repo-specific config
+        bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
+
+    # Persist PATH modification via CLAUDE_ENV_FILE
+    # The bazel wrapper dir needs to be on PATH so `bazel` invokes our wrapper
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
-        proxy_port = bazel_proxy_setup.BAZEL_PROXY_PORT if bazel_proxy_setup.is_configured() else None
-        combined_ca = str(bazel_proxy_setup.BAZEL_COMBINED_CA) if bazel_proxy_setup.is_configured() else None
-        env_content = bazelisk_setup.get_env_script(proxy_port=proxy_port, combined_ca=combined_ca)
+        env_content = bazelisk_setup.get_env_script()
         Path(env_file).write_text(env_content)
         log.info("Wrote PATH update to CLAUDE_ENV_FILE: %s", env_file)
     else:

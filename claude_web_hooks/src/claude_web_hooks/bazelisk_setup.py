@@ -114,24 +114,15 @@ exec "{BAZELISK_PATH}" "$@"
     return WRAPPER_PATH
 
 
-def get_env_script(proxy_port: int | None = None, combined_ca: str | None = None) -> str:
-    """Get bash script fragment to add wrapper dir to PATH and set proxy env vars.
+def get_env_script() -> str:
+    """Get bash script fragment to add wrapper dir to PATH.
 
     This should be appended to CLAUDE_ENV_FILE.
-
-    Args:
-        proxy_port: The local proxy port (e.g., 18081). If set, exports BAZEL_PROXY_PORT.
-        combined_ca: Path to combined CA bundle. If set, exports BAZEL_COMBINED_CA.
     """
-    lines = [
-        "# Bazel wrapper (sets proxy for TLS-inspecting proxy)",
-        f'[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"',
-    ]
-    if proxy_port:
-        lines.append(f'export BAZEL_PROXY_PORT="{proxy_port}"')
-    if combined_ca:
-        lines.append(f'export BAZEL_COMBINED_CA="{combined_ca}"')
-    return "\n".join(lines) + "\n"
+    return f"""\
+# Bazel wrapper (sets proxy for TLS-inspecting proxy)
+[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"
+"""
 
 
 def is_installed() -> bool:

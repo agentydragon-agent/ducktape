@@ -4,25 +4,24 @@ This generates a proxy_env.bzl file that can be loaded by BUILD files.
 The content differs based on whether we're on Claude Code web (with TLS proxy)
 or local development (no proxy needed).
 
-Detection:
-- On CC web: BAZEL_PROXY_PORT env var is set by session hook
-- Locally: env var not set, use empty proxy config
+Detection: checks if ~/.cache/bazel-proxy/combined_ca.pem exists.
+The session hook creates this file when setting up the TLS-inspecting proxy.
 """
 
+# Fixed paths matching bazel_proxy_setup.py constants
+_BAZEL_PROXY_PORT = "18081"
+_BAZEL_COMBINED_CA = "/root/.cache/bazel-proxy/combined_ca.pem"
+
 def _proxy_config_repo_impl(repository_ctx):
-    """Generate proxy_env.bzl based on environment."""
+    """Generate proxy_env.bzl based on proxy file existence."""
 
-    # Check for proxy configuration from environment
-    # On CC web, the session hook sets BAZEL_PROXY_PORT before invoking bazel
-    proxy_port = repository_ctx.os.environ.get("BAZEL_PROXY_PORT", "")
+    # Detect proxy by checking if the CA bundle exists
+    # The session hook creates this file when setting up the proxy
+    ca_path = repository_ctx.path(_BAZEL_COMBINED_CA)
 
-    if proxy_port:
-        # On Claude Code web with proxy - generate from env vars
-        combined_ca = repository_ctx.os.environ.get(
-            "BAZEL_COMBINED_CA",
-            "/root/.cache/bazel-proxy/combined_ca.pem",
-        )
-        local_proxy = "http://localhost:{}".format(proxy_port)
+    if ca_path.exists:
+        # Claude Code web with TLS-inspecting proxy
+        local_proxy = "http://localhost:{}".format(_BAZEL_PROXY_PORT)
         content = '''\
 # Auto-generated proxy config for Claude Code web
 PROXY_ENV = {{
@@ -33,7 +32,7 @@ PROXY_ENV = {{
     "SSL_CERT_FILE": "{ca}",
     "REQUESTS_CA_BUNDLE": "{ca}",
 }}
-'''.format(proxy = local_proxy, ca = combined_ca)
+'''.format(proxy = local_proxy, ca = _BAZEL_COMBINED_CA)
     else:
         # Local development - no proxy needed
         content = """# Default proxy config for local development
@@ -48,8 +47,7 @@ exports_files(["proxy_env.bzl"])
 
 proxy_config_repo = repository_rule(
     implementation = _proxy_config_repo_impl,
-    environ = ["BAZEL_PROXY_PORT", "BAZEL_COMBINED_CA"],
-    doc = "Repository rule that generates proxy configuration based on environment.",
+    doc = "Repository rule that generates proxy configuration based on file existence.",
 )
 
 def _proxy_config_impl(module_ctx):
