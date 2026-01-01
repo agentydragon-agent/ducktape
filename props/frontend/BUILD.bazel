@@ -38,27 +38,24 @@ sh_test(
 )
 
 # Svelte-check (type checking)
-# NOTE: Manual because it requires .svelte-kit/tsconfig.json which is generated
-# by `pnpm run check` (svelte-kit sync). Run via pnpm for now.
-# TODO: Add svelte-kit sync as a genrule dependency
+# Runs svelte-kit sync to generate .svelte-kit/tsconfig.json, then runs svelte-check
 sh_test(
     name = "svelte_check_test",
     srcs = ["//tools/lint:run_svelte_check.sh"],
     args = [
         "$(rootpath //tools/lint:svelte-check)",
+        "$(rootpath //tools/lint:svelte-kit)",
         "props/frontend",  # Package directory
         "--tsconfig",
         "tsconfig.json",
     ],
     data = [
         "//tools/lint:svelte-check",
-        ":node_modules/svelte-check",
-        ":node_modules/svelte",
-        ":node_modules/typescript",
+        "//tools/lint:svelte-kit",
+        ":node_modules",  # All npm packages for type checking
         "tsconfig.json",
+        "svelte.config.js",
+        "vite.config.ts",
     ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
-    tags = [
-        "lint",
-        "manual",  # Requires svelte-kit sync (generated files)
-    ],
+    tags = ["lint"],
 )

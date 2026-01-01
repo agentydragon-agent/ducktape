@@ -4,6 +4,7 @@ load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_props_frontend//props/frontend:eslint/package_json.bzl", eslint_bin = "bin")
 load("@npm_props_frontend//props/frontend:prettier/package_json.bzl", prettier_bin = "bin")
 load("@npm_props_frontend//props/frontend:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_props_frontend//props/frontend:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,6 +17,9 @@ prettier_bin.prettier_binary(name = "prettier")
 
 # Svelte-check binary for Svelte type checking
 svelte_check_bin.svelte_check_binary(name = "svelte-check")
+
+# Svelte-kit binary for generating .svelte-kit/tsconfig.json
+svelte_kit_bin.svelte_kit_binary(name = "svelte-kit")
 
 # Wrapper scripts for sh_test integration
 exports_files([

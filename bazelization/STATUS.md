@@ -13,8 +13,8 @@ The end-state is a **fully Bazel-managed repository** where:
 - `bazel lint //...` covers all languages in one command:
   - Python: ruff (done), mypy (done)
   - Rust: clippy, rustfmt (done)
-  - JS/TS: eslint, prettier (in progress)
-  - Bazel: buildifier
+  - JS/TS: eslint (done), prettier (done), svelte-check (done)
+  - Bazel: buildifier (done)
   - YAML: yamllint (for ansible/)
   - Nix: alejandra
 - No separate pre-commit framework; git hook calls `bazel lint` directly
@@ -393,27 +393,34 @@ bazel build --config=check //...
    - YAML linting via Bazel aspects
    - Remove yamllint from pre-commit hooks
 
+6. **Bazelize frontend build/dev (props/frontend)**
+   - Currently: `pnpm run build` (vite build), `pnpm run dev` (vite dev)
+   - Target: `bazel build //props/frontend:bundle`, `bazel run //props/frontend:dev`
+   - Use rules_js for vite integration
+   - Eliminates heterogeneity: Python fully Bazel, JS/TS currently split
+   - Note: Linting already Bazelized (prettier, svelte-check, eslint)
+
 ### Low Priority / Evaluate
 
-6. **Rust crates via crate_universe**
+7. **Rust crates via crate_universe**
    - `finance/worthy/` currently uses Cargo directly
    - Evaluate rules_rust crate_universe vs keeping Cargo
 
-7. **Website (Haskell/stack)**
+8. **Website (Haskell/stack)**
    - Extremely slow cold builds
    - Keep `stack build` outside Bazel for now
 
 ### Structural Improvements (do incrementally)
 
-8. **Colocate tests with production code**
+9. **Colocate tests with production code**
    - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
    - Simpler BUILD files, easier to see coverage gaps
 
-9. **Flatten package layouts**
-   - Remove `src/` nesting (Bazel handles packaging)
-   - Simpler paths in BUILD.bazel files
+10. **Flatten package layouts**
+    - Remove `src/` nesting (Bazel handles packaging)
+    - Simpler paths in BUILD.bazel files
 
-10. **Package consolidation**
+11. **Package consolidation**
     - Consider merging `mcp_infra/` into `adgn/`
     - Consider merging `agent_core/` into `adgn/`
     - Use Bazel visibility instead of package boundaries
@@ -593,7 +600,8 @@ Root `pyproject.toml` contains:
 | yamllint | `.yamllint.yaml` | Not yet (pre-commit framework) |
 | alejandra | Nix files | Not yet (pre-commit framework) |
 | ESLint | `props/frontend/eslint.config.js` | `bazel lint //...` via aspect_rules_lint |
-| Prettier | Same as ESLint | Not yet (pre-commit framework) |
+| Prettier | `props/frontend/.prettierrc` | `bazel test //props/frontend:prettier_test` |
+| svelte-check | `props/frontend/tsconfig.json` | `bazel test //props/frontend:svelte_check_test` |
 
 ### Pre-commit Framework (`.pre-commit-config.yaml`) — DEPRECATED
 
@@ -601,8 +609,9 @@ Root `pyproject.toml` contains:
 `tools/hooks/pre-commit`. The git hook runs `bazel lint` on staged files, which covers ruff and mypy.
 
 The `.pre-commit-config.yaml` file still exists for:
-- Hooks not yet migrated to Bazel (yamllint, alejandra, eslint, prettier, svelte-check)
-- CI workflows that still use `pre-commit run --all-files`
+- Hooks not yet migrated to Bazel (yamllint, alejandra)
+- Safety checks (no-commit-to-branch, check-merge-conflict, syntax validation)
+- Ansible syntax checking (ansible-syntax-check)
 
 **Migration status for pre-commit hooks:**
 
@@ -620,8 +629,8 @@ The `.pre-commit-config.yaml` file still exists for:
 | `buildifier` | BUILD formatting | `bazel run //tools/lint:buildifier` | ✅ Migrated |
 | `alejandra` | Nix formatting | N/A (nix-specific) | Keep in pre-commit |
 | `eslint` | JS/TS linting | `bazel lint //...` | ✅ Migrated |
-| `prettier` | JS/TS formatting | TODO: rules_js aspect | Keep in pre-commit |
-| `svelte-check` | Svelte types | TODO: rules_js aspect | Keep in pre-commit |
+| `prettier` | JS/TS formatting | `bazel test //props/frontend:prettier_test` | ✅ Migrated |
+| `svelte-check` | Svelte types | `bazel test //props/frontend:svelte_check_test` | ✅ Migrated |
 
 ### Other Configuration Files
 

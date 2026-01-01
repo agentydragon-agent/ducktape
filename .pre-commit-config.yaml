@@ -67,16 +67,7 @@ repos:
         language: system
         files: \.nix$
 
-  # NOTE: ESLint and Prettier are now handled by Bazel
+  # NOTE: ESLint, Prettier, and svelte-check are now handled by Bazel
   # - ESLint: `bazel lint //...` (via eslint aspect)
   # - Prettier: `bazel test //props/frontend:prettier_test`
-
-  # Svelte-check for Props Frontend (requires svelte-kit sync, not yet automated in Bazel)
-  - repo: local
-    hooks:
-      - id: svelte-check-props
-        name: svelte-check (Props Frontend)
-        language: system
-        entry: bash -c 'cd props/frontend && pnpm run check'
-        files: ^props/frontend/
-        pass_filenames: false
+  # - svelte-check: `bazel test //props/frontend:svelte_check_test`
