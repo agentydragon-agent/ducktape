@@ -106,20 +106,20 @@ create_task_graph_template(".")
 Access standardized prompts for AI agents:
 
 ```python
-from ducktape_llm_common.prompts import get_prompt, WORK_TRACKING_PROMPT
+from ducktape_llm_common.prompts.constants import PromptName
+from ducktape_llm_common.prompts.loader import list_prompts, load_prompt
 
 # Load a prompt
-prompt = get_prompt(WORK_TRACKING_PROMPT)
+prompt = load_prompt(PromptName.WORK_TRACKING)
 
 # Load with variable substitution
-prompt = get_prompt("task_management", variables={
+prompt = load_prompt("task_management", variables={
     "task_name": "implement-feature-x",
     "deadline": "2024-01-31"
 })
 
 # List available prompts
-from ducktape_llm_common.prompts import list_available_prompts
-available = list_available_prompts()
+available = list_prompts()
 ```
 
 ## Development

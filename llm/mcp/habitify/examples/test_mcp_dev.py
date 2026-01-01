@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
 SERVER_TEMPLATE = """
 import os
 import logging
-from habitify_mcp_server import create_habitify_mcp_server
+from habitify_mcp_server.server import create_habitify_mcp_server
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

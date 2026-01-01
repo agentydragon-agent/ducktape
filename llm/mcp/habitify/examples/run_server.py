@@ -12,7 +12,7 @@ import sys
 
 # Add the parent directory to the path so we can import the server
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from habitify_mcp_server import create_habitify_mcp_server
+from habitify_mcp_server.server import create_habitify_mcp_server
 from habitify_mcp_server.config import load_api_key
 
 # Setup logging

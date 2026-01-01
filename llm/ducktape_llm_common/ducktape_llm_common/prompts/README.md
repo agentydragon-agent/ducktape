@@ -38,7 +38,7 @@ The enhanced prompt system in `ducktape_llm_common` provides a comprehensive fra
 ### Basic Loading
 
 ```python
-from ducktape_llm_common.prompts import load_prompt
+from ducktape_llm_common.prompts.loader import load_prompt
 
 # Simple loading
 content = load_prompt("work_tracking")
@@ -60,7 +60,8 @@ content = load_prompt("work_tracking",
 ### Using PromptName Enum
 
 ```python
-from ducktape_llm_common.prompts import PromptName, load_prompt
+from ducktape_llm_common.prompts.constants import PromptName
+from ducktape_llm_common.prompts.loader import load_prompt
 
 # Use enum for type safety
 content = load_prompt(PromptName.WORK_TRACKING, {
@@ -79,10 +80,10 @@ by_category = PromptName.by_category()
 ### Helper Functions
 
 ```python
-from ducktape_llm_common.prompts import (
-    load_work_tracking_prompt,
+from ducktape_llm_common.prompts.helpers import (
+    load_debugging_protocol_prompt,
     load_task_management_prompt,
-    load_debugging_protocol_prompt
+    load_work_tracking_prompt,
 )
 
 # Work tracking with defaults
@@ -113,12 +114,9 @@ content = load_debugging_protocol_prompt(
 ### Validation
 
 ```python
-from ducktape_llm_common.prompts import (
-    PromptValidator,
-    validate_prompt,
-    get_prompt_variables,
-    validate_prompt_variables
-)
+from ducktape_llm_common.prompts.helpers import get_prompt_variables, validate_prompt_variables
+from ducktape_llm_common.prompts.loader import validate_prompt
+from ducktape_llm_common.prompts.validation import PromptValidator
 
 # Validate a single prompt
 issues = validate_prompt("my_prompt")
@@ -141,7 +139,7 @@ is_valid, missing = validate_prompt_variables(
 ### Discovery and Listing
 
 ```python
-from ducktape_llm_common.prompts import discover_prompts, list_prompts
+from ducktape_llm_common.prompts.loader import discover_prompts, list_prompts
 
 # Discover all available prompts
 prompts = discover_prompts()  # Returns {name: path} dict
@@ -156,7 +154,7 @@ names_and_paths = list_prompts(include_paths=True)
 ### Custom Prompt Directories
 
 ```python
-from ducktape_llm_common.prompts import PromptLoader
+from ducktape_llm_common.prompts.loader import PromptLoader
 
 # Create loader with custom directories
 loader = PromptLoader([
@@ -227,10 +225,10 @@ The prompt system uses specific exceptions:
 - `PromptError`: Base exception for all prompt errors
 
 ```python
-from ducktape_llm_common.prompts import (
-    load_prompt,
+from ducktape_llm_common.prompts.loader import (
     PromptNotFoundError,
-    PromptVariableError
+    PromptVariableError,
+    load_prompt,
 )
 
 try:
