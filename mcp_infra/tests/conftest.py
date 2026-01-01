@@ -2,9 +2,9 @@
 
 from contextlib import suppress
 
-import docker
 import pytest
 
+import docker
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.testing.fixtures import make_container_opts
 

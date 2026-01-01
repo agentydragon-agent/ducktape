@@ -3,7 +3,8 @@
 import pytest
 
 from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
-from tests.conftest import LEFT_BLOCK_CHARS, RIGHT_BLOCK_CHARS, render_to_string
+
+from .conftest import LEFT_BLOCK_CHARS, RIGHT_BLOCK_CHARS, render_to_string
 
 
 def render_bar(bar: ProgressBar, width: int) -> str:

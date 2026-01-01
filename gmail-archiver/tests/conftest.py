@@ -3,8 +3,9 @@
 from datetime import UTC, datetime
 from email.message import EmailMessage as StdEmailMessage
 
-from gmail_archiver.models import Email
 import pytest
+
+from gmail_archiver.models import Email
 
 
 @pytest.fixture

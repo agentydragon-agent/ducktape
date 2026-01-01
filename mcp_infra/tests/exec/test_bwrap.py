@@ -3,8 +3,8 @@ from __future__ import annotations
 import shutil
 import sys
 
-import pytest
 from fastmcp.client import Client
+import pytest
 
 from mcp_infra.exec.bwrap import BwrapExecArgs, BwrapExecServer
 from mcp_infra.exec.models import Exited

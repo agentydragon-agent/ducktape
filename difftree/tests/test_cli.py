@@ -6,7 +6,8 @@ from click.testing import CliRunner
 import pytest
 
 from difftree.__main__ import main
-from tests.conftest import create_file, git_add_commit
+
+from .conftest import create_file, git_add_commit
 
 
 @pytest.fixture

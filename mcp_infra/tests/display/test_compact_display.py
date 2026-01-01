@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from io import StringIO
+import json
 from typing import cast
 
-import pytest
-from agent_core.events import ToolCall, ToolCallOutput
 from mcp.types import (
     CallToolResult,
     Implementation,
@@ -17,9 +15,11 @@ from mcp.types import (
     TextResourceContents,
 )
 from pydantic import AnyUrl, BaseModel
+import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 
+from agent_core.events import ToolCall, ToolCallOutput
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited

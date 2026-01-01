@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import os
 import platform
 
@@ -9,6 +9,7 @@ from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
 import pytest
 
+import docker  # Only used for pytest_runtest_setup health check (sync hook)
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.notifications.buffer import NotificationsBuffer
@@ -41,6 +42,29 @@ def pytest_configure(config: pytest.Config) -> None:
         os.environ["ADGN_TEST_TRACE_WS"] = "0"
     else:
         os.environ["ADGN_TEST_TRACE_WS"] = "1"
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    for item in items:
+        if item.get_closest_marker("requires_sandbox_exec") is not None:
+            item.add_marker(pytest.mark.macos)
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    if item.get_closest_marker("requires_sandbox_exec") is not None and platform.system() != "Darwin":
+        pytest.skip("seatbelt sandbox tests require macOS (sandbox-exec unavailable)")
+    if item.get_closest_marker("macos") is not None and platform.system() != "Darwin":
+        pytest.skip("macOS-only test")
+    if item.get_closest_marker("requires_docker") is None:
+        return
+    try:
+        client = docker.from_env()
+        client.ping()
+    except docker.errors.DockerException as exc:
+        pytest.skip(f"Docker not available: {exc}")
+    else:
+        with suppress(Exception):
+            client.close()
 
 
 @pytest.fixture(autouse=True)
@@ -102,8 +126,10 @@ async def typed_docker_client(make_typed_mcp, docker_exec_server_py312slim):
 
 @pytest.fixture
 def live_openai(request):
-    """Provide a live AsyncOpenAI client for tests marked with `live_openai_api`."""
-    if request.node.get_closest_marker("live_openai_api") is not None:
+    """Provide a live AsyncOpenAI client for tests marked with `live_llm`."""
+    if request.node.get_closest_marker("live_llm") is not None:
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OPENAI_API_KEY not set; skipping live LLM test")
         return AsyncOpenAI()
 
     class _Noop:

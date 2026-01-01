@@ -2,10 +2,11 @@
 
 from datetime import datetime, timedelta
 
+import pytest
+
 from ducktape_llm_common.claude_linter_v2.access.context import PredicateContext
 from ducktape_llm_common.claude_linter_v2.access.evaluator import PredicateEvaluator
 from ducktape_llm_common.claude_linter_v2.types import SessionID
-import pytest
 
 
 class TestMultilinePredicates:

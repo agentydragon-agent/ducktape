@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pytest
 from fastmcp.exceptions import ToolError
+import pytest
 
 from mcp_infra.compositor.admin import DetachServerArgs
 from mcp_infra.constants import COMPOSITOR_META_MOUNT_PREFIX

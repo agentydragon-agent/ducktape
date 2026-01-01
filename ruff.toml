@@ -77,12 +77,46 @@ keep-runtime-typing = false
 [lint.isort]
 # Teach Ruff which packages are first-party so sectioning stays stable
 known-first-party = [
-    "adgn", "agent_core", "agent_pkg_host", "agent_pkg_runtime", "agent_server",
-    "claude_hooks", "claude_optimizer", "claude_web_hooks", "cli_util", "difftree", "ducktape",
-    "editor_agent", "editor_agent_runtime", "ember", "finance", "gatelet", "git_commit_ai",
-    "gmail_archiver", "gnome_terminal_profile_switcher", "mcp_infra", "mcp_starter", "mcp_utils",
-    "net_util", "openai_utils", "props_backend", "props_core", "py_detectors", "rspcache",
-    "sandboxed_jupyter", "tana", "wt",
+    "adgn",
+    "agent_core",
+    "agent_pkg",
+    "agent_pkg_host",
+    "agent_pkg_runtime",
+    "agent_server",
+    "claude_hooks",
+    "claude_optimizer",
+    "claude_web_hooks",
+    "cli_util",
+    "clustering_util",
+    "critic_util",
+    "difftree",
+    "ducktape",
+    "ducktape_llm_common",
+    "editor_agent",
+    "editor_agent_runtime",
+    "editor_util",
+    "ember",
+    "finance",
+    "gatelet",
+    "git_commit_ai",
+    "gmail_archiver",
+    "gnome_terminal_profile_switcher",
+    "grader_util",
+    "homeassistant",
+    "llm",
+    "mcp_infra",
+    "mcp_starter",
+    "mcp_utils",
+    "net_util",
+    "openai_utils",
+    "props_agent_util",
+    "props_backend",
+    "props_core",
+    "py_detectors",
+    "rspcache",
+    "sandboxed_jupyter",
+    "tana",
+    "wt",
 ]
 force-sort-within-sections = true
 combine-as-imports = true
@@ -90,42 +124,16 @@ combine-as-imports = true
 split-on-trailing-comma = false
 
 [lint.per-file-ignores]
-# Vendored third-party code - ignore all rules (excluded from `exclude` when files passed directly)
-"**/third_party/**" = ["ALL"]
-
 # Project-specific ignores (consolidated from individual pyproject.toml files)
-"gatelet/tasks.py" = ["INP001", "PT028"]  # Task script doesn't need __init__.py; pytest param default for CLI
+"gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
 "rspcache/src/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "py_detectors/src/py_detectors/det_*.py" = ["N802"]
+# Test fixtures are intentionally bad code for detector testing
+"py_detectors/tests/fixtures/**" = ["ALL"]
 "adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]
-
-# Late imports to avoid circular dependencies (per STYLE.md)
+# Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
 "props/src/props/db/sync/sync.py" = ["PLC0415"]
-"tana/src/tana/export/convert.py" = ["PLC0415"]  # convert.main() imports Workspace
-"tana/src/tana/workspace.py" = ["PLC0415"]  # Workspace.export_tanapaste() imports convert
-
-# Late imports in test fixtures and conftest
-"**/conftest.py" = ["PLC0415"]  # test fixtures often need lazy imports
-"**/tests/*.py" = ["PLC0415"]  # tests sometimes need test-only imports inside functions
-
-# Late imports in CLI entrypoints (argparse, etc. imported in main())
-"ansible/roles/*/files/*.py" = ["PLC0415"]
-"props/backend/src/props_backend/cli.py" = ["PLC0415"]
-"props/backend/src/props_backend/app.py" = ["PLC0415"]  # conditional imports based on config
-
-# Trilium scripts are standalone utilities
-"trilium/*.py" = ["PLC0415"]
-
-# Late imports for optional/conditional dependencies
-"llm/ducktape_llm_common/**/*.py" = ["PLC0415"]  # optional dbus, traceback in error handlers, etc.
-"llm/mcp/habitify/**/*.py" = ["PLC0415"]  # test fixtures
-"mcp_infra/tests/**/*.py" = ["PLC0415"]  # docker import with skip
-"mcp_infra/src/mcp_infra/exceptions.py" = ["PLC0415"]  # late import to avoid circular dep with exec.models
-
-# Routes may use local late imports for helper functions
-"props/backend/src/props_backend/routes/*.py" = ["PLC0415"]
-

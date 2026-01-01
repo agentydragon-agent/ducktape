@@ -4,13 +4,14 @@ from datetime import datetime
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ducktape_llm_common.claude_code_api import PostToolUseRequest, PreToolUseRequest, ToolInput
 from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
 from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
 from ducktape_llm_common.claude_linter_v2.types import SessionID
 from ducktape_llm_common.claude_outcomes import PostToolSuccess, PreToolApprove, PreToolDeny
-import pytest
 
 
 class TestMCPTools:

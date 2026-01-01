@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
 from pydantic import BaseModel
+import pytest
 
 from mcp_infra.compositor.admin import CompositorAdminServer
 from mcp_infra.mounted import Mounted

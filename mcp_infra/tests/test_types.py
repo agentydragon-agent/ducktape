@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 from pydantic import TypeAdapter, ValidationError
+import pytest
 
 from mcp_infra.prefix import MCPMountPrefix
 

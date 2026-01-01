@@ -3,6 +3,7 @@ from __future__ import annotations
 from importlib import resources
 
 from mcp import types
+
 from mcp_infra.compositor.rendering import render_compositor_instructions
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import RunningServerEntry

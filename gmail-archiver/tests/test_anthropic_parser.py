@@ -3,8 +3,9 @@
 from datetime import datetime
 from decimal import Decimal
 
-from gmail_archiver.planners.anthropic import AnthropicReceipt, parse_anthropic
 import pytest
+
+from gmail_archiver.planners.anthropic import AnthropicReceipt, parse_anthropic
 
 SAMPLE_RECEIPT_FULL = """
 Anthropic, PBC

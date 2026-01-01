@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from fastmcp.client import Client
 
 from agent_pkg_host.builder import IMAGE_INIT_PATH
-from mcp_infra.exceptions import InitFailedError
 from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited, TruncatedStream
 from mcp_infra.naming import build_mcp_function
 
@@ -19,7 +18,25 @@ if TYPE_CHECKING:
     from mcp_infra.exec.docker.server import ContainerExecServer
     from mcp_infra.mounted import Mounted
 
-__all__ = ["DEFAULT_INIT_TIMEOUT_MS", "run_init_script"]
+__all__ = ["DEFAULT_INIT_TIMEOUT_MS", "InitFailedError", "run_init_script"]
+
+
+class InitFailedError(Exception):
+    """Raised when init script fails (non-zero exit, truncated output, or MCP error)."""
+
+    exec_result: BaseExecResult | None
+
+    def __init__(self, message: str, *, exec_result: BaseExecResult | None = None):
+        full_message = message
+        if exec_result is not None:
+            stdout = exec_result.stdout
+            stderr = exec_result.stderr
+            stdout_text = stdout.truncated_text if isinstance(stdout, TruncatedStream) else stdout
+            stderr_text = stderr.truncated_text if isinstance(stderr, TruncatedStream) else stderr
+            full_message = f"{message}\n\nSTDOUT:\n{stdout_text}\n\nSTDERR:\n{stderr_text}"
+        super().__init__(full_message)
+        self.exec_result = exec_result
+
 
 # Default timeout for init script (1 minute)
 DEFAULT_INIT_TIMEOUT_MS = 60_000

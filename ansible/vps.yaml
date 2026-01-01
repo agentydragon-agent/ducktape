@@ -27,9 +27,9 @@
     # TLS stream routing defaults
     nginx_https_listener_port: 4443
     nginx_stream_default_backend: "127.0.0.1:{{ nginx_https_listener_port }}"
-    # Route to cluster ingress VIP (LoadBalancer external IP)
-    # 10.0.3.2 is the ingress-nginx-controller LoadBalancer VIP
-    test_cluster_stream_backend: "10.0.3.2:443"
+    # Route to cluster ingress VIP (LoadBalancer external IP, VLAN 4)
+    # 10.2.3.2 is the ingress-nginx-controller LoadBalancer VIP
+    test_cluster_stream_backend: "10.2.3.2:443"
     test_cluster_stream_sni_pattern: "*.test-cluster.agentydragon.com"
     test_cluster_stream_proxy_connect_timeout: 15s
     test_cluster_stream_proxy_timeout: 300s
