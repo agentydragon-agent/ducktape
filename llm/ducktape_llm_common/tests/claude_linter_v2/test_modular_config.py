@@ -1,7 +1,7 @@
 """Test modular configuration functionality."""
 
-from ducktape_llm_common.claude_linter_v2.config import ConfigLoader
 from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig, RuleConfig
+from ducktape_llm_common.claude_linter_v2.config.loader import ConfigLoader
 from ducktape_llm_common.claude_linter_v2.rule_registry import RuleRegistry
 
 
