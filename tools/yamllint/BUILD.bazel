@@ -1,0 +1,15 @@
+# Yamllint tool for YAML linting in Bazel
+
+exports_files([
+    "requirements_lock.txt",
+    "run_yamllint.sh",
+])
+
+# Yamllint binary via py_binary entry point
+py_binary(
+    name = "yamllint",
+    srcs = ["yamllint_main.py"],
+    main = "yamllint_main.py",
+    visibility = ["//visibility:public"],
+    deps = ["@pypi_yamllint//yamllint"],
+)

@@ -4,6 +4,9 @@ ignore: |
   .venv
   .uv-cache
   .uv-tools
+  # Excluded from yamllint (machine-specific and Helm templating)
+  ansible/host_vars/
+  k8s/
 
 rules:
   line-length:

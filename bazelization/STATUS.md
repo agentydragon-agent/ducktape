@@ -15,7 +15,7 @@ The end-state is a **fully Bazel-managed repository** where:
   - Rust: clippy, rustfmt (done)
   - JS/TS: eslint (done), prettier (done), svelte-check (done)
   - Bazel: buildifier (done)
-  - YAML: yamllint (for ansible/)
+  - YAML: yamllint (done)
   - Nix: alejandra
 - No separate pre-commit framework; git hook calls `bazel lint` directly
 
@@ -389,11 +389,7 @@ bazel build --config=check //...
    - `experimental/ember_evals/` (5 files) - fix or remove
    - Others: helm chart scripts, trilium scripts, etc.
 
-5. **Add yamllint aspect for ansible/**
-   - YAML linting via Bazel aspects
-   - Remove yamllint from pre-commit hooks
-
-6. **Bazelize frontend build/dev (props/frontend)**
+5. **Bazelize frontend build/dev (props/frontend)**
    - Currently: `pnpm run build` (vite build), `pnpm run dev` (vite dev)
    - Target: `bazel build //props/frontend:bundle`, `bazel run //props/frontend:dev`
    - Use rules_js for vite integration
@@ -402,25 +398,25 @@ bazel build --config=check //...
 
 ### Low Priority / Evaluate
 
-7. **Rust crates via crate_universe**
+6. **Rust crates via crate_universe**
    - `finance/worthy/` currently uses Cargo directly
    - Evaluate rules_rust crate_universe vs keeping Cargo
 
-8. **Website (Haskell/stack)**
+7. **Website (Haskell/stack)**
    - Extremely slow cold builds
    - Keep `stack build` outside Bazel for now
 
 ### Structural Improvements (do incrementally)
 
-9. **Colocate tests with production code**
+8. **Colocate tests with production code**
    - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
    - Simpler BUILD files, easier to see coverage gaps
 
-10. **Flatten package layouts**
-    - Remove `src/` nesting (Bazel handles packaging)
-    - Simpler paths in BUILD.bazel files
+9. **Flatten package layouts**
+   - Remove `src/` nesting (Bazel handles packaging)
+   - Simpler paths in BUILD.bazel files
 
-11. **Package consolidation**
+10. **Package consolidation**
     - Consider merging `mcp_infra/` into `adgn/`
     - Consider merging `agent_core/` into `adgn/`
     - Use Bazel visibility instead of package boundaries
@@ -597,7 +593,7 @@ Root `pyproject.toml` contains:
 | Ruff | `ruff.toml` (root) | `bazel lint //...` via aspect_rules_lint |
 | mypy | `mypy.ini` (root) | `bazel build --config=typecheck //...` via rules_mypy |
 | buildifier | `tools/lint/BUILD.bazel` | `bazel run //tools/lint:buildifier` |
-| yamllint | `.yamllint.yaml` | Not yet (pre-commit framework) |
+| yamllint | `.yamllint.yaml` | `bazel test //ansible:yamllint_test` |
 | alejandra | Nix files | Not yet (pre-commit framework) |
 | ESLint | `props/frontend/eslint.config.js` | `bazel lint //...` via aspect_rules_lint |
 | Prettier | `props/frontend/.prettierrc` | `bazel test //props/frontend:prettier_test` |
@@ -609,7 +605,7 @@ Root `pyproject.toml` contains:
 `tools/hooks/pre-commit`. The git hook runs `bazel lint` on staged files, which covers ruff and mypy.
 
 The `.pre-commit-config.yaml` file still exists for:
-- Hooks not yet migrated to Bazel (yamllint, alejandra)
+- Hooks not yet migrated to Bazel (alejandra)
 - Safety checks (no-commit-to-branch, check-merge-conflict, syntax validation)
 - Ansible syntax checking (ansible-syntax-check)
 
@@ -621,7 +617,7 @@ The `.pre-commit-config.yaml` file still exists for:
 | `check-ast` | Valid Python syntax | `bazel build` catches | Redundant |
 | `check-yaml` | Valid YAML | N/A | Keep in pre-commit |
 | `check-toml` | Valid TOML | N/A | Keep in pre-commit |
-| `yamllint` | YAML style | TODO: yamllint aspect | Keep in pre-commit |
+| `yamllint` | YAML style | `bazel test //ansible:yamllint_test` | ✅ Migrated |
 | `ansible-syntax-check` | Ansible validation | N/A | Keep in pre-commit |
 | `ruff-check` | Linting | `bazel lint //...` | ✅ Migrated |
 | `ruff-format` | Formatting | `bazel lint //...` | ✅ Migrated |
@@ -636,7 +632,7 @@ The `.pre-commit-config.yaml` file still exists for:
 
 | File | Purpose | Notes |
 |------|---------|-------|
-| `.yamllint.yaml` | yamllint config | Pre-commit only |
+| `.yamllint.yaml` | yamllint config | Used by `bazel test //ansible:yamllint_test` |
 | `mypy.ini` | Root mypy config | Used by adgn, critic_util |
 | `mypy-homeassistant.ini` | HA-specific mypy | Used by homeassistant/iaqi |
 | `Cargo.toml` | Rust workspace | finance/worthy uses Cargo |

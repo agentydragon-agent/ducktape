@@ -30,13 +30,7 @@ repos:
       # --pytest-test-first
       # - check-shebang-scripts-are-executable
 
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.35.1
-    hooks:
-      - id: yamllint
-        args: ["-c", ".yamllint.yaml"]
-        files: "\\.ya?ml$"
-        exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$"
+  # NOTE: yamllint is now handled by Bazel: `bazel test //ansible:yamllint_test`
 
   # Ansible syntax check: Fast validation for pre-commit
   #

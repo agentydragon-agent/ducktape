@@ -5,6 +5,7 @@ load("@rules_python//python/uv:lock.bzl", "lock")
 
 # Exports for use in other BUILD files
 exports_files([
+    ".yamllint.yaml",
     "mypy.ini",
     "requirements_bazel.txt",
     "ruff.toml",
