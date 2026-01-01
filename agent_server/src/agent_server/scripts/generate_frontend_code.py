@@ -18,8 +18,9 @@ import subprocess
 import sys
 from typing import Any
 
-from agent_core.events import ToolCall
 from pydantic import TypeAdapter
+
+from agent_core.events import ToolCall
 
 # Import models to export
 from agent_server.approvals import ApprovalRequest

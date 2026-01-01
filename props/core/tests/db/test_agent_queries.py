@@ -17,13 +17,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from props_core.db import query_builders as qb
 from props_core.db.examples import Example
 from props_core.db.models import Event, FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
 from props_core.db.session import get_session
 from props_core.splits import Split
-import pytest
-
 from tests.conftest import make_critic_run, make_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

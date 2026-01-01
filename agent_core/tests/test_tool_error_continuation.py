@@ -6,9 +6,10 @@ the agent continues with the next phase instead of aborting the entire turn.
 
 from __future__ import annotations
 
+from hamcrest import assert_that, contains_string, has_entries
+
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing import assert_function_call_output_structured
-from hamcrest import assert_that, contains_string, has_entries
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
 

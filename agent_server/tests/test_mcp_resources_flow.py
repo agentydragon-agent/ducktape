@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import FinishOnTextMessageHandler
@@ -8,8 +10,6 @@ from agent_core.testing import AssistantMessage, CapturingOpenAIModel, MakeCall
 from mcp_infra.display import DisplayEventsHandler
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesReadArgs
-import pytest
-
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
 
 

@@ -12,18 +12,18 @@ import shutil
 import tarfile
 from typing import Annotated
 
-from props_core.cli import common_options as opt
-from props_core.db.models import Snapshot
-from props_core.db.session import get_session
-from props_core.db.sync.export import _format_files
-from props_core.db.sync.sync import get_specimens_base_path
-from props_core.ids import SnapshotSlug
 import pygit2
 import typer
 from typer_di import TyperDI
 import yaml
 
 from cli_util import async_run
+from props_core.cli import common_options as opt
+from props_core.db.models import Snapshot
+from props_core.db.session import get_session
+from props_core.db.sync.export import _format_files
+from props_core.db.sync.sync import get_specimens_base_path
+from props_core.ids import SnapshotSlug
 
 # Snapshot subcommand group
 snapshot_app = TyperDI(help="Snapshot commands")

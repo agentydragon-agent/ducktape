@@ -10,6 +10,13 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 from uuid import UUID
 
+from rich.console import Console
+from sqlalchemy import text
+import typer
+
+from agent_pkg_runtime.mcp import mcp_client_from_env
+from agent_pkg_runtime.output import render_agent_prompt
+from cli_util import async_run
 from props_core.agent_helpers import get_current_agent_run, get_current_agent_run_id
 from props_core.agent_types import AgentType
 from props_core.cli.cmd_critic_dev_helpers import show_execution_traces, show_grading_summary, show_run_status
@@ -20,13 +27,6 @@ from props_core.ids import DefinitionId
 from props_core.models.examples import SingleFileSetExample, WholeSnapshotExample
 from props_core.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput, RunGraderInput
 from props_core.splits import Split
-from rich.console import Console
-from sqlalchemy import text
-import typer
-
-from agent_pkg_runtime.mcp import mcp_client_from_env
-from agent_pkg_runtime.output import render_agent_prompt
-from cli_util import async_run
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
 

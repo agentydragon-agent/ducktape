@@ -9,15 +9,15 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated
 
+import typer
+
+from agent_pkg_runtime.mcp import mcp_client_from_env
+from agent_pkg_runtime.output import WORKSPACE, render_agent_prompt
 from props_core.agent_helpers import fetch_snapshot, get_current_agent_run_id, get_scope_description
 from props_core.critic.submit_server import CriticSubmitInput
 from props_core.db.models import ReportedIssue, ReportedIssueOccurrence
 from props_core.db.session import get_session
 from props_core.db.snapshots import DBLocationAnchor
-import typer
-
-from agent_pkg_runtime.mcp import mcp_client_from_env
-from agent_pkg_runtime.output import WORKSPACE, render_agent_prompt
 
 HELP_TEXT = """Critic agent commands for reporting code review findings.
 

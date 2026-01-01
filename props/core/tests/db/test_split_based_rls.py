@@ -32,6 +32,11 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+import pytest_asyncio
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from agent_core.events import ToolCall
 from props_core.agent_types import PromptOptimizerTypeConfig
 from props_core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
@@ -41,11 +46,6 @@ from props_core.db.models import AgentRun, AgentRunStatus, Event, FalsePositive,
 from props_core.db.session import get_session
 from props_core.db.temp_user_manager import TempUserCredentials, TempUserManager
 from props_core.prompt_optimize.target_metric import TargetMetric
-import pytest
-import pytest_asyncio
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
 from tests.conftest import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

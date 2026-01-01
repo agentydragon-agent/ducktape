@@ -8,6 +8,9 @@ import sys
 import tempfile
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+import yaml
+
 from mcp_infra.seatbelt.compile import compile_sbpl
 from mcp_infra.seatbelt.model import (
     DefaultBehavior,
@@ -23,8 +26,6 @@ from mcp_infra.seatbelt.model import (
     SystemRule,
     TraceConfig,
 )
-from pydantic import BaseModel, ConfigDict, Field
-import yaml
 
 # Module path for subprocess invocation via `python -m`
 SANDBOXER_MODULE = __name__

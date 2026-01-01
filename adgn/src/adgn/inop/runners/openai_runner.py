@@ -11,22 +11,9 @@ import time
 from typing import Any
 import uuid
 
-from agent_core.agent import Agent
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import RequireAnyTool
-from agent_core.transcript_handler import TranscriptHandler
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
-from mcp_infra.compositor.server import Compositor
-from mcp_infra.constants import WORKING_DIR
-from mcp_infra.container_session import BindMount, ContainerOptions
-from mcp_infra.display import DisplayEventsHandler
-from mcp_infra.exec.bwrap import BwrapExecServer
-from mcp_infra.exec.direct import DirectExecServer
-from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.types import NetworkMode
 
 from adgn.inop.engine.models import (
     FinalOutput,
@@ -40,6 +27,19 @@ from adgn.inop.engine.models import (
 )
 from adgn.inop.io.file_utils import collect_workspace_files
 from adgn.inop.runners.base import AgentRunner
+from agent_core.agent import Agent
+from agent_core.handler import BaseHandler
+from agent_core.loop_control import RequireAnyTool
+from agent_core.transcript_handler import TranscriptHandler
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.constants import WORKING_DIR
+from mcp_infra.container_session import BindMount, ContainerOptions
+from mcp_infra.display import DisplayEventsHandler
+from mcp_infra.exec.bwrap import BwrapExecServer
+from mcp_infra.exec.direct import DirectExecServer
+from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.types import NetworkMode
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 
 """OpenAI runner that delegates execution to the Agent agent."""

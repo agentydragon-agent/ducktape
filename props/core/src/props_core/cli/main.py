@@ -13,6 +13,16 @@ from typing import Annotated
 from uuid import UUID
 
 import aiodocker
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.traceback import install as rich_traceback_install
+from sqlalchemy import func
+import typer
+from typer_di import TyperDI
+
+from cli_util import async_run, make_logging_callback
+from openai_utils.client_factory import build_client
 from props_core.agent_helpers import get_current_agent_run
 
 # cmd_gepa imported lazily below (gepa is optional)
@@ -58,16 +68,6 @@ from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props_core.prompt_optimize.target_metric import TargetMetric
 from props_core.runs_context import RunsContext
 from props_core.splits import Split
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.traceback import install as rich_traceback_install
-from sqlalchemy import func
-import typer
-from typer_di import TyperDI
-
-from cli_util import async_run, make_logging_callback
-from openai_utils.client_factory import build_client
 
 logger = logging.getLogger(__name__)
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+import pytest
+
 from mcp_infra.compositor.admin import CompositorAdminServer
 from mcp_infra.mounted import Mounted
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from pydantic import BaseModel
-import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

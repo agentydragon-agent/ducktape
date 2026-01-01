@@ -8,7 +8,6 @@ from uuid import UUID
 
 from agent_core.events import ApiRequest, AssistantText, Response, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
-
 from openai_utils.model import ReasoningItem
 from props_core.db.models import Event
 from props_core.db.session import get_session

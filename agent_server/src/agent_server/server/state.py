@@ -4,9 +4,10 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 import uuid
 
-from agent_server.server.protocol import ToolCall
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
+
+from agent_server.server.protocol import ToolCall
 
 # ---- Display items (normalized, UI-friendly) ----
 

@@ -13,10 +13,10 @@ import subprocess
 import sys
 from urllib.parse import urlunparse
 
-from mcp_infra.constants import SLEEP_FOREVER_CMD
 import yaml
 
 import docker
+from mcp_infra.constants import SLEEP_FOREVER_CMD
 from net_util import pick_free_port, wait_for_port
 from sandboxed_jupyter._jupyter_shared import (
     JUPYTER_SERVER_CONFIG,

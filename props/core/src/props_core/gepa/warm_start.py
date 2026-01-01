@@ -34,11 +34,12 @@ from __future__ import annotations
 from collections import defaultdict
 import logging
 
+from sqlalchemy import text
+
 from props_core.db.examples import Example
 from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 from props_core.splits import Split
-from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 

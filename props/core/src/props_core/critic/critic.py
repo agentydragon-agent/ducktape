@@ -12,6 +12,7 @@ from uuid import UUID
 
 import aiodocker
 from fastmcp.server.auth import AuthProvider
+
 from mcp_infra.enhanced import EnhancedFastMCP
 from props_core.agent_setup import AgentEnvironment
 from props_core.agent_workspace import WorkspaceManager

@@ -6,8 +6,6 @@ import logging
 import shlex
 from typing import TYPE_CHECKING, Any
 
-from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
-from agent_core.handler import BaseHandler
 from compact_json import Formatter  # type: ignore[import-untyped]
 from mcp import types as mcp_types
 from pydantic import TypeAdapter, ValidationError
@@ -19,6 +17,8 @@ from rich.panel import Panel
 from rich.segment import Segment
 from rich.text import Text
 
+from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.handler import BaseHandler
 from mcp_infra.exec.models import BaseExecResult, ExecInput, ExecStream, TruncatedStream
 from mcp_infra.naming import parse_tool_name
 from mcp_infra.prefix import MCPMountPrefix

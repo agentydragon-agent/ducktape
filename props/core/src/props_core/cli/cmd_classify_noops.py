@@ -8,12 +8,12 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-from props_core.cli import common_options as opt
-from props_core.noop_classifier.classifier import classify_patterns_parallel
 from rich.console import Console
 import typer
 
 from openai_utils.client_factory import build_client
+from props_core.cli import common_options as opt
+from props_core.noop_classifier.classifier import classify_patterns_parallel
 
 logger = logging.getLogger(__name__)
 

@@ -14,12 +14,13 @@ import tempfile
 import time
 from uuid import uuid4
 
-from gatelet.server.endpoints.webhook_view import PayloadSummary
 from httpx import AsyncClient
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+
+from gatelet.server.endpoints.webhook_view import PayloadSummary
 
 os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent.parent / "gatelet.toml"))
 # pylint: disable=wrong-import-position

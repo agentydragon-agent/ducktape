@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from git_commit_ai.git_ro.server import GitRoServer
 import pygit2
 import pytest
+
+from git_commit_ai.git_ro.server import GitRoServer
 
 
 def _ensure_identity(repo: pygit2.Repository) -> None:

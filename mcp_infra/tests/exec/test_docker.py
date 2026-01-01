@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
 import pytest
+
+from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
 
 # All tests below require structuredContent and call via the typed client
 

@@ -1,11 +1,12 @@
+from mcp import McpError, types
+import pytest
+
 from agent_server.mcp.approval_policy.engine import (
     POLICY_BACKEND_RESERVED_MISUSE_CODE,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
     POLICY_GATEWAY_STAMP_KEY,
     _raise_if_reserved_code,
 )
-from mcp import McpError, types
-import pytest
 
 
 async def test_raise_if_reserved_code_remaps_stamped_upstream() -> None:

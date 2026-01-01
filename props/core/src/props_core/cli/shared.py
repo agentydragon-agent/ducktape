@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 
+import tiktoken
+import typer
+
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleSpec, WholeSnapshotExample
 from props_core.runs_context import format_timestamp_session
-import tiktoken
-import typer
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from pydantic import BaseModel
+
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, NoAction
 
@@ -9,7 +11,6 @@ from agent_core.loop_control import Abort, InjectItems, NoAction
 from agent_server.notifications.handler import format_notifications_message
 from agent_server.server.bus import ServerBus
 from mcp_infra.notifications.types import NotificationsBatch
-from pydantic import BaseModel
 
 
 class ServerModeHandler(BaseModel, BaseHandler):

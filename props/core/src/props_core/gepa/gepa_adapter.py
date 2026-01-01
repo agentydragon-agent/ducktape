@@ -45,12 +45,16 @@ import tempfile
 from typing import Any, cast
 from uuid import UUID
 
-from agent_core.events import REFLECTION_EVENT_TYPES, EventType
 import aiodocker
 import gepa
 from gepa.core.result import GEPAResult
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 import litellm
+from pydantic import BaseModel
+from sqlalchemy import func
+
+from agent_core.events import REFLECTION_EVENT_TYPES, EventType
+from openai_utils.model import OpenAIModelProto
 from props_core.agent_types import AgentType
 from props_core.agent_workspace import WorkspaceManager
 from props_core.db.config import DatabaseConfig
@@ -61,10 +65,6 @@ from props_core.db.snapshots import DBCriticSubmitPayload
 from props_core.display import short_sha
 from props_core.gepa.warm_start import build_historical_gepa_state
 from props_core.splits import Split
-from pydantic import BaseModel
-from sqlalchemy import func
-
-from openai_utils.model import OpenAIModelProto
 
 logger = logging.getLogger(__name__)
 

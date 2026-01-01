@@ -22,12 +22,12 @@ from typing import Any, Literal
 
 # FastMCP-only: no TokenVerifier in server construction
 from fastmcp.tools import FunctionTool
-from mcp_infra.enhanced import EnhancedFastMCP
-from mcp_infra.prefix import MCPMountPrefix
 from pydantic import BaseModel, Field
 import pygit2
 from pygit2.enums import BranchType
 
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 from .formatting import (

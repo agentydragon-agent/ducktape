@@ -6,12 +6,12 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from git_commit_ai.cli import build_cache_key, get_commit_diff
-from git_commit_ai.core import build_prompt
 import pygit2
 import pytest
 
 from git_commit_ai import cli
+from git_commit_ai.cli import build_cache_key, get_commit_diff
+from git_commit_ai.core import build_prompt
 
 from .git_repo_utils import _commit, _init_repo, _stage
 

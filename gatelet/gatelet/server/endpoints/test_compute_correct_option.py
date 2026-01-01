@@ -1,7 +1,8 @@
 import hashlib
 
-from gatelet.server.endpoints.challenge import compute_correct_option
 import pytest
+
+from gatelet.server.endpoints.challenge import compute_correct_option
 
 
 def test_requires_power_of_two():

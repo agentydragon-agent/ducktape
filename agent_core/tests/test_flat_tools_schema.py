@@ -9,10 +9,6 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Final, Literal
 
-from agent_core.agent import Agent
-from agent_core.handler import FinishOnTextMessageHandler
-from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import AssistantMessage, CapturingOpenAIModel, MakeCall
 from hamcrest import (
     assert_that,
     contains_inanyorder,
@@ -23,11 +19,15 @@ from hamcrest import (
     has_key,
     has_properties,
 )
-from mcp_infra.enhanced import EnhancedFastMCP
-from mcp_infra.prefix import MCPMountPrefix
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
+from agent_core.agent import Agent
+from agent_core.handler import FinishOnTextMessageHandler
+from agent_core.loop_control import RequireAnyTool
+from agent_core.testing import AssistantMessage, CapturingOpenAIModel, MakeCall
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import SystemMessage
 
 # Test tool name constant

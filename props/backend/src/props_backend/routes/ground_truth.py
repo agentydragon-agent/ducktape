@@ -8,6 +8,10 @@ import io
 import tarfile
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
+
 from props_core.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
@@ -23,9 +27,6 @@ from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 from props_core.models.true_positive import LineRange
 from props_core.splits import Split
-from pydantic import BaseModel
-from sqlalchemy import func
-from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 

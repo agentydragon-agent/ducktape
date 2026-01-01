@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from click.testing import CliRunner
-from ducktape_llm_common.claude_linter.cli import cli
 import pytest
 import yaml
+
+from ducktape_llm_common.claude_linter.cli import cli
 
 
 def run_post_hook(test_input: dict[str, Any]):

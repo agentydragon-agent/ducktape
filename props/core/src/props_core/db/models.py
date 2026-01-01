@@ -19,7 +19,6 @@ from pydantic import BaseModel, Field, TypeAdapter
 if TYPE_CHECKING:
     from props_core.db.examples import Example
 
-from agent_core.events import EventType
 from sqlalchemy import (
     CheckConstraint,
     Enum,
@@ -40,6 +39,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
+from agent_core.events import EventType
 from props_core.agent_types import (
     CriticTypeConfig,
     FreeformTypeConfig,

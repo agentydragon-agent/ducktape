@@ -4,13 +4,14 @@ from io import StringIO
 from pathlib import Path
 import subprocess
 
+import pytest
+from rich.console import Console
+
 from difftree.config import RenderConfig, SortMode
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS
 from difftree.tree import build_tree, sort_tree
-import pytest
-from rich.console import Console
 
 # Test constants
 PNG_HEADER = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"

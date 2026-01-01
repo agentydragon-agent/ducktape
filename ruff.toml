@@ -76,7 +76,43 @@ keep-runtime-typing = false
 
 [lint.isort]
 # Teach Ruff which packages are first-party so sectioning stays stable
-known-first-party = ["adgn", "tana", "wt", "ducktape", "claude_hooks", "homeassistant", "llm", "openai_utils", "py_detectors", "agent_pkg", "agent_pkg_runtime", "clustering_util", "critic_util", "editor_util", "grader_util", "props_agent_util", "sandboxed_jupyter"]
+known-first-party = [
+    "adgn",
+    "agent_core",
+    "agent_pkg",
+    "agent_pkg_host",
+    "agent_pkg_runtime",
+    "agent_server",
+    "claude_hooks",
+    "cli_util",
+    "clustering_util",
+    "critic_util",
+    "difftree",
+    "ducktape",
+    "ducktape_llm_common",
+    "editor_agent",
+    "editor_agent_runtime",
+    "editor_util",
+    "ember",
+    "gatelet",
+    "git_commit_ai",
+    "gmail_archiver",
+    "grader_util",
+    "homeassistant",
+    "llm",
+    "mcp_infra",
+    "mcp_utils",
+    "net_util",
+    "openai_utils",
+    "props_agent_util",
+    "props_backend",
+    "props_core",
+    "py_detectors",
+    "rspcache",
+    "sandboxed_jupyter",
+    "tana",
+    "wt",
+]
 force-sort-within-sections = true
 combine-as-imports = true
 # Compatible with format.skip-magic-trailing-comma

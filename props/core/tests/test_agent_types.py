@@ -2,6 +2,9 @@
 
 from uuid import UUID
 
+from pydantic import TypeAdapter, ValidationError
+import pytest
+
 from props_core.agent_types import (
     AgentConfig,
     AgentType,
@@ -15,8 +18,6 @@ from props_core.agent_types import (
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
-from pydantic import TypeAdapter, ValidationError
-import pytest
 
 
 @pytest.fixture

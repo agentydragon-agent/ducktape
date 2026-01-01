@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from agent_server.persist.sqlite import SQLitePersistence
 import aiodocker
 from fastmcp.mcp_config import MCPConfig
 
+from agent_server.persist.sqlite import SQLitePersistence
 from openai_utils.model import OpenAIModelProto
 
 from .container import AgentContainer, build_container

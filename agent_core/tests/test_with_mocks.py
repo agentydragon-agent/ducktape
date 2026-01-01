@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from agent_core.agent import Agent
-from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import LIVE, AssistantMessage, EchoCall, assert_function_call_output_structured
 from hamcrest import has_entries
 import pytest
 
+from agent_core.agent import Agent
+from agent_core.loop_control import RequireAnyTool
+from agent_core.testing import LIVE, AssistantMessage, EchoCall, assert_function_call_output_structured
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 
 

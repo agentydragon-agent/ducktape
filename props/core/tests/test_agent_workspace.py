@@ -3,8 +3,9 @@
 from pathlib import Path
 from uuid import UUID
 
-from props_core.agent_workspace import WorkspaceManager
 import pytest
+
+from props_core.agent_workspace import WorkspaceManager
 
 
 class TestWorkspaceManager:

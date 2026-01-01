@@ -8,7 +8,14 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel
+import pytest
+import pytest_asyncio
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
+
 from agent_core.testing import FakeOpenAIModel, Step
+from openai_utils.model import ResponsesResult
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
@@ -40,13 +47,6 @@ from props_core.prompt_improve.reminder_handler import TerminationSuccess
 from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props_core.prompt_optimize.target_metric import TargetMetric
 from props_core.rationale import Rationale
-from pydantic import BaseModel
-import pytest
-import pytest_asyncio
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
-
-from openai_utils.model import ResponsesResult
 
 # Register shared fixtures from other packages
 pytest_plugins = [

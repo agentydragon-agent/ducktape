@@ -10,13 +10,13 @@ Tests the end-to-end SQL workflow where grader agents:
 from __future__ import annotations
 
 from fastmcp.exceptions import ToolError
+import pytest
+from sqlalchemy import create_engine, text
+
 from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 from props_core.db.session import get_session
 from props_core.db.temp_user_manager import TempUserManager
 from props_core.grader.submit_server import GraderSubmitServer
-import pytest
-from sqlalchemy import create_engine, text
-
 from tests.grader.conftest import make_test_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

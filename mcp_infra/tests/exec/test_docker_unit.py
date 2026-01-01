@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from fastmcp.resources.template import match_uri_template
+import pytest
+
 from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE, ContainerExecServer
 from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
 from mcp_infra.testing.fixtures import make_container_opts
-import pytest
 
 
 @pytest.fixture

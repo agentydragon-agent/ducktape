@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from props_core.db.models import AgentRun, GradingEdge, GradingPending, ReportedIssue
-from props_core.db.session import get_session
 from sqlalchemy import delete, select, text
 
 from agent_pkg_runtime.mcp import mcp_client_from_env
+from props_core.db.models import AgentRun, GradingEdge, GradingPending, ReportedIssue
+from props_core.db.session import get_session
 
 
 def get_pending_edges(
