@@ -13,12 +13,14 @@ Unified Bazel build system for all Python packages:
 
 | Metric | Count | Notes |
 |--------|-------|-------|
-| Python files total | 1131 | Excluding build artifacts |
-| Covered by BUILD | 1116 | 98.7% coverage |
+| Python files total | 1132 | Git-tracked only |
+| Covered by BUILD | 1117 | 98.7% coverage |
 | Intentionally excluded | 15 | ansible (12), nix (3) |
 | py_library targets | 43 | |
 | py_test targets | 26 | 1 manual (cotrl) |
 | ruff_test targets | 38 | Linting coverage |
+
+Run `./bazelization/audit.py` to get updated counts.
 
 ### Completed
 
@@ -127,7 +129,6 @@ The hook handles:
 
 7. **Rust crates (rules_rust)**
    - `finance/worthy/` uses Cargo
-   - sophia crate build currently broken
 
 ## Pure Bazel Structure Recommendations
 
@@ -153,7 +154,7 @@ The hook handles:
 
 ### Ongoing Maintenance
 
-1. **Run audit periodically**: Use the coverage script below to track drift
+1. **Run audit periodically**: `./bazelization/audit.py`
 2. **Add ruff_test to new packages**: Every BUILD.bazel with py_library should have ruff_test
 3. **Keep requirements_bazel.txt updated**: Run `bazel run //:requirements.update` after adding deps
 4. **Test with `bazel test //...`**: Ensure all non-manual tests pass before commits
@@ -177,134 +178,6 @@ Recommended CI steps:
 1. `bazel build //...` - Verify everything builds
 2. `bazel test //...` - Run all tests
 3. `bazel lint //...` - Run ruff linting (aspect_rules_lint)
-
-## Coverage Audit Script
-
-Use this script to track Bazelization progress:
-
-```python
-#!/usr/bin/env python3
-"""Audit Bazelization coverage in the repository."""
-
-import subprocess
-from pathlib import Path
-from collections import defaultdict
-
-REPO_ROOT = Path("/home/user/ducktape")
-
-# Directories to always exclude
-EXCLUDED_DIRS = {
-    ".git", "bazel-bin", "bazel-out", "bazel-testlogs", "bazel-ducktape",
-    "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache",
-    "third_party", ".claude", "bazel-*",
-}
-
-# Intentionally not Bazelized
-INTENTIONALLY_EXCLUDED = {
-    "ansible",  # Ansible modules managed by Ansible
-    "nix",      # Nix configs
-}
-
-def find_python_files():
-    """Find all Python files, excluding build artifacts."""
-    result = subprocess.run(
-        ["find", str(REPO_ROOT), "-name", "*.py", "-type", "f"],
-        capture_output=True, text=True
-    )
-    files = []
-    for f in result.stdout.strip().split("\n"):
-        if not f:
-            continue
-        path = Path(f)
-        # Skip excluded directories
-        if any(ex in path.parts for ex in EXCLUDED_DIRS):
-            continue
-        if str(path).startswith(str(REPO_ROOT / "bazel-")):
-            continue
-        files.append(path)
-    return files
-
-def find_build_files():
-    """Find all BUILD.bazel and BUILD files."""
-    result = subprocess.run(
-        ["find", str(REPO_ROOT), "-name", "BUILD.bazel", "-o", "-name", "BUILD"],
-        capture_output=True, text=True
-    )
-    builds = set()
-    for f in result.stdout.strip().split("\n"):
-        if not f or "bazel-" in f:
-            continue
-        builds.add(Path(f).parent)
-    return builds
-
-def get_package_for_file(py_file: Path, build_dirs: set) -> Path | None:
-    """Find the BUILD file directory that covers this Python file."""
-    current = py_file.parent
-    while current != REPO_ROOT.parent:
-        if current in build_dirs:
-            return current
-        current = current.parent
-    return None
-
-def analyze():
-    py_files = find_python_files()
-    build_dirs = find_build_files()
-
-    covered = []
-    uncovered = defaultdict(list)
-    intentional = defaultdict(list)
-
-    for py_file in py_files:
-        rel = py_file.relative_to(REPO_ROOT)
-        pkg = get_package_for_file(py_file, build_dirs)
-
-        # Check if intentionally excluded
-        top_dir = rel.parts[0] if rel.parts else ""
-        if top_dir in INTENTIONALLY_EXCLUDED:
-            intentional[top_dir].append(rel)
-        elif pkg:
-            covered.append(rel)
-        else:
-            # Group by top-level directory
-            uncovered[top_dir].append(rel)
-
-    print("=" * 60)
-    print("BAZELIZATION COVERAGE REPORT")
-    print("=" * 60)
-    print()
-    print(f"Total Python files: {len(py_files)}")
-    print(f"Covered by BUILD:   {len(covered)}")
-    print(f"Not covered:        {sum(len(v) for v in uncovered.values())}")
-    print(f"Intentionally excluded: {sum(len(v) for v in intentional.values())}")
-    print()
-
-    print("=" * 60)
-    print("UNCOVERED DIRECTORIES")
-    print("=" * 60)
-    for dir_name, files in sorted(uncovered.items()):
-        print(f"\n{dir_name}/ ({len(files)} files)")
-        for f in sorted(files)[:5]:
-            print(f"  - {f}")
-        if len(files) > 5:
-            print(f"  ... and {len(files) - 5} more")
-
-    print()
-    print("=" * 60)
-    print("INTENTIONALLY EXCLUDED")
-    print("=" * 60)
-    for dir_name, files in sorted(intentional.items()):
-        print(f"\n{dir_name}/ ({len(files)} files)")
-
-    print()
-    print("=" * 60)
-    print("BUILD FILES FOUND")
-    print("=" * 60)
-    for bd in sorted(build_dirs):
-        print(f"  {bd.relative_to(REPO_ROOT)}")
-
-if __name__ == "__main__":
-    analyze()
-```
 
 ## Commands Reference
 
