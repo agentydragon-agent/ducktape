@@ -462,6 +462,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")  # Resolved via layered config (env/git/default)
     parser.add_argument("--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--verbose", action="store_true", help="Show agent activity with rich display")
     parser.add_argument(
         "--accept-ai", action="store_true", help="Commit immediately with the AI-drafted message (skip editor)"
     )
@@ -597,6 +598,7 @@ class ProduceMessageInput:
     repo: pygit2.Repository
     model_name: str
     debug: bool
+    verbose: bool
     deadline: timedelta | None
     passthru: list[str]
     diff: str
@@ -612,7 +614,7 @@ async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
 
     ai_task: asyncio.Task[str] = asyncio.create_task(
         generate_commit_message_agent(
-            inp.repo, model=inp.model_name, debug=inp.debug, amend=inp.previous_message is not None
+            inp.repo, model=inp.model_name, debug=inp.debug, verbose=inp.verbose, amend=inp.previous_message is not None
         )
     )
 
@@ -698,6 +700,7 @@ async def async_main(argv: list[str] | None = None):
             repo=repo,
             model_name=config.model_name,
             debug=args.debug,
+            verbose=args.verbose,
             deadline=config.timeout,
             passthru=passthru,
             diff=diff,
