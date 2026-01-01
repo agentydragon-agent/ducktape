@@ -33,9 +33,12 @@ Target: Python 3.12+
 
 ### Rust
 ```bash
-cargo build
-cargo test
+bazel build //finance/worthy:rust_main
+bazel test //finance/worthy/...
+bazel lint --config=rust-check //finance/...
 ```
+
+**Rust dependencies**: Managed via root `Cargo.toml` + crate_universe.
 
 ## Code Style
 

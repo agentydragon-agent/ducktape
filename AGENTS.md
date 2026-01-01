@@ -166,9 +166,15 @@ bazel build //adgn:adgn
 
 ### Rust (Finance tools)
 ```bash
-cargo build
-cargo test
+bazel build //finance/worthy:rust_main
+bazel test //finance/worthy/...
+bazel lint --config=rust-check //finance/...
 ```
+
+**Adding dependencies:**
+1. Add to root `Cargo.toml`
+2. Run `CARGO_BAZEL_REPIN=1 bazel sync --only=crates` to update lockfile
+3. Use `@crates//crate_name` in BUILD.bazel deps
 
 ## Development Practices
 
