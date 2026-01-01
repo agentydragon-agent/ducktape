@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agent_core.testing import make_mock
+from agent_core.testing.openai_mock import make_mock
 
 pytestmark = pytest.mark.usefixtures()
 

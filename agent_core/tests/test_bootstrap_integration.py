@@ -8,7 +8,7 @@ import pytest
 
 from agent_core.handler import SequenceHandler
 from agent_core.loop_control import InjectItems, NoAction
-from agent_core.testing import is_all_function_calls
+from agent_core.testing.assertions import is_all_function_calls
 from mcp_infra.bootstrap import TypedBootstrapBuilder
 from mcp_infra.prefix import MCPMountPrefix
 

@@ -5,7 +5,8 @@ import asyncio
 from fastmcp.mcp_config import MCPConfig
 import pytest
 
-from agent_core.testing import AssistantMessage, CapturingOpenAIModel
+from agent_core.testing.openai_mock import CapturingOpenAIModel
+from agent_core.testing.steps import AssistantMessage
 from agent_server.runtime.container import build_container
 from agent_server.testing.steps import ApprovalPolicyAdminSetPolicyCall
 from openai_utils.model import InputTextPart

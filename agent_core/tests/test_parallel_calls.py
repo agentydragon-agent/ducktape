@@ -8,7 +8,7 @@ from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
-from agent_core.testing import NoopOpenAIClient
+from agent_core.testing.openai_mock import NoopOpenAIClient
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import UserMessage
 

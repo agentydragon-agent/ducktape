@@ -23,7 +23,8 @@ from agent_core.agent import Agent
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import CapturingOpenAIModel, FakeOpenAIModel, RecordingHandler
+from agent_core.testing.fixtures import RecordingHandler
+from agent_core.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.persist import AgentMetadata
