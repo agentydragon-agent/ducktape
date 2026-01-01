@@ -15,7 +15,7 @@ from typing import Annotated
 import aiodocker
 import typer
 
-from agent_pkg_host import ensure_image
+from agent_pkg_host.builder import ensure_image
 from cli_util.decorators import async_run
 from cli_util.logging_callback import make_logging_callback
 from editor_agent.agent_runner import run_editor_docker_agent

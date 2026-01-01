@@ -95,6 +95,7 @@ repos:
           - "fastmcp>=2.13"
           - "mcp>=1.0"
           - aiodocker
+          - openai>=1.0
           - pydantic>=2
           - anyio>=4.0
           - typer>=0.12

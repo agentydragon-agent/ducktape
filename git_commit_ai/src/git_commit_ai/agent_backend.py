@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import sys
 
 from fastmcp.client import Client
-from pydantic import BaseModel, Field
+from pydantic import Field
 import pygit2
 
 from agent_core.agent import Agent
@@ -22,13 +21,14 @@ from git_commit_ai.git_ro.server import (
 )
 from mcp_infra.bootstrap import TypedBootstrapBuilder
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.display import DisplayEventsHandler
+from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.types import SimpleOk
 from openai_utils.client_factory import build_client
 from openai_utils.model import FunctionCallItem, UserMessage
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
 def make_commit_bootstrap_calls(
@@ -138,7 +138,7 @@ def make_commit_bootstrap_calls(
     return calls
 
 
-class CommitMessage(BaseModel):
+class CommitMessage(OpenAIStrictModeBaseModel):
     """Minimal commit message payload."""
 
     subject: str = Field(..., description="<=72 chars, imperative mood")
@@ -209,7 +209,7 @@ class CommitController(BaseHandler):
 
 
 async def generate_commit_message_agent(
-    repo: pygit2.Repository, model: str, *, debug: bool = False, amend: bool = False
+    repo: pygit2.Repository, model: str, *, debug: bool = False, verbose: bool = False, amend: bool = False
 ) -> str:
     """Run Agent with git_ro + submit_commit_message MCP servers and return the commit message text."""
     submit_state = SubmitState()
@@ -242,8 +242,8 @@ async def generate_commit_message_agent(
         bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
         handlers: list[BaseHandler] = [CommitController(submit_state, bootstrap)]
-        if debug:
-            handlers.append(DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
+        if verbose:
+            handlers.append(await CompactDisplayHandler.from_compositor(comp, show_usage=debug))
 
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
