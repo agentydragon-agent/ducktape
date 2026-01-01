@@ -7,7 +7,7 @@ from typing import Any
 
 from uvicorn import Config, Server
 
-from net_util import pick_free_port
+from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 
 # System notification tag constants

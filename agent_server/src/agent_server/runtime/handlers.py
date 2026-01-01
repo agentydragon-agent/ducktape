@@ -11,7 +11,7 @@ from agent_server.server.mode_handler import ServerModeHandler
 from agent_server.server.runtime import UiEventHandler
 from agent_server.types import AgentID
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.display import DisplayEventsHandler
+from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.notifications.types import NotificationsBatch
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_utils import extract_single_text_content
+from mcp_utils.resources import extract_single_text_content
 
 
 @pytest.mark.requires_docker

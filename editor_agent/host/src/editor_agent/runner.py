@@ -18,7 +18,8 @@ from mcp_infra.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mounted import Mounted
 from mcp_infra.resources.server import ResourcesServer
-from net_util import get_docker_network_gateway_async, pick_free_port
+from net_util.docker import get_docker_network_gateway_async
+from net_util.net import pick_free_port
 
 # TODO: The pattern of "create token + StaticTokenVerifier, start FastMCP on free port,
 # get docker gateway IP, pass MCP_SERVER_URL/TOKEN to container" is duplicated in

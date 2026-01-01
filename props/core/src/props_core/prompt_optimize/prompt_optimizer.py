@@ -15,7 +15,7 @@ from sqlalchemy import func
 
 from agent_core.handler import AbortIf, RedirectOnTextMessageHandler
 from agent_core.turn_limit import MaxTurnsExceededError
-from mcp_infra.display import CompactDisplayHandler
+from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel

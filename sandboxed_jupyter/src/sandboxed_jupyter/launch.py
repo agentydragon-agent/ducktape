@@ -12,7 +12,7 @@ import subprocess
 import sys
 from urllib.parse import urlunparse
 
-from net_util import pick_free_port
+from net_util.net import pick_free_port
 from sandboxed_jupyter._jupyter_shared import build_jupyter_mcp_command, start_jupyter_server_process
 
 StrPath = str | os.PathLike[str]

@@ -41,8 +41,9 @@ import uvicorn
 from agent_core.handler import BaseHandler
 from agent_pkg_host.builder import ensure_image_from_archive
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.display import CompactDisplayHandler
-from net_util import get_docker_network_gateway_async, pick_free_port, wait_for_port
+from mcp_infra.display.rich_display import CompactDisplayHandler
+from net_util.docker import get_docker_network_gateway_async
+from net_util.net import pick_free_port, wait_for_port
 from props_core.agent_handle import load_definition_archive
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.common_options import DEFAULT_MAX_LINES

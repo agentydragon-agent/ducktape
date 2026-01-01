@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 from typing import IO
 
-from net_util import wait_for_port
+from net_util.net import wait_for_port
 
 # Jupyter Server configuration template for CORS and basic security settings
 JUPYTER_SERVER_CONFIG = (

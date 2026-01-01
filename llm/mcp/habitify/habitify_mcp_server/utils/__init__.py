@@ -1,30 +1,13 @@
-"""
-Utility functions for the Habitify MCP server.
-"""
+"""Utility functions for the Habitify MCP server."""
 
 from collections.abc import Callable
 import functools
 import os
 from typing import Any, TypeVar, cast
 
-# Import API key getter from our config module
 from ..config import load_api_key
 from ..habitify_client import HabitifyClient, HabitifyError
-from .date_utils import (
-    create_date_range,
-    format_date_for_api,
-    format_date_human,
-    format_date_yyyy_mm_dd,
-    parse_date,
-    validate_date_format,
-)
-from .error_utils import (
-    classify_error,
-    create_auth_error,
-    create_error_response,
-    create_not_found_error,
-    create_validation_error,
-)
+from .error_utils import create_auth_error, create_error_response
 
 # Define status colors mapping
 STATUS_COLORS = {"completed": "green", "skipped": "yellow", "failed": "red", "none": "blue"}
@@ -169,35 +152,3 @@ def with_client[F: Callable[..., Any]](func: F) -> F:
             return create_error_response(e)
 
     return cast(F, wrapper)
-
-
-__all__ = [
-    # Status formatting
-    "STATUS_COLORS",
-    "F",
-    # Type variables
-    "T",
-    "classify_error",
-    "create_auth_error",
-    "create_date_range",
-    # Error handling utilities
-    "create_error_response",
-    "create_not_found_error",
-    "create_validation_error",
-    "format_date_for_api",
-    "format_date_human",
-    "format_date_yyyy_mm_dd",
-    "format_rich_status",
-    # API key helpers
-    "get_api_key_from_param_or_env",
-    "get_server_api_key",
-    "get_status_color",
-    # Date utilities
-    "parse_date",
-    "validate_date_format",
-    # Parameter validation
-    "validate_required_params",
-    # Function decorators
-    "with_api_key",
-    "with_client",
-]
