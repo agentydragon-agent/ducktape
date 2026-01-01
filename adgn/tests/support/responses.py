@@ -4,8 +4,6 @@ import pytest
 
 from agent_core.testing.openai_mock import LIVE, make_mock
 
-__all__ = ["openai_client_param"]
-
 
 @pytest.fixture
 def openai_client_param(request, live_openai):

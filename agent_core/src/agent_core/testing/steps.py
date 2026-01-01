@@ -204,18 +204,3 @@ class AssertDockerExecThenCall:
         output = assert_and_extract(req, "docker_exec", BaseExecResult)
         _assert_docker_exec_success(output, self.stdout_matchers, self.expected_output)
         return factory.make(factory.docker_exec(self.next_cmd, timeout_ms=self.timeout_ms, tool_name=self.tool_name))
-
-
-__all__ = [
-    "AssertDockerExecThenCall",
-    "AssertDockerExecThenFinish",
-    "AssistantMessage",
-    "CheckThenCall",
-    "DockerExecCall",
-    "EchoCall",
-    "EmptyArgs",
-    "ExtractThenCall",
-    "Finish",
-    "MakeCall",
-    "Step",
-]

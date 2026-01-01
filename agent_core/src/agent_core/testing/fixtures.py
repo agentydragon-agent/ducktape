@@ -31,7 +31,6 @@ from agent_core.testing.echo_server import make_echo_server
 from agent_core.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 
 # Re-export fixtures from responses module for downstream use
-from agent_core.testing.responses import make_step_runner, reasoning_model, responses_factory
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.testing.simple_servers import SendMessageInput
@@ -330,30 +329,3 @@ def error_payload_server() -> EnhancedFastMCP:
         return {"ok": False, "error": "boom"}
 
     return mcp
-
-
-__all__ = [
-    # Fixtures (exported for pytest_plugins registration)
-    # Note: compositor fixtures are in mcp_infra.testing.fixtures
-    "FAIL_TOOL_NAME",
-    "RecordingHandler",
-    "ValidationServer",
-    "call_id_gen",
-    "echo_server",
-    "echo_spec",
-    "error_payload_server",
-    "live_openai",
-    "make_call_result",
-    "make_capturing_client",
-    "make_fake_openai",
-    "make_step_runner",
-    "make_test_agent",
-    "make_tool_call",
-    "make_tool_call_output",
-    "mcp_client_echo",
-    "reasoning_model",
-    "recording_handler",
-    "responses_factory",
-    "test_handlers",
-    "validation_server",
-]

@@ -110,14 +110,3 @@ class NoopOpenAIClient(OpenAIModelProto):
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")
-
-
-__all__ = [
-    "LIVE",
-    "CapturedRequest",
-    "CapturingOpenAIModel",
-    "FakeOpenAIModel",
-    "NoopOpenAIClient",
-    "ResponsesCreateFn",
-    "make_mock",
-]

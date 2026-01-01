@@ -104,13 +104,3 @@ def is_all_function_calls(
 def is_all_user_messages(items: Sequence[UserMessage | FunctionCallItem]) -> TypeGuard[Sequence[UserMessage]]:
     """TypeGuard to narrow Sequence[UserMessage | FunctionCallItem] to Sequence[UserMessage]."""
     return all(isinstance(x, UserMessage) for x in items)
-
-
-__all__ = [
-    "assert_and_extract",
-    "assert_last_call",
-    "extract_output",
-    "get_last_function_output",
-    "is_all_function_calls",
-    "is_all_user_messages",
-]
