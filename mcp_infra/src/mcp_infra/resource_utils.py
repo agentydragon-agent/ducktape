@@ -8,7 +8,7 @@ from fastmcp.server.server import add_resource_prefix as _fastmcp_add_resource_p
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
-from mcp_utils import extract_single_text_content
+from mcp_utils.resources import extract_single_text_content
 
 
 def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:

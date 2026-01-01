@@ -12,7 +12,7 @@ from agent_core.turn_limit import MaxTurnsHandler
 from agent_pkg_host.init_runner import run_init_script
 from editor_agent.runner import EditorDockerSession, editor_docker_session, writeback_success
 from editor_agent.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
-from mcp_infra.display import CompactDisplayHandler
+from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
 
 

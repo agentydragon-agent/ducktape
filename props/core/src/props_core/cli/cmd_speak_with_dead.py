@@ -14,7 +14,7 @@ from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutpu
 from agent_core.loop_control import ForbidAllTools
 from cli_util.decorators import async_run
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.display import DisplayEventsHandler
+from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client
 from openai_utils.model import AssistantMessage, FunctionCallItem, ReasoningItem, UserMessage

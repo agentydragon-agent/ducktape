@@ -11,7 +11,7 @@ from typing import Any
 from fastmcp.client import Client
 from mcp.types import InitializeResult
 
-from mcp_utils import extract_single_text_content
+from mcp_utils.resources import extract_single_text_content
 
 
 def print_mcp_env() -> None:

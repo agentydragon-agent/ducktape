@@ -17,7 +17,7 @@ import yaml
 
 import docker
 from mcp_infra.constants import SLEEP_FOREVER_CMD
-from net_util import pick_free_port, wait_for_port
+from net_util.net import pick_free_port, wait_for_port
 from sandboxed_jupyter._jupyter_shared import (
     JUPYTER_SERVER_CONFIG,
     build_jupyter_mcp_command,
