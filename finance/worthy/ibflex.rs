@@ -8,7 +8,7 @@ use std::{
     fmt,
     fmt::{Display, Formatter},
 };
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use url::Url;
 
 #[derive(Debug, Deserialize, PartialEq)]

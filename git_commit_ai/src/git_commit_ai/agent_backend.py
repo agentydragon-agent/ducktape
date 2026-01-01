@@ -209,12 +209,18 @@ class CommitController(BaseHandler):
 
 
 async def generate_commit_message_agent(
-    repo: pygit2.Repository, model: str, *, debug: bool = False, verbose: bool = False, amend: bool = False
+    repo: pygit2.Repository,
+    model: str,
+    *,
+    debug: bool = False,
+    verbose: bool = False,
+    amend: bool = False,
+    user_context: str | None = None,
 ) -> str:
     """Run Agent with git_ro + submit_commit_message MCP servers and return the commit message text."""
     submit_state = SubmitState()
 
-    def _build_commit_prompt(is_amend: bool) -> str:
+    def _build_commit_prompt(is_amend: bool, context: str | None) -> str:
         base = "You are an expert at writing high-quality git commit messages.\n\n"
         common_tail = (
             "Produce a concise, imperative subject (<=80 chars) and optional body "
@@ -230,9 +236,12 @@ async def generate_commit_message_agent(
             )
         else:
             middle = "You are COMMITTING the staged diff. Inspect the staged changes and then "
-        return base + middle + common_tail
+        prompt = base + middle + common_tail
+        if context:
+            prompt += f"\n\nUser provided the following context/guidance for this commit:\n{context}"
+        return prompt
 
-    prompt = _build_commit_prompt(amend)
+    prompt = _build_commit_prompt(amend, user_context)
 
     # Use CommitCompositor to mount servers
     async with CommitCompositor(repo, submit_state) as comp:

@@ -66,7 +66,7 @@ async fn get_price_in_chf(isin: &str) -> Result<Decimal, Box<dyn Error>> {
     )?;
     for row in rows.iter_mut() {
         let content = row
-            .call_js_fn("function() { return this.innerText; }", true)?
+            .call_js_fn("function() { return this.innerText; }", vec![], true)?
             .value
             .ok_or(SwissFundDataError::JSError)?;
         match content {

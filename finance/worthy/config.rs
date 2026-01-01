@@ -101,7 +101,4 @@ pub struct Config {
 
     /// cFIREsim configuration.
     pub cfiresim: Option<CFireSimConfig>,
-
-    /// Issuer for Solid tokens. Optional.
-    pub solid_issuer: Option<String>,
 }

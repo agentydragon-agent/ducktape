@@ -1,5 +1,4 @@
 use ibflex::{
-    parse_flex_statement_response,
     AssetCategory::Stock,
     FlexQueryResponse, FlexQuerySuccess, FlexStatement, FlexStatementResponse, FlexStatements,
     LevelOfDetail::Summary,
@@ -7,6 +6,7 @@ use ibflex::{
     Period::LastBusinessDay,
     Side::Long,
     Status::{Fail, Success},
+    parse_flex_statement_response,
 };
 use rust_decimal::Decimal;
 use url::Url;
