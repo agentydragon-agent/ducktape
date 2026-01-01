@@ -83,6 +83,7 @@ Run `./bazelization/audit.py` to get updated counts.
 - CI workflow updated to run `bazel lint //...` in addition to `bazel build` and `bazel test`
 - Yamllint migrated from pre-commit to Bazel (`bazel test //ansible:yamllint_test`)
 - Rust crate_universe fully integrated (Cargo.toml kept for dependency resolution only)
+- Frontend build/dev migrated to Bazel (`bazel build //props/frontend:bundle`, `bazel run //props/frontend:dev`)
 
 ### In Progress / Partial
 
@@ -370,54 +371,47 @@ bazel build --config=check //...
 
 ### High Priority
 
-1. **Enable remote cache write in CI**
-   - Currently read-only (`--remote_upload_local_results=false`)
-   - Enable for main branch for better cache hit rates
+- **Enable remote cache write in CI**
+  - Currently read-only (`--remote_upload_local_results=false`)
+  - Enable for main branch for better cache hit rates
 
-2. **Migrate Docker images to rules_oci**
-   - Start with `docker/runtime/Dockerfile` (most frequently built)
-   - Then: `docker/llm/properties-critic/Dockerfile`
-   - Evaluate complexity vs benefits for remaining images
+- **Migrate Docker images to rules_oci**
+  - Start with `docker/runtime/Dockerfile` (most frequently built)
+  - Then: `docker/llm/properties-critic/Dockerfile`
+  - Evaluate complexity vs benefits for remaining images
 
-3. **Fix ember_evals missing modules**
-   - Add missing .kubernetes, .matrix, .steps, .models submodules
-   - Or remove if abandoned
+- **Fix ember_evals missing modules**
+  - Add missing .kubernetes, .matrix, .steps, .models submodules
+  - Or remove if abandoned
 
 ### Medium Priority
 
-4. **Bazelify remaining Python files (54 not in targets)**
-   - `inventree_utils/` (23 files) - create BUILD.bazel
-   - `llm/` examples/scripts (6 files) - add to srcs or mark as data
-   - `experimental/ember_evals/` (5 files) - fix or remove
-   - Others: helm chart scripts, trilium scripts, etc.
-
-5. **Bazelize frontend build/dev (props/frontend)**
-   - Currently: `pnpm run build` (vite build), `pnpm run dev` (vite dev)
-   - Target: `bazel build //props/frontend:bundle`, `bazel run //props/frontend:dev`
-   - Use rules_js for vite integration
-   - Eliminates heterogeneity: Python fully Bazel, JS/TS currently split
-   - Note: Linting already Bazelized (prettier, svelte-check, eslint)
+- **Bazelify remaining Python files (54 not in targets)**
+  - `inventree_utils/` (23 files) - create BUILD.bazel
+  - `llm/` examples/scripts (6 files) - add to srcs or mark as data
+  - `experimental/ember_evals/` (5 files) - fix or remove
+  - Others: helm chart scripts, trilium scripts, etc.
 
 ### Low Priority / Evaluate
 
-6. **Website (Haskell/stack)**
-   - Extremely slow cold builds
-   - Keep `stack build` outside Bazel for now
+- **Website (Haskell/stack)**
+  - Extremely slow cold builds
+  - Keep `stack build` outside Bazel for now
 
 ### Structural Improvements (do incrementally)
 
-7. **Colocate tests with production code**
-   - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
-   - Simpler BUILD files, easier to see coverage gaps
+- **Colocate tests with production code**
+  - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
+  - Simpler BUILD files, easier to see coverage gaps
 
-8. **Flatten package layouts**
-   - Remove `src/` nesting (Bazel handles packaging)
-   - Simpler paths in BUILD.bazel files
+- **Flatten package layouts**
+  - Remove `src/` nesting (Bazel handles packaging)
+  - Simpler paths in BUILD.bazel files
 
-9. **Package consolidation**
-    - Consider merging `mcp_infra/` into `adgn/`
-    - Consider merging `agent_core/` into `adgn/`
-    - Use Bazel visibility instead of package boundaries
+- **Package consolidation**
+  - Consider merging `mcp_infra/` into `adgn/`
+  - Consider merging `agent_core/` into `adgn/`
+  - Use Bazel visibility instead of package boundaries
 
 ## Future Structure Goals
 

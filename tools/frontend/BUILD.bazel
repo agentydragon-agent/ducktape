@@ -1,0 +1,17 @@
+# Frontend build tooling
+# Vite and SvelteKit binaries for props/frontend
+
+load("@npm_props_frontend//props/frontend:vite/package_json.bzl", vite_bin = "bin")
+load("@npm_props_frontend//props/frontend:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_props_frontend//props/frontend:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
+
+package(default_visibility = ["//visibility:public"])
+
+# Vite binary for frontend builds
+vite_bin.vite_binary(name = "vite")
+
+# Svelte-kit binary for generating .svelte-kit/
+svelte_kit_bin.svelte_kit_binary(name = "svelte-kit")
+
+# Svelte-check binary for type checking
+svelte_check_bin.svelte_check_binary(name = "svelte-check")

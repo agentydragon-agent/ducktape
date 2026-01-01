@@ -1,4 +1,8 @@
 load("@npm_props_frontend//:defs.bzl", "npm_link_all_packages")
+load("@npm_props_frontend//props/frontend:vite/package_json.bzl", vite_bin = "bin")
+load("@npm_props_frontend//props/frontend:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_props_frontend//props/frontend:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
+load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
 
 # Link npm packages from pnpm-lock.yaml
 npm_link_all_packages(name = "node_modules")
@@ -11,6 +15,20 @@ exports_files([
     ".prettierrc",
     "tsconfig.json",
 ])
+
+# Source files for the frontend
+_SRCS = glob([
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "src/**/*.css",
+    "src/**/*.html",
+    "static/**",
+]) + [
+    "package.json",
+    "svelte.config.js",
+    "vite.config.ts",
+    "tsconfig.json",
+]
 
 # ESLint binary is created in //tools/lint:eslint to avoid artifact path conflicts
 # See bazelization/STATUS.md "JS/TS Linting via Bazel Aspects" section
@@ -37,25 +55,58 @@ sh_test(
     tags = ["lint"],
 )
 
+# Generate .svelte-kit directory (required by svelte-check for tsconfig)
+# Run: bazel build //props/frontend:svelte_kit_sync
+svelte_kit_bin.svelte_kit(
+    name = "svelte_kit_sync",
+    srcs = [
+        ":node_modules",
+        "package.json",
+        "svelte.config.js",
+        "vite.config.ts",
+        "tsconfig.json",
+    ],
+    args = ["sync"],
+    chdir = package_name(),
+    out_dirs = [".svelte-kit"],
+)
+
 # Svelte-check (type checking)
-# Runs svelte-kit sync to generate .svelte-kit/tsconfig.json, then runs svelte-check
-sh_test(
+# Run: bazel test //props/frontend:svelte_check_test
+svelte_check_bin.svelte_check_test(
     name = "svelte_check_test",
-    srcs = ["//tools/lint:run_svelte_check.sh"],
     args = [
-        "$(rootpath //tools/lint:svelte-check)",
-        "$(rootpath //tools/lint:svelte-kit)",
-        "props/frontend",  # Package directory
         "--tsconfig",
         "tsconfig.json",
     ],
+    chdir = package_name(),
     data = [
-        "//tools/lint:svelte-check",
-        "//tools/lint:svelte-kit",
-        ":node_modules",  # All npm packages for type checking
+        ":node_modules",
+        ":svelte_kit_sync",  # Depends on .svelte-kit directory
         "tsconfig.json",
         "svelte.config.js",
         "vite.config.ts",
     ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
     tags = ["lint"],
+)
+
+# Vite build (production bundle)
+# Run: bazel build //props/frontend:bundle
+# Output: bazel-bin/props/frontend/dist/
+vite_bin.vite(
+    name = "bundle",
+    srcs = _SRCS + [":node_modules"],
+    args = ["build"],
+    chdir = package_name(),
+    out_dirs = ["dist"],
+)
+
+# Vite dev server
+# Run: bazel run //props/frontend:dev
+js_run_devserver(
+    name = "dev",
+    args = ["dev"],
+    chdir = package_name(),
+    data = _SRCS + [":node_modules"],
+    tool = "//tools/frontend:vite",
 )
