@@ -200,7 +200,7 @@ git commit → pre-commit hook → bazel query → bazel lint //pkg1:all //pkg2:
 7. Writes `~/.cache/bazel-proxy/bazelrc` with proxy settings
 8. Installs bazel wrapper at `~/.cache/bazel-proxy/bin/bazel`
 9. Installs git pre-commit hook (`tools/hooks/pre-commit` → `.git/hooks/pre-commit`)
-10. Exports `BAZEL_PROXY_PORT` and `BAZEL_COMBINED_CA` via `CLAUDE_ENV_FILE`
+10. Exports PATH to wrapper via `CLAUDE_ENV_FILE`
 
 **Package structure:**
 ```
@@ -245,25 +245,22 @@ Claude Code web start
 
 The `tools/proxy_config/defs.bzl` module extension generates `@proxy_config//:proxy_env.bzl`:
 
-- **On Claude Code web:** Reads `BAZEL_PROXY_PORT` and `BAZEL_COMBINED_CA` from environment (set by session hook)
+- **On Claude Code web:** Detects proxy by checking if `~/.cache/bazel-proxy/combined_ca.pem` exists
 - **On local dev:** Empty `PROXY_ENV = {}`
 
 This allows BUILD files to use proxy env vars without hardcoding.
 
 ### Proxy Config Architecture
 
-The proxy env vars are set in three places (intentionally):
+The proxy config is set in two places:
 
 | Location | Purpose | Set By |
 |----------|---------|--------|
 | `~/.cache/bazel-proxy/bin/bazel` wrapper | For Bazelisk downloading Bazel | `bazelisk_setup.install_wrapper()` |
-| `CLAUDE_ENV_FILE` | For shell session (PATH, env vars) | `session_start.py` |
 | `~/.cache/bazel-proxy/bazelrc` | For build actions (pip, uv) | `bazel_proxy_setup._write_bazel_config()` |
 
-This layering is necessary because:
-1. Bazelisk needs proxy vars before Bazel is downloaded
-2. Shell session needs them for interactive bazel commands
-3. Build actions need them passed via `--action_env` in bazelrc
+The module extension detects proxy config by checking if `~/.cache/bazel-proxy/combined_ca.pem` exists
+(created by session hook), rather than reading environment variables.
 
 ## Linter Configuration
 
