@@ -1,0 +1,73 @@
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@npm_props_frontend//:defs.bzl", "npm_link_all_packages")
+
+# Link npm packages from pnpm-lock.yaml
+npm_link_all_packages(name = "node_modules")
+
+# Export files needed by npm_translate_lock
+exports_files([
+    "pnpm-lock.yaml",
+    "package.json",
+])
+
+# SvelteKit build (vite build)
+js_run_binary(
+    name = "build",
+    srcs = glob(
+        [
+            "src/**/*",
+            "static/**/*",
+            "*.config.*",
+            "*.json",
+            ".prettierrc",
+        ],
+        exclude = ["**/node_modules/**"],
+    ) + [
+        ":node_modules",
+    ],
+    outs = ["build"],
+    args = ["build"],
+    chdir = package_name(),
+    tool = ":node_modules/vite/bin/vite.js",
+)
+
+# Type checking (svelte-check)
+js_run_binary(
+    name = "check",
+    srcs = glob(
+        [
+            "src/**/*",
+            "*.config.*",
+            "*.json",
+        ],
+        exclude = ["**/node_modules/**"],
+    ) + [
+        ":node_modules",
+    ],
+    args = [
+        "sync",
+        "&&",
+        "svelte-check",
+        "--tsconfig",
+        "./tsconfig.json",
+    ],
+    chdir = package_name(),
+    tool = ":node_modules/@sveltejs/kit/svelte-kit.js",
+)
+
+# ESLint
+js_run_binary(
+    name = "lint",
+    srcs = glob(
+        [
+            "src/**/*",
+            "eslint.config.js",
+        ],
+        exclude = ["**/node_modules/**"],
+    ) + [
+        ":node_modules",
+    ],
+    args = ["."],
+    chdir = package_name(),
+    tool = ":node_modules/eslint/bin/eslint.js",
+)

@@ -31,10 +31,10 @@ Run `./bazelization/audit.py` to get updated counts.
 - Circular dependency resolved (bootstrap_handler moved to mcp_infra)
 - Session start hooks for Claude Code web Bazel proxy
 - `aspect_rules_lint` integrated for ruff linting (`bazel lint //...`)
+- Node.js frontends migrated to rules_js (`props/frontend`, `rspcache/admin_ui`)
 
 ### In Progress / Partial
 
-- Node.js frontends remain on pnpm (not yet migrated to rules_js)
 - Docker images built with Dockerfiles (not rules_oci)
 - Website uses Hakyll/stack (very slow Haskell builds)
 
@@ -296,24 +296,20 @@ BUILD.bazel files
 
 ### Medium Priority
 
-3. **Node.js frontends (rules_js)**
-   - `props/frontend`, `rspcache/admin_ui`, `agent_server/web`
-   - Currently use pnpm outside Bazel
-
-4. **Docker images (rules_oci)**
+3. **Docker images (rules_oci)**
    - Start with critical images, evaluate complexity vs Dockerfiles
 
-5. **Add mypy integration**
+4. **Add mypy integration**
    - Extend aspect_rules_lint for mypy type checking
    - Currently only ruff is integrated
 
 ### Low Priority / Evaluate
 
-6. **Website**
+5. **Website**
    - Haskell builds extremely slow from scratch
    - Consider keeping `stack build` outside Bazel
 
-7. **Rust crates (rules_rust)**
+6. **Rust crates (rules_rust)**
    - `finance/worthy/` uses Cargo
 
 ## Future Structure Goals

@@ -6,7 +6,11 @@
   "pnpm": {
     "overrides": {
       "esbuild": ">=0.21.0"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@playwright/test"
+    ]
   },
   "scripts": {
     "dev": "vite dev",

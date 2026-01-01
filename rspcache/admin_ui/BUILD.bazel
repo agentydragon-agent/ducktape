@@ -1,0 +1,48 @@
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@npm_rspcache_admin//:defs.bzl", "npm_link_all_packages")
+
+# Link npm packages from pnpm-lock.yaml (converted from package-lock.json)
+npm_link_all_packages(name = "node_modules")
+
+# Export files needed by npm_translate_lock
+exports_files([
+    "pnpm-lock.yaml",
+    "package.json",
+])
+
+# Vite build (React app)
+js_run_binary(
+    name = "build",
+    srcs = glob(
+        [
+            "src/**/*",
+            "index.html",
+            "*.config.*",
+            "*.json",
+        ],
+        exclude = ["**/node_modules/**"],
+    ) + [
+        ":node_modules",
+    ],
+    outs = ["dist"],
+    args = ["build"],
+    chdir = package_name(),
+    tool = ":node_modules/vite/bin/vite.js",
+)
+
+# TypeScript type checking
+js_run_binary(
+    name = "check",
+    srcs = glob(
+        [
+            "src/**/*",
+            "*.json",
+        ],
+        exclude = ["**/node_modules/**"],
+    ) + [
+        ":node_modules",
+    ],
+    args = ["--noEmit"],
+    chdir = package_name(),
+    tool = ":node_modules/typescript/bin/tsc",
+)
