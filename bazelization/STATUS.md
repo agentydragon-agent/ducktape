@@ -103,7 +103,7 @@ Run `./bazelization/audit.py` to get updated counts.
 | `ember` | `ember/` | ✅ Migrated | `bazel build //ember:image` |
 | `html` | `llm/html/` | ✅ Migrated | `bazel build //llm/html:image` |
 | `properties-critic` | `docker/llm/properties-critic/` | Pending | LLM tooling |
-| `openai_utils` | `openai_utils/docker/` | Pending | OpenAI utilities |
+| `openai_utils` | `openai_utils/docker/` | ❌ Deleted | Probe module never implemented |
 | `claude_optimizer` | `claude/claude_optimizer/docker/` | Pending | 8 variant images |
 | `props agents` | `props/core/src/props_core/agent_defs/` | Pending | 9 agent images |
 | `molecule` | `ansible/molecule/github_release_plugins/` | Skip | Ansible testing |

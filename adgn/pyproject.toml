@@ -184,7 +184,6 @@ skip-globs = ["tests/detectors/fixtures/**"]
 # LLM console scripts
 adgn-sysrw = "adgn.sysrw.cli:app"
 adgn-agent = "adgn.agent.cli:main"
-adgn-openai-probe = "openai_utils.probe:main"
 adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
 adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"
 adgn-mcp-docker-exec = "adgn.mcp.exec.docker.launcher:main"
