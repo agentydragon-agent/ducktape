@@ -16,7 +16,7 @@ The end-state is a **fully Bazel-managed repository** where:
   - JS/TS: eslint (done), prettier (done), svelte-check (done)
   - Bazel: buildifier (done)
   - YAML: yamllint (done)
-  - Nix: alejandra
+  - Nix: alejandra (done)
 - No separate pre-commit framework; git hook calls `bazel lint` directly
 
 ### Docker Images via rules_oci
@@ -608,7 +608,7 @@ Root `pyproject.toml` contains:
 | mypy | `mypy.ini` (root) | `bazel build --config=typecheck //...` via rules_mypy |
 | buildifier | `tools/lint/BUILD.bazel` | `bazel run //tools/lint:buildifier` |
 | yamllint | `.yamllint.yaml` | `bazel test //ansible:yamllint_test` |
-| alejandra | Nix files | Not yet (pre-commit framework) |
+| alejandra | Nix files | `bazel test //:alejandra_test` |
 | ESLint | `props/frontend/eslint.config.js` | `bazel lint //...` via aspect_rules_lint |
 | Prettier | `props/frontend/.prettierrc` | `bazel test //props/frontend:prettier_test` |
 | svelte-check | `props/frontend/tsconfig.json` | `bazel test //props/frontend:svelte_check_test` |
@@ -619,7 +619,6 @@ Root `pyproject.toml` contains:
 `tools/hooks/pre-commit`. The git hook runs `bazel lint` on staged files, which covers ruff and mypy.
 
 The `.pre-commit-config.yaml` file still exists for:
-- Hooks not yet migrated to Bazel (alejandra)
 - Safety checks (no-commit-to-branch, check-merge-conflict, syntax validation)
 - Ansible syntax checking (ansible-syntax-check)
 
@@ -637,7 +636,7 @@ The `.pre-commit-config.yaml` file still exists for:
 | `ruff-format` | Formatting | `bazel lint //...` | ✅ Migrated |
 | `mypy` (12 configs) | Type checking | `bazel build --config=typecheck` | ✅ Migrated |
 | `buildifier` | BUILD formatting | `bazel run //tools/lint:buildifier` | ✅ Migrated |
-| `alejandra` | Nix formatting | N/A (nix-specific) | Keep in pre-commit |
+| `alejandra` | Nix formatting | `bazel test //:alejandra_test` | ✅ Migrated |
 | `eslint` | JS/TS linting | `bazel lint //...` | ✅ Migrated |
 | `prettier` | JS/TS formatting | `bazel test //props/frontend:prettier_test` | ✅ Migrated |
 | `svelte-check` | Svelte types | `bazel test //props/frontend:svelte_check_test` | ✅ Migrated |

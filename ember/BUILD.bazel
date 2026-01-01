@@ -5,7 +5,10 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
+exports_files([
+    "devenv.nix",
+    "pyproject.toml",
+])
 
 py_library(
     name = "ember",

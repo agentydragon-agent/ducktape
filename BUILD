@@ -97,3 +97,43 @@ buildifier(
     lint_mode = "warn",
     mode = "diff",
 )
+
+# Nix files in root package
+_ROOT_NIX_FILES = glob(["*.nix"])
+
+# Nix files from other packages
+_PKG_NIX_FILES = [
+    "//adgn:devenv.nix",
+    "//ember:devenv.nix",
+    "//gnome-terminal-profile-switcher:default.nix",
+    "//props:devenv.nix",
+    "//terraform/nixos-dev-env:cloud-image.nix",
+    "//wt:devenv.nix",
+]
+
+# Alejandra check (for CI/tests)
+sh_test(
+    name = "alejandra_test",
+    srcs = ["//tools/nix:run_alejandra.sh"],
+    args = [
+        "$(rootpath //tools/nix:alejandra)",
+        "--check",
+    ] + ["$(rootpath %s)" % f for f in _ROOT_NIX_FILES + _PKG_NIX_FILES] + [
+        "$(locations //nix:nix_files)",
+    ],
+    data = [
+        "//tools/nix:alejandra",
+        "//nix:nix_files",
+    ] + _ROOT_NIX_FILES + _PKG_NIX_FILES,
+    tags = ["lint"],
+)
+
+# Alejandra fix (for pre-commit)
+sh_binary(
+    name = "alejandra_fix",
+    srcs = ["//tools/nix:run_alejandra.sh"],
+    args = [
+        "$(rootpath //tools/nix:alejandra)",
+    ],
+    data = ["//tools/nix:alejandra"],
+)
