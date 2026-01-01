@@ -102,7 +102,7 @@ Run `./bazelization/audit.py` to get updated counts.
 | `webhook_inbox` | `experimental/webhook_inbox/` | ✅ Migrated | `bazel build //experimental/webhook_inbox:image` |
 | `ember` | `ember/` | ✅ Migrated | `bazel build //ember:image` |
 | `html` | `llm/html/` | ✅ Migrated | `bazel build //llm/html:image` |
-| `properties-critic` | `docker/llm/properties-critic/` | Pending | LLM tooling |
+| `properties-critic` | `docker/llm/properties-critic/` | ❌ Deleted | Orphaned, never used |
 | `openai_utils` | `openai_utils/docker/` | ❌ Deleted | Probe module never implemented |
 | `claude_optimizer` | `claude/claude_optimizer/docker/` | Pending | 8 variant images |
 | `props agents` | `props/core/src/props_core/agent_defs/` | Pending | 9 agent images |
