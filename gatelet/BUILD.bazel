@@ -1,4 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
@@ -53,4 +55,57 @@ py_binary(
 ruff_test(
     name = "ruff",
     srcs = [":gatelet"],
+)
+
+# --- OCI Image ---
+
+py_binary(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [":gatelet"],
+)
+
+pkg_tar(
+    name = "server_tar",
+    srcs = [":server"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+pkg_tar(
+    name = "alembic_tar",
+    srcs = ["alembic.ini"],
+    package_dir = "/app",
+)
+
+pkg_tar(
+    name = "entrypoint_tar",
+    srcs = ["entrypoint.sh"],
+    package_dir = "/usr/local/bin",
+    mode = "0755",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    tars = [
+        ":server_tar",
+        ":alembic_tar",
+        ":entrypoint_tar",
+    ],
+    entrypoint = ["/usr/local/bin/entrypoint.sh"],
+    cmd = ["uvicorn", "gatelet.server.app:app", "--host", "0.0.0.0", "--port", "8000"],
+    workdir = "/app",
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = ["8000/tcp"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["gatelet:latest"],
 )

@@ -88,7 +88,7 @@ Run `./bazelization/audit.py` to get updated counts.
 
 ### In Progress / Partial
 
-- Docker images built with Dockerfiles (migrating to rules_oci, see below)
+- Docker images: 7 migrated to rules_oci, 4 pending (see inventory below)
 - Website uses Hakyll/stack (very slow Haskell builds)
 
 ### Docker Images Inventory
@@ -96,17 +96,17 @@ Run `./bazelization/audit.py` to get updated counts.
 | Image | Location | Status | Notes |
 |-------|----------|--------|-------|
 | `editor_agent` | `editor_agent/runtime/` | ✅ Migrated | `bazel build //editor_agent/runtime:image` |
-| `runtime` | `docker/runtime/` | Pending | Frequently built, high priority |
+| `runtime` | `docker/runtime/` | ✅ Migrated | `bazel build //docker/runtime:image` |
+| `rspcache` | `rspcache/` | ✅ Migrated | `bazel build //rspcache:image` |
+| `gatelet` | `gatelet/` | ✅ Migrated | `bazel build //gatelet:image` |
+| `webhook_inbox` | `experimental/webhook_inbox/` | ✅ Migrated | `bazel build //experimental/webhook_inbox:image` |
+| `ember` | `ember/` | ✅ Migrated | `bazel build //ember:image` |
+| `html` | `llm/html/` | ✅ Migrated | `bazel build //llm/html:image` |
 | `properties-critic` | `docker/llm/properties-critic/` | Pending | LLM tooling |
-| `rspcache` | `rspcache/docker/` | Pending | Cache service |
-| `gatelet` | `gatelet/docker/` | Pending | Gateway service |
-| `webhook_inbox` | `experimental/webhook_inbox/` | Pending | Experimental |
-| `ember` | `ember/` | Pending | Experimental |
-| `html` | `llm/html/` | Pending | HTML processing |
 | `openai_utils` | `openai_utils/docker/` | Pending | OpenAI utilities |
-| `claude_optimizer` | `claude/claude_optimizer/docker/` | Pending | 8 variant images (base, go, node, python, python-data, ruby, rust, system) |
-| `props agents` | `props/core/src/props_core/agent_defs/` | Pending | 9 agent images (critic, grader, improvement, etc.) |
-| `molecule` | `ansible/molecule/github_release_plugins/` | Skip | Ansible testing, not general use |
+| `claude_optimizer` | `claude/claude_optimizer/docker/` | Pending | 8 variant images |
+| `props agents` | `props/core/src/props_core/agent_defs/` | Pending | 9 agent images |
+| `molecule` | `ansible/molecule/github_release_plugins/` | Skip | Ansible testing |
 
 **Migration notes:**
 - rules_oci added to MODULE.bazel with `oci.pull` for `python:3.12-slim`
