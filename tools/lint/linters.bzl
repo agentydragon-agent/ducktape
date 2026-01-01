@@ -1,5 +1,6 @@
 "Linter aspects and test rules for the repository."
 
+load("@aspect_rules_lint//lint:eslint.bzl", "lint_eslint_aspect")
 load("@aspect_rules_lint//lint:lint_test.bzl", "lint_test")
 load("@aspect_rules_lint//lint:ruff.bzl", "lint_ruff_aspect")
 load("@rules_mypy//mypy:mypy.bzl", "mypy")
@@ -26,7 +27,17 @@ mypy_aspect = mypy(
     mypy_ini = Label("//:mypy.ini"),
 )
 
+# ESLint aspect for JS/TS linting
+# Uses eslint from props/frontend npm packages (first frontend with eslint configured)
+eslint = lint_eslint_aspect(
+    binary = "//props/frontend:eslint",
+    configs = [
+        Label("//props/frontend:eslint.config.js"),
+    ],
+)
+
 # Test rule factories - use these in BUILD.bazel files:
 #   load("//tools/lint:linters.bzl", "ruff_test")
 #   ruff_test(name = "ruff", srcs = [":my_library"])
 ruff_test = lint_test(aspect = ruff)
+eslint_test = lint_test(aspect = eslint)

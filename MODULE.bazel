@@ -24,6 +24,16 @@ npm_props = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dep
 npm_props.npm_translate_lock(
     name = "npm_props_frontend",
     pnpm_lock = "//props/frontend:pnpm-lock.yaml",
+    # Hoist eslint plugins so eslint can discover them at runtime
+    # Note: globals@16.5.0 is the version used by eslint flat config
+    public_hoist_packages = {
+        "@eslint/js": [""],
+        "@typescript-eslint/eslint-plugin": [""],
+        "@typescript-eslint/parser": [""],
+        "eslint-plugin-svelte": [""],
+        "svelte-eslint-parser": [""],
+        "globals@16.5.0": [""],
+    },
 )
 use_repo(npm_props, "npm_props_frontend")
 

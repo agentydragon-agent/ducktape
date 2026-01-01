@@ -45,3 +45,13 @@ build:rustfmt --output_groups=+rustfmt_checks
 # Run with: bazel build --config=rust-check //finance/worthy:all
 build:rust-check --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build:rust-check --output_groups=+clippy_checks,+rustfmt_checks
+
+# ESLint for JS/TS linting
+# Run with: bazel build --config=eslint //props/frontend:all
+build:eslint --aspects=//tools/lint:linters.bzl%eslint
+build:eslint --output_groups=+rules_lint_report
+
+# Combined all lints (Python + JS/TS)
+# Run with: bazel build --config=alllint //...
+build:alllint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint
+build:alllint --output_groups=+rules_lint_report

@@ -9,7 +9,6 @@ exports_files([
     "package.json",
 ])
 
-# TODO: js_run_binary for Vite/SvelteKit build not working - artifact prefix conflict with node_modules
-# Build with: npm run build (in props/frontend directory)
-# Type check with: npm run check
-# Lint with: npm run lint
+# NOTE: js_binary for eslint conflicts with node_modules artifact paths
+# See bazelization/STATUS.md "JS/TS Linting via Bazel Aspects" section
+# For now, use: npm run lint (in props/frontend directory)

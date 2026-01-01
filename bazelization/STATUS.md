@@ -421,13 +421,30 @@ Keep separate:
 Current: pre-commit hooks shell out to npm/pnpm for eslint/prettier
 Target: Bazel aspects like ruff, integrated into `bazel lint //...`
 
-`aspect_rules_lint` supports eslint. Required setup:
-1. Add `lint_eslint_aspect` to `tools/lint/linters.bzl`
-2. Configure eslint binary via npm package
-3. Wire into `.bazelrc` as `--config=eslint` or add to `--config=check`
-4. Update `tools/hooks/pre-commit` to use Bazel for JS/TS
+**Blocker: rules_js artifact prefix conflict**
 
-Benefits:
+When creating a `js_binary` for eslint in the same package as `npm_link_all_packages`,
+Bazel errors with "artifact prefix conflict" because:
+- `npm_link_all_packages` creates `:node_modules/eslint` directory target
+- `js_binary` entry_point creates `:node_modules/eslint/bin/eslint.js` file target
+- These paths conflict (one is prefix of the other)
+
+**Workarounds to investigate:**
+1. Move eslint binary to separate package (e.g., `tools/lint/eslint/BUILD.bazel`)
+   - Would need to copy/symlink node_modules or use package store directly
+2. Use package store target instead of node_modules link
+   - Reference `@npm_props_frontend__eslint__9.39.2...//:pkg` directly
+3. Wait for rules_js fix for this artifact prefix issue
+4. Use `js_run_binary` with chdir to frontend directory
+
+**Current state:**
+- `lint_eslint_aspect` defined in `tools/lint/linters.bzl` (ready)
+- `.bazelrc` has `--config=eslint` (ready)
+- Missing: working eslint binary target
+
+**For now:** Use `npm run lint` in frontend directories via pre-commit hooks.
+
+Benefits (once working):
 - Single `bazel lint //...` command for all languages
 - Consistent caching/incrementality
 - Same infrastructure for CI and local dev
