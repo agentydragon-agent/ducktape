@@ -9,8 +9,6 @@ use ibflex_source::IBFlexSourceConfig;
 use rust_decimal::prelude::Decimal;
 use serde::Deserialize;
 use std::collections::HashMap;
-use swiss_fund_data_converter::SwissFundDataConverterConfig;
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "type")]
@@ -35,7 +33,6 @@ pub enum ConverterConfig {
     Coinbase(CoinbaseConverterConfig),
     CurrencyLayer(CurrencyLayerConverterConfig),
     AlphaVantage(AlphaVantageConverterConfig),
-    SwissFundData(SwissFundDataConverterConfig),
     Fixer(FixerConverterConfig),
 }
 

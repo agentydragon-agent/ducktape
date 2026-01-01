@@ -28,7 +28,6 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use structopt::StructOpt;
-use swiss_fund_data_converter::SwissFundDataConverter;
 use term_table::{Table, TableStyle, row::Row, table_cell::Alignment, table_cell::TableCell};
 
 // TODO: cache conversions
@@ -102,7 +101,6 @@ enum ConverterType {
     CurrencyLayer,
     AlphaVantage,
     Coinbase,
-    SwissFundData,
     Fixer,
 }
 
@@ -122,9 +120,6 @@ async fn get_converter_snapshots(
         .flat_map(|(converter_name, converter_config)| {
             info!("{}", converter_name);
             match converter_config {
-                SwissFundData(config) => {
-                    SwissFundDataConverter::take_snapshot(config, denominations, base)
-                }
                 AlphaVantage(config) => {
                     // TODO: Err(ParsingError("missing metadata"))
                     // Err(ParsingError("missing exchange rate data"))
@@ -143,7 +138,6 @@ async fn get_converter_snapshots(
                 ConverterSnapshot {
                     id: converter_name.clone(),
                     converter_type: match converter_config {
-                        SwissFundData(_) => ConverterType::SwissFundData,
                         AlphaVantage(_) => ConverterType::AlphaVantage,
                         Coinbase(_) => ConverterType::Coinbase,
                         Fixer(_) => ConverterType::Fixer,
@@ -547,7 +541,6 @@ fn converter_snapshot_to_json(
             ConverterType::CurrencyLayer => json_output::ConverterType::CurrencyLayer,
             ConverterType::AlphaVantage => json_output::ConverterType::AlphaVantage,
             ConverterType::Coinbase => json_output::ConverterType::Coinbase,
-            ConverterType::SwissFundData => json_output::ConverterType::SwissFundData,
             ConverterType::Fixer => json_output::ConverterType::Fixer,
         },
         snapshot: converter_snapshot
@@ -567,7 +560,6 @@ fn converter_snapshot_from_json(
             json_output::ConverterType::CurrencyLayer => ConverterType::CurrencyLayer,
             json_output::ConverterType::AlphaVantage => ConverterType::AlphaVantage,
             json_output::ConverterType::Coinbase => ConverterType::Coinbase,
-            json_output::ConverterType::SwissFundData => ConverterType::SwissFundData,
             json_output::ConverterType::Fixer => ConverterType::Fixer,
         },
         snapshot: converter_snapshot
@@ -640,9 +632,6 @@ fn denomination_to_json(denomination: &Denomination) -> json_output::Denominatio
         Denomination::Stock { stock } => json_output::Denomination::Stock {
             symbol: stock.clone(),
         },
-        Denomination::FundIsin { fund_isin } => json_output::Denomination::FundIsin {
-            fund_isin: fund_isin.clone(),
-        },
     }
 }
 
@@ -656,9 +645,6 @@ fn denomination_from_json(denomination: &json_output::Denomination) -> Denominat
         },
         json_output::Denomination::Stock { symbol } => Denomination::Stock {
             stock: symbol.clone(),
-        },
-        json_output::Denomination::FundIsin { fund_isin } => Denomination::FundIsin {
-            fund_isin: fund_isin.clone(),
         },
     }
 }

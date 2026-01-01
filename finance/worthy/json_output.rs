@@ -59,11 +59,6 @@ pub enum Denomination {
         #[serde(rename = "Symbol")]
         symbol: String,
     },
-    #[serde(rename = "fund_isin")]
-    FundIsin {
-        #[serde(rename = "FundIsin")]
-        fund_isin: String,
-    },
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -82,8 +77,6 @@ pub enum ConverterType {
     AlphaVantage,
     #[serde(rename = "coinbase")]
     Coinbase,
-    #[serde(rename = "swissfunddata")]
-    SwissFundData,
     #[serde(rename = "fixer")]
     Fixer,
 }
