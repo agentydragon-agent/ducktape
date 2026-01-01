@@ -1,12 +1,14 @@
 # Agent Checklist (Ansible)
 
-Before handing work back to the user, run pre-commit hooks:
+Before handing work back to the user, run validation:
 
 ```bash
-pre-commit run --all-files
-```
+# Primary: Bazel lint for Python files
+bazel lint //...
 
-This automatically runs yamllint, ansible-playbook --syntax-check, and other checks.
+# Ansible-specific checks (yamllint, syntax-check)
+pre-commit run yamllint ansible-syntax-check --all-files
+```
 
 Do not ship un-checked YAML. If any command fails, fix the reported issues first, then rerun until they succeed.
 

@@ -88,7 +88,15 @@ alembic revision --autogenerate -m "Description of changes"
 
 ## Tools to Run Before Committing
 
-Before committing, run `pre-commit`.
+Before committing, run linting:
+```bash
+bazel lint //gatelet:all
+```
+
+For non-Python checks (YAML, etc.), run:
+```bash
+pre-commit run --all-files
+```
 
 ## Reporter Daemon
 
