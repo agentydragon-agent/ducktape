@@ -12,7 +12,8 @@ import uvicorn
 
 from agent_server.mcp_bridge.auth import TokensConfig
 from agent_server.server.app import create_app
-from cli_util import async_run, make_logging_callback
+from cli_util.decorators import async_run
+from cli_util.logging_callback import make_logging_callback
 from mcp_infra.config_loader import build_mcp_config
 from net_util import pick_free_port
 

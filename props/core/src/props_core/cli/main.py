@@ -21,7 +21,8 @@ from sqlalchemy import func
 import typer
 from typer_di import TyperDI
 
-from cli_util import async_run, make_logging_callback
+from cli_util.decorators import async_run
+from cli_util.logging_callback import make_logging_callback
 from openai_utils.client_factory import build_client
 from props_core.agent_helpers import get_current_agent_run
 

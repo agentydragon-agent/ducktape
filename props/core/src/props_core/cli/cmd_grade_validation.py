@@ -13,7 +13,7 @@ import aiodocker
 from sqlalchemy import func
 import typer
 
-from cli_util import async_run
+from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import AgentType

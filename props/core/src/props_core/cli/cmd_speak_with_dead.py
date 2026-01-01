@@ -12,7 +12,7 @@ import typer
 from agent_core.agent import Agent, TranscriptItem
 from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
 from agent_core.loop_control import ForbidAllTools
-from cli_util import async_run
+from cli_util.decorators import async_run
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display import DisplayEventsHandler
 from mcp_infra.display.rich_display import CompactDisplayHandler

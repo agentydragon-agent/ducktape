@@ -15,7 +15,8 @@ from agent_core.compaction import CompactionHandler
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.transcript_handler import TranscriptHandler
-from cli_util import async_run, make_logging_callback
+from cli_util.decorators import async_run
+from cli_util.logging_callback import make_logging_callback
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.display import CompactDisplayHandler
