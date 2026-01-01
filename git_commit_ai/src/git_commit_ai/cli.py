@@ -10,10 +10,11 @@ Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
     --model MODEL (default: gpt-5.1-codex-mini)
     --debug                Enable debug logging (shows exact AI command)
     --accept-ai            Commit immediately with the AI-drafted message (skip editor)
+    -m MSG                 User context/guidance for the commit message (not the message itself)
 
 Note: Pass --no-verify to skip running pre-commit inside this wrapper. The final `git commit`
       is invoked with --no-verify to avoid running hooks twice.
-      Passing -m/--message is not supported; this tool supplies the commit message.
+      Unlike `git commit -m`, the -m flag here provides guidance to the AI, not the final message.
 
 Important: Do NOT install this as a prepare-commit-msg hook. Since this command
          calls `git commit` internally, it would create an infinite loop. Use
@@ -186,6 +187,7 @@ def build_cache_key(
     *,
     include_all: bool,
     previous_message: str | None,
+    user_context: str | None,
     commitish: str,
     diff: str,
     provider: str = "minicodex",
@@ -195,9 +197,10 @@ def build_cache_key(
     Note: hash only the (possibly truncated) prompt diff by design.
     """
     diff_hash = hashlib.sha256(diff.encode()).hexdigest()
+    context_hash = hashlib.sha256(user_context.encode()).hexdigest()[:16] if user_context else "none"
     scope = "all" if include_all else "staged"
     amend_marker = "amend" if previous_message else "new"
-    return f"{provider}:{model_name}:{scope}:{amend_marker}:{commitish}:{diff_hash}"
+    return f"{provider}:{model_name}:{scope}:{amend_marker}:{context_hash}:{commitish}:{diff_hash}"
 
 
 class TaskStatus(StrEnum):
@@ -469,8 +472,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-a", "--all", action="store_true", dest="stage_all", help="Stage all tracked changes (like git commit -a)"
     )
-    # Capture -m/--message to reject it explicitly (we supply the commit message)
-    parser.add_argument("-m", "--message", dest="message", help=argparse.SUPPRESS)  # Hidden; validated to be None
+    # User context/guidance for the AI (not the final commit message)
+    parser.add_argument(
+        "-m",
+        "--message",
+        dest="user_context",
+        metavar="MSG",
+        help="User context/guidance for the commit message (e.g., why the change is being made)",
+    )
     return parser
 
 
@@ -603,6 +612,7 @@ class ProduceMessageInput:
     passthru: list[str]
     diff: str
     previous_message: str | None
+    user_context: str | None
     cache: Cache
     key: str
 
@@ -614,7 +624,12 @@ async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
 
     ai_task: asyncio.Task[str] = asyncio.create_task(
         generate_commit_message_agent(
-            inp.repo, model=inp.model_name, debug=inp.debug, verbose=inp.verbose, amend=inp.previous_message is not None
+            inp.repo,
+            model=inp.model_name,
+            debug=inp.debug,
+            verbose=inp.verbose,
+            amend=inp.previous_message is not None,
+            user_context=inp.user_context,
         )
     )
 
@@ -655,15 +670,6 @@ async def async_main(argv: list[str] | None = None):
 
     args, passthru = _parse_args_and_passthru(argv)
 
-    # Validate that -m/--message was not passed (we supply the commit message)
-    if args.message is not None:
-        print(
-            "Error: -m/--message is not supported; this tool supplies the commit message. "
-            "Remove -m/--message and try again.",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
-
     is_amend = "--amend" in passthru
 
     _init_logging(repo, args.debug)
@@ -691,6 +697,7 @@ async def async_main(argv: list[str] | None = None):
         config.model_name,
         include_all=args.stage_all,
         previous_message=previous_message,
+        user_context=args.user_context,
         commitish=str(repo.head.peel(pygit2.Commit).id),
         diff=diff,
     )
@@ -705,6 +712,7 @@ async def async_main(argv: list[str] | None = None):
             passthru=passthru,
             diff=diff,
             previous_message=previous_message,
+            user_context=args.user_context,
             cache=cache,
             key=key,
         )

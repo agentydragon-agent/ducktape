@@ -50,6 +50,3 @@ class ApprovalPolicyAdminSetPolicyCall:
         return factory.make_mcp_tool_call(
             APPROVAL_ADMIN_MOUNT_PREFIX, "set_policy", SetPolicyTextArgs(source=self.source)
         )
-
-
-__all__ = ["ApprovalPolicyAdminSetPolicyCall", "UiEndTurnCall", "UiSendMessageCall"]

@@ -187,22 +187,3 @@ def make_buffered_client():
                 yield sess, comp, buf
 
     return _open
-
-
-__all__ = [
-    "ResourceUpdatedCapture",
-    "async_docker_client",
-    "compositor",
-    "compositor_client",
-    "make_buffered_client",
-    "make_compositor",
-    "make_container_opts",
-    "make_simple_mcp",
-    "make_typed_mcp",
-    "origin_with_recorder",
-    "resource_capture",
-    "resources_client",
-    "resources_server",
-    "stdio_echo_spec",
-    "typed_resources_client",
-]

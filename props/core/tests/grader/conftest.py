@@ -12,8 +12,6 @@ from props_core.db.session import get_session
 from props_core.models.examples import WholeSnapshotExample
 from tests.conftest import make_critic_run, make_grader_run
 
-__all__ = ["make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
-
 
 def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type: ignore[return]
     """Create a test critic run with specified number of input issues.

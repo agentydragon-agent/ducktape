@@ -63,6 +63,3 @@ def make_simple_mcp() -> FlatModelMixin:
     server = FlatModelMixin("simple")
     build_simple_tools(server)
     return server
-
-
-__all__ = ["EchoInput", "EchoOutput", "SendMessageInput", "build_simple_tools", "make_simple_mcp"]
