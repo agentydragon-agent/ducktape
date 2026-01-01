@@ -54,15 +54,15 @@ See `bazelization/STATUS.md` for complete Bazel documentation.
 - Type check (mypy): `bazel build --config=typecheck //adgn:adgn`
 - Combined lint + typecheck: `bazel build --config=check //adgn:adgn`
 
-### Alternative: pytest directly
-- Tests (under `tests/`):
-  - Inside `adgn/`: `pytest tests`
-  - From repo root: `direnv exec adgn pytest adgn/tests`
-- Single test: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
-- **Debugging hangs/timeouts**: Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
-- Pre-commit: `pre-commit run -a` (runs ruff, mypy, trivial-patterns, etc.)
+### Debugging hangs/timeouts
+Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
+
+### Pre-commit hooks
+- Run: `pre-commit run -a` (runs ruff, mypy, trivial-patterns, etc.)
 - Setup: `pre-commit install`
-- Optional extras (GNOME console script deps): `python -m pip install -e '.[gnome]'`
+
+### Optional extras
+GNOME console script deps: `python -m pip install -e '.[gnome]'`
 
 ## Pytest Defaults
 See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, markers, and timeout settings.

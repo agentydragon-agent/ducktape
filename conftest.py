@@ -49,7 +49,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     # Docker availability check
     if item.get_closest_marker("requires_docker") is not None:
         try:
-            import docker
+            import docker  # noqa: PLC0415 - optional dependency, lazy import
 
             client = docker.from_env()
             client.ping()

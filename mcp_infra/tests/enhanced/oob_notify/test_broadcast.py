@@ -5,7 +5,7 @@ from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
 
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 
 
 class _Recorder(MessageHandler):

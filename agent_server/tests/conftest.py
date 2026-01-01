@@ -23,7 +23,8 @@ from agent_core.agent import Agent
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import CapturingOpenAIModel, FakeOpenAIModel, RecordingHandler
+from agent_core.testing.fixtures import RecordingHandler
+from agent_core.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.persist import AgentMetadata
@@ -38,7 +39,7 @@ from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
 import docker
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.notifications.buffer import NotificationsBuffer

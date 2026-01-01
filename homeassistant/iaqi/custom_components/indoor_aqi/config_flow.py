@@ -2,9 +2,8 @@
 
 import logging
 
-from homeassistant.config_entries import ConfigFlowResult
-
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 
 from . import DOMAIN
 

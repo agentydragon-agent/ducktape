@@ -13,8 +13,9 @@ Notes about hook behavior observed during testing:
 
 from pathlib import Path
 
-from claude_hooks.tool_models import BashInput, GlobInput, GrepInput, GrepOutputMode, LSInput, TaskInput
 import pytest
+
+from claude_hooks.tool_models import BashInput, GlobInput, GrepInput, GrepOutputMode, LSInput, TaskInput
 
 from .test_helpers import assert_tool_input_parsing, load_test_json
 

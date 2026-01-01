@@ -17,6 +17,11 @@ import pytest
 from typer.testing import CliRunner
 import yaml
 
+from tests.config_factory import ConfigFactory
+from tests.mock_factory import MockFactory, ServiceBuilder
+from tests.repo_factory import GitRepoFactory
+from tests.test_data import TestData
+from tests.test_utils import run_cli_command, wait_until
 from wt.server import github_client
 from wt.server.git_manager import GitManager
 from wt.server.worktree_service import WorktreeService
@@ -25,12 +30,6 @@ from wt.shared.configuration import Configuration
 from wt.shared.fixtures import write_pr_fixtures_file
 from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusItem, StatusResponse
 from wt.shell import install
-
-from tests.config_factory import ConfigFactory
-from tests.mock_factory import MockFactory, ServiceBuilder
-from tests.repo_factory import GitRepoFactory
-from tests.test_data import TestData
-from tests.test_utils import run_cli_command, wait_until
 
 
 @pytest.fixture(scope="session", autouse=True)

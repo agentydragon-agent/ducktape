@@ -11,9 +11,9 @@ Usage:
     ./bazelization/audit.py
 """
 
-import subprocess
 from collections import defaultdict
 from pathlib import Path
+import subprocess
 
 import pygit2
 
@@ -46,7 +46,7 @@ def find_bazel_python_sources() -> set[Path]:
     for kind in ["py_library", "py_test", "py_binary"]:
         result = subprocess.run(
             ["bazel", "query", f'labels(srcs, kind("{kind}", //...))'],
-            capture_output=True,
+            check=False, capture_output=True,
             text=True,
             cwd=REPO_ROOT,
         )
@@ -57,16 +57,15 @@ def find_bazel_python_sources() -> set[Path]:
             if not line or not line.endswith(".py"):
                 continue
             # Convert //pkg:path/to/file.py to pkg/path/to/file.py
-            if line.startswith("//"):
-                line = line[2:]
-            if ":" in line:
-                pkg, file = line.split(":", 1)
+            label = line.removeprefix("//")
+            if ":" in label:
+                pkg, file = label.split(":", 1)
                 if pkg:
                     sources.add(Path(pkg) / file)
                 else:
                     sources.add(Path(file))
             else:
-                sources.add(Path(line))
+                sources.add(Path(label))
 
     return sources
 
@@ -75,7 +74,7 @@ def query_bazel_targets(kind: str) -> list[str]:
     """Query Bazel for targets of a specific kind."""
     result = subprocess.run(
         ["bazel", "query", f'kind("{kind}", //...)'],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         cwd=REPO_ROOT,
     )
@@ -88,7 +87,7 @@ def query_manual_targets() -> list[str]:
     """Query Bazel for targets tagged as manual."""
     result = subprocess.run(
         ["bazel", "query", 'attr(tags, "manual", //...)'],
-        capture_output=True,
+        check=False, capture_output=True,
         text=True,
         cwd=REPO_ROOT,
     )

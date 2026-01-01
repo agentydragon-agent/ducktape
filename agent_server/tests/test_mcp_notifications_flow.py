@@ -8,9 +8,10 @@ import pytest
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing import ResponsesFactory, make_mock
+from agent_core.testing.openai_mock import make_mock
+from agent_core.testing.responses import ResponsesFactory
 from agent_server.notifications.handler import NotificationsHandler
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub

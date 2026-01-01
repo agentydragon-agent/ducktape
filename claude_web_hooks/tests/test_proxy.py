@@ -6,6 +6,7 @@ import base64
 from pathlib import Path
 import subprocess
 import sys
+import time
 from urllib.parse import urlparse
 
 import pytest
@@ -141,8 +142,6 @@ class TestLoadCredentials:
         assert proxy2 is proxy1  # Same object from cache
 
     def test_reloads_when_file_modified(self, tmp_path: Path) -> None:
-        import time
-
         write_credentials(tmp_path, "http://old@proxy:8080")
         proxy1, _ = load_credentials(tmp_path)
         assert proxy1.username == "old"

@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+import yaml
+
 from claude_optimizer.core.yaml_loader import YamlLoader
 from claude_optimizer.database.models import (
     GradingCriteria,
@@ -14,8 +17,6 @@ from claude_optimizer.database.models import (
     SeedTask,
     SystemPrompt,
 )
-import pytest
-import yaml
 
 from .test_types import OptimizationRunStatus
 

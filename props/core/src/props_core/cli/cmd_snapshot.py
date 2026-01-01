@@ -17,7 +17,7 @@ import typer
 from typer_di import TyperDI
 import yaml
 
-from cli_util import async_run
+from cli_util.decorators import async_run
 from props_core.cli import common_options as opt
 from props_core.db.models import Snapshot
 from props_core.db.session import get_session

@@ -16,7 +16,7 @@ class InitFailedError(Exception):
     exec_result: BaseExecResult | None
 
     def __init__(self, message: str, *, exec_result: BaseExecResult | None = None):
-        from mcp_infra.exec.models import TruncatedStream
+        from mcp_infra.exec.models import TruncatedStream  # noqa: PLC0415 - avoid circular import
 
         full_message = message
         if exec_result is not None:

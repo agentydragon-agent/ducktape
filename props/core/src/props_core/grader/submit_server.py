@@ -14,7 +14,7 @@ from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
 from sqlalchemy import text
 
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props_core.db.models import AgentRun, AgentRunStatus

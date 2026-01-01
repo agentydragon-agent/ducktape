@@ -1,7 +1,8 @@
 """Tests for configuration management."""
 
-from claude_optimizer.config import OptimizerConfig
 import yaml
+
+from claude_optimizer.config import OptimizerConfig
 
 
 def test_config_from_file(tmp_path):

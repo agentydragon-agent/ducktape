@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from mcp_utils import extract_single_text_content
 
 

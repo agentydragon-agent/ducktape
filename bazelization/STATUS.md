@@ -32,6 +32,9 @@ Run `./bazelization/audit.py` to get updated counts.
 - Session start hooks for Claude Code web Bazel proxy
 - `aspect_rules_lint` integrated for ruff linting (`bazel lint //...`)
 - Node.js frontends migrated to rules_js (`props/frontend`, `rspcache/admin_ui`)
+- Mypy integrated via rules_mypy (`--config=typecheck`)
+- Rust linting (clippy/rustfmt) integrated via rules_rust (`bazel lint //finance/...`)
+- Removed all re-export patterns from Python packages (direct imports only)
 
 ### In Progress / Partial
 
@@ -429,20 +432,60 @@ Bazel errors with "artifact prefix conflict" because:
 - `js_binary` entry_point creates `:node_modules/eslint/bin/eslint.js` file target
 - These paths conflict (one is prefix of the other)
 
-**Workarounds to investigate:**
-1. Move eslint binary to separate package (e.g., `tools/lint/eslint/BUILD.bazel`)
-   - Would need to copy/symlink node_modules or use package store directly
-2. Use package store target instead of node_modules link
-   - Reference `@npm_props_frontend__eslint__9.39.2...//:pkg` directly
-3. Wait for rules_js fix for this artifact prefix issue
-4. Use `js_run_binary` with chdir to frontend directory
+**Recommended solution (from aspect rules_lint docs):**
+
+The `aspect_rules_lint` documentation recommends creating the eslint binary via
+the package_json helper, not directly in the frontend package:
+
+```starlark
+# tools/lint/BUILD.bazel
+load("@npm//:eslint/package_json.bzl", eslint_bin = "bin")
+eslint_bin.eslint_binary(name = "eslint")
+```
+
+Then reference it in the linter aspect:
+```starlark
+# tools/lint/linters.bzl
+eslint = lint_eslint_aspect(
+    binary = Label("//tools/lint:eslint"),
+    configs = [Label("//:eslintrc")],
+)
+```
+
+This pattern works because:
+1. The eslint binary lives in `tools/lint/`, not in the frontend package
+2. `npm_translate_lock` with `bins = {"eslint": {"eslint": "./bin/eslint.js"}}`
+   creates the `package_json.bzl` with the `bin` helper
+
+**Required MODULE.bazel changes:**
+```starlark
+npm.npm_translate_lock(
+    name = "npm",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    bins = {
+        "eslint": {"eslint": "./bin/eslint.js"},
+    },
+    public_hoist_packages = {
+        "@eslint/js": ["props/frontend"],
+        "globals": ["props/frontend"],
+        "typescript-eslint": ["props/frontend"],
+    },
+)
+```
 
 **Current state:**
 - `lint_eslint_aspect` defined in `tools/lint/linters.bzl` (ready)
 - `.bazelrc` has `--config=eslint` (ready)
-- Missing: working eslint binary target
+- TODO: Add `bins` config to npm_translate_lock
+- TODO: Create eslint binary in `tools/lint/BUILD.bazel`
+- TODO: Test the full eslint flow
 
 **For now:** Use `npm run lint` in frontend directories via pre-commit hooks.
+
+**References:**
+- [rules_lint ESLint docs](https://docs.aspect.build/rulesets/aspect_rules_lint/docs/linting/)
+- [rules_lint example linters.bzl](https://github.com/aspect-build/rules_lint/blob/main/example/tools/lint/linters.bzl)
+- [rules_js troubleshooting](https://docs.aspect.build/rulesets/aspect_rules_js/docs/troubleshooting/)
 
 Benefits (once working):
 - Single `bazel lint //...` command for all languages

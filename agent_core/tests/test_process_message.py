@@ -8,6 +8,7 @@ from agent_core.agent import Agent
 from agent_core.events import AssistantText, SystemText, UserText
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.testing.openai_mock import NoopOpenAIClient
 from openai_utils.model import AssistantMessage, SystemMessage, UserMessage
 
 
@@ -36,7 +37,7 @@ async def test_process_message_fires_system_text_event(compositor_client, handle
     """Test that process_message fires on_system_text_event for SystemMessage."""
     agent = await Agent.create(
         mcp_client=compositor_client,
-        client=None,  # Not running, just testing process_message
+        client=NoopOpenAIClient(),
         handlers=[handler],
         tool_policy=AllowAnyToolOrTextMessage(),
     )
@@ -51,7 +52,7 @@ async def test_process_message_fires_system_text_event(compositor_client, handle
 async def test_process_message_fires_user_text_event(compositor_client, handler) -> None:
     """Test that process_message fires on_user_text_event for UserMessage."""
     agent = await Agent.create(
-        mcp_client=compositor_client, client=None, handlers=[handler], tool_policy=AllowAnyToolOrTextMessage()
+        mcp_client=compositor_client, client=NoopOpenAIClient(), handlers=[handler], tool_policy=AllowAnyToolOrTextMessage()
     )
 
     agent.process_message(UserMessage.text("User says hello"))
@@ -64,7 +65,7 @@ async def test_process_message_fires_user_text_event(compositor_client, handler)
 async def test_process_message_fires_assistant_text_event(compositor_client, handler) -> None:
     """Test that process_message fires on_assistant_text_event for AssistantMessage."""
     agent = await Agent.create(
-        mcp_client=compositor_client, client=None, handlers=[handler], tool_policy=AllowAnyToolOrTextMessage()
+        mcp_client=compositor_client, client=NoopOpenAIClient(), handlers=[handler], tool_policy=AllowAnyToolOrTextMessage()
     )
 
     agent.process_message(AssistantMessage.text("Assistant response"))
@@ -77,7 +78,7 @@ async def test_process_message_fires_assistant_text_event(compositor_client, han
 async def test_process_message_adds_to_transcript(compositor_client, handler) -> None:
     """Test that process_message adds messages to transcript."""
     agent = await Agent.create(
-        mcp_client=compositor_client, client=None, handlers=[handler], tool_policy=AllowAnyToolOrTextMessage()
+        mcp_client=compositor_client, client=NoopOpenAIClient(), handlers=[handler], tool_policy=AllowAnyToolOrTextMessage()
     )
 
     agent.process_message(SystemMessage.text("Sys"))

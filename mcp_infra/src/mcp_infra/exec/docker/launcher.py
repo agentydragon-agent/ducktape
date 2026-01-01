@@ -12,7 +12,7 @@ import aiodocker
 import typer
 from typer_di import TyperDI
 
-from cli_util import async_run
+from cli_util.decorators import async_run
 from mcp_infra.container_session import BindMount, ContainerOptions
 from mcp_infra.types import NetworkMode
 

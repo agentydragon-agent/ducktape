@@ -11,8 +11,6 @@ from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.notifications import parse_system_notification_payload
 
-from agent_server.notifications.handler import format_notifications_message
-
 
 async def test_stdio_child_notifications_envelope(compositor):
     """Test that stdio child server notifications are properly enveloped."""

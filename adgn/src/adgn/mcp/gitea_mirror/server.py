@@ -11,7 +11,7 @@ from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import requests
 
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 
 
 @dataclass
@@ -201,7 +201,7 @@ def _ensure_mirror(cfg: MirrorConfig, upstream: str, owner: str, repo: str) -> N
 def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
     sync_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}/mirror-sync"
     resp = _post_json(sync_url, cfg.token, {})
-    if resp.status_code // 100 != 2:  # type: ignore[operator]
+    if not (200 <= resp.status_code < 300):
         raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}")
 
 

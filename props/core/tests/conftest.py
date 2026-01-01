@@ -14,7 +14,8 @@ import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from agent_core.testing import FakeOpenAIModel, Step
+from agent_core.testing.openai_mock import FakeOpenAIModel
+from agent_core.testing.steps import Step
 from openai_utils.model import ResponsesResult
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import CriticTypeConfig, GraderTypeConfig

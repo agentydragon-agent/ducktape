@@ -7,7 +7,7 @@ from fastmcp.server import FastMCP
 from pydantic import Field
 import pytest
 
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 

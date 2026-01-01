@@ -5,7 +5,9 @@ import pytest
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import LIVE, AssistantMessage, EchoCall, assert_function_call_output_structured
+from agent_core.testing.matchers import assert_function_call_output_structured
+from agent_core.testing.openai_mock import LIVE
+from agent_core.testing.steps import AssistantMessage, EchoCall
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 
 

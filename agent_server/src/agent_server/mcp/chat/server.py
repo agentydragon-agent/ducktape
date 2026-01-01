@@ -11,7 +11,7 @@ from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 
 from agent_server.persist.sqlite import SQLitePersistence
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

@@ -25,8 +25,9 @@ import pytest
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import AssistantMessage, CapturingOpenAIModel, MakeCall
-from mcp_infra.enhanced import EnhancedFastMCP
+from agent_core.testing.openai_mock import CapturingOpenAIModel
+from agent_core.testing.steps import AssistantMessage, MakeCall
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import SystemMessage
 

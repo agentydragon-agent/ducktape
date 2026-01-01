@@ -3,7 +3,8 @@ from __future__ import annotations
 from hamcrest import has_entries
 import pytest
 
-from agent_core.testing import FAIL_TOOL_NAME, assert_function_call_output_structured
+from agent_core.testing.fixtures import FAIL_TOOL_NAME
+from agent_core.testing.matchers import assert_function_call_output_structured
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

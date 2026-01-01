@@ -7,8 +7,9 @@ from logging.handlers import MemoryHandler
 from custom_components.indoor_aqi.sensor import _LOGGER, IndoorAQISensor, compute_iaqi
 from hamcrest import assert_that, close_to, contains_inanyorder, has_entries
 from hamcrest.core.base_matcher import BaseMatcher
-from homeassistant.const import STATE_UNAVAILABLE
 import pytest
+
+from homeassistant.const import STATE_UNAVAILABLE
 
 
 class LogEntryContaining(BaseMatcher):

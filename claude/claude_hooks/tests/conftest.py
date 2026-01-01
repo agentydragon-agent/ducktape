@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import pygit2
+import pytest
+import yaml
+
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 from claude_hooks.tool_models import EditInput, WriteInput
-import pygit2
-import pytest
-import yaml
 
 # Core Infrastructure Fixtures
 # ============================

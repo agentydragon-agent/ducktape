@@ -3,8 +3,8 @@
 from hamcrest import all_of, assert_that, has_length, has_properties, has_property, instance_of
 from pydantic import BaseModel
 
-from agent_core.testing import ResponsesFactory
 from agent_core.testing.matchers import has_json_arguments, has_json_output
+from agent_core.testing.responses import ResponsesFactory
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME

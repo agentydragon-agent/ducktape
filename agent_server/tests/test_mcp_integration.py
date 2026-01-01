@@ -1,7 +1,6 @@
 import asyncio
 import shutil
 
-import pytest
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 import pytest

@@ -31,7 +31,7 @@ from mautrix.types import EventType, MessageEvent, RoomAlias, RoomID, TextMessag
 from pydantic import BaseModel, Field
 
 from agent_server.server.bus import ServerBus, UiEndTurn
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Matrix SDK uses millisecond timeouts for sync; keep constants explicit

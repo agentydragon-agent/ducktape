@@ -4,11 +4,12 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
 
+import pytest
+
 from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 from claude_hooks.tool_models import WriteInput
-import pytest
 
 
 def _create_write_hook_input(file_path: Path, content: str, cwd: Path) -> PostToolInput:

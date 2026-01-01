@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import anyio
 
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 
 m = EnhancedFastMCP("stdio_child")
 

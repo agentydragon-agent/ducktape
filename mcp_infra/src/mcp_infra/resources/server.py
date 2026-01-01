@@ -14,7 +14,7 @@ from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_infra.compositor.mount import MountEvent
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
 from mcp_infra.resources.types import ListSubscriptionSummary, ResourceEntry, SubscriptionsIndex, SubscriptionSummary

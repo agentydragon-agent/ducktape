@@ -4,6 +4,8 @@ from datetime import datetime
 import json
 from unittest.mock import Mock
 
+import pytest
+
 from claude_optimizer.core.yaml_loader import YamlLoader
 from claude_optimizer.database.models import (
     GraderFacetResult,
@@ -18,7 +20,6 @@ from claude_optimizer.database.models import (
     SeedTask,
     SystemPrompt,
 )
-import pytest
 
 from .test_types import OptimizationRunStatus
 

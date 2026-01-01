@@ -9,7 +9,7 @@ from typing import Annotated
 from rich.console import Console
 import typer
 
-from cli_util import async_run
+from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli import common_options as opt

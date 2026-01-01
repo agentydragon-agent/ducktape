@@ -6,10 +6,9 @@ from typing import Any
 
 import yaml
 
+from tests.test_data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
-
-from tests.test_data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
 
 
 class ConfigFactory:

@@ -6,7 +6,8 @@ from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing import AssistantMessage, CapturingOpenAIModel, MakeCall
+from agent_core.testing.openai_mock import CapturingOpenAIModel
+from agent_core.testing.steps import AssistantMessage, MakeCall
 from mcp_infra.display import DisplayEventsHandler
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesReadArgs

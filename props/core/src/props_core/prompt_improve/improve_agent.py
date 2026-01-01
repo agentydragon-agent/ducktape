@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from agent_core.handler import AbortIf
 from agent_core.turn_limit import MaxTurnsHandler
 from mcp_infra.display import CompactDisplayHandler
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.model import OpenAIModelProto
 from openai_utils.types import ReasoningSummary
 from props_core.agent_handle import AgentHandle

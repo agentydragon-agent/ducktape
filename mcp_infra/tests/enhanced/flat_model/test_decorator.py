@@ -9,7 +9,7 @@ from fastmcp.server.context import Context
 from pydantic import Field, field_validator
 import pytest
 
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.stubs.typed_stubs import TypedClient
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

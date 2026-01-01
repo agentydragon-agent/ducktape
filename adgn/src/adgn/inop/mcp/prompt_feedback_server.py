@@ -5,7 +5,7 @@ import logging
 from typing import Any, Protocol
 
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # ---- Dependencies and state -------------------------------------------------

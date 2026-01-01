@@ -6,6 +6,11 @@ import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from openai.types.responses.response import Response
+import pydantic
+import pytest
+import yaml
+
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
 from claude_optimizer.core.logging_openai_client import LoggingOpenAIClient, LoggingOpenAIModel
@@ -28,10 +33,6 @@ from claude_optimizer.core.optimizer import (
 from claude_optimizer.core.prompt_engineer import PromptEngineer, Turn
 from claude_optimizer.core.summarizer import PatternSummarizer
 from claude_optimizer.docker.docker_manager import DockerManager
-from openai.types.responses.response import Response
-import pydantic
-import pytest
-import yaml
 
 
 class TestPatternSummarizer:
