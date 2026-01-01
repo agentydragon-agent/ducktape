@@ -6,7 +6,6 @@ use petgraph::{
     // algo::bellman_ford,
     prelude::*,
     visit::{IntoEdges, IntoNodeIdentifiers, NodeCount, NodeIndexable},
-    Graph,
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::*;
@@ -18,9 +17,10 @@ use std::{
     ops::Add,
 };
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Default)]
 enum MultiplyDecimal {
     Finite(Decimal),
+    #[default]
     Infinite,
 }
 
@@ -55,18 +55,14 @@ impl FloatMeasure for MultiplyDecimal {
 impl Add for MultiplyDecimal {
     type Output = Self;
 
+    // Intentionally uses multiplication: this type represents multiplicative
+    // edge weights for shortest-path algorithms that need a monoid.
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn add(self, other: Self) -> Self {
         match (self, other) {
             (Finite(x), Finite(y)) => Finite(x * y),
             _ => Infinite,
         }
-        //println!("{:?} + {:?} = {:?}", self, other, res);
-    }
-}
-
-impl Default for MultiplyDecimal {
-    fn default() -> Self {
-        Infinite
     }
 }
 
@@ -117,10 +113,10 @@ where
     distance
 }
 
-//// From petgraph, modified to use multiplication instead of addition.
-//// https://docs.rs/petgraph/0.4.0/src/petgraph/.cargo/registry/src/github.com-1ecc6299db9ec823/petgraph-0.4.0/src/algo.rs.html#550-592,
-////
-//// TODO(agentydragon): send PR to upstream petgraph for custom binary function
+/// From petgraph, modified to use multiplication instead of addition.
+/// https://docs.rs/petgraph/0.4.0/src/petgraph/.cargo/registry/src/github.com-1ecc6299db9ec823/petgraph-0.4.0/src/algo.rs.html#550-592,
+///
+/// TODO(agentydragon): send PR to upstream petgraph for custom binary function
 //pub fn bellman_ford<G>(
 //    g: G,
 //    source: G::NodeId,

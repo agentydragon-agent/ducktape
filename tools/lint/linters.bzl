@@ -15,6 +15,13 @@ ruff = lint_ruff_aspect(
 
 # Mypy aspect for --config=typecheck builds
 # Uses root mypy.ini for configuration
+#
+# Type checking behavior:
+# - Packages with py.typed (rich, structlog, aiohttp, aiodocker) are fully
+#   type-checked - API misuse will be caught
+# - Packages without py.typed (colorama, Pygments) need type stubs for full
+#   checking. Pre-commit has these but Bazel needs a separate pip hub.
+#   For now these packages get ignore_missing_imports treatment.
 mypy_aspect = mypy(
     mypy_ini = Label("//:mypy.ini"),
 )

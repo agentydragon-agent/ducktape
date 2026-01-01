@@ -45,12 +45,22 @@ Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across
 - Background: `devenv up` starts the Vite dev server in the background
 
 ## Common Dev Commands
+
+### Bazel (primary build system)
+See `bazelization/STATUS.md` for complete Bazel documentation.
+- Build: `bazel build //adgn:adgn`
+- Test: `bazel test //adgn:tests`
+- Lint (ruff): `bazel lint //adgn:all`
+- Type check (mypy): `bazel build --config=typecheck //adgn:adgn`
+- Combined lint + typecheck: `bazel build --config=check //adgn:adgn`
+
+### Alternative: pytest directly
 - Tests (under `tests/`):
   - Inside `adgn/`: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
 - Single test: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
 - **Debugging hangs/timeouts**: Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
-- Pre-commit (preferred): `pre-commit run -a` (runs ruff, mypy, trivial-patterns, etc.)
+- Pre-commit: `pre-commit run -a` (runs ruff, mypy, trivial-patterns, etc.)
 - Setup: `pre-commit install`
 - Optional extras (GNOME console script deps): `python -m pip install -e '.[gnome]'`
 
@@ -63,7 +73,7 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, marke
 - Run: `pytest -q tests/agent/e2e -m "not live_openai_api"`
 
 ## High‑Level Module Map
-- Packaging: name `adgn`, Python `>=3.12,<3.14`, src layout under `src/`
+- Packaging: name `adgn`, Python `>=3.13`, src layout under `src/`
 - Tana export tooling now lives in the sibling `tana/` project (`src/tana/export/`).
   - Key entry points: `convert.py`, `materialize_searches.py`, `export_node_subset.py`, plus helpers under `tana/export/lib/*`.
 - Response cache (`src/adgn/rspcache/`)

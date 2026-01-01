@@ -301,9 +301,16 @@ bazel build --config=check //...
 
 **Key settings in mypy.ini:**
 - `follow_imports = silent` - Only report errors in explicitly passed files
-- `ignore_missing_imports = True` - External packages may not have stubs
-- `warn_return_any = False` - Disabled to avoid noise from third-party packages
-- Per-package `ignore_errors = True` for problematic external packages
+- `ignore_missing_imports = True` - Packages without stubs get lenient treatment
+- Packages with `py.typed` (rich, structlog, aiohttp, aiodocker) ARE type-checked
+  - API misuse in our code will be caught
+- Packages with broken stubs (numpy, pandas, rpds) have `ignore_errors = True`
+  - We still use their type info, just don't report internal stub errors
+
+**Type checking behavior:**
+- OUR code using typed packages → errors caught
+- OUR code using untyped packages → no type info (ignore_missing_imports)
+- Errors WITHIN external packages → suppressed
 
 **Integration with rules_mypy:**
 - Uses `rules_mypy` v0.40.0 for the mypy aspect

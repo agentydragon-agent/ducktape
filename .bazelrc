@@ -30,3 +30,18 @@ build:typecheck --output_groups=+mypy
 # Run with: bazel build --config=check //...
 build:check --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect
 build:check --output_groups=+rules_lint_report,+mypy
+
+# Rust linting (clippy)
+# Run with: bazel build --config=clippy //finance/worthy:all
+build:clippy --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
+build:clippy --output_groups=+clippy_checks
+
+# Rust formatting check
+# Run with: bazel build --config=rustfmt //finance/worthy:all
+build:rustfmt --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:rustfmt --output_groups=+rustfmt_checks
+
+# Combined Rust lint + format
+# Run with: bazel build --config=rust-check //finance/worthy:all
+build:rust-check --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:rust-check --output_groups=+clippy_checks,+rustfmt_checks

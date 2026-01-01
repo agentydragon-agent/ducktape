@@ -19,7 +19,7 @@ use ibflex_source::IBFlexSource;
 use log::{info, trace, warn};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::*;
-use rusty_money::{iso, Money};
+use rusty_money::{Money, iso};
 use source::Source;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -29,7 +29,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use structopt::StructOpt;
 use swiss_fund_data_converter::SwissFundDataConverter;
-use term_table::{row::Row, table_cell::Alignment, table_cell::TableCell, Table, TableStyle};
+use term_table::{Table, TableStyle, row::Row, table_cell::Alignment, table_cell::TableCell};
 
 // TODO: cache conversions
 // TODO: save cached in xdg cache dir?
@@ -75,8 +75,9 @@ async fn get_source_snapshots(
         .flat_map(|(source_id, source_config)| {
             process_source(source_config)
                 .map(move |result| {
-                    let assets =
-                        result.expect(&format!("getting result from source {source_id} failed"));
+                    let assets = result.unwrap_or_else(|_| {
+                        panic!("getting result from source {source_id} failed")
+                    });
                     info!("{} {} {:?}", source_id, source_config.name, assets);
                     use config::SourceType::*;
                     SourceSnapshot {
@@ -122,19 +123,19 @@ async fn get_converter_snapshots(
             info!("{}", converter_name);
             match converter_config {
                 SwissFundData(config) => {
-                    SwissFundDataConverter::take_snapshot(config, &denominations, base)
+                    SwissFundDataConverter::take_snapshot(config, denominations, base)
                 }
                 AlphaVantage(config) => {
                     // TODO: Err(ParsingError("missing metadata"))
                     // Err(ParsingError("missing exchange rate data"))
                     // this seems to happen on probably too many requests in too
                     // short a time.
-                    AlphaVantageConverter::take_snapshot(config, &denominations, base)
+                    AlphaVantageConverter::take_snapshot(config, denominations, base)
                 }
-                Coinbase(config) => CoinbaseConverter::take_snapshot(config, &denominations, base),
-                Fixer(config) => FixerConverter::take_snapshot(config, &denominations, base),
+                Coinbase(config) => CoinbaseConverter::take_snapshot(config, denominations, base),
+                Fixer(config) => FixerConverter::take_snapshot(config, denominations, base),
                 CurrencyLayer(config) => {
-                    CurrencyLayerConverter::take_snapshot(config, &denominations, base)
+                    CurrencyLayerConverter::take_snapshot(config, denominations, base)
                 }
             } // TODO
             .map(move |conversions| {
@@ -494,7 +495,7 @@ async fn main() {
         ModelLastSnapshot => {
             let paths = get_snapshot_paths(&config);
             let loaded_path = paths.iter().max().unwrap();
-            let file = File::open(&loaded_path).unwrap();
+            let file = File::open(loaded_path).unwrap();
             let snapshot: json_output::Snapshot = serde_json::from_reader(file).unwrap();
 
             let converter_snapshots: Vec<ConverterSnapshot> = snapshot
@@ -516,7 +517,7 @@ async fn main() {
                 .into_owned()
                 .replace("%s", &now.to_rfc3339());
             let mut wtr = csv::Writer::from_writer(File::create(&csv_path).unwrap());
-            wtr.write_record(&["Timestamp", "Total"]).unwrap();
+            wtr.write_record(["Timestamp", "Total"]).unwrap();
             for path in paths {
                 let file = File::open(&path).unwrap();
                 let snapshot: json_output::Snapshot =
@@ -688,15 +689,16 @@ fn render_table(
     table.max_column_width = 40;
     table.style = TableStyle::extended();
 
-    table.add_row(Row::new(vec![TableCell::new_with_alignment(
-        format!(
+    table.add_row(Row::new(vec![
+        TableCell::builder(format!(
             "\u{2211} {}\nHorizon: {} years",
             asset_to_money(total),
             deadline
-        ),
-        1 + modelling.yearly_yields.len(),
-        Alignment::Center,
-    )]));
+        ))
+        .col_span(1 + modelling.yearly_yields.len())
+        .alignment(Alignment::Center)
+        .build(),
+    ]));
 
     let mut header = vec![TableCell::new(
         "Yearly yield \u{2192}\nMonthly goal \u{2193}".to_string(),

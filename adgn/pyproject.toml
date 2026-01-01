@@ -74,11 +74,26 @@ dev = [
   'types-Jinja2',
 ]
 typing = [
+    # Type stubs for packages without py.typed
     'types-PyYAML',
     'types-requests',
     'types-docker',
-    'pandas-stubs',
+    'types-colorama',
+    'types-Pygments',
+    'types-psycopg2',
+    'types-python-dateutil',
+    'types-Markdown',
+    'types-tabulate',
+    'types-filelock',
+    'types-toml',
+    'types-aiofiles',
+    'types-psutil',
+    'types-jsonschema',
+    'types-unidiff',
     'types-Jinja2',
+    # Stubs for async packages
+    'asyncpg-stubs',
+    'pandas-stubs',
 ]
 # GNOME console script deps (install when needed)
 gnome = [
