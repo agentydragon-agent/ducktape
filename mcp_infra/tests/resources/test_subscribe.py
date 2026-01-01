@@ -1,4 +1,4 @@
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesSubscribeArgs
 from mcp_infra.testing.notifications import enable_resources_caps, install_subscription_recorder

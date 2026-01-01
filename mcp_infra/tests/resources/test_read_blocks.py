@@ -1,6 +1,6 @@
 """Tests for block-level resource reading with truncation markers."""
 
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ReadBlocksArgs
 

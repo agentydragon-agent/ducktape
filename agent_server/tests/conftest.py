@@ -38,7 +38,7 @@ from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
 import docker
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.notifications.buffer import NotificationsBuffer

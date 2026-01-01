@@ -20,7 +20,7 @@ from pydantic import AnyUrl
 import pytest
 
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerOptions
 from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.prefix import MCPMountPrefix

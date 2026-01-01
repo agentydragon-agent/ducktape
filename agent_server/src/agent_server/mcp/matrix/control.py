@@ -13,7 +13,7 @@ purely local state + UI bus signaling.
 from __future__ import annotations
 
 from agent_server.server.bus import ServerBus, UiEndTurn
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 
 
 def make_matrix_control_server(bus: ServerBus) -> EnhancedFastMCP:

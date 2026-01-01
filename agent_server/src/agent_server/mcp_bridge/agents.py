@@ -18,7 +18,7 @@ from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 
 from agent_server.presets import discover_presets
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:

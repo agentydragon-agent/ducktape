@@ -35,7 +35,7 @@ from agent_server.types import AgentID
 from mcp_infra.compositor.clients import CompositorMetaClient
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.container_session import ContainerOptions
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import SamplingSnapshot, ServerEntry

@@ -5,7 +5,7 @@ from fastmcp.tools import FunctionTool
 from pydantic import Field
 
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.types import SimpleOk
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
