@@ -371,6 +371,67 @@ Benefits:
 - Easier to see coverage gaps
 - Simpler BUILD files (single glob)
 
+### Flat Package Layout
+
+Current: nested `src/` layout per PEP 517/518 conventions
+Target: flat layout since Bazel handles packaging
+
+```
+# Current (nested src/)
+package_name/
+├── pyproject.toml
+├── src/package_name/
+│   └── module.py
+└── tests/
+
+# Target (flat)
+package_name/
+├── BUILD.bazel
+├── module.py
+├── module_test.py
+└── pyproject.toml  # pytest config only
+```
+
+Benefits:
+- Simpler paths in BUILD.bazel (no `src/` prefix)
+- Clearer what's in the package
+- Bazel visibility rules replace package boundaries
+
+### Package Consolidation
+
+Current: Many separate pyproject.toml packages with workspace references
+Target: Fewer packages, Bazel visibility for layering
+
+Rationale:
+- Bazel `visibility` attribute enforces layering without pyproject boundaries
+- Fewer packages = simpler dependency management
+- No need for uv workspace for internal deps
+
+Candidates for consolidation:
+- `mcp_infra/` could merge into `adgn/`
+- `agent_core/` could merge into `adgn/`
+- Small experimental packages into `experimental/` monolith
+
+Keep separate:
+- Packages with different deployment targets (container vs host)
+- Packages with genuinely different dependency sets
+
+### JS/TS Linting via Bazel Aspects
+
+Current: pre-commit hooks shell out to npm/pnpm for eslint/prettier
+Target: Bazel aspects like ruff, integrated into `bazel lint //...`
+
+`aspect_rules_lint` supports eslint. Required setup:
+1. Add `lint_eslint_aspect` to `tools/lint/linters.bzl`
+2. Configure eslint binary via npm package
+3. Wire into `.bazelrc` as `--config=eslint` or add to `--config=check`
+4. Update `tools/hooks/pre-commit` to use Bazel for JS/TS
+
+Benefits:
+- Single `bazel lint //...` command for all languages
+- Consistent caching/incrementality
+- Same infrastructure for CI and local dev
+
 ## Non-Bazel Infrastructure Inventory
 
 ### pyproject.toml Files (39 packages)
