@@ -21,22 +21,23 @@ ducktape/
     └── runtime/             # Container-side utilities
 ```
 
-## Environment and setup (direnv + devenv)
-- Requirements: Nix + devenv, direnv; Python 3.12+
-- First time here: `direnv allow`
-  - This loads .envrc → devenv, creates a Python venv at `.devenv/state/venv`, and installs the package in editable mode with dev extras.
-- With devenv active, dev tools are on PATH automatically (pytest, ruff, pre-commit, wt, rspcache, …). Run them directly without prefixes when inside adgn/.
-- Running from outside this dir (or scripts): prefix commands with `direnv exec adgn …`
+## Environment and Setup
 
-Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across packages. The per-package devenv still manages the local venv.
+**Bazel is the primary build system.** Requirements: Bazelisk (auto-downloads Bazel), Python 3.12+
 
-## Quick commands
-- Run all tests (tests live under `adgn/tests`):
-  - Inside `adgn/`.: `pytest tests`
-  - From repo root: `direnv exec adgn pytest adgn/tests`
-- Single test file/case: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
-- Lint/format: `ruff format .`, `ruff check . --fix`
-- Pre-commit: `pre-commit install`, `pre-commit run -a`
+## Quick Commands
+
+All commands run from repo root:
+```bash
+bazel build //adgn:adgn           # Build
+bazel test //adgn:tests           # Run tests
+bazel lint //adgn:all             # Lint (ruff + mypy)
+bazel run //adgn:adgn-agent       # Run CLI
+```
+
+For specific tests: `bazel test //adgn:tests --test_arg=-k --test_arg="test_name"`
+
+See `bazelization/STATUS.md` for complete Bazel documentation.
 
 ## Agent Presets (Agent UI)
 - Agents are created from presets (YAML) discovered via platformdirs:

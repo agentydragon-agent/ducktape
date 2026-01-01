@@ -1,6 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/lint:linters.bzl", "ruff_test")
 load("@rules_python//python/uv:lock.bzl", "lock")
+load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files([
     "pyproject.toml",

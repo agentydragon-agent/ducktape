@@ -4,6 +4,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
+
 py_library(
     name = "agent_server",
     srcs = glob(["src/agent_server/**/*.py"]),

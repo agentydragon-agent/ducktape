@@ -2,6 +2,17 @@
 
 High-level architecture and shared infrastructure for the props evaluation system.
 
+## Build and Lint
+
+**Bazel is the primary build system** for linting and testing:
+```bash
+bazel lint //props/...            # Lint (ruff + mypy)
+bazel test //props/core:tests     # Run core tests
+bazel build //props/frontend:bundle  # Build frontend
+```
+
+Runtime services (PostgreSQL, backend, frontend) use devenv for local development - see below.
+
 ## Directory Structure
 
 ```

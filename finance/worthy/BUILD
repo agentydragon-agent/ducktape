@@ -256,4 +256,3 @@ rust_test(
         "@crates//:serde_json",
     ],
 )
-

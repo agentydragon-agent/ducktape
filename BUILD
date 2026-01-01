@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
-load("@rules_python//python/uv:lock.bzl", "lock")
 load("@proxy_config//:proxy_env.bzl", "PROXY_ENV")
+load("@rules_python//python/uv:lock.bzl", "lock")
 
 # Exports for use in other BUILD files
 exports_files([

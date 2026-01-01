@@ -75,6 +75,10 @@ Run `./bazelization/audit.py` to get updated counts.
 - Mypy integrated via rules_mypy (`--config=typecheck`)
 - Rust linting (clippy/rustfmt) integrated via rules_rust (`bazel lint //finance/...`)
 - Removed all re-export patterns from Python packages (direct imports only)
+- ESLint binary in `//tools/lint:eslint` via npm_translate_lock bins config
+- Buildifier targets: `bazel run //tools/lint:buildifier` (fix) and `buildifier.check`
+- Documentation updated to be Bazel-first (AGENTS.md, README.md files)
+- Consolidated duplicate ruff config (removed from per-package pyproject.toml)
 
 ### In Progress / Partial
 
@@ -362,70 +366,54 @@ bazel build --config=check //...
 
 ## Action Items
 
-### Immediate (blocks other work)
-
-1. **Complete ESLint Bazel integration**
-   - Add `bins` config to `npm_translate_lock` in MODULE.bazel
-   - Create eslint binary in `tools/lint/BUILD.bazel`
-   - Test full eslint flow with `bazel lint //props/frontend:all`
-   - Then: remove eslint/prettier from pre-commit hooks
-
-2. **Add buildifier aspect**
-   - Lint BUILD.bazel files via `bazel lint //...`
-   - Remove buildifier from pre-commit hooks
-
 ### High Priority
 
-3. **Enable remote cache write in CI**
+1. **Enable remote cache write in CI**
    - Currently read-only (`--remote_upload_local_results=false`)
    - Enable for main branch for better cache hit rates
 
-4. **Migrate Docker images to rules_oci**
+2. **Migrate Docker images to rules_oci**
    - Start with `docker/runtime/Dockerfile` (most frequently built)
    - Then: `docker/llm/properties-critic/Dockerfile`
    - Evaluate complexity vs benefits for remaining images
 
-5. **Fix ember_evals missing modules**
+3. **Fix ember_evals missing modules**
    - Add missing .kubernetes, .matrix, .steps, .models submodules
    - Or remove if abandoned
 
 ### Medium Priority
 
-6. **Bazelify remaining Python files (54 not in targets)**
+4. **Bazelify remaining Python files (54 not in targets)**
    - `inventree_utils/` (23 files) - create BUILD.bazel
    - `llm/` examples/scripts (6 files) - add to srcs or mark as data
    - `experimental/ember_evals/` (5 files) - fix or remove
    - Others: helm chart scripts, trilium scripts, etc.
 
-7. **Remove duplicate config files**
-   - Consolidate `[tool.ruff]` from pyproject.toml into ruff.toml
-   - Remove per-package requirements.txt files (use requirements_bazel.txt)
-
-8. **Add yamllint aspect for ansible/**
+5. **Add yamllint aspect for ansible/**
    - YAML linting via Bazel aspects
    - Remove yamllint from pre-commit hooks
 
 ### Low Priority / Evaluate
 
-9. **Rust crates via crate_universe**
+6. **Rust crates via crate_universe**
    - `finance/worthy/` currently uses Cargo directly
    - Evaluate rules_rust crate_universe vs keeping Cargo
 
-10. **Website (Haskell/stack)**
-    - Extremely slow cold builds
-    - Keep `stack build` outside Bazel for now
+7. **Website (Haskell/stack)**
+   - Extremely slow cold builds
+   - Keep `stack build` outside Bazel for now
 
 ### Structural Improvements (do incrementally)
 
-11. **Colocate tests with production code**
-    - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
-    - Simpler BUILD files, easier to see coverage gaps
+8. **Colocate tests with production code**
+   - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
+   - Simpler BUILD files, easier to see coverage gaps
 
-12. **Flatten package layouts**
-    - Remove `src/` nesting (Bazel handles packaging)
-    - Simpler paths in BUILD.bazel files
+9. **Flatten package layouts**
+   - Remove `src/` nesting (Bazel handles packaging)
+   - Simpler paths in BUILD.bazel files
 
-13. **Package consolidation**
+10. **Package consolidation**
     - Consider merging `mcp_infra/` into `adgn/`
     - Consider merging `agent_core/` into `adgn/`
     - Use Bazel visibility instead of package boundaries

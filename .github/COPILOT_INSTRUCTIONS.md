@@ -54,25 +54,16 @@ Follow conventions in [STYLE.md](../STYLE.md):
 - Use fixtures for shared test components (prefer conftest.py)
 - Keep test bodies concise and focused on assertions
 
-## Pre-commit Hooks (Required)
+## Verification (Required)
 
-**Before handing in any work, you MUST ensure pre-commit hooks pass.**
-
-### Setup
-
-Install pre-commit hooks when starting work:
+**Before handing in any work, you MUST ensure all lint and tests pass.**
 
 ```bash
-pre-commit install
+bazel lint //...   # Lint (ruff + mypy)
+bazel test //...   # Run all tests
 ```
 
-### Verification
-
-Before completing your work, run the full pre-commit check:
-
-```bash
-pre-commit run --all-files
-```
+For Rust code, also run: `bazel lint --config=rust-check //finance/...`
 
 All checks must pass before the work is considered complete.
 

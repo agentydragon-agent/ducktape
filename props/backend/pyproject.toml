@@ -34,14 +34,7 @@ python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 
-[tool.ruff]
-target-version = "py312"
-line-length = 120
-src = ["src"]
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-ignore = ["E501"]
+# Ruff config is in root ruff.toml (shared across all packages)
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

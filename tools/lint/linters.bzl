@@ -28,9 +28,9 @@ mypy_aspect = mypy(
 )
 
 # ESLint aspect for JS/TS linting
-# Uses eslint from props/frontend npm packages (first frontend with eslint configured)
+# Binary created in //tools/lint:eslint from props/frontend npm packages
 eslint = lint_eslint_aspect(
-    binary = "//props/frontend:eslint",
+    binary = Label("//tools/lint:eslint"),
     configs = [
         Label("//props/frontend:eslint.config.js"),
     ],

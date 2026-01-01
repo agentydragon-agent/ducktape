@@ -4,14 +4,15 @@ This file provides guidance to LLM agents for working with this repository.
 
 ## Before Hand-off
 
-If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/AGENTS.md`.  
+If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/AGENTS.md`.
 Then finish with the full repo workflow:
 
 ```bash
-pre-commit run --all-files
+bazel lint //...
+bazel test //...
 ```
 
-This runs yamllint, ansible-playbook --syntax-check, ansible-lint, and every other hook so the hand-off state is fully verified.
+This runs ruff, mypy, and all tests. For Rust code, also run `bazel lint --config=rust-check //finance/...`.
 
 ## Repository Overview
 

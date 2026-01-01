@@ -11,6 +11,7 @@ Detection:
 
 def _proxy_config_repo_impl(repository_ctx):
     """Generate proxy_env.bzl based on environment."""
+
     # Check for proxy configuration from environment
     # On CC web, the session hook sets BAZEL_PROXY_PORT before invoking bazel
     proxy_port = repository_ctx.os.environ.get("BAZEL_PROXY_PORT", "")
@@ -32,13 +33,12 @@ PROXY_ENV = {{
     "SSL_CERT_FILE": "{ca}",
     "REQUESTS_CA_BUNDLE": "{ca}",
 }}
-'''.format(proxy=local_proxy, ca=combined_ca)
+'''.format(proxy = local_proxy, ca = combined_ca)
     else:
         # Local development - no proxy needed
-        content = '''\
-# Default proxy config for local development
+        content = """# Default proxy config for local development
 PROXY_ENV = {}
-'''
+"""
 
     repository_ctx.file("proxy_env.bzl", content)
     repository_ctx.file("BUILD.bazel", """\

@@ -3,12 +3,12 @@ load("@npm_props_frontend//:defs.bzl", "npm_link_all_packages")
 # Link npm packages from pnpm-lock.yaml
 npm_link_all_packages(name = "node_modules")
 
-# Export files needed by npm_translate_lock
+# Export files needed by npm_translate_lock and eslint aspect
 exports_files([
     "pnpm-lock.yaml",
     "package.json",
+    "eslint.config.js",
 ])
 
-# NOTE: js_binary for eslint conflicts with node_modules artifact paths
+# ESLint binary is created in //tools/lint:eslint to avoid artifact path conflicts
 # See bazelization/STATUS.md "JS/TS Linting via Bazel Aspects" section
-# For now, use: npm run lint (in props/frontend directory)
