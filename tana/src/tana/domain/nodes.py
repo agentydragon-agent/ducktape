@@ -89,7 +89,7 @@ class TagDefNode(BaseNode):
 class VisualNode(BaseNode):
     """Node representing visual content (images).
 
-    Use tana.operations.get_image_url(node) to extract image URLs.
+    Use tana.query.nodes.get_image_url(node) to extract image URLs.
     """
 
 
