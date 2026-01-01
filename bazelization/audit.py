@@ -5,12 +5,10 @@
 # ///
 """Audit Bazelization coverage in the repository.
 
-Run this script periodically to track Bazelization progress and identify gaps.
+Compares git-tracked Python files against files actually in Bazel srcs.
 
 Usage:
     ./bazelization/audit.py
-    # or
-    uv run bazelization/audit.py
 """
 
 import subprocess
@@ -28,30 +26,49 @@ INTENTIONALLY_EXCLUDED = {
 }
 
 
-def find_python_files() -> list[Path]:
+def find_git_python_files() -> set[Path]:
     """Find all git-tracked Python files."""
     repo = pygit2.Repository(REPO_ROOT)
     index = repo.index
     index.read()
 
-    files = []
+    files = set()
     for entry in index:
         if entry.path.endswith(".py"):
-            files.append(REPO_ROOT / entry.path)
+            files.add(Path(entry.path))
     return files
 
 
-def find_build_dirs() -> set[Path]:
-    """Find directories containing BUILD.bazel or BUILD files via git."""
-    repo = pygit2.Repository(REPO_ROOT)
-    index = repo.index
-    index.read()
+def find_bazel_python_sources() -> set[Path]:
+    """Query Bazel for all Python files in srcs of py_* targets."""
+    sources = set()
 
-    builds = set()
-    for entry in index:
-        if entry.path.endswith("BUILD.bazel") or entry.path.endswith("/BUILD") or entry.path == "BUILD":
-            builds.add((REPO_ROOT / entry.path).parent)
-    return builds
+    for kind in ["py_library", "py_test", "py_binary"]:
+        result = subprocess.run(
+            ["bazel", "query", f'labels(srcs, kind("{kind}", //...))'],
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+        )
+        if result.returncode != 0:
+            continue
+
+        for line in result.stdout.strip().split("\n"):
+            if not line or not line.endswith(".py"):
+                continue
+            # Convert //pkg:path/to/file.py to pkg/path/to/file.py
+            if line.startswith("//"):
+                line = line[2:]
+            if ":" in line:
+                pkg, file = line.split(":", 1)
+                if pkg:
+                    sources.add(Path(pkg) / file)
+                else:
+                    sources.add(Path(file))
+            else:
+                sources.add(Path(line))
+
+    return sources
 
 
 def query_bazel_targets(kind: str) -> list[str]:
@@ -80,37 +97,26 @@ def query_manual_targets() -> list[str]:
     return [line for line in result.stdout.strip().split("\n") if line]
 
 
-def get_package_for_file(py_file: Path, build_dirs: set[Path]) -> Path | None:
-    """Find the BUILD file directory that covers this Python file."""
-    current = py_file.parent
-    while current != REPO_ROOT.parent:
-        if current in build_dirs:
-            return current
-        current = current.parent
-    return None
-
-
 def analyze() -> None:
-    print("Scanning repository...")
-    py_files = find_python_files()
-    build_dirs = find_build_dirs()
+    print("Scanning git repository...")
+    git_files = find_git_python_files()
 
+    print("Querying Bazel for Python srcs...")
+    bazel_files = find_bazel_python_sources()
+
+    # Categorize files
     covered = []
     uncovered: dict[str, list[Path]] = defaultdict(list)
     intentional: dict[str, list[Path]] = defaultdict(list)
 
-    for py_file in py_files:
-        rel = py_file.relative_to(REPO_ROOT)
-        pkg = get_package_for_file(py_file, build_dirs)
-
-        # Check if intentionally excluded
+    for rel in sorted(git_files):
         top_dir = rel.parts[0] if rel.parts else ""
+
         if top_dir in INTENTIONALLY_EXCLUDED:
             intentional[top_dir].append(rel)
-        elif pkg:
+        elif rel in bazel_files:
             covered.append(rel)
         else:
-            # Group by top-level directory
             uncovered[top_dir].append(rel)
 
     # Query Bazel for target counts
@@ -120,17 +126,21 @@ def analyze() -> None:
     ruff_tests = query_bazel_targets("ruff_test")
     manual_targets = query_manual_targets()
 
+    total_git = len(git_files)
+    total_intentional = sum(len(v) for v in intentional.values())
+    total_uncovered = sum(len(v) for v in uncovered.values())
+
     print()
     print("=" * 60)
     print("BAZELIZATION COVERAGE REPORT")
     print("=" * 60)
     print()
-    print(f"Python files (git-tracked): {len(py_files)}")
-    print(f"Covered by BUILD:           {len(covered)}")
-    print(f"Not covered:                {sum(len(v) for v in uncovered.values())}")
-    print(f"Intentionally excluded:     {sum(len(v) for v in intentional.values())}")
-    if py_files:
-        pct = len(covered) / len(py_files) * 100
+    print(f"Python files (git-tracked): {total_git}")
+    print(f"In Bazel py_* srcs:         {len(covered)}")
+    print(f"Not in any target:          {total_uncovered}")
+    print(f"Intentionally excluded:     {total_intentional}")
+    if total_git - total_intentional > 0:
+        pct = len(covered) / (total_git - total_intentional) * 100
         print(f"Coverage:                   {pct:.1f}%")
     print()
 
@@ -151,14 +161,14 @@ def analyze() -> None:
 
     if uncovered:
         print("=" * 60)
-        print("UNCOVERED DIRECTORIES")
+        print("NOT IN ANY BAZEL TARGET")
         print("=" * 60)
         for dir_name, files in sorted(uncovered.items()):
             print(f"\n{dir_name}/ ({len(files)} files)")
-            for f in sorted(files)[:5]:
+            for f in sorted(files)[:10]:
                 print(f"  - {f}")
-            if len(files) > 5:
-                print(f"  ... and {len(files) - 5} more")
+            if len(files) > 10:
+                print(f"  ... and {len(files) - 10} more")
         print()
 
     print("=" * 60)
@@ -166,13 +176,6 @@ def analyze() -> None:
     print("=" * 60)
     for dir_name, files in sorted(intentional.items()):
         print(f"  {dir_name}/ ({len(files)} files)")
-
-    print()
-    print("=" * 60)
-    print(f"BUILD FILES: {len(build_dirs)} directories")
-    print("=" * 60)
-    for bd in sorted(build_dirs):
-        print(f"  {bd.relative_to(REPO_ROOT)}")
 
 
 if __name__ == "__main__":

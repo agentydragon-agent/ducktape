@@ -13,8 +13,9 @@ Unified Bazel build system for all Python packages:
 
 | Metric | Count | Notes |
 |--------|-------|-------|
-| Python files total | 1132 | Git-tracked only |
-| Covered by BUILD | 1117 | 98.7% coverage |
+| Python files total | 1133 | Git-tracked only |
+| In Bazel py_* srcs | 1042 | 93.2% coverage |
+| Not in any target | 76 | See list below |
 | Intentionally excluded | 15 | ansible (12), nix (3) |
 | py_library targets | 43 | |
 | py_test targets | 26 | 1 manual (cotrl) |
@@ -25,7 +26,7 @@ Run `./bazelization/audit.py` to get updated counts.
 ### Completed
 
 - MODULE.bazel with rules_python configured
-- All Python packages have BUILD.bazel files
+- Most Python packages have BUILD.bazel files
 - pip.parse with requirements_bazel.txt from uv export
 - Circular dependency resolved (bootstrap_handler moved to mcp_infra)
 - Session start hooks for Claude Code web Bazel proxy
@@ -54,11 +55,22 @@ Run `./bazelization/audit.py` to get updated counts.
 | `//homeassistant/iaqi:requirements*` | Separate requirements lock |
 | `//website:*` | Haskell/stack build system |
 
-### Known Incomplete Packages
+### Files Not in Any Bazel Target (76 files)
 
-| Package | Issue |
-|---------|-------|
-| `experimental/ember_evals/` | Missing modules (.kubernetes, .matrix, .steps, .models) |
+| Directory | Count | Notes |
+|-----------|-------|-------|
+| `inventree_utils/` | 23 | Entire package not Bazelized |
+| `claude/claude_optimizer/tests/` | 8 | Tests not in srcs |
+| `prompts/scans/` | 6 | Standalone scan scripts |
+| `llm/` (examples/scripts) | 6 | Example and manual test scripts |
+| `experimental/ember_evals/` | 5 | Missing submodules, incomplete |
+| `gmail-archiver/tests/` | 5 | Tests not in srcs |
+| `k8s/helm/*/files/` | 4 | Helm chart Python scripts |
+| `adgn/` (examples, gitea_pr_gate) | 4 | Subpackages not in srcs |
+| `trilium/` | 3 | Papers/search scripts |
+| `mcp_starter/` | 3 | Tests and manual scripts |
+| `sandboxed_jupyter/examples/` | 2 | Example scripts |
+| Other standalone files | 7 | Root conftest, dotfiles, gatelet/tasks, etc. |
 
 ## Package Structure
 
