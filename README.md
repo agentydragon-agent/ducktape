@@ -5,7 +5,15 @@ into separate repositories.
 
 Based on my [Python project skeleton](https://gitlab.com/agentydragon/python-skeleton).
 
-Please install and use [pre-commit](https://github.com/pre-commit/pre-commit).
+## Development
+
+This repository uses **Bazel** as the primary build system. Install the git pre-commit hook:
+
+```bash
+ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+```
+
+This hook runs `bazel lint` on staged files before each commit.
 
 ## License
 AGPL 3.0

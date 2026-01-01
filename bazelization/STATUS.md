@@ -69,7 +69,8 @@ Run `./bazelization/audit.py` to get updated counts.
 - Most Python packages have BUILD.bazel files
 - pip.parse with requirements_bazel.txt from uv export
 - Circular dependency resolved (bootstrap_handler moved to mcp_infra)
-- Session start hooks for Claude Code web Bazel proxy
+- Session start hooks for Claude Code web: Bazel proxy + git pre-commit hook installation
+- Git pre-commit hook (`tools/hooks/pre-commit`) runs `bazel lint` on staged files
 - `aspect_rules_lint` integrated for ruff linting (`bazel lint //...`)
 - Node.js frontends migrated to rules_js (`props/frontend`, `rspcache/admin_ui`)
 - Mypy integrated via rules_mypy (`--config=typecheck`)
@@ -79,6 +80,7 @@ Run `./bazelization/audit.py` to get updated counts.
 - Buildifier targets: `bazel run //tools/lint:buildifier` (fix) and `buildifier.check`
 - Documentation updated to be Bazel-first (AGENTS.md, README.md files)
 - Consolidated duplicate ruff config (removed from per-package pyproject.toml)
+- CI workflow updated to run `bazel lint //...` in addition to `bazel build` and `bazel test`
 
 ### In Progress / Partial
 
@@ -197,7 +199,8 @@ git commit → pre-commit hook → bazel query → bazel lint //pkg1:all //pkg2:
 6. Creates combined CA bundle at `~/.cache/bazel-proxy/combined_ca.pem`
 7. Writes `~/.cache/bazel-proxy/bazelrc` with proxy settings
 8. Installs bazel wrapper at `~/.cache/bazel-proxy/bin/bazel`
-9. Exports `BAZEL_PROXY_PORT` and `BAZEL_COMBINED_CA` via `CLAUDE_ENV_FILE`
+9. Installs git pre-commit hook (`tools/hooks/pre-commit` → `.git/hooks/pre-commit`)
+10. Exports `BAZEL_PROXY_PORT` and `BAZEL_COMBINED_CA` via `CLAUDE_ENV_FILE`
 
 **Package structure:**
 ```
@@ -588,31 +591,40 @@ Root `pyproject.toml` contains:
 | Tool | Config Location | Bazel Integration |
 |------|-----------------|-------------------|
 | Ruff | `ruff.toml` (root) | `bazel lint //...` via aspect_rules_lint |
-| mypy | Per-package `pyproject.toml` or `mypy.ini` | Not yet (pre-commit only) |
-| buildifier | Pre-commit hook | Pre-commit only |
-| yamllint | `.yamllint.yaml` | Pre-commit only |
-| alejandra | Pre-commit hook (nix) | Pre-commit only |
-| ESLint | `adgn/src/adgn/agent/web/`, `props/frontend/` | Pre-commit only |
-| Prettier | Same as ESLint | Pre-commit only |
+| mypy | `mypy.ini` (root) | `bazel build --config=typecheck //...` via rules_mypy |
+| buildifier | `tools/lint/BUILD.bazel` | `bazel run //tools/lint:buildifier` |
+| yamllint | `.yamllint.yaml` | Not yet (pre-commit framework) |
+| alejandra | Nix files | Not yet (pre-commit framework) |
+| ESLint | `adgn/src/adgn/agent/web/`, `props/frontend/` | Not yet (pre-commit framework) |
+| Prettier | Same as ESLint | Not yet (pre-commit framework) |
 
-### Pre-commit Hooks (`.pre-commit-config.yaml`)
+### Pre-commit Framework (`.pre-commit-config.yaml`) — DEPRECATED
 
-| Hook | Purpose | Bazel Equivalent |
-|------|---------|------------------|
-| `no-commit-to-branch` | Block commits to main | N/A (git hook) |
-| `check-ast` | Valid Python syntax | `bazel build` catches |
-| `check-yaml` | Valid YAML | N/A |
-| `check-toml` | Valid TOML | N/A |
-| `yamllint` | YAML style | N/A |
-| `ansible-syntax-check` | Ansible validation | N/A |
-| `ruff-check` | Linting | `bazel lint //...` |
-| `ruff-format` | Formatting | `bazel lint //...` |
-| `mypy` (12 configs) | Type checking | TODO: aspect_rules_lint |
-| `buildifier` | BUILD formatting | TODO: aspect_rules_lint |
-| `alejandra` | Nix formatting | N/A |
-| `eslint` | JS/TS linting | TODO: rules_js |
-| `prettier` | JS/TS formatting | TODO: rules_js |
-| `svelte-check` | Svelte types | TODO: rules_js |
+**Note:** The pre-commit framework is being deprecated in favor of the Bazel-based git hook at
+`tools/hooks/pre-commit`. The git hook runs `bazel lint` on staged files, which covers ruff and mypy.
+
+The `.pre-commit-config.yaml` file still exists for:
+- Hooks not yet migrated to Bazel (yamllint, alejandra, eslint, prettier, svelte-check)
+- CI workflows that still use `pre-commit run --all-files`
+
+**Migration status for pre-commit hooks:**
+
+| Hook | Purpose | Bazel Equivalent | Status |
+|------|---------|------------------|--------|
+| `no-commit-to-branch` | Block commits to main | N/A (git hook) | Keep in pre-commit |
+| `check-ast` | Valid Python syntax | `bazel build` catches | Redundant |
+| `check-yaml` | Valid YAML | N/A | Keep in pre-commit |
+| `check-toml` | Valid TOML | N/A | Keep in pre-commit |
+| `yamllint` | YAML style | TODO: yamllint aspect | Keep in pre-commit |
+| `ansible-syntax-check` | Ansible validation | N/A | Keep in pre-commit |
+| `ruff-check` | Linting | `bazel lint //...` | ✅ Migrated |
+| `ruff-format` | Formatting | `bazel lint //...` | ✅ Migrated |
+| `mypy` (12 configs) | Type checking | `bazel build --config=typecheck` | ✅ Migrated |
+| `buildifier` | BUILD formatting | `bazel run //tools/lint:buildifier` | ✅ Migrated |
+| `alejandra` | Nix formatting | N/A (nix-specific) | Keep in pre-commit |
+| `eslint` | JS/TS linting | TODO: rules_js aspect | Keep in pre-commit |
+| `prettier` | JS/TS formatting | TODO: rules_js aspect | Keep in pre-commit |
+| `svelte-check` | Svelte types | TODO: rules_js aspect | Keep in pre-commit |
 
 ### Other Configuration Files
 
@@ -662,18 +674,16 @@ Root `pyproject.toml` contains:
 3. **Keep requirements_bazel.txt updated**: Run `bazel run //:requirements.update` after adding deps
 4. **Test with `bazel test //...`**: Ensure all non-manual tests pass before commits
 
-### Pre-commit Integration
+### Git Pre-commit Hook (Recommended)
 
-The `pre-commit` configuration should include:
-```yaml
-- repo: local
-  hooks:
-    - id: bazel-test
-      name: bazel test
-      entry: bazel test //...
-      language: system
-      pass_filenames: false
+Install the Bazel-based git hook instead of using the pre-commit framework:
+
+```bash
+ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
 ```
+
+This hook runs `bazel lint` on staged Python files. For Claude Code web sessions,
+the session start hook installs this automatically.
 
 ### CI Configuration
 

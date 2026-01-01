@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Session start hook for Claude Code web: sets up Bazel proxy for TLS-inspecting proxies."""
+"""Session start hook for Claude Code web: sets up Bazel proxy and git hooks."""
 
 from __future__ import annotations
 
@@ -15,6 +15,47 @@ from claude_web_hooks import bazel_proxy_setup, bazelisk_setup
 
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
+
+
+def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
+    """Install Bazel-based git pre-commit hook.
+
+    Creates a symlink from .git/hooks/pre-commit to tools/hooks/pre-commit,
+    which runs `bazel lint` on staged Python files.
+    """
+    git_hooks_dir = project_dir / ".git" / "hooks"
+    if not git_hooks_dir.exists():
+        log.info("Not a git repository (no .git/hooks), skipping git hook install")
+        return
+
+    hook_source = project_dir / "tools" / "hooks" / "pre-commit"
+    if not hook_source.exists():
+        log.warning("Hook source not found: %s", hook_source)
+        return
+
+    hook_target = git_hooks_dir / "pre-commit"
+
+    # Calculate relative path from .git/hooks to tools/hooks/pre-commit
+    # This is ../../tools/hooks/pre-commit
+    relative_source = Path("..") / ".." / "tools" / "hooks" / "pre-commit"
+
+    if hook_target.is_symlink():
+        current_target = hook_target.resolve()
+        expected_target = hook_source.resolve()
+        if current_target == expected_target:
+            log.info("Git pre-commit hook already installed")
+            return
+        # Different symlink target, replace it
+        hook_target.unlink()
+        log.info("Replacing existing git pre-commit hook symlink")
+    elif hook_target.exists():
+        # Regular file exists, back it up and replace
+        backup = hook_target.with_suffix(".backup")
+        hook_target.rename(backup)
+        log.info("Backed up existing pre-commit hook to %s", backup)
+
+    hook_target.symlink_to(relative_source)
+    log.info("Installed git pre-commit hook: %s -> %s", hook_target, relative_source)
 
 
 def setup_logging() -> logging.Logger:
@@ -59,6 +100,9 @@ def main() -> int:
     # Install bazel wrapper that sets proxy env vars
     bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
 
+    # Install git pre-commit hook that runs bazel lint
+    install_git_precommit_hook(project_dir, log)
+
     # Persist PATH modification and proxy env vars via CLAUDE_ENV_FILE
     # The proxy config is exported so the Bazel module extension can generate
     # @proxy_config//:proxy_env.bzl with the correct values at repository resolution time
@@ -77,6 +121,7 @@ def main() -> int:
     log.info("Environment ready:")
     log.info("  bazel:       %s", bazelisk_setup.get_status())
     log.info("  Bazel proxy: %s", bazel_proxy_setup.get_status())
+    log.info("  git hook:    installed (bazel lint)")
     log.info("=" * 60)
     return 0
 
