@@ -18,44 +18,44 @@ LOG_FILE = CACHE_DIR / "session-start.log"
 
 
 def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
-    """Install Bazel-based git pre-commit hook.
+    """Install git pre-commit hook using pre-commit framework.
 
-    Creates a symlink from .git/hooks/pre-commit to tools/hooks/pre-commit,
-    which runs `bazel lint` on staged Python files.
+    Runs `pre-commit install` which installs the hook defined in .pre-commit-config.yaml.
+    This includes conflict marker detection, syntax checks, and bazel lint.
     """
-    git_hooks_dir = project_dir / ".git" / "hooks"
-    if not git_hooks_dir.exists():
-        log.info("Not a git repository (no .git/hooks), skipping git hook install")
+    import subprocess
+
+    git_dir = project_dir / ".git"
+    if not git_dir.exists():
+        log.info("Not a git repository (no .git), skipping git hook install")
         return
 
-    hook_source = project_dir / "tools" / "hooks" / "pre-commit"
-    if not hook_source.exists():
-        log.warning("Hook source not found: %s", hook_source)
+    precommit_config = project_dir / ".pre-commit-config.yaml"
+    if not precommit_config.exists():
+        log.warning("No .pre-commit-config.yaml found, skipping git hook install")
         return
 
-    hook_target = git_hooks_dir / "pre-commit"
+    hook_target = git_dir / "hooks" / "pre-commit"
+    if hook_target.exists():
+        log.info("Git pre-commit hook already installed")
+        return
 
-    # Calculate relative path from .git/hooks to tools/hooks/pre-commit
-    # This is ../../tools/hooks/pre-commit
-    relative_source = Path("..") / ".." / "tools" / "hooks" / "pre-commit"
-
-    if hook_target.is_symlink():
-        current_target = hook_target.resolve()
-        expected_target = hook_source.resolve()
-        if current_target == expected_target:
-            log.info("Git pre-commit hook already installed")
-            return
-        # Different symlink target, replace it
-        hook_target.unlink()
-        log.info("Replacing existing git pre-commit hook symlink")
-    elif hook_target.exists():
-        # Regular file exists, back it up and replace
-        backup = hook_target.with_suffix(".backup")
-        hook_target.rename(backup)
-        log.info("Backed up existing pre-commit hook to %s", backup)
-
-    hook_target.symlink_to(relative_source)
-    log.info("Installed git pre-commit hook: %s -> %s", hook_target, relative_source)
+    try:
+        result = subprocess.run(
+            ["pre-commit", "install"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            log.info("Installed git pre-commit hook via pre-commit install")
+        else:
+            log.warning("pre-commit install failed: %s", result.stderr)
+    except FileNotFoundError:
+        log.warning("pre-commit not found, skipping git hook install")
+    except subprocess.TimeoutExpired:
+        log.warning("pre-commit install timed out")
 
 
 def setup_logging() -> logging.Logger:
@@ -122,7 +122,7 @@ def main() -> int:
     log.info("Environment ready:")
     log.info("  bazel:       %s", bazelisk_setup.get_status())
     log.info("  Bazel proxy: %s", bazel_proxy_setup.get_status())
-    log.info("  git hook:    installed (bazel lint)")
+    log.info("  git hook:    installed (pre-commit)")
     log.info("=" * 60)
     return 0
 
