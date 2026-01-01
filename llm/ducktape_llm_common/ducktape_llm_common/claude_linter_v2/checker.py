@@ -3,7 +3,8 @@
 import logging
 from pathlib import Path
 
-from .config import AutofixCategory, ConfigLoader, Violation
+from .config.loader import ConfigLoader
+from .config.models import AutofixCategory, Violation
 from .linters.python_ast import PythonASTAnalyzer
 from .linters.python_formatter import PythonFormatter
 from .linters.python_ruff import PythonRuffLinter

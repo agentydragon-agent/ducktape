@@ -58,7 +58,7 @@ If you prefer manual setup, add to your Claude Desktop config:
 ### Using the Python Client Directly
 
 ```python
-from habitify_mcp_server import HabitifyClient
+from habitify_mcp_server.habitify_client import HabitifyClient
 import asyncio
 from datetime import date, timedelta
 

@@ -21,11 +21,10 @@ from pytimeparse import parse as parse_duration
 from ..claude_code_api import SessionID
 from . import __version__
 from .checker import FileChecker
-from .config import AutofixCategory
+from .config.models import AutofixCategory
 from .hooks.exceptions import HookBugError
 from .hooks.handler import HOOK_REQUEST_TYPES, handle
-from .session import SessionManager
-from .session.manager import SessionInfo
+from .session.manager import SessionInfo, SessionManager
 
 logger = logging.getLogger(__name__)
 
