@@ -8,7 +8,57 @@ exports_files([
     "pnpm-lock.yaml",
     "package.json",
     "eslint.config.js",
+    ".prettierrc",
+    "tsconfig.json",
 ])
 
 # ESLint binary is created in //tools/lint:eslint to avoid artifact path conflicts
 # See bazelization/STATUS.md "JS/TS Linting via Bazel Aspects" section
+
+# Prettier check (formatting validation)
+# Run: bazel test //props/frontend:prettier_test
+sh_test(
+    name = "prettier_test",
+    srcs = ["//tools/lint:run_prettier.sh"],
+    args = [
+        "$(rootpath //tools/lint:prettier)",
+        "props/frontend",  # Package directory
+        "--check",
+        "--config",
+        ".prettierrc",
+        "src",
+    ],
+    data = [
+        "//tools/lint:prettier",
+        ":node_modules/prettier",
+        ":node_modules/prettier-plugin-svelte",
+        ".prettierrc",
+    ] + glob(["src/**/*.ts", "src/**/*.svelte", "src/**/*.css"]),
+    tags = ["lint"],
+)
+
+# Svelte-check (type checking)
+# NOTE: Manual because it requires .svelte-kit/tsconfig.json which is generated
+# by `pnpm run check` (svelte-kit sync). Run via pnpm for now.
+# TODO: Add svelte-kit sync as a genrule dependency
+sh_test(
+    name = "svelte_check_test",
+    srcs = ["//tools/lint:run_svelte_check.sh"],
+    args = [
+        "$(rootpath //tools/lint:svelte-check)",
+        "props/frontend",  # Package directory
+        "--tsconfig",
+        "tsconfig.json",
+    ],
+    data = [
+        "//tools/lint:svelte-check",
+        ":node_modules/svelte-check",
+        ":node_modules/svelte",
+        ":node_modules/typescript",
+        "tsconfig.json",
+    ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
+    tags = [
+        "lint",
+        "manual",  # Requires svelte-kit sync (generated files)
+    ],
+)

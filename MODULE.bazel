@@ -24,10 +24,12 @@ node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
 npm_props = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
 npm_props.npm_translate_lock(
     name = "npm_props_frontend",
-    # Generate bin entry for eslint to enable //tools/lint:eslint binary
+    # Generate bin entries for linting/formatting tools
     # Bzlmod requires list format with "name=path" entries
     bins = {
         "eslint": ["eslint=./bin/eslint.js"],
+        "prettier": ["prettier=./bin/prettier.cjs"],
+        "svelte-check": ["svelte-check=./bin/svelte-check"],
     },
     pnpm_lock = "//props/frontend:pnpm-lock.yaml",
     # Hoist eslint plugins so eslint can discover them at runtime
