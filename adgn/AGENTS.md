@@ -20,29 +20,22 @@ ducktape/
 
 `agent_pkg/runtime` provides output/MCP helpers used by init scripts in Docker containers. It has no dependency on `adgn` (installed separately in container images).
 
-## Environment and Setup (direnv + devenv)
-- Requirements: Nix + devenv, direnv, Python 3.12+. Node 20 is available in the dev shell for the UI.
-- First time here: `cd adgn`, `direnv allow`
-  - This loads `.envrc` → devenv, creates a Python venv, and installs `adgn` in editable mode with dev extras.
-- Re-entering later: just `cd adgn`; direnv activates the environment.
-- Verify environment:
-  - `direnv status` shows if `.envrc` is loaded
-  - `echo "$VIRTUAL_ENV"` contains `.../adgn/.devenv/state/venv`
-  - `which python` resolves to `.../adgn/.devenv/state/venv/bin/python`
-- Running commands:
-  - Inside `adgn/`, tools are on PATH (pytest, ruff, pre-commit, wt, rspcache, adgn-agent, ...)
-  - From outside: prefix with `direnv exec adgn <command>`
-- Refresh after edits:
-  - `devenv.nix`/`.envrc` changes → `direnv reload`
-  - `pyproject.toml` dependency changes → `direnv reload` (reinstalls dev extras on entry)
+## Environment and Setup
 
-Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across packages. The per-package devenv still manages the local venv at `.devenv/state/venv`.
+**Bazel is the primary build system.** See `bazelization/STATUS.md` for complete documentation.
 
-### Devenv Helper Scripts
-- `ui-dev` → run Vite dev server for Agent UI (`http://127.0.0.1:5173`)
-- `ui-build` → build UI assets into `src/adgn/agent/server/static/web`
-- `agent-serve` → start Agent backend server (`http://127.0.0.1:8765`)
-- Background: `devenv up` starts the Vite dev server in the background
+Requirements: Bazelisk (auto-downloads Bazel), Python 3.12+
+
+All commands run from repo root:
+```bash
+bazel build //adgn:adgn        # Build
+bazel test //adgn:tests        # Test
+bazel lint //adgn:all          # Lint (ruff + mypy)
+bazel run //adgn:adgn-agent    # Run CLI
+```
+
+### Legacy: direnv + devenv (transitional)
+Some local development still uses direnv/devenv for venv management. This is being migrated to pure Bazel.
 
 ## Common Dev Commands
 
@@ -55,14 +48,13 @@ See `bazelization/STATUS.md` for complete Bazel documentation.
 - Combined lint + typecheck: `bazel build --config=check //adgn:adgn`
 
 ### Debugging hangs/timeouts
-Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
+Run without xdist parallelization for clearer output: `bazel test //adgn:tests --test_arg=-n0 --test_arg=-v`
 
-### Pre-commit hooks
-- Run: `pre-commit run -a` (runs ruff, mypy, trivial-patterns, etc.)
-- Setup: `pre-commit install`
-
-### Optional extras
-GNOME console script deps: `python -m pip install -e '.[gnome]'`
+### Git pre-commit hook
+The git hook at `tools/hooks/pre-commit` runs `bazel lint` on staged files. Install with:
+```bash
+ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+```
 
 ## Pytest Defaults
 See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, markers, and timeout settings.
@@ -122,8 +114,8 @@ See `[project.scripts]` in `pyproject.toml` for the full list of CLI entry point
 - Quick start: `props run --snapshot <slug>` or `props snapshot exec <snapshot-slug>`
 
 ### Testing LLM Code
-- Typical: `direnv exec adgn pytest -q -m "not live_openai_api"`
-- Excluding a suite: `-k "not sandboxed_jupyter"`
+- Typical: `bazel test //adgn:tests --test_arg=-m --test_arg="not live_openai_api"`
+- Excluding a suite: `--test_arg=-k --test_arg="not sandboxed_jupyter"`
 - `live_openai_api` tests require OPENAI_API_KEY and network access
 
 ### Bootstrap Handlers (Agent Initialization)
@@ -240,10 +232,16 @@ handlers = [bootstrap, ...other handlers...]
   - For resource JSON, use `read_text_json(session, uri)` or the typed variant. Avoid hand‑parsing `contents`.
 
 ### Linting and Typing
-- Prefer to use repo-wide configured `pre-commit` over individual tools (like `ruff`, `mypy`, etc.)
-- Do not add ignore rules or silence individual lint errors unless explicitly approved
-- Codemod
-  - Run `trivial-patterns --scope tests tests` alongside Ruff and mypy before handing off patches. Add more scopes with repeated flags or comma-separated values (e.g., `--scope tests,src/adgn`). Omit `--scope` to scan the entire project. The CLI wraps `adgn-trivial-patterns`; review its findings and fix or justify each one. Skip patterns live under `[tool.adgn.trivial-patterns]` in `pyproject.toml`.
+Use `bazel lint //...` for all linting:
+```bash
+bazel lint //adgn:all                    # Ruff
+bazel build --config=typecheck //adgn:adgn  # Mypy
+bazel build --config=check //adgn:adgn      # Both
+```
+
+Do not add ignore rules or silence individual lint errors unless explicitly approved.
+
+For codemod tasks, run `trivial-patterns` via Bazel (TODO: add trivial-patterns to Bazel aspects).
 
 ### CallToolResult Conventions (MCP)
 - Typed vs. client results

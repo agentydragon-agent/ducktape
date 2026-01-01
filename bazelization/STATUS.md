@@ -1,5 +1,45 @@
 # Bazel Migration Status
 
+## Full Bazel Vision
+
+The end-state is a **fully Bazel-managed repository** where:
+
+### All Builds and Tests via Bazel
+- `bazel build //...` builds everything (Python, Rust, JS/TS frontends, Docker images)
+- `bazel test //...` runs all tests (unit, integration, e2e)
+- No direct `pytest`, `npm test`, `cargo test` invocations outside Bazel
+
+### All Linting via Bazel Aspects
+- `bazel lint //...` covers all languages in one command:
+  - Python: ruff (done), mypy (done)
+  - Rust: clippy, rustfmt (done)
+  - JS/TS: eslint, prettier (in progress)
+  - Bazel: buildifier
+  - YAML: yamllint (for ansible/)
+  - Nix: alejandra
+- No separate pre-commit framework; git hook calls `bazel lint` directly
+
+### Docker Images via rules_oci
+- All container images built with `bazel build //docker/...:image`
+- Deterministic, cacheable, layer-optimized builds
+- No `docker build` commands in development or CI
+
+### Single Dependency Source
+- Python: `requirements_bazel.txt` → pip.parse lockfile
+- JS/TS: `pnpm-lock.yaml` → npm_translate_lock
+- Rust: `Cargo.lock` → crate_universe
+- No per-package requirements.txt or pyproject.toml dependencies
+
+### Simplified Package Structure
+- Flat layout (no `src/` nesting) since Bazel handles packaging
+- Tests colocated with production code (`module.py` + `module_test.py`)
+- Fewer packages, Bazel visibility for layering instead of pyproject boundaries
+
+### What Stays Outside Bazel
+- Ansible (managed by Ansible Galaxy)
+- Nix configuration (inherently non-Bazel)
+- Website (Haskell/stack, very slow cold builds)
+
 ## Target State
 
 Unified Bazel build system for all Python packages:
@@ -322,29 +362,73 @@ bazel build --config=check //...
 
 ## Action Items
 
+### Immediate (blocks other work)
+
+1. **Complete ESLint Bazel integration**
+   - Add `bins` config to `npm_translate_lock` in MODULE.bazel
+   - Create eslint binary in `tools/lint/BUILD.bazel`
+   - Test full eslint flow with `bazel lint //props/frontend:all`
+   - Then: remove eslint/prettier from pre-commit hooks
+
+2. **Add buildifier aspect**
+   - Lint BUILD.bazel files via `bazel lint //...`
+   - Remove buildifier from pre-commit hooks
+
 ### High Priority
 
-1. **Enable remote cache write in CI**
+3. **Enable remote cache write in CI**
    - Currently read-only (`--remote_upload_local_results=false`)
    - Enable for main branch for better cache hit rates
 
-2. **Fix ember_evals missing modules**
+4. **Migrate Docker images to rules_oci**
+   - Start with `docker/runtime/Dockerfile` (most frequently built)
+   - Then: `docker/llm/properties-critic/Dockerfile`
+   - Evaluate complexity vs benefits for remaining images
+
+5. **Fix ember_evals missing modules**
    - Add missing .kubernetes, .matrix, .steps, .models submodules
    - Or remove if abandoned
 
 ### Medium Priority
 
-3. **Docker images (rules_oci)**
-   - Start with critical images, evaluate complexity vs Dockerfiles
+6. **Bazelify remaining Python files (54 not in targets)**
+   - `inventree_utils/` (23 files) - create BUILD.bazel
+   - `llm/` examples/scripts (6 files) - add to srcs or mark as data
+   - `experimental/ember_evals/` (5 files) - fix or remove
+   - Others: helm chart scripts, trilium scripts, etc.
+
+7. **Remove duplicate config files**
+   - Consolidate `[tool.ruff]` from pyproject.toml into ruff.toml
+   - Remove per-package requirements.txt files (use requirements_bazel.txt)
+
+8. **Add yamllint aspect for ansible/**
+   - YAML linting via Bazel aspects
+   - Remove yamllint from pre-commit hooks
 
 ### Low Priority / Evaluate
 
-5. **Website**
-   - Haskell builds extremely slow from scratch
-   - Consider keeping `stack build` outside Bazel
+9. **Rust crates via crate_universe**
+   - `finance/worthy/` currently uses Cargo directly
+   - Evaluate rules_rust crate_universe vs keeping Cargo
 
-6. **Rust crates (rules_rust)**
-   - `finance/worthy/` uses Cargo
+10. **Website (Haskell/stack)**
+    - Extremely slow cold builds
+    - Keep `stack build` outside Bazel for now
+
+### Structural Improvements (do incrementally)
+
+11. **Colocate tests with production code**
+    - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
+    - Simpler BUILD files, easier to see coverage gaps
+
+12. **Flatten package layouts**
+    - Remove `src/` nesting (Bazel handles packaging)
+    - Simpler paths in BUILD.bazel files
+
+13. **Package consolidation**
+    - Consider merging `mcp_infra/` into `adgn/`
+    - Consider merging `agent_core/` into `adgn/`
+    - Use Bazel visibility instead of package boundaries
 
 ## Future Structure Goals
 
