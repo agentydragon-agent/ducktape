@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
@@ -29,6 +29,17 @@ py_binary(
     srcs = ["gmail_archiver/__main__.py"],
     main = "gmail_archiver/__main__.py",
     deps = [":gmail_archiver"],
+)
+
+py_test(
+    name = "gmail_archiver_tests",
+    srcs = glob(["tests/**/*.py"]),
+    imports = ["."],
+    main = "tests/__init__.py",
+    deps = [
+        ":gmail_archiver",
+        "@pypi//pytest",
+    ],
 )
 
 ruff_test(

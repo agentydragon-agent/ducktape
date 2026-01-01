@@ -32,6 +32,22 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_integration",
+    srcs = glob([
+        "tests/*.py",
+        "tests/integration/**/*.py",
+    ]),
+    main = "tests/__init__.py",
+    # Integration tests require docker/external resources
+    tags = ["manual"],
+    deps = [
+        ":graders",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
 ruff_test(
     name = "ruff",
     srcs = [":graders"],

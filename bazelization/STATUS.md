@@ -14,12 +14,12 @@ Unified Bazel build system for all Python packages:
 | Metric | Count | Notes |
 |--------|-------|-------|
 | Python files total | 1133 | Git-tracked only |
-| In Bazel py_* srcs | 1042 | 93.2% coverage |
-| Not in any target | 76 | See list below |
+| In Bazel py_* srcs | 1064 | 95.2% coverage |
+| Not in any target | 54 | See list below |
 | Intentionally excluded | 15 | ansible (12), nix (3) |
-| py_library targets | 43 | |
-| py_test targets | 26 | 1 manual (cotrl) |
-| ruff_test targets | 38 | Linting coverage |
+| py_library targets | 44 | |
+| py_test targets | 29 | 3 manual |
+| ruff_test targets | 39 | Linting coverage |
 
 Run `./bazelization/audit.py` to get updated counts.
 
@@ -50,25 +50,23 @@ Run `./bazelization/audit.py` to get updated counts.
 
 | Target | Reason |
 |--------|--------|
+| `//claude/claude_optimizer:test_integration` | Requires docker/external resources |
 | `//experimental/cotrl:test_llm_rl_minimal` | Requires OPENAI_API_KEY |
 | `//gnome-terminal-profile-switcher:*` | Requires DBUS/GNOME session |
 | `//homeassistant/iaqi:requirements*` | Separate requirements lock |
+| `//mcp_starter:test_integration` | Requires running MCP server |
 | `//website:*` | Haskell/stack build system |
 
-### Files Not in Any Bazel Target (76 files)
+### Files Not in Any Bazel Target (54 files)
 
 | Directory | Count | Notes |
 |-----------|-------|-------|
 | `inventree_utils/` | 23 | Entire package not Bazelized |
-| `claude/claude_optimizer/tests/` | 8 | Tests not in srcs |
-| `prompts/scans/` | 6 | Standalone scan scripts |
 | `llm/` (examples/scripts) | 6 | Example and manual test scripts |
 | `experimental/ember_evals/` | 5 | Missing submodules, incomplete |
-| `gmail-archiver/tests/` | 5 | Tests not in srcs |
 | `k8s/helm/*/files/` | 4 | Helm chart Python scripts |
 | `adgn/` (examples, gitea_pr_gate) | 4 | Subpackages not in srcs |
 | `trilium/` | 3 | Papers/search scripts |
-| `mcp_starter/` | 3 | Tests and manual scripts |
 | `sandboxed_jupyter/examples/` | 2 | Example scripts |
 | Other standalone files | 7 | Root conftest, dotfiles, gatelet/tasks, etc. |
 
@@ -142,6 +140,101 @@ The hook handles:
 7. **Rust crates (rules_rust)**
    - `finance/worthy/` uses Cargo
 
+## Future Structure Goals
+
+### Tests Colocated with Production Code
+
+Current: tests in separate `tests/` directory
+Target: tests alongside the code they test
+
+```
+# Current (src/tests split)
+package_name/
+├── src/package_name/
+│   ├── module.py
+│   └── ...
+└── tests/
+    └── test_module.py
+
+# Target (colocated)
+package_name/
+├── src/package_name/
+│   ├── module.py
+│   └── module_test.py  # or test_module.py
+```
+
+Benefits:
+- Tests visible next to code they test
+- Easier to see coverage gaps
+- Simpler BUILD files (single glob)
+
+## Non-Bazel Infrastructure Inventory
+
+### pyproject.toml Files (39 packages)
+
+Each package has a pyproject.toml with varying content:
+
+| Content Type | Purpose | Target State |
+|--------------|---------|--------------|
+| `[tool.pytest]` | pytest configuration | Keep (not Bazel-managed) |
+| `[tool.mypy]` | mypy configuration | Keep (used by pre-commit) |
+| `[tool.ruff]` | ruff overrides | Migrate to root ruff.toml |
+| `[project]` deps | Package dependencies | Remove (use requirements_bazel.txt) |
+| `[tool.uv.workspace]` | uv workspace | Keep until fully on Bazel |
+
+Root `pyproject.toml` contains:
+- `[tool.uv]` override-dependencies and sources
+- `[tool.ruff]` (duplicate of ruff.toml - should consolidate)
+- `[tool.uv.workspace]` members list
+
+### Linting Configuration
+
+| Tool | Config Location | Bazel Integration |
+|------|-----------------|-------------------|
+| Ruff | `ruff.toml` (root) | `bazel lint //...` via aspect_rules_lint |
+| mypy | Per-package `pyproject.toml` or `mypy.ini` | Not yet (pre-commit only) |
+| buildifier | Pre-commit hook | Pre-commit only |
+| yamllint | `.yamllint.yaml` | Pre-commit only |
+| alejandra | Pre-commit hook (nix) | Pre-commit only |
+| ESLint | `adgn/src/adgn/agent/web/`, `props/frontend/` | Pre-commit only |
+| Prettier | Same as ESLint | Pre-commit only |
+
+### Pre-commit Hooks (`.pre-commit-config.yaml`)
+
+| Hook | Purpose | Bazel Equivalent |
+|------|---------|------------------|
+| `no-commit-to-branch` | Block commits to main | N/A (git hook) |
+| `check-ast` | Valid Python syntax | `bazel build` catches |
+| `check-yaml` | Valid YAML | N/A |
+| `check-toml` | Valid TOML | N/A |
+| `yamllint` | YAML style | N/A |
+| `ansible-syntax-check` | Ansible validation | N/A |
+| `ruff-check` | Linting | `bazel lint //...` |
+| `ruff-format` | Formatting | `bazel lint //...` |
+| `mypy` (12 configs) | Type checking | TODO: aspect_rules_lint |
+| `buildifier` | BUILD formatting | TODO: aspect_rules_lint |
+| `alejandra` | Nix formatting | N/A |
+| `eslint` | JS/TS linting | TODO: rules_js |
+| `prettier` | JS/TS formatting | TODO: rules_js |
+| `svelte-check` | Svelte types | TODO: rules_js |
+
+### Other Configuration Files
+
+| File | Purpose | Notes |
+|------|---------|-------|
+| `.yamllint.yaml` | yamllint config | Pre-commit only |
+| `mypy.ini` | Root mypy config | Used by adgn, critic_util |
+| `mypy-homeassistant.ini` | HA-specific mypy | Used by homeassistant/iaqi |
+| `Cargo.toml` | Rust workspace | finance/worthy uses Cargo |
+| `.bazelrc` | Bazel config | Generated by session hook |
+| `.bazelignore` | Bazel ignore patterns | Static |
+
+### Known Duplication
+
+1. **Ruff config**: `ruff.toml` and `pyproject.toml [tool.ruff]` both exist
+2. **First-party packages**: Listed in both `ruff.toml` and `pyproject.toml`
+3. **mypy deps**: Duplicated across 12 pre-commit hook configs
+
 ## Pure Bazel Structure Recommendations
 
 ### Current Deviations
@@ -161,6 +254,8 @@ The hook handles:
 2. Use `bazel run` for all Python scripts
 3. Consolidate all Python deps to single `requirements_bazel.txt`
 4. Replace shell scripts with `sh_binary` targets where appropriate
+5. Migrate mypy to aspect_rules_lint
+6. Remove duplicate ruff config from pyproject.toml
 
 ## Repo Health Recommendations
 
