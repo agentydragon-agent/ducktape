@@ -25,18 +25,16 @@ from .inbox import GmailInbox
 from .models import Email
 from .plan import Plan
 from .plan_display import display_plan, summarize_plan
-from .planners import (
-    AliExpressPlanner,
-    AnthemEobPlanner,
-    AnthemReimbursementPlanner,
-    AnthropicReceiptPlanner,
-    DbsaEventPlanner,
-    DoorDashPlanner,
-    OneMedicalPlanner,
-    SprucePlanner,
-    SquarePlanner,
-    UspsPlanner,
-)
+from .planners.aliexpress import AliExpressPlanner
+from .planners.anthem_eob import AnthemEobPlanner
+from .planners.anthem_reimbursement import AnthemReimbursementPlanner
+from .planners.anthropic import AnthropicReceiptPlanner
+from .planners.dbsa import DbsaEventPlanner
+from .planners.doordash import DoorDashPlanner
+from .planners.one_medical import OneMedicalPlanner
+from .planners.spruce import SprucePlanner
+from .planners.square import SquarePlanner
+from .planners.usps import UspsPlanner
 
 app = typer.Typer(help="Archive old Gmail emails based on extracted dates")
 app.add_typer(filters_app, name="filters")
