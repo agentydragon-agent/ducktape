@@ -5014,6 +5014,9 @@ unidiff==0.7.5 \
     # via
     #   adgn (adgn/pyproject.toml)
     #   difftree (difftree/pyproject.toml)
+types-unidiff==0.7.0.20240505 \
+    --hash=sha256:f01ac7bf7fe4094b3c97c8f08125278ea71455c18d984a980569aef2ab6a768b
+    # via adgn (adgn/pyproject.toml)
 unpaddedbase64==2.1.0 \
     --hash=sha256:485eff129c30175d2cd6f0cd8d2310dff51e666f7f36175f738d75dfdbd0b1c6 \
     --hash=sha256:7273c60c089de39d90f5d6d4a7883a79e319dc9d9b1c8924a7fab96178a5f005

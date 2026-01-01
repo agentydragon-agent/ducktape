@@ -48,7 +48,7 @@ def apply_patch_auto(
         pt = normalize_single_file_unified_patch(patch_text)
         if require_single_file:
             data = [ln.encode("utf-8") for ln in pt.splitlines(True)]
-            pset = PatchSet(data, encoding="utf-8")  # type: ignore[arg-type]
+            pset = PatchSet(data, encoding="utf-8")
             if len(pset) != 1:
                 raise ValueError(SINGLE_FILE_REQUIRED_ERR)
         apply_unified_diff(pt, open_fn, _wrap_write, _wrap_remove)
