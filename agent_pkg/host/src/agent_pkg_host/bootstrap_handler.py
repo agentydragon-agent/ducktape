@@ -11,11 +11,7 @@ from mcp.types import CallToolResult, TextContent
 from agent_core.events import ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
-<<<<<<<< HEAD:mcp_infra/src/mcp_infra/bootstrap_handler.py
-from mcp_infra.exceptions import InitFailedError
-========
 from agent_pkg_host.init_runner import InitFailedError
->>>>>>>> origin/devel:agent_pkg/host/src/agent_pkg_host/bootstrap_handler.py
 from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
 from openai_utils.model import FunctionCallItem
 
