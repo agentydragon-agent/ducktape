@@ -201,7 +201,7 @@ def _ensure_mirror(cfg: MirrorConfig, upstream: str, owner: str, repo: str) -> N
 def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
     sync_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}/mirror-sync"
     resp = _post_json(sync_url, cfg.token, {})
-    if resp.status_code // 100 != 2:
+    if resp.status_code // 100 != 2:  # type: ignore[operator]
         raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}")
 
 

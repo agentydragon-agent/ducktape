@@ -5,6 +5,7 @@ load("@proxy_config//:proxy_env.bzl", "PROXY_ENV")
 
 # Exports for use in other BUILD files
 exports_files([
+    "mypy.ini",
     "requirements_bazel.txt",
     "ruff.toml",
 ])

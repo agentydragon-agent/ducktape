@@ -5677,11 +5677,11 @@
     },
     "@@rules_rust~//crate_universe:extensions.bzl%crate": {
       "general": {
-        "bzlTransitiveDigest": "pMkhqymPhx4aSbOqhE7bnlY8pXlGB1e6MW/hFCIgP4Y=",
+        "bzlTransitiveDigest": "qTrgMsbwKQO/JHot7r8coJwOaXMMgonfEGavoTJFO2I=",
         "recordedFileInputs": {
           "@@//Cargo.toml": "e35a394f1bca72a13197ce348ecdd1aeea7726d0313192c0a52f9131a00c1f8a",
           "@@//Cargo.lock": "3739b1363d2bbf5462c85fd6eeb1985f381bdf0e3829059d65e4c9c896f7feba",
-          "@@//MODULE.bazel": "bea14cf0623bdcf19c56acba2b57a1a4edca4f60a899ee7b95c7102f7a65a424",
+          "@@//MODULE.bazel": "3d8d956cdde1dec167321ef871982023320530ac36e6db7ea145a71c6166b1a4",
           "@@rules_rust~~rust_host_tools~rust_host_tools//rust_host_tools": "ENOENT"
         },
         "recordedDirentsInputs": {},

@@ -14,7 +14,10 @@ ruff = lint_ruff_aspect(
 )
 
 # Mypy aspect for --config=typecheck builds
-mypy_aspect = mypy()
+# Uses root mypy.ini for configuration
+mypy_aspect = mypy(
+    mypy_ini = Label("//:mypy.ini"),
+)
 
 # Test rule factories - use these in BUILD.bazel files:
 #   load("//tools/lint:linters.bzl", "ruff_test")

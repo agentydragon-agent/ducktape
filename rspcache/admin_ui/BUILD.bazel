@@ -1,4 +1,3 @@
-load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@npm_rspcache_admin//:defs.bzl", "npm_link_all_packages")
 
 # Link npm packages from pnpm-lock.yaml (converted from package-lock.json)
@@ -10,39 +9,6 @@ exports_files([
     "package.json",
 ])
 
-# Vite build (React app)
-js_run_binary(
-    name = "build",
-    srcs = glob(
-        [
-            "src/**/*",
-            "index.html",
-            "*.config.*",
-            "*.json",
-        ],
-        exclude = ["**/node_modules/**"],
-    ) + [
-        ":node_modules",
-    ],
-    outs = ["dist"],
-    args = ["build"],
-    chdir = package_name(),
-    tool = ":node_modules/vite/bin/vite.js",
-)
-
-# TypeScript type checking
-js_run_binary(
-    name = "check",
-    srcs = glob(
-        [
-            "src/**/*",
-            "*.json",
-        ],
-        exclude = ["**/node_modules/**"],
-    ) + [
-        ":node_modules",
-    ],
-    args = ["--noEmit"],
-    chdir = package_name(),
-    tool = ":node_modules/typescript/bin/tsc",
-)
+# TODO: js_run_binary for Vite build not working - artifact prefix conflict with node_modules
+# Build with: npm run build (in rspcache/admin_ui directory)
+# TypeScript check with: npm run tsc -- --noEmit

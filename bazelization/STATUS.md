@@ -282,6 +282,34 @@ BUILD.bazel files
 - Provides explicit version pinning
 - Works across all platforms (linux/macos, x64/arm64)
 
+### Mypy Configuration
+
+**Aspect:** `//tools/lint:linters.bzl%mypy_aspect`
+**Config:** `mypy.ini` (root)
+
+**Running mypy via Bazel:**
+```bash
+# Type check specific target
+bazel build --config=typecheck //adgn:adgn
+
+# Type check all Python targets
+bazel build --config=typecheck //...
+
+# Combined lint + typecheck
+bazel build --config=check //...
+```
+
+**Key settings in mypy.ini:**
+- `follow_imports = silent` - Only report errors in explicitly passed files
+- `ignore_missing_imports = True` - External packages may not have stubs
+- `warn_return_any = False` - Disabled to avoid noise from third-party packages
+- Per-package `ignore_errors = True` for problematic external packages
+
+**Integration with rules_mypy:**
+- Uses `rules_mypy` v0.40.0 for the mypy aspect
+- Mypy runs on each py_library target with its transitive deps available
+- Caches are propagated between targets for faster incremental checks
+
 ## Action Items
 
 ### High Priority
@@ -298,10 +326,6 @@ BUILD.bazel files
 
 3. **Docker images (rules_oci)**
    - Start with critical images, evaluate complexity vs Dockerfiles
-
-4. **Add mypy integration**
-   - Extend aspect_rules_lint for mypy type checking
-   - Currently only ruff is integrated
 
 ### Low Priority / Evaluate
 
