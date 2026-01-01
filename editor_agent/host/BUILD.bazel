@@ -3,7 +3,16 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
+exports_files([
+    "pyproject.toml",
+])
+
+# Init script for the container image (called as /init)
+filegroup(
+    name = "init_script",
+    srcs = ["src/editor_agent/definition/init"],
+    visibility = ["//editor_agent/runtime:__pkg__"],
+)
 
 py_library(
     name = "editor_agent",

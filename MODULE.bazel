@@ -11,6 +11,19 @@ bazel_dep(name = "aspect_rules_lint", version = "1.0.8")
 bazel_dep(name = "rules_multitool", version = "1.3.0")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
 
+# Container images (rules_oci)
+bazel_dep(name = "rules_oci", version = "2.2.6")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "python_slim",
+    image = "docker.io/library/python",
+    platforms = ["linux/amd64"],
+    tag = "3.12-slim",
+)
+use_repo(oci, "python_slim", "python_slim_linux_amd64")
+
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_rules_js", version = "2.4.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.0")

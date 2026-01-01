@@ -84,11 +84,35 @@ Run `./bazelization/audit.py` to get updated counts.
 - Yamllint migrated from pre-commit to Bazel (`bazel test //ansible:yamllint_test`)
 - Rust crate_universe fully integrated (Cargo.toml kept for dependency resolution only)
 - Frontend build/dev migrated to Bazel (`bazel build //props/frontend:bundle`, `bazel run //props/frontend:dev`)
+- rules_oci integrated for OCI container images (`editor_agent/runtime:image` as first migration)
 
 ### In Progress / Partial
 
-- Docker images built with Dockerfiles (not rules_oci)
+- Docker images built with Dockerfiles (migrating to rules_oci, see below)
 - Website uses Hakyll/stack (very slow Haskell builds)
+
+### Docker Images Inventory
+
+| Image | Location | Status | Notes |
+|-------|----------|--------|-------|
+| `editor_agent` | `editor_agent/runtime/` | ✅ Migrated | `bazel build //editor_agent/runtime:image` |
+| `runtime` | `docker/runtime/` | Pending | Frequently built, high priority |
+| `properties-critic` | `docker/llm/properties-critic/` | Pending | LLM tooling |
+| `rspcache` | `rspcache/docker/` | Pending | Cache service |
+| `gatelet` | `gatelet/docker/` | Pending | Gateway service |
+| `webhook_inbox` | `experimental/webhook_inbox/` | Pending | Experimental |
+| `ember` | `ember/` | Pending | Experimental |
+| `html` | `llm/html/` | Pending | HTML processing |
+| `openai_utils` | `openai_utils/docker/` | Pending | OpenAI utilities |
+| `claude_optimizer` | `claude/claude_optimizer/docker/` | Pending | 8 variant images (base, go, node, python, python-data, ruby, rust, system) |
+| `props agents` | `props/core/src/props_core/agent_defs/` | Pending | 9 agent images (critic, grader, improvement, etc.) |
+| `molecule` | `ansible/molecule/github_release_plugins/` | Skip | Ansible testing, not general use |
+
+**Migration notes:**
+- rules_oci added to MODULE.bazel with `oci.pull` for `python:3.12-slim`
+- Each `pkg_tar` becomes a separate OCI layer
+- Use `bazel run //<pkg>:load` to load into Docker daemon
+- Use `bazel build //<pkg>:load --output_groups=+tarball` for tarball export
 
 ### Intentionally Not Bazelized
 
@@ -376,9 +400,7 @@ bazel build --config=check //...
   - Enable for main branch for better cache hit rates
 
 - **Migrate Docker images to rules_oci**
-  - Start with `docker/runtime/Dockerfile` (most frequently built)
-  - Then: `docker/llm/properties-critic/Dockerfile`
-  - Evaluate complexity vs benefits for remaining images
+  - See Docker Images section below for full inventory
 
 - **Fix ember_evals missing modules**
   - Add missing .kubernetes, .matrix, .steps, .models submodules
