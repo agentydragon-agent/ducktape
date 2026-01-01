@@ -91,20 +91,196 @@ experimental/package_name/
 └── test_package_name.py
 ```
 
-## Session Hooks
+## Hook Lifecycle
 
-Claude Code web sessions use a session start hook to configure Bazel:
+This repository uses two types of hooks:
+1. **Git hooks** - Run on git operations (pre-commit)
+2. **Claude Code session hooks** - Run when Claude Code web sessions start
 
-1. **Hook config:** `.claude/settings.json` runs `python3 -m claude_web_hooks.session_start`
-2. **Package:** `claude_web_hooks/` contains:
-   - `proxy.py` - Local auth proxy for TLS-inspecting proxy
-   - `bazel_proxy_setup.py` - Setup logic (CA extraction, truststore, bazelrc)
-   - `session_start.py` - Main hook entry point
+### Git Pre-commit Hook
 
-The hook handles:
-- Starting local proxy at `localhost:18081` for BCR access
-- Creating Java truststore with TLS inspection CA
-- Writing `~/.bazelrc` with proxy configuration
+**Installation:**
+```bash
+ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+```
+
+**What it does:**
+1. Gets staged Python files from git (`--diff-filter=ACM`)
+2. Uses `bazel query attr('srcs', ...)` to find targets containing those files
+3. Runs `bazel lint` on unique packages via Aspect CLI
+
+**Requirements:**
+- Aspect CLI (provides `bazel lint` command, installed via Bazelisk)
+- Ruff binary from `tools/multitool/lockfile.json`
+
+**The Bazel query:**
+```bash
+# Build regex from staged files, query for targets with matching srcs
+PATTERN=$(echo "$STAGED_PY" | sed 's/\./\\./g' | tr '\n' '|' | sed 's/|$//')
+bazel query "attr('srcs', '.*($PATTERN).*', //...)" --output=package
+```
+
+**Flow:**
+```
+git commit → pre-commit hook → bazel query → bazel lint //pkg1:all //pkg2:all → pass/fail
+```
+
+### Claude Code Session Start Hook
+
+**Configuration:** `.claude/settings.json`
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "PYTHONPATH=claude_web_hooks/src python3 -m claude_web_hooks.session_start"
+      }]
+    }]
+  }
+}
+```
+
+**What it does:**
+1. Installs Bazelisk to `~/.cache/bazel-proxy/bazelisk`
+2. Writes proxy credentials to `~/.cache/bazel-proxy/upstream_proxy`
+3. Starts local proxy at `localhost:18081` (handles auth to upstream)
+4. Extracts TLS inspection CA via openssl to upstream
+5. Creates Java truststore with proxy CA at `~/.cache/bazel-proxy/cacerts.jks`
+6. Creates combined CA bundle at `~/.cache/bazel-proxy/combined_ca.pem`
+7. Writes `~/.cache/bazel-proxy/bazelrc` with proxy settings
+8. Installs bazel wrapper at `~/.cache/bazel-proxy/bin/bazel`
+9. Exports `BAZEL_PROXY_PORT` and `BAZEL_COMBINED_CA` via `CLAUDE_ENV_FILE`
+
+**Package structure:**
+```
+claude_web_hooks/
+├── src/claude_web_hooks/
+│   ├── session_start.py      # Entry point
+│   ├── bazelisk_setup.py     # Bazelisk + wrapper installation
+│   ├── bazel_proxy_setup.py  # Proxy, CA, truststore setup
+│   └── proxy.py              # Async proxy server (stdlib only)
+```
+
+**Files created:**
+| Path | Purpose |
+|------|---------|
+| `~/.cache/bazel-proxy/bazelisk` | Bazelisk binary |
+| `~/.cache/bazel-proxy/bin/bazel` | Wrapper that sets proxy env vars |
+| `~/.cache/bazel-proxy/upstream_proxy` | Upstream proxy URL (refreshable) |
+| `~/.cache/bazel-proxy/proxy.pid` | Proxy daemon PID |
+| `~/.cache/bazel-proxy/cacerts.jks` | Java truststore with proxy CA |
+| `~/.cache/bazel-proxy/combined_ca.pem` | System CAs + proxy CA |
+| `~/.cache/bazel-proxy/bazelrc` | Bazel proxy configuration |
+| `~/.bazelrc` | try-import for proxy bazelrc |
+
+**Flow:**
+```
+Claude Code web start
+  → SessionStart hook
+  → session_start.py main()
+  → bazelisk_setup.install_bazelisk()
+  → bazel_proxy_setup.setup_bazel_proxy()
+    → _update_proxy_credentials()
+    → _start_proxy_server()
+    → _extract_proxy_ca()
+    → _create_java_truststore()
+    → _create_combined_ca_bundle()
+    → _write_bazel_config()
+  → bazelisk_setup.install_wrapper()
+  → Write CLAUDE_ENV_FILE (PATH, env vars)
+```
+
+### Bazel Module Extension for Proxy
+
+The `tools/proxy_config/defs.bzl` module extension generates `@proxy_config//:proxy_env.bzl`:
+
+- **On Claude Code web:** Reads `BAZEL_PROXY_PORT` and `BAZEL_COMBINED_CA` from environment (set by session hook)
+- **On local dev:** Empty `PROXY_ENV = {}`
+
+This allows BUILD files to use proxy env vars without hardcoding.
+
+### Proxy Config Architecture
+
+The proxy env vars are set in three places (intentionally):
+
+| Location | Purpose | Set By |
+|----------|---------|--------|
+| `~/.cache/bazel-proxy/bin/bazel` wrapper | For Bazelisk downloading Bazel | `bazelisk_setup.install_wrapper()` |
+| `CLAUDE_ENV_FILE` | For shell session (PATH, env vars) | `session_start.py` |
+| `~/.cache/bazel-proxy/bazelrc` | For build actions (pip, uv) | `bazel_proxy_setup._write_bazel_config()` |
+
+This layering is necessary because:
+1. Bazelisk needs proxy vars before Bazel is downloaded
+2. Shell session needs them for interactive bazel commands
+3. Build actions need them passed via `--action_env` in bazelrc
+
+## Linter Configuration
+
+### Ruff Version and Lockfile
+
+Ruff is managed via `rules_multitool` with a custom lockfile:
+
+**Location:** `tools/multitool/lockfile.json`
+
+**Current version:** 0.14.0 (aspect_rules_lint bundles 0.8.3, we override for newer features)
+
+**Lockfile format:**
+```json
+{
+  "ruff": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/astral-sh/ruff/releases/download/0.14.0/ruff-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "...",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+      // ... other platforms
+    ]
+  }
+}
+```
+
+**To update ruff:**
+1. Check latest release at https://github.com/astral-sh/ruff/releases
+2. Update URLs and sha256 hashes in `tools/multitool/lockfile.json`
+3. Test with `bazel lint //...`
+
+**How it integrates:**
+```
+MODULE.bazel
+  → bazel_dep(name = "aspect_rules_lint")
+  → multitool.hub(lockfile = "//tools/multitool:lockfile.json")
+
+tools/lint/linters.bzl
+  → lint_ruff_aspect(binary = "@multitool//tools/ruff")
+
+BUILD.bazel files
+  → ruff_test(name = "ruff", srcs = [":my_lib"])
+```
+
+### Ruff Configuration
+
+**Location:** `ruff.toml` (root)
+
+**Key settings:**
+- `target-version = "py312"` - Python 3.12+ modern syntax
+- `line-length = 120` - Wider lines than PEP 8 default
+- Enabled rule categories: E, F, PLC/PLE/PLR/PLW, UP, FA, FURB, I, B, COM, C4, PT, SIM, N, RUF
+
+**Per-file ignores** are in `ruff.toml` (not scattered in pyproject.toml files):
+- `**/conftest.py` - Late imports allowed
+- `**_det_*.py` - AST visitor naming allowed
+- FastAPI patterns - `B008` for dependency injection
+
+### Why Custom Lockfile?
+
+`aspect_rules_lint` bundles ruff but uses an older version. The custom lockfile:
+- Allows using latest ruff with new rules
+- Provides explicit version pinning
+- Works across all platforms (linux/macos, x64/arm64)
 
 ## Action Items
 
