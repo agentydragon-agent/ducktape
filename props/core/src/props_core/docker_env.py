@@ -10,9 +10,6 @@ if TYPE_CHECKING:
 
 import aiodocker
 
-# Re-export for backwards compatibility during migration
-from docker.errors import ImageNotFound
-
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.container_session import BindMount, ContainerOptions
@@ -22,7 +19,6 @@ from props_core.db.config import DbConnectionConfig
 
 logger = logging.getLogger(__name__)
 
-PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 DOCKER_MOUNT_PREFIX = MCPMountPrefix("docker")  # Mount prefix for properties Docker exec server
 
 
@@ -140,33 +136,6 @@ class PropertiesDockerCompositor(Compositor):
     @property
     def container_working_dir(self) -> Path:
         return WORKING_DIR
-
-
-def build_critic_build_hint() -> str:
-    # Build hint uses repository docker path (not package resources):
-    #   docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .
-    return f"docker build -f 'docker/llm/properties-critic/Dockerfile' -t {PROPERTIES_DOCKER_IMAGE} ."
-
-
-async def ensure_critic_image_async(docker_client: aiodocker.Docker) -> str:
-    """Ensure the default properties critic image exists; return image ID.
-
-    Args:
-        docker_client: Async Docker client
-
-    Returns:
-        Image ID (e.g., "sha256:abc123...") - immutable reference to the image
-
-    Raises:
-        ImageNotFound: If image does not exist (with build hint)
-    """
-    try:
-        image_info = await docker_client.images.inspect(PROPERTIES_DOCKER_IMAGE)
-        image_id: str = image_info["Id"]
-        return image_id
-    except aiodocker.DockerError as e:
-        hint = build_critic_build_hint()
-        raise ImageNotFound(f"Docker image not found: {PROPERTIES_DOCKER_IMAGE}.\nBuild it first:\n{hint}") from e
 
 
 def build_critic_binds(
