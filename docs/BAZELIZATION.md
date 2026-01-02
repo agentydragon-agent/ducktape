@@ -106,10 +106,11 @@ This ensures:
 - No Bazel rules for Ansible
 - **Goal**: Either Bazel-ize or document as intentional exception
 
-### 5. **CI config out of sync**
-- CI runs `bazel test //props/frontend:eslint_test` but target doesn't exist
-- Now using aspects instead of test targets for ESLint
-- **Goal**: CI should match local workflow exactly
+### 5. ~~**CI config out of sync**~~ ✅ RESOLVED (2026-01-02)
+- ~~CI runs `bazel test //props/frontend:eslint_test` but target doesn't exist~~
+- ~~Now using aspects instead of test targets for ESLint~~
+- ~~**Goal**: CI should match local workflow exactly~~
+- **DONE**: CI now uses aspects (--config=lint, --config=rust-check), consolidated into bazel-build job
 
 ### 6. ~~**Lint-staged.sh is bespoke tooling**~~ ✅ RESOLVED (2026-01-02)
 - ~~Custom script to map files → Bazel packages → ruff targets~~
@@ -163,11 +164,13 @@ This ensures:
 - [ ] If not feasible, document Ansible as intentional exception with rationale
 - [ ] Minimize custom scripting (ansible/scripts/run-syntax-check.sh)
 
-### Phase 5: Cleanup
+### Phase 5: Cleanup ⚠️ IN PROGRESS
 - [x] Remove `tools/hooks/lint-staged.sh` (rely on aspects)
 - [x] Remove bespoke shell scripts (run_eslint.sh, run_prettier.sh, etc.)
-- [ ] Consolidate CI jobs into single Bazel command
-- [ ] Update CI config to match current implementation
+- [x] Consolidate CI jobs (merged rust-lint into bazel-build)
+- [x] Update CI config to use aspects (--config=lint, --config=rust-check)
+- [ ] Create unified `bazel check //...` command (Phase 3 dependency)
+- [ ] Simplify CI to single check command once unified command exists
 
 ---
 
@@ -208,7 +211,7 @@ bazel fix //...
 Bazelization is complete when:
 
 1. ⚠️ **Pre-commit hook** is a single `bazel check //...` command (Currently: Multiple aspect configs)
-2. ⚠️ **CI** runs identical `bazel check //...` command (Not yet updated)
+2. ⚠️ **CI** runs identical `bazel check //...` command (Partially done: uses aspects, not yet unified command)
 3. ✅ **No manual tool invocations** (no `ruff`, `mypy`, `npm run lint`, etc.) - ALL go through Bazel
 4. ✅ **Auto-fix on commit** for all formatters (ruff, prettier, rustfmt, shfmt, buildifier)
 5. ✅ **Type errors block commits** (mypy in pre-commit)
@@ -217,6 +220,8 @@ Bazelization is complete when:
 8. ✅ **Fast incremental checks** - Bazel caching works correctly
 
 **Progress: 6/8 complete** (75%)
+
+**Recent improvement**: CI now consolidated - bazel-build runs all aspect-based linting (Python, JS/TS, Rust) in single job
 
 ---
 
