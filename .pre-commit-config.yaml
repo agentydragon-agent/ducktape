@@ -47,7 +47,7 @@ repos:
         entry: ansible/scripts/run-syntax-check.sh
         language: system
         files: "^ansible/.*\\.ya?ml$"
-        exclude: "^ansible/k8s/.*"  # Exclude k8s files
+        exclude: "^ansible/k8s/.*" # Exclude k8s files
         pass_filenames: true
 
   # Linting (ruff + ESLint via Bazel aspects)
