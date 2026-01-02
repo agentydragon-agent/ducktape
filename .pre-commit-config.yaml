@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^k8s-old/"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^k8s-old/|^cluster/flux-system/flux-system/"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -498,18 +498,19 @@ repos:
         files: ^cluster/terraform/.*cilium.*\.(yaml|yml|tf)$
         pass_filenames: false
 
-      # Prevent terraform provider version redefinitions
+      # Prevent terraform provider version redefinitions in modules
+      # Layer root directories (00-*, 01-*, 02-*, 03-*, authentik-blueprint) are excluded as they are independent terraform roots
       - id: terraform-version-centralization
         name: Prevent terraform provider version redefinitions (cluster)
         entry: >-
           bash -c
-          'MATCHES=$(grep -r -l "required_providers" cluster/terraform/ --include="*.tf" --exclude-dir=".terraform" | grep -v "terraform.tf" | xargs -r grep -l "version\\s*=") || true;
+          'MATCHES=$(grep -r -l "required_providers" cluster/terraform/modules/ --include="*.tf" --exclude-dir=".terraform" | grep -v "terraform.tf" | xargs -r grep -l "^[[:space:]]*version[[:space:]]*=") || true;
           if [ -n "$MATCHES" ]; then
-          echo "❌ FATAL: Provider version constraints found outside centralized terraform.tf:";
+          echo "❌ FATAL: Provider version constraints found in modules (should be in root terraform.tf):";
           echo "$MATCHES";
-          echo "All provider versions must be centralized in terraform.tf";
+          echo "Modules should not specify provider versions - only root modules should";
           exit 1;
           fi'
         language: system
-        files: ^cluster/terraform/.*\.tf$
+        files: ^cluster/terraform/modules/.*\.tf$
         pass_filenames: false
