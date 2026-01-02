@@ -17,6 +17,29 @@ CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
 
 
+def emit_session_context(log: logging.Logger, had_warnings: bool, had_errors: bool) -> None:
+    """Emit structured context summary for Claude Code to inject into transcript.
+
+    This output goes to stdout and gets injected as context for the operating agent.
+    """
+    print("\n" + "=" * 60)
+    print("SESSION START HOOK SUMMARY")
+    print("=" * 60)
+
+    if had_errors:
+        print("[ERROR] Session start completed with ERRORS - some features may not work correctly")
+        print(f"[ERROR] Check log file for details: {LOG_FILE}")
+    elif had_warnings:
+        print("[WARNING] Session start completed with warnings - using fallback configurations")
+        print(f"Review log file for details: {LOG_FILE}")
+    else:
+        print("Session start completed successfully - all features configured")
+
+    print(f"\nFull log available at: {LOG_FILE}")
+    print("=" * 60 + "\n")
+    sys.stdout.flush()
+
+
 def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
     """Install git pre-commit hook using pre-commit framework.
 
@@ -58,19 +81,67 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
         log.warning("pre-commit install timed out")
 
 
-def setup_logging() -> logging.Logger:
-    """Configure logging to stdout and file."""
+class LogLevelCounter(logging.Handler):
+    """Handler that counts warnings and errors."""
+
+    def __init__(self):
+        super().__init__()
+        self.warning_count = 0
+        self.error_count = 0
+
+    def emit(self, record):
+        if record.levelno == logging.WARNING:
+            self.warning_count += 1
+        elif record.levelno >= logging.ERROR:
+            self.error_count += 1
+
+
+def setup_logging() -> tuple[logging.Logger, LogLevelCounter]:
+    """Configure logging to stdout and file with clear log level indicators.
+
+    Returns logger and a counter to track warnings/errors.
+    """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(message)s",
-        handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler(LOG_FILE, mode="a")],
-    )
-    return logging.getLogger(__name__)
+
+    # Format with clear log level indicators
+    # INFO is unmarked (normal), WARNING/ERROR are clearly marked
+    class LogLevelFormatter(logging.Formatter):
+        def format(self, record):
+            if record.levelno == logging.INFO:
+                # INFO logs don't need a prefix - they're expected
+                return record.getMessage()
+            elif record.levelno == logging.WARNING:
+                return f"[WARNING] {record.getMessage()}"
+            elif record.levelno == logging.ERROR:
+                return f"[ERROR] {record.getMessage()}"
+            else:
+                # Any other level is unexpected - highlight it
+                return f"[{record.levelname}] {record.getMessage()}"
+
+    formatter = LogLevelFormatter()
+
+    # Stdout handler for context injection
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+
+    # File handler for persistence
+    file_handler = logging.FileHandler(LOG_FILE, mode="a")
+    file_handler.setFormatter(formatter)
+
+    # Counter handler to track warnings/errors
+    counter = LogLevelCounter()
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    logger.addHandler(stdout_handler)
+    logger.addHandler(file_handler)
+    logger.addHandler(counter)
+
+    return logger, counter
 
 
 def main() -> int:
-    log = setup_logging()
+    log, counter = setup_logging()
 
     log.info("=" * 60)
     log.info("Hook: %s", __file__)
@@ -80,6 +151,7 @@ def main() -> int:
 
     if os.environ.get("CLAUDE_CODE_REMOTE") != "true":
         log.info("Not remote environment, skipping")
+        emit_session_context(log, had_warnings=False, had_errors=False)
         return 0
 
     log.info("Environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
@@ -92,21 +164,27 @@ def main() -> int:
     bazel_proxy_setup.setup_bazel_proxy()
 
     # Detect project directory from CLAUDE_PROJECT_DIR or PWD
-    # CLAUDE_PROJECT_DIR should be provided but isn't in Claude Code on the web
+    # Documentation states CLAUDE_PROJECT_DIR should be provided when Claude Code spawns hooks,
+    # but it's not available in Claude Code on the web as of 2.0.59
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
-    if not project_dir_str:
+    if project_dir_str:
+        log.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
+    else:
+        log.warning("CLAUDE_PROJECT_DIR not provided by Claude Code (expected per docs, missing in web v2.0.59)")
         # Fallback: use PWD and verify it's a git repo
         pwd = Path.cwd()
+        log.info("Attempting fallback: checking if PWD=%s is a git repository", pwd)
         if (pwd / ".git").exists():
             project_dir_str = str(pwd)
             os.environ["CLAUDE_PROJECT_DIR"] = project_dir_str
-            log.info("CLAUDE_PROJECT_DIR not provided, detected from PWD: %s", project_dir_str)
+            log.info("SUCCESS: PWD contains .git directory, using as project root: %s", project_dir_str)
         else:
-            log.warning("CLAUDE_PROJECT_DIR not set and PWD is not a git repo, skipping project-specific setup")
+            log.error("FAILED: PWD does not contain .git directory, cannot detect project root")
+            log.error("Project-specific setup will be skipped (no git pre-commit hooks)")
 
     if project_dir_str:
         project_dir = Path(project_dir_str)
-        log.info("Project: %s", project_dir)
+        log.info("Project directory confirmed: %s", project_dir)
 
         # Install bazel wrapper that sets proxy env vars
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
@@ -128,28 +206,44 @@ def main() -> int:
 
     # Persist PATH modification via CLAUDE_ENV_FILE or fallback to symlink
     # The bazel wrapper needs to be on PATH so `bazel` invokes our wrapper
+    log.info("Configuring bazel availability for bash sessions...")
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
+        log.info("CLAUDE_ENV_FILE provided: %s", env_file)
+        log.info("Using standard approach: writing PATH export to CLAUDE_ENV_FILE")
         env_content = bazelisk_setup.get_env_script()
         # Also export the debug timestamp
         env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
         Path(env_file).write_text(env_content)
-        log.info("Wrote PATH update to CLAUDE_ENV_FILE: %s", env_file)
+        log.info("SUCCESS: Wrote PATH and timestamp exports to %s", env_file)
+        log.info("Bazel will be available in bash sessions via PATH modification")
     else:
-        # Fallback for Claude Code on the web: symlink to ~/.local/bin
-        # Claude Code spawns non-interactive bash which doesn't source rc files
-        # but ~/.local/bin is already on PATH
-        log.warning("CLAUDE_ENV_FILE not set, using symlink fallback")
+        log.warning("CLAUDE_ENV_FILE not provided by Claude Code (only available in SessionStart hooks)")
+        log.warning("Cannot persist PATH modifications for bash sessions")
+        log.info("Attempting fallback: symlinking bazel to ~/.local/bin (which is already on PATH)")
+
         local_bin = Path.home() / ".local" / "bin"
+        log.info("Checking PATH environment variable...")
+        current_path = os.environ.get("PATH", "")
+        if str(local_bin) in current_path:
+            log.info("CONFIRMED: %s is in PATH", local_bin)
+        else:
+            log.warning("WARNING: %s is NOT in current PATH, symlink may not work", local_bin)
+            log.warning("Current PATH: %s", current_path)
+
         local_bin.mkdir(parents=True, exist_ok=True)
+        log.info("Ensured %s exists", local_bin)
 
         bazel_symlink = local_bin / "bazel"
         bazel_wrapper = bazelisk_setup.WRAPPER_PATH
 
         if bazel_symlink.exists() or bazel_symlink.is_symlink():
+            log.info("Removing existing symlink/file at %s", bazel_symlink)
             bazel_symlink.unlink()
+
         bazel_symlink.symlink_to(bazel_wrapper)
-        log.info("Created symlink: %s -> %s", bazel_symlink, bazel_wrapper)
+        log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
+        log.info("Bazel should be available in bash sessions if ~/.local/bin is on PATH")
 
     # Summary
     log.info("=" * 60)
@@ -158,6 +252,10 @@ def main() -> int:
     log.info("  Bazel proxy: %s", bazel_proxy_setup.get_status())
     log.info("  git hook:    installed (pre-commit)")
     log.info("=" * 60)
+
+    # Emit context for Claude Code to inject into transcript
+    emit_session_context(log, had_warnings=counter.warning_count > 0, had_errors=counter.error_count > 0)
+
     return 0
 
 
