@@ -50,15 +50,30 @@ repos:
         exclude: "^ansible/k8s/.*"  # Exclude k8s files
         pass_filenames: true
 
-  # Bazel ruff linting (via aspect_rules_lint ruff_test targets)
+  # Ruff linting (via Bazel aspect)
+  # Runs ruff check on all Python code for linting issues
   - repo: local
     hooks:
-      - id: bazel-ruff
-        name: bazel test :ruff
-        entry: tools/hooks/lint-staged.sh
-        language: script
+      - id: bazel-ruff-lint
+        name: bazel build --config=lint (ruff)
+        entry: bazel
+        args: ['build', '--config=lint', '--keep_going', '//...']
+        language: system
         files: \.py$
-        pass_filenames: true
+        pass_filenames: false
+
+  # Auto-format all code (ruff, prettier, shfmt, buildifier)
+  # Runs ruff format on Python, prettier on JS/TS, etc.
+  - repo: local
+    hooks:
+      - id: bazel-format
+        name: bazel run //tools/format
+        entry: bazel
+        args: ['run', '//tools/format']
+        language: system
+        files: \.(py|ts|js|svelte|tsx|css|ya?ml|sh|bzl)$
+        exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
+        pass_filenames: false
 
   # Mypy type checking (via Bazel aspect)
   # Runs type checking on all Python code using rules_mypy aspect
@@ -83,21 +98,6 @@ repos:
         language: system
         files: \.(ts|js|svelte|tsx)$
         pass_filenames: false
-
-  # Prettier auto-fix (formatting via Bazel)
-  # Auto-fixes formatting issues on commit using Bazel's prettier binary
-  # This ensures consistency with CI checks (--config=prettier)
-  - repo: local
-    hooks:
-      - id: prettier-fix
-        name: prettier --write (via Bazel)
-        entry: bazel
-        args: ['run', '//tools/lint:prettier', '--', '--write']
-        language: system
-        files: \.(ts|js|svelte|tsx|css|ya?ml)$
-        # Exclude files that shouldn't be formatted
-        exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
-        pass_filenames: true
 
   # NOTE: Other linters are handled by Bazel test targets
   # - alejandra: `bazel test //:alejandra_test`
