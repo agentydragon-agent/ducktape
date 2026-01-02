@@ -63,8 +63,9 @@ data "external" "terraform_user" {
       # Create terraform user
       pveum user add terraform@pve --comment "Terraform automation (ephemeral)" 2>/dev/null || true
 
-      # Create role with necessary permissions
-      pveum role add TerraformAdmin -privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.Monitor,VM.PowerMgmt,User.Modify,Permissions.Modify" 2>/dev/null || true
+      # Create/update role with necessary permissions
+      pveum role add TerraformAdmin -privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.Monitor,VM.PowerMgmt,User.Modify,Permissions.Modify" 2>/dev/null || \
+      pveum role modify TerraformAdmin -privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.Monitor,VM.PowerMgmt,User.Modify,Permissions.Modify"
 
       # Set ACL
       pveum aclmod / -user terraform@pve -role TerraformAdmin
@@ -326,12 +327,11 @@ resource "proxmox_virtual_environment_file" "home_manager_flake" {
 # CLOUD-INIT CONFIGURATION
 locals {
   cloud_init_user_data = templatefile("${path.module}/cloud-init.yaml.tpl", {
-    username              = var.username
-    ssh_public_key        = local.ssh_public_key
-    hostname              = local.vm_name_computed
-    nixos_config_snippet  = "${local.vm_name_computed}-configuration.nix"
-    flake_snippet         = "${local.vm_name_computed}-flake.nix"
-    proxmox_api_host      = var.proxmox_api_host
+    username             = var.username
+    ssh_public_key       = local.ssh_public_key
+    hostname             = local.vm_name_computed
+    nixos_configuration  = local.nixos_configuration
+    home_manager_flake   = local.home_manager_flake
   })
 }
 

@@ -6,9 +6,9 @@
 {
   imports = [ ./hardware-configuration.nix ];
 
-  # Boot
-  boot.loader.grub.enable = true;
-  boot.loader.grub.device = "/dev/sda";
+  # Boot (UEFI with systemd-boot)
+  boot.loader.systemd-boot.enable = true;
+  boot.loader.efi.canTouchEfiVariables = true;
 
   # Networking
   networking.hostName = "${hostname}";
@@ -19,20 +19,11 @@
 
   # Nix settings - enable flakes
   nix = {
-    package = pkgs.nixFlakes;
-    extraOptions = ''
-      experimental-features = nix-command flakes
-    '';
     settings = {
+      experimental-features = [ "nix-command" "flakes" ];
       trusted-users = [ "${username}" "root" ];
       auto-optimise-store = true;
     };
-  };
-
-  # Use nixos-${nixos_channel} channel
-  system.autoUpgrade = {
-    enable = false;
-    channel = "https://nixos.org/channels/nixos-${nixos_channel}";
   };
 
   # Allow unfree packages
@@ -100,6 +91,9 @@
       PermitRootLogin = "no";
     };
   };
+
+  # QEMU guest agent for Proxmox integration
+  services.qemuGuest.enable = true;
 
   # Essential packages
   environment.systemPackages = with pkgs; [

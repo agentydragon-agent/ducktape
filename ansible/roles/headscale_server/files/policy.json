@@ -4,7 +4,7 @@
   },
   "autoApprovers": {
     "routes": {
-      "10.0.0.0/16": ["tag:cluster-router"]
+      "10.2.0.0/16": ["tag:cluster-router"]
     }
   },
   "acls": [
