@@ -1,12 +1,11 @@
 """Habitify MCP Server implementation."""
 
-import os
 from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 
 from . import tools
-from .context import lifespan
+from .context import make_lifespan
 from .habitify_client import HabitifyClient
 from .types import Status
 
@@ -15,10 +14,6 @@ def create_habitify_mcp_server(
     debug: bool = False, log_level: str = "INFO", api_key: str | None = None, port: int = 3000
 ) -> FastMCP:
     """Create and configure a Habitify MCP server."""
-    # Set API key in environment if provided (for lifespan to pick up)
-    if api_key:
-        os.environ["HABITIFY_API_KEY"] = api_key
-
     server = FastMCP(
         "Habitify",
         description="Habitify API for habit tracking through Model Context Protocol",
@@ -26,7 +21,7 @@ def create_habitify_mcp_server(
         debug=debug,
         log_level=log_level,
         port=port,
-        lifespan=lifespan,
+        lifespan=make_lifespan(api_key),
     )
 
     def get_client(ctx: Context) -> HabitifyClient:

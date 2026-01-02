@@ -121,11 +121,7 @@ gmail-archiver filters apply filters.yaml --label "receipts/anthropic"
 
 ## Development
 
-### Run tests
-
-```bash
-bazel test //gmail-archiver:test_gmail_archiver
-```
+See root `AGENTS.md` for Bazel basics (build, test, lint, adding dependencies).
 
 ## Architecture
 
