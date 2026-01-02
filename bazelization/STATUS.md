@@ -53,15 +53,15 @@ Unified Bazel build system for all Python packages:
 
 | Metric | Count | Notes |
 |--------|-------|-------|
-| Python files total | 1133 | Git-tracked only |
-| In Bazel py_* srcs | 1064 | 95.2% coverage |
-| Not in any target | 54 | See list below |
+| Python files total | 1135 | Git-tracked only |
+| In Bazel py_* srcs | 1082 | 96.6% coverage |
+| Not in any target | 38 | See list below |
 | Intentionally excluded | 15 | ansible (12), nix (3) |
-| py_library targets | 44 | |
-| py_test targets | 29 | 3 manual |
-| ruff_test targets | 39 | Linting coverage |
+| py_library targets | 54 | |
+| py_test targets | 32 | 3 manual |
+| ruff_test targets | 40 | Linting coverage |
 
-Run `./bazelization/audit.py` to get updated counts.
+Run `uv run bazelization/audit.py` to get updated counts.
 
 ### Completed
 
