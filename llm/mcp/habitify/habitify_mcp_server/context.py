@@ -1,19 +1,11 @@
 """Server context for Habitify MCP server."""
 
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 
 from mcp.server.fastmcp import FastMCP
 
 from .config import load_api_key
 from .habitify_client import HabitifyClient
-
-
-@dataclass
-class HabitifyContext:
-    """Server context holding the Habitify API client."""
-
-    client: HabitifyClient
 
 
 @asynccontextmanager
@@ -26,4 +18,4 @@ async def lifespan(server: FastMCP):
             "Set it in .env or pass via --api-key."
         )
     async with HabitifyClient(api_key=api_key) as client:
-        yield HabitifyContext(client=client)
+        yield client

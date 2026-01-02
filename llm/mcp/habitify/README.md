@@ -139,13 +139,10 @@ habitify_mcp_server/
 
 ```bash
 # Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=habitify_mcp_server
+bazel test //llm/mcp/habitify:test_habitify
 
 # Run specific test file
-pytest tests/test_client.py
+bazel test //llm/mcp/habitify:test_habitify --test_arg=-k --test_arg=test_client
 ```
 
 ### API Reference Collection

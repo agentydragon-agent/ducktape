@@ -20,20 +20,20 @@ Includes shell integration tests.
 ## Running Tests
 
 ```bash
+# All wt tests
+bazel test //wt:tests
+
 # Unit tests only (fast)
-pytest -m unit
+bazel test //wt:tests --test_arg=-m --test_arg=unit
 
 # Integration tests only (slower, creates real git repos)
-pytest -m integration
+bazel test //wt:tests --test_arg=-m --test_arg=integration
 
 # Shell integration tests (tests actual shell function with fd3)
-pytest -m shell
+bazel test //wt:tests --test_arg=-m --test_arg=shell
 
 # Exclude slow tests
-pytest -m "not slow"
-
-# Run with coverage
-pytest --cov=wt --cov-report=term-missing
+bazel test //wt:tests --test_arg=-m --test_arg="not slow"
 ```
 
 ## Shell Integration Tests

@@ -119,5 +119,5 @@ system.  Whenever you come back to the project make sure to re-activate the venv
 ### Running the Tests
 
 ```bash
-pytest
+bazel test //homeassistant/iaqi:tests
 ```

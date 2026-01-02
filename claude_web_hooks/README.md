@@ -165,8 +165,5 @@ This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.att
 
 ```bash
 # Run tests
-pytest claude_web_hooks/tests/
-
-# With Bazel (if Bazel can access BCR)
 bazel test //claude_web_hooks:test_proxy
 ```

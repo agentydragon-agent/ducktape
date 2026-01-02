@@ -25,7 +25,7 @@ Tests are designed for execution INSIDE the devcontainer:
 
 ```bash
 # Run all tests
-pytest
+bazel test //gatelet:tests
 ```
 
 ### Test database access

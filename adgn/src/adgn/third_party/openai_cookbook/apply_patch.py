@@ -7,6 +7,7 @@
 # Date:     2025-08-07T16:57:35Z
 
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -19,9 +20,9 @@ class ActionType(str, Enum):
 
 class FileChange(BaseModel):
     type: ActionType
-    old_content: str | None = None
-    new_content: str | None = None
-    move_path: str | None = None
+    old_content: Optional[str] = None
+    new_content: Optional[str] = None
+    move_path: Optional[str] = None
 
 
 class Commit(BaseModel):
@@ -29,7 +30,7 @@ class Commit(BaseModel):
 
 
 def assemble_changes(
-    orig: dict[str, str | None], dest: dict[str, str | None]
+    orig: dict[str, Optional[str]], dest: dict[str, Optional[str]]
 ) -> Commit:
     commit = Commit()
     for path in sorted(set(orig.keys()).union(dest.keys())):
@@ -66,9 +67,9 @@ class Chunk(BaseModel):
 
 class PatchAction(BaseModel):
     type: ActionType
-    new_file: str | None = None
+    new_file: Optional[str] = None
     chunks: list[Chunk] = Field(default_factory=list)
-    move_path: str | None = None
+    move_path: Optional[str] = None
 
 
 class Patch(BaseModel):
@@ -85,14 +86,14 @@ class Parser(BaseModel):
     patch: Patch = Field(default_factory=Patch)
     fuzz: int = 0
 
-    def is_done(self, prefixes: tuple[str, ...] | None = None) -> bool:
+    def is_done(self, prefixes: Optional[tuple[str, ...]] = None) -> bool:
         if self.index >= len(self.lines):
             return True
         if prefixes and self.lines[self.index].startswith(prefixes):
             return True
         return False
 
-    def startswith(self, prefix: tuple[str, ...] | None) -> bool:
+    def startswith(self, prefix: Optional[tuple[str, ...]]) -> bool:
         assert self.index < len(self.lines), f"Index: {self.index} >= {len(self.lines)}"
         if self.lines[self.index].startswith(prefix):
             return True
@@ -424,9 +425,9 @@ class DiffError(ValueError):
     pass
 
 
-from collections.abc import Callable
 import os
 import sys
+from typing import Callable
 
 
 def load_files(paths: list[str], open_fn: Callable) -> dict[str, str]:

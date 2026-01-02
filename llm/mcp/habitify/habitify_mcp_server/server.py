@@ -6,7 +6,8 @@ from typing import Any
 from mcp.server.fastmcp import Context, FastMCP
 
 from . import tools
-from .context import HabitifyContext, lifespan
+from .context import lifespan
+from .habitify_client import HabitifyClient
 from .types import Status
 
 
@@ -28,10 +29,9 @@ def create_habitify_mcp_server(
         lifespan=lifespan,
     )
 
-    def get_client(ctx: Context) -> Any:
+    def get_client(ctx: Context) -> HabitifyClient:
         """Get the HabitifyClient from the lifespan context."""
-        habitify_ctx: HabitifyContext = ctx.request_context.lifespan_context
-        return habitify_ctx.client
+        return ctx.request_context.lifespan_context
 
     @server.tool()
     async def get_habits(ctx: Context, include_archived: bool = False) -> dict[str, Any]:

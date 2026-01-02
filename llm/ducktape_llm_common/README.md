@@ -128,14 +128,11 @@ available = list_prompts()
 
 ```bash
 # Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=ducktape_llm_common
+bazel test //llm/ducktape_llm_common:tests
 
 # Run specific test module
-pytest tests/linters/
-pytest tests/utils/
+bazel test //llm/ducktape_llm_common:tests --test_arg=-k --test_arg=linters
+bazel test //llm/ducktape_llm_common:tests --test_arg=-k --test_arg=utils
 ```
 
 ### Code Quality

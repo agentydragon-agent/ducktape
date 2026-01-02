@@ -62,7 +62,7 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, marke
 
 ### UI E2E Tests (Playwright)
 - Install browsers once: `python -m playwright install`
-- Run: `pytest -q tests/agent/e2e -m "not live_openai_api"`
+- Run: `bazel test //adgn:tests --test_arg=-m --test_arg="not live_openai_api" --test_arg=-k --test_arg=e2e`
 
 ## High‑Level Module Map
 - Packaging: name `adgn`, Python `>=3.13`, src layout under `src/`

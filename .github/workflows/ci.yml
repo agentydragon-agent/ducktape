@@ -121,42 +121,31 @@ jobs:
           fi
 
   props-frontend-build:
-    name: Props frontend build
+    name: Props frontend build (Bazel)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Cache pnpm store
+      - name: Cache Bazel repository
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/pnpm/store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('props/frontend/pnpm-lock.yaml') }}
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-frontend-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'props/frontend/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-
+            bazel-frontend-${{ runner.os }}-
 
-      - name: Install dependencies
-        working-directory: props/frontend
-        run: pnpm install --frozen-lockfile
+      - name: Build frontend bundle
+        run: bazel build //props/frontend:bundle
 
-      - name: Build frontend
-        working-directory: props/frontend
-        run: pnpm build
+      - name: Check TypeScript types (svelte-check)
+        run: bazel test //props/frontend:svelte_check_test
 
-      - name: Check TypeScript types
-        working-directory: props/frontend
-        run: pnpm check
+      - name: Check formatting (prettier)
+        run: bazel test //props/frontend:prettier_test
 
       - name: Generate build summary
         if: always()

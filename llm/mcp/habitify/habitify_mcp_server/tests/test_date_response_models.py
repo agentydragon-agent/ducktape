@@ -7,16 +7,9 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from habitify_mcp_server.habitify_client import HabitifyClient
 from habitify_mcp_server.types import HabitStatus
 
-
-@pytest.fixture
-def client():
-    """Create a Habitify client with a mock API key."""
-    with patch.dict("os.environ", {"HABITIFY_API_KEY": "test_api_key"}):
-        client = HabitifyClient()
-        yield client
+# Uses 'client' fixture from conftest.py
 
 
 @pytest.mark.asyncio

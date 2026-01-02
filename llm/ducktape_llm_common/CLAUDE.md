@@ -29,16 +29,13 @@ This dual setup prevents accidentally locking yourself out when claude-linter mo
 ### Testing
 ```bash
 # Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=ducktape_llm_common
+bazel test //llm/ducktape_llm_common:tests
 
 # Run specific test module
-pytest tests/claude_linter/test_cli.py
+bazel test //llm/ducktape_llm_common:tests --test_arg=-k --test_arg=test_cli
 
 # Run single test
-pytest tests/claude_linter/test_cli.py::test_specific_function
+bazel test //llm/ducktape_llm_common:tests --test_arg=-k --test_arg=test_specific_function
 ```
 
 ### Code Quality

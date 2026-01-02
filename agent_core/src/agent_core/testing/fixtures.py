@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -24,7 +23,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from agent_core.agent import Agent
-from agent_core.events import ToolCall, ToolCallOutput
+from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing.echo_server import make_echo_server
@@ -46,12 +45,22 @@ class RecordingHandler(BaseHandler):
     def __init__(self) -> None:
         super().__init__()
         self.records: list[ToolCall | ToolCallOutput] = []
+        self.text_events: list[SystemText | UserText | AssistantText] = []
 
     def on_tool_call_event(self, evt: ToolCall, /) -> None:
         self.records.append(evt)
 
     def on_tool_result_event(self, evt: ToolCallOutput, /) -> None:
         self.records.append(evt)
+
+    def on_system_text_event(self, evt: SystemText, /) -> None:
+        self.text_events.append(evt)
+
+    def on_user_text_event(self, evt: UserText, /) -> None:
+        self.text_events.append(evt)
+
+    def on_assistant_text_event(self, evt: AssistantText, /) -> None:
+        self.text_events.append(evt)
 
 
 @pytest.fixture
