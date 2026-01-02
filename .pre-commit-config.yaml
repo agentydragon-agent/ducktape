@@ -74,7 +74,19 @@ repos:
         files: \.py$
         pass_filenames: false
 
-  # Auto-format all code (ruff, prettier, shfmt, buildifier)
+  # Rust linting and format check (clippy + rustfmt via Bazel aspects)
+  # Runs on all Rust files
+  - repo: local
+    hooks:
+      - id: bazel-rust-check
+        name: bazel build --config=rust-check
+        entry: bazel
+        args: ['build', '--config=rust-check', '--keep_going', '//...']
+        language: system
+        files: \.rs$
+        pass_filenames: false
+
+  # Auto-format all code (ruff, prettier, rustfmt, shfmt, buildifier)
   - repo: local
     hooks:
       - id: bazel-format
@@ -82,7 +94,7 @@ repos:
         entry: bazel
         args: ['run', '//tools/format']
         language: system
-        files: \.(py|ts|js|svelte|tsx|css|ya?ml|sh|bzl)$
+        files: \.(py|ts|js|svelte|tsx|css|ya?ml|rs|sh|bzl)$
         exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
         pass_filenames: false
 
