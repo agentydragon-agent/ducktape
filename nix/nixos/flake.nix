@@ -27,6 +27,7 @@
     system = "x86_64-linux";
 
     # Helper to create NixOS configuration for a VM
+    # When running on the VM with --impure, also imports /etc/nixos/hardware-configuration.nix
     mkNixosVm = {
       hostname,
       username ? "user",
@@ -47,6 +48,13 @@
               home-manager.useUserPackages = true;
               # Home-manager config will be applied separately via flake
             }
+            # Import hardware-configuration.nix from the VM if it exists (requires --impure)
+            # This provides the actual disk UUIDs and partition layout
+            (
+              if builtins.pathExists /etc/nixos/hardware-configuration.nix
+              then /etc/nixos/hardware-configuration.nix
+              else {}
+            )
           ]
           ++ extraModules;
       };

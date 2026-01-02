@@ -1,6 +1,7 @@
 # Hardware configuration for Proxmox VMs
-# This is a generic template - the actual hardware-configuration.nix
-# is generated on the VM by nixos-generate-config
+# Provides VM-specific hardware settings. Filesystem mounts are included here
+# with mkDefault so they can be overridden by /etc/nixos/hardware-configuration.nix
+# when using --impure flag.
 {
   config,
   lib,
@@ -21,19 +22,19 @@
   boot.kernelModules = ["kvm-intel" "kvm-amd"];
   boot.extraModulePackages = [];
 
-  # Filesystem - will be overridden by hardware-configuration.nix on the VM
-  # These are placeholders for the flake to evaluate
+  # Filesystem placeholders - these allow the flake to evaluate locally.
+  # On the VM, run nixos-rebuild with --impure to also import
+  # /etc/nixos/hardware-configuration.nix which has the real disk UUIDs.
+  # mkDefault ensures the generated config takes precedence.
   fileSystems."/" = lib.mkDefault {
     device = "/dev/disk/by-label/nixos";
     fsType = "ext4";
   };
 
-  fileSystems."/boot" = lib.mkDefault {
-    device = "/dev/disk/by-label/boot";
-    fsType = "vfat";
-  };
+  # Don't define /boot - not all images have a separate boot partition
+  # The generated hardware-configuration.nix will define it if needed
 
-  swapDevices = [];
+  swapDevices = lib.mkDefault [];
 
   # Networking - use DHCP
   networking.useDHCP = lib.mkDefault true;

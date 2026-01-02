@@ -115,8 +115,3 @@ cd /path/to/ducktape/props && direnv exec . psql
 
 The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`). The props package loads specimen data from this external location.
 
-## Docker Build
-
-**Important:** Run all docker build commands from the workspace root (`ducktape/`), not from `props/`.
-- Properties critic image lives under `docker/llm/properties-critic/Dockerfile`.
-- Build locally: `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`

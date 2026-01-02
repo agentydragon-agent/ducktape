@@ -25,9 +25,11 @@ runcmd:
   - /run/current-system/sw/bin/nixos-generate-config --show-hardware-config > /etc/nixos/hardware-configuration.nix
 
   # Step 2: Initial NixOS rebuild from flake (runcmd runs as root, no sudo needed)
+  # --impure allows the flake to import /etc/nixos/hardware-configuration.nix
+  # --no-write-lock-file since we're pulling from GitHub and can't write back
   - |
     echo "Applying NixOS configuration from flake..."
-    /run/current-system/sw/bin/nixos-rebuild switch --flake '${nixos_flake_url}#${nixos_host}' --install-bootloader 2>&1 | tee /var/log/nixos-rebuild.log || echo "nixos-rebuild failed, check /var/log/nixos-rebuild.log"
+    /run/current-system/sw/bin/nixos-rebuild switch --flake '${nixos_flake_url}#${nixos_host}' --impure --no-write-lock-file --install-bootloader 2>&1 | tee /var/log/nixos-rebuild.log || echo "nixos-rebuild failed, check /var/log/nixos-rebuild.log"
 
   # Step 3: Apply home-manager configuration as the user
   - |

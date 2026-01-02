@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -24,7 +23,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from agent_core.agent import Agent
-from agent_core.events import ToolCall, ToolCallOutput
+from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing.echo_server import make_echo_server
@@ -45,12 +44,21 @@ class RecordingHandler(BaseHandler):
 
     def __init__(self) -> None:
         super().__init__()
-        self.records: list[ToolCall | ToolCallOutput] = []
+        self.records: list[ToolCall | ToolCallOutput | SystemText | UserText | AssistantText] = []
 
     def on_tool_call_event(self, evt: ToolCall, /) -> None:
         self.records.append(evt)
 
     def on_tool_result_event(self, evt: ToolCallOutput, /) -> None:
+        self.records.append(evt)
+
+    def on_system_text_event(self, evt: SystemText, /) -> None:
+        self.records.append(evt)
+
+    def on_user_text_event(self, evt: UserText, /) -> None:
+        self.records.append(evt)
+
+    def on_assistant_text_event(self, evt: AssistantText, /) -> None:
         self.records.append(evt)
 
 
@@ -263,12 +271,10 @@ def live_openai(request):
       do not actually use it (e.g., parameterized tests with a mock branch),
       return a lightweight no-op placeholder to avoid network work and keep
       those tests running.
-    - For `live_llm` tests, require OPENAI_API_KEY and construct AsyncOpenAI;
-      skip if the key is not available.
+    - For `live_llm` tests, construct AsyncOpenAI (marker skip logic
+      ensures OPENAI_API_KEY is set).
     """
     if request.node.get_closest_marker("live_llm") is not None:
-        if not os.getenv("OPENAI_API_KEY"):
-            pytest.skip("OPENAI_API_KEY not set; skipping live LLM test")
         return AsyncOpenAI()
 
     class _Noop:
