@@ -3,23 +3,6 @@
 This file helps AI agents work on the `adgn` package: environment setup, common commands, testing, module map, LLM tooling (Agent), MCP/approvals, and conventions.
 See `README.md` for a shorter overview.
 
-## Workspace Structure
-
-`adgn` is part of a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) at the ducktape repo root:
-
-```
-ducktape/
-├── pyproject.toml          # Workspace root
-├── uv.lock                  # Single lockfile for all packages
-├── adgn/                    # This package
-├── tana/                    # Tana export utilities
-└── agent_pkg/               # Agent package infrastructure
-    ├── host/                # Host-side (image building, init runner)
-    └── runtime/             # Container utilities for init scripts
-```
-
-`agent_pkg/runtime` provides output/MCP helpers used by init scripts in Docker containers. It has no dependency on `adgn` (installed separately in container images).
-
 ## Environment and Setup
 
 See @../AGENTS.md for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
@@ -243,7 +226,6 @@ Approval Policy
 - Changes to the active policy trigger `ResourceUpdated` for the canonical URI and the UI refreshes accordingly.
 
 ## Notes and Caveats
-- GNOME console script deps require system libraries and are not in the default install; use the `[gnome]` extra as needed
 - See `tana/export/lib` for the low-level parser modules (some use lazy imports to avoid cycles).
 - Tests marked `real_github` or `live_openai_api` talk to network/services; run explicitly
 

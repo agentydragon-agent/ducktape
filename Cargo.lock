@@ -628,7 +628,7 @@ dependencies = [
 [[package]]
 name = "currency_layer"
 version = "0.1.2"
-source = "git+https://github.com/agentydragon/currency-layer-rs?rev=1f2f9af4dfb569808ca195f673452337b5e5d0be#1f2f9af4dfb569808ca195f673452337b5e5d0be"
+source = "git+https://github.com/RyanBluth/currency-layer-rs?rev=1f2f9af4dfb569808ca195f673452337b5e5d0be#1f2f9af4dfb569808ca195f673452337b5e5d0be"
 dependencies = [
  "chrono",
  "failure",
