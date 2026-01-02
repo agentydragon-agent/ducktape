@@ -206,6 +206,17 @@ def main() -> int:
 
     # Persist PATH modification via CLAUDE_ENV_FILE or fallback to symlink
     # The bazel wrapper needs to be on PATH so `bazel` invokes our wrapper
+    #
+    # Claude Code web environment observations (v2.0.59):
+    # - CLAUDE_ENV_FILE: NOT provided (despite docs saying SessionStart hooks get it)
+    # - CLAUDE_PROJECT_DIR: NOT provided (despite docs saying hooks receive it)
+    # - PATH already includes: /root/.local/bin (container default)
+    #
+    # Why ~/.local/bin instead of a more specific path?
+    # - It's already on PATH in Claude Code web containers
+    # - Standard XDG location for user executables
+    # - More likely to persist across environment changes than custom paths
+    # - Using CLAUDE_ENV_FILE would be better but it's not available
     log.info("Configuring bazel availability for bash sessions...")
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
@@ -223,13 +234,17 @@ def main() -> int:
         log.info("Attempting fallback: symlinking bazel to ~/.local/bin (which is already on PATH)")
 
         local_bin = Path.home() / ".local" / "bin"
+
+        # Defensive check: verify ~/.local/bin is on PATH
         log.info("Checking PATH environment variable...")
         current_path = os.environ.get("PATH", "")
-        if str(local_bin) in current_path:
-            log.info("CONFIRMED: %s is in PATH", local_bin)
-        else:
-            log.warning("WARNING: %s is NOT in current PATH, symlink may not work", local_bin)
-            log.warning("Current PATH: %s", current_path)
+        if str(local_bin) not in current_path:
+            log.error("FAILED: %s is NOT in PATH - bazel symlink won't work", local_bin)
+            log.error("Current PATH: %s", current_path)
+            log.error("Bazel will not be available in bash sessions")
+            emit_session_context(log, had_warnings=counter.warning_count > 0, had_errors=counter.error_count > 0)
+            return 1
+        log.info("CONFIRMED: %s is in PATH", local_bin)
 
         local_bin.mkdir(parents=True, exist_ok=True)
         log.info("Ensured %s exists", local_bin)
@@ -237,13 +252,32 @@ def main() -> int:
         bazel_symlink = local_bin / "bazel"
         bazel_wrapper = bazelisk_setup.WRAPPER_PATH
 
+        # Defensive check: if bazel already exists, verify it's our symlink
         if bazel_symlink.exists() or bazel_symlink.is_symlink():
-            log.info("Removing existing symlink/file at %s", bazel_symlink)
-            bazel_symlink.unlink()
+            if bazel_symlink.is_symlink():
+                existing_target = bazel_symlink.resolve()
+                if existing_target == bazel_wrapper.resolve():
+                    log.info("Bazel symlink already points to our wrapper: %s -> %s", bazel_symlink, existing_target)
+                    # Already configured correctly, continue to summary
+                else:
+                    log.warning("Existing bazel symlink points to different target: %s -> %s", bazel_symlink, existing_target)
+                    log.warning("Replacing with our wrapper")
+                    bazel_symlink.unlink()
+                    log.info("Removed existing bazel symlink at %s", bazel_symlink)
+                    bazel_symlink.symlink_to(bazel_wrapper)
+                    log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
+            else:
+                log.warning("Bazel exists but is not a symlink (file or directory): %s", bazel_symlink)
+                log.warning("Replacing with our wrapper symlink")
+                bazel_symlink.unlink()
+                log.info("Removed existing bazel at %s", bazel_symlink)
+                bazel_symlink.symlink_to(bazel_wrapper)
+                log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
+        else:
+            bazel_symlink.symlink_to(bazel_wrapper)
+            log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
 
-        bazel_symlink.symlink_to(bazel_wrapper)
-        log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
-        log.info("Bazel should be available in bash sessions if ~/.local/bin is on PATH")
+        log.info("Bazel should be available in bash sessions via ~/.local/bin")
 
     # Summary
     log.info("=" * 60)
