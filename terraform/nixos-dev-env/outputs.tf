@@ -16,13 +16,13 @@ output "user_api_token" {
   sensitive   = true
 }
 
-# Dev Workstation outputs
-output "dev_workstation" {
-  description = "Dev workstation VM info"
+# Wyrm2 outputs
+output "wyrm2" {
+  description = "Wyrm2 VM info"
   value = {
-    name           = module.dev_workstation.vm_name
-    id             = module.dev_workstation.vm_id
-    ipv4_addresses = module.dev_workstation.ipv4_addresses
+    name           = module.wyrm2.vm_name
+    id             = module.wyrm2.vm_id
+    ipv4_addresses = module.wyrm2.ipv4_addresses
   }
 }
 
@@ -36,14 +36,14 @@ output "instructions" {
     User: ${local.proxmox_username}
 
     VMs:
-    - dev-workstation (ID: ${module.dev_workstation.vm_id})
+    - wyrm2 (ID: ${module.wyrm2.vm_id})
 
     📋 Next steps:
 
     1. Wait for VMs to boot and cloud-init to complete (~2-3 minutes)
 
     2. Get VM IP addresses:
-       terraform output dev_workstation
+       terraform output wyrm2
 
     3. SSH into a VM (passwordless):
        ssh ${var.username}@<vm-ip>
@@ -57,8 +57,12 @@ output "instructions" {
        Password: (set with: ssh root@${var.proxmox_host} "pveum user password ${local.proxmox_username}")
 
     Configuration:
-    - NixOS channel: ${var.nixos_channel}
+    - NixOS flake: ${var.nixos_flake_url}
     - Home-manager flake: ${var.home_manager_flake_url}#${var.home_manager_host}
+
+    To update VM config after changes:
+    - Push to devel branch, then: terraform apply
+    - Or manually: ssh user@<ip> 'sudo nixos-rebuild switch --flake ${var.nixos_flake_url}#wyrm2'
 
     🔐 Environment variables baked into VMs:
     - Proxmox: PROXMOX_VE_ENDPOINT, PROXMOX_VE_USERNAME, PROXMOX_VE_API_TOKEN, PROXMOX_POOL_ID

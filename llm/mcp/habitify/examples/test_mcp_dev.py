@@ -1,23 +1,19 @@
-"""
-Example script to test the Habitify MCP server using mcp dev.
+"""Test the Habitify MCP server using mcp dev.
 
-This script sets up a mock server file that can be run with the MCP dev command
-to view and interact with the tools in a debug environment.
+Usage: bazel run //llm/mcp/habitify:test_mcp_dev -- [--api-key KEY] [--debug]
 
-The MCP dev environment provides a convenient way to test MCP servers without
-requiring a full Claude Desktop installation.
+Creates a mock server file for the MCP dev command to test tools
+in a debug environment without full Claude Desktop installation.
 """
 
 import argparse
 import logging
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
-# Add the parent directory to the path so we can import the server
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from habitify_mcp_server.config import load_api_key
+from habitify_mcp_server.utils import get_api_key_from_param_or_env
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -65,9 +61,10 @@ def main() -> int:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.setLevel(logging.DEBUG)
 
-    # Load API key using our common utility
-    api_key = load_api_key(api_key_override=args.api_key, exit_on_missing=False, logger_func=logger.error)
+    # Load API key from CLI param or environment
+    api_key = get_api_key_from_param_or_env(args.api_key)
     if not api_key:
+        logger.error("HABITIFY_API_KEY is required. Set in environment or pass --api-key.")
         return 1
 
     # Create a temporary file with the server code

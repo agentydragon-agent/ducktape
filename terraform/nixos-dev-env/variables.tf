@@ -72,19 +72,19 @@ variable "user_comment" {
 }
 
 # =============================================================================
-# NIXOS/HOME-MANAGER DEFAULTS
+# NIXOS/HOME-MANAGER FLAKE CONFIGURATION
 # =============================================================================
-
-variable "nixos_channel" {
-  description = "NixOS channel (unstable, 24.11, 24.05, etc.)"
-  type        = string
-  default     = "unstable"
-}
 
 variable "ssh_public_key" {
   description = "SSH public key (auto-detected from ~/.ssh if not specified)"
   type        = string
   default     = ""
+}
+
+variable "nixos_flake_url" {
+  description = "Flake URL for NixOS system configuration"
+  type        = string
+  default     = "github:agentydragon/ducktape?dir=nix/nixos&ref=devel"
 }
 
 variable "home_manager_flake_url" {

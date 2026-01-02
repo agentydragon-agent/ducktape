@@ -103,6 +103,7 @@ known-first-party = [
     "editor_agent_runtime",
     "editor_util",
     "ember",
+    "finance",
     "gatelet",
     "git_commit_ai",
     "gmail_archiver",
@@ -111,9 +112,11 @@ known-first-party = [
     "habitify_mcp_server",
     "homeassistant",
     "indoor_aqi",
+    "inventree_utils",
     "llm",
     "llm_html",
     "mcp_infra",
+    "mcp_starter",
     "mcp_utils",
     "net_util",
     "openai_utils",
@@ -142,6 +145,8 @@ split-on-trailing-comma = false
 "py_detectors/src/py_detectors/det_*.py" = ["N802"]
 # Test fixtures are intentionally bad code for detector testing
 "py_detectors/tests/fixtures/**" = ["ALL"]
+# Vendored third-party code - don't lint
+"**/third_party/**" = ["ALL"]
 "adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]
 # Lazy import for orchestration-only dependency (adgn.definition_builder not in container)

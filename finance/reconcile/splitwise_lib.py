@@ -4,9 +4,9 @@ import json
 import threading
 import urllib.parse
 
+import platformdirs
 import splitwise
 import uvicorn
-import xdg
 from absl import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
@@ -83,8 +83,8 @@ def retrieve_get_params(port):
 
 
 def load_splitwise_expenses(splitwise_group_id) -> dict[str, external_system.ExternalExpense]:
-    config_dir = xdg.xdg_config_home() / "gnucash_splitwise_reconciler"
-    cache_dir = xdg.xdg_cache_home() / "gnucash_splitwise_reconciler"
+    config_dir = platformdirs.user_config_path("gnucash_splitwise_reconciler")
+    cache_dir = platformdirs.user_cache_path("gnucash_splitwise_reconciler")
     splitwise_credentials_path = config_dir / "splitwise_credentials.json"
 
     client = make_client(splitwise_credentials_path)

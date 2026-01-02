@@ -295,36 +295,34 @@ resource "null_resource" "cleanup" {
 # VM INSTANCES
 # =============================================================================
 
-# Dev Workstation VM
-module "dev_workstation" {
+# Wyrm2 - NixOS dev workstation
+module "wyrm2" {
   source = "./modules/nixos-vm"
   providers = {
     proxmox = proxmox.user
   }
 
-  vm_name     = "dev-workstation"
-  vm_id       = 110
-  username    = var.username
-  vcpus       = 8
-  memory_mb   = 16384
+  vm_name      = "wyrm2"
+  vm_id        = 110
+  username     = var.username
+  vcpus        = 8
+  memory_mb    = 16384
   disk_size_gb = 100
-  enable_gui  = true
-  auto_start  = true
+  auto_start   = true
 
-  overlay                = file("${path.module}/overlays/dev-workstation.nix")
+  # NixOS config from flake
+  nixos_flake_url = var.nixos_flake_url
+  nixos_host      = "wyrm2"
+
+  # Home-manager config from flake
   home_manager_flake_url = var.home_manager_flake_url
   home_manager_host      = var.home_manager_host
-  nixos_channel          = var.nixos_channel
 
   proxmox_node_name = var.proxmox_node_name
   storage           = var.storage
   network_bridge    = var.network_bridge
   pool_id           = proxmox_virtual_environment_pool.user_pool.pool_id
   ssh_public_key    = local.ssh_public_key
-
-  proxmox_env_vars = local.proxmox_env_vars
-  llm_api_keys     = local.llm_api_keys
-  custom_env_vars  = var.custom_env_vars
 
   depends_on = [
     proxmox_virtual_environment_acl.pool_admin,

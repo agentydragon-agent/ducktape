@@ -1,261 +1,128 @@
-"""
-Habitify MCP tools implementation.
-"""
+"""Habitify MCP tools implementation."""
 
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
-from .habitify_client import HabitifyClient
+from .habitify_client import HabitifyClient, HabitifyError
 from .types import (
     DateRangeStatusItem,
     DateRangeStatusResult,
-    ErrorResponse,
     HabitResult,
     HabitsResult,
     LogResult,
-    ResultType,
     Status,
     StatusResult,
 )
-from .utils import with_client
-from .utils.error_utils import create_error_response, create_validation_error
 from .utils.habit_resolver import resolve_habit
 
 
-def validate_habit_identifier(**kwargs) -> ErrorResponse | None:
-    """
-    Validate that either an ID or name is provided to identify a habit.
-
-    Returns:
-        ErrorResponse if validation fails, or None if validation passes
-    """
-    id_param = kwargs.get("id")
-    name_param = kwargs.get("name")
-
-    if not id_param and not name_param:
-        action = kwargs.get("action", "use")
-        return create_validation_error(f"Either a habit ID or habit name is required to {action} a habit.")
-
-    return None
+def _require_habit_identifier(*, id: str | None, name: str | None, action: str = "use") -> None:
+    """Validate that either an ID or name is provided."""
+    if not id and not name:
+        raise HabitifyError(f"Either a habit ID or habit name is required to {action} a habit.")
 
 
-async def _validate_and_resolve(
-    client: HabitifyClient, id: str | None = None, name: str | None = None, action: str = "use"
-) -> Any:
-    """Validate habit identifier and resolve habit or return ErrorResponse."""
-    validation_error = validate_habit_identifier(id=id, name=name, action=action)
-    if validation_error:
-        return validation_error
-    return await resolve_habit(client, id=id, name=name)
-
-
-@with_client
-async def get_habits(client: HabitifyClient, include_archived: bool = False) -> ResultType:
-    """
-    MCP tool to get all habits.
-
-    Args:
-        client: HabitifyClient instance (injected by decorator)
-        include_archived: Whether to include archived habits (default: False)
-
-    Returns:
-        Dict with habits or error information
-    """
+async def get_habits(client: HabitifyClient, *, include_archived: bool = False) -> HabitsResult:
+    """Get all habits."""
     habits = await client.get_habits()
-
-    # Filter out archived habits if include_archived is False
     if not include_archived:
         habits = [habit for habit in habits if not habit.archived]
-
-    # Return habits with count, using Pydantic model
     return HabitsResult(habits=habits, count=len(habits))
 
 
-@with_client
-async def get_habit(client: HabitifyClient, id: str | None = None, name: str | None = None) -> ResultType:
-    """
-    Get a specific habit by ID or name.
+async def get_habit(client: HabitifyClient, *, id: str | None = None, name: str | None = None) -> HabitResult:
+    """Get a specific habit by ID or name."""
+    _require_habit_identifier(id=id, name=name, action="get")
 
-    Args:
-        client: HabitifyClient instance (injected by decorator)
-        id: ID of the habit to retrieve
-        name: Name or partial name of the habit to find
-
-    Returns:
-        Dict with habit details or error information
-    """
-    # Validate required arguments
-    validation_error = validate_habit_identifier(id=id, name=name, action="get")
-    if validation_error:
-        return validation_error
-
-    # If ID is provided, use direct lookup
     if id:
-        try:
-            habit = await client.get_habit(id)
-            return HabitResult(habit=habit)
-        except Exception as e:
-            return create_error_response(e)
+        habit = await client.get_habit(id)
+        return HabitResult(habit=habit)
 
-    # If name is provided, do a name-based lookup with detailed feedback
-    if name:
-        habits = await client.get_habits()
+    # Resolve by name
+    habits = await client.get_habits()
+    habit_name = name.lower().strip()  # type: ignore[union-attr]
+    matching_habits = [h for h in habits if habit_name in h.name.lower()]
 
-        # Find matching habits (case-insensitive)
-        habit_name = name.lower().strip()
-        matching_habits = [h for h in habits if habit_name in h.name.lower()]
+    if not matching_habits:
+        raise HabitifyError(f'No habit found with name containing "{name}"')
 
-        if not matching_habits:
-            return create_validation_error(f'No habit found with name containing "{name}"')
+    exact_match = next((h for h in matching_habits if h.name.lower() == habit_name), None)
+    if exact_match:
+        return HabitResult(habit=exact_match, match_type="exact")
 
-        # Find exact match if available
-        exact_match = next((h for h in matching_habits if h.name.lower() == habit_name), None)
+    if len(matching_habits) == 1:
+        return HabitResult(habit=matching_habits[0], match_type="partial")
 
-        if exact_match:
-            return HabitResult(habit=exact_match, match_type="exact")
-
-        # If only one match, return it
-        if len(matching_habits) == 1:
-            return HabitResult(habit=matching_habits[0], match_type="partial")
-
-        # Multiple matches, provide them as context
-        return create_validation_error(
-            f'Multiple habits found matching "{name}"',
-            {
-                "matches": [{"id": h.id, "name": h.name} for h in matching_habits[:5]],
-                "total_matches": len(matching_habits),
-            },
-        )
-
-    # This should never be reached due to validation, but satisfies mypy
-    return create_validation_error("Either a habit ID or habit name is required")
+    matches = ", ".join(f"{h.name} ({h.id})" for h in matching_habits[:5])
+    raise HabitifyError(f'Multiple habits found matching "{name}": {matches}')
 
 
-@with_client
 async def get_habit_status(
     client: HabitifyClient,
+    *,
     id: str | None = None,
     name: str | None = None,
     date: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
     days: int | None = None,
-) -> ResultType:
+) -> StatusResult | DateRangeStatusResult:
+    """Get a habit's status for one or more dates.
+
+    Single date: use 'date' parameter.
+    Date range (inclusive): use start_date/end_date, start_date/days, end_date/days, or just days.
     """
-    MCP tool to get a habit's status for one or more dates.
+    _require_habit_identifier(id=id, name=name, action="check")
+    resolved = await resolve_habit(client, id=id, name=name)
 
-    This function supports both single date and date range queries.
-    For a single date, use the 'date' parameter.
-    For a date range, use:
-    - start_date and end_date for a specific range (inclusive)
-    - start_date and days for N days from start date
-    - end_date and days for N days before end date
-    - just days for N days up to today
-
-    All dates are inclusive (both start and end dates are included in results).
-
-    Args:
-        client: HabitifyClient instance (injected by decorator)
-        id: ID of the habit to check
-        name: Name of the habit to check (alternative to id)
-        date: Single date to check in YYYY-MM-DD format (defaults to today if no range specified)
-        start_date: Start date for range in YYYY-MM-DD format (inclusive)
-        end_date: End date for range in YYYY-MM-DD format (inclusive)
-        days: Number of days to include in range
-
-    Returns:
-        Dict with habit status or error information
-    """
-    # Validate and resolve habit identifier
-    resolved = await _validate_and_resolve(client, id=id, name=name, action="check")
-    if isinstance(resolved, ErrorResponse):
-        return resolved
-
-    # Check if we're doing a date range query or a single date query
     is_range_query = any((start_date, end_date, days))
 
-    # If both date and range parameters are provided, return an error
     if date and is_range_query:
-        return create_validation_error(
-            "Cannot specify both date and date range parameters (start_date, end_date, days) simultaneously."
-        )
+        raise HabitifyError("Cannot specify both date and date range parameters (start_date, end_date, days).")
 
-    # If it's a range query
     if is_range_query:
         statuses = await client.check_habit_status_range(
             resolved.habit_id, start_date=start_date, end_date=end_date, days=days
         )
 
-        # Convert to normalized format
         items = []
-
-        # Track the actual date range
         first_date = None
         last_date = None
 
-        # Process each status
         for status in statuses:
-            # status.date is already an ISO date string (YYYY-MM-DD)
             items.append(DateRangeStatusItem(date=status.date, status=status.status))
-
-            # Track date range
             if first_date is None or status.date < first_date:
                 first_date = status.date
             if last_date is None or status.date > last_date:
                 last_date = status.date
 
-        # Create the date range result
         return DateRangeStatusResult(
             statuses=items,
             start_date=first_date or datetime.now().strftime("%Y-%m-%d"),
             end_date=last_date or datetime.now().strftime("%Y-%m-%d"),
             date_count=len(items),
         )
-    # Single date query (original behavior)
-    # Parse date if provided or default to today
+
     date_str = date or datetime.now().strftime("%Y-%m-%d")
-
     status = await client.check_habit_status(resolved.habit_id, date_str)
-
-    # Status is now a Pydantic model, use attribute access
     return StatusResult(status=status.status, date=date_str)
 
 
-@with_client
 async def set_habit_status(
     client: HabitifyClient,
+    *,
     id: str | None = None,
     name: str | None = None,
     status: Status = Status.COMPLETED,
     date: str | None = None,
     note: str | None = None,
     value: float | None = None,
-) -> ResultType:
-    """
-    Set a habit's status for a specific date.
+) -> LogResult:
+    """Set a habit's status for a specific date."""
+    _require_habit_identifier(id=id, name=name, action="set")
+    resolved = await resolve_habit(client, id=id, name=name)
 
-    Args:
-        client: HabitifyClient instance (injected by decorator)
-        id: ID of the habit to update
-        name: Name of the habit to update (alternative to id)
-        status: Status to set: completed, skipped, failed, or none
-        date: Date in YYYY-MM-DD format (defaults to today)
-        note: Optional note to attach to the log
-        value: Optional value for habits with numeric goals
-
-    Returns:
-        Dict with status update result or error information
-    """
-    # Validate and resolve habit identifier
-    resolved = await _validate_and_resolve(client, id=id, name=name, action="set")
-    if isinstance(resolved, ErrorResponse):
-        return resolved
-
-    # Status validation is now handled by type system (Status enum)
-    # Convert Status enum to Literal type for client call
     result = await client.set_habit_status(
         resolved.habit_id, cast(Literal["completed", "skipped", "failed", "none"], status.value), date, note, value
     )
-
-    # Pydantic handles optional fields
     return LogResult(status=result.status, date=result.date, note=result.note, value=result.value)

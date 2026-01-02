@@ -10,8 +10,8 @@ import httpx
 import pytest
 import yaml
 
-from ..habitify_client import HabitifyClient
-from .reference_models import TestReference
+from habitify_mcp_server.habitify_client import HabitifyClient
+from habitify_mcp_server.tests.reference_models import TestReference
 
 
 @pytest.fixture

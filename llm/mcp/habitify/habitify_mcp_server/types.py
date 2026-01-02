@@ -161,15 +161,6 @@ class ResolvedHabit(BaseModel):
     match_type: str | None = None
 
 
-class ErrorResponse(BaseModel):
-    """Model for structured error responses."""
-
-    error: str
-    category: str | None = None  # Error category (auth, not_found, validation, api, network, unknown)
-    matches: list[dict[str, str]] | None = None
-    total_matches: int | None = None
-
-
 class HabitsResult(BaseModel):
     """Result for getHabits tool."""
 
@@ -181,6 +172,7 @@ class HabitResult(BaseModel):
     """Result for getHabit tool."""
 
     habit: Habit
+    match_type: str | None = None
 
 
 class StatusResult(BaseModel):
@@ -226,16 +218,3 @@ class DeleteResult(BaseModel):
     """Result for deleteHabit tool."""
 
     deleted: bool = True
-
-
-# Union type for all possible result types
-ResultType = (
-    HabitsResult
-    | HabitResult
-    | StatusResult
-    | DateRangeStatusResult
-    | LogResult
-    | UpdateResult
-    | DeleteResult
-    | ErrorResponse
-)

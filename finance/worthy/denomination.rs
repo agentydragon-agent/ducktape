@@ -16,7 +16,4 @@ pub enum Denomination {
     Stock {
         stock: String,
     },
-    FundIsin {
-        fund_isin: String,
-    },
 }

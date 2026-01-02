@@ -13,8 +13,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from habitify_mcp_server.config import get_api_base_url, load_api_key
 
-# Load API key using our common utility
-api_key = load_api_key(api_key_override=None, exit_on_missing=True, logger_func=print)
+# Load API key from environment
+api_key = load_api_key(exit_on_missing=True)
 
 # Prepare the installation command
 # Note: We need to use the module name, not the path

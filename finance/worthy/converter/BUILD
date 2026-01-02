@@ -62,28 +62,6 @@ rust_library(
 )
 
 rust_library(
-    name = "swiss_fund_data_converter",
-    srcs = ["swiss_fund_data_converter.rs"],
-    edition = "2024",
-    proc_macro_deps = [
-        "@crates//:async-trait",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//finance/worthy:asset",
-        "//finance/worthy:converter",
-        "//finance/worthy:denomination",
-        "//finance/worthy:exchange_rate",
-        "@crates//:headless_chrome",
-        "@crates//:log",
-        "@crates//:regex",
-        "@crates//:rust_decimal",
-        "@crates//:serde",
-        "@crates//:serde_json",
-    ],
-)
-
-rust_library(
     name = "fixer_converter",
     srcs = ["fixer_converter.rs"],
     edition = "2024",
