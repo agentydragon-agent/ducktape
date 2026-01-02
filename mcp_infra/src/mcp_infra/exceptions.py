@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from mcp_infra.exec.models import BaseExecResult
 
-__all__ = ["InitFailedError"]
-
 
 class InitFailedError(Exception):
     """Raised when init script fails (non-zero exit, truncated output, or MCP error)."""

@@ -142,7 +142,6 @@ def add_external_to_gnucash(external_transaction, book, account_of_interest, ext
 
 def main(_):
     config_dir = Path(user_config_dir("ducktape"))
-    Path(user_cache_dir("ducktape"))
 
     with (config_dir / "config.yaml").open() as f:
         config = yaml.safe_load(f)

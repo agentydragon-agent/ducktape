@@ -21,7 +21,6 @@ from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
 
-from mcp_infra.bootstrap_handler import BootstrapHandler
 from mcp_infra.exec.models import ExecInput
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -34,14 +33,6 @@ if TYPE_CHECKING:
 
     from mcp_infra.exec.docker.server import ContainerExecServer
     from mcp_infra.mounted import Mounted
-
-__all__ = [
-    "DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS",
-    "BootstrapHandler",
-    "TypedBootstrapBuilder",
-    "docker_exec_call",
-    "introspect_server_models",
-]
 
 # Default timeout for bootstrap docker exec calls (1 second).
 # Bootstrap commands should complete quickly - failing fast reveals issues.
