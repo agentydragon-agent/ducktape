@@ -43,32 +43,24 @@ resource "tls_private_key" "flux_deploy" {
 # NIX CACHE SIGNING KEY
 # Uses nix-store format, generated once and stored in local file
 # The file is NOT in git but backed up with terraform state
+# Uses external data source to create-if-not-exists during plan
 # ============================================
-resource "null_resource" "nix_cache_key_generate" {
-  # Only generate if file doesn't exist
-  provisioner "local-exec" {
-    command = <<-EOT
-      if [ ! -f ${path.module}/nix-cache-key.json ]; then
-        echo "🔑 Generating new Nix cache signing key..."
-        nix-store --generate-binary-cache-key cache.test-cluster.agentydragon.com-1 /tmp/nix-private.key /tmp/nix-public.key
-        jq -n --arg priv "$(cat /tmp/nix-private.key)" --arg pub "$(cat /tmp/nix-public.key)" \
-          '{private_key: $priv, public_key: $pub}' > ${path.module}/nix-cache-key.json
-        rm /tmp/nix-private.key /tmp/nix-public.key
-        echo "✅ Nix cache signing key generated"
-      else
-        echo "ℹ️  Nix cache signing key already exists"
-      fi
-    EOT
-  }
-}
-
-data "local_file" "nix_cache_key" {
-  depends_on = [null_resource.nix_cache_key_generate]
-  filename   = "${path.module}/nix-cache-key.json"
+data "external" "nix_cache_key" {
+  program = ["bash", "-c", <<-EOT
+    KEY_FILE="${path.module}/nix-cache-key.json"
+    if [ ! -f "$KEY_FILE" ]; then
+      nix-store --generate-binary-cache-key cache.test-cluster.agentydragon.com-1 /tmp/nix-private.key /tmp/nix-public.key 2>/dev/null
+      jq -n --arg priv "$(cat /tmp/nix-private.key)" --arg pub "$(cat /tmp/nix-public.key)" \
+        '{private_key: $priv, public_key: $pub}' > "$KEY_FILE"
+      rm /tmp/nix-private.key /tmp/nix-public.key
+    fi
+    cat "$KEY_FILE"
+  EOT
+  ]
 }
 
 locals {
-  nix_cache_keys = jsondecode(data.local_file.nix_cache_key.content)
+  nix_cache_keys = data.external.nix_cache_key.result
 }
 
 # ============================================

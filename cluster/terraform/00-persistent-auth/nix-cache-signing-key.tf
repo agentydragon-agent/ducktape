@@ -46,39 +46,9 @@ CERTEOF
     EOT
   }
 
-  depends_on = [null_resource.nix_cache_key_generate]
+  # No depends_on needed - external data source handles creation
 }
 
-# Commit sealed secrets changes to git
-resource "null_resource" "commit_nix_cache_sealed_secret" {
-  triggers = {
-    # Depend on the sealed secret generation
-    sealed_secret_id = null_resource.nix_cache_signing_key_sealed_secret.id
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      cd ${path.root}/../..
-      if [ -f k8s/applications/nix-cache/signing-key-sealed.yaml ]; then
-        if ! git diff --quiet k8s/applications/nix-cache/signing-key-sealed.yaml 2>/dev/null; then
-          git add k8s/applications/nix-cache/signing-key-sealed.yaml
-          git commit -m "chore: update Nix cache signing key sealed secret
-
-🔄 Generated with terraform-managed sealed-secrets keypair
-🔒 Persistent signing key - survives cluster lifecycle
-
-🤖 Generated with Claude Code
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
-          echo "✅ Committed updated Nix cache sealed secret"
-        else
-          echo "ℹ️  Nix cache sealed secret unchanged - no commit needed"
-        fi
-      else
-        echo "⚠️  Nix cache sealed secret file not found - skipping commit"
-      fi
-    EOT
-  }
-
-  depends_on = [null_resource.nix_cache_signing_key_sealed_secret]
-}
+# Note: Commit sealed secrets manually after terraform apply:
+# git add k8s/applications/nix-cache/signing-key-sealed.yaml
+# git commit -m "chore: update Nix cache signing key sealed secret"
