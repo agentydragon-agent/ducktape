@@ -32,17 +32,18 @@ _SRCS = glob([
     "tsconfig.json",
 ]
 
-# ESLint binary is created in //tools/lint:eslint to avoid artifact path conflicts
-# See bazelization/STATUS.md "JS/TS Linting via Bazel Aspects" section
-
 # ESLint check (JS/TS/Svelte linting)
+# Uses sh_test wrapper because ESLint v9 flat config discovery doesn't work
+# with aspect_rules_lint's execroot execution model. The aspect runs ESLint
+# from the Bazel execroot where files are in a flat output structure, but
+# ESLint v9 searches upward from source files for eslint.config.js.
 # Run: bazel test //props/frontend:eslint_test
 sh_test(
     name = "eslint_test",
     srcs = ["//tools/lint:run_eslint.sh"],
     args = [
         "$(rootpath //tools/lint:eslint)",
-        "props/frontend",  # Package directory
+        "props/frontend",
         "--config",
         "eslint.config.js",
         "src",
