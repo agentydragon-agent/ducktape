@@ -101,6 +101,7 @@ def acquire_singleton_lock(pid_file: Path, state: ProxyState) -> bool:
                 if state.pid_file:
                     state.pid_file.unlink(missing_ok=True)
             except OSError:
+                # Cleanup is best-effort - process is exiting anyway
                 pass
 
     atexit.register(cleanup)
@@ -149,6 +150,7 @@ def kill_existing(pid_file: Path) -> bool:
         os.kill(pid, signal.SIGKILL)
         time.sleep(0.1)
     except ProcessLookupError:
+        # Process died between check and SIGKILL - mission accomplished
         pass
 
     return True
@@ -232,6 +234,7 @@ async def pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> No
             writer.write(data)
             await writer.drain()
     except (ConnectionResetError, BrokenPipeError):
+        # Client/server closed connection during transfer - normal for proxying
         pass
     finally:
         writer.close()

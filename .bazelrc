@@ -14,7 +14,8 @@ common --enable_bzlmod
 
 # Trying to see if this might fix the issues with errors in
 # cargo-raze-generated platform-specific dependencies in BUILD files
-build --platforms //:linux_x64
+# NOTE: Commented out - cargo-raze is no longer used (now using rules_rust crate_universe)
+# build --platforms //:linux_x64
 
 # Lint configuration (Python ruff + JS/TS eslint)
 # Run with: bazel build --config=lint //...
