@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Final, Literal
 
+import pytest
 from hamcrest import (
     assert_that,
     contains_inanyorder,
@@ -20,7 +21,6 @@ from hamcrest import (
     has_properties,
 )
 from pydantic import BaseModel, ConfigDict, Field
-import pytest
 
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler

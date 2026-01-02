@@ -10,18 +10,18 @@ For compositor fixtures, also register:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterable
 import json
 import os
+from collections.abc import Callable, Iterable
 from typing import Any
 
+import mcp.types
+import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from fastmcp.tools import FunctionTool
-import mcp.types
 from openai import AsyncOpenAI
 from pydantic import BaseModel
-import pytest
 
 from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput

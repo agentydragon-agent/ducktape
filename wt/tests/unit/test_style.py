@@ -1,6 +1,6 @@
 import importlib
-from pathlib import Path
 import re
+from pathlib import Path
 
 # Scan the installed package directory for wt (production code),
 # not a hardcoded path relative to tests.

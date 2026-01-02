@@ -1,17 +1,17 @@
 """Thin CLI layer - just argument parsing and handler coordination (async Typer commands)."""
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 import functools
 import inspect
 import logging
 import sys
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 import click
-from colorama import init
 import typer
+from colorama import init
 from typer.main import get_command
 
 from .client.cd_utils import emit_cd_command

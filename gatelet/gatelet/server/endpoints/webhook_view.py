@@ -1,7 +1,7 @@
 """Webhook viewing endpoints."""
 
-from datetime import datetime
 import math
+from datetime import datetime
 from typing import Annotated, Any
 
 from compact_json import Formatter

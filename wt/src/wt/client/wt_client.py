@@ -5,23 +5,23 @@ providing both low-level daemon communication and high-level status operations.
 """
 
 import asyncio
-from collections.abc import Callable
 import contextlib
-from dataclasses import dataclass, field
 import fcntl
 import json
 import logging
 import os
-from pathlib import Path
 import subprocess
 import sys
-from typing import IO, cast
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import IO, cast
 
 import click
 import psutil
-from pydantic import BaseModel, TypeAdapter, ValidationError
 import pygit2
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from ..shared.configuration import Configuration
 from ..shared.env import is_test_mode

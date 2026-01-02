@@ -2,11 +2,11 @@
 """Test language models as RL agents with raw numerical data."""
 
 import asyncio
+import json
+import os
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-import json
-import os
 from pathlib import Path
 from typing import Any, Literal
 

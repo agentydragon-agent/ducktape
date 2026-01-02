@@ -16,10 +16,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pydantic_core
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
-import pydantic_core
 
 from mcp_infra.exec.models import ExecInput
 from mcp_infra.naming import build_mcp_function

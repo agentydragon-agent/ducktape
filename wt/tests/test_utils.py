@@ -1,9 +1,9 @@
 """Shared test utilities to avoid duplication across test files."""
 
-from collections.abc import Callable
-from datetime import timedelta
 import os
 import subprocess
+from collections.abc import Callable
+from datetime import timedelta
 
 from tenacity import RetryError, Retrying, stop_after_delay, wait_fixed
 

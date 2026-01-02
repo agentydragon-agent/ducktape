@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from fastmcp.mcp_config import MCPConfig
 import pytest
+from fastmcp.mcp_config import MCPConfig
 
 from agent_core.testing.openai_mock import CapturingOpenAIModel
 from agent_core.testing.steps import AssistantMessage

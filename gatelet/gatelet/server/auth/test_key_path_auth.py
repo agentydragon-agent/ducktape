@@ -1,8 +1,8 @@
 """Test for key_path_auth that doesn't depend on complex fixtures."""
 
-from datetime import datetime
 import logging
 import uuid
+from datetime import datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -1,12 +1,13 @@
 """Score evolution tracking, plotting functionality, and rollout analysis."""
 
-from datetime import UTC, datetime
 import json
-from pathlib import Path
 import statistics
+from datetime import UTC, datetime
+from pathlib import Path
 
 import matplotlib
 import pandas as pd
+import tiktoken
 from plotnine import (
     aes,
     element_text,
@@ -21,7 +22,6 @@ from plotnine import (
     theme_minimal,
 )
 from pydantic import BaseModel
-import tiktoken
 
 from adgn.inop.io.logging_utils import DualOutputLogging
 

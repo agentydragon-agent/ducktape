@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import hashlib
 import inspect
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse

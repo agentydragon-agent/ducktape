@@ -16,9 +16,9 @@ import asyncio
 import hashlib
 import io
 import logging
-from pathlib import Path
 import tarfile
 import tempfile
+from pathlib import Path
 
 import aiodocker
 

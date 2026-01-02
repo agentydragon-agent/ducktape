@@ -5,8 +5,8 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Annotated, TypeVar
 
-from pydantic import BaseModel, Field
 import pygit2
+from pydantic import BaseModel, Field
 from pygit2.enums import DeltaStatus, FileStatus
 
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel

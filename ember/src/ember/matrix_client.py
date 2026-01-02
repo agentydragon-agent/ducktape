@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
-import logging
-import os
 from pathlib import Path
 
 from mautrix.types import RoomAlias, RoomID

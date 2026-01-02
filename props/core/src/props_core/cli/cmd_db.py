@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 import gzip
-from pathlib import Path
 import subprocess
+from datetime import datetime
+from pathlib import Path
 
 import aiodocker
+import typer
 from rich.console import Console
 from rich.table import Table
-import typer
 
 from props_core.db.config import DatabaseConfig, get_database_config
 from props_core.db.session import get_session, recreate_database

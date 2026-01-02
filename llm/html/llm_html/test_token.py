@@ -7,8 +7,8 @@ deterministic.
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
 import pytest
+from pydantic import BaseModel, Field
 
 from .server import TIMEZONE
 from .token_scheme import TokenScheme, VerificationError

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-import os
 from pathlib import Path
 
 from .models import Detection

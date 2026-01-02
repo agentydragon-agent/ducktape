@@ -1,8 +1,8 @@
 """Planner for archiving old Anthropic receipt emails."""
 
+import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-import re
 
 import dateutil.parser
 from pydantic import BaseModel

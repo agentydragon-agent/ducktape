@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import hmac
 import os
 import time
+from dataclasses import dataclass
 
+import requests
 from kubernetes import client, config
 from kubernetes.client import ApiException
-import requests
 
 
 @dataclass

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from http import HTTPStatus
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from http import HTTPStatus
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
 import httpx
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 import structlog
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from structlog.stdlib import BoundLogger
 
 from .policy_common import (

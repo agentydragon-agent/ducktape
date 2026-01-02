@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from hamcrest import has_entries
 import pytest
+from hamcrest import has_entries
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool

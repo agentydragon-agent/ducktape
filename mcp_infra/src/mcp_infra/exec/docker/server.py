@@ -12,10 +12,10 @@ from pathlib import PurePosixPath
 from typing import Any, cast
 
 import aiodocker
+import mcp.types as mcp_types
 from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.tools import FunctionTool
-import mcp.types as mcp_types
 
 from mcp_infra.container_session import (
     ContainerOptions,

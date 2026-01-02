@@ -2,8 +2,8 @@
 CLI-specific utility functions.
 """
 
-from rich.console import Console
 import typer
+from rich.console import Console
 
 from ..habitify_client import HabitifyClient, HabitifyError
 

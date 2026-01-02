@@ -9,8 +9,8 @@ Tests the end-to-end SQL workflow where critic agents:
 
 from __future__ import annotations
 
-from fastmcp.exceptions import ToolError
 import pytest
+from fastmcp.exceptions import ToolError
 from sqlalchemy import text
 
 from props_core.critic.submit_server import CriticSubmitInput

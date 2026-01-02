@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
 import yaml
+from pydantic import BaseModel
 
 from adgn.inop.engine.models import SeedTask
 from adgn.inop.io.logging_utils import DualOutputLogging

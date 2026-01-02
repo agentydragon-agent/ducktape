@@ -1,9 +1,9 @@
 """Shared pytest configuration and fixtures for habitify tests."""
 
-from contextlib import contextmanager
-from importlib import resources
 import json
 import os
+from contextlib import contextmanager
+from importlib import resources
 from unittest.mock import AsyncMock, patch
 
 import httpx

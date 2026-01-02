@@ -4,10 +4,10 @@ import inspect
 import json
 from typing import Literal
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.server.context import Context
 from pydantic import Field, field_validator
-import pytest
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.stubs.typed_stubs import TypedClient

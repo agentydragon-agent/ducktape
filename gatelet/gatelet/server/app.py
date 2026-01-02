@@ -1,8 +1,8 @@
 """FastAPI application for Gatelet server."""
 
+import logging
 from collections.abc import Callable
 from datetime import datetime
-import logging
 
 from fastapi import Cookie, Depends, FastAPI, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse

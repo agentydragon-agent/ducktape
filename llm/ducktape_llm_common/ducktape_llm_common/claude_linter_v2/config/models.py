@@ -1,7 +1,7 @@
 """Configuration models for Claude Linter v2 using Pydantic."""
 
-from enum import Enum
 import re
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator

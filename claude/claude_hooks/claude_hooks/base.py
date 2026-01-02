@@ -1,14 +1,14 @@
 """Base hook framework with JSON I/O handling."""
 
-from abc import ABC, abstractmethod
 import json
 import logging
-from pathlib import Path
 import sys
+from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, TypeVar
 
-from platformdirs import user_config_dir, user_state_dir
 import yaml
+from platformdirs import user_config_dir, user_state_dir
 
 from claude_hooks.actions import (
     HookAction,

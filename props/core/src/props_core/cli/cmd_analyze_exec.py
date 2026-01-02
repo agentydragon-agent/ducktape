@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from collections import Counter
 import json
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import Annotated
 
+import typer
 from rich import box
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy import select
-import typer
 
 from agent_core.events import ToolCall
 from props_core.db.models import Event

@@ -2,8 +2,8 @@
 
 import asyncio
 
-from fastmcp.client import Client
 import pytest
+from fastmcp.client import Client
 
 from agent_core.agent import Agent
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler

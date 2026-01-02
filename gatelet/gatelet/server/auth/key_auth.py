@@ -1,7 +1,7 @@
 """Key-in-path authentication for Gatelet."""
 
-from datetime import timedelta
 import logging
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

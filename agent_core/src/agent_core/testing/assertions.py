@@ -6,13 +6,13 @@ MCP tool results in tests.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import json
 import logging
+from collections.abc import Sequence
 from typing import TypeGuard
 
-from pydantic import BaseModel
 import pytest
+from pydantic import BaseModel
 
 from agent_core.agent import _openai_to_mcp_result
 from mcp_infra.calltool import extract_structured_content

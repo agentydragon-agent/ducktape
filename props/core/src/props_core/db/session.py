@@ -32,11 +32,11 @@ Design rationale:
 
 from __future__ import annotations
 
+import logging
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-import logging
 from pathlib import Path
-import threading
 from typing import Any
 
 from alembic import command

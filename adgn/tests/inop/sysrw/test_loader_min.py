@@ -4,8 +4,8 @@ from __future__ import annotations
 from importlib import resources
 from pathlib import Path
 
-from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
 import pytest
+from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
 
 import adgn.sysrw
 from adgn.sysrw.run_eval import read_dataset  # type: ignore

@@ -18,23 +18,23 @@ Preserve DEBUGGING.md - it will save hours when things break.
 """
 
 import asyncio
+import os
+import shutil
+import traceback
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
-import os
 from pathlib import Path
-import shutil
-import traceback
 from typing import Any
 
 import claude_code_sdk
+import pathspec
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 from docker.models.containers import Container
-import pathspec
 
-from adgn.inop.engine.models import SeedTask
 import docker
+from adgn.inop.engine.models import SeedTask
 
 
 @contextmanager

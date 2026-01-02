@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable
 import contextlib
-from pathlib import Path
 import time
+from collections.abc import Awaitable, Callable, Iterable
+from pathlib import Path
 from weakref import WeakSet
 
 import pygit2

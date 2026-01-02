@@ -1,9 +1,9 @@
 """Session management for tracking Claude Code sessions and their permissions."""
 
-from datetime import datetime
-from enum import StrEnum
 import json
 import logging
+from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 
 from platformdirs import user_data_dir

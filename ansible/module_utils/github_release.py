@@ -6,11 +6,11 @@ It contains common classes and functions used by the GitHub release action
 plugins.
 """
 
-from dataclasses import dataclass
 import json
 import re
-from typing import Any, TypeVar
 import urllib.request
+from dataclasses import dataclass
+from typing import Any, TypeVar
 
 # Type variables for better type hints
 T = TypeVar("T")

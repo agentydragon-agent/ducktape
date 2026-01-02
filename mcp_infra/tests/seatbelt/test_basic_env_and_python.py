@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import sys
 
-from _markers import REQUIRES_SANDBOX_EXEC
 import pytest
+from _markers import REQUIRES_SANDBOX_EXEC
 
 from mcp_infra.seatbelt.runner import run_sandboxed_async
 

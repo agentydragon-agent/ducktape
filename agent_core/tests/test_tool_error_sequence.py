@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from hamcrest import has_entries
 import pytest
+from hamcrest import has_entries
 
 from agent_core.testing.fixtures import FAIL_TOOL_NAME
 from agent_core.testing.matchers import assert_function_call_output_structured

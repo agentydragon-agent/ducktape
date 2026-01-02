@@ -1,9 +1,9 @@
 """Authentication handlers for Gatelet endpoints."""
 
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from enum import StrEnum
-import logging
 from typing import Protocol
 from urllib.parse import urlencode
 

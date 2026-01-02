@@ -1,7 +1,7 @@
 """Validation utilities for prompts."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 import yaml
 

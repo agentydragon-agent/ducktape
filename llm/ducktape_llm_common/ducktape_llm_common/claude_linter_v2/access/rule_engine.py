@@ -1,8 +1,8 @@
 """Rule evaluation engine with precedence and 'most restrictive wins' logic."""
 
+import logging
 from dataclasses import dataclass
 from enum import IntEnum
-import logging
 
 from ..config.clean_models import ModularConfig
 from ..config.models import AccessControlRule, RuleAction

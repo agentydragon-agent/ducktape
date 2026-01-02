@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from importlib import resources
 import os
-from pathlib import Path
 import runpy
 import shutil
 import subprocess
 import sys
+from importlib import resources
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest

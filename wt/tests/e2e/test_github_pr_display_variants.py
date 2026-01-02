@@ -1,14 +1,14 @@
 """E2E: real daemon/client + shadowed PyGithub; PR variants: open(can merge), merged, closed, no PR."""
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta
 import json
 import os
-from pathlib import Path
 import re
 import socket
-from typing import Any
 import uuid
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import pytest
 

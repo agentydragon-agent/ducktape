@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from fastmcp import Context
 from fastmcp.server import FastMCP
 from pydantic import BaseModel, ConfigDict
-import pytest
 
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler

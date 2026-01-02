@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 import contextlib
+import secrets
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-import secrets
 
 import aiodocker
 from fastmcp.server.auth import StaticTokenVerifier

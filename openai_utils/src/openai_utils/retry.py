@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import functools
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-import functools
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 
 import httpx

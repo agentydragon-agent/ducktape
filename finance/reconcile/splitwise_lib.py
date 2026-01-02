@@ -4,12 +4,12 @@ import json
 import threading
 import urllib.parse
 
-from absl import logging
-from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
 import splitwise
 import uvicorn
 import xdg
+from absl import logging
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 
 from ducktape.finance.reconcile import external_system
 

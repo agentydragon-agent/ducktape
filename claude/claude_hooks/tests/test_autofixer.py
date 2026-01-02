@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from hamcrest import assert_that, contains_string
 import pytest
+from hamcrest import assert_that, contains_string
 
 from claude_hooks.actions import PostToolFeedbackToClaude
 from claude_hooks.config import AutofixerConfig

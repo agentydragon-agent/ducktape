@@ -1,8 +1,8 @@
 """Tests for Rationale type validation."""
 
+import pytest
 from hamcrest import assert_that, equal_to
 from pydantic import ValidationError
-import pytest
 
 # Extract limits from the Rationale type's constraints
 MIN_LENGTH = 10

@@ -7,8 +7,8 @@ but SQLAlchemy's .isnot(None) filter only excludes SQL NULL, not JSON null.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 

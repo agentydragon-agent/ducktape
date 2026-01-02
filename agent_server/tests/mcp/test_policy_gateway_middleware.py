@@ -5,11 +5,11 @@ These tests verify that the policy gateway correctly gates tool calls based on p
 
 import asyncio
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from mcp import McpError, types as mtypes
-import pytest
 
 from agent_server.mcp.approval_policy.engine import (
     POLICY_BACKEND_RESERVED_MISUSE_MSG,

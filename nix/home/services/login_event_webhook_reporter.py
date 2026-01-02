@@ -6,8 +6,6 @@ GNOME + logind event reporter
  * Logs to systemd-journal
 """
 
-from collections import Counter
-from datetime import timedelta
 import json
 import logging
 import os
@@ -16,6 +14,8 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
+from datetime import timedelta
 
 from gi.repository import GLib
 from pydbus import SystemBus

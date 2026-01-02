@@ -7,10 +7,10 @@ to the sandboxed_jupyter package.
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, nullcontext
 import os
-from pathlib import Path
 import subprocess
+from contextlib import AbstractContextManager, nullcontext
+from pathlib import Path
 from typing import IO
 
 from net_util.net import wait_for_port

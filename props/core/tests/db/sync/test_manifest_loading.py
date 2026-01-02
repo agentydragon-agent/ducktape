@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import ValidationError
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from props_core.db.sync.loader import discover_snapshots
 from props_core.ids import SnapshotSlug

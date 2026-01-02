@@ -3,12 +3,12 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys
 import textwrap
 import time
+from pathlib import Path
 
 from jupyter_client import BlockingKernelClient
 

@@ -75,18 +75,27 @@ allowed-confusables = ["σ"]
 keep-runtime-typing = false
 
 [lint.isort]
-# Teach Ruff which packages are first-party so sectioning stays stable
+# Don't treat same-package imports specially (no local-folder section)
+detect-same-package = false
+# Unknown packages default to third-party (no heuristics)
+default-section = "third-party"
+# First-party = our workspace packages (ruff uses heuristics otherwise)
+# TODO: Auto-generate this list from Bazel once bazelized
 known-first-party = [
     "adgn",
+    "adgn_mcp_starter",
     "agent_core",
-    "agent_pkg",
     "agent_pkg_host",
     "agent_pkg_runtime",
     "agent_server",
+    "claude_history",
     "claude_hooks",
+    "claude_optimizer",
     "cli_util",
     "clustering_util",
+    "cotrl",
     "critic_util",
+    "dbus_fast_example",
     "difftree",
     "ducktape",
     "ducktape_llm_common",
@@ -97,9 +106,13 @@ known-first-party = [
     "gatelet",
     "git_commit_ai",
     "gmail_archiver",
+    "gnome_terminal_profile_switcher",
     "grader_util",
+    "habitify_mcp_server",
     "homeassistant",
+    "indoor_aqi",
     "llm",
+    "llm_html",
     "mcp_infra",
     "mcp_utils",
     "net_util",
@@ -111,9 +124,10 @@ known-first-party = [
     "rspcache",
     "sandboxed_jupyter",
     "tana",
+    "tana_export",
+    "tests",  # test packages (until colocated under main packages)
     "wt",
 ]
-force-sort-within-sections = true
 combine-as-imports = true
 # Compatible with format.skip-magic-trailing-comma
 split-on-trailing-comma = false

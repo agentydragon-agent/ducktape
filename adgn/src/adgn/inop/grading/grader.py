@@ -1,7 +1,7 @@
 """General grading system that handles different grading strategies."""
 
-from datetime import UTC, datetime
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from adgn.inop.config import OptimizerConfig

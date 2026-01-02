@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
 import yaml
+from pydantic import BaseModel, ConfigDict, Field
 
 from openai_utils.types import ReasoningEffort
 

@@ -1,7 +1,7 @@
 """Contextual logging support for Claude hooks."""
 
-from contextvars import ContextVar
 import logging
+from contextvars import ContextVar
 from uuid import UUID
 
 # Context variables for storing hook execution context

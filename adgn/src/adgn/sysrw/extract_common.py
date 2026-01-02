@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
 import gzip
 import json
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, TextIO
 

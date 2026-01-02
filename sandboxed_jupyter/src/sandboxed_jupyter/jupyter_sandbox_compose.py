@@ -4,11 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError
 import yaml
+from pydantic import BaseModel, Field, ValidationError
 
 from sandboxed_jupyter.sandboxer import Policy as SandboxPolicy, build_sandboxer_command
 

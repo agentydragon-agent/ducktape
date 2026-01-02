@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from rich.console import Console
 import typer
+from rich.console import Console
 
 from props_core.db.session import get_session
 from props_core.db.sync.export import export_snapshot_issues

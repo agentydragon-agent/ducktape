@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import shlex
+from collections.abc import Callable
 
 # Conditional import to avoid circular dependency when compositor is not available
 from typing import TYPE_CHECKING, Any, get_args, get_type_hints
 
+import pydantic_core
 from fastmcp.tools.tool import FunctionTool
 from mcp import types as mcp_types
-import pydantic_core
 
 from mcp_infra.exec.models import ExecInput
 from mcp_infra.naming import parse_tool_name

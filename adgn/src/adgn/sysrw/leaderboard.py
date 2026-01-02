@@ -10,13 +10,13 @@ Defaults to rich table output sorted by mean score desc.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable
-from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
 import sys
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 from rich.console import Console

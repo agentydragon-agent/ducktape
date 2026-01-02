@@ -9,14 +9,14 @@ See: https://github.com/romkatv/gitstatus for full protocol specification.
 
 import asyncio
 import contextlib
-from dataclasses import dataclass, replace
-from datetime import datetime
-from enum import StrEnum
 import logging
 import shutil
 import subprocess
-from typing import Literal, Self
 import uuid
+from dataclasses import dataclass, replace
+from datetime import datetime
+from enum import StrEnum
+from typing import Literal, Self
 
 logger = logging.getLogger(__name__)
 

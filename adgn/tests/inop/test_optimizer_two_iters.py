@@ -4,6 +4,8 @@ from pathlib import Path
 import aiodocker
 import pytest
 
+import adgn.inop.engine.optimizer
+import adgn.inop.engine.runner_factory
 from adgn.inop.config import (
     DebugConfig,
     GraderConfig,
@@ -27,8 +29,6 @@ from adgn.inop.engine.models import (
     TrajectoryItem,
     WorkspaceEnvironment,
 )
-import adgn.inop.engine.optimizer
-import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
 from mcp_infra.naming import build_mcp_function

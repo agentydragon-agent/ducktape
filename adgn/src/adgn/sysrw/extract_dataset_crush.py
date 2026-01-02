@@ -30,11 +30,11 @@ Each output record has shape:
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import json
 import os
-from pathlib import Path
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from .constants import BAD_MARKER

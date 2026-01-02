@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
 import os
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 

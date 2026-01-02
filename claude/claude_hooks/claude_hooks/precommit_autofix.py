@@ -1,14 +1,14 @@
 """Pre-commit autofix hook implementation."""
 
 import ast
-from dataclasses import dataclass
-from pathlib import Path
 import subprocess
 import textwrap
 import traceback
+from dataclasses import dataclass
+from pathlib import Path
 
-from platformdirs import user_state_dir
 import pygit2
+from platformdirs import user_state_dir
 
 from claude_hooks.actions import PostToolAction, PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.base import PostToolUseHook

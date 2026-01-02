@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from io import StringIO
 import json
+from io import StringIO
 from typing import cast
 
+import pytest
 from mcp.types import (
     CallToolResult,
     Implementation,
@@ -15,7 +16,6 @@ from mcp.types import (
     TextResourceContents,
 )
 from pydantic import AnyUrl, BaseModel
-import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 

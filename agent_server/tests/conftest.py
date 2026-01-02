@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
-import json
-import re
 from typing import Any
 from unittest.mock import MagicMock
 
+import mcp.types
+import pytest
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from fastmcp.server import FastMCP
 from fastmcp.tools import FunctionTool
-import mcp.types
 from pydantic import BaseModel
-import pytest
 
+import docker
 from agent_core.agent import Agent
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
@@ -37,7 +38,6 @@ from agent_server.runtime.container import AgentContainerCompositor
 from agent_server.server.app import create_app
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
-import docker
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer

@@ -1,10 +1,15 @@
 """Tests for the Claude instruction optimizer."""
 
-from datetime import datetime
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pydantic
+import pytest
+import yaml
+from openai.types.responses.response import Response
 
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize
@@ -28,10 +33,6 @@ from claude_optimizer.core.optimizer import (
 from claude_optimizer.core.prompt_engineer import PromptEngineer, Turn
 from claude_optimizer.core.summarizer import PatternSummarizer
 from claude_optimizer.docker.docker_manager import DockerManager
-from openai.types.responses.response import Response
-import pydantic
-import pytest
-import yaml
 
 
 class TestPatternSummarizer:

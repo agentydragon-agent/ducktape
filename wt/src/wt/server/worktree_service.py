@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 import contextlib
 import inspect
 import logging
-from pathlib import Path
 import shutil
+from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 import psutil
 import pygit2

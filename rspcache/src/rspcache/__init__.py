@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 import hashlib
 import json
 import os
 import time
+from collections.abc import AsyncIterator
 from typing import Any, NewType
 
 import canonicaljson
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-import httpx
 from openai.types.responses import Response as OpenAIResponse, ResponseCreateParams, ResponseStreamEvent, ResponseUsage
 from pydantic import TypeAdapter
 

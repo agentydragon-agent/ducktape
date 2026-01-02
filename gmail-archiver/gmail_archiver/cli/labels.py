@@ -2,9 +2,9 @@
 
 from typing import Annotated
 
+import typer
 from rich.console import Console
 from rich.table import Table
-import typer
 
 from gmail_archiver.cli.common import DryRunOption, TokenFileOption, get_client
 

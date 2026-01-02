@@ -6,10 +6,10 @@ commands completed successfully before running test scenarios.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent_core.agent import _openai_to_mcp_result

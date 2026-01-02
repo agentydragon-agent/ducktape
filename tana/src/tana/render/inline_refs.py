@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import html
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 # Regex patterns for inline references

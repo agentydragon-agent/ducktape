@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pygit2
 from fastmcp.client import Client
 from pydantic import Field
-import pygit2
 
 from agent_core.agent import Agent
 from agent_core.handler import BaseHandler, SequenceHandler

@@ -1,6 +1,6 @@
-from importlib import resources
 import shlex
 import sys
+from importlib import resources
 
 
 def main() -> None:

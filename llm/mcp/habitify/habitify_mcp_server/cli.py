@@ -3,18 +3,18 @@ Command-line interface for the Habitify MCP server.
 """
 
 import asyncio
-from datetime import datetime
 import logging
 import os
-from pathlib import Path
 import signal
 import subprocess
 import sys
+from datetime import datetime
+from pathlib import Path
 
+import typer
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
-import typer
 
 import habitify_mcp_server
 

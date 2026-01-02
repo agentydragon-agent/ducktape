@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Session start hook for Claude Code web: sets up nix, direnv, devenv, uv."""
 
-from collections.abc import Iterator
-from contextlib import contextmanager
-from datetime import datetime
 import json
 import logging
 import os
-from pathlib import Path
 import select
 import subprocess
 import sys
 import threading
 import traceback
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import IO
 
 LOG_FILE = Path("/tmp/session-start-direnv.log")

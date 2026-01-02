@@ -7,14 +7,14 @@ Includes model metadata sync (previously in sync_model_metadata.py).
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import hashlib
 import io
 import logging
-from pathlib import Path
 import shutil
 import tarfile
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlunparse

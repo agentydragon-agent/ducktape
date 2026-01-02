@@ -1,8 +1,10 @@
 """Full end-to-end test with mocked OpenAI and Claude SDK APIs."""
 
-from datetime import datetime
 import json
+from datetime import datetime
 from unittest.mock import Mock
+
+import pytest
 
 from claude_optimizer.core.yaml_loader import YamlLoader
 from claude_optimizer.database.models import (
@@ -18,7 +20,6 @@ from claude_optimizer.database.models import (
     SeedTask,
     SystemPrompt,
 )
-import pytest
 
 from .test_types import OptimizationRunStatus
 

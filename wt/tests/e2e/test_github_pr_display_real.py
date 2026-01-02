@@ -5,12 +5,12 @@ so the daemon imports our stub instead of the real PyGithub. This avoids network
 exercising the full daemon/CLI pipeline.
 """
 
-from datetime import timedelta
 import json
 import os
 import re
 import socket
 import uuid
+from datetime import timedelta
 
 import pytest
 

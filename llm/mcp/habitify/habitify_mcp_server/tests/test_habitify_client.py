@@ -7,9 +7,9 @@ All tests use async methods only.
 import datetime
 from unittest.mock import MagicMock
 
-from hamcrest import all_of, assert_that, greater_than, has_length, has_properties, instance_of, only_contains
 import httpx
 import pytest
+from hamcrest import all_of, assert_that, greater_than, has_length, has_properties, instance_of, only_contains
 
 from ..habitify_client import HabitifyError
 from ..types import Area, Habit, HabitStatus, Status

@@ -4,8 +4,8 @@ This module provides advanced features for prompt management including
 discovery, validation, template support, and error handling.
 """
 
-from pathlib import Path
 import re
+from pathlib import Path
 from string import Template
 from typing import Any
 

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, suppress
 import os
 import platform
+from contextlib import asynccontextmanager, suppress
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
-import pytest
 
 import docker  # Only used for pytest_runtest_setup health check (sync hook)
 from mcp_infra.compositor.server import Compositor

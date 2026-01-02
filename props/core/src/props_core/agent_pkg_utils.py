@@ -16,8 +16,8 @@ For agent-created packages:
 from __future__ import annotations
 
 import io
-from pathlib import Path
 import tarfile
+from pathlib import Path
 
 # Required files in agent package tar (build context)
 DOCKERFILE_FILE = "Dockerfile"

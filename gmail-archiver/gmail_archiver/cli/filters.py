@@ -5,10 +5,10 @@ import itertools
 from pathlib import Path
 from typing import Annotated
 
-from rich.console import Console
-from rich.table import Table
 import typer
 import yaml
+from rich.console import Console
+from rich.table import Table
 
 from gmail_archiver.cli.common import DryRunOption, TokenFileOption, get_client
 from gmail_archiver.filter_planner import GmailFilterPlanner

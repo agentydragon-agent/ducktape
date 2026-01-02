@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from contextlib import AsyncExitStack
 import logging
 import os
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import aiodocker
+import uvicorn
 from fastapi import FastAPI, FastAPI as SubApp, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastmcp.mcp_config import MCPConfig
-import uvicorn
 
 from agent_server.mcp_bridge.auth import TokensConfig
 from agent_server.mcp_bridge.compositor_factory import create_global_compositor

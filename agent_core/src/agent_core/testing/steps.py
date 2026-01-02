@@ -12,9 +12,9 @@ Provides portable step types for building mock agent conversations:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
-import pytest
 
 from agent_server.presets import create_agent_from_preset, discover_presets
 from mcp_utils.resources import extract_single_text_content

@@ -8,8 +8,8 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-from rich.console import Console
 import typer
+from rich.console import Console
 
 from openai_utils.client_factory import build_client
 from props_core.cli import common_options as opt

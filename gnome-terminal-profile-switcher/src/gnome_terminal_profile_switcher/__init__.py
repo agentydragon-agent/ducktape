@@ -7,8 +7,8 @@ import uuid
 from uuid import UUID
 from xml.etree import ElementTree
 
-from absl import app, flags, logging
 import dbus
+from absl import app, flags, logging
 from gi.repository import Gio
 
 _PROFILE = flags.DEFINE_string("profile", None, "Name or UUID of profile to set everywhere")

@@ -4,8 +4,8 @@ from __future__ import annotations
 import copy
 import json
 import os
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any
 
 from ..extract_common import iter_wire_lines

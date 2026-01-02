@@ -10,8 +10,8 @@ desired command. It may also accept a fallback flag: --adgn-run-as <name>.
 
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from adgn.util.patch import apply_patch_auto
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-import os
 from pathlib import Path
 from typing import Annotated, Any, Literal, NewType, Self
 

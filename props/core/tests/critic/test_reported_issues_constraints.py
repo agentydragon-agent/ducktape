@@ -9,8 +9,8 @@ Verifies that database constraints correctly enforce:
 
 from __future__ import annotations
 
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from props_core.db.examples import Example

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import sys
 import traceback
+from pathlib import Path
 
 
 def _ensure_parent(path: Path) -> None:

@@ -19,10 +19,10 @@ import re
 from typing import Annotated
 from uuid import UUID
 
+import typer
 from rich import box
 from rich.console import Console
 from rich.table import Table
-import typer
 
 from agent_pkg_runtime.output import render_agent_prompt
 from props_core.agent_helpers import get_current_agent_run

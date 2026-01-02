@@ -1,11 +1,12 @@
 """Claude Code runner implementation using Docker containers."""
 
-from pathlib import Path
 import shutil
 import tempfile
 import time
 import uuid
+from pathlib import Path
 
+import structlog
 from claude_code_sdk import (
     AssistantMessage as ClaudeAssistantMessage,
     ResultMessage,
@@ -13,7 +14,6 @@ from claude_code_sdk import (
     ToolResultBlock,
     ToolUseBlock,
 )
-import structlog
 
 from adgn.inop.engine.models import (
     AssistantMessage,

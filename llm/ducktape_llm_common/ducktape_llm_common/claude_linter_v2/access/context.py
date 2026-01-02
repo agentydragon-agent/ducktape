@@ -1,8 +1,8 @@
 """Context object for predicate evaluation."""
 
+import fnmatch
 from dataclasses import dataclass, field
 from datetime import datetime
-import fnmatch
 from typing import Any
 
 from ..types import SessionID

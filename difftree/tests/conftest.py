@@ -1,8 +1,8 @@
 """Shared test fixtures for difftree tests."""
 
+import subprocess
 from io import StringIO
 from pathlib import Path
-import subprocess
 
 import pytest
 from rich.console import Console

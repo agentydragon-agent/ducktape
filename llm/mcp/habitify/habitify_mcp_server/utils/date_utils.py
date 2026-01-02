@@ -3,8 +3,8 @@ Date utility functions for Habitify.
 Provides consistent date handling across CLI and API components.
 """
 
-from collections.abc import Callable
 import datetime
+from collections.abc import Callable
 from typing import TypeVar
 
 T = TypeVar("T")

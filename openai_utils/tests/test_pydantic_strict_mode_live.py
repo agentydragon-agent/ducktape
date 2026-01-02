@@ -10,10 +10,10 @@ import itertools
 import os
 from typing import Annotated, Literal
 
+import pytest
 from openai import BadRequestError
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.json_schema import GenerateJsonSchema
-import pytest
 
 from openai_utils.client_factory import build_client
 from openai_utils.json_schema import OpenAICompatibleSchema

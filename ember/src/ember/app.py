@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import logging
+from functools import lru_cache
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI
