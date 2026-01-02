@@ -37,8 +37,9 @@ This ensures:
 - ✅ All linters now use Bazel aspects (no more test targets or bespoke scripts)
 - ✅ Auto-formatting works for Python, JS/TS, Rust, shell, Bazel files
 - ✅ Type checking (mypy) blocks commits
-- ✅ Deleted 5 bespoke wrapper scripts (lint-staged.sh, run_eslint.sh, run_prettier.sh, etc.)
+- ✅ Deleted 6 bespoke wrapper scripts (lint-staged.sh, run_eslint.sh, check-ansible-changes.sh, etc.)
 - ✅ Consistent workflow: aspect for checking, //tools/format for fixing
+- ✅ Simplified CI: inline path filtering instead of custom scripts
 
 **Next steps** (Phase 3):
 - Create unified `bazel check //...` command that runs all aspects
@@ -238,6 +239,7 @@ These wrapper scripts have been deleted as they're obsolete with aspects:
 | `tools/yamllint/run_yamllint.sh` | Yamllint wrapper for sh_test | ✅ DELETED | Test target (Ansible-specific) |
 | `tools/nix/run_alejandra.sh` | Alejandra wrapper | ✅ DELETED | Test target |
 | `tools/hooks/lint-staged.sh` | Maps files→packages→ruff targets | ✅ DELETED | Ruff aspect handles automatically |
+| `.github/scripts/check-ansible-changes.sh` | Check if ansible/ changed | ✅ DELETED | Inline git diff in CI workflow |
 
 ### Remaining Scripts With Business Logic
 
@@ -246,7 +248,7 @@ These contain significant logic beyond just running a tool:
 | Script | Purpose | Status | Notes |
 |--------|---------|--------|-------|
 | `ansible/scripts/run-syntax-check.sh` | Filter playbooks vs other YAML files | Keep for now | Complex logic to identify playbooks; could become Bazel rule |
-| `.github/scripts/run-ansible-lint.sh` | Run ansible-lint on all playbooks | Migrate later | Should be `bazel test //ansible:lint` |
+| `.github/scripts/run-ansible-lint.sh` | Run ansible-lint on all playbooks | Keep for now | CI uses inline path filtering; script runs the actual lint |
 
 ### Scripts That Are Not Build Infrastructure
 
