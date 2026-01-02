@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/authentik-blueprint/kagent
+  path: ./cluster/k8s/authentik-blueprint/kagent
   prune: true
   sourceRef:
     kind: GitRepository

@@ -6,7 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m0s
-  path: ./k8s/harbor-proxy-cache
+  path: ./cluster/k8s/harbor-proxy-cache
   prune: true
   sourceRef:
     kind: GitRepository

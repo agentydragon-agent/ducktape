@@ -6,7 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/powerdns-operator
+  path: ./cluster/k8s/powerdns-operator
   prune: true
   sourceRef:
     kind: GitRepository

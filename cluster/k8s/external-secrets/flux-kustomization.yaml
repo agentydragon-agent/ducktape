@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m0s
-  path: ./k8s/external-secrets
+  path: ./cluster/k8s/external-secrets
   prune: true
   sourceRef:
     kind: GitRepository

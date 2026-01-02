@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/monitoring-stack
+  path: ./cluster/k8s/monitoring-stack
   prune: true
   sourceRef:
     kind: GitRepository

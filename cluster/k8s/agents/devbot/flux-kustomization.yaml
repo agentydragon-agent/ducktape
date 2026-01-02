@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/agents/devbot
+  path: ./cluster/k8s/agents/devbot
   prune: true
   sourceRef:
     kind: GitRepository

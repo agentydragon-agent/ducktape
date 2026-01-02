@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 10m
   timeout: 5m
-  path: ./k8s/authentik-blueprint/vault
+  path: ./cluster/k8s/authentik-blueprint/vault
   prune: true
   wait: true
   sourceRef:

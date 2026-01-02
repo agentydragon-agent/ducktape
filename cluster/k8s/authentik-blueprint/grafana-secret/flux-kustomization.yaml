@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/authentik-blueprint/grafana-secret
+  path: ./cluster/k8s/authentik-blueprint/grafana-secret
   prune: true
   sourceRef:
     kind: GitRepository
