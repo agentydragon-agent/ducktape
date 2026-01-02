@@ -35,8 +35,8 @@ This ensures:
 | **shfmt** | Shell | Format | Via `//tools/format` | ✅ auto-fix | ✅ | Added 2026-01-02 |
 | **buildifier** | Bazel | Format | Via `//tools/format` | ✅ auto-fix | ✅ | Added 2026-01-02 |
 | **svelte-check** | Svelte | Type check | Test target | ❌ | ✅ test target | |
-| **clippy** | Rust | Lint | Aspect (`@rules_rust//rust:defs.bzl%rust_clippy_aspect`) | ❌ | ✅ `--config=rust-check` | |
-| **rustfmt** | Rust | Format | Aspect (`@rules_rust//rust:defs.bzl%rustfmt_aspect`) | ❌ | ✅ `--config=rust-check` | Check-only |
+| **clippy** | Rust | Lint | Aspect (`@rules_rust//rust:defs.bzl%rust_clippy_aspect`) | ✅ via `--config=rust-check` | ✅ `--config=rust-check` | Added 2026-01-02 |
+| **rustfmt** | Rust | Format | Via `//tools/format` + aspect | ✅ auto-fix + check | ✅ `--config=rust-check` | Added 2026-01-02 |
 | **alejandra** | Nix | Format | Test target | ❌ | ❌ | Check-only |
 | **yamllint** | YAML | Lint | Test target (`//ansible:yamllint_test`) | ❌ | ❌ | Ansible only |
 
@@ -114,18 +114,18 @@ This ensures:
 - [x] SessionStart hook installs pre-commit
 - [x] Add mypy aspect to pre-commit
 - [x] Switch ruff to aspect approach
+- [x] Add Rust clippy/rustfmt to pre-commit
 - [ ] Add svelte-check to pre-commit
-- [ ] Add Rust clippy/rustfmt to pre-commit (if working on Rust)
 - [ ] Remove raw pre-commit-hooks, implement equivalents in Bazel
 
 ### Phase 2: Auto-fix Support ✅ COMPLETE (2026-01-02)
 - [x] Use `//tools/format` target for auto-fix:
   - `ruff format` (Python)
   - `prettier --write` (JS/TS/Svelte/CSS/YAML)
+  - `rustfmt` (Rust)
   - `shfmt` (shell scripts)
   - `buildifier -mode=fix` (Bazel files)
 - [x] Hook formatters into pre-commit with auto-fix
-- [ ] Add rustfmt to `//tools/format` (not needed yet, Rust not actively developed)
 
 ### Phase 3: Unified Check Command
 - [ ] Create `//tools:check` target or `.bazelrc` config
