@@ -23,6 +23,28 @@ This ensures:
 
 ## Current State (2026-01-02)
 
+### 📊 Summary
+
+**Major achievement today**: Completed Phases 1 & 2 of bazelization roadmap
+
+**Current pre-commit workflow** (`.pre-commit-config.yaml`):
+1. **bazel-lint**: Combined ruff + ESLint aspects on Python/JS/TS files
+2. **bazel-typecheck**: mypy aspect on Python files
+3. **bazel-rust-check**: clippy + rustfmt aspects on Rust files
+4. **bazel-format**: Unified auto-fix for all languages (ruff, prettier, rustfmt, shfmt, buildifier)
+
+**Key improvements**:
+- ✅ All linters now use Bazel aspects (no more test targets or bespoke scripts)
+- ✅ Auto-formatting works for Python, JS/TS, Rust, shell, Bazel files
+- ✅ Type checking (mypy) blocks commits
+- ✅ Deleted 5 bespoke wrapper scripts (lint-staged.sh, run_eslint.sh, run_prettier.sh, etc.)
+- ✅ Consistent workflow: aspect for checking, //tools/format for fixing
+
+**Next steps** (Phase 3):
+- Create unified `bazel check //...` command that runs all aspects
+- Update CI to use unified command
+- Simplify pre-commit to single check hook
+
 ### ✅ Fully Bazelized
 
 | Tool | Language | Purpose | Bazel Integration | Pre-commit | CI | Notes |
@@ -142,8 +164,8 @@ This ensures:
 - [ ] Minimize custom scripting (ansible/scripts/run-syntax-check.sh)
 
 ### Phase 5: Cleanup
-- [ ] Remove `tools/hooks/lint-staged.sh` (rely on aspects)
-- [ ] Remove bespoke shell scripts
+- [x] Remove `tools/hooks/lint-staged.sh` (rely on aspects)
+- [x] Remove bespoke shell scripts (run_eslint.sh, run_prettier.sh, etc.)
 - [ ] Consolidate CI jobs into single Bazel command
 - [ ] Update CI config to match current implementation
 
@@ -185,41 +207,41 @@ bazel fix //...
 
 Bazelization is complete when:
 
-1. ✅ **Pre-commit hook** is a single `bazel check //...` command
-2. ✅ **CI** runs identical `bazel check //...` command
-3. ✅ **No manual tool invocations** (no `ruff`, `mypy`, `npm run lint`, etc.)
-4. ✅ **Auto-fix on commit** for all formatters
-5. ✅ **Type errors block commits**
-6. ✅ **Zero bespoke shell scripts** in `tools/hooks/`
+1. ⚠️ **Pre-commit hook** is a single `bazel check //...` command (Currently: Multiple aspect configs)
+2. ⚠️ **CI** runs identical `bazel check //...` command (Not yet updated)
+3. ✅ **No manual tool invocations** (no `ruff`, `mypy`, `npm run lint`, etc.) - ALL go through Bazel
+4. ✅ **Auto-fix on commit** for all formatters (ruff, prettier, rustfmt, shfmt, buildifier)
+5. ✅ **Type errors block commits** (mypy in pre-commit)
+6. ✅ **Zero bespoke shell scripts** in `tools/hooks/` (lint-staged.sh deleted)
 7. ✅ **Hermetic builds** - all tools fetched/managed by Bazel
 8. ✅ **Fast incremental checks** - Bazel caching works correctly
+
+**Progress: 6/8 complete** (75%)
 
 ---
 
 ## Run Script Analysis
 
-### Scripts That Should Be Eliminated (Pure Bazel Wrappers)
+### Scripts Eliminated (Pure Bazel Wrappers) ✅ DONE
 
-These are thin wrappers that just `cd` and `exec` - they exist to work around Bazel test infrastructure limitations. With aspects, they're unnecessary:
+These wrapper scripts have been deleted as they're obsolete with aspects:
 
-| Script | Purpose | Can Eliminate? | Replacement |
-|--------|---------|----------------|-------------|
-| `tools/lint/run_eslint.sh` | ESLint wrapper for sh_test | **YES** | ESLint aspect (already implemented) |
-| `tools/lint/run_prettier.sh` | Prettier wrapper for sh_test | **YES** | Prettier aspect or direct bazel run |
-| `tools/yamllint/run_yamllint.sh` | Yamllint wrapper for sh_test | **YES** | Yamllint aspect |
-| `tools/nix/run_alejandra.sh` | Alejandra wrapper | **YES** | Direct multitool invocation |
+| Script | Purpose | Status | Replacement |
+|--------|---------|--------|-------------|
+| `tools/lint/run_eslint.sh` | ESLint wrapper for sh_test | ✅ DELETED | ESLint aspect |
+| `tools/lint/run_prettier.sh` | Prettier wrapper for sh_test | ✅ DELETED | Prettier in //tools/format |
+| `tools/yamllint/run_yamllint.sh` | Yamllint wrapper for sh_test | ✅ DELETED | Test target (Ansible-specific) |
+| `tools/nix/run_alejandra.sh` | Alejandra wrapper | ✅ DELETED | Test target |
+| `tools/hooks/lint-staged.sh` | Maps files→packages→ruff targets | ✅ DELETED | Ruff aspect handles automatically |
 
-**Action**: Replace sh_test wrappers with aspects or direct tool invocations.
-
-### Scripts With Business Logic (Keep or Migrate to Starlark)
+### Remaining Scripts With Business Logic
 
 These contain significant logic beyond just running a tool:
 
-| Script | Purpose | Keep? | Notes |
-|--------|---------|-------|-------|
-| `tools/hooks/lint-staged.sh` | Maps files→packages→ruff targets | **NO** | aspect_rules_lint should handle file filtering automatically |
-| `ansible/scripts/run-syntax-check.sh` | Filter playbooks vs other YAML files | **MAYBE** | Complex logic to identify playbooks; could become Bazel rule |
-| `.github/scripts/run-ansible-lint.sh` | Run ansible-lint on all playbooks | **MIGRATE** | Should be `bazel test //ansible:lint` |
+| Script | Purpose | Status | Notes |
+|--------|---------|--------|-------|
+| `ansible/scripts/run-syntax-check.sh` | Filter playbooks vs other YAML files | Keep for now | Complex logic to identify playbooks; could become Bazel rule |
+| `.github/scripts/run-ansible-lint.sh` | Run ansible-lint on all playbooks | Migrate later | Should be `bazel test //ansible:lint` |
 
 ### Scripts That Are Not Build Infrastructure
 
@@ -229,11 +251,10 @@ These are application/example scripts, not build tooling:
 |--------|---------|-------|
 | `sandboxed_jupyter/examples/run_one.sh` | Example reproducer script | **YES** |
 
-**Recommendation**:
-1. **Remove immediately**: All wrapper scripts in `tools/lint/`, `tools/yamllint/`, `tools/nix/` - they're obsolete with aspects
-2. **Replace next**: `tools/hooks/lint-staged.sh` - aspect-based filtering makes this unnecessary
-3. **Migrate or document**: Ansible scripts - either create proper Bazel rules or document as intentional exception
-4. **Keep**: Application-specific scripts outside of build infrastructure
+**Status**:
+1. ✅ **Wrapper scripts deleted**: All in `tools/lint/`, `tools/yamllint/`, `tools/nix/`, `tools/hooks/` - obsolete with aspects
+2. ⚠️ **Ansible scripts remain**: Complex logic makes them harder to migrate to Bazel
+3. ✅ **Application scripts preserved**: Example/reproducer scripts kept as intended
 
 ---
 
