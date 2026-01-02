@@ -73,7 +73,7 @@ def apply_unified_diff(
     # Normalize and feed UTF-8 bytes to unidiff for portability
     norm = normalize_single_file_unified_patch(text)
     data = [ln.encode("utf-8") for ln in norm.splitlines(True)]
-    patch = PatchSet(data, encoding="utf-8")  # type: ignore[arg-type]
+    patch = PatchSet(data, encoding="utf-8")
     for fp in patch:
         is_add = fp.is_added_file
         is_del = fp.is_removed_file

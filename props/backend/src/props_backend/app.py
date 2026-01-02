@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import logging
 import os
+from pathlib import Path
 import sys
 import traceback
-from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiodocker
@@ -15,13 +15,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+
 from openai_utils.model import OpenAIChatCompletionModel
+from props_backend.routes import ground_truth, runs, stats
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.resources import get_database_config
 from props_core.grader.daemon_manager import DaemonManager
-
-from props_backend.routes import ground_truth, runs, stats
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

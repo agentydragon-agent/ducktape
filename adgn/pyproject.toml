@@ -187,11 +187,6 @@ adgn-agent = "adgn.agent.cli:main"
 adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
 adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"
 adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
-# docker-exec and seatbelt-exec moved to mcp-infra package
-# Editor moved to editor_agent package - adgn-editor-docker is now in editor-agent
-# Frontend code generation moved to agent_server package
-
-# Mypy configuration moved to central /mypy.ini at repo root
 
 [tool.uv.sources]
 agent-core = { workspace = true }
