@@ -5,8 +5,9 @@ exports_files([
     "requirements_lock.txt",
 ])
 
-# Shared lock for Home Assistant integrations (pydantic 1.x - incompatible with main repo)
-# Run: bazel run //homeassistant:requirements.update
+# Shared lock for Home Assistant integrations
+# Home Assistant 2025.1+ uses Pydantic v2 internally (compatible with main repo)
+# Update lockfile: cd homeassistant && uv pip compile pyproject.toml -o requirements_lock.txt --python-version 3.13
 lock(
     name = "requirements",
     srcs = ["pyproject.toml"],
