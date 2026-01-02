@@ -41,18 +41,17 @@ resource "tls_private_key" "flux_deploy" {
 
 # ============================================
 # NIX CACHE SIGNING KEY
-# Uses nix-store format, generated once and stored in local file
-# The file is NOT in git but backed up with terraform state
-# Uses external data source to create-if-not-exists during plan
+# Uses nix-store format, generated once and cached in local file
+# File is gitignored, backed up with terraform state to Google Drive
 # ============================================
 data "external" "nix_cache_key" {
   program = ["bash", "-c", <<-EOT
     KEY_FILE="${path.module}/nix-cache-key.json"
     if [ ! -f "$KEY_FILE" ]; then
-      nix-store --generate-binary-cache-key cache.test-cluster.agentydragon.com-1 /tmp/nix-private.key /tmp/nix-public.key 2>/dev/null
-      jq -n --arg priv "$(cat /tmp/nix-private.key)" --arg pub "$(cat /tmp/nix-public.key)" \
+      nix-store --generate-binary-cache-key cache.test-cluster.agentydragon.com-1 /tmp/nix-priv.$$ /tmp/nix-pub.$$ 2>/dev/null
+      jq -n --arg priv "$(cat /tmp/nix-priv.$$)" --arg pub "$(cat /tmp/nix-pub.$$)" \
         '{private_key: $priv, public_key: $pub}' > "$KEY_FILE"
-      rm /tmp/nix-private.key /tmp/nix-public.key
+      rm -f /tmp/nix-priv.$$ /tmp/nix-pub.$$
     fi
     cat "$KEY_FILE"
   EOT
