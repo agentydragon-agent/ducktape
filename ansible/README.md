@@ -183,6 +183,7 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 | | 100.64.100.210-250 | Reserved for additional k3s nodes | |
 
 #### Future Expansion
+
 * `100.64.50.x/24` - IoT devices
 * `100.64.60.x/24` - Guest devices
 * `100.64.200.x/24` - Lab/experimental
@@ -258,6 +259,7 @@ sudo tailscale up --login-server=https://your-vps:8080
 ### Magic DNS
 
 Headscale provides automatic hostname resolution:
+
 * `atlas.your-vps-domain` resolves to `10.13.13.30`
 * `agentydragon.your-vps-domain` resolves to `10.13.13.11`
 * etc.

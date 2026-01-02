@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^k8s-old/"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -18,8 +18,8 @@ repos:
         language_version: python3.13
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-        # Skip Helm (contains Go templating, not valid YAML), k8s-old (archived), cluster k8s/charts
-        exclude: ansible/host_vars/.*\.yml$|claude/claude_optimizer/config\.example\.yaml$|k8s-old/|cluster/k8s/|cluster/charts/
+        # Skip Helm templates (Go templating, not valid YAML), ansible vault files, cluster charts
+        exclude: "ansible/host_vars/.*\\.yml$|claude/claude_optimizer/config\\.example\\.yaml$|cluster/k8s/|cluster/charts/"
       - id: check-toml
 
       # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer
@@ -36,7 +36,7 @@ repos:
       - id: yamllint
         args: ["-c", ".yamllint.yaml"]
         files: "\\.ya?ml$"
-        exclude: "ansible/host_vars/.*\\.yml$|k8s-old/|cluster/k8s/|cluster/charts/"
+        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/"
 
   # Ansible syntax check: Fast validation for pre-commit
   #
