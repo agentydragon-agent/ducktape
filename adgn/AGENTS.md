@@ -275,8 +275,6 @@ Docker images
 **Important:** Run all docker build commands from the workspace root (`ducktape/`), not from `adgn/`.
 - Runtime/policy container image (required for `container` mode):
   - `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
-- Properties critic image:
-  - `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`
 - Override the runtime/policy image via `ADGN_RUNTIME_IMAGE` if you tag it differently.
 
 Tests

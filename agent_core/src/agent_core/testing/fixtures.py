@@ -44,8 +44,7 @@ class RecordingHandler(BaseHandler):
 
     def __init__(self) -> None:
         super().__init__()
-        self.records: list[ToolCall | ToolCallOutput] = []
-        self.text_events: list[SystemText | UserText | AssistantText] = []
+        self.records: list[ToolCall | ToolCallOutput | SystemText | UserText | AssistantText] = []
 
     def on_tool_call_event(self, evt: ToolCall, /) -> None:
         self.records.append(evt)
@@ -54,13 +53,13 @@ class RecordingHandler(BaseHandler):
         self.records.append(evt)
 
     def on_system_text_event(self, evt: SystemText, /) -> None:
-        self.text_events.append(evt)
+        self.records.append(evt)
 
     def on_user_text_event(self, evt: UserText, /) -> None:
-        self.text_events.append(evt)
+        self.records.append(evt)
 
     def on_assistant_text_event(self, evt: AssistantText, /) -> None:
-        self.text_events.append(evt)
+        self.records.append(evt)
 
 
 @pytest.fixture
@@ -272,10 +271,10 @@ def live_openai(request):
       do not actually use it (e.g., parameterized tests with a mock branch),
       return a lightweight no-op placeholder to avoid network work and keep
       those tests running.
-    - For `live_openai_api` tests, construct AsyncOpenAI (marker skip logic
+    - For `live_llm` tests, construct AsyncOpenAI (marker skip logic
       ensures OPENAI_API_KEY is set).
     """
-    if request.node.get_closest_marker("live_openai_api") is not None:
+    if request.node.get_closest_marker("live_llm") is not None:
         return AsyncOpenAI()
 
     class _Noop:

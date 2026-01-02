@@ -46,9 +46,6 @@ Authentik deployment along with blueprints and supporting services.
 ### `grafana-operator/`
 Deploys the main Grafana instance using the official Grafana chart as a dependency. Configuration lives in `values.yaml` (datasources, ingress, admin user, dashboards).
 
-### `grafana-dashboards/`
-Manages custom Grafana dashboard ConfigMaps. Dashboard JSON/SQL sources live under `sql/` and are injected via `Files.Get`.
-
 ### `gitea/`
 Wraps the upstream Gitea chart with Authentik OAuth bootstrap jobs, sealed secrets, and reflector deployment for secret reflection.
 
@@ -76,14 +73,11 @@ Applies the homelab CA certificate and cluster issuers that sit on top of the up
 ### `observability/base/`
 Creates the `observability` namespace (labels configurable via values).
 
-### `observability/openai-probe/`
-Runs the OpenAI probe deployment and service, with optional SealedSecret templating for the API key.
-
 ### `observability/timescaledb/`
 Provision TimescaleDB StatefulSet, service, and sealed secret used by observability workloads.
 
 ### `observability/`
-Umbrella chart that installs the namespace, probe, and TimescaleDB components together.
+Umbrella chart that installs the namespace, TimescaleDB, and Grafana components together.
 
 ## Deployment Flow
 

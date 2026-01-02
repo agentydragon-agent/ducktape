@@ -10,10 +10,6 @@ dependencies:
     alias: base
     version: 0.1.0
     repository: file://./base
-  - name: observability-openai-probe
-    alias: openai-probe
-    version: 0.1.0
-    repository: file://./openai-probe
   - name: observability-timescaledb
     alias: timescaledb
     version: 0.1.0
@@ -21,6 +17,3 @@ dependencies:
   - name: grafana-operator
     version: 0.1.0
     repository: file://./grafana/operator
-  - name: grafana-dashboards
-    version: 0.1.0
-    repository: file://./grafana/dashboards

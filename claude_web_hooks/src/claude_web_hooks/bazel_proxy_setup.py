@@ -204,6 +204,17 @@ def _start_proxy_server() -> bool:
     return False
 
 
+def _get_local_registry_path() -> Path | None:
+    """Get local registry path if it exists in the project directory."""
+    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not project_dir:
+        return None
+    local_registry = Path(project_dir) / "tools" / "local_registry"
+    if local_registry.exists() and (local_registry / "bazel_registry.json").exists():
+        return local_registry
+    return None
+
+
 def _write_bazel_config() -> None:
     """Write Bazel proxy config to separate file and add try-import to ~/.bazelrc."""
     if not BAZEL_TRUSTSTORE.exists():
@@ -211,6 +222,19 @@ def _write_bazel_config() -> None:
         return
 
     local_proxy = f"http://localhost:{BAZEL_PROXY_PORT}"
+
+    # Check for local registry (contains patched ape module for native ELF support)
+    local_registry = _get_local_registry_path()
+    registry_config = ""
+    if local_registry:
+        log.info("Found local registry at %s (patched ape for native ELF)", local_registry)
+        registry_config = f"""
+# Local registry with patched ape module (native ELF instead of APE binaries)
+# This avoids binfmt_misc requirement in Claude Code web containers
+# Note: Local registry is checked first, then BCR as fallback
+common --registry=file://{local_registry}
+common --registry=https://bcr.bazel.build
+"""
 
     # Write proxy config to dedicated file
     proxy_rc = f"""\
@@ -230,7 +254,7 @@ build --action_env=http_proxy={local_proxy}
 # Use local execution instead of sandbox (sandbox has /dev/null issues in CC web)
 build --spawn_strategy=local
 test --spawn_strategy=local
-"""
+{registry_config}"""
     BAZEL_PROXY_RC.write_text(proxy_rc)
     log.info("Wrote proxy config to %s", BAZEL_PROXY_RC)
 

@@ -19,7 +19,8 @@ from props_core.db.config import DbConnectionConfig
 
 logger = logging.getLogger(__name__)
 
-DOCKER_MOUNT_PREFIX = MCPMountPrefix("docker")  # Mount prefix for properties Docker exec server
+# Mount prefix for properties Docker exec server
+DOCKER_MOUNT_PREFIX = MCPMountPrefix("docker")
 
 
 # Docker network name for properties containers
