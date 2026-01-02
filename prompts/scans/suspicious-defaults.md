@@ -1,6 +1,7 @@
 # Scan: Suspicious Default Values
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -30,12 +31,14 @@ for t in tools:
 ```
 
 **Why this is bad**:
+
 - `FunctionToolParam` constructor accepts `description: str | None`
 - Using `or ""` suggests we're defensive about None, but type should handle it
 - The `or ""` is hiding type information from the type checker
 - If `description=None` is valid, pass it explicitly; if not, handle it properly
 
 **Better - Option 1: Explicit None handling**:
+
 ```python
 # GOOD: FunctionToolParam accepts None, so pass it through
 tools = await client.list_tools()
@@ -50,6 +53,7 @@ for t in tools:
 ```
 
 **Better - Option 2: Explicit default if semantically required**:
+
 ```python
 # GOOD: If empty string has semantic meaning different from None
 tools = await client.list_tools()
@@ -83,6 +87,7 @@ for t in tools:
 ```
 
 **Why this is bad**:
+
 - `t.inputSchema` is typed as `dict[str, Any]` (not `dict[str, Any] | None`)
 - Using `or {}` suggests either:
   1. The upstream type annotation is lying (runtime can return None)
@@ -91,6 +96,7 @@ for t in tools:
 - This masks a potential type safety issue
 
 **Better - Option 1: Trust the type**:
+
 ```python
 # GOOD: If type says non-None, trust it
 tools = await client.list_tools()
@@ -105,6 +111,7 @@ for t in tools:
 ```
 
 **Better - Option 2: Fix upstream or add type assertion**:
+
 ```python
 # GOOD: If upstream type is wrong, fix it or assert
 from typing import cast
@@ -136,11 +143,13 @@ def process_config(headers: dict[str, str] | None) -> None:
 ```
 
 **Why this is bad**:
+
 - The function accepts `None` but immediately converts it to `{}`
 - This suggests `None` and `{}` mean the same thing
 - Better to use `= {}` default or make it non-None
 
 **Better**:
+
 ```python
 # GOOD: Make intent clear with default parameter
 def process_config(headers: dict[str, str] | None = None) -> None:
@@ -172,6 +181,7 @@ for it in decision.inserts_input:
 ```
 
 **Why this is bad**:
+
 - The type says `inserts_input` contains specific types
 - Runtime code does an isinstance check suggesting we don't trust the type
 - This indicates either:
@@ -180,6 +190,7 @@ for it in decision.inserts_input:
   3. Type annotation is lying
 
 **Better**:
+
 ```python
 # GOOD: Tighten type annotation to match runtime checks
 class Continue:
@@ -203,6 +214,7 @@ def format_error(message: str | None) -> str:
 ```
 
 **Better**:
+
 ```python
 # GOOD: Handle None explicitly
 def format_error(message: str | None) -> str:
@@ -241,6 +253,7 @@ echo "Field defaults:" && rg --type py '^[[:space:]]+\w+:.*=' | wc -l
 ```
 
 **What to review for each default:**
+
 1. **Optionality**: Does it make sense for this to be optional in this context?
 2. **Semantic meaning**: Is default value semantically appropriate (e.g., `=0` for count vs `=None`)?
 3. **Type consistency**: Does default match the declared type?
@@ -250,6 +263,7 @@ echo "Field defaults:" && rg --type py '^[[:space:]]+\w+:.*=' | wc -l
 **Process ALL output**: Read each default, use your judgment to identify suspicious patterns.
 
 **Common suspicious patterns to watch for:**
+
 - `param: str = ""` when None would be more honest
 - `param: dict = {}` (mutable default bug in non-dataclass)
 - `param: T | None = None` but immediately converted with `or default`
@@ -261,16 +275,19 @@ echo "Field defaults:" && rg --type py '^[[:space:]]+\w+:.*=' | wc -l
 **Goal**: Find ALL instances of suspicious defaults (high recall target ~80-90%).
 
 **Recall/Precision**: High recall (~90%) with automation, medium precision (~60%)
+
 - `grep -E "or \{\}|or \"\"|or ''"` finds most instances: ~90% recall, ~60% precision
 - `grep -E "or \[\]"` finds list defaults: ~90% recall, ~60% precision
 - False positives: Legitimate use of `or` for boolean coercion, ternary-like patterns
 
 **Why high recall**:
+
 - Pattern is syntactically distinct and easy to grep
 - Almost all instances follow `x or <literal>` pattern
 - Variations are rare (mostly just `{}`, `""`, `[]`, `()`)
 
 **Recommended approach AFTER Step 0**:
+
 1. Run grep to find all `or {}`, `or ""`, `or []` patterns (~90% recall, ~60% precision)
 2. For each candidate, analyze:
    - **What is the type of the value being checked?**
@@ -303,18 +320,21 @@ rg --type py "\([^)]*or \{\}[^)]*\)"
 **Verification for each candidate**:
 
 1. **Check the source type**:
+
    ```python
    value = get_something()  # What type does get_something() return?
    result = value or {}     # Is it T | None? Or just T?
    ```
 
 2. **Check the target type**:
+
    ```python
    def func(param: dict[str, Any] | None): ...
    func(value or {})  # Does func accept None? If yes, why convert?
    ```
 
 3. **Look for upstream type issues**:
+
    ```python
    # Is the source type annotation wrong?
    # Example: inputSchema: dict[str, Any] but can actually be None
@@ -322,6 +342,7 @@ rg --type py "\([^)]*or \{\}[^)]*\)"
    ```
 
 4. **Consider semantic difference**:
+
    ```python
    # Is there a semantic difference between None and empty?
    headers = config.headers or {}
@@ -406,18 +427,21 @@ def process(data: dict[str, Any] | None = None) -> None:
 Cases where `x or default` is correct:
 
 ### 1. Boolean coercion for counts/numbers
+
 ```python
 # OK: Treat 0 as "use default"
 count = config.get_count() or 10  # 0 means "use default 10"
 ```
 
 ### 2. Explicit falsy-to-default for strings
+
 ```python
 # OK: Empty string means "use default"
 name = user_input.strip() or "Unnamed"  # Empty string → default
 ```
 
 ### 3. Backward compatibility shim
+
 ```python
 # OK: Legacy code during migration
 # TODO(2025-12): Remove after all callers updated
@@ -426,6 +450,7 @@ def legacy_api(data: dict[str, Any] | None = None) -> None:
 ```
 
 ### 4. Intentional equivalence of None and empty
+
 ```python
 # OK: If None and {} are semantically identical
 def add_headers(headers: dict[str, str] | None = None) -> None:
@@ -442,6 +467,7 @@ def add_headers(headers: dict[str, str] | None = None) -> None:
 ## Common Patterns to Fix
 
 ### Pattern 1: Tool parameter coercion
+
 ```python
 # BAD:
 FunctionToolParam(name=t.name, description=t.description or "", parameters=t.inputSchema or {})
@@ -451,6 +477,7 @@ FunctionToolParam(name=t.name, description=t.description, parameters=t.inputSche
 ```
 
 ### Pattern 2: Dictionary merging
+
 ```python
 # BAD:
 merged = {**(base or {}), **(override or {})}
@@ -462,6 +489,7 @@ merged = {**base_dict, **override_dict}
 ```
 
 ### Pattern 3: Iteration over potentially None collections
+
 ```python
 # BAD:
 for item in collection or []:

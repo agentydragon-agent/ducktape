@@ -1,11 +1,13 @@
 # LLM Properties Knowledge Base
 
 ## Purpose
+
 - Single, reusable source of truth for the properties my LLM agents must satisfy.
 - Decoupled from any one agent or prompt; this is durable input data for systems that enforce and improve agent quality.
 - Some overlap is fine — favor covering everything that should be covered over minimizing entries.
 
 ## Repository layout (package)
+
 - `props/` — property definition files (Markdown), supports nested categories:
   - `props/python/` — Python-specific properties
   - `props/markdown/` — Markdown-specific properties
@@ -19,6 +21,7 @@
 **Specimen data now lives in a separate repository**: [github.com/agentydragon/specimens](https://github.com/agentydragon/specimens)
 
 Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
+
 - Per-snapshot directories with `manifest.yaml` (source, split, bundle metadata) and issue files (`.yaml`)
 - Each snapshot has its own `manifest.yaml` defining source commit and train/valid/test split
 
@@ -44,12 +47,14 @@ export ADGN_PROPS_SPECIMENS_ROOT="$REPO_ROOT/../specimens"
 See the [specimens repository](https://github.com/agentydragon/specimens) for format specs and authoring guides.
 
 ## Conventions
+
 - Property IDs are kebab-case and derived from filenames; evolve content rather than renaming IDs when possible.
 - Overlap between properties is acceptable; a de-duplication layer can live above this knowledge base later.
 - No indexes or generated cross-references for now.
 - All Markdown in this repository (properties, specimens, docs) MUST adhere to the Markdown properties under `props/markdown/**`. When writing/editing Markdown, follow those definitions as the normative style/structure.
 
 ## Property files
+
 - Location: under `props/` (may be nested, e.g., `props/python/<id>.md`, `props/markdown/<id>.md`, or at the root for general)
 - Identifier: read from the filename (no frontmatter ID)
 - Required frontmatter:
@@ -75,11 +80,11 @@ See the [specimens repository](https://github.com/agentydragon/specimens) for fo
 - Covered + GAP: It’s acceptable to include a `GAP:` note under a covered finding when the item is covered at one level (e.g., “no-dead-code”) but still lacks a clarity/abstraction‑level rule; use GAP to communicate partial coverage and the missing angle.
 
 Example usage:
+
 ```markdown
 - **wt/wt/server/gitstatusd_client.py**: 294–355 — [no-dead-code rationale]
   GAP: Clarify boundary vs helper responsibility for short‑array handling so index checks live in one place.
 ```
-
 
 ## Behavioral layer and scoping
 
@@ -112,6 +117,7 @@ Example usage:
 **Approach:** Generate multiple focused training examples per snapshot (single files, file pairs, component groups) in addition to the full-repo review. This provides tighter feedback loops and more training signal for optimization.
 
 **Dataset model:**
+
 - **Snapshot:** Frozen code state at a specific commit with labeled issues (TPs and FPs) — specimens from separate repo
 - **Training Example:** `(snapshot, targeted_files)` pair where recall denominator is computed based on which issues are in expected recall scope for those files
 - **True Positive filtering:** Uses `critic_scopes_expected_to_recall` to determine which issues should be detectable given a file set
@@ -159,6 +165,7 @@ props run --snapshot ducktape/2025-11-20-00 --structured true --files src/foo.py
 ```
 
 This:
+
 - Loads the specimen from the registry
 - Runs the critic agent with MCP tools (Docker-based)
 - Stores the critique in the database
@@ -177,6 +184,7 @@ props snapshot-grade 123 --model gpt-4o
 ```
 
 This:
+
 - Fetches the critique from the database
 - Loads the specimen's canonical issues
 - Runs the grader to compute metrics (TP/FP/FN/recall/precision)
@@ -202,6 +210,7 @@ with get_session() as session:
 ```
 
 All structured runs are persisted with:
+
 - Input/output payloads (JSONB columns in database)
 - Specimen splits for train/valid/test separation
 - Execution traces in events table

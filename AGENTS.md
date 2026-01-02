@@ -4,7 +4,7 @@ This file provides guidance to LLM agents for working with this repository.
 
 ## Before Hand-off
 
-If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/AGENTS.md`.  
+If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/AGENTS.md`.
 Then finish with the full repo workflow:
 
 ```bash
@@ -19,6 +19,7 @@ This runs yamllint, ansible-playbook --syntax-check, ansible-lint, and every oth
 As the name suggests, it serves as "duct tape" for the owner's personal infrastructure needs.
 
 This repository manages configuration and deployment for several systems:
+
 - **agentydragon**: ThinkPad X1 Extreme 3rd Edition laptop (main development machine)
 - **gpd**: GPD Win Max 2 laptop
 - **vps**: Personal VPS server (hosts various services)
@@ -44,6 +45,7 @@ This repository manages configuration and deployment for several systems:
    - Headscale VPN management
 
 ### Secondary Active Areas
+
 - **Webhook Inbox** (`experimental/webhook_inbox/`)
 - **Home Assistant Integration** (`homeassistant/iaqi/`)
 - **Codex Configuration** (`dotfiles/codex/`)
@@ -53,11 +55,13 @@ This repository manages configuration and deployment for several systems:
 Dotfiles are centrally managed via rcm with symlinks from home directory:
 
 ### Structure
+
 - **Source**: `dotfiles/` directory in repository
 - **Deployment**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
 - **Configuration**: `dotfiles/rcrc` controls symlink behavior
 
 ### Key Symlinked Components
+
 ```
 ~/.bashrc -> ducktape/dotfiles/bashrc
 ~/.zshrc -> ducktape/dotfiles/zshrc
@@ -66,13 +70,16 @@ Dotfiles are centrally managed via rcm with symlinks from home directory:
 ```
 
 ### User Scripts (.local/bin)
+
 The repository provides numerous utility scripts symlinked to `~/.local/bin/`:
+
 - Git AI commit tools (`git_commit_ai.py`, `git_prepare_commit_msg_ai.py`)
 - Theme switchers (`set_dark_theme`, `set_light_theme`, `switch_gnome_terminal_profile`)
 - Development utilities (`generate-agent-name`, `login_event_webhook_reporter.py`)
 - Various helper scripts
 
 ### Important Notes
+
 - **DO NOT modify dotfiles directly in ~/...  or in Ansible steps** - edit source files in `dotfiles/`
 - Some dotfiles are host-specific (e.g., `host-agentydragon/rcrc`, `host-gpd/rcrc`)
 
@@ -85,22 +92,26 @@ Shell configuration follows a specific loading hierarchy:
 ## Infrastructure Components
 
 ### Ansible Automation
+
 The `ansible/` directory contains system configuration.
 See: @ansible/README.md
 
 #### Playbooks
+
 - `agentydragon.yaml` - Main laptop configuration
 - `vps.yaml` - VPS server deployment
 - `gpd.yaml` - GPD laptop setup
 - `wyrm.yaml` - Wyrm desktop provisioning
 
 #### Key Roles
+
 - **System Base**: `cli/`, `gui/`, `system/`, `user/`
 - **Development**: `golang/`, `dev-env/`, `dev-clojure/`, `dev-ml/`
 - **Services**: `webhook_inbox/`, `trilium_server/`, `headscale-server/`, `syncthing-server/`
 - **Networking**: `tailscale-client/`
 
 ### Network Infrastructure
+
 - **Headscale**: Self-hosted Tailscale controller (100.64.0.0/10)
 - **Syncthing**: Cross-device file synchronization
 
@@ -109,14 +120,17 @@ See: @ansible/README.md
 These components exist but see minimal recent changes:
 
 ### Finance Tools (`finance/`)
+
 - Worthy: Rust-based portfolio tracker (uses Cargo/Bazel)
 - Reconciliation utilities for various financial systems
 
 ### Knowledge Management
+
 - **Trilium Notes** (`trilium/`): Extensions and widgets
 - **Tana Export** (`tana/`): Export utilities
 
 ### Other Tools
+
 - **InventTree** (`inventree_utils/`): Inventory management plugins
 - **Website** (`website/`): Personal website (Hakyll/Haskell)
 - **Kubernetes** (`k8s/`): k3s cluster configurations
@@ -139,6 +153,7 @@ ducktape/
 ```
 
 **Key points:**
+
 - Single `uv.lock` at repo root with all resolved dependencies
 - Run `uv sync` from `ducktape/` to install all workspace members
 - Each package has its own `pyproject.toml` but shares the lockfile
@@ -146,6 +161,7 @@ ducktape/
 - `agent_pkg/runtime` is designed for Docker containers (minimal deps)
 
 **Development workflow:**
+
 - Each package (adgn, tana) has its own `.envrc` + `devenv.nix` that manages a local venv
 - Run `direnv allow` in the package directory to set up the environment
 - The workspace `uv.lock` ensures consistent dependency versions across packages
@@ -162,12 +178,14 @@ cd ducktape && uv sync       # Installs all members
 - Target runtime version: Python 3.12+.
 
 ### Rust (Finance tools)
+
 ```bash
 cargo build
 cargo test
 ```
 
 ### Bazel (Various components)
+
 ```bash
 bazel build //target:name
 bazel test //target:name
@@ -176,12 +194,14 @@ bazel test //target:name
 ## Development Practices
 
 ### Testing
+
 - Test files: `test_*.py` in same directory as code
 - Framework: pytest with pytest-asyncio
 - Use fixtures for shared test components
 - Keep tests concise and parameterized
 
 ### Deployment
+
 ```bash
 cd ansible
 ansible-playbook <hostname>.yaml --ask-become-pass

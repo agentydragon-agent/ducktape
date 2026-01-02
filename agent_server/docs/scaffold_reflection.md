@@ -5,12 +5,14 @@ This document enumerates safe, practical surfaces that let the agent reflect on 
 See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md>, <mcp-runtime/resources.md>.
 
 ## Principles
+
 - Safety first: tiny write surface; every mutating tool call is approval‑gated.
 - Everything observable: expose small, typed resources for mounts, capabilities, runtime info.
 - Hooks, not DSL: hooks are Python code (bounded) matching the handler model; easy migration path.
 - No bypass: even hook‑emitted tool invocations go through the Compositor and policy middleware.
 
 ## Baseline dependencies
+
 - Compositor with policy middleware (enforcement gate).
 - Resources server (compositor/* introspection, subscriptions).
 - Runtime container image `adgn-runtime` (includes Python + rg; code installed in image).
@@ -18,6 +20,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
 - Split policy servers: policy_reader (resources + decide), policy_approver, policy_proposer.
 
 ## Read‑only introspection (P0)
+
 - runtime container info — implemented
   - Server `runtime`, URI `resource://container.info` (JSON): `{id, image, platform, os, arch, adgn_version, python_paths, tools:{rg:true}}`
   - Purpose: adapt commands/reads to container reality.
@@ -30,6 +33,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
   - Current durable subs; agent can reason about what’s blocked open.
 
 ## Runtime‑updatable (P0–P1) — approval‑gated
+
 - Compositor admin tools (P0) — implemented
   - Server: `compositor_admin`.
   - Tools: `attach_server({name, spec}) -> {ok}`, `detach_server({name}) -> {ok}`.
@@ -52,6 +56,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
   - Bridge: invoke hooks on coalesced notifications before legacy handlers; migrate handlers into hook code over time.
 
 ## DB MCP server (P1) — read‑only, namespaced views only — planned
+
 - Server: `db` (or `agent_db`).
 - Access shape:
   - Whitelisted views only: `db://view/<name>?params...` and/or `query({view, params})`.
@@ -66,6 +71,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
   - Always advisory: no approval item creation; middleware still evaluates at execution.
 
 ## Priorities
+
 - P0 — immediate value, low risk
   - Compositor admin tools (attach/detach) with middleware gating
   - Compositor meta: per‑server state (enumerate state resources; no mounts index). Instructions/capabilities via InitializeResult.
@@ -81,6 +87,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
   - Batch decide for planning (advisory only)
 
 ## Dependency DAG (logical)
+
 - Core
   - PolicyMiddleware → required for all mutating tools (admin + hooks enable/disable)
   - ResourcesServer → exposes compositor/runtime resources + subscriptions
@@ -96,6 +103,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
   - OrchestratorBridge (deliver coalesced notifications to hooks) ← ResourcesServer
 
 ASCII
+
 ```
 PolicyMiddleware ──→ CompositorAdmin
 PolicyMiddleware ──→ LoopHooks
@@ -108,6 +116,7 @@ HTTPAccess (container→host Compositor) [optional]
 ```
 
 ## Migration notes
+
 - Start with P0: admin tools + introspection + advisory decide; read server instructions at attach/init and inject a compact summary to the model.
 - Add P1 hooks+DB: keep handlers; run hooks first; migrate handler bodies into hook code incrementally.
 - Keep mutating tools gated by policy; log concise rationale strings; retain idempotence and rollback paths.

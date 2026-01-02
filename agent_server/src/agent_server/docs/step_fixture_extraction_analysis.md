@@ -18,12 +18,14 @@ After comprehensive analysis of 14 test files using `make_step_runner`, I found:
 ### Pattern 1: Echo + Done (4 occurrences)
 
 **Locations**:
+
 1. `tests/agent/test_approval_integration.py`: `MakeCall("echo", "echo", EchoInput(text="test"))` + `AssistantMessage("done")`
 2. `tests/agent/test_with_mocks.py`: `MakeCall("echo", "echo", EchoInput(text="hi"))` + `AssistantMessage("done")`
 3. `tests/agent/test_agent_mcp_echo.py`: `MakeCall("echo", "echo", EchoInput(text="hello"))` + `AssistantMessage("done")`
 4. `tests/agent/e2e/test_approvals.py`: `MakeCall("echo", "echo", {"text": "hello"})` + `MakeCall("ui", "end_turn", {})`
 
 **Why NOT extract**:
+
 - **Different echo text**: Each test uses different text (`"test"`, `"hi"`, `"hello"`) which may be intentional for test clarity
 - **Different endings**: First 3 use `AssistantMessage("done")`, last uses `MakeCall("ui", "end_turn", {})` (e2e pattern)
 - **Different typing**: Last uses dict args (legacy pattern from e2e test)
@@ -35,11 +37,13 @@ After comprehensive analysis of 14 test files using `make_step_runner`, I found:
 ### Pattern 2: UI End Turn (3 occurrences in e2e/)
 
 **Locations**:
+
 - `tests/agent/e2e/test_approvals.py`
 - `tests/agent/e2e/test_proposals_reject.py`
 - `tests/agent/e2e/test_ui.py`
 
 **Why NOT extract**:
+
 - All are **different first steps** (echo, policy_proposer, send_message)
 - Only commonality is ending with `end_turn`
 - E2E tests are integration tests - each scenario is unique
@@ -90,10 +94,12 @@ def po_agent_steps():
 ### Pattern 5: Single Message (2 occurrences)
 
 **Locations**:
+
 - `tests/llm/cli/test_llm_edit_cli.py`: `steps=[AssistantMessage("ok")]`
 - `tests/mcp/approval_policy/test_server_available.py`: `steps=[AssistantMessage("I can see the approval tools")]`
 
 **Why NOT extract**:
+
 - **Trivial pattern**: One line each
 - **Different messages**: Not truly duplicated
 - **Creating a fixture is overkill**: `make_step_runner(steps=[AssistantMessage("ok")])` is already minimal
@@ -103,6 +109,7 @@ def po_agent_steps():
 ### Pattern 6: Unique Sequences (8 occurrences)
 
 **Files with unique step sequences**:
+
 - `test_flat_tools_schema.py` - Tests schema changes across phases (2 sequences, similar but phase-specific)
 - `test_mcp_resources_flow.py` - Resources read test (unique)
 - `test_notifications_handler.py` - Approval policy notification test (unique)
@@ -136,6 +143,7 @@ def po_agent(make_step_runner, po_agent_steps) -> _StepRunner:
 ```
 
 **Why this is NOT needed**:
+
 1. **Single use**: These fixtures are used in ONE test
 2. **Clear inline**: `po_runner = make_step_runner(steps=po_agent_steps)` is already clear
 3. **No parameterization**: The steps fixture already exists; wrapping it adds no value
@@ -178,7 +186,7 @@ def ok_agent(make_step_runner):
     return make_step_runner(steps=[AssistantMessage("ok")])
 ```
 
-### ✅ DO Extract When You Have:
+### ✅ DO Extract When You Have
 
 1. **Exact duplication** across 3+ tests
 2. **Stable pattern** (won't change per test)
@@ -190,6 +198,7 @@ def ok_agent(make_step_runner):
 ### 1. Keep Current Structure (No Changes Needed)
 
 The test suite is well-organized:
+
 - Global fixtures in `tests/conftest.py` and `tests/support/`
 - Suite-specific fixtures in `tests/agent/conftest.py`, `tests/props/conftest.py`
 - Test-specific fixtures in individual test files
@@ -199,6 +208,7 @@ The test suite is well-organized:
 **Trigger for extraction**: When you write a 3rd test that needs the SAME step sequence, extract then.
 
 **Example scenario where extraction would be appropriate**:
+
 ```python
 # If 3+ tests all need this EXACT sequence:
 steps = [
@@ -237,6 +247,7 @@ Add to `docs/test_patterns_analysis.md`:
 If these patterns emerge, extract them:
 
 **Potential future fixture** (if 3+ uses appear):
+
 ```python
 @pytest.fixture
 def make_echo_agent(make_step_runner):
@@ -268,6 +279,7 @@ But **don't create this preemptively** - wait for the 3rd use.
 **No fixtures should be extracted at this time.**
 
 The test suite demonstrates **good design**:
+
 1. Global infrastructure (`make_step_runner`, step classes) is reusable
 2. Test scenarios are appropriately unique
 3. Existing fixtures (PO/critic workflows) are correctly scoped to their test file

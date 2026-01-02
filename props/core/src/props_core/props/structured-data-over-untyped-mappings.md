@@ -8,6 +8,7 @@ Avoid `dict[str, Any]`/`Mapping[str, Any]`, `Record<string, unknown>`, `map[stri
 Pydantic models, dataclasses + TypedDicts, TS interfaces/types, Go structs, Java records/POJOs, with proper (de)serialization.
 
 ## Acceptance criteria (checklist)
+
 - No new function parameters/returns are untyped or loosely typed maps for domain data (e.g., `dict[str, Any]`, `Mapping[str, Any]`, `Record<string, unknown>`, `map[string]any`)
 - Enumerations: when a field has one of N possible options, use a proper enum — not a bare primitive
   - Python: `enum.StrEnum` (3.11+) for string‑valued enums; plain `Enum` for non‑string values. See [Use StrEnum for string‑valued enums](python/strenum.md)
@@ -28,6 +29,7 @@ Pydantic models, dataclasses + TypedDicts, TS interfaces/types, Go structs, Java
 ## Positive examples
 
 Python (Pydantic v2 model + StrEnum):
+
 ```python
 from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
@@ -50,6 +52,7 @@ payload: dict = User(id="u1", email="u@example.com", role=Role.ADMIN).model_dump
 ```
 
 Python (TypedDict for small, static shapes):
+
 ```python
 from typing import TypedDict
 
@@ -62,6 +65,7 @@ def get_health() -> Health:
 ```
 
 TypeScript (interface + literal union + runtime check):
+
 ```ts
 import { z } from "zod";
 
@@ -81,6 +85,7 @@ const user: User = UserSchema.parse(JSON.parse(input));
 ```
 
 Go (struct + typed enum‑like):
+
 ```go
 type Role string
 const (
@@ -99,6 +104,7 @@ _ = json.Unmarshal(data, &u)
 ```
 
 Java (record + enum):
+
 ```java
 public enum Role { ADMIN, USER }
 public record User(String id, String email, Role role) {}
@@ -107,12 +113,14 @@ public record User(String id, String email, Role role) {}
 ## Negative examples (violations)
 
 Opaque dict returned from core logic:
+
 ```python
 def load_user() -> dict[str, Any]:  # too loose
     return {"id": uid, "mail": email}  # inconsistent, unvalidated keys
 ```
 
 Ad‑hoc nested map assembly for transport:
+
 ```python
 payload = {
     "user": {"id": user.id, "email": user.email},
@@ -122,11 +130,13 @@ payload = {
 ```
 
 Using primitives for a closed set (should be an enum):
+
 ```python
 role: str = "admin"  # should be Role (StrEnum)
 ```
 
 TypeScript domain shape as Record (no schema):
+
 ```ts
 function makeUser(): Record<string, unknown> {  // too loose
   return { id: "u1", email: "u@example.com", role: "admin" };
@@ -134,6 +144,7 @@ function makeUser(): Record<string, unknown> {  // too loose
 ```
 
 Go passing dynamic bags through modules:
+
 ```go
 func Handle(m map[string]any) error {  // too loose
     // callers and callees disagree on keys/types
@@ -142,5 +153,6 @@ func Handle(m map[string]any) error {  // too loose
 ```
 
 Notes
+
 - Use map‑like types only for inherently key/value domains (headers, labels), short‑lived and close to their origin
 - When introducing a model on an existing loose interface, convert once at the boundary; avoid churn by bouncing between loose and strict forms inside the same flow

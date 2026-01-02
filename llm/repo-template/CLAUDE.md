@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository Overview
 
 This is a multi-language project template. When starting a new project:
+
 1. Delete language-specific sections that don't apply
 2. Keep only relevant configuration
 3. Update this file to reflect the actual project
@@ -12,6 +13,7 @@ This is a multi-language project template. When starting a new project:
 ## Python-Specific Requirements [DELETE IF NOT PYTHON]
 
 ### Virtual Environment (CRITICAL)
+
 **ALWAYS work in a virtual environment. NEVER install packages globally.**
 
 ```bash
@@ -26,7 +28,9 @@ python -m venv venv
 ```
 
 ### Test Location Convention
+
 Tests MUST be placed next to the code they test:
+
 - `src/mypackage/foo.py` → `src/mypackage/test_foo.py`
 - NOT in `/tests/` directory
 - NOT as `test_foo_bar.py` for `foo/bar.py`
@@ -35,6 +39,7 @@ Tests MUST be placed next to the code they test:
 ## Development Commands
 
 ### Code Quality
+
 ```bash
 # Run all pre-commit hooks manually
 pre-commit run --all-files
@@ -56,6 +61,7 @@ semgrep --pattern 'getattr($OBJ, "$ATTR")' --lang python .
 ```
 
 ### Testing
+
 ```bash
 # Run all tests
 pytest
@@ -77,6 +83,7 @@ pytest -v
 ```
 
 ### Reference Materials
+
 ```bash
 # Update reference documentation and examples
 cd references && ./fetch.sh
@@ -94,6 +101,7 @@ cd references && ./fetch.sh
 ## Code Standards
 
 ### Python Development
+
 - **Formatter**: Black (configured in pre-commit)
 - **Linter**: Ruff (enforces modern Python patterns, configured in pyproject.toml)
 - **Pattern Detection**: Semgrep (catches anti-patterns from llm.agentydragon.com/coding)
@@ -101,13 +109,17 @@ cd references && ./fetch.sh
 - **Test Framework**: pytest
 
 ### Linting Configuration
-This template includes opinionated linting rules based on https://llm.agentydragon.com/coding:
+
+This template includes opinionated linting rules based on <https://llm.agentydragon.com/coding>:
+
 - **Ruff**: Enforces modern Python syntax, pathlib usage, proper exception handling
 - **Semgrep**: Detects string concatenation for URLs/SQL/HTML, broad exceptions, getattr usage
 - **Auto-fixes**: ~60% of issues can be automatically fixed with `ruff check --fix`
 
 ### Pre-commit Hooks
+
 The following checks run automatically on commit:
+
 - Trailing whitespace removal
 - End-of-file fixing
 - YAML/JSON/TOML validation
@@ -117,13 +129,17 @@ The following checks run automatically on commit:
 - Merge conflict markers detection
 
 ### Working with References
+
 The `references/` directory contains fetched external documentation. Only `fetch.sh` is version controlled. To add new references:
+
 1. Edit `references/fetch.sh` to add fetch commands
 2. Run the script to fetch materials
 3. Commit only the updated `fetch.sh`
 
 ### Scratch Directory Usage
+
 For temporary work:
+
 ```bash
 # Generate agent name at session start
 agent_name=$(generate-agent-name)
@@ -140,6 +156,7 @@ echo "# THROWAWAY SCRIPT - DO NOT REUSE" > scratch/$agent_name/experiment.py
 1. **Template vs Project**: This starts as a template. Delete irrelevant sections after choosing your language/stack.
 
 2. **Virtual Environment**: For Python, ALWAYS check you're in venv before any pip commands:
+
    ```bash
    which python  # Must show venv path, not system python
    ```

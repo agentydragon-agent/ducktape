@@ -38,7 +38,6 @@ Previously the tool's model was very basic, and answered the two questions as fo
 Problems
 ===
 
-
 Assuming infinite retirement time
 ====
 
@@ -49,8 +48,7 @@ Ignoring growth while saving
 
 "Take how much money I need - how much I have, divide by monthly savings" ignores that the money I saved up so far also earn interest, before I'm done saving. It's too pessimistic.
 
-
-Stand aside, I know differential equations!
+Stand aside, I know differential equations
 ===
 
 Let's model the depletion of your money as a function $f$, which will map number of years since retirement to the amount of money. You start with some initial amount $f(0)$. If we pretend you withdraw the salary for a year and add interest once yearly, we'd get:
@@ -137,7 +135,6 @@ $$C = f_0 - \frac{c}{i'}$$
 
 Okay this is a little bit ugly. Let's play.
 
-
 ```python
 c = 12000  # yearly costs
 f_0 = 100000  # initial savings
@@ -173,7 +170,6 @@ And it gives:
     after 9 years, got: 12814.368806706276
     after 10 years, got: 1088.512347280921
 
-
 Cool, it seems to be giving reasonable results. But our two questions were: *how much money do I need to pay myself a given salary* and *how long until I save up the money I need*.
 
 Let's instead first solve another question: *if I have 100 000 USD and spend 1000 USD per month, how long will it last me*.
@@ -193,14 +189,12 @@ $$
 
 And let's test it:
 
-
 ```
 x = (log(-c / (C * i_prime))) / i_prime
 print(x)
 ```
 
     10.090871103712766
-
 
 Cool, this matches what the Python $f(x)$ predicted above - after 10 years, it was just dwindling at about 1088 USD.
 
@@ -243,13 +237,11 @@ $$
 
 Let's try it out:
 
-
 ```
 c = 12000  # yearly costs
 x = 60  # years for the investment to survive
 i = 0.04  # interest
 ```
-
 
 ```
 i_prime = log(1+i)
@@ -258,7 +250,6 @@ print(f0)
 ```
 
     276876.0258210814
-
 
 Cool!
 

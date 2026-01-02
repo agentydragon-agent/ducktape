@@ -7,12 +7,14 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
 ## Architecture
 
 ### Storage Architecture (Option C - virtiofs)
+
 - **ZFS Dataset**: `tank/gitea-public-mirrors` on atlas (200GB quota)
 - **Mount Strategy**: virtiofs shared filesystem to k3s VMs
 - **K8s Storage**: hostPath PV on k3s-master at `/mnt/gitea-mirrors`
 - **Separate from tankshare**: Dedicated storage slice for git repositories
 
 ### Network Architecture
+
 - **Domain**: `mirrors.git.k3s.agentydragon.com`
 - **Access**: Public read-only for cloning, admin-only for mirror management
 - **Integration**: Works with existing Authentik SSO
@@ -51,31 +53,37 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
 ### 🔄 Pending Deployment Steps
 
 1. **Deploy ZFS dataset on atlas**
+
    ```bash
    cd ~/code/ducktape/ansible
    cd ansible
    ansible-playbook atlas.yaml --tags gitea-mirrors
    ```
+
    This will:
    - Create ZFS dataset `tank/gitea-public-mirrors` with 200GB quota
    - Configure virtiofs for k3s VMs (vmid 200, 201)
    - Install and start virtiofsd systemd service
 
 2. **Configure mounts on k3s nodes**
+
    ```bash
    cd ansible
    ansible-playbook k3s-nodes.yaml --tags gitea-mirrors
    ```
+
    This will:
    - Create `/mnt/gitea-mirrors` mount point
    - Add virtiofs entry to /etc/fstab
    - Mount the filesystem
 
 3. **Deploy Gitea Mirrors Helm chart**
+
    ```bash
    cd ~/code/ducktape/k8s/helmfile
    helmfile -l name=gitea-mirrors sync
    ```
+
    This will:
    - Create gitea-mirrors namespace
    - Deploy hostPath PV/PVC
@@ -88,6 +96,7 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
    - Test with initial set of repositories
 
 5. **Test git clone with reference**
+
    ```bash
    # After mirrors are populated
    git clone --reference /mnt/gitea-mirrors/github.com/torvalds-linux.git \
@@ -97,6 +106,7 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
 ## Configuration Details
 
 ### ZFS Dataset Settings
+
 ```bash
 recordsize=128k     # Optimal for git objects
 compression=lz4     # Fast compression
@@ -106,6 +116,7 @@ quota=200G         # Storage limit
 ```
 
 ### Gitea Configuration
+
 - **Database**: SQLite3 (simple, sufficient for mirrors)
 - **Domain**: mirrors.git.k3s.agentydragon.com
 - **Features**:
@@ -116,6 +127,7 @@ quota=200G         # Storage limit
   - Landing page: explore
 
 ### Kubernetes Resources
+
 - **Namespace**: gitea-mirrors
 - **Storage**: 200Gi hostPath PV on k3s-master
 - **Service**: ClusterIP (exposed via Traefik)
@@ -159,16 +171,19 @@ ducktape/
 ## Troubleshooting
 
 ### If VMs can't mount virtiofs
+
 1. Check virtiofsd service: `systemctl status virtiofsd-gitea-mirrors`
 2. Verify VM args: `qm config 200 | grep virtiofs`
 3. Check socket: `ls -la /var/run/virtiofsd-gitea-mirrors.sock`
 
 ### If Helm deployment fails
+
 1. Check PVC status: `kubectl get pvc -n gitea-mirrors`
 2. Verify node mount: `ssh k3s-master ls -la /mnt/gitea-mirrors`
 3. Check pod logs: `kubectl logs -n gitea-mirrors deployment/gitea-mirrors`
 
 ### If mirrors don't update
+
 1. Check Gitea logs: `kubectl logs -n gitea-mirrors deployment/gitea-mirrors`
 2. Verify network connectivity from pod
 3. Check mirror settings in Gitea admin panel

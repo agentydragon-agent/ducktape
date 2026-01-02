@@ -20,6 +20,7 @@ When iterating over dict views (`.keys()`, `.values()`, `.items()`), wrapping th
 ## Example (from TODO.md)
 
 **Bad:**
+
 ```python
 while True:
     for worker in list(self.workers.values()):
@@ -34,6 +35,7 @@ while True:
 ```
 
 **Good:**
+
 ```python
 # Iterate directly over the view when not mutating the dict
 for worker in self.workers.values():

@@ -6,12 +6,14 @@ kind: outcome
 Trivial nested guards without else blocks are combined into a single condition; use logical conjunction (and/or) and the walrus operator to bind intermediate values when needed.
 
 ## Acceptance criteria (checklist)
+
 - Patterns like `if a: if b:` (with no else between) are flattened to a single `if a and b:`
 - Three+ level trivial nests (e.g., `if a: if b: if c:`) are flattened to a single combined condition
 - When a nested guard exists only to reuse a freshly computed value, bind inline with `:=` and combine
 - Deep nesting is acceptable only when branches have distinct else/elif flows or when readability clearly benefits
 
 ## Positive examples
+
 ```python
 # Two-level flatten
 if is_running and (code := proc.returncode) is not None:

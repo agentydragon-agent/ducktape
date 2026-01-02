@@ -25,10 +25,10 @@ fi
 Claude Code's shell snapshotting system filters out functions that start with `_` or `__`, treating them as "system/private" functions. This breaks zoxide because:
 
 1. **Your Interactive Shell**: Has `cd()` function and `__zoxide_z()` function
-2. **Claude's Snapshot Process**: 
+2. **Claude's Snapshot Process**:
    - ✅ Captures `cd()` (doesn't start with `_`)
    - ❌ **Filters out `__zoxide_z()`** (starts with `__`)
-3. **Claude's Execution**: 
+3. **Claude's Execution**:
    - Sources snapshot with `cd()` but missing `__zoxide_z()`
    - Result: `cd` → `__zoxide_z "$@"` → `command not found`
 
@@ -37,6 +37,7 @@ Claude Code's shell snapshotting system filters out functions that start with `_
 Claude creates a shell script that enumerates functions with explicit filtering:
 
 **For Zsh:**
+
 ```bash
 # Get user function names - FILTER OUT system ones
 typeset +f | grep -vE '^(_|__)' | while read func; do
@@ -78,8 +79,9 @@ claude() {
 ### Option 3: Alternative Commands
 
 When Claude environment is detected, use alternatives:
+
 - `builtin cd` instead of `cd`
-- `pushd` instead of `cd` 
+- `pushd` instead of `cd`
 - `command cd` to bypass function
 
 ## Implementation Status

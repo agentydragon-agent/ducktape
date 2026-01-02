@@ -130,6 +130,7 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
 ### 5. Visual Design Requirements
 
 **Color Scheme:**
+
 | Element | Color | Purpose |
 |---------|-------|---------|
 | TP occurrence | Green (#dcfce7 bg, #16a34a border) | Ground truth true positive |
@@ -153,6 +154,7 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
 - Display shows 1-based line numbers
 - File slicing uses 0-based
 - Conversion utilities:
+
   ```typescript
   function dbLineToDisplay(line: number): number {
     return line + 1;

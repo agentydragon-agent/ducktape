@@ -20,37 +20,43 @@ When a specimen's ground truth changes (issues added/removed/modified, line rang
 ## Option 1: Delete Stale Runs (Simplest)
 
 ### Approach
+
 On sync, if ground truth changes:
+
 ```python
 if specimen_ground_truth_changed(specimen):
     db.execute("DELETE FROM evaluation_runs WHERE specimen_id = ?", specimen.id)
 ```
 
 ### Pros
+
 - Extremely simple
 - No schema changes
 - No query complexity
 - Always shows current results only
 
 ### Cons
+
 - **Data loss** - can't analyze historical trends
 - **Expensive re-evaluation** - must re-run all experiments after ground truth fixes
 - **No audit trail** - can't answer "what did the model produce against the old ground truth?"
 - **Breaks ongoing experiments** - if you're iterating on prompts and fix ground truth mid-stream, all context is lost
 
 ### Verdict
-❌ **Not recommended** - data loss is too costly for research/optimization workflows
 
+❌ **Not recommended** - data loss is too costly for research/optimization workflows
 
 ## Option 2: Soft Delete with `deleted_at` (Simple)
 
 ### Schema Changes
+
 ```sql
 ALTER TABLE evaluation_runs ADD COLUMN deleted_at TIMESTAMP;
 CREATE INDEX idx_eval_runs_not_deleted ON evaluation_runs(specimen_id) WHERE deleted_at IS NULL;
 ```
 
 ### Approach
+
 ```python
 if specimen_ground_truth_changed(specimen):
     db.execute(
@@ -60,6 +66,7 @@ if specimen_ground_truth_changed(specimen):
 ```
 
 ### Query Pattern
+
 ```sql
 -- Default: active runs only
 SELECT * FROM evaluation_runs
@@ -71,24 +78,27 @@ WHERE specimen_id = ?
 ```
 
 ### Pros
+
 - Simple to implement (one column, standard pattern)
 - Data preserved for forensics
 - Partial index keeps current queries fast
 - Easy to understand ("deleted" is intuitive)
 
 ### Cons
+
 - **No versioning semantics** - can't group by ground truth version
 - **No idempotency** - if you revert ground truth to a previous state, old runs stay deleted
 - **Ambiguous deletions** - can't distinguish "ground truth changed" from "user manually deleted bad run"
 - **Limited analysis** - hard to answer "compare v1 vs v2 ground truth"
 
 ### Verdict
-✅ **Viable for MVP** if you don't need version-aware analysis
 
+✅ **Viable for MVP** if you don't need version-aware analysis
 
 ## Option 3: Content-Based Versioning with Hash + Flag (Recommended)
 
 ### Schema Changes
+
 ```sql
 -- Specimens table
 ALTER TABLE specimens ADD COLUMN ground_truth_hash TEXT;
@@ -102,6 +112,7 @@ CREATE INDEX idx_eval_runs_gt_hash ON evaluation_runs(ground_truth_hash);
 ```
 
 ### Hash Computation
+
 ```python
 def compute_ground_truth_hash(specimen: Specimen) -> str:
     """Stable hash of issues + ranges (semantic content)."""
@@ -129,6 +140,7 @@ def compute_ground_truth_hash(specimen: Specimen) -> str:
 ```
 
 ### Sync Logic
+
 ```python
 def sync_specimen(specimen: Specimen):
     new_hash = compute_ground_truth_hash(specimen)
@@ -162,6 +174,7 @@ def sync_specimen(specimen: Specimen):
 ```
 
 ### Query Patterns
+
 ```sql
 -- Default: current runs only (simple, fast)
 SELECT * FROM evaluation_runs
@@ -203,6 +216,7 @@ GROUP BY r1.prompt_id
 ```
 
 ### Pros
+
 - **No data loss** - all runs preserved
 - **Simple default queries** - just add `is_current = true`
 - **Idempotent** - reverting ground truth reactivates old runs
@@ -212,17 +226,19 @@ GROUP BY r1.prompt_id
 - **Audit trail** - see exactly when and how often ground truth changed
 
 ### Cons
+
 - **Hash collisions** (extremely unlikely with 64-bit hash)
 - **Doesn't capture "why"** - no metadata about what changed
 - **Hash computation cost** (mitigated: only on sync, can cache)
 
 ### Verdict
-✅ **Recommended** - best balance of simplicity and capability
 
+✅ **Recommended** - best balance of simplicity and capability
 
 ## Option 4: Explicit Versioning Table (Most Flexible)
 
 ### Schema
+
 ```sql
 CREATE TABLE specimen_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -244,6 +260,7 @@ CREATE INDEX idx_eval_runs_version ON evaluation_runs(specimen_version_id);
 ```
 
 ### Sync Logic
+
 ```python
 def sync_specimen(specimen: Specimen):
     new_hash = compute_ground_truth_hash(specimen)
@@ -281,6 +298,7 @@ def sync_specimen(specimen: Specimen):
 ```
 
 ### Query Patterns
+
 ```sql
 -- Current runs (join required)
 SELECT r.* FROM evaluation_runs r
@@ -307,21 +325,23 @@ ORDER BY version_number
 ```
 
 ### Pros
+
 - **Rich metadata** - capture why ground truth changed
 - **Version graph** - parent_version_id enables branching/merging semantics
 - **Clear semantics** - explicit version numbers are intuitive
 - **Flexible analysis** - can query by version number, hash, or date
 
 ### Cons
+
 - **Most complex** - requires joins, version management logic
 - **Slower queries** - default queries need join to specimens table
 - **Migration complexity** - backfilling version history is harder
 - **Overkill?** - do we really need branching/metadata?
 
 ### Verdict
+
 ✅ **Use if** you need rich version metadata or plan to branch/merge ground truths
 ❌ **Skip for MVP** - start with Option 3 and migrate later if needed
-
 
 ## Migration Path: Option 3 → Option 4
 
@@ -357,7 +377,6 @@ SET current_version_id = (
 
 This is clean because Option 3 already has the hash, which is the stable identifier.
 
-
 ## Recommendation
 
 **Start with Option 3 (Content-Based Versioning):**
@@ -381,6 +400,7 @@ This is clean because Option 3 already has the hash, which is the stable identif
 ## Implementation Checklist
 
 ### Database Schema
+
 - [ ] Add `specimens.ground_truth_hash` column
 - [ ] Add `evaluation_runs.ground_truth_hash` column (NOT NULL)
 - [ ] Add `evaluation_runs.is_current` column (BOOLEAN NOT NULL DEFAULT true)
@@ -388,6 +408,7 @@ This is clean because Option 3 already has the hash, which is the stable identif
 - [ ] Write migration with backfill logic
 
 ### Core Logic
+
 - [ ] Implement `compute_ground_truth_hash()` function
 - [ ] Update specimen sync to detect hash changes
 - [ ] Update sync to mark old runs `is_current = false`
@@ -395,11 +416,13 @@ This is clean because Option 3 already has the hash, which is the stable identif
 - [ ] Log ground truth changes (specimen ID, old hash, new hash)
 
 ### Query Updates
+
 - [ ] Add `is_current = true` to default evaluation_runs queries
 - [ ] Update aggregate functions (avg, percentile) to filter current runs
 - [ ] Add CLI flag `--include-stale` to opt into historical data
 
 ### Testing
+
 - [ ] Test hash stability (same ground truth → same hash)
 - [ ] Test hash changes (modified issue → different hash)
 - [ ] Test idempotency (revert ground truth → old runs reactivated)
@@ -407,6 +430,7 @@ This is clean because Option 3 already has the hash, which is the stable identif
 - [ ] Test query performance with stale runs
 
 ### Documentation
+
 - [ ] Document versioning behavior in props README
 - [ ] Add query examples for version-aware analysis
 - [ ] Document backfill procedure for existing databases

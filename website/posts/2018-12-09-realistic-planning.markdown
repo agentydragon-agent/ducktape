@@ -105,7 +105,7 @@ extension of that setup. Say something like:
   a "command" level or at a "subordinate" level, it would hopefully make it
   easy for parts to agree to collective decisions.
 
-Meh, too hard. I got other stuff to do.
+Meh, too hard. I got other stuff to do
 ===
 
 I guess getting any model halfway realistic would be too complicated, and I

@@ -95,15 +95,15 @@ build:
   before_script:
     # TODO: this setup script is duplicated with another place in this file
     - |
-        cache_host="bazel-cache.agentydragon.com:9090"
-        if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
-          echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
-          echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@${cache_host}" >> .bazelrc
-        else
-          echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
-          echo "build --remote_cache=https://${cache_host}" >> .bazelrc
-          echo "build --remote_upload_local_results=false" >> .bazelrc
-        fi
+      cache_host="bazel-cache.agentydragon.com:9090"
+      if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
+        echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
+        echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@${cache_host}" >> .bazelrc
+      else
+        echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
+        echo "build --remote_cache=https://${cache_host}" >> .bazelrc
+        echo "build --remote_upload_local_results=false" >> .bazelrc
+      fi
   script:
     - bazel version
     - python --version
@@ -152,15 +152,15 @@ test:
   before_script:
     # TODO: this setup script is duplicated with another place in this file
     - |
-        cache_host="bazel-cache.agentydragon.com:9090"
-        if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
-          echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
-          echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@${cache_host}" >> .bazelrc
-        else
-          echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
-          echo "build --remote_cache=https://${cache_host}" >> .bazelrc
-          echo "build --remote_upload_local_results=false" >> .bazelrc
-        fi
+      cache_host="bazel-cache.agentydragon.com:9090"
+      if [ ! -z "${BAZEL_CACHE_PASSWORD}" ]; then
+        echo "BAZEL_CACHE_PASSWORD is available, using remote cache"
+        echo "build --remote_cache=https://gitlab-runner:${BAZEL_CACHE_PASSWORD}@${cache_host}" >> .bazelrc
+      else
+        echo "BAZEL_CACHE_PASSWORD is not available, will use remote cache read-only"
+        echo "build --remote_cache=https://${cache_host}" >> .bazelrc
+        echo "build --remote_upload_local_results=false" >> .bazelrc
+      fi
   script:
     - bazel test ...
 

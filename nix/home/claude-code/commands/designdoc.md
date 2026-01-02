@@ -7,12 +7,14 @@ You've been asked to create a design document for the feature or change being di
 ## Phase 1: Requirements and Initial Doc
 
 First, **gather requirements**:
+
 - Ask clarifying questions about scope, goals, and constraints
 - Confirm what problem this solves and for whom
 - Understand success criteria and non-goals
 - Clarify any ambiguities in the request
 
 Then, **research context** by investigating:
+
 - Call sites and callers of affected code
 - Implementation details of relevant libraries/patterns
 - Existing similar implementations or alternatives
@@ -59,6 +61,7 @@ Then write a design document with these sections (organize in whatever order mak
 ### Default Assumptions (unless user explicitly requests otherwise)
 
 **Testing:**
+
 - NOT exhaustive - write high-value tests for main flows only
 - Prefer integration tests over unit tests
 - Use real objects where easy, not mocks
@@ -66,17 +69,20 @@ Then write a design document with these sections (organize in whatever order mak
 - Goal: confidence in main paths, not 100% coverage
 
 **Documentation:**
+
 - NO separate documentation files (README, design docs, etc.)
 - Only brief inline docs/comments for non-obvious code
 - If it's clear from reading the code, don't document it
 - Comments should add value beyond what's immediately obvious
 
 **Backward Compatibility:**
+
 - Clean breaks by default - NO backcompat shims or migration code
 - NO migration paths unless explicitly requested
 - Call out breaks clearly and ask user to confirm they're acceptable
 
 **Style Guidelines:**
+
 - Keep it DRY and concise
 - Well-structured, not an append-only log
 - Clear enough for implementation
@@ -86,6 +92,7 @@ Then write a design document with these sections (organize in whatever order mak
 After writing the initial doc, guide the user interactively to refine it:
 
 **Each iteration:**
+
 1. Present remaining **open questions** (prioritized, actionable)
 2. Offer **alternatives** that need decisions
 3. Ask about **tradeoff preferences**
@@ -93,6 +100,7 @@ After writing the initial doc, guide the user interactively to refine it:
 5. Provide **breadcrumbs**: clear next steps toward a solid plan
 
 **When the user responds:**
+
 1. Research/test/explore as requested
 2. Integrate findings and decisions into the doc
 3. Keep the doc **logically structured** (reorganize as needed, don't just append)

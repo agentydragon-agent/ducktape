@@ -4,8 +4,6 @@ A tiny FastMCP server that provides neutral loop control tools independent of an
 
 ## Tools (server `loop`; model sees `loop_*`)
 
-
-
 - `yield_turn({}) -> {ok}` → exposed as `loop_yield_turn`
   - Triggers a latch consumed by the loop-control handler. On the next `on_before_sample`, that handler returns `Abort()` and the turn ends. The handler also appends an end-turn marker to `UiState` so the timeline reflects the transition.
   - Keep always-allow in policy; it is the neutral, prompt-aligned way for the model to finish a turn.

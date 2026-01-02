@@ -22,6 +22,7 @@ ducktape/
 ```
 
 ## Environment and setup (direnv + devenv)
+
 - Requirements: Nix + devenv, direnv; Python 3.12+
 - First time here: `direnv allow`
   - This loads .envrc → devenv, creates a Python venv at `.devenv/state/venv`, and installs the package in editable mode with dev extras.
@@ -31,6 +32,7 @@ ducktape/
 Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across packages. The per-package devenv still manages the local venv.
 
 ## Quick commands
+
 - Run all tests (tests live under `adgn/tests`):
   - Inside `adgn/`.: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
@@ -39,6 +41,7 @@ Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across
 - Pre-commit: `pre-commit install`, `pre-commit run -a`
 
 ## Agent Presets (Agent UI)
+
 - Agents are created from presets (YAML) discovered via platformdirs:
   - `platformdirs.user_config_dir('adgn')/presets`
   - Examples: Linux `~/.config/adgn/presets`, macOS `~/Library/Application Support/adgn/presets`
@@ -55,14 +58,17 @@ Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across
   - System prompt in the preset is combined with an MCP servers header at agent start
 
 ## Console scripts
+
 - rspcache → adgn.rspcache.cli:main
 - LLM: adgn-agent, adgn-llm-edit, adgn-sysrw, props, sandbox-jupyter
 - Worktree tooling (`wt`, `wt-install`) now lives in the sibling `wt/` project
 
 ## More details
+
 - See ./CLAUDE.md for a deeper guide (test config, module map, LLM toolkit notes).
 
 ## Runtime container image (container mode)
+
 - Build the base image used for both runtime exec and policy evaluation (run from workspace root `ducktape/`):
   - `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
   - Set `ADGN_RUNTIME_IMAGE=adgn-runtime:latest` to use this image everywhere.

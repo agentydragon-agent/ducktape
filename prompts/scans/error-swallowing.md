@@ -1,6 +1,7 @@
 # Scan: Error Swallowing (Let It Crash)
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -20,6 +21,7 @@ Error swallowing occurs when exceptions are caught but not re-raised, causing fa
 ## Philosophy: When to Catch vs Let Crash
 
 ### Let It Crash (Don't Catch)
+
 - **Infrastructure failures**: Database connection lost, file system full, out of memory
 - **Programming errors**: Assertion violations, type errors, null pointer dereferences
 - **Configuration errors**: Missing required config, invalid credentials
@@ -27,6 +29,7 @@ Error swallowing occurs when exceptions are caught but not re-raised, causing fa
 - **Invariant violations**: Data corruption, impossible state transitions
 
 ### Catch Gracefully (User-Facing Errors)
+
 - **User input errors**: Invalid data format, missing required fields
 - **Transient failures**: Network timeout (with retry), temporary service unavailability
 - **Expected business logic**: Permission denied, resource not found
@@ -39,6 +42,7 @@ Error swallowing occurs when exceptions are caught but not re-raised, causing fa
 ### Pattern 1: Logging and Continuing
 
 **BAD**: Infrastructure failure logged but ignored
+
 ```python
 async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | None:
     await app.state.ready.wait()
@@ -56,6 +60,7 @@ async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | Non
 **Issue**: `ensure_live()` failing indicates infrastructure is broken, but we continue anyway.
 
 **GOOD**: Only catch expected errors, let infrastructure failures crash
+
 ```python
 async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle:
     """Get or create channel bundle for agent.
@@ -75,6 +80,7 @@ async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle:
 ```
 
 **Call site handling** (if user-facing):
+
 ```python
 try:
     bundle = await get_channel_bundle(app, agent_id)
@@ -89,6 +95,7 @@ except Exception:
 ### Pattern 2: Returning None on All Errors
 
 **BAD**: Treating all errors as "not found"
+
 ```python
 def get_config(key: str) -> Config | None:
     try:
@@ -100,6 +107,7 @@ def get_config(key: str) -> Config | None:
 **Issue**: Caller can't distinguish between "config doesn't exist" and "database is down".
 
 **GOOD**: Let infrastructure failures crash, only return None for legitimate absence
+
 ```python
 def get_config(key: str) -> Config | None:
     """Get config by key.
@@ -120,6 +128,7 @@ def get_config(key: str) -> Config | None:
 ### Pattern 3: Catching and Logging Without Re-raising
 
 **BAD**: Notification failure silently absorbed
+
 ```python
 for agent_id in registry.known_agents():
     try:
@@ -133,6 +142,7 @@ for agent_id in registry.known_agents():
 **Issue**: If infrastructure setup fails, the system is broken. Continuing silently creates unpredictable behavior.
 
 **GOOD**: Let infrastructure failures crash
+
 ```python
 for agent_id in registry.known_agents():
     infra = await registry.get_infrastructure(agent_id)
@@ -143,6 +153,7 @@ for agent_id in registry.known_agents():
 ### Pattern 4: Swallowing Errors in Event Loop Notifier
 
 **BAD**: Missing event loop treated as non-critical
+
 ```python
 def notifier(uri: str):
     try:
@@ -156,6 +167,7 @@ def notifier(uri: str):
 **Issue**: If there's no event loop, the notification system is fundamentally broken. This is a programming error.
 
 **GOOD**: Let it crash - no event loop is a bug
+
 ```python
 def notifier(uri: str):
     # If there's no event loop, we WANT this to crash
@@ -167,6 +179,7 @@ def notifier(uri: str):
 ### Pattern 5: Contextlib.suppress for Critical Operations
 
 **BAD**: Using `suppress()` for operations that must succeed
+
 ```python
 with contextlib.suppress(Exception):
     await critical_database_operation()
@@ -174,6 +187,7 @@ with contextlib.suppress(Exception):
 ```
 
 **ACCEPTABLE**: Using `suppress()` only for truly optional operations
+
 ```python
 # Sending final error message to client on disconnection
 with contextlib.suppress(Exception):
@@ -197,12 +211,14 @@ with contextlib.suppress(Exception):
 **Tool**: `prompts/scans/scan_error_handling.py` - AST-based scanner for error handling antipatterns
 
 **What it finds**:
+
 1. **Bare except** - `except:` with no exception type
 2. **Broad except** - `except Exception:` (too broad)
 3. **Non-raising except** - Exception handlers that don't re-raise (return, pass, etc.)
 4. **Single-line try** - Try-except wrapping single statement (use contextlib.suppress)
 
 **Usage**:
+
 ```bash
 # Run on entire codebase
 python prompts/scans/scan_error_handling.py . > error_handling_scan.json
@@ -213,6 +229,7 @@ cat error_handling_scan.json | jq '.issues | to_entries[] |
 ```
 
 **Output structure**:
+
 - `summary`: Counts of each issue type
 - `issues`: Dict mapping file paths to lists of issues by type:
   - `bare_except`: `{line, col}` for each bare except
@@ -221,11 +238,13 @@ cat error_handling_scan.json | jq '.issues | to_entries[] |
   - `single_line_try`: `{line, col}` for single-line try blocks
 
 **Tool characteristics**:
+
 - **~100% recall**: Finds all try-except patterns
 - **High false positives for non_raising_except**: Includes legitimate logging before re-raise
 - **Expected**: You review each finding in context
 
 **Example output**:
+
 ```json
 {
   "summary": {"bare_except": 5, "broad_except": 12, "non_raising_except": 34},
@@ -256,6 +275,7 @@ rg --type py -U 'except.*:.*\n.*return None' --multiline
 ### Examples to Flag
 
 **High Priority** (likely wrong):
+
 ```python
 # Pattern: Infrastructure failure returning None
 try:
@@ -278,6 +298,7 @@ except Exception:
 ```
 
 **Medium Priority** (review carefully):
+
 ```python
 # Pattern: Broad exception catch with logging
 try:
@@ -292,6 +313,7 @@ except (TypeError, ValueError, KeyError):
 ```
 
 **Low Priority** (likely acceptable):
+
 ```python
 # Pattern: User-facing validation
 try:
@@ -338,6 +360,7 @@ For each swallowed error:
 Some error catches are correct and should remain:
 
 ### Best-Effort I/O Cleanup
+
 ```python
 finally:
     with contextlib.suppress(Exception):
@@ -345,6 +368,7 @@ finally:
 ```
 
 ### User Input Validation
+
 ```python
 try:
     data = parse_user_input(request.json)
@@ -353,6 +377,7 @@ except ValidationError as e:
 ```
 
 ### Transient Failures with Retry
+
 ```python
 for attempt in range(max_retries):
     try:
@@ -364,6 +389,7 @@ for attempt in range(max_retries):
 ```
 
 ### Resource Existence Checks
+
 ```python
 try:
     config = db.get(key)
@@ -374,6 +400,7 @@ except NotFoundError:
 ## Examples from Codebase
 
 ### Example 1: Channel Bundle Error Swallowing (FIXED)
+
 ```python
 # ❌ BEFORE: Swallowed infrastructure failures
 async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle | None:
@@ -396,6 +423,7 @@ async def get_channel_bundle(app: FastAPI, agent_id: str) -> ChannelBundle:
 ```
 
 ### Example 2: Notification Wiring Error Swallowing (FIXED)
+
 ```python
 # ❌ BEFORE: Infrastructure setup failure hidden
 for agent_id in registry.known_agents():
@@ -412,6 +440,7 @@ for agent_id in registry.known_agents():
 ```
 
 ### Example 3: Event Loop Error Swallowing (FIXED)
+
 ```python
 # ❌ BEFORE: Missing event loop treated as recoverable
 def notifier(uri: str):
@@ -444,21 +473,25 @@ For each flagged pattern:
 ## Priority for Fixing
 
 **Critical** (fixes first):
+
 - Infrastructure setup (database, event loop, registry)
 - Notification/broadcasting systems
 - Critical path operations (request handling, state mutations)
 
 **High Priority**:
+
 - Resource loading (configs, database records)
 - API call forwarding
 - Background task scheduling
 
 **Medium Priority**:
+
 - Cleanup operations that should succeed
 - Optional features that should fail visibly
 - Diagnostic/monitoring operations
 
 **Low Priority** (may be correct):
+
 - Best-effort cleanup in finally blocks
 - User input validation
 - Transient failure retry logic
@@ -466,6 +499,7 @@ For each flagged pattern:
 ## Summary
 
 **Golden Rules**:
+
 1. **Let it crash**: Infrastructure failures should propagate
 2. **Fail fast, fail visibly**: Don't hide errors behind logs
 3. **Only catch specific exceptions**: `except KeyError`, not `except Exception`

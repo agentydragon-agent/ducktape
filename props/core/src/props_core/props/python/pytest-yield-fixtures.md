@@ -6,6 +6,7 @@ kind: outcome
 Resources that require teardown should be provided via pytest yield fixtures; this is REQUIRED once the same setup/teardown appears in more than one test, otherwise recommended. Teardown must run in a `finally` block guarding the `yield`.
 
 ## Acceptance criteria (checklist)
+
 - Yield fixtures are used for any resource needing teardown when the pattern is used in 2+ tests; single-use may inline cleanup, but prefer a yield fixture for clarity/reuse.
 - Teardown lives in a `finally:` after the `yield`, ensuring cleanup on errors/failures and partial setups.
 - No duplicated setup/teardown code across tests; factor into a fixture instead of copy/paste try/finally blocks.
@@ -76,4 +77,5 @@ def srv(tmp_path):
 ```
 
 ## See also
+
 - [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)

@@ -11,12 +11,14 @@ Anthropic has published extensive guidance on effective prompt engineering for C
 **Principle:** Explicitly state what you want the model to do. Don't rely on the model to infer intent from vague instructions.
 
 **Good:**
+
 ```
 Analyze this code for dead code (unused imports, unreachable code, unused variables).
 List each finding with file path and line number.
 ```
 
 **Bad:**
+
 ```
 Take a look at this code and see if anything seems off.
 ```
@@ -28,6 +30,7 @@ Take a look at this code and see if anything seems off.
 **Principle:** Organize prompts with clear sections, headers, and delimiters. Use XML tags, Markdown headers, or other structure to separate concerns.
 
 **Pattern:**
+
 ```markdown
 # Task Description
 [What the agent should do]
@@ -46,6 +49,7 @@ Take a look at this code and see if anything seems off.
 ```
 
 **Benefits:**
+
 - Easier for the model to parse and understand
 - Clear separation between instructions, context, and examples
 - Simpler to debug and iterate (modify one section without affecting others)
@@ -55,6 +59,7 @@ Take a look at this code and see if anything seems off.
 **Principle:** Give the model relevant context, but avoid overwhelming it with unnecessary information.
 
 **Context types:**
+
 - **Task context:** Why this task matters, what success looks like
 - **Domain context:** Specialized knowledge the model might lack
 - **Constraint context:** What NOT to do, edge cases to handle
@@ -67,12 +72,14 @@ Take a look at this code and see if anything seems off.
 **Principle:** Few-shot examples are powerful, but quality > quantity.
 
 **Good examples:**
+
 - Show diverse cases (not just variations of same pattern)
 - Include edge cases and boundary conditions
 - Demonstrate the reasoning process (not just inputs/outputs)
 - Keep examples concise (3-5 is often enough)
 
 **Anti-pattern:**
+
 - 20+ similar examples that all show the same pattern
 - Examples without explanations (model must guess the underlying rule)
 
@@ -81,6 +88,7 @@ Take a look at this code and see if anything seems off.
 **Principle:** Explicitly define the agent's role and expertise level.
 
 **Effective role-setting:**
+
 ```markdown
 You are an expert code reviewer with 10 years of experience in Python.
 You prioritize semantic issues (correctness, maintainability) over style.
@@ -94,6 +102,7 @@ You understand the difference between intentional patterns and mistakes.
 **Principle:** Define the exact structure and content of expected outputs.
 
 **Good:**
+
 ```markdown
 ## Output Format
 Return a JSON object with this structure:
@@ -112,6 +121,7 @@ Return a JSON object with this structure:
 **Principle:** When there are judgment calls, provide decision criteria or defaults.
 
 **Pattern:**
+
 ```markdown
 When you encounter duplication:
 - If in UI components (visual consistency), mark as acceptable
@@ -126,6 +136,7 @@ When you encounter duplication:
 **Principle:** For multi-step reasoning, explicitly instruct the model to show its work.
 
 **Pattern:**
+
 ```markdown
 Before flagging an issue, explain your reasoning:
 1. What pattern did you observe?
@@ -142,6 +153,7 @@ Then provide the structured issue report.
 **Principle:** Prompt engineering is empirical. Test on real examples, identify failure modes, iterate.
 
 **Workflow:**
+
 1. Write initial prompt based on principles
 2. Test on diverse examples (easy, medium, hard)
 3. Analyze failures (what did the model miss? what did it hallucinate?)
@@ -149,6 +161,7 @@ Then provide the structured issue report.
 5. Repeat until performance converges
 
 **Example iteration:**
+
 - **Observation:** Model flags intentional duplication as issues
 - **Diagnosis:** Missing guidance on acceptable duplication patterns
 - **Fix:** Add section "When Duplication is Acceptable" with examples
@@ -159,11 +172,13 @@ Then provide the structured issue report.
 **Principle:** Understand what the model is naturally good at and structure tasks accordingly.
 
 **Models are good at:**
+
 - Pattern matching across large contexts
 - Explaining reasoning in natural language
 - Following explicit step-by-step instructions
 
 **Models struggle with:**
+
 - Exact line-by-line counting (use tools instead)
 - Complex multi-step arithmetic (use calculator tools)
 - Maintaining perfect consistency over very long outputs
@@ -175,6 +190,7 @@ Then provide the structured issue report.
 ### Extended Context Windows
 
 Claude models (particularly Claude 3+) support large context windows (100K+ tokens). This enables:
+
 - **Multi-file analysis:** Pass entire codebases in context
 - **Long-range dependencies:** Find cross-file patterns without external tools
 - **Rich examples:** Include multiple diverse examples without truncation
@@ -184,6 +200,7 @@ Claude models (particularly Claude 3+) support large context windows (100K+ toke
 ### Reasoning Models (Claude 4+)
 
 Claude 4 models include enhanced reasoning capabilities. When using reasoning-enabled models:
+
 - **Request explicit reasoning:** "Think step-by-step before answering"
 - **Provide reasoning budget:** "You have 500 tokens to reason internally before responding"
 - **Encourage self-correction:** "Review your reasoning. Are there any gaps or errors?"
@@ -191,6 +208,7 @@ Claude 4 models include enhanced reasoning capabilities. When using reasoning-en
 ### Tool Use (Function Calling)
 
 Claude excels at tool use. When designing agent prompts:
+
 - **List available tools clearly:** Don't assume the model remembers from fine-tuning
 - **Explain when to use each tool:** Provide decision criteria
 - **Show tool use examples:** Demonstrate correct usage patterns
@@ -198,6 +216,7 @@ Claude excels at tool use. When designing agent prompts:
 ### Constitutional AI Considerations
 
 Claude is trained with Constitutional AI (harmlessness, helpfulness, honesty). Implications:
+
 - **Avoid adversarial framing:** Don't say "ignore safety guidelines" (triggers refusal)
 - **Frame tasks constructively:** "Help me improve this code" not "Find everything wrong"
 - **Acknowledge uncertainty:** Claude is trained to say "I'm not sure" when uncertain - don't penalize this
@@ -224,10 +243,10 @@ Claude is trained with Constitutional AI (harmlessness, helpfulness, honesty). I
 
 ## References
 
-- **Anthropic Prompt Engineering Guide**: https://docs.anthropic.com/claude/docs/prompt-engineering
-- **Claude 3 Model Card**: https://www.anthropic.com/claude-3-model-card
+- **Anthropic Prompt Engineering Guide**: <https://docs.anthropic.com/claude/docs/prompt-engineering>
+- **Claude 3 Model Card**: <https://www.anthropic.com/claude-3-model-card>
 - **Constitutional AI Paper** (Anthropic, 2022): "Constitutional AI: Harmlessness from AI Feedback"
-- **Anthropic Prompt Library**: https://docs.anthropic.com/claude/page/prompts (curated examples)
+- **Anthropic Prompt Library**: <https://docs.anthropic.com/claude/page/prompts> (curated examples)
 
 ## Advanced Patterns
 
@@ -236,6 +255,7 @@ Claude is trained with Constitutional AI (harmlessness, helpfulness, honesty). I
 For complex tasks, chain multiple prompts instead of cramming everything into one:
 
 **Example:**
+
 1. **Analysis prompt:** "Identify all potential issues in this code"
 2. **Prioritization prompt:** "Given these issues, rank them by severity"
 3. **Explanation prompt:** "For the top 5 issues, explain why they matter"
@@ -259,6 +279,7 @@ Focus on: algorithmic complexity, unnecessary allocations, caching opportunities
 ### Prompt Versioning
 
 Track prompt iterations with version control:
+
 - Save each prompt version with metadata (date, author, intent)
 - Link prompts to performance metrics (recall, precision)
 - Maintain changelog explaining what changed and why
@@ -268,6 +289,7 @@ Track prompt iterations with version control:
 ### Human-in-the-Loop Refinement
 
 For critical applications, combine automated prompt optimization with human review:
+
 1. Automated system generates candidate prompts
 2. Human reviews for clarity, safety, alignment with goals
 3. Human-approved prompts go into production
@@ -288,6 +310,7 @@ For critical applications, combine automated prompt optimization with human revi
 ### 2. Contradictory Instructions
 
 **Anti-pattern:**
+
 ```
 Be comprehensive and thorough.
 Be concise and brief.

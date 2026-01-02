@@ -14,12 +14,12 @@ repos:
       - id: check-merge-conflict
 
       # Syntax checks
-      - id: check-ast  # valid Python parse
+      - id: check-ast # valid Python parse
         language_version: python3.13
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-        # Skip Helm (contains Go templating, not valid YAML)
-        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/.*\.ya?ml$|^k8s-old/.*\.ya?ml$
+        # Skip Helm (contains Go templating, not valid YAML), k8s-old (archived), cluster k8s/charts
+        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s-old/|^cluster/k8s/|^cluster/charts/
       - id: check-toml
 
       # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer
@@ -36,7 +36,7 @@ repos:
       - id: yamllint
         args: ["-c", ".yamllint.yaml"]
         files: "\\.ya?ml$"
-        exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$|^k8s-old/.*\\.ya?ml$"
+        exclude: "ansible/host_vars/.*\\.yml$|^k8s-old/|^cluster/k8s/|^cluster/charts/"
 
   # Ansible syntax check: Fast validation for pre-commit
   #
@@ -53,7 +53,7 @@ repos:
         entry: ansible/scripts/run-syntax-check.sh
         language: system
         files: "^ansible/.*\\.ya?ml$"
-        exclude: "^ansible/k8s/.*"  # Exclude k8s files
+        exclude: "^ansible/k8s/.*" # Exclude k8s files
         pass_filenames: true
 
   # Ruff = linter + import sorter + formatter

@@ -18,10 +18,12 @@ These are **correctly using JSONB**:
 ### Priority 1: Occurrence Files & Ranges
 
 **Current State:**
+
 - `TruePositiveOccurrenceORM.files`: `Mapped[dict]` storing `{path: [line_ranges] | null}`
 - `FalsePositiveOccurrenceORM.files`: `Mapped[dict]` storing `{path: [line_ranges] | null}`
 
 **Problems:**
+
 - Can't query "all TPs affecting file X"
 - Can't filter by line numbers in SQL
 - No foreign key validation
@@ -94,6 +96,7 @@ class FalsePositiveOccurrenceRange(Base):
 ```
 
 **Migration Strategy:**
+
 1. Create new tables with migration
 2. Create validation trigger function and triggers
 3. Populate from existing JSONB data (trigger will validate on insert)
@@ -104,6 +107,7 @@ class FalsePositiveOccurrenceRange(Base):
 **Note**: The trigger will immediately catch any invalid ranges during migration step 3. Any ground truth with line numbers exceeding file bounds will cause migration to fail with a clear error message identifying the problematic file and range.
 
 **Benefits:**
+
 - SQL queries: `WHERE file_path = 'foo.py' AND start_line <= 50 AND end_line >= 40`
 - Proper indexing on file paths and line ranges
 - Foreign key integrity:
@@ -117,9 +121,11 @@ class FalsePositiveOccurrenceRange(Base):
 ### Priority 2: FP Relevant Files
 
 **Current State:**
+
 - `FalsePositiveOccurrenceORM.relevant_files`: `Mapped[list]` storing `[path, ...]`
 
 **Problems:**
+
 - Can't join on relevant files
 - No foreign key validation
 - Can't efficiently query "FPs relevant to file X"
@@ -152,6 +158,7 @@ class FalsePositiveRelevantFile(Base):
 ```
 
 **Benefits:**
+
 - Join queries: `JOIN fp_occurrence_relevant_files ON file_path = reviewed_file`
 - Proper foreign keys
 - Easier to query scope relevance
@@ -161,6 +168,7 @@ class FalsePositiveRelevantFile(Base):
 ### Backward Compatibility
 
 During migration:
+
 1. Keep JSONB columns temporarily
 2. Dual-write to both JSONB and new tables
 3. Add validation that JSONB matches table data
@@ -249,6 +257,7 @@ def _migrate_tp_ranges():
 ### API Impact
 
 Minimal - API responses can be constructed from either source:
+
 - Before migration: Read from JSONB, parse to LineRange
 - After migration: Read from table, construct LineRange objects
 - API schema stays the same
@@ -256,16 +265,19 @@ Minimal - API responses can be constructed from either source:
 ### Performance Considerations
 
 **Pros:**
+
 - Better indexes → faster file-based queries
 - Selective loading (don't load all ranges if you only need counts)
 - Native SQL operations on line numbers
 
 **Cons:**
+
 - More rows (each range = separate row vs nested in JSONB)
 - More joins required
 - Slightly more complex queries
 
 **Mitigation:**
+
 - Use eager loading where appropriate
 - Create composite indexes on common query patterns
 - Keep denormalized views for common aggregations
@@ -341,12 +353,14 @@ EXECUTE FUNCTION validate_range_line_numbers();
 ```
 
 **Benefits:**
+
 - Database-enforced integrity (can't insert invalid ranges)
 - Catches authoring errors at sync time
 - Prevents stale data if file shrinks between syncs
 - Clear error messages pointing to the specific issue
 
 **Application-level validation** (during YAML sync):
+
 ```python
 def validate_range_against_file(
     snapshot_slug: str,

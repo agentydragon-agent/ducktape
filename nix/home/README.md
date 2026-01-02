@@ -76,6 +76,7 @@ home-manager packages
 ```
 
 ### Generation Management
+
 ```bash
 # List all generations (versions)
 home-manager generations
@@ -86,12 +87,13 @@ home-manager expire-generations "-7 days"
 ```
 
 ### Diffing Changes
+
 Nix doesn't have built-in config diff, but you can:
 
 ```bash
 # See what packages would change
 nix-store -q --references $(home-manager build) | sort > /tmp/new-packages
-nix-store -q --references ~/.nix-profile | sort > /tmp/old-packages  
+nix-store -q --references ~/.nix-profile | sort > /tmp/old-packages
 diff /tmp/old-packages /tmp/new-packages
 
 # Or use nix-diff tool
@@ -104,6 +106,7 @@ nix-diff $(home-manager generations | head -2)
 ## Usage
 
 The pod has two persistent volumes:
+
 - `/nix` - The Nix store (20GB)
 - `/home/ubuntu` - User home directory (10GB)
 
@@ -112,12 +115,14 @@ This ensures that Nix packages and user configuration persist across pod restart
 ## Connecting from local machine
 
 You can also port-forward to work with the container:
+
 ```bash
 # If we add SSH server later
 kubectl -n nix-sandbox port-forward nix-sandbox-0 2222:22
 ```
 
 Or copy files:
+
 ```bash
 kubectl -n nix-sandbox cp ./my-config nix-sandbox-0:/home/ubuntu/
 ```
@@ -125,6 +130,7 @@ kubectl -n nix-sandbox cp ./my-config nix-sandbox-0:/home/ubuntu/
 ## Cleanup
 
 To remove everything (including the secret):
+
 ```bash
 kubectl delete -f statefulset.yaml
 kubectl delete secret api-keys -n nix-sandbox  # If created

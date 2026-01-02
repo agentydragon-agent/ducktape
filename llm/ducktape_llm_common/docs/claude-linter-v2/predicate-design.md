@@ -1,6 +1,7 @@
 # Claude Linter v2 Predicate System Design Options
 
 ## Design Goals
+
 - User-friendly for common cases
 - Powerful enough for complex logic
 - Self-documenting (can explain what it does)
@@ -25,7 +26,7 @@ predicate = { builtin = "safe_git_commands" }
 
 # Time-based rule
 [[rules]]
-predicate = { 
+predicate = {
   all_of = [
     { glob = "prod/**" },
     { time = "business_hours" }
@@ -36,14 +37,14 @@ message = "No production edits during business hours"
 
 # Complex logic with Python expression
 [[rules]]
-predicate = { 
-  expr = "tool == 'Bash' and command.startswith('rm') and not is_test_file(path)" 
+predicate = {
+  expr = "tool == 'Bash' and command.startswith('rm') and not is_test_file(path)"
 }
 action = "deny"
 
 # Full Python function (rare cases)
 [[rules]]
-predicate = { 
+predicate = {
   python = """
 def check(ctx):
     # Complex logic here
@@ -58,6 +59,7 @@ def check(ctx):
 ```
 
 ### Natural Language Generation
+
 ```python
 def to_natural_language(predicate):
     if 'glob' in predicate:
@@ -80,12 +82,12 @@ rules:
       exclude: ["**/*.generated.py", "**/*.test.py"]
     action: allow
     tools: [Edit, Write]
-    
+
   - predicate:
       type: git_command
       allow: [status, diff, log, add, commit]
       deny: [push --force, reset --hard]
-    
+
   - predicate:
       type: time_window
       days: [mon, tue, wed, thu, fri]
@@ -93,7 +95,7 @@ rules:
       timezone: "US/Pacific"
     action: deny
     message: "No edits during business hours"
-    
+
   - predicate:
       type: composite
       operator: and
@@ -118,7 +120,7 @@ action = "deny"
 
 [[rules]]
 predicate = '''
-(and 
+(and
   (= tool "Edit")
   (matches path ".*\.py$")
   (contains new-content "hasattr"))
@@ -145,7 +147,7 @@ action = "deny"
 # With variables
 [[rules]]
 predicate = """
-when tool is Edit 
+when tool is Edit
 and path matches {production_paths}
 and time is business_hours
 then deny with "No production edits during business hours"
@@ -174,15 +176,15 @@ predicate = { expr = "Edit('src/**') and not test_file and business_hours" }
 
 # Python function with sandboxed execution
 [[rules]]
-predicate = { 
+predicate = {
   fn = "check_migration_safety",  # References functions.toml
   sandbox = true
 }
 
 # Natural language (compiled to predicate)
 [[rules]]
-predicate = { 
-  natural = "allow editing Python files in src/ except during deployments" 
+predicate = {
+  natural = "allow editing Python files in src/ except during deployments"
 }
 ```
 
@@ -228,7 +230,7 @@ def check(ctx):
     return 'allow'
 """
 
-[[rules]] 
+[[rules]]
 predicate = { function = "check_pr_approval" }
 apply_to = ["prod/**"]
 ```
@@ -241,7 +243,7 @@ Each predicate type can describe itself:
 class Predicate:
     def describe(self) -> str:
         """Human-readable description"""
-    
+
     def explain_decision(self, context, result) -> str:
         """Why did this rule match/not match?"""
 
@@ -265,6 +267,7 @@ class Predicate:
 ## User Experience Examples
 
 ### Beginner: Just wants to protect some files
+
 ```toml
 [[rules]]
 pattern = "*.prod.py"
@@ -273,6 +276,7 @@ message = "Production files are read-only"
 ```
 
 ### Intermediate: Wants time-based rules
+
 ```toml
 [[rules]]
 predicate = "business_hours"
@@ -281,11 +285,12 @@ action = "deny"
 ```
 
 ### Advanced: Complex multi-condition logic
+
 ```toml
 [[rules]]
 predicate = {
   expr = """
-    (Edit('src/**/*.py') or Write('src/**/*.py')) and 
+    (Edit('src/**/*.py') or Write('src/**/*.py')) and
     not (test_file or fixture_file) and
     not has_approval('tech-lead')
   """
@@ -295,20 +300,21 @@ message = "Consider getting tech lead approval for core changes"
 ```
 
 ### Expert: Custom Python logic
+
 ```toml
 [functions.semantic_check]
 code = """
 def check(ctx):
     if ctx.tool != 'Edit':
         return 'allow'
-    
+
     # Use tree-sitter to parse
     tree = parse_python(ctx.new_content)
-    
+
     # Check for specific patterns
     if has_raw_sql_queries(tree) and not has_sql_injection_protection(tree):
         return 'deny', 'SQL queries must use parameterized statements'
-        
+
     return 'allow'
 """
 ```

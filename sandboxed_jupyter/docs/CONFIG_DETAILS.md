@@ -31,6 +31,7 @@ net: { mode: loopback }
 ```
 
 Notes
+
 - Unknown fields in the YAML are rejected (`extra = forbid`).
 - Process exec is permitted wherever paths are readable or writeable; narrow by trimming paths.
 
@@ -79,4 +80,5 @@ env:
   - Reads: if `allow_write_all: true` nothing more is needed; else either `(allow file-read* (subpath "/"))` for `allow_read_all: true`, or one `(allow file-read* (subpath "..."))` per `read_paths` entry
 
 Tuning tip
+
 - Start permissive (e.g., include kernel venv `site-packages` and your repo in `read_paths`, and `workspace` + `run_root` in `write_paths`). Then use seatbelt trace (`--trace-sandbox`) to derive the minimal additional reads needed for plotting/fonts, etc.

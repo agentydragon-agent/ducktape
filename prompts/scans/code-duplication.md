@@ -1,11 +1,13 @@
 # Scan: Duplicated Code Patterns
 
 ## Context
+
 @../shared-context.md
 
 ## Overview
 
 Codebases accumulate duplicated code across all domains:
+
 - **Test code**: Identical fixtures, setup logic, assertion patterns, custom matchers
 - **Production code**: Repeated business logic, data transformations, validation patterns
 - **Utilities**: Similar helper functions with slight variations
@@ -18,6 +20,7 @@ This scan identifies opportunities to extract shared implementations to reduce m
 **DRY (Don't Repeat Yourself) matters**: While local clarity sometimes justifies duplication, systematic patterns should be factored into shared implementations.
 
 **Balance**: Prefer local clarity over premature abstraction, but extract when:
+
 - Pattern appears 3+ times across different modules
 - Logic is complex and error-prone to duplicate
 - Pattern needs to evolve consistently
@@ -232,6 +235,7 @@ def test_user_validation():
 ```
 
 **Why?**
+
 - Mocks hide schema changes (real models fail fast)
 - Mocks don't validate constraints (Pydantic validation, required fields)
 - Mocks create maintenance burden (reimplementing data structures)
@@ -516,6 +520,7 @@ it('should require rejection reason to be non-empty', async () => {
 ```
 
 **Benefits of workflow extraction**:
+
 - **Single source of truth**: Dialog opening logic in one place
 - **Easier maintenance**: Update selector once if HTML structure changes
 - **Test intent clarity**: `openRejectDialog()` is self-documenting
@@ -555,6 +560,7 @@ rg --type py --no-heading '^[[:space:]]*[^#].*\S' | \
 ```
 
 **What to review from jscpd output**:
+
 1. **Duplication count**: Does block appear 3+ times?
 2. **Complexity**: Is it complex enough to warrant extraction (5+ lines, not trivial)?
 3. **Consistency**: Should changes propagate consistently?
@@ -562,6 +568,7 @@ rg --type py --no-heading '^[[:space:]]*[^#].*\S' | \
 5. **Evolution**: Will these likely evolve together or diverge?
 
 **What to review from common line patterns**:
+
 1. **Test assertions**: Same assertion pattern across multiple tests?
 2. **Setup/teardown**: Repeated initialization/cleanup?
 3. **Validation**: Same validation logic duplicated?

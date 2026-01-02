@@ -80,6 +80,7 @@ pytest tests/props/prompt_eval/test_prompt_optimizer_integration.py -v
 ## Skipping Behavior
 
 Tests will **skip automatically** if:
+
 - Required database configuration environment variables are not set
 - PostgreSQL is not running
 
@@ -94,6 +95,7 @@ The mock returns simple responses for both critic and grader flows.
 ## Database Schema
 
 Tests verify the following tables:
+
 - `specimens`: Specimen metadata with split (train/valid/test)
 - `prompts`: Prompt templates with hashes
 - `critiques`: Critic outputs (list of issues)
@@ -104,10 +106,12 @@ Tests verify the following tables:
 ## Row-Level Security (RLS)
 
 The database enforces RLS policies:
+
 - **admin_user**: Bypasses RLS (table owner)
 - **agent_user**: Can only SELECT from train/valid splits (NOT test)
 
 Tests verify this by:
+
 1. Writing test split data as admin_user
 2. Querying as agent_user and verifying empty result set
 
@@ -125,12 +129,14 @@ A complete end-to-end test would require:
 This is intentionally NOT included in these tests to keep them fast and deterministic.
 
 For actual tool execution tests, see:
+
 - `tests/props/cli/test_*.py`: CLI integration tests
 - `tests/agent/test_*.py`: Full agent flow tests
 
 ### Additional Coverage
 
 Future tests could add:
+
 - Verify cost tracking in database
 - Test error handling (critic failures, grader failures)
 - Test concurrent runs (multiple critics/graders)

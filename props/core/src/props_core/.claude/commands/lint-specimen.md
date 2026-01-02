@@ -1,6 +1,7 @@
 # Lint a specimen for conformance
 
 Read the specimens repository documentation first:
+
 - `~/code/specimens/CLAUDE.md` — Main guide
 - `~/code/specimens/docs/authoring-guide.md` — Authoring rules
 - `~/code/specimens/docs/format-spec.md` — Format specification
@@ -20,17 +21,21 @@ Do not duplicate requirement lists here. The linter MUST read the authoring guid
 Read `~/code/specimens/docs/quality-checklist.md` for the pre-commit verification checklist.
 
 ## Input
+
 - Target specimen: path to a specimen directory or any file inside it.
   - A valid specimen contains `issues/*.yaml` files
   - If omitted, discover candidates via `specimens/*/` directories
 
 ## Output
+
 A textual report of all violations with:
+
 - Location: file path and line number(s)
 - Rule reference: quote from authoring guide
 - Suggested fix: concrete edit description
 
 ## Procedure
+
 1) Read authoring guide and extract checklist
 2) Identify target specimen directory
 3) Validate structure and files
@@ -61,16 +66,19 @@ A textual report of all violations with:
 ## Interaction with Specimens
 
 **CRITICAL**: Always use `props snapshot exec <slug> -- <command>` when you need to interact with the hydrated specimen code:
+
 - Reading files from the specimen
 - Running tools against the specimen code
 - Checking file existence or structure
 
 This ensures:
+
 - Proper specimen hydration (git checkout at correct commit)
 - Isolation from the host filesystem
 - Correct working directory context
 
 Example:
+
 ```bash
 # Read a file from specimen
 props snapshot exec ducktape/2025-11-20-repo -- cat adgn/tests/agent/test_foo.py

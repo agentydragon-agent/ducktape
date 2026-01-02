@@ -37,6 +37,7 @@ pip install -e ".[dev]"
 ```
 
 This setup ensures:
+
 - Your global `cl2`/`claude-linter-v2` commands remain stable
 - Development changes only affect the venv
 - You can't accidentally lock yourself out by modifying hook code
@@ -49,6 +50,7 @@ This setup ensures:
 ## Quick Start
 
 ### Console Scripts Available
+
 - `claude-linter` - Unified linter for Claude Code hooks (pre/post/check modes)
 - `check-work-urls` - Validate work URLs in markdown files
 - `check-task-metadata` - Validate METADATA.yaml files
@@ -178,6 +180,6 @@ MIT License - see LICENSE file for details.
 
 ## Support
 
-- Documentation: https://ducktape.readthedocs.io/
-- Issues: https://github.com/ducktape/llm-common/issues
-- Discussions: https://github.com/ducktape/llm-common/discussions
+- Documentation: <https://ducktape.readthedocs.io/>
+- Issues: <https://github.com/ducktape/llm-common/issues>
+- Discussions: <https://github.com/ducktape/llm-common/discussions>

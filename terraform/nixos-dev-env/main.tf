@@ -5,7 +5,7 @@ locals {
   # Proxmox configuration
   proxmox_host     = "root@${var.proxmox_host}"
   proxmox_endpoint = "https://${var.proxmox_api_host}/"
-  proxmox_insecure = true  # Accept self-signed certs
+  proxmox_insecure = true # Accept self-signed certs
 
   # User and pool
   proxmox_user_base  = var.proxmox_username != "" ? var.proxmox_username : var.username
@@ -238,12 +238,12 @@ resource "proxmox_virtual_environment_acl" "sdn_access" {
 resource "null_resource" "nixos_cloud_image" {
   triggers = {
     cloud_image_config = filemd5("${path.module}/cloud-image.nix")
-    proxmox_host      = var.proxmox_host
-    storage           = var.storage
+    proxmox_host       = var.proxmox_host
+    storage            = var.storage
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
+    command     = <<-EOT
       set -e
       echo "Building NixOS qcow2 cloud image..."
 

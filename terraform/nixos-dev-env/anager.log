@@ -103,9 +103,9 @@ Terraform will perform the following actions:
                 #cloud-config
                 # Cloud-init configuration for NixOS with ducktape home-manager
                 # Sets up user 'user' with no password, auto-login, and home-manager
-                
+
                 hostname: user-nixos
-                
+
                 users:
                   - name: user
                     gecos: user
@@ -115,25 +115,25 @@ Terraform will perform the following actions:
                     ssh_authorized_keys:
                       - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@popvm
                     lock_passwd: true  # No password
-                
+
                 # System configuration
                 package_update: false
                 package_upgrade: false
-                
+
                 # Run commands to set up home-manager from ducktape repo
                 runcmd:
                   # Ensure /run/current-system/sw/bin is in PATH for cloud-init scripts
                   - export PATH="/run/current-system/sw/bin:$PATH"
-                
+
                   # Clone ducktape repository for user
                   - mkdir -p /home/user/code
                   - git clone https://gitlab.com/agentydragon/ducktape.git /home/user/code/ducktape
                   - chown -R user:users /home/user/code
-                
+
                   # Apply home-manager configuration from ducktape repo (with GUI enabled)
                   # Use the standalone home-manager, not a flake-based approach
                   - su - user -c 'home-manager switch -f ~/code/ducktape/nix/home/home.nix --arg enableGui true --arg enableKube false'
-                
+
                 final_message: "NixOS system ready! User 'user' configured with ducktape home-manager."
             EOT
           [32m+[0m[0m file_name = "user-nixos-cloud-init.yaml"
@@ -158,7 +158,7 @@ Terraform will perform the following actions:
           [32m+[0m[0m data      = <<-EOT
                 {
                   description = "Home Manager configuration for user-nixos";
-                
+
                   inputs = {
                     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
                     home-manager = {
@@ -167,7 +167,7 @@ Terraform will perform the following actions:
                     };
                     ducktape.url = "github:agentydragon/ducktape/main";
                   };
-                
+
                   outputs = { nixpkgs, home-manager, ducktape, ... }: {
                     homeConfigurations."user" = home-manager.lib.homeManagerConfiguration {
                       pkgs = nixpkgs.legacyPackages.x86_64-linux;
@@ -178,7 +178,7 @@ Terraform will perform the following actions:
                             homeDirectory = "/home/user";
                             stateVersion = "24.11";
                           };
-                
+
                           # Import ducktape home-manager config
                           imports = [ ducktape.packages.x86_64-linux.home ];
                         }

@@ -19,6 +19,7 @@ gmail_archiver/
 ```
 
 ### Data Models (Pydantic)
+
 ```python
 class FooReceipt(BaseModel):
     amount: Decimal | None = None
@@ -26,7 +27,9 @@ class FooReceipt(BaseModel):
 ```
 
 ### Parsing Functions
+
 If there's no state, just write functions:
+
 ```python
 def parse_foo(email: GmailMessage) -> FooReceipt:
     # Do the work
@@ -34,6 +37,7 @@ def parse_foo(email: GmailMessage) -> FooReceipt:
 ```
 
 NOT:
+
 ```python
 class FooParser:
     def __init__(self):
@@ -44,6 +48,7 @@ class FooParser:
 ```
 
 ### Planners
+
 Planners coordinate the archiving logic. They can be classes since they have configuration (thresholds, names):
 
 ```python
@@ -67,6 +72,7 @@ class FooPlanner:
 ## Dependencies
 
 Keep dependencies minimal. Current stack:
+
 - `google-api-python-client` - Gmail API
 - `pydantic` - Data models
 - `beautifulsoup4` - HTML parsing
@@ -76,6 +82,7 @@ Keep dependencies minimal. Current stack:
 ## Common Patterns
 
 ### Date parsing from email headers
+
 ```python
 try:
     dt = datetime.strptime(email.date, "%a, %d %b %Y %H:%M:%S %z")
@@ -85,6 +92,7 @@ except (ValueError, AttributeError):
 ```
 
 ### Regex extraction with optional fields
+
 ```python
 amount = None
 if match := AMOUNT_REGEX.search(body):
@@ -93,6 +101,7 @@ if match := AMOUNT_REGEX.search(body):
 ```
 
 ### Archive decision logic
+
 ```python
 from gmail_archiver.core import LABEL_AUTO_CLEANED
 from gmail_archiver.gmail_api_models import SystemLabel

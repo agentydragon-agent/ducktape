@@ -5,11 +5,13 @@ This document provides test cases to verify the Claude Code linter hooks are wor
 ## Prerequisites
 
 1. Install the ducktape_llm_common package:
+
    ```bash
    pip install -e /path/to/ducktape_llm_common
    ```
 
 2. Verify hooks are configured in `~/.claude/settings.json`:
+
    ```json
    "hooks": {
      "PreToolUse": [
@@ -44,6 +46,7 @@ This document provides test cases to verify the Claude Code linter hooks are wor
 ### Test 1: Auto-fixable Violations Only
 
 **File**: `test_autofix.py`
+
 ```python
 from typing import Union, Optional
 
@@ -55,6 +58,7 @@ def process_data(value: Union[str, int]) -> Optional[str]:
 ```
 
 **Expected Result**:
+
 - Pre-hook: Should pass (all violations are fixable)
 - Post-hook: Should auto-fix and report:
   - `UP007`: Convert `Union[str, int]` to `str | int`
@@ -64,6 +68,7 @@ def process_data(value: Union[str, int]) -> Optional[str]:
 ### Test 2: Non-fixable Ruff Violations
 
 **File**: `test_nonfixable.py`
+
 ```python
 import requests
 
@@ -73,12 +78,14 @@ def fetch_data(url):
 ```
 
 **Expected Result**:
+
 - Pre-hook: Should block with error message about S113 violation
 - File should NOT be created
 
 ### Test 3: Manual Pattern Violations (hasattr)
 
 **File**: `test_hasattr.py`
+
 ```python
 def check_attr(obj):
     if hasattr(obj, 'foo'):
@@ -87,12 +94,14 @@ def check_attr(obj):
 ```
 
 **Expected Result**:
+
 - Currently: Original `claude-linter-hook` blocks this
 - TODO: Pre-hook should also check manual patterns
 
 ### Test 4: Mixed Violations
 
 **File**: `test_mixed.py`
+
 ```python
 from typing import Union
 import requests
@@ -100,24 +109,27 @@ import requests
 def process(value: Union[str, int]):  # UP007 - fixable
     if hasattr(value, 'upper'):  # hasattr - not fixable
         return value.upper()
-    
+
 def fetch(url):
     return requests.get(url).text  # S113 - not fixable
 ```
 
 **Expected Result**:
+
 - Pre-hook: Should block due to non-fixable violations (hasattr, S113)
 - File should NOT be created
 
 ### Test 5: Clean File
 
 **File**: `test_clean.py`
+
 ```python
 def add(a: int, b: int) -> int:
     return a + b
 ```
 
 **Expected Result**:
+
 - Pre-hook: Pass
 - Post-hook: No changes needed
 - File created successfully

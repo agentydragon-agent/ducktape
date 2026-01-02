@@ -9,6 +9,7 @@ They are packed as tar archives containing a Dockerfile that builds an image wit
 When run, `/init` outputs the agent's system prompt to stdout.
 
 **Identity model:**
+
 - **Repo-backed packages**: Human-readable IDs (e.g., "critic", "grader"). Synced
   from `agent_defs/` directory, always updated in place on sync.
 - **Agent-created packages**: UUIDs assigned by the MCP server (via CLI helper).
@@ -28,10 +29,12 @@ agent_defs/
 ```
 
 **Required:**
+
 - `Dockerfile` - Builds the agent image (must produce `/init`)
 - `/init` in image - Executable that outputs system prompt to stdout
 
 **Optional (used by some /init implementations):**
+
 - `agent.md` - Agent-specific prompt portion rendered by `/init`
 - Supporting files referenced by Dockerfile
 
@@ -50,6 +53,7 @@ class AgentType(StrEnum):
 ## Database Schema
 
 **Tables:**
+
 - `agent_definitions` - Archives with `id`, `agent_type`, `archive` bytea
 - `agent_runs` - Unified runs with `agent_run_id`, `type_config` JSONB
 - `events` - Tool call traces linked via `agent_run_id`
@@ -86,6 +90,7 @@ All agents use a single `agent_base` role with RLS policies based on agent type:
 ```
 
 **Environment variables available to agents:**
+
 - Database: `$PGHOST`, `$PGPORT`, `$PGUSER`, `$PGPASSWORD`, `$PGDATABASE`
 - MCP: `$MCP_SERVER_URL`, `$MCP_SERVER_TOKEN`
 - `$AGENT_RUN_ID` - UUID of the current agent run
@@ -115,6 +120,7 @@ specialized analysis to sub-agents.
 ### Recursive Cost Aggregation
 
 Track costs across agent sub-trees:
+
 - `own_cost` - Cost of this agent run only
 - `cost_including_subagents` - Recursive sum including descendants
 

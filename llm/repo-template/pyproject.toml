@@ -9,23 +9,23 @@ select = [
     "E",    # pycodestyle errors
     "F",    # pyflakes
     "W",    # pycodestyle warnings
-    
+
     # Modern Python features (from your site)
     "UP",   # pyupgrade - enforces modern syntax
-    
+
     # Exception handling (from your site)
     "BLE",  # flake8-blind-except - no blind except Exception
     "TRY",  # tryceratops - exception handling antipatterns
-    
+
     # Path handling (from your site)
     "PTH",  # flake8-use-pathlib - enforce pathlib over os.path
-    
+
     # Code quality
     "C90",  # mccabe complexity
     "B",    # flake8-bugbear
     "SIM",  # flake8-simplify
     "RUF",  # Ruff-specific rules
-    
+
     # Import conventions (from your site)
     "E402", # Module level import not at top of file
     "I",    # isort

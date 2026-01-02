@@ -68,7 +68,7 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = [
     "docker.*",
-    "plotnine.*", 
+    "plotnine.*",
     "tiktoken.*",
     "pathspec.*",
     "claude_code_sdk.*",

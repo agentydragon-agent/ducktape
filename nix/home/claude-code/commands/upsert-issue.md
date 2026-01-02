@@ -7,6 +7,7 @@ Capture a code quality issue in the specimens repository at `~/code/specimens`.
 ## First: Read the Specimens Documentation
 
 **Before creating any issue, read the local documentation:**
+
 - `~/code/specimens/CLAUDE.md` - Overview and key docs
 - `~/code/specimens/docs/format-spec.md` - YAML format specification
 - `~/code/specimens/docs/authoring-guide.md` - How to write good issues
@@ -31,6 +32,7 @@ These docs are the source of truth for the current format (YAML, not libsonnet).
 ## If Snapshot is Stale
 
 If the file you're documenting doesn't exist in the latest snapshot:
+
 ```
 Cannot upsert - file not in latest snapshot.
 Latest: <snapshot-slug>

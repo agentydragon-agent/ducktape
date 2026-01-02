@@ -19,18 +19,22 @@ All text and identifiers must truthfully represent reality: code, names, docs, c
 ## Method (Outcome-First)
 
 ### Analysis Strategy
+
 1. **Read code first** - Map CLI flags/params → client builders → RPC payloads → server handlers
 2. **Use tools only as hints** - Validate each candidate by reading code and constructing a compact proof
 3. **Prefer precise anchors** - Use file:1-based lines, function/class names over long excerpts
 
 ### End-to-End Path Analysis
+
 Cover the full path from interface to implementation:
+
 - **Flag/param propagation**: CLI → client → protocol/RPC → server
 - **Request/response shapes**: Types/fields at each boundary
 - **Error semantics**: What is raised/returned vs. what is claimed
 - **No swallow expectations**: Verify exceptions aren't silently caught
 
 ### Process Steps
+
 1. **Enumerate candidates**:
    - Flags/params: grep CLI (click/Typer) and client builders for names/defaults
    - RPC methods: list handlers and payload models; note expected fields and shapes
@@ -46,6 +50,7 @@ Cover the full path from interface to implementation:
 ## Validation Approach
 
 For each contract claim:
+
 1. **Read the contract** (function/class name, docstring, type hint, comment, error message)
 2. **Trace the implementation** to understand actual behavior
 3. **Identify specific mismatches** between claimed and actual
@@ -56,6 +61,7 @@ For each contract claim:
 ## Command Snippets (For Navigation)
 
 ### Search and Discovery
+
 ```bash
 # Find CLI definitions and arguments
 rg -n "@app\.command|add_argument\(|Typer\(|choices=|Enum\(" /workspace
@@ -65,6 +71,7 @@ nl -ba -w1 -s ' ' /workspace/path.py | sed -n '120,160p'
 ```
 
 ### Optional Fast Hints (Do Not Paste Outputs)
+
 ```bash
 # Pyright (type checking, unreachable code)
 pyright --outputjson /workspace
@@ -83,6 +90,7 @@ ctags -R -f /tmp/tags /workspace
 ## Positive Examples
 
 Fixed name correctly reflects returned value:
+
 ```go
 func syntheticFormatPath(format string) string {
     // Returns synthetic path like "fetch.md", not extension
@@ -90,6 +98,7 @@ func syntheticFormatPath(format string) string {
 ```
 
 Accurate docstring with clear semantics:
+
 ```python
 def load_config(path: str | None) -> dict:
     """Load configuration.
@@ -100,6 +109,7 @@ def load_config(path: str | None) -> dict:
 ```
 
 Non-obvious rationale captured briefly:
+
 ```python
 # Trim trailing whitespace because upstream API mishandles it (issue #1234)
 text = text.rstrip()
@@ -108,6 +118,7 @@ text = text.rstrip()
 ## Negative Examples
 
 Misleading name - `getFileExtension` returns fake output path, not extension:
+
 ```go
 func getFileExtension(format string) string {
     if format == "markdown" {
@@ -118,11 +129,13 @@ func getFileExtension(format string) string {
 ```
 
 Identifier typo reduces clarity:
+
 ```go
 func isValidUt8(b []byte) bool { /* ... */ }  // should be isValidUTF8
 ```
 
 Stale/contradictory comment says `path` is required, but code accepts `None`:
+
 ```python
 # path is required
 path = ...
@@ -132,6 +145,7 @@ if path is None:
 ```
 
 Docstring claims caching but function doesn't actually cache:
+
 ```python
 def _load_yaml_file(self, path: Path) -> Any:
     """Load and cache YAML file content."""  # false - no caching
@@ -152,6 +166,7 @@ def _load_yaml_file(self, path: Path) -> Any:
 ## Focus Areas
 
 Focus on mismatches that could:
+
 - Mislead developers about how to use the code
 - Cause bugs due to incorrect assumptions
 - Make debugging harder due to inaccurate error messages

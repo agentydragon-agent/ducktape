@@ -3,6 +3,7 @@ Show the current task stack and context.
 Aliases: bt, stack
 
 When invoked, provide a clear summary of:
+
 1. Current task depth and what we're doing at each level
 2. Where we are in the current task
 3. What remains to be done
@@ -25,6 +26,7 @@ Use a visual stack representation showing the task hierarchy:
 
 U: /backtrace
 A:
+
 ```
 [Git commit organization for 48 files]
 └─[Creating individual commits]
@@ -36,6 +38,7 @@ A:
 ```
 
 Still need to commit:
+
 - 2 more Claude commands (raihelp, memorize)
 - llm/html refactoring (6 files)
 - ansible configs (3 files)

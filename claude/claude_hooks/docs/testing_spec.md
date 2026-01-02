@@ -17,6 +17,7 @@ pytest tests/ -v
 ```
 
 Current test coverage:
+
 - `tests/test_autofixer.py` - Pre-commit autofixer hook logic
 - `tests/test_actions.py` - Hook action helpers
 

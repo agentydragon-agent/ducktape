@@ -6,6 +6,7 @@ kind: behavior
 All text and identifiers truthfully represent reality: code, names, docs, comments, logs, metrics, schemas, and help reflect actual behavior and intent.
 
 ## Acceptance criteria (checklist)
+
 - Names reflect actual semantics and primary effect; avoid names that suggest different behavior than implemented
 - Docstrings summarize purpose, inputs, outputs, side effects, and are updated alongside behavior changes
 - Comments explain non‑obvious "why"/constraints; remove stale or contradictory/historical comments
@@ -19,6 +20,7 @@ All text and identifiers truthfully represent reality: code, names, docs, commen
 ## Negative examples
 
 Misleading name - `getFileExtension` returns fake output path, not an extension:
+
 ```go
 func getFileExtension(format string) string {
     if format == "markdown" {
@@ -30,11 +32,13 @@ func getFileExtension(format string) string {
 ```
 
 Typo:
+
 ```go
 func isValidUt8(b []byte) bool { /* ... */ }
 ```
 
 Stale/contradictory comment says `path` is required, but code accepts `None` and defaults:
+
 ```python
 # path is required
 path = ...
@@ -44,6 +48,7 @@ if path is None:
 ```
 
 Docstring claims caching but function doesn't actually cache, only loads+parses:
+
 ```python
 def _load_yaml_file(self, path: Path) -> Any:
     """Load and cache YAML file content."""  # <-- false
@@ -52,7 +57,9 @@ def _load_yaml_file(self, path: Path) -> Any:
 ```
 
 ## Positive examples
+
 Fixed name correctly reflects returned value:
+
 ```go
 func syntheticFormatPath(format string) string {
     // ...
@@ -70,11 +77,13 @@ def load_config(path: str | None) -> dict:
 ```
 
 Non-obvious rationale captured briefly (good):
+
 ```python
 # Trim trailing whitespace because upstream API mishandles it (issue #1234)
 text = text.rstrip()
 ```
 
 ## Cross-references
+
 - [Self‑describing names](./self-describing-names.md)
 - [No useless docs](./no-useless-docs.md)

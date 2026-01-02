@@ -5,6 +5,7 @@ Identify pytest test classes that don't provide value and should be converted to
 ## Antipattern
 
 Test classes that:
+
 1. Don't define any class-level fixtures (via `@pytest.fixture` decorators in the class)
 2. Don't have setup/teardown methods (`setup_method`, `teardown_method`, `setup_class`, `teardown_class`)
 3. Don't maintain shared state between tests
@@ -24,6 +25,7 @@ Test classes that:
 **ONLY use test classes when they provide value:**
 
 1. **Class-level fixtures** - Shared expensive setup:
+
 ```python
 class TestDatabase:
     @pytest.fixture(scope="class")
@@ -38,6 +40,7 @@ class TestDatabase:
 ```
 
 2. **Setup/teardown methods** - State management:
+
 ```python
 class TestStatefulComponent:
     def setup_method(self):
@@ -52,6 +55,7 @@ class TestStatefulComponent:
 ```
 
 3. **Shared instance attributes** - Mutable state across tests:
+
 ```python
 class TestCounter:
     def setup_class(self):
@@ -101,16 +105,19 @@ async def test_get_habit(client, mock_async_response, patch_client_method):
 For each test class:
 
 1. Check if it has any setup/teardown methods:
+
 ```bash
 rg --type py "class Test\w+:" -A 100 | grep -E "(setup_method|teardown_method|setup_class|teardown_class)"
 ```
 
 2. Check if it defines class-level fixtures:
+
 ```bash
 rg --type py "class Test\w+:" -A 100 | grep -E "@pytest\.fixture.*scope.*class"
 ```
 
 3. Check if test methods use `self.` for shared state:
+
 ```bash
 rg --type py "def test_\w+\(self" -A 20 | grep "self\.\w+ ="
 ```
@@ -140,6 +147,7 @@ For each `class Test*:` found:
 ## Example Conversion
 
 **Before:**
+
 ```python
 class TestHabitifyClient:
     """Tests for the Habitify client using async methods only."""
@@ -159,6 +167,7 @@ class TestHabitifyClient:
 ```
 
 **After:**
+
 ```python
 """Tests for the Habitify client using async methods only."""
 
@@ -177,6 +186,7 @@ async def test_habitify_client_get_habit(client, mock_async_response, patch_clie
 ```
 
 **Changes:**
+
 - Removed `class TestHabitifyClient:`
 - Moved class docstring to module docstring
 - Dedented all test methods by one level
@@ -186,10 +196,12 @@ async def test_habitify_client_get_habit(client, mock_async_response, patch_clie
 ## Files to Review
 
 Common locations:
+
 - `*/tests/test_*.py`
 - `*/tests/**/test_*.py`
 
 Priority files (based on search):
+
 - `llm/mcp/habitify/habitify_mcp_server/tests/test_habitify_client.py`
 - `claude/claude_hooks/tests/test_autofixer.py`
 - `claude/claude_hooks/tests/test_protocol_actions.py`
@@ -206,6 +218,7 @@ These patterns indicate the class SHOULD be kept:
 4. **Plugin integration** - Classes required by pytest plugins
 
 **Example of valuable class:**
+
 ```python
 @pytest.mark.slow
 @pytest.mark.integration

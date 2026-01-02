@@ -66,6 +66,7 @@
 ## When to Refactor
 
 **Do refactor when**:
+
 - You find unused code → delete it immediately
 - Multiple files doing the same thing → merge them
 - A class has no state → make it functions
@@ -73,6 +74,7 @@
 - A subdirectory has <3 files → flatten it
 
 **Don't refactor when**:
+
 - "It might be useful later"
 - "It's more proper OOP this way"
 - "It follows a pattern I learned"
@@ -80,6 +82,7 @@
 ## Questions to Ask Yourself
 
 Before adding complexity:
+
 - "Does this class have state?" → If no, use functions
 - "Is this abstraction actually used differently?" → If no, remove it
 - "Could this be simpler?" → Usually yes

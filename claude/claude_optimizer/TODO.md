@@ -13,17 +13,19 @@ Repository bundles huge Cargo target/ artifacts (> 80 MB) and lock files but omi
 
 ## Git Repository Storage
 
-Consider switching git repositories from Docker volumes to bind mounts for consistency with workspace/logs mounts. 
+Consider switching git repositories from Docker volumes to bind mounts for consistency with workspace/logs mounts.
 
 **Current**: Git repos use Docker volume `claude_shared_git`
 **Proposed**: Use bind mounts like workspace and logs
 
-**Benefits**: 
+**Benefits**:
+
 - More consistent architecture
 - Easier external inspection/debugging
 - Simpler file system layout
 
 **Considerations**:
+
 - Historical reasons for volumes (Colima path limitations)
 - Not currently needed functionality
 - Would require testing with Colima constraints

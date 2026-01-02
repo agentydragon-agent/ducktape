@@ -1,5 +1,6 @@
 Tue, May 6 #day
 =====
+
 - switch to better PG&E rates [Open] #issue
   - **Status**: Open
   - **Follow-ups**:

@@ -6,6 +6,7 @@ kind: outcome
 Use semantically rich, domain‑appropriate types instead of bare primitives, and make units explicit. Convert primitive inputs at boundaries; keep a single canonical internal unit/type.
 
 ## Acceptance criteria (checklist)
+
 - Time: use rich time types; avoid raw epoch ints/floats in core logic
 - Paths: use platform path libraries (`pathlib.Path` in Python; `path/filepath` in Go); no string concatenation
 - URLs: build/parse with standard libraries (`urllib.parse`, `net/url`); no manual string concatenation
@@ -40,6 +41,7 @@ MAX_UPLOAD = 25                     # units unclear
 ```
 
 ## Sub‑rules
+
 - [Time and duration](time.md)
 - [URLs](urls.md)
 - [Byte sizes](bytes.md)

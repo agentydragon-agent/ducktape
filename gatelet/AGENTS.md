@@ -5,10 +5,12 @@ You should have a `DATABASE_URL` env var set pointing to a usable database for t
 ## Dependencies
 
 Dependencies are defined in `pyproject.toml`:
+
 - Main dependencies in `dependencies` section
 - Development dependencies in `[project.optional-dependencies].dev` section
 
 First-time setup inside the devcontainer:
+
 ```bash
 # Install project with dev dependencies
 pip install -e '.[dev]'
@@ -17,6 +19,7 @@ pip install -e '.[dev]'
 ## Testing Strategy
 
 Tests are designed for execution INSIDE the devcontainer:
+
 - Transaction-isolated to prevent cross-test contamination
 - Each test uses a clean database state
 - DB sessions are rolled back after each test

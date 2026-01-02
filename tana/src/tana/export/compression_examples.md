@@ -1,29 +1,34 @@
 # Tana Export Compression Strategies
 
 ## 1. **Remove Redundant Node IDs** (30-40% reduction)
+
 - Keep only essential IDs for cross-references
 - Remove IDs from leaf nodes that aren't referenced elsewhere
 - Example: `[[buy a vise^2KoNzewiaEZz]]` → `buy a vise` (if not referenced)
 
 ## 2. **Consolidate Similar Items** (20-30% reduction)
+
 - Group related tasks by category
 - Merge duplicate/similar entries
 - Example: Multiple "buy X" items → Single "Shopping: X, Y, Z"
 
 ## 3. **Remove Implementation Details** (15-20% reduction)
+
 - Keep high-level goals, remove technical notes
 - Example: Remove all the Google Assistant troubleshooting details
 
 ## 4. **Flatten Deep Hierarchies** (10-15% reduction)
+
 - Reduce indentation levels where possible
 - Combine parent-child relationships when semantically equivalent
 
 ## 5. **Use Shorthand Notation** (5-10% reduction)
+
 - Replace verbose status markers
 - Use symbols instead of text: ✓ instead of "completed"
 - Abbreviate common terms: HA → Home Assistant
 
-## Example Compressed Format:
+## Example Compressed Format
 
 ```
 %%tana%%
@@ -54,7 +59,7 @@
     • Tools: vise, PCB holder, calipers
 ```
 
-## Compression Script Approach:
+## Compression Script Approach
 
 ```python
 def compress_tana_export(content):

@@ -37,11 +37,13 @@ Find documentation and comments that restate what code already says, add no insi
 This prevents skipping items. Do not rely on "scanning" — explicitly list every piece of documentation.
 
 ### Analysis Strategy
+
 1. **Read code structure first** - Understand what the code does before evaluating its documentation
 2. **Compare doc to signature** - Check if docstring adds anything beyond what signature/types show
 3. **Check comment necessity** - Would removing the comment lose any information?
 
 ### Process Steps
+
 1. **Extract all docstrings** in functions, methods, classes, modules — list each with file:line
 2. **For each docstring** (go through your extracted list one by one):
    - Compare to function name and signature
@@ -56,6 +58,7 @@ This prevents skipping items. Do not rely on "scanning" — explicitly list ever
 ## Positive Examples (Acceptable Documentation)
 
 Docstring explaining non-obvious behavior:
+
 ```python
 def retry_with_backoff(fn: Callable[[], T], max_attempts: int = 3) -> T:
     """Retries fn with exponential backoff (1s, 2s, 4s). Raises last exception after max_attempts."""
@@ -63,12 +66,14 @@ def retry_with_backoff(fn: Callable[[], T], max_attempts: int = 3) -> T:
 ```
 
 Comment explaining WHY:
+
 ```python
 # Use UTC to avoid DST edge cases in scheduling
 scheduled_at = datetime.now(timezone.utc)
 ```
 
 Docstring describing invariants/contracts:
+
 ```python
 def transfer(from_account: Account, to_account: Account, amount: Decimal) -> None:
     """Atomically transfers amount. Raises InsufficientFunds if from_account.balance < amount."""
@@ -76,6 +81,7 @@ def transfer(from_account: Account, to_account: Account, amount: Decimal) -> Non
 ```
 
 Docstring disambiguating an ambiguous name:
+
 ```python
 # GOOD: docstring clarifies what "working_dir" means
 @property
@@ -92,6 +98,7 @@ def container_working_dir(self) -> Path:
 ## Negative Examples (Flag These)
 
 Restating the function name:
+
 ```python
 def get_user(user_id: str) -> User:
     """Get a user by ID.
@@ -106,6 +113,7 @@ def get_user(user_id: str) -> User:
 ```
 
 Restating what code does:
+
 ```python
 # Increment the counter
 counter += 1
@@ -116,6 +124,7 @@ if user is None:
 ```
 
 Prescriptive instead of descriptive:
+
 ```python
 class DatabaseConfig:
     """Use this class to configure the database connection.
@@ -128,6 +137,7 @@ class DatabaseConfig:
 ```
 
 Section banners with no content:
+
 ```python
 # ============================================================================
 # Helper Functions
@@ -138,6 +148,7 @@ def helper_one():
 ```
 
 Args that echo signature:
+
 ```python
 def process_data(data: list[dict], strict: bool = False) -> ProcessResult:
     """Process data records.

@@ -26,6 +26,7 @@ All date-dependent endpoints require a specific date format:
 3. **Example**: For date "May 9, 2025" at UTC, use `2025-05-09T00:00:00+00:00`
 
 Using an incorrect date format will result in a 500 error with the message:
+
 ```
 "Only accept the format of target_date is YYYY-MM-DDThh:mm:ss±hh:mm"
 ```
@@ -45,6 +46,7 @@ All successful API responses follow this general structure:
 ```
 
 Error responses typically have:
+
 ```json
 {
   "message": "Error message here",
@@ -64,11 +66,13 @@ Error responses typically have:
 **Description:** Retrieve all habits in your Habitify account.
 
 **Request:**
+
 ```
 GET https://api.habitify.me/habits
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "message": "Success",
@@ -107,11 +111,13 @@ GET https://api.habitify.me/habits
 **Description:** Retrieve detailed information about a specific habit.
 
 **Request:**
+
 ```
 GET https://api.habitify.me/habits/{habit_id}
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "message": "Success",
@@ -141,6 +147,7 @@ GET https://api.habitify.me/habits/{habit_id}
 ```
 
 **Error Response (500):**
+
 ```json
 {
   "message": "The habit does not exist",
@@ -158,14 +165,17 @@ GET https://api.habitify.me/habits/{habit_id}
 **Description:** Get the status of a habit for a specific date.
 
 **Parameters:**
+
 - `target_date` (required): Date in ISO-8601 format with timezone (YYYY-MM-DDThh:mm:ss±hh:mm)
 
 **Request:**
+
 ```
 GET https://api.habitify.me/status/{habit_id}?target_date=2025-05-04T00:00:00+00:00
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "message": "Success",
@@ -190,6 +200,7 @@ GET https://api.habitify.me/status/{habit_id}?target_date=2025-05-04T00:00:00+00
 
 **Error Response (500):**
 Invalid date format:
+
 ```json
 {
   "message": "Only accept the format of target_date is YYYY-MM-DDThh:mm:ss±hh:mm",
@@ -207,6 +218,7 @@ Invalid date format:
 **Description:** Update the status of a habit for a specific date.
 
 **Request Body:**
+
 ```json
 {
   "status": "completed",  // Possible values: "completed", "failed", "skipped"
@@ -217,6 +229,7 @@ Invalid date format:
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "message": "Success",
@@ -230,6 +243,7 @@ Invalid date format:
 See corresponding YAML example file for the complete request and response structure.
 
 **Notes:**
+
 - For habits without goals, you can omit the `value` field
 - The `note` field is optional and allows you to add a comment to the habit log
 - This is the only way to add notes to habits - notes are attached to status updates for specific dates
@@ -250,6 +264,7 @@ See corresponding YAML example file for the complete request and response struct
 **Description:** Get habits for a specific date with their status information.
 
 **Parameters:**
+
 - `target_date` (required): Date in ISO-8601 format with timezone (YYYY-MM-DDThh:mm:ss±hh:mm)
 - `order_by` (optional): Order habits by ("priority", "reminder_time", "status")
 - `status` (optional): Filter by status (comma-separated: "none", "completed", "failed", "skipped", "in_progress")
@@ -296,6 +311,7 @@ A habit object typically includes:
 | priority | number | Priority value used for sorting |
 
 When retrieved via `/journal`, habits also include:
+
 - `status` - Current status for the specified date
 - `progress` - Progress information for habits with goals
 - `habit_type` - Habit type identifier
@@ -332,11 +348,13 @@ The Habitify API supports several types of goals and measurement units:
 ### Updating Goals
 
 When updating a habit status with goals:
+
 1. Use the `value` field to specify progress toward the goal
 2. For habits without explicit goals, omit the `value` field and just use status
 3. The `status` can be set independently of goal progress
 
 **Example**: For a habit with a goal of "10 reps daily":
+
 - Partial completion: Set `value` to a number between 0-10 and `status` to "in_progress"
 - Full completion: Set `value` to 10 and `status` to "completed"
 - Failed attempt: Set `status` to "failed" with whatever `value` was achieved

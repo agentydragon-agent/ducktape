@@ -1,6 +1,7 @@
 # Scan: Suspicious Nullability
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -22,6 +23,7 @@ Nullability (`T | None`) that is misused, propagated through too many layers, or
 **Correct approach**: Fix the root cause by making the type system reflect reality - if a value is never actually None in practice, it shouldn't be typed as nullable.
 
 **Important**: Suspicious nullability often points to a **design problem**, not just a typing problem. You usually cannot fix it by changing 1-2 annotations. Instead, you may need to:
+
 - Refactor data flow to handle None at boundaries
 - Restructure function call chains to eliminate None propagation
 - Rethink API design to make optional vs required explicit
@@ -32,11 +34,13 @@ Nullability (`T | None`) that is misused, propagated through too many layers, or
 ## Core Principle: Optional at ONE Branch Point, Not Infecting 500 Inner Points
 
 **The Goal**: `Maybe<OneBigOptionalModule>` where module contains `{Foo, Bar, Baz}`
+
 - Optionality exists at **ONE** outer layer
 - Once you unwrap the Maybe, everything inside is non-optional
 - Handle None **once** at the branch point, then work with non-None values downstream
 
 **The Problem**: `OptionalModule` with `Maybe<Foo>, Maybe<Bar>, Maybe<Baz>`
+
 - Optionality "infects" every single field
 - Every function touching Foo must handle None
 - Every function touching Bar must handle None
@@ -191,6 +195,7 @@ except ValueError:
 ```
 
 **Better**:
+
 ```python
 # GOOD: Don't accept None, handle it at the call site
 def process_user_data(user_id: str) -> UserData:
@@ -220,6 +225,7 @@ def send_notification(container: Container) -> None:
 ```
 
 **Better - Option 1: Type narrowing helper**:
+
 ```python
 def _require_container_id(container: Container) -> str:
     """Get container ID, raising if None.
@@ -243,6 +249,7 @@ def send_notification(container: Container) -> None:
 ```
 
 **Better - Option 2: Type guard**:
+
 ```python
 def has_container_id(container: Container) -> TypeGuard[ContainerWithId]:
     return container.id is not None
@@ -282,6 +289,7 @@ send_notification(display)  # str | None
 ```
 
 **Better - Handle None once at branch point**:
+
 ```python
 # GOOD: Inner functions work with non-None values
 def get_user_email(user_id: str) -> str:
@@ -320,6 +328,7 @@ if email is not None:  # Pointless check
 ```
 
 **Better**:
+
 ```python
 class User:
     def __init__(self, email: str):
@@ -350,6 +359,7 @@ def connect_to_database(
 ```
 
 **Better**:
+
 ```python
 # GOOD: Required parameters are not nullable
 def connect_to_database(
@@ -395,6 +405,7 @@ rg --type py 'Union\[.*None' -B 2 -A 1 --line-number
 ```
 
 **What to review for each nullable:**
+
 1. **Immediately fails if None**: Function parameter accepts None but first line raises if None
 2. **Immediately asserts not None**: Value assigned from nullable source then `assert x is not None`
 3. **None propagation**: Function returns None if param is None (propagating through layers)
@@ -406,17 +417,20 @@ rg --type py 'Union\[.*None' -B 2 -A 1 --line-number
 ---
 
 **Recall/Precision**: Medium recall (~60-70%) with targeted patterns, requires manual verification
+
 - `grep "| None\).*\n.*if.*is None.*raise"` finds immediate None checks: ~50% recall, ~70% precision
 - `grep "assert.*is not None"` finds assertions: ~80% recall, ~60% precision
 - AST scan for None propagation patterns: ~40% recall, ~80% precision
 - Manual reading required for "semantically impossible None"
 
 **Why medium recall for targeted patterns**:
+
 - Many patterns require understanding control flow across multiple functions
 - "Semantically impossible None" requires domain understanding
 - None propagation patterns have many variations
 
 **Recommended approach AFTER Step 0**:
+
 1. Run targeted grep/AST patterns to find obvious antipatterns (~60-70% recall, ~60-70% precision)
 2. For each candidate, analyze:
    - **Immediately fails if None?** Check first lines of function body
@@ -443,6 +457,7 @@ rg --type py "def \w+\([^)]*: \w+ \| None"
 ```
 
 **AST-based approach**:
+
 ```python
 # Build tool that finds:
 for func in all_functions:
@@ -485,6 +500,7 @@ rg --type py -A10 "def \w+\(" | grep -B1 "if.*is None.*or.*is None"
 ### 5. AST-Based Discovery (Comprehensive)
 
 Build tool that analyzes:
+
 ```python
 # Pseudocode for AST-based detection
 for func in all_functions:
@@ -548,6 +564,7 @@ for func in all_functions:
 ## Investigation Process
 
 ### Step 1: Trace the None Source
+
 ```python
 # Where does None come from?
 # - User input? → Validate at input boundary
@@ -557,6 +574,7 @@ for func in all_functions:
 ```
 
 ### Step 2: Understand Domain Constraints
+
 ```python
 # Can this actually be None given the domain?
 # Example: Docker container.id after successful creation
@@ -566,6 +584,7 @@ for func in all_functions:
 ```
 
 ### Step 3: Map Call Chain
+
 ```python
 # How far does None propagate?
 def a() -> X | None: ...
@@ -585,6 +604,7 @@ if x := a():
 ```
 
 ### Step 4: Check for Defensive Programming
+
 ```python
 # Is this defensive programming against bad calls?
 def process(required_param: str | None) -> None:
@@ -601,6 +621,7 @@ def process(required_param: str | None) -> None:
 ## Fix Strategy
 
 ### Fix 1: Remove Nullability from Parameters That Immediately Fail
+
 ```python
 # Before:
 def process(user_id: str | None) -> None:
@@ -619,6 +640,7 @@ if user_id is not None:
 ```
 
 ### Fix 2: Create Type-Narrowing Helper for Assertions
+
 ```python
 # Before:
 container_id = container.id  # str | None
@@ -636,6 +658,7 @@ use_container_id(container_id)
 ```
 
 ### Fix 3: Eliminate None Propagation
+
 ```python
 # Before:
 def get_user(user_id: str | None) -> User | None:
@@ -673,6 +696,7 @@ if user_id is not None:
 ```
 
 ### Fix 4: Make Required Parameters Non-Nullable
+
 ```python
 # Before:
 def connect(host: str | None, port: int | None, db: str | None) -> Connection:
@@ -698,6 +722,7 @@ def connect(
 Cases where `T | None` is correct:
 
 ### 1. Genuinely Optional Data
+
 ```python
 # User profile where middle name is optional
 class User(BaseModel):
@@ -707,6 +732,7 @@ class User(BaseModel):
 ```
 
 ### 2. Database Queries That Might Not Find Results
+
 ```python
 def find_user_by_email(email: str) -> User | None:
     # None means "not found", which is different from error
@@ -714,6 +740,7 @@ def find_user_by_email(email: str) -> User | None:
 ```
 
 ### 3. Caching / Memoization
+
 ```python
 def get_cached_value(key: str) -> str | None:
     # None means "not in cache", caller will compute and cache
@@ -721,6 +748,7 @@ def get_cached_value(key: str) -> str | None:
 ```
 
 ### 4. External API That Can Return None
+
 ```python
 # Docker container.id is None before container is created
 # This is correct typing from the library

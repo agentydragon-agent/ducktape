@@ -250,10 +250,10 @@ Issues/bugs/TODO items have #issue supertag. `#issue`'s have:
 
 * `Status::` field which is `[[Open]]` / `[[Done]]` / `[[Waiting]]` / `[[Shelved]]` / `[[Cancelled]]`.
 * `Hotlists::` field, of which some important are:
-    * `[[Do next]]` -- for issues that are high priority, to be picked up next
-    * `[[Buy]]` -- involves buying something
-    * `[[Personal technical infrastructure]]` -- computer/phone setup, automation, etc.
-    * `[[Repair]]`, `[[Prevention]]`, `[[Health]]`, `[[Mental health]]`, `[[Home improvement]]`, `[[Socializing]]`
+  * `[[Do next]]` -- for issues that are high priority, to be picked up next
+  * `[[Buy]]` -- involves buying something
+  * `[[Personal technical infrastructure]]` -- computer/phone setup, automation, etc.
+  * `[[Repair]]`, `[[Prevention]]`, `[[Health]]`, `[[Mental health]]`, `[[Home improvement]]`, `[[Socializing]]`
 * `Snapshot::` field: brief summary of current state/blockers/... - as opposed to historical evolution/logs
 
 Example:

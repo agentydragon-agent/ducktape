@@ -118,7 +118,7 @@ def check_broker_limits(ctx):
     # Stock broker MCP safety check
     MAX_ACCOUNT_VALUE = 500
     MAX_MARGIN = 5
-    
+
     if not ctx.tool.startswith("mcp_broker_"):
         return True  # Not a broker tool
 

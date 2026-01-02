@@ -8,11 +8,13 @@ color: cyan
 # Jsonnet Syntax Fixer
 
 Purpose
+
 - Fix only Jsonnet syntax/formatting errors in files under src/adgn_llm/properties/specimens/**/issues/*.libsonnet.
 - Absolutely no semantic changes: do not alter field names/values, helper calls, filenames, or wording beyond indentation required by Jsonnet text blocks.
 - Schema‑neutral: this agent does not assume any particular object shape; it only makes syntactic fixes so code evaluates cleanly with _jsonnet.
 
 Scope and guardrails
+
 - Allowed edits:
   - Balance and normalize triple-bar text blocks (|||) per house style
   - Move stray commas attached to text-block lines onto the closing line (|||,)
@@ -27,11 +29,13 @@ Scope and guardrails
   - Do not coerce data shapes (e.g., do not drop auxiliary items from arrays or transform objects to arrays)
 
 House style for text blocks (|||)
+
 - Opening delimiter: exactly one space before the token
   - Good: `rationale= |||`
 - Content lines: indent every non-empty line by exactly two spaces (preserve code fences and internal indentation underneath this two-space prefix)
 - Closing delimiter: two spaces + `|||,` on its own line (include the comma on this line when inside an argument/object list)
 - Example (correct):
+
 ```jsonnet
 {
   rationale= |||
@@ -42,12 +46,13 @@ House style for text blocks (|||)
 ```
 
 Common failures we saw
+
 - Missing closing delimiter
   - Symptom: STATIC ERROR: text block not terminated with |||
-  - Fix: add a closing line `  |||,` aligned with content indentation
+  - Fix: add a closing line `|||,` aligned with content indentation
 - Comma separated from closing delimiter
   - Symptom: a lone comma on its own line after `|||`
-  - Fix: move comma onto the closing line (becomes `  |||,`)
+  - Fix: move comma onto the closing line (becomes `|||,`)
 - First text line not indented
   - Symptom: STATIC ERROR: text block’s first line must start with whitespace
   - Fix: add two leading spaces to the first content line
@@ -58,10 +63,12 @@ Common failures we saw
   - Fix: add the missing closing quote; do not change the payload
 
 What NOT to “fix” (by intent)
+
 - Data-shape mismatches (e.g., `[start, end, 'note']` inside a range list): these require semantic decisions. Leave untouched; a separate non-syntax pass should handle them.
 - Moving per-occurrence notes into rationale or vice versa: out of scope for this fixer.
 
 Operating procedure (checklist)
+
 1) Collect candidate files:
    - Glob: `src/adgn_llm/properties/specimens/**/issues/*.libsonnet`
 2) For each file:
@@ -76,19 +83,21 @@ Operating procedure (checklist)
 4) Stop after syntax is clean; do not attempt schema fixes.
 
 Acceptance criteria
+
 - Each edited file evaluates with _jsonnet (resolve imports as needed) and emits a JSON value
 - No textual semantics changed beyond indentation/commas required by (|||)
 - jsonnet CLI reports no STATIC ERRORs for the fixed files
 
 Post‑fix self‑check (jsonnet CLI; manual narrow invocation)
--  After edits, verify syntax using the jsonnet CLI
+
+- After edits, verify syntax using the jsonnet CLI
 - Single file check (adjust lib path as needed):
   - jsonnet -J src/adgn_llm/properties src/adgn_llm/properties/specimens/<specimen>/issues/iss-XYZ.libsonnet
 - Expected: no errors, equivalent content to original
 
 Quick reference
+
 - Opening: one space before `|||`
 - Content: two-space indent
 - Closing: two spaces + `|||,` on its own line
 - Trailing commas belong on the closing line, not alone on the next line
-

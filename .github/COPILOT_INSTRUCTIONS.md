@@ -16,7 +16,9 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md)
 ## Build Systems
 
 ### Python (UV Workspace)
+
 The repository uses a UV workspace with a single `uv.lock` at the root:
+
 ```bash
 # Install all workspace members
 uv sync
@@ -24,15 +26,18 @@ uv sync
 # Or use per-package devenv
 cd adgn && direnv allow
 ```
+
 Target: Python 3.12+
 
 ### Rust
+
 ```bash
 cargo build
 cargo test
 ```
 
 ### Bazel
+
 ```bash
 bazel build //target:name
 bazel test //target:name
@@ -41,6 +46,7 @@ bazel test //target:name
 ## Code Style
 
 Follow conventions in [STYLE.md](../STYLE.md):
+
 - **No exception swallowing**: Catch specific exceptions, let real errors surface
 - **Prefer exceptions over error lists**: Raise exceptions on validation failure
 - **Use Pydantic as typed objects**: Access fields directly (`model.field`), not `dict.get(...)`

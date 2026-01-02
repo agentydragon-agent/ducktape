@@ -1,6 +1,5 @@
 # TODO: untested
 
-
 # Example dashboard cards for Indoor AQI integration
 #
 # This file contains examples of how to set up dashboard cards to display
@@ -10,46 +9,46 @@
 - type: entities
   title: Indoor Air Quality
   entities:
-  - entity: sensor.rais_room_aqi
-    name: Overall IAQI
-  - type: attribute
-    entity: sensor.rais_room_aqi
-    attribute: bottleneck_string
-    name: Problem Areas
+    - entity: sensor.rais_room_aqi
+      name: Overall IAQI
+    - type: attribute
+      entity: sensor.rais_room_aqi
+      attribute: bottleneck_string
+      name: Problem Areas
 
 # 2. Component IAQI breakdown card
 - type: entities
   title: Air Quality Components
   entities:
-  - type: attribute
-    entity: sensor.rais_room_aqi
-    attribute: iaqi_co2
-    name: CO₂ Quality
-  - type: attribute
-    entity: sensor.rais_room_aqi
-    attribute: iaqi_pm25
-    name: PM2.5 Quality
-  - type: attribute
-    entity: sensor.rais_room_aqi
-    attribute: iaqi_voc
-    name: VOC Quality
+    - type: attribute
+      entity: sensor.rais_room_aqi
+      attribute: iaqi_co2
+      name: CO₂ Quality
+    - type: attribute
+      entity: sensor.rais_room_aqi
+      attribute: iaqi_pm25
+      name: PM2.5 Quality
+    - type: attribute
+      entity: sensor.rais_room_aqi
+      attribute: iaqi_voc
+      name: VOC Quality
 
 # 3. Raw values card
 - type: entities
   title: Raw Pollutant Values
   entities:
-  - type: attribute
-    entity: sensor.rais_room_aqi
-    attribute: raw_co2
-    name: CO₂ (ppm)
-  - type: attribute
-    entity: sensor.rais_room_aqi
-    attribute: raw_pm25
-    name: PM2.5 (μg/m³)
-  - type: attribute
-    entity: sensor.rais_room_aqi
-    attribute: raw_voc
-    name: VOC (ppb)
+    - type: attribute
+      entity: sensor.rais_room_aqi
+      attribute: raw_co2
+      name: CO₂ (ppm)
+    - type: attribute
+      entity: sensor.rais_room_aqi
+      attribute: raw_pm25
+      name: PM2.5 (μg/m³)
+    - type: attribute
+      entity: sensor.rais_room_aqi
+      attribute: raw_voc
+      name: VOC (ppb)
 
 # 4. Colored gauge for overall IAQI
 - type: gauge

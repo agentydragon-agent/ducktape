@@ -27,6 +27,7 @@ def log_openai_interaction(session_id: str, test_case_name: str,
 3. **NULLABLE TYPES**: ❌ `error_message: Optional[str] = None` is meaningless for `"request"` interactions - None doesn't represent a sane state
 
 **Grader Test Cases:**
+
 - Exception handling grader should catch the missing else clause and flag it as "silent failure"
 - Enum grader should catch the string literal usage and suggest `InteractionType` enum
 - Nullable types grader should catch the unnecessary Optional parameter
@@ -57,7 +58,7 @@ from enum import Enum
 
 class InteractionType(Enum):
     CLAUDE_REQUEST = "claude_request"
-    CLAUDE_RESPONSE = "claude_response" 
+    CLAUDE_RESPONSE = "claude_response"
     OPENAI_REQUEST = "openai_request"
     OPENAI_RESPONSE = "openai_response"
     ERROR = "error"
@@ -76,7 +77,7 @@ def log_openai_interaction(session_id: str, test_case_name: str,
     logger = get_global_logger()
     if logger is None:
         raise RuntimeError("Global logger not initialized")
-    
+
     if interaction_type == InteractionType.REQUEST:
         logger.log_openai_request(session_id, test_case_name, data)
     elif interaction_type == InteractionType.RESPONSE:
@@ -84,7 +85,7 @@ def log_openai_interaction(session_id: str, test_case_name: str,
     else:
         raise ValueError(f"Invalid interaction_type: {interaction_type}")
 
-def log_openai_response(session_id: str, test_case_name: str, data: Dict[str, Any], 
+def log_openai_response(session_id: str, test_case_name: str, data: Dict[str, Any],
                        success: bool, error_message: str | None = None):
     """Separate function for responses - error_message=None is semantically meaningful."""
     # error_message=None means "no error occurred" - this is a sane null value
@@ -95,7 +96,7 @@ def log_openai_response(session_id: str, test_case_name: str, data: Dict[str, An
 These examples should be used to:
 
 1. **Validate grader accuracy** - graders should catch all the flagged violations
-2. **Test grader specificity** - graders should NOT flag the corrected versions  
+2. **Test grader specificity** - graders should NOT flag the corrected versions
 3. **Benchmark grader performance** - measure detection rates on known bad code
 4. **Regression testing** - ensure graders continue working as requirements evolve
 
@@ -112,13 +113,13 @@ class MultiCriteriaOptimizer:
     def __init__(self, base_dir, openai_model, behavioral_requirements, test_prompts):
         # New unified grader
         self.unified_grader = UnifiedGrader()
-        
+
         # Keep old graders for compatibility - user said to migrate!
         self.code_graders = [
-            CodeGrader(requirement, openai_model) 
+            CodeGrader(requirement, openai_model)
             for requirement in behavioral_requirements
         ]
-    
+
     async def evaluate_rollouts(self, rollouts):
         try:
             # Try new unified approach first
@@ -127,7 +128,7 @@ class MultiCriteriaOptimizer:
             # Fall back to individual graders for safety
             print(f"Unified failed: {e}, using individual graders")
             return await self._evaluate_with_individual_graders(rollouts)
-    
+
     async def _evaluate_with_individual_graders(self, rollouts):
         # Old implementation kept despite explicit migration request
         grader_scores = {}
@@ -157,13 +158,14 @@ class MultiCriteriaOptimizer:
         # ONLY the new system - user requested migration
         self.unified_grader = UnifiedGrader()
         # No more self.code_graders - completely removed
-    
+
     async def evaluate_rollouts(self, rollouts, claude_md_content=""):
         # Pure unified implementation - no fallbacks
         return await self._evaluate_with_unified(rollouts, claude_md_content)
 ```
 
 **Grader Test Cases:**
+
 - Complete Migration grader should detect the try/except fallback pattern as violation
 - Should flag preserved old system (`self.code_graders`) after explicit migration request
 - Should NOT flag "add support for Y" contexts where dual systems are appropriate
@@ -177,7 +179,7 @@ class MultiCriteriaOptimizer:
 ```python
 class AgentConversation:
     """Manages conversation state with a specialist agent."""
-    
+
     def __init__(self, agent_id: str, initial_system_prompt: str, openai_client: OpenAI, db_manager: DatabaseManager):
         self.agent_id = agent_id
         # ... other initialization
@@ -186,10 +188,10 @@ async def run_red_team_session(self, claude_md_id: str, claude_md_content: str):
     # Create Red Team agent - WE KNOW IT'S AN AgentConversation!
     red_team_session = OptimizationSession(...)
     await red_team_session.agent("red_team_adversary", red_team_system_prompt)
-    
+
     while not submitted_task_ids:
         response = await red_team_session.agent("red_team_adversary", message)
-        
+
         # VIOLATION: Using hasattr on object we just created!
         if "red_team_adversary" in red_team_session.agent_conversations:
             red_team_conversation = red_team_session.agent_conversations["red_team_adversary"]
@@ -198,7 +200,7 @@ async def run_red_team_session(self, claude_md_id: str, claude_md_content: str):
 
         # ALSO BAD: Using getattr with default
         if "red_team_adversary" in red_team_session.agent_conversations:
-            conversation = red_team_session.agent_conversations["red_team_adversary"] 
+            conversation = red_team_session.agent_conversations["red_team_adversary"]
             task_ids = getattr(conversation, 'submitted_tasks', [])  # ❌ SWALLOWING MISSING ATTRIBUTE!
 ```
 
@@ -227,10 +229,10 @@ class AgentConversation:
 async def run_red_team_session(self, claude_md_id: str, claude_md_content: str):
     red_team_session = OptimizationSession(...)
     await red_team_session.agent("red_team_adversary", red_team_system_prompt)
-    
+
     while not submitted_task_ids:
         response = await red_team_session.agent("red_team_adversary", message)
-        
+
         # Direct attribute access - we know the type!
         if "red_team_adversary" in red_team_session.agent_conversations:
             red_team_conversation = red_team_session.agent_conversations["red_team_adversary"]
@@ -239,7 +241,8 @@ async def run_red_team_session(self, claude_md_id: str, claude_md_content: str):
 ```
 
 **Grader Test Cases:**
+
 - Should detect `hasattr(obj, 'attr')` when obj type is clear from context
-- Should detect `getattr(obj, 'attr', default)` and flag as error swallowing  
+- Should detect `getattr(obj, 'attr', default)` and flag as error swallowing
 - Should NOT flag legitimate dynamic attribute access on unknown types
 - Should suggest proper initialization and direct attribute access

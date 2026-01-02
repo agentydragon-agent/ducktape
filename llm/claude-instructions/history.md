@@ -32,11 +32,9 @@ never got to work:
   in parallel.
 
 * how to Task - avoid stepping on each others' toes, prefer:
-  - not modify files
-  - read-only tasks
-  - isolated work areas (folders)
-  - read-only tasks
+  * not modify files
+  * read-only tasks
+  * isolated work areas (folders)
+  * read-only tasks
 
 * tasks can abort halfway/abruptly, there's no mechanism to report partial progress
-
-

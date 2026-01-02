@@ -61,6 +61,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
 
 1) Pre‑warm the control venv (dev + CI)
    - Create once and reuse via SJ_TEST_CONTROL_BIN to avoid per‑session install:
+
      ```bash
      python3 -m venv .tmp/control_venv
      .tmp/control_venv/bin/pip install -U pip wheel \
@@ -69,6 +70,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
      export SJ_TEST_CONTROL_BIN="$(pwd)/.tmp/control_venv/bin"
      pytest -q tests/mcp/sandboxed_jupyter_mcp
      ```
+
    - In conftest.py, _bootstrap_control_venv_and_require_tools already respects PATH; add a fast path that uses SJ_TEST_CONTROL_BIN if set and valid to skip install.
 
 2) Reduce Jupyter startup time where acceptable

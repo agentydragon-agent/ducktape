@@ -167,13 +167,13 @@ learning a new word, include a couple of example sentences with the word.
 When learning how to conjugate a verb, include both the conjugation table,
 and sentences with examples of each conjugated form.
 
-## Æsthethethics!
+## Æsthethethics
 
 It’s easier to do something if you like it. I like having all my cards follow
 the same style, nicely typesetting my equations with `align*`, `\underbrace`
 etc.
 
-## Clozes!
+## Clozes
 
 Most of my early notes were just front-back and back-front cards. Clozes are
 often a much better choice, because they make entering the context and expected

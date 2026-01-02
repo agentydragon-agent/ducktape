@@ -1,6 +1,7 @@
 # Comprehensive Code Review
 
 Perform a thorough code review of the specified target, which can be:
+
 - An entire codebase
 - A directory or module (e.g., `pattern_extractor/*.py`)
 - A single file
@@ -9,6 +10,7 @@ Perform a thorough code review of the specified target, which can be:
 The review scales automatically - analyzing architecture for large codebases, module design for directories, or implementation details for individual functions. Follow all patterns and guidelines defined in CLAUDE.md and any project-specific instructions.
 
 **Scaling the Review**:
+
 - **Full codebase**: Include all phases (architecture, dependencies, maintainability, etc.)
 - **Module/directory**: Focus on module design, internal consistency, and integration points
 - **Single file**: Skip architecture, focus on implementation quality and patterns
@@ -81,6 +83,7 @@ For each major module/component, spawn parallel Task agents to analyze:
 ### Phase 3: Pattern Compliance
 
 Check for compliance with all applicable coding patterns, conventions, and guidelines defined in:
+
 - CLAUDE.md (global instructions)
 - Project-specific CLAUDE.md overrides
 - Any documented team conventions
@@ -174,6 +177,7 @@ Document constraints that explain seemingly poor design choices:
 ### Actionable Recommendations
 
 For each finding, provide:
+
 1. **Clear classification**: Bug, Security, Performance, Maintainability, Style
 2. **Specific location**: File path and line numbers
 3. **Concrete fix**: Either "obviously do X" or multiple alternative approaches
@@ -208,6 +212,7 @@ For each finding, provide:
 ## Special Focus Areas
 
 Pay special attention to common code quality issues:
+
 - Missing error handling or silent failures
 - Unhandled edge cases
 - Type safety violations

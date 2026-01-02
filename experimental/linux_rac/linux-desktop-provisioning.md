@@ -3,17 +3,20 @@
 These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmox). Run them manually before applying the Ansible playbook.
 
 1. **Clone from template**
+
    ```bash
    qm clone 9000 1301 --name linux-desktop-01 --full
    ```
 
 2. **Allocate resources**
+
    ```bash
    qm set 1301 --cores 4 --memory 8192
    qm resize 1301 scsi0 40G
    ```
 
 3. **Configure cloud-init (static IP example)**
+
    ```bash
    cat ~/.ssh/id_ed25519.pub > /root/.ssh/linux-desktop-ci.pub   # ensure your public key exists on atlas
 
@@ -27,6 +30,7 @@ These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmo
    ```
 
 4. **Start the VM and wait for cloud-init**
+
    ```bash
    qm start 1301
    sleep 60
@@ -34,6 +38,7 @@ These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmo
 
 5. **Inventory entry**
    Add the host to `ansible/inventory.yaml` (or use `--limit`):
+
    ```yaml
    linux_desktop:
      hosts:

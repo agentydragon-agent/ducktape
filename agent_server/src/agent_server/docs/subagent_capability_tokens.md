@@ -6,6 +6,7 @@
 ## Problem
 
 Agents need to spawn sub-agents and share resources (transcripts, MCP servers) without breaking isolation:
+
 1. **Transcript access**: Agents should only see outputs of agents they spawned (or were delegated access to)
 2. **MCP server delegation**: Pass server handles between agents
 3. **Hierarchical spawning**: Sub-agents spawning their own helpers
@@ -14,6 +15,7 @@ Agents need to spawn sub-agents and share resources (transcripts, MCP servers) w
 ## Current Infrastructure
 
 **`agent_runs` table** (implemented):
+
 - `agent_run_id`: Primary key (UUID)
 - `agent_definition_id`: References agent definition
 - `parent_agent_run_id`: Parent for hierarchy tracking
@@ -21,6 +23,7 @@ Agents need to spawn sub-agents and share resources (transcripts, MCP servers) w
 - `status`: Run status (in_progress, completed, etc.)
 
 **RLS** (implemented):
+
 - `current_agent_run_id()`: Extracts UUID from session username
 - `current_agent_type()`: Returns agent type from type_config
 - Policies filter by agent_run_id and type
@@ -42,11 +45,13 @@ CREATE TABLE agent_grants (
 
 **Automatic grants on spawn:**
 When agent A spawns agent B:
+
 - `(grantor=A, grantee=A, target=B, capability='read_transcript')`
 - `(grantor=A, grantee=A, target=B, capability='send_messages')`
 - `(grantor=A, grantee=A, target=B, capability='administer_grants')`
 
 **Delegation example:**
+
 - PO spawns critic (PO gets all capabilities on critic)
 - PO spawns grader (PO gets all capabilities on grader)
 - PO grants grader read access to critic: `grant_access(target=critic, grantee=grader, capability='read_transcript')`
@@ -67,6 +72,7 @@ CREATE TABLE messages (
 ```
 
 **Benefits:**
+
 - Zero-copy: Pass message UUIDs instead of copying large JSON
 - Type safety: Schema validation at write time
 - Immutable: Messages can't be modified after creation
@@ -133,6 +139,7 @@ async def fork_and_continue(input: ForkAndContinueInput) -> ForkAndContinueOutpu
 ## RLS Policy Extensions
 
 **Events table** (extends current policy):
+
 ```sql
 CREATE POLICY event_access ON events FOR SELECT USING (
     agent_run_id = current_agent_run_id()
@@ -145,6 +152,7 @@ CREATE POLICY event_access ON events FOR SELECT USING (
 ```
 
 **Agent grants introspection:**
+
 ```sql
 CREATE POLICY grant_access ON agent_grants FOR SELECT USING (
     grantee_agent_id = current_agent_run_id()
@@ -177,11 +185,13 @@ CREATE POLICY grant_access ON agent_grants FOR SELECT USING (
 ### Prompt Optimizer → Critic → Grader
 
 Currently handled by `CriticAgentEnvironment` and `GraderAgentEnvironment` with:
+
 - Temporary database users (`agent_{run_id}`)
 - RLS policies filtering by `current_agent_run_id()`
 - HTTP MCP server for submit tools
 
 Subagent tools would simplify this to:
+
 ```python
 critic_result = await run_subagent(prompt="Review this code...", ...)
 grader_result = await run_subagent(prompt=f"Grade critique {critic_result.agent_run_id}...", ...)
@@ -190,6 +200,7 @@ grader_result = await run_subagent(prompt=f"Grade critique {critic_result.agent_
 ### Parallel Evaluation
 
 Fork pattern for efficient parallelization:
+
 ```python
 # Instead of spawning N critics with repeated context
 fork_result = await fork_and_continue(

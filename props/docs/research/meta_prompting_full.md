@@ -7,18 +7,21 @@ Meta-prompting is an architectural pattern where a "conductor" LLM orchestrates 
 ## Core Concepts
 
 **Conductor Agent:**
+
 - High-level orchestrator that understands the problem domain
 - Routes subtasks to specialized experts based on their capabilities
 - Synthesizes expert outputs into coherent solutions
 - Maintains conversation context and task state
 
 **Expert Agents:**
+
 - Domain-specific LLMs with specialized knowledge or prompts
 - Examples: coding expert, math expert, writing expert, fact-checking expert
 - Can be the same underlying model with different system prompts
 - Isolated from each other (conductor handles inter-expert communication)
 
 **Key Benefits:**
+
 - **Modularity:** Experts can be updated independently
 - **Specialization:** Each expert optimized for specific task types
 - **Scalability:** Add new experts without modifying existing ones
@@ -88,6 +91,7 @@ Break down user requests, call appropriate experts, synthesize results.
 ```
 
 Each expert is a separate LLM with specialized prompt:
+
 ```python
 # code_expert system prompt
 You are a coding expert. Analyze code quality, identify bugs, suggest improvements.
@@ -126,11 +130,13 @@ Backend Conductor (web architecture, APIs, databases)
 ### vs Single Mega-Prompt
 
 **Meta-prompting advantages:**
+
 - Easier to debug (isolated experts)
 - Better specialization (experts don't compete for context)
 - Simpler to update (modify one expert without affecting others)
 
 **Single prompt advantages:**
+
 - Lower latency (one LLM call instead of multiple)
 - Lower cost (fewer API calls)
 - No conductor logic needed
@@ -138,11 +144,13 @@ Backend Conductor (web architecture, APIs, databases)
 ### vs Chain-of-Thought
 
 **Meta-prompting advantages:**
+
 - Explicit specialization (not just reasoning steps)
 - Reusable experts across problems
 - Conductor can retry with different experts
 
 **Chain-of-thought advantages:**
+
 - Simpler implementation (no orchestration)
 - Single coherent reasoning thread
 - Lower overhead
@@ -168,6 +176,7 @@ Backend Conductor (web architecture, APIs, databases)
    - Optimizer synthesizes into improved prompt
 
 **Key takeaway for system prompt:**
+
 - Frame the optimizer as a "meta-agent" that designs expert prompts (the critic)
 - Encourage explicit task decomposition (what issue types to cover, in what order)
 - Suggest iterative refinement with feedback loops (similar to conductor retry logic)
@@ -182,12 +191,14 @@ Backend Conductor (web architecture, APIs, databases)
 ## Implementation Considerations
 
 **When to use meta-prompting:**
+
 - Complex tasks with clear subtask boundaries
 - Need for specialized expertise in different areas
 - Want modularity and independent expert evolution
 - Latency/cost acceptable for quality improvement
 
 **When NOT to use:**
+
 - Simple tasks solvable with single prompt
 - Tight latency requirements
 - Cost-sensitive applications (multiple LLM calls)
@@ -198,12 +209,14 @@ Backend Conductor (web architecture, APIs, databases)
 OpenAI documented a meta-prompting approach to prompt optimization:
 
 **Setup:**
+
 - **Generator agent:** Creates candidate prompts
 - **Critic agent:** Reviews prompts for contradictions, clarity issues
 - **Refiner agent:** Iteratively improves prompts based on critique
 - **Evaluator agent:** Tests prompts on examples, measures performance
 
 **Workflow:**
+
 1. Generator creates initial prompt
 2. Critic identifies issues (contradictions, ambiguity)
 3. Refiner addresses issues → new prompt

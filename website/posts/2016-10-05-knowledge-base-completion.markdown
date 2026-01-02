@@ -58,7 +58,7 @@ a partially populated knowledge base, we are doing *knowledge base completion*.
 Researchers have thrown many wildly different ideas at the problem, and some of
 them stuck. For example:
 
- * *Extracting relations from unstructured text.* This means I take a knowledge
+* *Extracting relations from unstructured text.* This means I take a knowledge
    base, some piece of text (I'm using Wikipedia articles), and I try to
    fill the gaps using the text.
    <br>
@@ -76,7 +76,7 @@ them stuck. For example:
    to train our classifier well, and who has the time to label 10k+ sentences
    those days? Fortunately, we can use a neat trick called *distant
    supervision*. Interested? Read about it in [this paper](https://web.stanford.edu/~jurafsky/mintz.pdf).
- * *Mining for graph patterns.* In real life, we know that if Peter is the
+* *Mining for graph patterns.* In real life, we know that if Peter is the
    father of John and Kate is John's mother, it's pretty likely that Peter and
    Kate might be married. So, if our knowledge base contains the facts
    <code>Peter is the father of John</code> and <code>Kate is the mother of
@@ -91,7 +91,7 @@ them stuck. For example:
    One is called PRA (*Path Ranking Algorithm*), another one SFE (*Subgraph
    Feature Extraction*). Matt Gardner has [an implementation of
    both](https://matt-gardner.github.io/pra/).
- * *Embeddings.* This means that we invent a space with, say, 50 dimensions,
+* *Embeddings.* This means that we invent a space with, say, 50 dimensions,
    and somehow represent entities and relations within that space. We choose
    this representation so that the embedding then informs us about which
    relations might be true, but missing in the knowledge graph.

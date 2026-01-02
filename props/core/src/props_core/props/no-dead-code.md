@@ -9,6 +9,7 @@ If established invariants or type reasoning make a branch impossible, delete it.
 Any formally-dead "should never happen" branches only contain an immediate `assert` or `TypeError`.
 
 ## Acceptance criteria (checklist)
+
 - Unused symbols (functions, classes, variables, constants) are removed
 - Unreachable branches (by invariants/types) are removed; if a "can't happen" guard is desired, keep at most an `assert` or `TypeError`.
 - Switches/if‑chains do not include arms for states that cannot occur given the function’s contract
@@ -36,7 +37,7 @@ if basePath == "" {
     return full || base
 }
 ...
-if !validFile || basePath == "" {  // remove basePath check - ruled out above 
+if !validFile || basePath == "" {  // remove basePath check - ruled out above
     return false
 }
 ```
@@ -110,6 +111,7 @@ def handle(x: Bar | Baz | Quux) -> str:
 ```
 
 ## Exceptions
+
 - Intentional extension points (plugin hooks, abstract interfaces) may appear unused locally but must be referenced by a registry, entry‑points, or configuration.
   Keep a short comment or link to the registry proving reachability:
 
@@ -124,9 +126,11 @@ def handle(x: Bar | Baz | Quux) -> str:
   active_plugins:
   - module_name:plugin_has_no_references_in_python
   ```
+
 - Temporary compatibility shims may remain while a migration is in progress, with an owner and removal date
 
 ## Guidance
+
 - Use local reasoning and established invariants. If a branch is obviously unreachable, delete it.
   When unsure, search references, check feature flags/config, and document the invariant you rely on.
 - Prefer strengthening invariants and validations over keeping speculative fallback branches

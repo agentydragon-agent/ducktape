@@ -11,6 +11,7 @@ Prefer concrete types over `Any`.
 Factor complex type expressions into named aliases.
 
 ## Acceptance criteria
+
 - All assigned, returned, and passed values are members of their declared types. Static checks pass under chosen type checker where applicable.
 - Types are not too narrow: no value violates its declared type at runtime or under static analysis.
 - Types are not too wide: if a declaration uses a union (e.g., `A | B`), there must be a live, reachable code path producing/accepting each variant. Remove dead variants.
@@ -74,7 +75,7 @@ def f(flag: bool) -> int | str:
 Overuse of `Any` / loose type - should be `Callable[[int], str]` or similar:
 
 ```python
-def run(cb: Any) -> Any:  
+def run(cb: Any) -> Any:
     return cb(123)
 
 def maybe() -> int | None:  # not actually optional

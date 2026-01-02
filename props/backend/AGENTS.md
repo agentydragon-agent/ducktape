@@ -59,6 +59,7 @@ cd frontend && pnpm generate
 ## Props Integration
 
 Backend imports from `props_core` package:
+
 - `props_core.agent_registry.AgentRegistry` - Run critic/grader agents
 - `props_core.db.models` - ORM models, views
 - `props_core.db.config` - Database connection

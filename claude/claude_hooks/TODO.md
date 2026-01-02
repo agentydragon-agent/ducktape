@@ -3,6 +3,7 @@
 ## Test Coverage Improvements
 
 ### Schema Evolution Testing
+
 - [ ] **Test builtin tool with unexpected schema**: Create test that verifies hook behaves reasonably when a builtin tool (Write, Edit, etc.) shows up with unexpected schema
   - Simulate new version of Claude Code adding new tool options/fields
   - Ensure graceful degradation - tool should still parse but not break
@@ -26,7 +27,7 @@
 ## Test Data Collection
 
 - [ ] **Expand JSON test coverage**: Current coverage is 13/89 scenarios (~15%)
-  - **Priority:** Edit tool variations  
+  - **Priority:** Edit tool variations
   - **Priority:** MultiEdit tool variations
   - Grep tool variations (most gaps)
   - NotebookRead/NotebookEdit tools

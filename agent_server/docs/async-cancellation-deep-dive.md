@@ -7,6 +7,7 @@ Let me explain async, cancellation, scopes, lifespans, and shields like you've n
 ### What is Async/Await?
 
 **Normal (synchronous) code** runs one step at a time:
+
 ```python
 def download_file():
     data = network.read()  # Blocks here, waiting for network
@@ -16,6 +17,7 @@ def download_file():
 When `network.read()` is waiting for bytes from the network, your entire program is frozen, doing nothing.
 
 **Async code** can say "I'm waiting, go do other things":
+
 ```python
 async def download_file():
     data = await network.read()  # Says "I'm waiting, run other tasks"
@@ -135,7 +137,7 @@ async with Compositor() as comp:
 
 When the `async with Client(comp)` block exits, it calls `Client.__aexit__()`.
 
-### Stack Frame 3: Client.__aexit__ (client.py:477-482)
+### Stack Frame 3: Client.**aexit** (client.py:477-482)
 
 ```python
 async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -333,6 +335,7 @@ finally:
 **Why does FastMCP do this?**
 
 The `finally` block ensures that when a client disconnects:
+
 1. The server's message-handling task is terminated immediately
 2. No messages are processed after the client is gone
 3. The connection is cleaned up quickly
@@ -342,11 +345,13 @@ This is **aggressive cleanup** - FastMCP prioritizes **fast disconnect** over **
 **Is this reasonable?**
 
 For most resources, yes:
+
 - Database connections can be dropped
 - File handles will be closed by the OS
 - Memory will be garbage collected
 
 For Docker containers? **No**:
+
 - Containers keep running after your program exits
 - They consume real system resources
 - They need explicit cleanup
@@ -370,11 +375,13 @@ finally:
 ```
 
 **Pros:**
+
 - Guaranteed to complete
 - Simple
 - Works with current FastMCP design
 
 **Cons:**
+
 - Blocks event loop during cleanup
 - Mixing sync/async
 - Feels wrong
@@ -401,11 +408,13 @@ async with Compositor() as comp:
 ```
 
 **Pros:**
+
 - Container lifecycle independent of MCP server lifespan
 - Async cleanup happens in uncancelled context
 - Clean separation of concerns
 
 **Cons:**
+
 - Requires refactoring all call sites
 - More boilerplate at each usage point
 - Duplicates container management logic
@@ -432,11 +441,13 @@ async def _cleanup_container_background(container_id, client):
 ```
 
 **Pros:**
+
 - Async cleanup
 - Doesn't block
 - Works with current structure
 
 **Cons:**
+
 - Cleanup happens "eventually", not immediately
 - Task might not complete if event loop closes
 - Hard to test/verify
@@ -463,12 +474,14 @@ From anyio docs:
 **This might actually work!** The `shield=True` parameter tells anyio to **ignore** cancellation from parent scopes.
 
 **Pros:**
+
 - Async cleanup
 - Doesn't block
 - Works within lifespan pattern
 - Respects async paradigm
 
 **Cons:**
+
 - Still might fail if event loop closes
 - Adds dependency on anyio CancelScope behavior
 - Need to test thoroughly
@@ -480,12 +493,14 @@ From anyio docs:
 **Short term (quick fix):** Use Option 1 (synchronous cleanup)
 
 **Long term (proper architecture):** Either:
+
 - Option 4 (anyio shielding) if it works reliably
 - Option 2 (move lifecycle out of lifespan) for cleaner architecture
 
 The fundamental issue is that **Docker containers are OS-level resources that need explicit cleanup**, and FastMCP's lifespan pattern is designed for **in-process resources that can be implicitly cleaned up**.
 
 We need to either:
+
 1. Make the cleanup robust against cancellation (Option 4)
 2. Move container management to a layer that doesn't use the lifespan pattern (Option 2)
 

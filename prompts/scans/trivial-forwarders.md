@@ -1,6 +1,7 @@
 # Scan: Functions That Should Be Inlined
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -126,11 +127,13 @@ def get_user(user_id: str) -> User:
 **Tool**: `prompts/scans/scan_single_line_functions.py` - AST-based scanner for single-line function bodies
 
 **What it finds**:
+
 - All functions (sync and async) with exactly ONE line of real code (excluding docstrings)
 - Includes: function name, file, line number, the single statement, decorators, signature
 - Groups by file for easier review
 
 **Usage**:
+
 ```bash
 # Run on entire codebase
 python prompts/scans/scan_single_line_functions.py . > single_line_functions.json
@@ -146,6 +149,7 @@ cat single_line_functions.json | jq '.by_file'
 ```
 
 **What to review for each function:**
+
 1. **Call count**: How many times is it called? (use grep, AST analysis)
 2. **Architectural role**: Is this a facade, interface implementation, or API boundary?
 3. **Complexity**: Would inlining make call sites more OR less complex?
@@ -159,16 +163,19 @@ cat single_line_functions.json | jq '.by_file'
 **Goal**: Find ALL functions that should be inlined (100% recall target).
 
 **Recall/Precision**: High recall (~90%) with automation, low precision (~20-30%)
+
 - Functions called exactly once: ~95% recall, ~20% precision (many legitimate one-time wrappers)
 - Functions with short body (<= 3 lines): ~85% recall, ~25% precision (many valid simple functions)
 - Single-return functions: ~90% recall, ~30% precision (facades, interface implementations, etc.)
 
 **Why low precision is expected**:
+
 - Legitimate reasons for simple forwarders: facades, interfaces, API stability, backward compatibility
 - Can't tell from syntax alone whether function reduces complexity at call sites
 - Need to understand: call count, architectural role, complexity trade-offs
 
 **Recommended approach AFTER Step 0**:
+
 1. Process single-line function scanner output (MANDATORY Step 0)
 2. For each candidate, analyze:
    - **Call count**: How many times is it called? (vulture, grep, AST)
@@ -224,6 +231,7 @@ rg --type py -U "def \w+\([^)]*\):[^\n]*\n\s+return \w+\("
 ### 4. AST-Based Discovery (Comprehensive)
 
 Build tool that analyzes:
+
 ```python
 # Pseudocode for AST-based detection
 for func in all_functions:
@@ -247,6 +255,7 @@ for func in all_functions:
 
 2. **Check interface/protocol conformance** (MOST IMPORTANT - prevents false positives):
    - **Python protocols**: Check if method is called by dunder methods:
+
      ```python
      # Context manager protocol
      __enter__() / __exit__() / __aenter__() / __aexit__()
@@ -255,19 +264,24 @@ for func in all_functions:
      # Sequence protocol
      __len__() / __getitem__() / __setitem__()
      ```
+
    - **Abstract base classes**: Check if method overrides ABC abstract method:
+
      ```bash
      # Look for class inheritance from ABC
      rg "class.*\(.*ABC.*\)" file.py
      # Look for @abstractmethod in parent class
      ```
+
    - **Framework interfaces**: Check for standard API patterns:
+
      ```python
      # Gym environment: reset(), step(), render(), close()
      # Django models: save(), delete(), clean()
      # Context managers: __enter__(), __exit__(), close()
      # FastAPI dependencies: __call__()
      ```
+
    - **If method is required by protocol/interface → KEEP** (even if trivial forwarder)
 
 3. **Check architectural role**:
@@ -277,6 +291,7 @@ for func in all_functions:
    - Private helper with simple body? → Likely inline
 
 4. **Complexity analysis**:
+
    ```python
    # For each call site:
    # Current: result = helper_func(arg1, arg2)
@@ -294,11 +309,13 @@ for func in all_functions:
 For each candidate function, ask:
 
 ### 1. **Call Count Test**
+
 - Called once in same file? → **Strong inline candidate**
 - Called 2-3 times with simple body? → **Medium inline candidate**
 - Called 10+ times? → **Check complexity benefit**
 
 ### 2. **Complexity Test**
+
 ```python
 # Simulate inlining at each call site:
 # Would this make the call site:
@@ -311,7 +328,9 @@ For each candidate function, ask:
 ```
 
 ### 3. **Architectural Role Test**
+
 **Check in this order** (most common to least common):
+
 1. [ ] **Protocol/interface conformance?** → **KEEP** (highest priority check)
    - Called by dunder methods? (`__aexit__`, `__enter__`, `__iter__`, etc.)
    - Part of framework interface? (Gym, Django, FastAPI, etc.)
@@ -326,6 +345,7 @@ For each candidate function, ask:
 5. [ ] **Private helper, simple body?** → **LIKELY INLINE**
 
 ### 4. **Consolidation Test**
+
 - Consolidates error handling? → **KEEP**
 - Consolidates validation logic? → **KEEP**
 - Consolidates complex computation? → **KEEP**
@@ -334,11 +354,13 @@ For each candidate function, ask:
 ## Fix Strategy (When Inlining)
 
 1. **Identify all call sites**:
+
    ```bash
    rg --type py "function_name\("
    ```
 
 2. **Inline the function body** at each call site:
+
    ```python
    # Before:
    result = helper_func(arg1, arg2)
@@ -360,18 +382,21 @@ These patterns have **legitimate reasons** for simple forwarding:
 ### Protocol/Interface Conformance (HIGHEST PRIORITY - Most Common False Positives)
 
 **Python Protocols**:
+
 - **Context managers**: `close()` called by `__aexit__()`, even if trivial
 - **Iterators**: `__next__()` forwarding to internal iterator
 - **Async protocols**: `__aenter__()` / `__aexit__()` / `close()` / `stop()`
 - **Descriptors**: `__get__()` / `__set__()` / `__delete__()`
 
 **Framework Interfaces**:
+
 - **Gym environments**: `reset()`, `step()`, `render()`, `close()` - standard API
 - **Django**: Template tags must be functions (can't call constructors directly)
 - **FastAPI**: Dependencies implementing `__call__()`
 - **SQLAlchemy**: Repository pattern methods implementing interface
 
 **How to verify**:
+
 ```bash
 # Check if method is called by dunder methods
 rg "def __(enter|exit|aenter|aexit|iter|next)" file.py -A10 | grep "method_name"
@@ -384,6 +409,7 @@ rg "from.*import.*ClassName" --type py | wc -l  # Check usage count
 ```
 
 ### Architectural Patterns
+
 - **Facade pattern**: Stable API over changing implementation
   - **IMPORTANT**: Only keep if actually used externally (check call sites)
   - Example: SearchService was removed because only 2 of 5 methods used by single caller
@@ -391,6 +417,7 @@ rg "from.*import.*ClassName" --type py | wc -l  # Check usage count
 - **Dependency injection**: Provides customization point for testing
 
 ### Complexity Reduction
+
 - **Consolidates error handling**: Multiple try/except blocks → single function
 - **Consolidates validation**: Complex checks used in multiple places
 - **Called many times**: 10+ call sites benefit from centralized logic
@@ -398,6 +425,7 @@ rg "from.*import.*ClassName" --type py | wc -l  # Check usage count
   - Example: `get_split_amount(split)` vs `gnc_numeric_to_python_Decimal(split.GetAmount())`
 
 ### Temporary Patterns
+
 - **Backward compatibility**: During migration/refactoring (document with TODO)
 - **API versioning**: Supporting old API during deprecation period
 
@@ -417,6 +445,7 @@ result = dump_response(snapshot.response)
 ```
 
 **Decision analysis**:
+
 1. ✅ **Call count**: Called once → strong inline candidate
 2. ✅ **Complexity test**:
    - Current: 1 line
@@ -428,6 +457,7 @@ result = dump_response(snapshot.response)
 **Decision**: **INLINE**
 
 **Fix**:
+
 ```python
 # Before:
 from module import dump_response
@@ -457,6 +487,7 @@ metadata = safe_json_loads(row.metadata_json)
 ```
 
 **Decision analysis**:
+
 1. ❌ **Call count**: Called 15 times → check complexity benefit
 2. ❌ **Complexity test**:
    - Current: 1 line per call site
@@ -489,6 +520,7 @@ class MatrixClient:
 **Why flagged:** `close()` is a trivial forwarder to `stop()`
 
 **Decision analysis**:
+
 1. ❌ **Call count**: Only called once (by `__aexit__`)
 2. ❌ **Interface conformance**: **Protocol requirement**
    - `__aexit__()` calls `close()` - this is async context manager protocol
@@ -522,6 +554,7 @@ class OpaqueEnvironmentWrapper:
 **Why flagged:** `close()` just forwards to `self.env.close()`
 
 **Decision analysis**:
+
 1. ❌ **Interface conformance**: **Framework requirement**
    - Gym environments are expected to have `reset()`, `step()`, `render()`, `close()`
    - Even if `close()` just forwards, it's part of the standard Gym interface
@@ -555,6 +588,7 @@ profile.sync()  # Called from external code
 **Why flagged:** `sync()` just forwards to `self.settings.sync()`
 
 **Decision analysis**:
+
 1. ❌ **Call count**: Called 3 times by external code (not just internal methods)
 2. ❌ **Architectural role**: Part of public API, actually used by callers
 3. ❌ **Facade pattern**: Wrapper provides public API boundary
@@ -572,6 +606,7 @@ profile.sync()  # Called from external code
 For each finding, apply the Decision Framework and categorize:
 
 ### ✅ Should Inline (True Positives)
+
 - **What**: Function name, location, evidence
 - **Why it should be inlined**: Apply Decision Framework
   - Call count test result
@@ -581,6 +616,7 @@ For each finding, apply the Decision Framework and categorize:
 - **Recommended action**: Specific fix (show before/after)
 
 ### ❌ Should Keep (False Positives / Justified Forwarders)
+
 - **What**: Function name, location
 - **Why it should be kept**: Specific reason from "When to Keep" section
   - Facade/interface implementation

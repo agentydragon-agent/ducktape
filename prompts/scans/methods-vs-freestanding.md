@@ -1,6 +1,7 @@
 # Scan: Methods vs Freestanding Functions
 
 ## Context
+
 @../shared-context.md
 
 ## Overview
@@ -57,11 +58,13 @@ config = MirrorConfig.resolve(url, token)
 ```
 
 **Detection patterns:**
+
 - Function name: `make_X`, `create_X`, `from_X`, `build_X`, `resolve_X`, `parse_X`
 - Returns instance of class X
 - Located near class X definition
 
 **Why classmethod is better:**
+
 - Clear ownership: method belongs to the class
 - Discoverable: IDE shows it when typing `MirrorConfig.`
 - Inheritance: Subclasses can override factory behavior
@@ -107,11 +110,13 @@ await ctx.record_error("error")
 ```
 
 **Detection heuristics:**
+
 1. Function takes instance/struct as first parameter
 2. Accesses 3+ fields from that instance
 3. Function name suggests it operates on that type
 
 **Why method is better:**
+
 - Cohesion: Related data and behavior in one place
 - Encapsulation: Instance fields are implementation details
 - Shorter call sites: No need to pass instance fields individually
@@ -170,16 +175,19 @@ await ctx.record_error(...)
 ```
 
 **Detection heuristics:**
+
 1. 3+ parameters passed together in multiple functions
 2. Parameters represent cohesive state (not independent values)
 3. Same bundle appears at multiple call sites
 
 **When bundling is appropriate:**
+
 - Parameters are conceptually related (db + key + response_id for database operations)
 - Multiple functions operate on the same bundle
 - Bundle represents lifecycle state (streaming context, transaction context)
 
 **When NOT to bundle:**
+
 - Parameters are independent configuration values
 - Only one function uses the combination
 - Bundling would create artificial coupling
@@ -212,6 +220,7 @@ ctx.set_response_id("msg_123")
 ```
 
 **Detection:**
+
 - Function takes mutable instance as parameter
 - Primary purpose is modifying that instance's state
 - Function name suggests mutation (set_X, update_X, add_X, remove_X)

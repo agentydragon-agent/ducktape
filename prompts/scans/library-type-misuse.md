@@ -1,6 +1,7 @@
 # Scan: Library Type Misuse
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -111,17 +112,20 @@ class Response(BaseModel):
 ## Common Libraries with Good Types
 
 ### Excellent Typing (use confidently)
+
 - **OpenAI SDK** (`openai`): Response, Message types
 - **Pydantic** (v2): BaseModel, TypeAdapter, validators
 - **httpx**: Client, Response, Request
 - **FastAPI**: Depends, Request, Response
 
 ### Good Typing with Caveats
+
 - **SQLAlchemy**: ORM relationships may need type stubs improvement
 - **asyncpg**: Connection, Record types are well-typed
 - **Click**: Decorators work well with type hints
 
 ### Known Typing Issues
+
 - **pygit2**: Minimal type annotations (consider type stubs)
 - **Some older SQLAlchemy patterns**: May need casts for legacy code
 
@@ -130,12 +134,14 @@ class Response(BaseModel):
 **Primary Method**: Manual code reading combined with reading library source code.
 
 **Why automation is insufficient**:
+
 - Determining if a cast/check is "misuse" requires understanding library capabilities
 - Need to read actual library source (`.pyi` files or implementation) to verify types
 - Some defensive code exists for valid reasons (handling multiple library versions, gradual migration)
 - Context matters: is this legacy code during migration or new antipattern?
 
 **Research-based workflow**:
+
 1. Find casts/defensive patterns using grep (discovery)
 2. For each, manually research library types
 3. Read actual `.pyi` or source files
@@ -159,6 +165,7 @@ rg --type py "isinstance\(response,.*Response\)"
 ### Verification Process (Manual)
 
 For each candidate found:
+
 1. **Find library source**: `import lib; print(lib.__file__)`
 2. **Read actual types**: Check `.pyi` files or source
 3. **Verify necessity**: Is cast/check actually needed given library types?
@@ -200,6 +207,7 @@ class Branch:
 ```
 
 Configure mypy:
+
 ```ini
 # mypy.ini
 [mypy]
@@ -216,7 +224,7 @@ pip install types-sqlalchemy  # Official stubs often exist
 
 ### Option 3: Contribute to typeshed
 
-- Fork https://github.com/python/typeshed
+- Fork <https://github.com/python/typeshed>
 - Add stubs for the library
 - Submit PR to help everyone
 
@@ -251,6 +259,7 @@ users = cast(list[User], session.query(User).all())
 ```
 
 Always document WHY:
+
 ```python
 # Cast needed: pygit2 lacks type stubs (as of 2024)
 branches = cast(list[str], repo.listall_branches())
@@ -258,7 +267,7 @@ branches = cast(list[str], repo.listall_branches())
 
 ## Reference Links
 
-- OpenAI Python SDK: https://github.com/openai/openai-python
-- Pydantic types: https://docs.pydantic.dev/latest/concepts/types/
-- typeshed (Python type stubs): https://github.com/python/typeshed
-- mypy reveal_type: https://mypy.readthedocs.io/en/stable/common_issues.html#reveal-type
+- OpenAI Python SDK: <https://github.com/openai/openai-python>
+- Pydantic types: <https://docs.pydantic.dev/latest/concepts/types/>
+- typeshed (Python type stubs): <https://github.com/python/typeshed>
+- mypy reveal_type: <https://mypy.readthedocs.io/en/stable/common_issues.html#reveal-type>

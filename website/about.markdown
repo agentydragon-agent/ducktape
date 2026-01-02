@@ -31,14 +31,14 @@ I hunted a few geocaches:
 
 I try to be a generalist. Some stuff I do or did before:
 
- * Lots of Google stack in C++, Python. Services, gigabyte-terabyte scale
+* Lots of Google stack in C++, Python. Services, gigabyte-terabyte scale
    pipelines, stuff like that.
- * Web stuff. In the distant past, I used PHP, then Ruby (on Rails and off),
+* Web stuff. In the distant past, I used PHP, then Ruby (on Rails and off),
    and I mostly use Python today. Of course, there's JavaScript and its
    offshoots.
- * I sometimes write software that needs a lot of performance.
+* I sometimes write software that needs a lot of performance.
    I mostly use C or C++ for that, but I also like Go.
- * I also wrote a few desktop things in Java and C#. I'm a bit more competent
+* I also wrote a few desktop things in Java and C#. I'm a bit more competent
    in the latter.
 
 Between 2012 and 2016, I helped organize [KSP][ksp] -- a computer science

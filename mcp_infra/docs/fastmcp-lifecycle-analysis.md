@@ -52,11 +52,13 @@ async def _lifespan_manager(self) -> AsyncIterator[None]:
 ### Lifespan Invocation Points
 
 **When `__aenter__` runs:**
+
 - For in-process servers: When `FastMCPTransport.connect_session()` calls `_enter_server_lifespan()` (lines 855, 895-903)
 - The lifespan context is entered **once** when the first client connects
 - Subsequent client connections reuse the existing lifespan (check: `if self._lifespan_result_set:`)
 
 **When `__aexit__` runs:**
+
 - When `_enter_server_lifespan()` exits
 - This happens when the `FastMCPTransport` context manager exits
 - **CRITICAL**: This occurs inside a cancel scope that gets cancelled
@@ -148,6 +150,7 @@ async def _session_runner(self):
 ```
 
 The design uses cancellation to **forcefully terminate** server operations when a client disconnects. This ensures:
+
 - No hanging connections
 - Quick cleanup
 - Resource reclamation
@@ -182,6 +185,7 @@ def __init__(
 ```
 
 When you pass a `FastMCP` server instance:
+
 1. `infer_transport()` wraps it in a `FastMCPTransport`
 2. The transport creates in-memory streams connecting client and server
 3. Both run in the same event loop but communicate via memory streams
@@ -203,11 +207,13 @@ async def __aexit__(self, exc_type, exc_val, exc_tb):
 ```
 
 **Lines 484-530** (`_connect` method):
+
 - Creates `_session_runner()` task
 - Waits for server to be ready
 - Manages reference counting for reentrant contexts
 
 **Lines 532-568** (`_disconnect` method):
+
 - Decrements reference counter
 - When counter reaches 0: sets stop_event
 - Waits for `_session_runner()` to complete
@@ -294,11 +300,13 @@ async def lifespan(server: FastMCP):
 ```
 
 **Pros:**
+
 - Guaranteed to complete
 - Cannot be cancelled
 - Simple and reliable
 
 **Cons:**
+
 - Blocks the event loop during cleanup
 - Less efficient for I/O operations
 
@@ -329,10 +337,12 @@ async def lifespan(server: FastMCP):
 ```
 
 **Pros:**
+
 - Allows async cleanup to complete
 - More efficient than sync calls
 
 **Cons:**
+
 - Slightly more complex
 - Shield doesn't work across cancel scopes in some edge cases
 - Must use `asyncio.shield()`, not anyio alternatives
@@ -362,10 +372,12 @@ async def lifespan(server: FastMCP):
 ```
 
 **Pros:**
+
 - Never blocks
 - Cannot be cancelled
 
 **Cons:**
+
 - No guarantee cleanup completes before process exit
 - Harder to track cleanup failures
 - Resource leaks if process terminates
@@ -467,6 +479,7 @@ async def lifespan(server: FastMCP):
 **Problem:** FastMCP doesn't have a "session-scoped" lifespan pattern. The server lifespan is entered once and reused across all client connections.
 
 **Alternative Implementation:**
+
 - Use a resource or tool with internal state tracking
 - Manage container lifecycle in tool implementations
 - Use request context to track sessions
@@ -613,8 +626,8 @@ FastMCP's cancellation behavior is **by design** - it prioritizes quick disconne
 ### Further Reading
 
 - FastMCP source: `/code/fastmcp/src/fastmcp/`
-- anyio cancel scopes: https://anyio.readthedocs.io/en/stable/cancellation.html
-- asyncio.shield: https://docs.python.org/3/library/asyncio-task.html#asyncio.shield
+- anyio cancel scopes: <https://anyio.readthedocs.io/en/stable/cancellation.html>
+- asyncio.shield: <https://docs.python.org/3/library/asyncio-task.html#asyncio.shield>
 
 ---
 

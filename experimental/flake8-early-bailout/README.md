@@ -48,6 +48,7 @@ pip install flake8-early-bailout
 ```
 
 Or for development:
+
 ```bash
 pip install -e .
 ```

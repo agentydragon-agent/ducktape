@@ -19,6 +19,7 @@ Find and read all `.md` files in `props/` to understand already defined formal p
 
 Specimens are in the external repository at `~/code/specimens/`. Read the specimens there to find examples of bad code with critique. Canonical ground‑truth is now recorded in
 `issues/*.yaml` files. Use these to identify:
+
 - Issues to flag (should_flag=true) — candidates to generalize into new/edited properties
 - Canonical negatives (should_flag=false) — clarify exclusions or tighten definitions as needed.
 
@@ -44,6 +45,7 @@ with your *proposed definitions* and possibly *proposed definition changes*.
 ### Goals for proposed definitions
 
 Property definitions:
+
 - Must be *broadly applicable*: they must realistically hit on reasonably common coding tasks/programs
 - May be scoped to specific common libraries (e.g., frameworks, test libraries, etc.),
 - But cannot be so narrow so as to be only ever hit in ~1 exact usecase (e.g., "when writing a custom CLI utility
@@ -54,10 +56,10 @@ be a set that would *generate* all listed violations in specimens.
 
 Aim is to produce properties that are *both* high *precision* and high *level*:
 
-* High *precision* properties: that are *narrowly targeted* to prevent specific individual common problems,
+- High *precision* properties: that are *narrowly targeted* to prevent specific individual common problems,
   and that are very easy to check for compliance without room for interpretation - e.g.: "Python is indented
   with 4 spaces per level".
-* High *level* properties: that are *broadly applicable* across many different contexts, and that
+- High *level* properties: that are *broadly applicable* across many different contexts, and that
   capture *general principles* of good code - e.g.: "code is modular - made from Legos you can take apart, individually
   reason about and build without having to keep the whole in mind", "code is easy to read and understand".
 
@@ -76,21 +78,21 @@ a library vs when should I write my own thing").
 
 Start each definition as a section with a sub-heading, and include in it:
 
-* How you would propose stating the principle as a definition of a positive property that good code should have.
+- How you would propose stating the principle as a definition of a positive property that good code should have.
   Use files in `props/` as a style guide.
-* Insofar as it's possible, aim to write this definition as a precise definition that one can read and use to determine
+- Insofar as it's possible, aim to write this definition as a precise definition that one can read and use to determine
   "does code X meet good property Y or not?". This will not always be fully possible - for example in cases where
   there are trade-offs.
-* A couple high-signal examples of paired good/bad code - the more the more subtle, general or high-level the principle.
+- A couple high-signal examples of paired good/bad code - the more the more subtle, general or high-level the principle.
   Aim to cover breadth of the principle and important boundary cases.
-* Cases there the property does not apply / circumstances which allow exceptions. In cases where this property
+- Cases there the property does not apply / circumstances which allow exceptions. In cases where this property
   trades off against other desired properties, where the boundary lies (e.g.: "require design pattern X but only if method
   is >Y lines long").
-* References to specific instances from specimen from which you derived this principle, along with explanation of *why*
+- References to specific instances from specimen from which you derived this principle, along with explanation of *why*
   you believe this is the correct generalization (i.e., why not narrower, why not tighter, why not more general, why
   not more specific).
 
-### Example of a proposed definition:
+### Example of a proposed definition
 
 ```markdown
 ## Names are be descriptive and unambiguous

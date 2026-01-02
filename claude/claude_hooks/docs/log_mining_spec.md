@@ -15,7 +15,7 @@ Let the LLM do the thinking instead of building a complex pipeline.
 ## What We're Looking For
 
 1. **User Interruptions**: When user stopped Claude mid-action
-2. **Corrections**: User feedback after Claude did something wrong  
+2. **Corrections**: User feedback after Claude did something wrong
 3. **Patterns**: Recurring issues that could be prevented
 
 ## Implementation

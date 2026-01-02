@@ -3,12 +3,14 @@
 ## Problem Statement
 
 Current issues:
+
 - **Repeated expensive initialization**: `SnapshotHydrator.from_env()`, `docker.from_env()`, `FilesystemLoader()` created multiple times per CLI invocation
 - **Manual threading**: Would need to pass dependencies through every layer (CLI → business logic → helpers)
 - **Testing friction**: Hard to mock dependencies when they're created inline
 - **No lifecycle management**: Docker client never closes, no cleanup hooks
 
 What we need:
+
 - ✅ Explicit dependencies (function signatures show what they need)
 - ✅ Single initialization per CLI invocation
 - ✅ Easy testing (mock/override for tests)
@@ -43,6 +45,7 @@ def prompt_optimize():
 **What it is**: Drop-in replacement for Typer with FastAPI-style dependency injection
 
 **Code example**:
+
 ```python
 # cli/resources.py
 from typer_di import TyperDI, Depends
@@ -81,6 +84,7 @@ def grade_validation(
 ```
 
 **Testing**:
+
 ```python
 from unittest.mock import Mock, patch
 
@@ -95,6 +99,7 @@ def test_snapshot_exec():
 ```
 
 **Pros**:
+
 - ✅ Minimal changes: `Typer()` → `TyperDI()`
 - ✅ Perfect mypy support (full stubs, types preserved)
 - ✅ Dependencies cached per invocation automatically
@@ -103,6 +108,7 @@ def test_snapshot_exec():
 - ✅ Standard Python testing (patch dependency functions)
 
 **Cons**:
+
 - ⚠️ New dependency (but small: ~500 LOC, no subdeps)
 - ⚠️ Testing requires patching (standard Python pattern, but some find verbose)
 - ❌ **No async support**: Dependency functions must be synchronous (see "Async Dependencies" section below)
@@ -116,6 +122,7 @@ def test_snapshot_exec():
 **What it is**: Industrial-strength DI framework with containers and providers
 
 **Code example**:
+
 ```python
 # cli/container.py
 from dependency_injector import containers, providers
@@ -152,6 +159,7 @@ def snapshot_exec(
 ```
 
 **Testing**:
+
 ```python
 def test_snapshot_exec():
     mock_hydrator = Mock(spec=SnapshotHydrator)
@@ -165,12 +173,14 @@ def test_snapshot_exec():
 ```
 
 **Pros**:
+
 - ✅ Perfect mypy support (full stubs, Cython-optimized)
 - ✅ Clean test override API (`container.provider.override(mock)`)
 - ✅ Advanced features (configuration, resources, scopes)
 - ✅ Battle-tested in production (FastAPI, Flask, Django integration)
 
 **Cons**:
+
 - ❌ More boilerplate (Container class, wiring, `@inject` decorator)
 - ❌ Must remember to wire modules
 - ❌ `@inject` position matters (must be innermost)
@@ -185,6 +195,7 @@ def test_snapshot_exec():
 **What it is**: Explicit dependency passing using Protocols for interface contracts
 
 **Code example**:
+
 ```python
 # core/resources.py
 from typing import Protocol
@@ -253,6 +264,7 @@ def snapshot_exec(ctx: typer.Context, snapshot: str):
 ```
 
 **Testing**:
+
 ```python
 from unittest.mock import Mock
 
@@ -272,6 +284,7 @@ def test_snapshot_exec():
 ```
 
 **Pros**:
+
 - ✅ No library dependency
 - ✅ Perfect mypy support (Protocols are first-class)
 - ✅ Explicit contracts (Protocol defines interface)
@@ -279,6 +292,7 @@ def test_snapshot_exec():
 - ✅ Very testable (pass mocks directly)
 
 **Cons**:
+
 - ❌ More boilerplate (Protocol definitions, wrapper functions)
 - ❌ Manual context passing (`ctx.obj`)
 - ❌ Separation between CLI wrappers and business logic (extra indirection)
@@ -292,6 +306,7 @@ def test_snapshot_exec():
 **What it is**: Mix strategies based on component needs
 
 **Code example**:
+
 ```python
 # Shared singletons via module-level memoization
 from functools import lru_cache
@@ -319,11 +334,13 @@ def grade_validation(
 ```
 
 **Pros**:
+
 - ✅ Flexibility (choose right pattern per use case)
 - ✅ Minimal library lock-in
 - ✅ Progressive adoption (migrate incrementally)
 
 **Cons**:
+
 - ⚠️ Inconsistency (multiple patterns in same codebase)
 - ⚠️ Team needs to know when to use which pattern
 
@@ -336,6 +353,7 @@ def grade_validation(
 ### Primary: Use typer-di
 
 **Why**:
+
 1. **Minimal disruption**: Change `Typer()` → `TyperDI()`, add `Depends()` to commands
 2. **Perfect for CLI**: Designed specifically for Typer, zero impedance mismatch
 3. **Good enough DI**: Handles 90% of use cases (singletons, caching, lifecycle)
@@ -343,12 +361,14 @@ def grade_validation(
 5. **Simple testing**: Standard Python mocking patterns
 
 **What gets injected** (resources that should be created once):
+
 - `SnapshotHydrator` (expensive: loads all manifests from YAML)
 - `docker.DockerClient` (expensive: connects to daemon)
 - `FilesystemLoader` (scans filesystem for issue files)
 - Config/settings objects (if added later)
 
 **What stays direct** (cheap or need fresh instances):
+
 - `get_session()` - database sessions (must be per-operation)
 - `specimens_definitions_root()` - could be injected, but cheap enough to call directly
 - Pure functions with no state
@@ -399,6 +419,7 @@ app = TyperDI()
 #### Phase 2: Migrate Commands (incremental, command by command)
 
 **Before**:
+
 ```python
 @app.command()
 def snapshot_exec(snapshot: str, command: list[str] | None = None):
@@ -410,6 +431,7 @@ def snapshot_exec(snapshot: str, command: list[str] | None = None):
 ```
 
 **After**:
+
 ```python
 from .resources import get_hydrator, get_docker_client
 from typer_di import Depends
@@ -427,6 +449,7 @@ def snapshot_exec(
 ```
 
 **Migration order** (prioritize high-use commands):
+
 1. `snapshot exec` (uses both hydrator and Docker)
 2. `grade-validation` (uses hydrator)
 3. `prompt-optimize` (uses hydrator)
@@ -435,6 +458,7 @@ def snapshot_exec(
 #### Phase 3: Update Tests
 
 **Before**:
+
 ```python
 def test_snapshot_exec():
     # ❌ Hits real filesystem, Docker daemon
@@ -442,6 +466,7 @@ def test_snapshot_exec():
 ```
 
 **After**:
+
 ```python
 from unittest.mock import Mock, patch
 
@@ -458,6 +483,7 @@ def test_snapshot_exec():
 ```
 
 **Or use pytest fixtures**:
+
 ```python
 @pytest.fixture
 def mock_resources(monkeypatch):
@@ -513,12 +539,14 @@ def get_hydrator() -> SnapshotHydrator:
 ```
 
 **Problems**:
+
 - Global state (testing requires cleanup)
 - Manual lifecycle management (no cleanup hooks)
 - Not composable (can't pass different instances)
 - Hidden dependencies (function signature doesn't show needs)
 
 **typer-di solves this**:
+
 - No globals (dependencies scoped to CLI invocation)
 - Automatic lifecycle (cleanup via atexit)
 - Testable (patch the function)
@@ -527,11 +555,13 @@ def get_hydrator() -> SnapshotHydrator:
 ### Q: What about `get_session()`? Should it be injected?
 
 **No**. Database sessions should be:
+
 - Short-lived (per-operation, not per-CLI-invocation)
 - Context-managed (auto-commit/rollback)
 - Not cached (fresh connection per operation)
 
 Keep the current pattern:
+
 ```python
 def some_command(hydrator: SnapshotHydrator = Depends(get_hydrator)):
     # hydrator is singleton (reused)
@@ -543,6 +573,7 @@ def some_command(hydrator: SnapshotHydrator = Depends(get_hydrator)):
 ### Q: How do I inject into helpers/business logic?
 
 **Option A: Thread through parameters** (explicit):
+
 ```python
 def grade_validation(
     critique_id: int,
@@ -558,6 +589,7 @@ def _grade_impl(critique_id: int, hydrator: SnapshotHydrator) -> dict:
 ```
 
 **Option B: Make helpers dependency functions** (if they're reusable):
+
 ```python
 def get_grader(hydrator: SnapshotHydrator = Depends(get_hydrator)) -> Grader:
     """Factory for grader (depends on hydrator)."""
@@ -574,6 +606,7 @@ def grade_validation(
 ### Q: Can I mix typer-di with plain Typer?
 
 **Yes**. `TyperDI` is backwards-compatible:
+
 ```python
 app = TyperDI()
 
@@ -615,12 +648,14 @@ def snapshot_exec(snapshot: str):
 ```
 
 **Why this is worse**:
+
 - ❌ Hidden dependencies (signature doesn't show needs)
 - ❌ Hard to test (need to clear cache, patch hidden function)
 - ❌ No lifecycle management (can't register cleanup)
 - ❌ Not composable (all commands get same instance, can't override)
 
 **DI is better**:
+
 - ✅ Explicit dependencies (signature shows `= Depends(...)`)
 - ✅ Testable (patch the dependency function)
 - ✅ Lifecycle hooks (atexit cleanup)
@@ -639,6 +674,7 @@ def snapshot_exec(snapshot: str):
 5. **Update tests**: Use `patch()` or fixtures to mock dependencies
 
 **Timeline**:
+
 - Setup: 30 minutes
 - Migrate 1-2 commands: 1 hour
 - Update tests: 1 hour
@@ -647,6 +683,7 @@ def snapshot_exec(snapshot: str):
 **Total effort**: ~3 hours for core migration, then incremental refinement.
 
 **Benefits**:
+
 - 🚀 Performance: No repeated expensive initialization
 - 🧪 Testability: Easy to mock dependencies
 - 📝 Clarity: Function signatures show dependencies
@@ -665,6 +702,7 @@ def snapshot_exec(snapshot: str):
 3. **Underlying Typer has no async support**: Typer itself [doesn't natively support async functions](https://github.com/fastapi/typer/issues/88)
 
 **Source code evidence** (from `/code/typer_di/src/typer_di/_method_builder.py`):
+
 ```python
 # Line 48-50: Generated code template
 _INVOKE_TEMPLATE = """\
@@ -673,6 +711,7 @@ _INVOKE_TEMPLATE = """\
 ```
 
 The generated wrapper looks like:
+
 ```python
 def wrapper(param1, param2):
     __r0 = dependency_fn1(arg1=param1)  # Called synchronously
@@ -783,6 +822,7 @@ async def my_command(
 ### What Works with typer-di
 
 ✅ **Synchronous dependencies**:
+
 - `SnapshotHydrator.from_env()` - loads YAML synchronously
 - `docker.from_env()` - sync Docker client (not `aiodocker`)
 - Database connections (if using sync SQLAlchemy)
@@ -790,6 +830,7 @@ async def my_command(
 - File system operations
 
 ❌ **Async dependencies** (create inline instead):
+
 - `aiodocker.Docker()` - requires event loop
 - `aiohttp.ClientSession()` - requires event loop
 - Async database pools

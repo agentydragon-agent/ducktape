@@ -14,7 +14,7 @@ identifier, and every endpoint accepts some number of arguments. The `service`
 utility lets you pass strings or 32-bit integers, like this:
 
 ```
-$ service call [service_name] [endpoint_id] s16 [string_arg] i32 [int_arg] ...
+service call [service_name] [endpoint_id] s16 [string_arg] i32 [int_arg] ...
 ```
 
 By Googling around, I found that Android phones have a `connectivity` service,

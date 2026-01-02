@@ -6,6 +6,7 @@ description: Discover and analyze Claude Code session logs from ~/.claude/projec
 # Claude Code Session Logs Skill
 
 This skill helps discover and analyze Claude Code session logs stored in `~/.claude/projects/`. Use this when you need to:
+
 - Find the current session log
 - Extract conversation history for analysis
 - Verify what tools were used in a session
@@ -17,15 +18,18 @@ This skill helps discover and analyze Claude Code session logs stored in `~/.cla
 Sessions are stored per-project in `~/.claude/projects/` with directory names based on the working directory path.
 
 **Project directory naming:**
+
 - `/code/gitlab.com/agentydragon/ducktape` → `~/.claude/projects/-code-gitlab-com-agentydragon-ducktape/`
 - All `/` become `-`, path is prefixed with `-`
 
 **Important:** The current `pwd` may differ from the session's original `cwd` if directories were changed during the session. The helper script accounts for this by:
+
 1. Searching recent sessions from ALL projects (last hour)
 2. Scoring by **recency first** (most important signal)
 3. Using git branch and cwd as secondary signals
 
 **Discovery script:**
+
 ```bash
 # Find current project directory
 PROJECT_DIR=$(pwd | sed 's|/|-|g')
@@ -45,6 +49,7 @@ done
 ```
 
 Use the helper script for convenience:
+
 ```bash
 ~/.claude/skills/session-logs/find-current-session.sh
 ```
@@ -54,6 +59,7 @@ Use the helper script for convenience:
 **Structure:** JSONL (one JSON object per line)
 
 **Key fields in each entry:**
+
 - `type`: Entry type (`"user"`, `"assistant"`, `"tool_use"`, `"tool_result"`, etc.)
 - `message`: Contains the actual content (nested structure)
 - `timestamp`: ISO 8601 timestamp (e.g., `"2025-12-01T19:35:59.995Z"`)
@@ -62,6 +68,7 @@ Use the helper script for convenience:
 - `gitBranch`: Current git branch
 
 **Tool use entries:**
+
 ```json
 {
   "type": "assistant",
@@ -85,6 +92,7 @@ Use the helper script for convenience:
 ```
 
 **User message entries:**
+
 ```json
 {
   "type": "user",
@@ -103,6 +111,7 @@ Use the helper script for convenience:
 ## Common Queries
 
 ### Show recent Edit operations
+
 ```bash
 CURRENT_SESSION=$(~/.claude/skills/session-logs/find-current-session.sh | head -1)
 
@@ -112,6 +121,7 @@ grep '"type":"tool_use"' "$CURRENT_SESSION" | \
 ```
 
 ### Show recent Bash commands
+
 ```bash
 grep '"type":"tool_use"' "$CURRENT_SESSION" | \
   jq -r 'select(.message.content[0].name == "Bash") |
@@ -119,18 +129,21 @@ grep '"type":"tool_use"' "$CURRENT_SESSION" | \
 ```
 
 ### Extract all tool calls
+
 ```bash
 grep '"type":"tool_use"' "$CURRENT_SESSION" | \
   jq -r '.message.content[0].name' | sort | uniq -c | sort -rn
 ```
 
 ### Get user messages
+
 ```bash
 grep '"type":"user"' "$CURRENT_SESSION" | \
   jq -r '.message.content[0].text' | head -20
 ```
 
 ### Find files modified in session
+
 ```bash
 grep '"type":"tool_use"' "$CURRENT_SESSION" | \
   jq -r 'select(.message.content[0].name == "Edit" or .message.content[0].name == "Write") |
@@ -138,6 +151,7 @@ grep '"type":"tool_use"' "$CURRENT_SESSION" | \
 ```
 
 ### Session statistics
+
 ```bash
 echo "Session: $CURRENT_SESSION"
 echo "Session ID: $(tail -1 "$CURRENT_SESSION" | jq -r .sessionId)"
@@ -149,16 +163,19 @@ echo "User messages: $(grep -c '"type":"user"' "$CURRENT_SESSION")"
 ## Use Cases
 
 **For /followups command:**
+
 - Verify files modified in session still exist on disk
 - Extract conversation TODOs and incomplete actions
 - Find all Edit/Write operations to check against git status
 
 **For debugging:**
+
 - Check what Bash commands were executed
 - Verify tool parameters that were used
 - Trace conversation flow and reasoning
 
 **For delegation:**
+
 - Provide session logs to subagents for analysis
 - Extract specific conversation segments
 - Mine historical context for decision-making

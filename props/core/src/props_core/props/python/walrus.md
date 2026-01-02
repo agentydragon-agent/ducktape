@@ -7,6 +7,7 @@ kind: outcome
 When a simple condition depends on a value computed immediately before, the value is bound inline with the walrus operator (:=) inside the condition.
 
 ## Acceptance criteria (checklist)
+
 - Patterns like `if x`, `if not x`, `if x is None`, `if x is not None`, or `if x == <literal>` that depend on a freshly computed value use `:=` to bind inline
 - The bound expression is the immediately evaluated value (e.g., a function call or awaitable)
 - Do not create a separate one‑off variable assignment solely to feed the next `if` when `:=` would be equivalent and readable
@@ -14,6 +15,7 @@ When a simple condition depends on a value computed immediately before, the valu
 - Only enforce when the walrus form remains a single, readable line after formatting
 
 ## Positive examples
+
 ```python
 # DB lookup: bind inline for a trivial guard
 if not (user := db.get(User, user_id)):
@@ -40,6 +42,7 @@ if (code := compute_status()) == 1:
 ```
 
 ## Negative examples
+
 ```python
 # One-off assignment only to feed the next if — should use walrus
 user = db.get(User, user_id)
@@ -55,12 +58,14 @@ if result is not None:
 ```
 
 ## Clarifications
+
 - Apply this rule only to collapse a redundant two-step "assign, then immediately check" into a single `if` with `:=` when it improves clarity.
 - Do not introduce throwaway bindings (e.g., `_ := ...`) just to satisfy the rule; either bind to a meaningful name you reuse, or write the condition directly.
 
 ## Dict error checks
 
 ### Positive examples
+
 ```python
 # Use walrus to bind dict error payload inline
 if error := resp.get("error"):
@@ -68,6 +73,7 @@ if error := resp.get("error"):
 ```
 
 ### Negative examples
+
 ```python
 # Two-step then check — should use walrus
 if "error" in resp:
@@ -78,6 +84,7 @@ if "error" in resp:
 ## While reader loops
 
 ### Positive examples
+
 ```python
 # File-like object
 while chunk := f.read(8192):
@@ -89,6 +96,7 @@ while (line := await stream.readline()):
 ```
 
 ### Negative examples
+
 ```python
 # Two-step read loop instead of walrus
 chunk = f.read(8192)

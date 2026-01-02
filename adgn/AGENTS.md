@@ -21,6 +21,7 @@ ducktape/
 `agent_pkg/runtime` provides output/MCP helpers used by init scripts in Docker containers. It has no dependency on `adgn` (installed separately in container images).
 
 ## Environment and Setup (direnv + devenv)
+
 - Requirements: Nix + devenv, direnv, Python 3.12+. Node 20 is available in the dev shell for the UI.
 - First time here: `cd adgn`, `direnv allow`
   - This loads `.envrc` → devenv, creates a Python venv, and installs `adgn` in editable mode with dev extras.
@@ -39,12 +40,14 @@ ducktape/
 Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across packages. The per-package devenv still manages the local venv at `.devenv/state/venv`.
 
 ### Devenv Helper Scripts
+
 - `ui-dev` → run Vite dev server for Agent UI (`http://127.0.0.1:5173`)
 - `ui-build` → build UI assets into `src/adgn/agent/server/static/web`
 - `agent-serve` → start Agent backend server (`http://127.0.0.1:8765`)
 - Background: `devenv up` starts the Vite dev server in the background
 
 ## Common Dev Commands
+
 - Tests (under `tests/`):
   - Inside `adgn/`: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
@@ -55,14 +58,18 @@ Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across
 - Optional extras (GNOME console script deps): `python -m pip install -e '.[gnome]'`
 
 ## Pytest Defaults
+
 See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, markers, and timeout settings.
+
 - Hermetic git (pytest-env): `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`
 
 ### UI E2E Tests (Playwright)
+
 - Install browsers once: `python -m playwright install`
 - Run: `pytest -q tests/agent/e2e -m "not live_llm"`
 
 ## High‑Level Module Map
+
 - Packaging: name `adgn`, Python `>=3.12,<3.14`, src layout under `src/`
 - Tana export tooling now lives in the sibling `tana/` project (`src/tana/export/`).
   - Key entry points: `convert.py`, `materialize_searches.py`, `export_node_subset.py`, plus helpers under `tana/export/lib/*`.
@@ -75,6 +82,7 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, marke
 - Tools (`src/adgn/tools/`) — `trivial_patterns` linter, arg0 utilities
 
 ## Agent (CLI + Local UI)
+
 - Commands:
   - REPL: `adgn-agent run`
   - UI server: `adgn-agent serve` (opens WS UI at `http://127.0.0.1:8765/`)
@@ -92,6 +100,7 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, marke
   - Serve/dev build agent and MCP on the uvicorn loop via `app.state.agent_factory` to avoid cross‑loop deadlocks
 
 ### UI Development and Builds
+
 - Dev (recommended): `adgn-agent dev` — starts FastAPI + Vite, with proxying for `/ws` and `/transcript`
 - Split dev: `adgn-agent serve` (backend) + `npm --prefix src/adgn/agent/web run dev` (optionally set `VITE_BACKEND_ORIGIN=http://127.0.0.1:8765`)
 - Build assets (REQUIRED before `serve`):
@@ -104,22 +113,29 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, marke
   - Use hard refresh after rebuilding assets; server logs include “WS OUT” at `log_level=debug`
 
 ## LLM Toolkit and CLIs
+
 See `[project.scripts]` in `pyproject.toml` for the full list of CLI entry points.
+
 ### Properties/specimens
+
 **For detailed props-specific documentation, see:**
+
 - @src/adgn/props/AGENTS.md — Complete guide to specimens, models, database, tooling, and workflows
 - @src/adgn/props/CLAUDE.md — Props package conventions and authoring
 - Quick start: `props run --snapshot <slug>` or `props snapshot exec <snapshot-slug>`
 
 ### Testing LLM Code
+
 - Typical: `direnv exec adgn pytest -q -m "not live_llm"`
 - Excluding a suite: `-k "not sandboxed_jupyter"`
 - `live_llm` tests require API keys and network access
 
 ### Bootstrap Handlers (Agent Initialization)
+
 Bootstrap handlers inject synthetic function calls before the agent's first sampling cycle, providing initial context without requiring explicit agent requests.
 
 **Pattern (immediate construction):**
+
 ```python
 from adgn.agent.bootstrap import TypedBootstrapBuilder, BootstrapHandler, docker_exec_call, read_package_file_call
 
@@ -138,6 +154,7 @@ handlers = [bootstrap, ...other handlers...]
 ```
 
 **Key principles:**
+
 - Builder instances are local (no global state)
 - Auto-generates call_ids (no manual management needed)
 - Type-safe: Pydantic payloads validated via introspection
@@ -148,6 +165,7 @@ handlers = [bootstrap, ...other handlers...]
 **Future enhancement:** See `src/adgn/agent/docs/bootstrap_type_safety.md` for plans to eliminate string literals via generic/typed stubs
 
 ## Conventions and Tips
+
 - Production code changes and test updates
   - When editing production code in `src/...`, always check what code in `tests/...` uses the interfaces/bits you touched and propagate any necessary edits.
   - Type signature changes, parameter additions/removals, renamed functions/classes, or changed behavior patterns all require corresponding test updates.
@@ -194,6 +212,7 @@ handlers = [bootstrap, ...other handlers...]
   - Do not rely on `model_rebuild()` to resolve forward refs in Pydantic where simple reordering can avoid them. Add a one‑line comment if a forward ref is truly unavoidable and why.
 
 ### MCP Conventions (Compositor, Resources, Subscriptions)
+
 - Imports at top
   - Keep all imports at module top. Only import inside a function to break a proven circular dependency; add a one‑line comment at that import explaining the cycle. Do not add per‑file linters or mypy excludes without explicit approval.
 - URI helpers, no literals
@@ -203,6 +222,7 @@ handlers = [bootstrap, ...other handlers...]
   - Use `COMPOSITOR_ADMIN_SERVER_NAME` instead of the literal `"compositor_admin"`.
 - Standard in‑proc mounts (pinned)
   - Mount `resources` and `compositor_meta` pinned by default:
+
     ```python
     await compositor.mount_inproc(
         "resources", make_resources_server(name="resources", compositor=compositor), pinned=True
@@ -210,12 +230,15 @@ handlers = [bootstrap, ...other handlers...]
     compmeta_server = make_compositor_meta_server(compositor=compositor, name=COMPOSITOR_META_SERVER_NAME)
     await compositor.mount_inproc(COMPOSITOR_META_SERVER_NAME, compmeta_server, pinned=True)
     ```
+
   - If using policy engine, also mount its servers:
+
     ```python
     await compositor.mount_inproc(POLICY_READER_SERVER_NAME, policy_engine.reader)
     await compositor.mount_inproc(POLICY_PROPOSER_SERVER_NAME, policy_engine.policy_proposer)
     await compositor.mount_inproc(APPROVAL_ADMIN_SERVER_NAME, policy_engine.admin)
     ```
+
   - Pinned servers cannot be unmounted; pinning is supported only for in‑proc mounts, at mount time.
 - Notifications
   - Use the `MountEvent` enum for Compositor mount listeners; no stringly‑typed actions.
@@ -230,12 +253,14 @@ handlers = [bootstrap, ...other handlers...]
   - For resource JSON, use `read_text_json(session, uri)` or the typed variant. Avoid hand‑parsing `contents`.
 
 ### Linting and Typing
+
 - Prefer to use repo-wide configured `pre-commit` over individual tools (like `ruff`, `mypy`, etc.)
 - Do not add ignore rules or silence individual lint errors unless explicitly approved
 - Codemod
   - Run `trivial-patterns --scope tests tests` alongside Ruff and mypy before handing off patches. Add more scopes with repeated flags or comma-separated values (e.g., `--scope tests,src/adgn`). Omit `--scope` to scan the entire project. The CLI wraps `adgn-trivial-patterns`; review its findings and fix or justify each one. Skip patterns live under `[tool.adgn.trivial-patterns]` in `pyproject.toml`.
 
 ### CallToolResult Conventions (MCP)
+
 - Typed vs. client results
   - The FastMCP client returns a lightweight `CallToolResult` dataclass (not a Pydantic model) with snake_case fields (`is_error`, `structured_content`).
   - Pydantic MCP types live under `mcp.types` (e.g., `mcp.types.CallToolResult`) with camelCase aliases (`isError`, `structuredContent`). Use these when you need typed validation/serialization.
@@ -246,10 +271,12 @@ handlers = [bootstrap, ...other handlers...]
   - When tests need to validate structure, construct/validate against `mcp.types.CallToolResult` explicitly.
 
 Runtime exec
+
 - Runtime Docker MCP server name/tool: `runtime/exec` (shared constants).
 - Host-side timeouts are enforced; if a command times out the session container is restarted before the next call.
 
 Approval Policy
+
 - Policies are standalone Python programs executed in Docker. They read a JSON request from stdin and write a JSON response to stdout.
   - Input: `{name: "<server>_<tool>", arguments: {...}}`
   - Output: `{decision: "allow|deny_continue|deny_abort|ask", rationale?: str}`
@@ -258,11 +285,13 @@ Approval Policy
 - Changes to the active policy trigger `ResourceUpdated` for the canonical URI and the UI refreshes accordingly.
 
 ## Notes and Caveats
+
 - GNOME console script deps require system libraries and are not in the default install; use the `[gnome]` extra as needed
 - See `tana/export/lib` for the low-level parser modules (some use lazy imports to avoid cycles).
 - Tests marked `real_github` or `live_llm` talk to network/services; run explicitly
 
 ## References and Further Reading
+
 - Bootstrap type safety: `src/adgn/agent/docs/bootstrap_type_safety.md`
 - Approval policy implementation: `src/adgn/agent/approvals.py`
 - Agent presets: see README.md "Agent Presets" (if available)
@@ -275,18 +304,21 @@ Approval Policy
 # Agent Guidelines and Implicit DoD
 
 Scope
+
 - This file applies to the entire `adgn/` subtree and all files beneath it.
 
 Implicit Definition of Done (DoD)
+
 - These rules apply to all tasks unless the user explicitly overrides them. They include all DoD items provided by the user during collaboration, plus the project defaults.
 
 General
 @../../STYLE.md
 
 - Full test suite passing; ruff + mypy clean.
- - Run `trivial-patterns --scope tests tests` alongside `ruff` and `mypy`; add scope entries for every directory you touched (`--scope tests --scope src/adgn`) or omit the flag to cover the whole project. Update `[tool.adgn.trivial-patterns]` in `pyproject.toml` if you need additional skip globs. Review both trivial alias and renamed import warnings before sending patches.
+- Run `trivial-patterns --scope tests tests` alongside `ruff` and `mypy`; add scope entries for every directory you touched (`--scope tests --scope src/adgn`) or omit the flag to cover the whole project. Update `[tool.adgn.trivial-patterns]` in `pyproject.toml` if you need additional skip globs. Review both trivial alias and renamed import warnings before sending patches.
 
 Runtime containerization / approval policy specifics
+
 - Evaluation ALWAYS runs in Docker using a one‑off container. No `/trusted` or `/rw` mounts are used.
 - Approval policy server exposes the active policy as a single read‑only resource and broadcasts `ResourceUpdated` using the canonical URI `resource://approval-policy/policy.py`.
 - Seatbelt templates are managed by their MCP server; no host volume IO is assumed.
@@ -297,20 +329,25 @@ Runtime containerization / approval policy specifics
 - Env: `ADGN_RUNTIME_IMAGE`, `ADGN_POLICY_EVAL_TIMEOUT_SECS`, `ADGN_POLICY_EVAL_MEM`, `ADGN_POLICY_EVAL_NANO_CPUS`.
 
 Testing policy decisions (advisory)
+
 - Optional: expose `policy_reader.decide` to agent/human tokens for testing and planning.
 - Advisory only: it does not create approval items or alter enforcement; the policy middleware still evaluates and enforces at execution time.
 - Suggested UI affordance: “Test decision” action next to tool payload inspectors; render `{decision, rationale}` with a clear warning.
 
 Docker images
+
 - Do not silently ignore missing Docker images. Image lookups must raise when an image is not present (e.g., `docker.errors.ImageNotFound`). Avoid `try/except: pass` around image checks.
 
 ### Building images
+
 **Important:** Run all docker build commands from the workspace root (`ducktape/`), not from `adgn/`.
+
 - Runtime/policy container image (required for `container` mode):
   - `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
 - Override the runtime/policy image via `ADGN_RUNTIME_IMAGE` if you tag it differently.
 
 Tests
+
 - Use explicit Pydantic IO types (e.g., `ExecInput`, `ExecResult`) with typed test clients; avoid guessing models from introspection maps.
 - Use shared helpers/fixtures for repeated patterns (e.g., volume name derivation).
 - Compositor admin tools (mount lifecycle)

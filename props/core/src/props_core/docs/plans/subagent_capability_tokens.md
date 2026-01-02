@@ -9,6 +9,7 @@
 ## Summary
 
 Enable agents to spawn sub-agents with proper isolation via:
+
 - **Hub table pattern**: `agents` table for metadata/hierarchy + type-specific tables for execution details
 - **Messages as first-class entities**: Typed, immutable, addressable by UUID (no JSON copying)
 - **Capability tokens** (UUIDs) for access delegation
@@ -19,6 +20,7 @@ Enable agents to spawn sub-agents with proper isolation via:
 ## Problem
 
 Critics need to spawn sub-agents and share resources without breaking isolation:
+
 1. **Transcript access**: Agents see only their own outputs + spawned children (or delegated)
 2. **Hierarchical spawning**: Sub-critics spawning helpers
 3. **Direct DB access**: Agents query Postgres with full SQL (no MCP wrappers)
@@ -82,17 +84,20 @@ CREATE INDEX idx_agent_grants_grantee_target_cap ON agent_grants(grantee_agent_i
 ```
 
 **Grant examples:**
+
 - `(grantor=PO, grantee=grader, target=critic, capability='read_transcript')` → grader can read critic's transcript
 - `(grantor=PO, grantee=PO, target=critic, capability='send_messages')` → PO can send messages to critic
 - `(grantor=PO, grantee=PO, target=critic, capability='administer_grants')` → PO can grant others access to critic
 
 **Automatic grants on spawn:**
 When agent A spawns agent B, create:
+
 - `(grantor=A, grantee=A, target=B, capability='read_transcript')`
 - `(grantor=A, grantee=A, target=B, capability='send_messages')`
 - `(grantor=A, grantee=A, target=B, capability='administer_grants')`
 
 **Example delegation:**
+
 - PO spawns critic (PO gets all capabilities on critic)
 - PO spawns grader (PO gets all capabilities on grader)
 - PO wants grader to read critic's output:
@@ -101,6 +106,7 @@ When agent A spawns agent B, create:
   - `grant_access(target=critic, grantee=grader, capability='send_messages')`
 
 **Grant management tool:**
+
 ```python
 from enum import StrEnum
 
@@ -181,6 +187,7 @@ CREATE INDEX idx_messages_in_reply_to ON messages(in_reply_to);
 ```
 
 **Schema Registry** (Python):
+
 ```python
 # src/adgn/props/messages/schemas.py
 from enum import StrEnum
@@ -211,6 +218,7 @@ SCHEMA_MODELS = {
 ```
 
 **MCP Tools** (Only upsert, agents read via SQL):
+
 ```python
 from pydantic import BaseModel
 from uuid import UUID
@@ -248,6 +256,7 @@ async def upsert_message(input: UpsertMessageInput) -> UpsertMessageOutput:
 ```
 
 **Agents read via SQL** (no read_message tool):
+
 ```sql
 -- Agent queries directly
 SELECT content FROM messages WHERE id = 'some-uuid';
@@ -255,6 +264,7 @@ SELECT content FROM messages WHERE id = 'some-uuid';
 ```
 
 **RLS Policy**:
+
 ```sql
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 
@@ -272,6 +282,7 @@ CREATE POLICY message_access ON messages FOR SELECT USING (
 ```
 
 **Schema Registry as MCP Resources**:
+
 ```python
 # Agents can read available schemas
 @mcp.resource("resource://messages/schemas")
@@ -286,6 +297,7 @@ async def list_schemas() -> str:
 ```
 
 **Benefits**:
+
 - **Zero-copy**: Pass message UUIDs instead of copying large JSON payloads
 - **Type safety**: Schema validation at write time
 - **Immutable**: Messages can't be modified after creation
@@ -298,6 +310,7 @@ async def list_schemas() -> str:
 Messages are delivered **asynchronously** via formatted user messages in the agent transcript (events table).
 
 **Delivery (fire-and-forget):**
+
 ```python
 class SendMessageInput(BaseModel):
     agent_id: UUID
@@ -377,6 +390,7 @@ while time.time() - start < timeout:
 No `poll_messages` tool needed - agents have SQL access and can implement polling logic as needed.
 
 **Response delivery (when reply is sent):**
+
 ```python
 # In upsert_message tool, after inserting reply:
 if input.in_reply_to:
@@ -399,6 +413,7 @@ Read: SELECT * FROM messages WHERE id='{message_id}'
 ```
 
 **Key design decisions:**
+
 - **Formatted user messages**: Notifications are text-based `user_message` events (no coupling to agent.py)
 - **Lazy content delivery**: Only message ID in notification, agent reads content via SQL
 - **Explicit reply linkage**: Agents call `upsert_message(in_reply_to=...)` to respond
@@ -407,6 +422,7 @@ Read: SELECT * FROM messages WHERE id='{message_id}'
 - **Response notifications**: Replies trigger formatted user messages to original sender
 
 **Agent loop:**
+
 ```python
 async def agent_loop(agent_id: UUID):
     """Agent processes messages until no unreplied messages remain."""
@@ -437,6 +453,7 @@ async def agent_loop(agent_id: UUID):
 ```
 
 **Example flow:**
+
 1. PO spawns critic: `critic_id = spawn_agent(type='critic', ...)`
 2. PO creates input message: `input_msg = upsert_message(schema_type='plaintext', content={'text': 'analyze this code'})`
 3. PO sends to critic: `send_message(agent_id=critic_id, message_id=input_msg.message_id)` → returns immediately
@@ -474,6 +491,7 @@ async def start_agent_loop(agent_id: UUID):
 ```
 
 **Agent lifecycle**:
+
 - **Idle**: Not in `running_agents`, can receive messages anytime
 - **Running**: In `running_agents`, actively processing messages
 - **Message delivery**: Fire-and-forget, multiple messages can be delivered while agent is running
@@ -603,6 +621,7 @@ CREATE POLICY grant_access ON agent_grants FOR SELECT USING (
 ```
 
 **Agent spawning creates Postgres role**:
+
 ```python
 async def create_agent_role(agent_id: UUID) -> tuple[str, str]:
     username = f"agent_{agent_id.hex}"
@@ -619,6 +638,7 @@ async def create_agent_role(agent_id: UUID) -> tuple[str, str]:
 ```
 
 **Cleanup only on explicit termination** (not automatic):
+
 ```python
 async def drop_agent_role(agent_id: UUID):
     username = f"agent_{agent_id.hex}"
@@ -629,7 +649,9 @@ async def drop_agent_role(agent_id: UUID):
 ## Implementation Order (11 Milestones, ~8-9 days)
 
 ### Milestone 1: Messages Foundation (Day 1 AM, ~2h)
+
 - **Schema changes**:
+
   ```sql
   CREATE TABLE messages (
       id UUID PRIMARY KEY,
@@ -643,6 +665,7 @@ async def drop_agent_role(agent_id: UUID):
   CREATE INDEX idx_messages_created_by ON messages(created_by_agent_id);
   CREATE INDEX idx_messages_in_reply_to ON messages(in_reply_to);
   ```
+
 - Create `src/adgn/props/messages/schemas.py`:
   - `MessageSchema` StrEnum
   - Pydantic models (`PlaintextMessage`, `StructuredCritique`, `StructuredGrade`)
@@ -651,6 +674,7 @@ async def drop_agent_role(agent_id: UUID):
 - RLS policy on messages table
 
 ### Milestone 2: Messages MCP Server (Day 1 AM, ~2h)
+
 - Create `src/adgn/mcp/messages/server.py`
 - Implement `upsert_message` tool:
   - Pydantic I/O: `UpsertMessageInput` (schema_type, content, in_reply_to) → `UpsertMessageOutput` (message_id)
@@ -670,7 +694,9 @@ async def drop_agent_role(agent_id: UUID):
 - **TODO**: Add SQL polling example code to agent system prompts
 
 ### Milestone 3: Agents Hub Table (Day 1 PM, ~2h)
+
 - **Schema changes (ALTER TABLE directly in prod)**:
+
   ```sql
   -- Create agents table
   CREATE TABLE agents (...);
@@ -689,19 +715,23 @@ async def drop_agent_role(agent_id: UUID):
   -- Create agent_grants
   CREATE TABLE agent_grants (...);
   ```
+
 - Update SQLAlchemy models (`Agent`, `CriticRun`, `AgentGrants`)
 
 ### Milestone 4: Postgres RLS Setup (Day 1 PM, ~2h)
+
 - RLS policies on agents table
 - `create_agent_role()`, `drop_agent_role()` helpers
 - Grant agents SELECT/INSERT/UPDATE on `messages` table
 
 ### Milestone 5: Subagents Server Scaffolding (Day 2 AM, ~2h)
+
 - Capability registry (in-memory)
 - `src/adgn/mcp/subagents/server.py`, `models.py`
 - `running_agents` registry
 
 ### Milestone 6: `run_subagent` MVP (Day 2, ~6h)
+
 - Agent spawning with DB credentials baked in
 - `create_agent_role` → pass via container env vars
 - Rebuild agent from events table (for continuing conversations)
@@ -712,21 +742,25 @@ async def drop_agent_role(agent_id: UUID):
 - Initial message ID → message UUID conversion
 
 ### Milestone 7: Simplify Critic (Day 3, ~4h)
+
 - Update critic prompt to use `upsert_message`
 - Remove old critic_submit server (funky multi-tool pattern)
 - Test: critic produces valid `structured_critique` message
 - Link critic_runs to messages table (optional `message_id` FK)
 
 ### Milestone 8: Grader Integration (Day 3, ~2h)
+
 - Update grader prompt: read via SQL, write via `upsert_message`
 - Test: grader produces valid `structured_grade` message
 
 ### Milestone 9: PO Message Piping (Day 4, ~4h)
+
 - Update PO to pipe message IDs between agents
 - Test end-to-end: PO → critic → grader via message UUIDs
 - **🚩 SHIP THIS** - MVP complete with messages
 
 ### Milestone 5-9: Async, Fork, MCP Delegation, Volumes
+
 (Days 3-8, parallelism + optimization)
 
 ## Benefits

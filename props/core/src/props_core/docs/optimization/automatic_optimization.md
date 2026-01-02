@@ -26,9 +26,11 @@ while not converged:
 ## Best Practices
 
 ### 1. Start from Baseline
+
 Don't start from scratch. Fetch the base critic and iterate.
 
 ### 2. Train/Valid Split
+
 - **Train:** Iterate rapidly, inspect results, diagnose failures
 - **Valid:** Test only after train performance looks promising
 - **Never:** Optimize on valid (leads to overfitting)
@@ -36,17 +38,21 @@ Don't start from scratch. Fetch the base critic and iterate.
 **Red flag:** High train, zero valid → overfit
 
 ### 3. Rich Feedback
+
 Don't just look at accuracy numbers. Analyze:
+
 - **What failed:** Specific examples the prompt missed
 - **Execution traces:** Tool calls, reasoning, where critic got stuck
 - **Patterns:** "Missed all duplication issues" not just "82% accuracy"
 
 ### 4. Measure Variance
+
 - **LCB (Lower Confidence Bound):** mean - σ/√n — penalizes high variance
 - **Zero-recall %:** How often does prompt fail completely?
 - Don't trust point estimates with n < 5
 
 ### 5. Budget Allocation
+
 - **Exploration:** Many prompts × few examples (find good regions)
 - **Exploitation:** Few prompts × many examples (refine winners)
 
@@ -65,15 +71,18 @@ Don't just look at accuracy numbers. Analyze:
 ## Proxy vs Terminal Metrics
 
 **Terminal metric:** Whole-snapshot recall on VALID split
+
 - What we actually care about - can the critic find issues in a real whole-repo review?
 - Black-box: only aggregate recall visible, no ground truth or traces
 
 **Proxy metric:** File-set recall on TRAIN split
+
 - Easier to debug (1-5 occurrences vs hundreds)
 - Full debugging access: TPs, execution traces, everything
 - Improvements here *hopefully* transfer to terminal metric
 
 **Workflow:**
+
 ```
 File-set on TRAIN (proxy)  →  Whole-snapshot on TRAIN  →  Whole-snapshot on VALID (terminal)
 Easy to debug, small scope    Harder, more occurrences    Black-box, true generalization
@@ -93,6 +102,7 @@ ORDER BY n_recall_denominator;
 ```
 
 **Strategy:**
+
 1. Pick file-set examples with 1-3 occurrences
 2. Run critic, grade, analyze what was missed
 3. Much easier to debug "why did I miss 1 thing in 2 files?" than "why did I miss 259 things?"
@@ -125,6 +135,7 @@ ORDER BY sequence_num;
 ```
 
 **Diagnose before iterating:**
+
 1. Compare reported issues to TPs - what patterns are missing?
 2. Read execution traces - did the critic analyze the right files?
 3. Check if "novel" findings align with labeler preferences
@@ -133,11 +144,13 @@ ORDER BY sequence_num;
 ## When to Use report-failure
 
 **Infrastructure failures only:**
+
 - Definition won't build (Dockerfile errors)
 - Database inaccessible
 - Systematic errors preventing any evaluation
 
 **NOT for metrics:**
+
 - 0% recall → diagnose and iterate
 - All "novel" findings → investigate
 - Any numeric result → it's feedback, not failure

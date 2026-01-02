@@ -14,7 +14,7 @@ rollouts:
 prompt_engineer:
   model: "o3"
   reasoning_effort: "high"
-  feedback_mode: "stats_only"  # Options: full_rollouts, summary, stats_only
+  feedback_mode: "stats_only" # Options: full_rollouts, summary, stats_only
 
 grader:
   model: "o3"
@@ -46,19 +46,19 @@ exclude_patterns:
   # - "**/.cache/**"   # Any .cache directory at any depth
 
   # System files that should never reach grader
-  - "CLAUDE.md"          # Claude system prompt
+  - "CLAUDE.md" # Claude system prompt
   - ".gitignore"
   - ".dockerignore"
-  - ".DS_Store"          # Mac filesystem metadata
+  - ".DS_Store" # Mac filesystem metadata
 
   # Authentication & secrets (CRITICAL FOR SECURITY)
-  - ".aws/"              # AWS credentials
-  - ".azure/"            # Azure credentials
-  - "*.key"              # Private keys
-  - "*.pem"              # SSL certificates
-  - "*.p12"              # PKCS#12 certificates
-  - ".env*"              # Environment files with secrets
-  - "secrets.*"          # Any secrets files
+  - ".aws/" # AWS credentials
+  - ".azure/" # Azure credentials
+  - "*.key" # Private keys
+  - "*.pem" # SSL certificates
+  - "*.p12" # PKCS#12 certificates
+  - ".env*" # Environment files with secrets
+  - "secrets.*" # Any secrets files
 
   # Build artifacts & caches
   - "*.pyc"
@@ -71,17 +71,17 @@ exclude_patterns:
   - "**/dist/"
   - "**/.venv/"
   - "**/venv/"
-  - "**/vendor/"  # Ruby bundler vendor directory
-  - "**/.bundle/"  # Ruby bundler config
-  - "**/target/"  # Rust build directory
-  - "**/.cargo/"  # Rust cargo directory
-  - "**/Cargo.lock"  # Rust lock file (can be large)
-  - "**/go.sum"  # Go sum file (can be large)
-  - "**/package-lock.json"  # NPM lock file (can be large)
-  - "**/yarn.lock"  # Yarn lock file (can be large)
-  - "**/Gemfile.lock"  # Ruby lock file (can be large)
-  - "**/poetry.lock"  # Python poetry lock file
-  - "**/composer.lock"  # PHP composer lock file
+  - "**/vendor/" # Ruby bundler vendor directory
+  - "**/.bundle/" # Ruby bundler config
+  - "**/target/" # Rust build directory
+  - "**/.cargo/" # Rust cargo directory
+  - "**/Cargo.lock" # Rust lock file (can be large)
+  - "**/go.sum" # Go sum file (can be large)
+  - "**/package-lock.json" # NPM lock file (can be large)
+  - "**/yarn.lock" # Yarn lock file (can be large)
+  - "**/Gemfile.lock" # Ruby lock file (can be large)
+  - "**/poetry.lock" # Python poetry lock file
+  - "**/composer.lock" # PHP composer lock file
 
   # Temporary & log files
   - "*.tmp"

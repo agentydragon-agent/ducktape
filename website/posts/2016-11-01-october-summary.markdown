@@ -15,19 +15,19 @@ the hub of its long-term viability.
 
 Executive summary:
 
- * Effective altruism in Czech Republic is doing well. We have a medium-term
+* Effective altruism in Czech Republic is doing well. We have a medium-term
    plan around movement growth.
- * [EAGxPrague][eagxprague] is happening on December 10 and you are encouraged
+* [EAGxPrague][eagxprague] is happening on December 10 and you are encouraged
    to apply ([Czech application][application-cz], [English
    application][application-en]) and *please* report your experience and
    feedback (the more verbose the better) to [prague@eaglobalx.org](mailto:prague@eaglobalx.org)
- * I encourage you to seek answers to certain questions by using surveys and
+* I encourage you to seek answers to certain questions by using surveys and
    basic statistics. It's fun, easy and powerful.
- * We have very little information on which to estimate how many people will
+* We have very little information on which to estimate how many people will
    apply to the conference. I am curious as to how high will the actual
    number be once we launch distribution.
- * I talk about the importance of good planning.
- * Personally, my depression's back, I am not OK, but who knows, maybe I'll be
+* I talk about the importance of good planning.
+* Personally, my depression's back, I am not OK, but who knows, maybe I'll be
    OK one day.
 
 Effective altruism
@@ -130,27 +130,27 @@ We would be happy to meet you and talk.
 I would be also very happy to hear any feedback from you at
 [prague@eaglobalx.org](mailto:prague@eaglobalx.org), especially:
 
- * Do you know the important info? When and where will the conference be?
+* Do you know the important info? When and where will the conference be?
    What will it be about? What should you do if you want to go there?
- * Do you want to attend the conference given what you see on the website?
- * Did you find any parts of the application hard to understand?
- * Do you think some information you are looking for is hard to find on the
+* Do you want to attend the conference given what you see on the website?
+* Did you find any parts of the application hard to understand?
+* Do you think some information you are looking for is hard to find on the
    website?
- * Is there anything about the website that confuses you, or makes you go
+* Is there anything about the website that confuses you, or makes you go
    "ugh"?
- * Do you know someone we should definitely talk to?
- * Do you have any suggestions for us?
+* Do you know someone we should definitely talk to?
+* Do you have any suggestions for us?
 
 The next steps in our plan are, roughly:
 
- * Do the conference and gather contacts to interested people there.
- * Do post-conference engagament - e.g., one-off talks, discussions, meet-ups,
+* Do the conference and gather contacts to interested people there.
+* Do post-conference engagament - e.g., one-off talks, discussions, meet-ups,
    where we get to know each other better, and talk about our longer-term
    plans and strategy. Grow our member base.
- * Engage students at universities - teach them about Effective Altruism
+* Engage students at universities - teach them about Effective Altruism
    and invite them to our events.
- * Produce more EA material in Czech and post it on social media.
- * Think about longer-term strategy. For example: We will need to approach
+* Produce more EA material in Czech and post it on social media.
+* Think about longer-term strategy. For example: We will need to approach
    influencers at some point and try to persuade them. When will be the right
    time and how should we do that? Our operations will need some monetary
    resources. How can we gather those?
@@ -189,13 +189,13 @@ so I asked 9 of my friends to rate each on a 1-5 cool-uncool scale.
 
 My methodology was the following:
 
- * For each friend, tell them the story ("So, you're walking down the uni
+* For each friend, tell them the story ("So, you're walking down the uni
    hallway and you see a poster saying EAGxPrague with this tagline...")
    and I send them a random permutation of the answers to rate.
    The random permutation is important because people are highly biased
    to the order of information presentation and since we'll pick just one
    tagline, we want to remove this bias.
- * Then, we take their answers, average them out, and pick the best one.
+* Then, we take their answers, average them out, and pick the best one.
 
 One nice thing about this is that *it doesn't matter that the participants don't
 use the same scale*: one participant might use the whole cool-uncool range of 1
@@ -215,21 +215,21 @@ The scores of the different taglines were as follows: (N = 9. I acknowledge a
 possible methodological gap in not calculating and working with the variances.
 1 = cool, 5 = uncool.)
 
- * "Chytře za lepším světem" ("Smartly towards a better world"):  3.11
- * "Dělejme dobro lépe" ("Let's do good better"): 2.66
- * "Konference o efektivní pomoci" ("An conference on effective aid"): 3.0
- * "Máme úžasnou příležitost pomoci stovkám lidí. Jak na to?" ("We have a great opportunity to help hundreds of people. How can we do it?"): 3.22
- * "Skutečná řešení na skutečné problémy" ("Real solutions to real problems"): 3.0
- * "Skutečné problémy a jejich efektivní řešení" ("Real problems and their effective solutions"): 2.66
- * "Skutečné problémy, efektivní řešení" ("Real problems, effective solutions"): 3.0
+* "Chytře za lepším světem" ("Smartly towards a better world"):  3.11
+* "Dělejme dobro lépe" ("Let's do good better"): 2.66
+* "Konference o efektivní pomoci" ("An conference on effective aid"): 3.0
+* "Máme úžasnou příležitost pomoci stovkám lidí. Jak na to?" ("We have a great opportunity to help hundreds of people. How can we do it?"): 3.22
+* "Skutečná řešení na skutečné problémy" ("Real solutions to real problems"): 3.0
+* "Skutečné problémy a jejich efektivní řešení" ("Real problems and their effective solutions"): 2.66
+* "Skutečné problémy, efektivní řešení" ("Real problems, effective solutions"): 3.0
 
 Some things that surprised me here:
 
- * The size of the gap between "Real problems and their effective solutions"
+* The size of the gap between "Real problems and their effective solutions"
    and "Real problems, effective solutions". Come on, it's just two short words
    versus a comma! Surprisingly, some subjects gave these two taglines
    a difference of a full 2 points.
- * That "Real problems and their effective solutions" did better
+* That "Real problems and their effective solutions" did better
    than "Real problems, effective solutions". We (the 3 of us in the room
    at the time) liked the sound of the second one a bit better.
 
@@ -274,15 +274,15 @@ fill it.
 
 Other pieces of information we have are:
 
- * We did a pre-conference event that we marketed minimally, just by sharing
+* We did a pre-conference event that we marketed minimally, just by sharing
    an event invitation by 3 people on Facebook. 15 people came there, we
    collected their e-mails and they were enthusiastic about the EAGxPrague
    idea.
- * The [LessWrong Group Prague on Facebook][lw-fb] has 97 members. I'd guess
+* The [LessWrong Group Prague on Facebook][lw-fb] has 97 members. I'd guess
    about 10 or so people come to most meetups.
- * The [Czech EA group on Facebook][czech-ea-fb] has 55 members. There's
+* The [Czech EA group on Facebook][czech-ea-fb] has 55 members. There's
    not too much intersection with the LW group.
- * Our venue, [Paralelní Polis][pp], will promote the event on [their Facebook
+* Our venue, [Paralelní Polis][pp], will promote the event on [their Facebook
    page][pp-fb], which has ~11K likes.
 
 Our hive-mind's estimates were that we could, optimistically, get about 80
@@ -335,17 +335,17 @@ back really hard in the last few days.
 I have a few pieces of advise I want to give others who might be in a similar
 position as me, that is, confusion about personal relationships:
 
- * Don't try to ignore away any nagging feelings in the back of your mind.
- * Never say anything like "I like you" or "I love you" or perform any actions
+* Don't try to ignore away any nagging feelings in the back of your mind.
+* Never say anything like "I like you" or "I love you" or perform any actions
    associated with affection or love unless you are **absolutely sure** you
    are expressing your sincere emotion and that the message being broadcasted
    and the message being received are both as accurate as possible.
- * Never lie about your feelings to people you care about. Lying doesn't always
+* Never lie about your feelings to people you care about. Lying doesn't always
    feel like lying. Sometimes it just feels like a little pause before you
    say something, or a word you say while slightly twisting its meaning
    inside your head. Or it may be an action that carries an implicit meaning
    you may not realize.
- * Others may understand your emotions better than you yourself do. I haven't
+* Others may understand your emotions better than you yourself do. I haven't
    done that, but if you feel confused about what do you feel, you may try
    asking your friends. You may not notice verbal or behavioral clues you
    yourself broadcast, and others might.
@@ -364,7 +364,6 @@ Until next time. Onwards!
 [jirka]: http://nadvornik.org/
 [dan]: http://danielhnyk.cz/
 [ea]: http://www.effective-altruism.org/
-[dog-train]: http://www.guidedogs.org.uk/microsites/sponsor-a-puppy/about-sponsor-a-puppy/frequently-asked-questions#65162
 [amf]: https://www.againstmalaria.com/
 [doing-good-better]: http://www.effectivealtruism.com/
 [eagxprague]: http://www.eagxprague.org/

@@ -1,6 +1,7 @@
 # Scan: Overly Loose Input/Output Typing
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -28,6 +29,7 @@ def _normalize_call_arguments(arguments: Any) -> str | None:
 ```
 
 **Better**:
+
 ```python
 def _normalize_call_arguments(arguments: dict[str, Any] | str | None) -> str | None:
     """Normalize function call arguments to JSON string.
@@ -55,6 +57,7 @@ async def get_cached_response_payload(self, key: str) -> dict[str, Any] | None:
 ```
 
 **Better**:
+
 ```python
 async def get_cached_response_payload(self, key: str) -> OpenAIResponse | None:
     snapshot_model = await self._get_snapshot(key)
@@ -85,6 +88,7 @@ def make_item_tool_call(
 **Why this "convenience" is actually worse**:
 
 1. **If caller has pre-serialized JSON** → They should deserialize it first
+
    ```python
    # Don't do this:
    make_item_tool_call(name="foo", arguments=json_string)  # Pass pre-serialized
@@ -95,11 +99,13 @@ def make_item_tool_call(
    ```
 
 2. **If caller has dict** → They pass it directly
+
    ```python
    make_item_tool_call(name="foo", arguments={"key": "value"})
    ```
 
 3. **API should be clear about what it wants**:
+
    ```python
    # GOOD: Clear, unambiguous API
    def make_item_tool_call(
@@ -144,6 +150,7 @@ def get_user_data(user_id: str) -> User | dict[str, Any]:
 ```
 
 **Better**:
+
 ```python
 def get_user_data(user_id: str) -> User:
     if cached := cache.get(user_id):
@@ -190,6 +197,7 @@ echo "Any types:" && rg --type py ': Any' | wc -l
 ```
 
 **What to review for each loose type:**
+
 1. **Can we know the actual type?** Pydantic model, TypedDict, specific union instead of Any?
 2. **Is this from external source?** API response, user input requiring runtime validation?
 3. **Is loose typing justified?** Check library docs, API specs, data source
@@ -199,6 +207,7 @@ echo "Any types:" && rg --type py ': Any' | wc -l
 **Process ALL output**: Read each type annotation, use your judgment to identify overly loose patterns.
 
 **Common overly loose patterns to flag:**
+
 - `param: Any` - "I gave up on types"
 - `-> dict[str, Any]` when returning from Pydantic model (use actual model type)
 - `-> Any` returns - almost always wrong
@@ -210,17 +219,20 @@ echo "Any types:" && rg --type py ': Any' | wc -l
 **Goal**: Find ALL instances of overly loose typing (100% recall target).
 
 **Recall/Precision**: High recall (~95%) for syntactic patterns, low precision (~30-40%)
+
 - `grep ": Any"` finds `Any` parameters: ~95% recall, ~40% precision (some legitimate uses)
 - `grep ": dict\[str, Any\]"` finds loose dicts: ~95% recall, ~35% precision (many legitimate uses)
 - `grep ": object"` finds object typing: ~90% recall, ~20% precision (rare but usually wrong)
 - AST scan for unions with loose types: ~85% recall, ~30% precision
 
 **Why low precision is expected**:
+
 - `dict[str, Any]` is sometimes correct (truly dynamic data, JSON from external API)
 - `Any` is sometimes needed (typing.Protocol variance, gradual typing migration)
 - Need to understand: Is this loose typing necessary or lazy?
 
 **Recommended approach AFTER Step 0**:
+
 1. Run grep/AST to find ALL candidates (~95% recall, ~30-40% precision)
 2. For each candidate, investigate:
    - **Can we know the actual type?** (Pydantic model, typed dict, specific union)
@@ -282,6 +294,7 @@ rg --type py ": dict\[str, Any\] \| str"
 ### 5. AST-Based Discovery (Comprehensive)
 
 Build tool that analyzes:
+
 ```python
 # Pseudocode for AST-based detection
 for func in all_functions:
@@ -338,6 +351,7 @@ for func in all_functions:
 For each loose type found:
 
 ### Step 1: Understand the Source
+
 ```python
 # Trace back: Where does this data come from?
 # - Pydantic model.model_dump()? → Use the Pydantic type
@@ -347,6 +361,7 @@ For each loose type found:
 ```
 
 ### Step 2: Check for Runtime Validation
+
 ```python
 # If function does this:
 def process_data(data: Any):
@@ -366,6 +381,7 @@ def process_data(data: dict[str, Any] | str):
 ```
 
 ### Step 3: Read External Documentation
+
 ```python
 # For library integrations, check:
 # 1. Does OpenAI API accept both dict and str?
@@ -384,6 +400,7 @@ def api_function(param: dict[str, Any] | str):
 ```
 
 ### Step 4: Create Proper Types
+
 ```python
 # Instead of:
 def get_config(name: str) -> dict[str, Any]:
@@ -403,6 +420,7 @@ def get_config(name: str) -> AppConfig:
 ## Fix Strategy
 
 ### Fix 1: Replace `Any` with Specific Union
+
 ```python
 # Before:
 def process(data: Any) -> str:
@@ -418,6 +436,7 @@ def process(data: dict[str, Any] | str) -> str:
 ```
 
 ### Fix 2: Replace `dict[str, Any]` Return with Pydantic Model
+
 ```python
 # Before:
 def get_user(user_id: str) -> dict[str, Any]:
@@ -430,6 +449,7 @@ def get_user(user_id: str) -> User:
 ```
 
 ### Fix 3: Create Pydantic Model for External API
+
 ```python
 # Before:
 def fetch_github_user(username: str) -> dict[str, Any]:
@@ -450,6 +470,7 @@ def fetch_github_user(username: str) -> GitHubUser:
 ```
 
 ### Fix 4: Document When Loose Typing is Necessary
+
 ```python
 # If truly needed (rare):
 def process_json_payload(payload: dict[str, Any]) -> None:
@@ -470,6 +491,7 @@ def process_json_payload(payload: dict[str, Any]) -> None:
 Rare cases where loose typing is correct:
 
 ### 1. Truly Dynamic External Data
+
 ```python
 # Webhook payloads that vary by source
 def handle_webhook(payload: dict[str, Any]) -> None:
@@ -478,6 +500,7 @@ def handle_webhook(payload: dict[str, Any]) -> None:
 ```
 
 ### 2. Generic JSON Processing
+
 ```python
 # Library function that works with any JSON
 def pretty_print_json(data: dict[str, Any] | list[Any]) -> str:

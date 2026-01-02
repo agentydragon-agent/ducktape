@@ -11,11 +11,14 @@
 # Upload snapshot
 
 - set credentials:
+
   ```bash
   export SOLID_USERNAME=agentydragon
   export SOLID_PASSWORD=<...>
   ```
+
 - upload the snapshot:
+
   ```bash
   bazel run //worthy -- --write_to_solid
   ```

@@ -11,7 +11,7 @@ title: Playing with AI
 <div id="playing-with-ai-toggle-highlight">
 The last about 2 weeks I have taken some time to finally get practical AI experience, so I'm running TensorFlow and all, and making lots of Anki cards.
 
-## Sidenote: Anki for programming is awesome!
+## Sidenote: Anki for programming is awesome
 
 By the way, Anki cards are so useful for learning how to use libraries fluently without looking things up it's ridiculous.
 

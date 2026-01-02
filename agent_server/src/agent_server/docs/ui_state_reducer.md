@@ -1,11 +1,13 @@
 # UI State Reducer — Current State & Open Items
 
 Motivation
+
 - Eliminate split of display logic between server and client and the confusion around multiple “transcripts”
 - Make UI rendering deterministic, reloadable, and versioned
 - Centralize transformation from agent/tool events → display items in one place (server-side)
 
 Goals (acceptance criteria)
+
 - Server maintains a single authoritative UiState per agent/session
 - UiState is a typed, display‑oriented model; client renders only UiState (no own grouping)
 - Ordering: ToolCall → FunctionCallOutput → grouped UI items emitted deterministically
@@ -14,10 +16,12 @@ Goals (acceptance criteria)
 - Protocol versioning for UiState messages (future‑proof)
 
 Non‑Goals (for this refactor)
+
 - Streaming deltas (we can start with whole‑state updates)
 - Multi‑session persistence beyond a single server process lifetime
 
 Design overview (implemented)
+
 - Server‑side reducer
   - A pure reducer reduce_ui_state(prev: UiState, evt: UiEvent) -> UiState consumes typed events and returns a new state
   - One source of truth lives on AgentSession: session.ui_state (not “transcript”)
@@ -42,23 +46,28 @@ Design overview (implemented)
   - Deprecate snapshot.transcript over time (keep for migration)
 
 Ordering & snapshot
+
 - After each FunctionCallOutput, reduce with any UiMessage items drained from UiBus → emit UiStateUpdated
 - On hello/resume: drain UiBus, then send UiStateSnapshot of current UiState
 
 Handler & loop control
+
 - UiAutoHandler(bus):
   - on_before_sample: if bus.consume_end_turn() → Abort(); else Continue(RequireAnyTool()) to force tool usage
   - No per‑tool interception; approvals are enforced by Policy Gateway middleware
   - Reducer is applied by the UI server ConnectionManager/AgentSession on typed events and bus drains
 
 Open items only (migration largely complete)
+
 1) Cleanup: remove any remaining legacy transcript references in comments and protocol helpers; keep WS‑only path.
 2) Persistence: consider durable UiState snapshots (optional) to speed very large histories.
 
 Testing (remaining)
+
 - Add targeted reducer tests for rare UI paths (multi‑tool groups with interleaved UI messages; large batched updates).
 
 Decisions (resolved)
+
 - DisplayItem schema: UserMessage, AssistantMarkdown, ToolGroup (no UiNotice for now)
 - Approvals in ToolGroup: store full ApprovalDecision kind (approve | deny_continue | deny_abort)
 - UiStateUpdated payload: send full state (v1)
@@ -68,14 +77,17 @@ Decisions (resolved)
 - Client: do not keep legacy transcript rendering; remove it
 
 Risks & mitigations
+
 - Drift between event stream and UiState: mitigated by single reducer and strictly ordered application
 - Client/server mismatch during migration: version messages and feature flag on client
 
 Execution checklist (open only)
+
 - [ ] Cleanup: remove any lingering transcript helpers; update docs accordingly
 - [ ] Optional: durable UiState persistence (see Decisions)
 
 Appendix: example UiState (v1)
+
 ```json
 {
   "seq": 5,

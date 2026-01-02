@@ -1,6 +1,7 @@
 # Scan: Idiomatic pygit2 Usage Patterns
 
 ## Context
+
 @../shared-context.md
 
 ## Idiomatic Patterns
@@ -8,6 +9,7 @@
 ### 1. Getting HEAD OID or Commit
 
 **Direct OID access** (when you only need the OID):
+
 ```python
 # BAD: Overcomplicated - peeling just to get ID
 oid = repo.revparse_single("HEAD").peel(pygit2.Commit).id
@@ -17,6 +19,7 @@ oid = repo.head.target
 ```
 
 **Commit access** (when you need the commit object):
+
 ```python
 # BAD: Using revparse_single
 head = repo.revparse_single("HEAD").peel(pygit2.Commit)
@@ -33,11 +36,13 @@ The `repo.head` property returns a Reference. Use `.target` for direct OID acces
 ### 2. Getting Parent Commits
 
 **BAD** (unnecessarily complex):
+
 ```python
 parent = repo[commit.parent_ids[0]].peel(pygit2.Commit)
 ```
 
 **GOOD** (idiomatic):
+
 ```python
 parent = commit.parents[0]
 ```
@@ -49,6 +54,7 @@ The `.parents` property already returns a `list[Commit]`, no peeling needed.
 For branch names, tags, or other revspecs:
 
 **Pattern: Create a helper function**:
+
 ```python
 def _resolve_to_commit(repo: pygit2.Repository, revspec: str) -> pygit2.Commit:
     """Resolve any revspec to a Commit, peeling tags if needed."""
@@ -80,6 +86,7 @@ else:
 ### 5. Commit Iteration - Use Walker
 
 **BAD** (manual parent walking):
+
 ```python
 def get_recent_commits(repo: pygit2.Repository, n: int) -> list[pygit2.Commit]:
     commits = []
@@ -93,6 +100,7 @@ def get_recent_commits(repo: pygit2.Repository, n: int) -> list[pygit2.Commit]:
 ```
 
 **GOOD** (using Walker):
+
 ```python
 def get_recent_commits(repo: pygit2.Repository, n: int) -> list[pygit2.Commit]:
     walker = repo.walk(repo.head.target)
@@ -107,6 +115,7 @@ def get_recent_commits(repo: pygit2.Repository, n: int) -> list[pygit2.Commit]:
 ```
 
 **Why Walker is better**:
+
 - Native first-parent traversal with `simplify_first_parent()`
 - Iterator-based (Pythonic)
 - No manual parent checking or index tracking
@@ -117,6 +126,7 @@ def get_recent_commits(repo: pygit2.Repository, n: int) -> list[pygit2.Commit]:
 Don't create one-line wrappers around pygit2 operations unless they add semantic value.
 
 **BAD** (pointless abstraction):
+
 ```python
 def _head_commit_oid(repo: pygit2.Repository) -> pygit2.Oid:
     return repo.head.peel(pygit2.Commit).id
@@ -130,6 +140,7 @@ tree = _index_tree_oid(repo)
 ```
 
 **GOOD** (direct usage):
+
 ```python
 # Just use the idiomatic pattern directly
 oid = repo.head.target  # Even better: direct OID access
@@ -137,6 +148,7 @@ tree = repo.index.write_tree()
 ```
 
 **When helpers ARE good**:
+
 ```python
 # GOOD: Adds semantic value and handles multiple cases
 def _resolve_to_commit(repo: pygit2.Repository, revspec: str) -> pygit2.Commit:
@@ -158,6 +170,7 @@ def _is_ancestor_of(repo: pygit2.Repository, ancestor: pygit2.Oid, descendant: p
 These are the idiomatic pygit2 APIs you should use by default:
 
 ### Repository Operations
+
 ```python
 repo.head                           # Reference - the current HEAD reference
 repo.head.target                    # Oid - OID that HEAD points to (no peeling needed)
@@ -174,6 +187,7 @@ repo.status()                       # dict[str, int] - working directory status
 ```
 
 ### Commit Operations
+
 ```python
 commit.parents                      # list[Commit] - parent commits (no peeling needed)
 commit.parent_ids                   # list[Oid] - parent OIDs (prefer .parents for commit objects)
@@ -183,6 +197,7 @@ commit.tree                         # Tree - tree object for this commit
 ```
 
 ### Walker Operations
+
 ```python
 walker = repo.walk(oid)             # Create walker
 walker.simplify_first_parent()      # Follow only first-parent chain (linear history)
@@ -193,6 +208,7 @@ for commit in walker:               # Iterator over commits
 ```
 
 ### Reference Operations
+
 ```python
 ref.target                          # Oid - OID the reference points to
 ref.peel()                          # Object - peel to underlying object
@@ -231,6 +247,7 @@ echo "Total pygit2 usage:" && rg --type py 'pygit2\.' | wc -l
 ```
 
 **What to review for each pygit2 usage:**
+
 1. **HEAD access**: Using `revparse_single("HEAD")` instead of `repo.head.target`?
 2. **Parent access**: Using `parent_ids[0]` instead of `.parents[0]`?
 3. **Manual walking**: Iterating with manual parent access instead of Walker?
@@ -244,17 +261,20 @@ echo "Total pygit2 usage:" && rg --type py 'pygit2\.' | wc -l
 **Goal**: Find ALL non-idiomatic pygit2 patterns (100% recall target).
 
 **Recall/Precision**: Medium-high recall (~70-80%) with targeted grep patterns
+
 - `rg 'revparse_single\("HEAD"\)'` finds HEAD access antipatterns: ~90% recall, ~85% precision
 - `rg 'parent_ids\[0\]'` finds parent access antipatterns: ~80% recall, ~70% precision
 - `rg 'cur\.parents\[0\]'` finds manual parent walking: ~60% recall, ~90% precision
 - Trivial helper detection (one-line functions): ~50% recall, ~40% precision
 
 **This pattern has moderate automation support**:
+
 - Many non-idiomatic patterns have distinctive text signatures
 - But some require understanding API capabilities (knowing Walker exists, knowing .target vs .peel)
 - Need to verify refactored code works correctly
 
 **Recommended approach AFTER Step 0**:
+
 1. Run targeted grep patterns to find known antipatterns (~70-80% recall)
 2. Verify each candidate:
    - Does proposed refactoring preserve behavior?
@@ -291,6 +311,7 @@ rg --type py -A1 '^def _.*\(.*pygit2\.Repository.*\):$' | grep -B1 'return repo\
 ## With types-pygit2 Installed
 
 Type stubs (`types-pygit2>=1.15.0`) provide proper return types:
+
 - `repo.head` returns `Reference`
 - `Reference.peel(T)` returns `T`
 - `commit.parents` returns `list[Commit]`

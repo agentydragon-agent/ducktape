@@ -7,6 +7,7 @@ The parse tree is laid out in the minimum number of lines allowed by the configu
 If code can fit on one line without harming readability and the linter would preserve it, it does.
 
 ## Acceptance criteria (checklist)
+
 - Calls/constructors with short argument lists are on one line when the linter would not split them
 - Expressions that can be a single line without reducing readability are written on one line
 - It is acceptable to add at most one blank line to separate logical sections (e.g., Arrange/Act/Assert in tests)
@@ -14,6 +15,7 @@ If code can fit on one line without harming readability and the linter would pre
 - Do not introduce two or more consecutive blank lines for spacing
 
 ## Positive examples
+
 ```python
 # One-line constructor call (readable; linter keeps it on one line)
 img = MediaContent(type="image", data=sample_png, mimeType="image/png")
@@ -35,6 +37,7 @@ headers = (
 ```
 
 ## Negative examples
+
 ```python
 # Unnecessarily split call with identical parse tree; should be single line
 img = MediaContent(
@@ -60,6 +63,7 @@ value = (
 ### FastAPI configuration examples
 
 #### Negative examples (identical parse tree, unnecessary breaks)
+
 ```python
 from fastapi import APIRouter, Depends
 
@@ -74,6 +78,7 @@ def create_router() -> APIRouter:
 ```
 
 #### Positive examples (same parse tree, compact layout)
+
 ```python
 from fastapi import APIRouter, Depends
 

@@ -18,7 +18,7 @@ In this post, I give a high-level overview of how it works at the moment.
 The system needs to keep track of various assets which aren't straightforward
 to appraise:
 
- * I own a few Bitcoins (which were a large portion of my wealth back
+* I own a few Bitcoins (which were a large portion of my wealth back
    in the last bubble at the end of 2014).
 
 <figure>
@@ -30,17 +30,17 @@ Image from [bitcoincharts.com](http://bitcoincharts.com/charts/bitstampUSD#rg146
 </div>
 </figure>
 
- * I have some money in conservative investment funds backed mostly
+* I have some money in conservative investment funds backed mostly
    by government bonds.
 
- * As I am writing this, I have a separate French bank account in euros.
+* As I am writing this, I have a separate French bank account in euros.
    At the time when I needed to track it, HomeBank did have a limited form of
    multicurrency support, but if I remember correctly, I had a good reason
    for not using that (the feature may not have been usable in my particular
    case).
 
- * In 2014, I started dabbling in stocks.
- * And I also have some cash.
+* In 2014, I started dabbling in stocks.
+* And I also have some cash.
 
 The original problem was keeping track of my fiat money and of my Bitcoins.
 I wanted to have something stupidly hacky and working.
@@ -106,12 +106,12 @@ number (of CZK) or crashes and burns.
 
 I have the following data sources:
 
-*   `Prvak::Finance::Homebank::Accounting` loads a static HomeBank .xhb file,
+* `Prvak::Finance::Homebank::Accounting` loads a static HomeBank .xhb file,
     which has a simple XML format. It uses the wonderful `nokogiri` gem to parse
     it and crudely adds up all transactions. There are a few small gotchas
     regarding "hidden accounts", internal transfers, and so on.
 
-*   `Prvak::Finance::IKSPortfolio` understands investment funds provided
+* `Prvak::Finance::IKSPortfolio` understands investment funds provided
     by the company I invest through ([IKS](http://www.iks-kb.cz/web/index.html)).
     Basically, you buy a number of "investment certificates" for price X and hope
     price eventually befomes >X. I have "investment certificates" for several
@@ -137,14 +137,14 @@ I have the following data sources:
     where you can find the data. The incredibly useful `mechanize` gem
     parses the HTML like a piece of cake.
 
-*   I use `BtcKit::BtcPrice` to get the pitiful state of my Bitcoin hoard.
+* I use `BtcKit::BtcPrice` to get the pitiful state of my Bitcoin hoard.
     There's again a file in my home which stores how many BTC do I have.
     I simply pull some recent CZK trades from
     the [LocalBitcoins](https://localbitcoins.com) JSON API and compute an average.
     I tried various other providers for the data with varying success. LocalBitcoins
     is good enough for now.
 
-*   Stocks used to be handled by `Prvak::Finance::Stocks`. This is now a thin
+* Stocks used to be handled by `Prvak::Finance::Stocks`. This is now a thin
     wrapper around [worthy](https://github.com/MichalPokorny/worthy)
     (the Ruby implementation broke one day and I decided I want to learn a bit
     of Go instead :).
@@ -170,7 +170,7 @@ I have the following data sources:
     the API is dead simple and does everything I need.
     [This Go module](https://github.com/MichalPokorny/worthy/blob/master/src/github.com/MichalPokorny/worthy/free_currency_converter/free_currency_converter.go) calls what I need.
 
-*   Finally, there's the euro account. It's again stored in a file,
+* Finally, there's the euro account. It's again stored in a file,
     and I convert to CZK again using [freecurrencyconverterapi.com](http://www.freecurrencyconverterapi.com).
 
 <h2>Using the data</h2>

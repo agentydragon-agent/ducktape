@@ -84,7 +84,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Need full history for change detection
+          fetch-depth: 0 # Need full history for change detection
 
       - name: Check if ansible files changed
         id: ansible-changes
@@ -96,7 +96,7 @@ jobs:
         if: steps.ansible-changes.outputs.changed == 'true'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Cache Ansible Galaxy
         if: steps.ansible-changes.outputs.changed == 'true'
@@ -150,7 +150,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4

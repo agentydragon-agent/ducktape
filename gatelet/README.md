@@ -51,9 +51,10 @@ cp gatelet.example.toml gatelet.toml
 invoke setup
 ```
 
-This starts PostgreSQL and Gatelet with automatic code reloading. The service will be available at http://localhost:8000.
+This starts PostgreSQL and Gatelet with automatic code reloading. The service will be available at <http://localhost:8000>.
 
 Available development commands:
+
 - `invoke up` - Start development environment with live reload
 - `invoke down` - Stop all services
 - `invoke test` - Run tests
@@ -86,6 +87,7 @@ pip install -e '.[dev]'
 cp gatelet.example.toml gatelet.toml
 export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet
 ```
+
 Edit ``gatelet.toml`` and set ``home_assistant.api_url`` to your Home Assistant
 instance. Admin pages will link back to this URL.
 
@@ -96,7 +98,7 @@ alembic upgrade head
 uvicorn gatelet.server.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The service will be available at http://localhost:8000. When finished, stop the database container with:
+The service will be available at <http://localhost:8000>. When finished, stop the database container with:
 
 ```bash
 docker stop gatelet-db
@@ -157,7 +159,7 @@ Designed for current LLM constraints (as of May 2025), particularly OpenAI sched
 Gatelet supports multiple authentication methods:
 
 1. **Key in Path** - Simple authentication by including key in URL path
-   - Usage model: User provides direct URL with embedded key (http://server/k/SECRET_KEY/)
+   - Usage model: User provides direct URL with embedded key (<http://server/k/SECRET_KEY/>)
    - Example: `/k/{key}/`
 
 2. **Challenge-Response** - Secure authentication using nonce challenges
@@ -189,17 +191,20 @@ Gatelet supports multiple authentication methods:
 ## Features
 
 ### Webhooks
+
 - Receive and store webhooks from various sources
 - View webhook history with pagination
 - Optional encryption for sensitive data
 
 ### Home Assistant Integration
+
 - Current state of configured entities with friendly names
 - Historical state changes for discrete entities
 - Trend data for continuous sensors (temperature, humidity, etc.)
 - Direct links back to Home Assistant when viewed by a human admin
 
 ### Session Management
+
 - Challenge-based authentication for LLMs (LLM sessions)
 - Time-limited tokens with automatic extension
 - Human admin interface for viewing **admin sessions**

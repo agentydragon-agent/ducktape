@@ -38,7 +38,7 @@ repos:
     rev: v1.45.0
     hooks:
       - id: semgrep
-        args: ['--config=.semgrep/rules.yaml', '--error']
+        args: ["--config=.semgrep/rules.yaml", "--error"]
 
   # Local hooks using ducktape-llm-common tools
   - repo: local

@@ -24,7 +24,7 @@ Given the above, we’re moving to supported alternatives below.
 
 ## 1) App Sandbox (entitlements) — recommended when shipping an app/helper
 
-- What: Enable App Sandbox in an app/auxiliary helper with Hardened Runtime + specific entitlements. 
+- What: Enable App Sandbox in an app/auxiliary helper with Hardened Runtime + specific entitlements.
 - How access is scoped: security-scoped bookmarks (user-approved or pre-provisioned) grant read/write to exact directories at runtime (workspace/run_root/tmp). No wildcard path whitelists; you hold bookmarks.
 - Dev story:
   - Create a tiny macOS app (Swift/ObjC) that launches the kernel process.
@@ -44,7 +44,7 @@ Given the above, we’re moving to supported alternatives below.
 ## 3) Virtualization — run the kernel in Linux/macOS VM
 
 - What: Use Virtualization.framework (or Docker Desktop/Colima/Lima which run a Linux VM) and mount only the required host directories (workspace/run_root/tmp) read/write; mount nothing else.
-- Dev story: 
+- Dev story:
   - Easiest: Docker Desktop (or Colima) and a minimal image (e.g., `python:slim`). Mount only the needed host dirs. Loopback-only networking. This is a VM under the hood on macOS.
   - Stronger but more code: Virtualization.framework VM with VirtioFS shares of the allowed directories.
 - Pros: Strong isolation; fast to adopt with Docker/Colima; fully under our control.
@@ -58,12 +58,14 @@ Given the above, we’re moving to supported alternatives below.
 ## Suggested direction for this project
 
 Short-term (required for dynamic paths; fastest path):
+
 - Run the kernel in a Linux VM container (Docker/Colima). Bind-mount only workspace/run_root/tmp. No other host paths. Loopback-only net.
 - We can keep YAML policy and translate:
   - `fs.read_paths` → container mounts (ro) and `fs.write_paths` → container mounts (rw)
   - `net.mode` → container network settings
 
 Longer-term (native macOS):
+
 - Build a tiny App Sandbox wrapper app (`JupyterKernelLauncher.app`) with minimal entitlements and security-scoped bookmarks for the allowed dirs. Launch our Python helper inside this app. This gives Apple-supported per-process FS scoping without SBPL.
 
 ### Note: Python environments across host/VM/container

@@ -105,6 +105,7 @@ The linter respects pre-commit's standard disabling mechanisms:
 ### Hook Behavior
 
 #### Pre-Hook (Write operations only)
+
 1. Receives proposed file content from Claude Code
 2. Creates a temporary file with the content
 3. Runs pre-commit with fixing enabled on the temp file
@@ -113,11 +114,12 @@ The linter respects pre-commit's standard disabling mechanisms:
 6. Returns JSON response with decision and reason
 
 #### Post-Hook (Write, Edit, MultiEdit operations)
+
 1. Receives information about written/edited files
 2. Runs pre-commit with fixing enabled on the actual files
 3. Applies auto-fixes directly to the files
 4. For Write: Sends "FYI" message to Claude if fixes were applied
-5. For Edit/MultiEdit: 
+5. For Edit/MultiEdit:
    - Always applies all possible auto-fixes
    - If non-fixable violations remain after fixes, warns Claude with detailed message
    - If only auto-fixes were needed, sends "FYI" message to Claude

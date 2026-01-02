@@ -11,28 +11,34 @@ Generated: 2025-12-23
 **Root cause**: The PostgreSQL trigger `check_unknown_mapping_exists()` fails when inserting into `unknown_assignments`.
 
 The trigger tries to find the snapshot slug by:
+
 1. Looking up the grader run's `type_config->>'graded_agent_run_id'`
 2. Joining to the critic run to get `type_config -> 'example' ->> 'snapshot_slug'`
 
 But the join returns NULL because either:
+
 - The grader run's `graded_agent_run_id` doesn't point to a valid critic run
 - The critic run exists but its `type_config -> 'example'` is malformed or missing `snapshot_slug`
 
 **Investigation needed**:
+
 - Check if `make_grader_run()` / `make_critic_run()` are setting up the JSON correctly
 - Verify the agent_runs records exist and have proper type_config before the unknown_assignment insert
 - The clustering CLI tool (`clustering assign-to-tp`) is inserting the assignment INSIDE THE CONTAINER, so the grader_run_id it's using must exist with proper linkage
 
 **Confirmed JSON structure**:
+
 - `GraderTypeConfig` serializes `graded_agent_run_id` correctly to top-level key
 - `CriticTypeConfig` serializes `example.snapshot_slug` correctly
 
 **Debugging steps**:
+
 1. The trigger `check_unknown_mapping_exists()` is at line 708-757 in `20251223000000_schema_squashed.py`
 2. It uses `get_graded_agent_run_id(gr.agent_run_id)` to look up the critic run ID
 3. Then joins to get `type_config -> 'example' ->> 'snapshot_slug'` from the critic run
 
 **Possible causes**:
+
 1. The grader run exists but its `type_config->>'graded_agent_run_id'` is NULL (serialization issue)
 2. The critic run doesn't exist when the trigger runs (transaction isolation)
 3. The critic run exists but doesn't have `type_config.example.snapshot_slug` (wrong type_config)
@@ -55,13 +61,16 @@ This is a legitimate slow test that should have a higher timeout or be marked as
 ## Test Fixture Types: Fast vs Slow
 
 ### `synced_test_db` (FAST - test fixtures)
+
 Uses local git-tracked fixtures at `tests/props/fixtures/specimens/`:
+
 - `test-fixtures/train1` (TRAIN) - 4 small Python files
 - `test-fixtures/valid1` (VALID) - 1 file
 - `test-fixtures/valid2` (VALID) - 1 file
 - `test-fixtures/test1` (TEST) - 1 file
 
 These use `vcs: local` with `bundle: null` in their `manifest.yaml`, so:
+
 - **No hydration** - `resolve_source_root()` returns the original path directly with `needs_cleanup=False`
 - **No network** - No GitHub/Git cloning
 - **Fast sync** - Only reads a handful of small files for line counting
@@ -69,7 +78,9 @@ These use `vcs: local` with `bundle: null` in their `manifest.yaml`, so:
 Most tests use this fixture and sync should complete in <1 second.
 
 ### `synced_production_db` (SLOW - real specimens)
+
 Uses production specimens from `ADGN_PROPS_SPECIMENS_ROOT` (typically `~/code/specimens`):
+
 - Multiple repositories with Git/GitHub sources
 - **Hydration required** - Downloads/clones repos, extracts tarballs
 - **Line counting** - Reads every file in every snapshot
@@ -84,6 +95,7 @@ To skip them: `pytest -m 'not requires_production_specimens'`
 ## Slow Tests Summary
 
 Total test time: ~627s (~10.5 minutes) for 243 tests
+
 - 5 failed
 - 228 passed
 - 10 skipped
@@ -128,12 +140,14 @@ Total test time: ~627s (~10.5 minutes) for 243 tests
 ### 1. Docker Container Startup (~15-35s each)
 
 Tests that spin up Docker containers for agent execution:
+
 - All `*_http_mode_*` tests
 - `test_docker_*` tests in temp_user_permissions
 
 **Root cause**: Container creation, image pull checks, network setup, Python environment initialization inside container.
 
 **Potential optimizations**:
+
 - Reuse container across tests (session-scoped fixture)
 - Pre-warm container pool
 - Use lighter base image
@@ -146,6 +160,7 @@ Tests that spin up Docker containers for agent execution:
 **Root cause**: Runs critic → grader → prompt_optimizer sequentially, each with its own container lifecycle.
 
 **Potential optimizations**:
+
 - Mock LLM responses more aggressively
 - Parallelize independent agent runs
 - Share container between agents
@@ -159,6 +174,7 @@ Tests that spin up Docker containers for agent execution:
 **These tests use `synced_production_db`** (not `synced_test_db`), so they sync real specimens:
 
 **Root cause**: The `synced_production_db` fixture runs `sync_all()` which for GitHub/Git sources:
+
 1. Loads snapshots from YAML (fast)
 2. **Hydrates each snapshot** - downloads from GitHub or clones Git repos (SLOW)
 3. **Reads every file and counts lines** for `snapshot_files` table (SLOW for large repos)
@@ -172,6 +188,7 @@ Tests that spin up Docker containers for agent execution:
 for the ~8 small test files.
 
 **Potential optimizations for production sync**:
+
 - **Skip file line counting for tests** - if tests don't need `snapshot_files.line_count`, skip this step
 - **Pre-sync database dump** - create a database dump and restore instead of syncing from scratch
 - **Parallel hydration** - hydrate snapshots concurrently (currently sequential)
@@ -181,6 +198,7 @@ for the ~8 small test files.
 ### 4. Expensive Setup Fixtures
 
 Several tests have 15-35s setup phases:
+
 - `test_grader_comprehensive_data_access` (29s setup)
 - `test_grader_http_mode_sql_workflow` (17s setup)
 - `test_grader_http_mode_zero_issues` (17s setup)
@@ -188,6 +206,7 @@ Several tests have 15-35s setup phases:
 **Root cause**: Complex fixture chains, DB seeding, Docker preparation.
 
 **Potential optimizations**:
+
 - Session-scoped fixtures for shared infrastructure
 - Parallel fixture setup
 - Fixture caching
@@ -195,16 +214,19 @@ Several tests have 15-35s setup phases:
 ## Recommendations
 
 ### Quick Wins
+
 1. **Session-scoped Docker client**: Avoid recreating Docker client per test
 2. **Cache specimen parsing**: Parse YAML once per session
 3. **Reuse containers**: Keep agent containers warm between tests
 
 ### Medium-term
+
 1. **Container pooling**: Pre-create N containers at session start
 2. **Fixture optimization**: Audit fixture scope (function → class → module → session)
 3. **Parallel test groups**: Group tests by resource needs, run in parallel
 
 ### Long-term
+
 1. **Mock more aggressively**: Replace Docker calls with mocks for unit tests
 2. **Separate integration tests**: Mark slow tests, run separately in CI
 3. **Profile fixture chains**: Find redundant setup/teardown

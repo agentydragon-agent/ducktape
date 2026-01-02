@@ -32,7 +32,7 @@ class MyHook(PostToolUseHook):
     def __init__(self):
         super().__init__("my_hook")
         self.hook_config = MyHookConfig.model_validate(self.config)
-    
+
     def execute(self, hook_input: PostToolUseInput) -> PostToolUseOutput:
         if hook_input.tool_name == "Write":
             return HookActions.PostToolUse.continue_with_feedback("File written!")
@@ -45,6 +45,7 @@ if __name__ == '__main__':
 ## Built-in Hooks
 
 ### Pre-commit Autofixer
+
 Automatically runs pre-commit autofix on files Claude modifies:
 
 ```bash
@@ -68,6 +69,7 @@ Automatically runs pre-commit autofix on files Claude modifies:
 ## Examples
 
 See `docs/` for detailed specs:
+
 - `AUTOFIXER_SPEC.md` - Pre-commit autofix integration
-- `LINT_ENFORCER_SPEC.md` - Lint violation tracking  
+- `LINT_ENFORCER_SPEC.md` - Lint violation tracking
 - `CUSTOM_LLM_TRIGGERS_SPEC.md` - Pattern-based interventions

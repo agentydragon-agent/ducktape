@@ -1,6 +1,7 @@
 # Scan: Pytest Antipatterns and Best Practices
 
 ## Context
+
 @../shared-context.md
 
 ## Overview
@@ -299,6 +300,7 @@ echo "Total os.* usage:" && rg --type py '\bos\.' --glob "test_*.py" --glob "*_t
 ```
 
 **What to review for each pattern:**
+
 1. **os.environ usage**: Should use `monkeypatch.setenv()` / `monkeypatch.delenv()`
 2. **os.chdir usage**: Should use `monkeypatch.chdir()`
 3. **tempfile usage**: Should use `tmp_path` fixture (unless testing tempfile itself)
@@ -315,6 +317,7 @@ echo "Total os.* usage:" && rg --type py '\bos\.' --glob "test_*.py" --glob "*_t
 **Primary Method AFTER Step 0**: Manual code reading of test files to identify patterns.
 
 **Why automation is insufficient**:
+
 - Some `tempfile` usage might be intentional (testing tempfile handling itself)
 - Need to understand test intent: does test actually need manual temp path creation?
 - Some tests can't use pytest fixtures (e.g., testing subprocess that creates temp files)
@@ -398,7 +401,9 @@ def session_tmpdir(tmp_path_factory):
 Manual manipulation is acceptable when:
 
 ### 1. Non-pytest code
+
 Production code can use `tempfile`, `os.environ`, etc.:
+
 ```python
 # Production code (not a test)
 def export_report():
@@ -408,6 +413,7 @@ def export_report():
 ```
 
 ### 2. Testing the mechanism itself
+
 ```python
 def test_env_var_handling():
     # OK: Testing how code reacts to missing env vars
@@ -416,17 +422,20 @@ def test_env_var_handling():
 ```
 
 ### 3. Weird environment constraints
+
 - Special permissions requirements
 - Cross-process communication
 - Must be in specific location (`/tmp`, specific mount point)
 - Cross-test persistence needed (very rare)
 
 ### 4. Setup/teardown in conftest.py
+
 Session-level setup that pytest fixtures can't handle (also rare).
 
 ## Benefits of pytest fixtures
 
 ### tmp_path / tmp_path_factory
+
 ✅ **Automatic cleanup** - No finally blocks, no forgotten cleanup
 ✅ **Unique per test** - Each test gets fresh directory, no conflicts
 ✅ **Pathlib by default** - `tmp_path` is `Path`, not string
@@ -435,6 +444,7 @@ Session-level setup that pytest fixtures can't handle (also rare).
 ✅ **Scoping support** - function/class/module/session scopes
 
 ### monkeypatch
+
 ✅ **Automatic restoration** - All changes reverted after test
 ✅ **Test isolation** - Changes don't leak between tests
 ✅ **No try/finally** - Cleaner test code

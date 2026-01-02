@@ -32,11 +32,13 @@ Other really nice uses of this technique include asking:
 * How has the speed of my website's rendering evolved over time?
 
 My crontab line looks like this:
+
 ```
 0 * * * * log-pagecount
 ```
 
 The `log-pagecount` script in question is dead simple:
+
 ```
 #!/bin/bash
 set -e
@@ -52,6 +54,7 @@ echo "---- CUT ----" >> $SLOC_LOGFILE
 echo $DATE >> $SLOC_LOGFILE
 cloc /home/prvak/master/code >> $SLOC_LOGFILE
 ```
+
 The lines-of-code counting is done by the
 [cloc](https://github.com/AlDanial/cloc) tool
 ([AlDanial/cloc](https://github.com/AlDanial/cloc) on GitHub). In Arch Linux,
@@ -59,6 +62,7 @@ you can install it by running `pacman -S cloc`.
 
 Then, in `~/misc/sloc-count-to-log.py`, I have a simple script that changes the
 format of the lines-of-count logfile:
+
 ```
 #!/usr/bin/python
 with open('master-sloc.tsv', 'w') as f:
@@ -71,6 +75,7 @@ with open('master-sloc.tsv', 'w') as f:
 ```
 
 Then, I have this Gnuplot script in `~/misc/plot-thesis-stats.gnuplot`:
+
 ```
 set datafile separator ' '
 set xdata time
@@ -78,11 +83,12 @@ set y2tics
 set timefmt "%Y%m%d%H%M"
 set key right bottom
 plot \
-	"master-pagecount-log.log" u 1:2 w lines axes x1y1 title "Pages", \
-	"master-sloc.tsv" u 1:2 w lines axes x1y2 title "SLOC"
+ "master-pagecount-log.log" u 1:2 w lines axes x1y1 title "Pages", \
+ "master-sloc.tsv" u 1:2 w lines axes x1y2 title "SLOC"
 ```
 
 To see the pretty graph, I do this:
+
 ```
 ~ $ cd ~/misc
 ~/misc $ gnuplot

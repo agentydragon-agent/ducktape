@@ -5,6 +5,7 @@ This document describes the Claude Code hooks that automatically run `claude-lin
 ## Overview
 
 The hooks integrate with Claude Code's hooks system to:
+
 - **Pre-hook**: Run the linter before Write operations to block violations
 - **Post-hook**: Auto-fix text issues and Python formatting after Write/Edit/MultiEdit operations
 
@@ -18,14 +19,17 @@ Both hooks ensure code quality standards are maintained.
    - Unified CLI: `ducktape_llm_common/claude_linter/claude_linter.py`
 
 2. **Installation**: The hooks are automatically installed when you install the package:
+
    ```bash
    pip install -e /path/to/ducktape_llm_common
    # or
    pip install ducktape-llm-common
    ```
+
    This installs the `claude-linter` command with pre/post/check modes.
 
 3. **Configuration**: The hooks are configured in `~/.claude/settings.json`:
+
    ```json
    {
      "hooks": {
@@ -80,10 +84,11 @@ Both hooks ensure code quality standards are maintained.
 ## How It Works
 
 ### Pre-Hook (Write only)
+
 1. **Triggering**: Runs before Claude creates new files with Write tool
 2. **Python File Detection**: Checks if the file will be a Python file (`.py` extension)
 3. **Text Fixes**: Runs pre-commit text fixes on all file types
-4. **Python Linting**: 
+4. **Python Linting**:
    - Creates a `ClaudeRulesLinter` instance with `treat_all_as_errors=True`
    - This mode treats ALL violations as errors (not just "new" ones)
    - Runs the linter to check for violations
@@ -92,6 +97,7 @@ Both hooks ensure code quality standards are maintained.
    - **Failure**: Exits with code 2, blocks creation and shows errors to Claude
 
 ### Post-Hook (Write/Edit/MultiEdit)
+
 1. **Triggering**: Runs after Claude modifies files
 2. **Text Fixes**: Automatically fixes:
    - Trailing whitespace (preserves markdown double-space line breaks)

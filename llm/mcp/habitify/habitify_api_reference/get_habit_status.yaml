@@ -6,7 +6,7 @@ request:
     Authorization: API_KEY_MASKED
     Content-Type: application/json
   params:
-    target_date: '2025-05-09T00:00:00+00:00'
+    target_date: "2025-05-09T00:00:00+00:00"
 response:
   status_code: 200
   headers:

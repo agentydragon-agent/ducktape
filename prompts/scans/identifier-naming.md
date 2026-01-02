@@ -1,6 +1,7 @@
 # Scan: Identifier Naming
 
 ## Context
+
 @../shared-context.md
 
 ## Core Principle
@@ -74,6 +75,7 @@ for request in requests:
 ### When Abbreviations Are Acceptable
 
 #### ✓ Momentary scope (< 3 lines)
+
 ```python
 # OK: Mathematical/index conventions
 for i in range(n):        # Loop index
@@ -91,6 +93,7 @@ x, _, z = get_coordinates()  # _ for unused middle value
 ```
 
 #### ✓ Well-established conventions (use sparingly)
+
 ```python
 # Acceptable if universally understood
 df = load_dataframe()  # Pandas convention
@@ -162,13 +165,13 @@ def process_rollout(
     optimizer_config.get_value()  # ✓ Clear which config
 ```
 
-### A Name is Vague When:
+### A Name is Vague When
 
 - **Context doesn't clarify its purpose** (e.g., `cfg` in a function with multiple config objects)
 - **Multiple similar entities exist** (e.g., `id` when there are user IDs, request IDs, etc. nearby)
 - **The containing scope is generic** (e.g., `key` in a class called `Response`)
 
-### A Name is NOT Vague When:
+### A Name is NOT Vague When
 
 - **Container name provides full context** (e.g., `User.id` is obviously the user's ID)
 - **Only one of its kind exists** in the scope (e.g., single `status` field in focused class)
@@ -407,6 +410,7 @@ rg --type py 'def \w+\([^)]*\bid\b[^)]*\bid\b'
    - `User.id`, `CacheEntry.key`, `Product.name` → likely fine
 
 2. **Read function signatures** - Multiple similar entities:
+
    ```python
    # BAD: Three IDs in scope
    def link_items(id: str, parent_id: str, user_id: str):
@@ -450,6 +454,7 @@ def process(request: Request, config: Config, context: Context):
 ### Priority 3: Vague Names (Context-Dependent)
 
 Add prefix/suffix clarifying purpose:
+
 ```python
 # Before
 class Response(BaseModel):
@@ -479,6 +484,7 @@ response = fetch(request)
 ## When Short/Vague Names Are Acceptable
 
 ### ✓ Momentary lifespan (1-3 lines)
+
 ```python
 for i in range(n):        # OK: index
     for j in range(m):    # OK: nested index
@@ -491,6 +497,7 @@ items = [x for x in values if x > 0]  # OK: comprehension
 ```
 
 ### ✓ Strong container context
+
 ```python
 class User(BaseModel):
     id: int        # OK: User.id is clear
@@ -501,6 +508,7 @@ class CacheEntry(BaseModel):
 ```
 
 ### ✓ Module context provides clarity
+
 ```python
 # File: kubernetes_client.py
 
@@ -536,12 +544,14 @@ from cache.redis import Cache  # Clear from import path
 **Principle**: Leverage the import path and module name to avoid redundantly long class names. When you import `from kubernetes_client import Config`, the context is clear. Avoid Java-style `KubernetesClientConfigurationSettings` when `Config` suffices given the module context.
 
 ### ✓ Single entity of type in scope
+
 ```python
 def process_task(task: Task, cfg: OptimizerConfig):  # OK: only one config
     cfg.validate()
 ```
 
 ### ✓ Standard conventions
+
 ```python
 args, kwargs, cls, self  # Standard Python
 df, pd, np               # Pandas/NumPy ecosystem
@@ -606,12 +616,14 @@ def process_rollout(rollout, task, optimizer_config, grading_config, model_confi
 ## Recall/Precision Estimates
 
 ### Abbreviated Identifiers
+
 - **Automated detection**: ~85-90% recall, ~70% precision
   - High recall: patterns are clear (length, common abbreviations)
   - Some false positives: acceptable conventions (i, j, k, df, pd)
 - **Manual filtering needed**: Review ~30% to eliminate acceptable uses
 
 ### Vague Identifiers
+
 - **Automated detection**: ~30-40% recall, ~20% precision
   - Low recall: context-dependent, semantic analysis required
   - High false positives: most `id` fields are actually fine

@@ -5,6 +5,7 @@
 ## When Walrus Wins
 
 The walrus operator is valuable when you need to **use a value AND test/process it** in the same expression, avoiding:
+
 - Duplicating expensive computation or lookups
 - Polluting outer scope with temporary variables
 - Verbose multi-line patterns that obscure intent
@@ -54,6 +55,7 @@ rg --type py '^[[:space:]]*while ' -B 2 -A 2 --line-number
 ```
 
 **Manual verification process**:
+
 1. **Check variable usage**: Is variable ONLY used in the conditional block?
 2. **Verify pattern**: Assignment followed by test (if/while) using that variable?
 3. **Check for duplicate calls**: Same function called in condition and body?
@@ -65,6 +67,7 @@ rg --type py '^[[:space:]]*while ' -B 2 -A 2 --line-number
 ### Pattern 1: dict.get() + if check
 
 **Example 1a: Positive check**
+
 ```python
 # Before
 p = child_env.get(key)
@@ -79,6 +82,7 @@ if (p := child_env.get(key)):
 **Benefits**: Saves one line, clearer intent, variable scoped to block.
 
 ### Example 2: None check (good candidate)
+
 **File**: `adgn/src/adgn/mcp/compositor/server.py:196`
 
 ```python
@@ -95,6 +99,7 @@ if (entry := per_name.get(nm)) is None:
 **Benefits**: Saves one line, clearer that entry is only used in condition.
 
 ### Example 3: Class/type check (good candidate)
+
 **File**: `claude/claude_hooks/claude_hooks/inputs.py:67`
 
 ```python
@@ -174,6 +179,7 @@ configs = [cfg for p in paths if (cfg := parse_config(p)) is not None]
 **Benefits**: Avoids duplicate parse_config calls, much more efficient for expensive transforms.
 
 ### Example 4: Multi-use variable (skip)
+
 **File**: `adgn/src/adgn/rspcache/models.py:56`
 
 ```python
@@ -191,6 +197,7 @@ if isinstance(response, Mapping):
 **Reason**: `response_id` check is not the only logic path, walrus would not help.
 
 ### Example 5: Complex condition (skip)
+
 ```python
 # Keep as-is - walrus would reduce readability
 tmp_hint = env_set.get("TMPDIR") or env_set.get("TMP") or env_set.get("TEMP")
@@ -204,6 +211,7 @@ if tmp_hint:
 ## When NOT to Apply Walrus
 
 ❌ **Variable used outside the conditional block**
+
 ```python
 # BAD: value needed outside the block
 if (value := data.get("key")):
@@ -212,6 +220,7 @@ log(value)  # NameError! value not in scope
 ```
 
 ❌ **Multiple checks on same variable**
+
 ```python
 # BAD: variable tested multiple times
 value = data.get("key")
@@ -223,6 +232,7 @@ return value
 ```
 
 ❌ **Hurts readability with complex nesting**
+
 ```python
 # BAD: Too complex
 if (x := a()) and (y := b(x)) and (z := c(y)) and z > 10:
@@ -237,6 +247,7 @@ if z > 10:
 ```
 
 ❌ **Value used only once in simple context**
+
 ```python
 # BAD: Unnecessary walrus
 if (x := compute()):
@@ -259,6 +270,7 @@ These patterns can be detected with high recall (>80%) using the grep commands a
 **Expected precision**: 10-30% (many false positives, but that's okay - agent reviews all candidates)
 
 **Key to identify true positives**:
+
 1. Variable assigned, then immediately tested in if/while
 2. Variable only used within the conditional block
 3. Same computation appears in condition and body (duplicate work)

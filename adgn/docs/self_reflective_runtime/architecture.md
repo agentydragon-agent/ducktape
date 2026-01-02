@@ -32,6 +32,7 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
   - Runs the agent turn loop; hot-swappable via a lightweight supervisor process.
   - Maintains the agent transcript/event stream and loop-control latch; any UI projection (`UiState`) is built in the control plane.
   - Implementation sketch:
+
     ```text
     agentd/
       supervisor.py    # entrypoint; handles control API, restarts
@@ -41,6 +42,7 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
       db.py            # thin wrapper around agent-scoped DB (SQLite/functional)
       config.py        # loads credentials, handler configs, hook defs from DB
     ```
+
   - Supervisor boots `loop_worker`, exposes the control API, and watches for restart/shutdown signals.
   - `loop_worker` pulls pending inputs (chat events, hook effects), runs `agent.run_turn(...)`, and streams tool calls through `mcp_clients` (policy gateway enforces approvals).
   - `hooks.py` executes hook code in-process, producing “Effects” (`wake`, `messages`, `invoke`) that the worker consumes on the next turn.

@@ -77,30 +77,39 @@ cl2 fix src/ --categories formatting,imports
 ## Key Features
 
 ### 1. Modular Configuration
+
 Each check has its own configuration section with standard fields:
+
 - `enabled` - Whether the check is active
 - `message` - Custom error message
 - `severity` - error, warning, or info
 - `autofix` - Whether the issue can be auto-fixed
 
 ### 2. Python AST Checks
+
 Built-in checks for common Python anti-patterns:
+
 - Bare except clauses
 - hasattr/getattr/setattr usage
-- Barrel __init__.py files
+- Barrel **init**.py files
 
 ### 3. Ruff Integration
+
 Seamlessly integrates with ruff for additional Python linting with configurable rules.
 
 ### 4. Access Control
+
 Fine-grained permission system with:
+
 - Path-based rules
 - Python predicate expressions
 - Session-specific permissions
 - "Most restrictive wins" precedence
 
 ### 5. Hook Integration
+
 Integrates with Claude Code's hook system:
+
 - **PreToolUse**: Block problematic code before execution
 - **PostToolUse**: Auto-fix formatting issues
 - **Stop**: Quality gate to ensure clean code before session end

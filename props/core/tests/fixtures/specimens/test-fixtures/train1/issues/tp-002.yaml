@@ -1,16 +1,16 @@
-rationale: 'Second test issue for integration testing.
+rationale: "Second test issue for integration testing.
 
   This ensures the snapshot has multiple files with issues.
 
-  '
+  "
 should_flag: true
 occurrences:
-- occurrence_id: occ-1
-  files:
-    add.py:
-    - 4
-    - 6
-  critic_scopes_expected_to_recall:
-  - - add.py
-  graders_match_only_if_reported_on:
-  - add.py
+  - occurrence_id: occ-1
+    files:
+      add.py:
+        - 4
+        - 6
+    critic_scopes_expected_to_recall:
+      - - add.py
+    graders_match_only_if_reported_on:
+      - add.py

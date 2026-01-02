@@ -7,11 +7,13 @@ PostgreSQL-based storage for properties evaluation results.
 We maintain **TWO separate databases** to ensure tests never affect production data:
 
 ### Production Database: `eval_results`
+
 - **Purpose**: Real evaluation results, persistent storage
 - **DO NOT DROP/RECREATE**: Contains valuable data
 - **Connection**: Uses standard PG* environment variables (set by devenv)
 
 ### Test Database: `eval_results_test`
+
 - **Purpose**: Integration tests only
 - **FREELY DROP/RECREATE**: Tests use fixtures to reset state
 - **Connection**: Uses individual environment variables for test database configuration
@@ -19,6 +21,7 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 ## Setup
 
 1. **Start PostgreSQL container**:
+
    ```bash
    cd adgn
    devenv up
@@ -27,6 +30,7 @@ We maintain **TWO separate databases** to ensure tests never affect production d
    This starts the PostgreSQL container in the background (managed by devenv).
 
 2. **Initialize database**:
+
    ```bash
    # Create database, schema, RLS policies, and sync specimens
    props db recreate --yes
@@ -39,6 +43,7 @@ We maintain **TWO separate databases** to ensure tests never affect production d
    - Syncs specimen data from the specimens repository
 
    For incremental updates (without dropping tables):
+
    ```bash
    props sync
    ```
@@ -46,12 +51,14 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 ## Database Users
 
 ### postgres (admin)
+
 - **Full access**: Create/drop tables, write data, read all data
 - **Purpose**: Migrations, data loading, test setup
 - **Bypasses RLS**: Can see all splits (train/valid/test)
 - **Connection**: Via PGUSER/PGPASSWORD environment variables
 
 ### Temporary Agent Users (per-task)
+
 - **Username pattern**: `agent_{agent_run_id}` (unified for all agent types)
 - **Role membership**: Inherit from `agent_base` role
 - **Permissions**: SELECT on reference tables, INSERT/UPDATE/DELETE on agent-specific tables

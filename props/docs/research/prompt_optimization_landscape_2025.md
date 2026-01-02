@@ -15,6 +15,7 @@ This document summarizes research into state-of-the-art prompt optimization fram
 **Design**: Evolutionary algorithm with reflection-based mutation and component-level merge
 
 **How it works**:
+
 - Maintains population of programs (Pareto front)
 - Two operations:
   - **Reflective Mutation**: Select one program, evaluate on minibatch, reflect on failures, propose improved version
@@ -25,6 +26,7 @@ This document summarizes research into state-of-the-art prompt optimization fram
 **Key assumption**: Programs are **compositional** - dict of independent components that can be mixed/matched
 
 **Example use case**:
+
 ```python
 program = {
     "query_rewriter": "Take user query and...",
@@ -34,12 +36,14 @@ program = {
 ```
 
 **Why it doesn't fit our use case**:
+
 - With one component (system prompt), merge degenerates to "pick one or the other"
 - No cross-prompt information synthesis (reflective mutation only sees one prompt's failures)
 - Designed for multi-stage pipelines, not monolithic prompts
 - Still expensive: each iteration evaluates at least one candidate on subsample
 
 **What we'd use from GEPA**:
+
 - Population tracking (Pareto front)
 - Subsample-before-full-eval strategy
 - Candidate selection heuristics
@@ -55,6 +59,7 @@ program = {
 **Design**: Bayesian optimization over instructions and few-shot examples
 
 **How it works**:
+
 1. **Bootstrap**: Run program many times, collect traces of input/output behavior
 2. **Grounded proposal**: Use traces to draft many potential instructions for each module
 3. **Discrete search**: Sample mini-batches, propose combinations of instructions + examples, update surrogate model
@@ -64,11 +69,13 @@ program = {
 **Key assumption**: Multi-module programs with clear interfaces between stages
 
 **Why it doesn't fit**:
+
 - Same compositional assumption as GEPA
 - Designed for DSPy pipelines (chained LM calls)
 - Benefits diminish with task complexity (per April 2025 research)
 
 **What we'd use**:
+
 - Bayesian surrogate model approach
 - Bootstrapping traces from successful runs
 
@@ -85,18 +92,21 @@ program = {
 **How it works**:
 
 **Stage 1: Iterative Instruction Optimization**
+
 1. **Mutate**: Generate 10 variations using "thinking styles" (step-by-step, critical thinking, etc.)
 2. **Evaluate**: Test each on mini-batches, score by correct answers
 3. **Critique**: For poorly performing prompts: "What's wrong?" → Refine. For good prompts: "How to improve?" → Enhance
 4. **Select**: Keep top-N, repeat
 
 **Stage 2: Sequential Optimization of Instructions + Examples**
+
 1. Generate/refine few-shot examples (can synthesize from scratch)
 2. Alternate: refine instruction OR refine examples
 3. Generate CoT reasoning for examples
 4. Generate expert identity (system prompt persona)
 
 **Key assumptions**:
+
 - **Cheap evaluation**: Can test 10 candidates × multiple batches × iterations
 - **Simple examples**: Q&A pairs that fit in context
 - **Self-contained evaluation**: LLM can score its own outputs
@@ -121,6 +131,7 @@ program = {
    - **Can only show failure summaries, not full examples**
 
 **What we'd use**:
+
 - The critique loop pattern (evaluate → critique failures → refine)
 - Positive critique for already-good prompts ("what's working well?")
 - Expert identity generation
@@ -136,6 +147,7 @@ program = {
 **Design**: Automatic "differentiation" via text using LLM feedback
 
 **How it works**:
+
 - PyTorch-like API for text optimization
 - Backpropagation through text transformations
 - Iterative refinement using textual "gradients" (feedback)
@@ -147,15 +159,18 @@ program = {
 **Performance**: State-of-the-art on GPQA (PhD-level Q&A) and LeetCode Hard
 
 **Why it might fit**:
+
 - Designed for continuous text optimization (not just discrete prompts)
 - Can handle complex, structured tasks
 - Doesn't assume cheap evaluation (focuses on quality over quantity)
 
 **Why it might not fit**:
+
 - Still assumes you can run many iterations
 - Gradient feedback requires showing the model its errors (expensive in our case)
 
 **What we'd use**:
+
 - The gradient metaphor (feedback → update direction)
 - Focus on quality refinement over rapid exploration
 
@@ -166,21 +181,25 @@ program = {
 ### 5. Other Notable Approaches
 
 **EvoPrompt** (ICLR 2024):
+
 - Evolutionary algorithms for discrete prompts
 - Up to 25% improvement on BBH benchmark
 - Similar assumptions to PromptWizard (cheap evaluation, many candidates)
 
 **Meta's prompt-ops**:
+
 - PDO (Prompt Duel Optimizer) using dueling bandits
 - Optimizes prompts for Llama models specifically
 - State-of-the-art on BIG-bench Hard and MS MARCO
 
 **GreaTerPrompt** (2025):
+
 - Unified toolkit (text-based + gradient-based)
 - Web UI + Python library
 - Works with both local and API LLMs
 
 **APE** (Automatic Prompt Engineer):
+
 - Surprisingly competitive despite simplicity
 - Doesn't require initial human prompt
 - Worth considering as baseline
@@ -228,6 +247,7 @@ program = {
 ### Option 1: Stick with Current Approach (Recommended)
 
 **What you have**:
+
 ```python
 # run_improvement_agent
 1. Select one prompt (best by validation LCB)
@@ -245,6 +265,7 @@ program = {
 ```
 
 **Why this is appropriate**:
+
 - **Selective evaluation**: Only one candidate per iteration (affordable)
 - **Rich analysis**: Agent can do deep dive into failures (not limited by framework)
 - **Flexible**: Can change analysis strategy without rewriting framework
@@ -253,6 +274,7 @@ program = {
 **Enhancements to consider**:
 
 1. **Population tracking**:
+
    ```python
    prompts = [
        (prompt_text, validation_recall, validation_lcb, metadata),
@@ -282,11 +304,13 @@ program = {
 ### Option 2: Adapt TextGrad for Expensive Evaluation
 
 **What to adapt**:
+
 - Use TextGrad's gradient metaphor but with manual feedback
 - Each "gradient step" = one expensive critic run + detailed analysis
 - Focus on quality of each iteration over quantity
 
 **How it would work**:
+
 ```python
 for iteration in range(max_iterations):
     # 1. Evaluate current prompt (expensive)
@@ -306,11 +330,13 @@ for iteration in range(max_iterations):
 ```
 
 **Advantages**:
+
 - Structured framework for iterative refinement
 - Can plug in your failure analysis as "gradient"
 - Good documentation/tooling
 
 **Disadvantages**:
+
 - Still assumes more iterations than you can afford
 - Adds framework complexity without clear benefit over simple agent
 
@@ -358,12 +384,14 @@ for iteration in range(budget // cost_per_eval):
 ```
 
 **Why this works**:
+
 - Population gives you exploration (multiple approaches)
 - Simple LLM-based improvement (no framework)
 - Bounded evaluation cost (budget // cost_per_eval iterations)
 - Easy to implement and debug
 
 **Enhancement ideas from frameworks**:
+
 - **Positive critique** (PromptWizard): If score > threshold, ask "what's working well? how to improve further?"
 - **Subsample gating** (GEPA): Test on subset before full eval
 - **Candidate selection** (GEPA): Smart heuristics for which prompt to improve next
@@ -376,12 +404,14 @@ for iteration in range(budget // cost_per_eval):
 **Reality check**: None of the 2024-2025 frameworks are designed for your problem.
 
 **What would make a framework useful**:
+
 1. **Handles expensive evaluation** (budget-conscious, selective candidates)
 2. **Works with complex structured examples** (not just Q&A pairs)
 3. **Leverages rich failure data** (grader results, execution traces)
 4. **Supports monolithic prompts** (not compositional)
 
 **None exist yet.** The field is focused on:
+
 - Multi-module systems (DSPy, GEPA)
 - Cheap evaluation scenarios (PromptWizard, EvoPrompt)
 - Simple Q&A benchmarks (most papers)
@@ -395,6 +425,7 @@ for iteration in range(budget // cost_per_eval):
 ### Phase 1: Enhance Current System (1-2 days)
 
 1. **Add population tracking**:
+
    ```python
    class PromptPopulation:
        def __init__(self):
@@ -410,6 +441,7 @@ for iteration in range(budget // cost_per_eval):
    ```
 
 2. **Add subsample validation**:
+
    ```python
    def should_run_full_validation(prompt, subsample_result):
        # Only run expensive full validation if subsample looks promising
@@ -419,6 +451,7 @@ for iteration in range(budget // cost_per_eval):
    ```
 
 3. **Track improvement lineage**:
+
    ```python
    # Store in database
    ImprovementRun:

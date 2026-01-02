@@ -32,12 +32,14 @@ props/
 The backend, frontend, and PostgreSQL are managed by devenv via process-compose. **Never start these services manually.**
 
 ### Starting All Services
+
 ```bash
 cd props
 devenv up  # Starts postgres, backend, frontend
 ```
 
 ### Process Management Commands
+
 ```bash
 # List processes and their status
 process-compose process list
@@ -57,30 +59,37 @@ process-compose process start backend
 ```
 
 ### Service URLs
-- Backend: http://localhost:8000
-- Frontend: http://localhost:5173
+
+- Backend: <http://localhost:8000>
+- Frontend: <http://localhost:5173>
 - PostgreSQL: localhost:5433
 
 ### What to NEVER Do
+
 - **NEVER** run `uvicorn` manually
 - **NEVER** run `pnpm dev` manually for the frontend
 - **NEVER** start the postgres container manually
 - **NEVER** kill service PIDs without checking if they're process-compose managed
 
 Manual service starts will:
+
 1. Block process-compose from starting (port conflict: "Address already in use")
 2. Watch wrong directories (code changes won't reload)
 3. Break the devenv-managed workflow
 
 ### Backend Watch Directories
+
 The devenv backend watches:
+
 - `backend/src` - Backend route handlers
 - `core/src` - Props core package
 
 Changes trigger automatic reload.
 
 ### Regenerating OpenAPI Schema
+
 After backend API changes:
+
 ```bash
 cd frontend
 pnpm generate  # Requires backend running
@@ -95,12 +104,14 @@ The `props db recreate` command drops ALL data including expensively-collected a
 **NEVER run this command without the user's explicit verbal agreement.**
 
 For applying migrations to an existing database, use the standard Alembic workflow:
+
 ```bash
 cd core/src/props_core/db
 direnv exec . alembic upgrade head
 ```
 
 ### psql Access
+
 ```bash
 # Connect with psql (uses PG* environment variables set by devenv)
 cd props && direnv exec . psql
@@ -114,4 +125,3 @@ cd /path/to/ducktape/props && direnv exec . psql
 **Specimens data lives in a separate repository**: [github.com/agentydragon/specimens](https://github.com/agentydragon/specimens)
 
 The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`). The props package loads specimen data from this external location.
-

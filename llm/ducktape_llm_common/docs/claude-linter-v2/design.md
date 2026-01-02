@@ -3,6 +3,7 @@
 ## Executive Summary
 
 Claude Linter v2 is a monolithic code quality and permission management system for Claude Code, providing:
+
 - Python predicate-based access control with session and repo-level rules
 - Hard blocks for dangerous patterns (bare except, hasattr/getattr)
 - Selective autofixing based on hook type (full fix for Write, formatting-only for Edit)
@@ -13,7 +14,9 @@ Claude Linter v2 is a monolithic code quality and permission management system f
 ## Architecture
 
 ### Monolithic Design
+
 Single binary with internal modularity:
+
 ```
 claude-linter/
 ├── cli.py                    # Entry point
@@ -26,6 +29,7 @@ claude-linter/
 ```
 
 Benefits:
+
 - Single process (no IPC overhead)
 - Shared memory and state
 - Unified configuration
@@ -49,6 +53,7 @@ message = "Core files are read-only"
 ```
 
 Built-in predicates:
+
 - `Edit()`, `Write()`, `Read()`, `Bash()` - Tool matchers
 - `safe_git_commands()` - Allow safe git operations only
 - `is_test()`, `is_prod()` - Path helpers
@@ -57,23 +62,27 @@ Built-in predicates:
 ### 2. Hook Behavior
 
 #### PreToolUse
+
 1. Check access control (fastest fail)
 2. Run hard blocks (bare except, hasattr)
 3. Check format issues (inform only)
 
 #### PostToolUse
+
 - **Write**: Full autofix all categories
 - **Edit/MultiEdit**: Selective autofix (formatting only by default)
 - Report violations
 - Inject permissions/guidance
 
 #### Stop
+
 - Quality gate: Block if unfixed errors
 - Cleanup questionnaire
 
 ### 3. Diff-Based Intelligence
 
 Analyze only changed code with context awareness:
+
 - **In-diff violations**: Block (Claude just added these)
 - **Near-diff violations**: Warn (context issues)
 - **Out-of-diff violations**: Report only
@@ -82,6 +91,7 @@ Analyze only changed code with context awareness:
 ### 4. Hard-Blocked Patterns
 
 AST-based blocking for Python:
+
 ```toml
 [python.hard_blocks]
 bare_except = true      # Blocks except: without type
@@ -92,6 +102,7 @@ eval_exec = true        # Blocks eval() and exec()
 ### 5. LLM-Based Analysis
 
 Optional AI-powered checks:
+
 ```toml
 [llm_analysis]
 enabled = true
@@ -103,6 +114,7 @@ daily_cost_limit = 5.00
 ### 6. Contextual Guidance
 
 Detect patterns and inject timely advice:
+
 - Test writing → pytest best practices
 - API client code → timeout/retry guidance
 - Security patterns → security reminders
@@ -110,6 +122,7 @@ Detect patterns and inject timely advice:
 ### 7. Task Profiles
 
 Pre-approved permission sets:
+
 ```toml
 [[profiles]]
 name = "refactoring"
@@ -193,7 +206,7 @@ claude-linter session list
 # Output:
 # Sessions in /home/user/project:
 #   abc123 - last seen 2m ago
-#   def456 - last seen 5m ago  
+#   def456 - last seen 5m ago
 # Sessions in other directories:
 #   xyz789 - /home/user/other - last seen 1h ago
 
@@ -205,6 +218,7 @@ claude-linter session allow 'Edit("src/**")' --dir /home/user/project
 ```
 
 When Claude is blocked, the error message is targeted at the LLM:
+
 ```
 Error: Permission denied to edit src/core/security.py
 
@@ -247,7 +261,9 @@ Allows Claude to query and request permissions:
 ## Key Innovations
 
 ### 1. Permission Communication
+
 Post-hook injection informs Claude of active permissions:
+
 ```
 foo.py written OK with whitespace fixes.
 
@@ -258,13 +274,17 @@ FYI: You have blanket approval for:
 ```
 
 ### 2. Checklist-Based Overrides
+
 For hasattr/getattr usage, Claude must complete a detailed checklist explaining why it's necessary.
 
 ### 3. Safe Git Commands
+
 Predicate function that allows safe git operations while blocking force pushes, history rewrites, etc.
 
 ### 4. Stop Hook Questionnaire
+
 Forces cleanup reflection:
+
 - List temporary files created
 - Check for duplicate functionality
 - Remove debug code
@@ -273,6 +293,7 @@ Forces cleanup reflection:
 ## Implementation Strategy
 
 ### Parallel Implementation
+
 Claude Linter v2 will be implemented as a separate package/command to avoid disrupting the existing v1:
 
 ```
@@ -287,10 +308,12 @@ ducktape_llm_common/
 ```
 
 Command names:
+
 - v1: `claude-linter` (unchanged)
 - v2: `claude-linter-v2` or `cl2`
 
 This allows:
+
 - Gradual migration without breaking existing workflows
 - A/B testing between versions
 - Easy rollback if needed
@@ -299,23 +322,24 @@ This allows:
 ## Implementation Status (Updated: Jan 2025)
 
 ### ✅ Completed
+
 1. **Phase 1**: Core framework + config system ✅
    - CLI with `cl2` command
    - Pydantic-based configuration models
    - Hook handler infrastructure
-   
+
 2. **Phase 2**: Python predicate access control ✅
    - Unrestricted Python eval for predicates
    - Session management with per-session files
    - Built-in predicates (Edit, Write, etc.)
    - "Most restrictive wins" rule evaluation
-   
+
 3. **Phase 3**: Python hard blocks ✅
    - AST analyzer for bare except
    - Blocks hasattr/getattr/setattr usage
-   - Detects barrel __init__.py patterns
+   - Detects barrel **init**.py patterns
    - Integrates with pre-hook blocking
-   
+
 4. **Phase 4**: Selective autofix by hook type ✅
    - Full autofix for Write tool
    - Formatting-only for Edit/MultiEdit
@@ -326,17 +350,19 @@ This allows:
    - Per-session file storage
    - Session commands: allow, deny, forbid, list
    - Directory-based session inference
-   
+
 6. **Install command** ✅
    - `cl2 install` configures all 5 hook types
    - Single command handles all hooks via `hook_event_name`
    - Forward compatibility (unknown hooks → no-op)
 
 ### 🚧 TODO (High Priority)
+
 - **Stop hook quality gate**: Block if unfixed errors remain
 - **Diff-based intelligence**: In-diff vs near-diff vs out-of-diff
 
 ### 📋 TODO (Medium Priority)
+
 - **Task profiles**: Pre-configured permission sets
 - **safe_git_commands predicate**: Built-in safety checks
 - **Duration parsing**: Support "2h", "30m" formats
@@ -344,6 +370,7 @@ This allows:
 - **Direct file checking**: Make `cl2 check` work
 
 ### 🔮 TODO (Low Priority)
+
 - **Phase 6**: MCP server for permission queries
 - **Phase 7**: LLM analysis integration
 - **Phase 8**: Contextual guidance system

@@ -8,6 +8,7 @@ Based on my [Python project skeleton](https://gitlab.com/agentydragon/python-ske
 Please install and use [pre-commit](https://github.com/pre-commit/pre-commit).
 
 ## License
+
 AGPL 3.0
 
 ## Updates
@@ -35,5 +36,6 @@ nix run nixpkgs#act -- -W .github/workflows/ci.yml \
 ```
 
 Tips:
+
 - `act` needs Docker. Make sure `docker pull catthehacker/ubuntu:act-latest` works first.
 - Use `act -j <job-name>` to run a single job.

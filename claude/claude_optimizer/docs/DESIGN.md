@@ -7,11 +7,13 @@ The Claude Instruction Optimizer uses a **per-task Docker image** approach with 
 ## Core Design Principles
 
 ### 🐳 **Per-Task Docker Images**
+
 - Each task gets its own Docker image: `claude-dev:task-{task_id}`
 - Images inherit from optimal base layers (python-data, rust, node, etc.)
 - No shared repository layers - keeps architecture simple
 
 ### 📦 **Independent Base Layers**
+
 - `system-base`: Ubuntu + essential tools
 - `python-core`, `python-dev`, `python-data`: Python environments
 - `rust`: Rust toolchain
@@ -20,6 +22,7 @@ The Claude Instruction Optimizer uses a **per-task Docker image** approach with 
 - Each layer builds independently with optimal caching
 
 ### 🗂️ **Runtime Repository Mounting**
+
 - Git repositories are **NOT baked into Docker images**
 - Repositories cloned at runtime to `/git/{repo_url}/`
 - Main repository symlinked to `/workspace` for agent execution
@@ -28,6 +31,7 @@ The Claude Instruction Optimizer uses a **per-task Docker image** approach with 
 ## System Components
 
 ### Task Definition (`seeds.yaml`)
+
 ```yaml
 - id: my_task
   dependencies: ["python-data"]  # Determines base Docker layer
@@ -36,11 +40,13 @@ The Claude Instruction Optimizer uses a **per-task Docker image** approach with 
 ```
 
 ### Dependency Resolution (`dependency_manager.py`)
+
 - Maps task dependencies → optimal Docker base layer
 - Always returns per-task image name: `claude-dev:task-{task_id}`
 - Generates simple Dockerfiles that inherit from base layers
 
 ### Runtime Execution (`optimizer.py`)
+
 1. **Task Loading**: YAML → database with validation
 2. **Docker Image**: Build per-task image from base layer
 3. **Repository Setup**: Clone git repos at runtime
@@ -66,17 +72,21 @@ The Claude Instruction Optimizer uses a **per-task Docker image** approach with 
 ## Build Process
 
 ### 1. **Base Layer Build** (`build_dependency_layers.py`)
+
 ```bash
 python3 -m adgn_llm.instruction_optimizer.docker.build_dependency_layers
 ```
+
 - Builds independent layers in dependency order
 - Uses Docker buildx with persistent caching (`.docker-cache/`)
 - No git repositories involved - pure runtime environments
 
 ### 2. **Task Execution** (`optimizer.py`)
+
 ```bash
 python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3
 ```
+
 - Generates per-task Dockerfiles dynamically
 - Clones git repositories at runtime
 - Executes agents in isolated containers
@@ -85,18 +95,21 @@ python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 10 --rollo
 ## Key Architectural Decisions
 
 ### ✅ **Why Per-Task Images?**
+
 - **Simplicity**: No complex shared layer optimization
 - **Isolation**: Each task has dedicated environment
 - **Flexibility**: Easy to customize per task in future
 - **Debugging**: Clear 1:1 mapping task → image
 
 ### ✅ **Why Runtime Git Mounting?**
+
 - **Flexibility**: Any git repository without pre-building
 - **Freshness**: Always use specified commit
-- **Simplicity**: No complex layer dependency graphs  
+- **Simplicity**: No complex layer dependency graphs
 - **Development Speed**: No rebuild when changing repos
 
 ### ✅ **Why Independent Base Layers?**
+
 - **Cache Efficiency**: Only rebuild what changed
 - **Modularity**: Language runtimes evolve independently
 - **Build Speed**: Parallel layer construction

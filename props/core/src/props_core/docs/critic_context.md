@@ -6,6 +6,7 @@ When a critic runs on an example, it receives:
 2. **Source code** — mounted read-only at `/snapshots/{snapshot_slug}/`
 
 The init script prints these in a "Review Scope" section:
+
 ```
 === Review Scope ===
 Snapshot: ducktape/2025-11-26-00
@@ -30,6 +31,7 @@ The scope is displayed by the init script. Scope types:
 ## Available Tools
 
 Critics have access to:
+
 - Shell tools via docker_exec (rg, ruff, mypy, vulture, etc.)
 - Direct psql access with RLS-scoped credentials
 - CLI `props critic-agent` for reporting issues

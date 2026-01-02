@@ -40,7 +40,7 @@ jupyter-nbconvert --to markdown --template basic <...>.ipynb
 
 # Syntax highlighting
 
-See: https://pandoc.org/MANUAL.html#syntax-highlighting
+See: <https://pandoc.org/MANUAL.html#syntax-highlighting>
 
 It uses [skylighting](https://github.com/jgm/skylighting) library under the hood.
 

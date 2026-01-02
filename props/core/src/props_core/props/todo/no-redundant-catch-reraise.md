@@ -10,6 +10,7 @@ Try/except that immediately re-raises the same exception without adding context,
 ## Example
 
 **Questionable:**
+
 ```python
 try:
     docker_client.cleanup()
@@ -19,11 +20,13 @@ except docker.errors.APIError:
 ```
 
 **Agent Guidance:**
+
 - Flag such blocks as "consider removing the try/except and allow the exception to propagate."
 
 ## Exceptions (Allowed)
 
 These cases are acceptable and should NOT be flagged:
+
 - Adding structured logging/metrics or context
 - Translating exception types (domain-specific)
 - Narrow scoping to preserve invariants (e.g., guarantee finally semantics when language constructs don't suffice)
@@ -31,6 +34,7 @@ These cases are acceptable and should NOT be flagged:
 ## Evidence to Include
 
 When flagging, include:
+
 - Exception type(s) being caught
 - Whether body is empty/pass/`raise` only
 - Whether any useful context/logging is present

@@ -1,17 +1,20 @@
 # Scan: Useless Comments and Documentation
 
 ## Context
+
 @../shared-context.md
 
 ## Core Principle
 
 **Comments and documentation should add value beyond what the code itself expresses.** This applies to:
+
 - Inline comments (`# ...`)
 - Block comments (`# ---- Section ----`)
 - Docstrings (`"""..."""`)
 - Type hints and annotations (should be accurate, not duplicated in docs)
 
 A comment or docstring is useless if it:
+
 - Duplicates information already clear from code structure (types, decorators, names)
 - States the obvious ("increment counter" for `counter += 1`, "Validate config" for `validate_config()`)
 - Is outdated or contradicts the code
@@ -538,7 +541,9 @@ Generate a review document with all comments:
 
 **Comment:**
 ```
+
 <full_comment_text>
+
 ```
 
 **Context Before:**
@@ -547,6 +552,7 @@ Generate a review document with all comments:
 ```
 
 **Context After:**
+
 ```python
 <3_lines_after>
 ```
@@ -558,6 +564,7 @@ Generate a review document with all comments:
 **Reasoning:** <why_this_assessment>
 
 ---
+
 ```
 
 ---

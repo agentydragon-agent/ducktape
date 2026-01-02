@@ -41,7 +41,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
   node_name   = var.proxmox_node_name
   vm_id       = var.vm_id
   pool_id     = var.pool_id
-  bios        = "ovmf"  # UEFI boot required for qcow-efi images
+  bios        = "ovmf" # UEFI boot required for qcow-efi images
 
   cpu {
     cores = var.vcpus
@@ -95,7 +95,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   agent {
     enabled = true
-    timeout = "10m"  # Wait longer for guest agent to report IP (cloud-init takes time)
+    timeout = "10m" # Wait longer for guest agent to report IP (cloud-init takes time)
   }
 
   # Ignore changes to cloud-init after creation - updates happen via nixos-rebuild

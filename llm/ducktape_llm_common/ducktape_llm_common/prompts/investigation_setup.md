@@ -32,30 +32,35 @@ category: Investigation
 ## Investigation Framework
 
 ### 1. Define Scope
+
 - Clear boundaries of what to investigate
 - What's explicitly out of scope
 - Success criteria for the investigation
 - Time and resource constraints
 
 ### 2. Evidence Collection
+
 - **Primary sources**: Direct observations, logs, code
 - **Secondary sources**: Documentation, comments, issues
 - **Interviews**: Stakeholder perspectives
 - **Experiments**: Reproducible tests
 
 ### 3. Analysis Techniques
+
 - **Timeline reconstruction**: When did events occur?
 - **Causal analysis**: What led to what?
 - **Pattern recognition**: Are there recurring themes?
 - **Anomaly detection**: What stands out as unusual?
 
 ### 4. Documentation Standards
+
 - Record all evidence with timestamps
 - Link claims to supporting evidence
 - Note confidence levels for findings
 - Track open questions and unknowns
 
 ### 5. Validation Process
+
 - Cross-reference multiple sources
 - Test hypotheses with experiments
 - Seek contradictory evidence

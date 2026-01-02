@@ -6,11 +6,13 @@ kind: outcome
 Agent-edited code does not cast `pathlib.Path` (or other PathLike) to `str` when calling APIs that accept path-like objects; it passes the `Path` directly.
 
 ## Acceptance criteria (checklist)
+
 - No `str(path)` when the target API accepts `os.PathLike`
 - `Path` (or any `os.PathLike`) is passed directly to the API
 - This applies across subprocess program/args, filesystem APIs, and archive/logging constructors commonly used in Python 3.8+
 
 ## Common APIs that accept PathLike (non-exhaustive)
+
 - subprocess: `Popen`, `run`, `check_call`, `check_output` (program, arguments, and `env` mapping values)
 - builtin/open: `open(path)`
 - os: `stat`, `listdir`, many file ops via `os.fspath`
@@ -19,6 +21,7 @@ Agent-edited code does not cast `pathlib.Path` (or other PathLike) to `str` when
 - logging: `logging.FileHandler(path)`
 
 ## Positive examples
+
 ```python
 from pathlib import Path
 import subprocess
@@ -49,6 +52,7 @@ with zipfile.ZipFile(archive, "w") as zf:
 ```
 
 ## Negative examples
+
 ```python
 # Casting Path to str for subprocess — forbidden
 cfg = Path("/etc/tool/config.ini")

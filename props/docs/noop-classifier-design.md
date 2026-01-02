@@ -49,11 +49,13 @@ Agent Transcript:
 ```
 
 **Context window handling:**
+
 - If `context_length_exceeded` error: create new agent with new MCP server
 - New server starts from where previous one left off (remaining batches)
 - Original server's results are preserved
 
 **Per-worker MCP server:**
+
 - Each worker gets its own `ClassifierServer` instance
 - Server tracks its own batches and results
 - No shared state between workers
@@ -80,6 +82,7 @@ class ClassifierServer:
 ```
 
 **Schema:**
+
 ```python
 class Classification(BaseModel):
     prefix: str
@@ -93,6 +96,7 @@ class SubmitResult(BaseModel):
 ```
 
 **Validation:**
+
 - Tool validates all prefixes from current batch are classified
 - Raises `ToolError` if any prefix is missing
 - Raises `ToolError` if any prefix appears twice
@@ -100,6 +104,7 @@ class SubmitResult(BaseModel):
 - Returns next batch to classify (or `None` when done)
 
 **Flow:**
+
 1. Initial user message contains first batch
 2. Agent calls `submit_classifications([...])`
 3. Tool validates, stores results, returns next batch
@@ -391,6 +396,7 @@ async def classify_patterns_parallel(
 ## Model Selection
 
 Use `gpt-5.1-codex-mini` for:
+
 - Optimized for code understanding
 - Fast classification
 - Cost efficiency

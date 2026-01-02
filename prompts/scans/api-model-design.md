@@ -1,6 +1,7 @@
 # Scan: API Model Design Antipatterns
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern 1: Denormalized/Computed Fields in Models
@@ -25,6 +26,7 @@ class ResponseRecordModel(BaseModel):
 ```
 
 Issues:
+
 - **Data duplication** - Same info in two places (api_key.name and api_key_name)
 - **No type safety** - Flat UUID doesn't tell you what it references
 - **Harder to evolve** - Adding new api_key fields requires flattening each one
@@ -55,6 +57,7 @@ class FinalResponseSnapshot(BaseModel):
 ```
 
 Issues:
+
 - **Synchronization burden** - Must keep both copies in sync
 - **Wasted storage** - Same data stored twice
 - **Type confusion** - One is `dict[str, Any]`, other should be `ResponseUsage`
@@ -80,6 +83,7 @@ class ResponseRecordModel(BaseModel):
 ```
 
 Issues:
+
 - **Redundant** - `Mapped[dict[str, Any]]` + JSONB already tells you it's JSON
 - **Leaky abstraction** - API shouldn't know about DB storage format
 - **Breaking changes** - If you change DB storage (e.g., to BSON), API breaks
@@ -106,6 +110,7 @@ class FinalResponseSnapshot(BaseModel):
 ```
 
 Issues:
+
 - **Lost structure** - Relationship between response/error/token_usage is obscured
 - **Type loss** - `dict[str, Any]` instead of properly typed models
 - **Confusing names** - `final_response` vs `response`, `response_error` vs `error`
@@ -133,6 +138,7 @@ class FinalResponseSnapshot(BaseModel):
 ```
 
 Issues:
+
 - **No validation** - `dict[str, Any]` accepts anything, even malformed data
 - **No autocomplete** - Can't navigate fields in IDE
 - **Runtime errors** - Typos caught at runtime, not compile time
@@ -143,12 +149,14 @@ Issues:
 **Primary Method**: Manual code reading to identify denormalization and type inconsistencies.
 
 **Why automation is insufficient**:
+
 - Determining if a flat field is "denormalized" requires understanding domain relationships
-- Some field name patterns (_id + _name) are legitimate (not references to other models)
+- Some field name patterns (_id +_name) are legitimate (not references to other models)
 - "_json" suffix might be intentional naming, not just DB leakage
 - `dict[str, Any]` is sometimes correct (truly dynamic data)
 
 **Manual analysis required**: For each pattern found, understand:
+
 - Is this truly denormalized data from a relationship?
 - Does the API structure match domain relationships?
 - Are types intentionally loose or just untyped?

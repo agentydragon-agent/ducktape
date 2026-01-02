@@ -4,12 +4,12 @@
     <domain>meta</domain>
     <tags>xml, schema, documentation, meta-prompting</tags>
   </meta>
-  
+
   <context>
     <purpose>An HTML5-style XML schema for structuring prompts, instructions, and rules for Claude.</purpose>
     <note>This document follows its own schema format, demonstrating full self-reference.</note>
   </context>
-  
+
   <instructions>
     <section id="overview">
       <title>Overview</title>
@@ -18,7 +18,7 @@
         It uses HTML5-style XML with clear patterns for examples, conversations, and tool usage.
       </content>
     </section>
-    
+
     <section id="core-structure">
       <title>Core Structure</title>
       <examples>
@@ -31,15 +31,15 @@
                 <domain>coding|analysis|creative|general</domain>
                 <tags>tag1, tag2, tag3</tags>
               </meta>
-              
+
               <context>
                 <!-- Background and setup -->
               </context>
-              
+
               <instructions>
                 <!-- Main task description -->
               </instructions>
-              
+
               <examples>
                 <example positive>
                   <!-- Good example -->
@@ -48,7 +48,7 @@
                   <!-- Bad example -->
                 </example>
               </examples>
-              
+
               <output>
                 <section required>Section name</section>
                 <section optional>Optional section</section>
@@ -58,7 +58,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="conversation-schema">
       <title>Conversation Schema</title>
       <examples>
@@ -66,22 +66,22 @@
           <code><![CDATA[
             <conversation>
               <u>How do I authenticate?</u>
-              
+
               <a>I'll help you set up authentication. Let me first check your current auth configuration.
-              
+
               <tool-call>
                 <read path="src/auth/config.py" />
               </tool-call>
               </a>
-              
+
               <t>
               File contents:
               AUTH_METHOD = "oauth2"
               TOKEN_EXPIRY = 3600
               </t>
-              
+
               <a>I see you're using OAuth2. Let me show you how to implement it properly.
-              
+
               <tool-call>
                 <write path="src/auth/oauth_handler.py">
                   <content>
@@ -94,7 +94,7 @@
             </conversation>
           ]]></code>
         </example>
-        
+
         <example positive title="Alternative: message tags with from attribute">
           <code><![CDATA[
             <conversation>
@@ -110,7 +110,7 @@
         Prefer <![CDATA[<u>/<a>/<t>]]> for conciseness. Use <![CDATA[<message from="">]]> when you need additional attributes or metadata.
       </note>
     </section>
-    
+
     <section id="tool-calls">
       <title>Tool Call Schema</title>
       <note>For single tool calls, the <![CDATA[<tool-call>]]> envelope can be omitted for brevity.</note>
@@ -119,15 +119,15 @@
           <title>Single tool call (no envelope needed)</title>
           <code language="xml"><![CDATA[
             <bash command="git status" />
-            
+
             <read path="/src/main.py" />
-            
+
             <mcp server="memory" tool="search_nodes">
               <params>{"query": "authentication patterns"}</params>
             </mcp>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Multiple tools (envelope required)</title>
           <code language="xml"><![CDATA[
@@ -140,7 +140,7 @@
             </tool-call>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>MCP tools with full structure</title>
           <code language="xml"><![CDATA[
@@ -156,7 +156,7 @@
             </tool-call>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Task spawning</title>
           <code language="xml"><![CDATA[
@@ -170,7 +170,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="example-patterns">
       <title>Example Patterns</title>
       <examples>
@@ -187,7 +187,7 @@
                     pass
                 </code>
               </example>
-              
+
               <example positive>
                 <code language="python">
                 # Good: Explicit error handling
@@ -201,7 +201,7 @@
             </examples>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Prefix/Completion pattern</title>
           <code language="xml"><![CDATA[
@@ -211,14 +211,14 @@
                 def validate_token(token: str) ->
                 </code>
               </prefix>
-              
+
               <completion bad>
                 <code language="python">
                 def validate_token(token: str) -> Any:
                     # Returns whatever
                 </code>
               </completion>
-              
+
               <completion good>
                 <code language="python">
                 def validate_token(token: str) -> bool:
@@ -231,7 +231,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="inline-marking">
       <title>Marking Good/Bad Inline</title>
       <examples>
@@ -246,7 +246,7 @@
             <conversation>
               <u>My tests are failing with some error</u>
               <a>I'll check what's happening. Let me <good why="gather specific error info">run the tests with verbose output</good>.
-              
+
               <tool-call>
                 <bash command="pytest -xvs" />
               </tool-call>
@@ -267,11 +267,11 @@
             </code>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Good/bad with reasoning attributes</title>
           <code language="xml"><![CDATA[
-            <a>I found the issue. Instead of <bad why="loses error context">suppressing the error</bad>, 
+            <a>I found the issue. Instead of <bad why="loses error context">suppressing the error</bad>,
             I'll <good why="preserves stack trace">re-raise with additional context</good>:
 
             <tool-call>
@@ -287,7 +287,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="conditionals">
       <title>Conditional Patterns</title>
       <examples>
@@ -304,7 +304,7 @@
             </triggers>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Decision logic with <![CDATA[<if>/<then>/<elif>]]></title>
           <code language="xml"><![CDATA[
@@ -320,7 +320,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="lists">
       <title>Ordered and Unordered Lists</title>
       <examples>
@@ -336,7 +336,7 @@
             </action>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Use <![CDATA[<ul>]]> for unordered lists</title>
           <code language="xml"><![CDATA[
@@ -351,7 +351,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="hierarchical-rules">
       <title>Hierarchical Rules</title>
       <examples>
@@ -361,23 +361,23 @@
             <rules>
               <rule id="/code">
                 <title>General Programming Rules</title>
-                
+
                 <rule id="/code/quality">
                   <title>Code Quality</title>
                   <content>Always prioritize readability</content>
-                  
+
                   <rule id="/code/quality/no-disable-checks">
                     <title>Never Disable Quality Checks</title>
                     <content>No # type: ignore, # noqa, etc.</content>
                   </rule>
                 </rule>
-                
+
                 <rule id="/code/python">
                   <title>Python-Specific Rules</title>
-                  
+
                   <rule id="/code/python/types">
                     <title>Type Annotations</title>
-                    
+
                     <rule id="/code/python/types/new-style-optional">
                       <title>Use New Style Optional Syntax</title>
                       <content>
@@ -385,7 +385,7 @@
                         <good>str | None</good>
                       </content>
                     </rule>
-                    
+
                     <rule id="/code/python/types/no-any">
                       <title>Avoid Any Type</title>
                       <content>Use specific types instead of Any</content>
@@ -396,7 +396,7 @@
             </rules>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Referencing hierarchical rules</title>
           <code language="xml"><![CDATA[
@@ -406,7 +406,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="interlinking">
       <title>Interlinking</title>
       <examples>
@@ -432,7 +432,7 @@
             </rule>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Using references</title>
           <code language="xml"><![CDATA[
@@ -449,7 +449,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="aliases">
       <title>Tag Aliases for Compression</title>
       <content>
@@ -471,7 +471,7 @@
             </aliases>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Using aliases</title>
           <code language="xml"><![CDATA[
@@ -479,17 +479,17 @@
             <example negative>
               <description>Bad approach</description>
             </example>
-            
+
             <!-- Use -->
             <ex n>
               <desc>Bad approach</desc>
             </ex>
-            
+
             <!-- Or even more compressed -->
             <ex n>Bad approach</ex>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Compressed triggers with aliases</title>
           <code language="xml"><![CDATA[
@@ -500,7 +500,7 @@
                 <then>stop+read_full+trace</then>
               </trigger>
             </triggers>
-            
+
             <!-- Compressed with aliases -->
             <triggers>
               <trig>ERROR→stop+read_full+trace</trig>
@@ -513,7 +513,7 @@
         Define aliases early in the document for maximum benefit.
       </note>
     </section>
-    
+
     <section id="special-tags">
       <title>Special Tags</title>
       <examples>
@@ -527,7 +527,7 @@
             <optional>Nice to have</optional>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Semantic markers</title>
           <code language="xml"><![CDATA[
@@ -537,7 +537,7 @@
             <todo>Future improvement</todo>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>Code language specification</title>
           <code language="xml"><![CDATA[
@@ -550,7 +550,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="cdata-usage">
       <title>CDATA for Literal Content</title>
       <content>
@@ -563,17 +563,17 @@
           <code language="xml"><![CDATA[
             <instructions><![CDATA[
                 To create a tool call, use <tool-call> like this:
-                
+
                 <tool-call>
                   <read path="/src/main.py" />
                   <bash command="git status" />
                 </tool-call>
-                
+
                 The <read> tag takes a path attribute.
             ]]]]><![CDATA[></instructions>
           ]]></code>
         </example>
-        
+
         <example positive>
           <title>CDATA in examples</title>
           <code language="xml"><![CDATA[
@@ -591,7 +591,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="complete-example">
       <title>Complete Example</title>
       <examples>
@@ -605,36 +605,36 @@
                 <domain>coding</domain>
                 <tags>types, python, refactoring</tags>
               </meta>
-              
+
               <context>
                 <background>
                   We need to migrate from string-based IDs to strongly-typed IDs
                   throughout the codebase.
                 </background>
-                
+
                 <rules>
                   <rule critical><ref href="#/code/quality/no-disable-checks" /></rule>
                   <rule><ref href="#/code/python/types/new-style-optional" /></rule>
                   <rule><ref href="#/code/python/types/no-any" /></rule>
                 </rules>
               </context>
-              
+
               <instructions>
                 Replace all string IDs with typed versions:
-                
+
                 <code language="python">
                 # <bad>Old style</bad>
                 def get_user(user_id: str) -> dict[str, Any]:
                     pass
-                
+
                 # <good>New style</good>
                 def get_user(user_id: UserId) -> User:
                     pass
                 </code>
-                
+
                 Follow the pattern in <ref href="#strong-types-pattern" />.
               </instructions>
-              
+
               <pattern id="strong-types-pattern">
                 <title>Strong Types Pattern</title>
                 <code language="python">
@@ -645,17 +645,17 @@
                         return super().__new__(cls, value)
                 </code>
               </pattern>
-              
+
               <conversation>
                 <u>Create a WorkspaceId type</u>
                 <a>I'll create a strongly-typed WorkspaceId class:
-                
+
                 <tool-call>
                   <write path="src/types/ids.py">
                     <content>
                     class WorkspaceId(str):
                         """Strongly-typed workspace identifier."""
-                        
+
                         def __new__(cls, value: str) -> "WorkspaceId":
                             if not value or not value.strip():
                                 raise ValueError("WorkspaceId cannot be empty")
@@ -667,31 +667,31 @@
                 </tool-call>
                 </a>
               </conversation>
-              
+
               <examples>
                 <example negative>
                   <code language="python">
                   # Primitive obsession
                   workspace_id: str = "ws_123"
                   user_id: str = "user_456"
-                  
+
                   # Oops, swapped them!
                   get_workspace(user_id)  # Type checker won't catch this
                   </code>
                 </example>
-                
+
                 <example positive>
                   <code language="python">
                   # Strong types
                   workspace_id = WorkspaceId("ws_123")
                   user_id = UserId("user_456")
-                  
+
                   # Type error! Can't mix IDs
                   get_workspace(user_id)  # mypy: error
                   </code>
                 </example>
               </examples>
-              
+
               <output>
                 <section required>New type definitions</section>
                 <section required>Migration plan</section>
@@ -702,7 +702,7 @@
         </example>
       </examples>
     </section>
-    
+
     <section id="quick-reference">
       <title>Quick Reference</title>
       <content>
@@ -762,7 +762,7 @@
       </content>
     </section>
   </instructions>
-  
+
   <output>
     <section id="benefits">
       <title>Schema Benefits</title>
@@ -776,7 +776,7 @@
         <li><strong>Self-Referential</strong>: This document follows its own schema</li>
       </ul>
     </section>
-    
+
     <section id="design-goals">
       <title>Design Goals</title>
       <ul>

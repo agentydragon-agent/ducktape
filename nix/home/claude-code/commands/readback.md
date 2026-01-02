@@ -7,6 +7,7 @@ You just received rushed/vague instructions from the user.
 **STOP. Do NOT execute anything yet.**
 
 Paraphrase back your understanding of what was requested:
+
 - Fill in missing details based on context
 - Make implicit assumptions explicit
 - Identify any ambiguities or unknowns

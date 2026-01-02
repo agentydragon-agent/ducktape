@@ -18,6 +18,7 @@ direnv allow  # Activates .envrc which loads devenv
 ```
 
 The devenv environment automatically:
+
 - Starts a local PostgreSQL server
 - Sets the required `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` environment variables
 - Creates a virtual environment with all dependencies
@@ -43,8 +44,10 @@ pytest -n auto
 **Manual setup (without devenv):**
 
 If you can't use devenv, you need to:
+
 1. Install and start PostgreSQL
 2. Set environment variables:
+
    ```bash
    export PGHOST=localhost
    export PGPORT=5432
@@ -52,7 +55,9 @@ If you can't use devenv, you need to:
    export PGPASSWORD=your_password
    export PGDATABASE=postgres
    ```
+
 3. Create virtual environment and install dependencies:
+
    ```bash
    uv venv --python=python3.12 .venv
    source .venv/bin/activate

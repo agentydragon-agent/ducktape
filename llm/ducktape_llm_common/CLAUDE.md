@@ -27,6 +27,7 @@ pip install -e ".[dev]"
 This dual setup prevents accidentally locking yourself out when claude-linter modifies its own code.
 
 ### Testing
+
 ```bash
 # Run all tests
 pytest
@@ -42,6 +43,7 @@ pytest tests/claude_linter/test_cli.py::test_specific_function
 ```
 
 ### Code Quality
+
 ```bash
 # Linting
 ruff check ducktape_llm_common tests
@@ -54,6 +56,7 @@ ruff check --fix ducktape_llm_common tests
 ```
 
 ### Building
+
 ```bash
 # Build package
 python -m build
@@ -62,19 +65,24 @@ python -m build
 ## Code Architecture
 
 ### Claude Linter System
+
 The claude linter (`ducktape_llm_common/claude_linter/`) is a unified system for code quality checks with three modes:
+
 - **pre-hook**: Blocks on non-fixable violations (e.g., security issues)
 - **post-hook**: Auto-fixes issues (e.g., missing imports, formatting)
 - **check mode**: Reports without blocking
 
 Key components:
+
 - `registry.py`: Central linter registration system
 - `config.py`: Configuration management with Pydantic models
 - `precommit_runner.py`: Integration with pre-commit framework
 - Linters in submodules: `security.py`, `formatting.py`, `imports.py`, etc.
 
 ### Prompts System
+
 The prompts system (`ducktape_llm_common/prompts/`) manages standardized AI agent prompts:
+
 - `loader.py`: Discovers and caches prompts from multiple directories
 - `validation.py`: Validates prompt structure and metadata
 - `helpers.py`: Utilities for variable substitution and formatting

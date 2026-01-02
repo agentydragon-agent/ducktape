@@ -1,6 +1,7 @@
 # TODO: Convert tests to single-param OpenAI mock/live pattern
 
 Pattern reference
+
 - Single-param fixture: `openai_client_param` (mock via behavior function OR `LIVE` sentinel marked `live_llm`)
 - Behavior: one async function shaped like `responses.create(**kwargs)`; switch on `req` shape
   - Strong typing preferred: treat `req` as dict (Responses.create params are TypedDict at runtime) or pass SDK request class when readily available
@@ -48,6 +49,7 @@ Pattern reference
   - Apply the same single-param fixture + behavior pattern; keep live variants opt-in
 
 Notes
+
 - Keep behaviors minimal and declarative: big switch on `req["input"]`, `req["tools"]`, `req["tool_choice"]`
 - Always return adapter Pydantic models from factory helpers to preserve shape correctness and enforce layering
 - Avoid `getattr` in tests; prefer dict/typed access and explicit asserts on types

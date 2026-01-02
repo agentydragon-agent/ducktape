@@ -82,6 +82,7 @@ Yay, issues!
 
 Social anxiety
 ---
+
 One symptom I call (for now) *social anxiety*.
 It doesn't usually manifest as actually feeling anxious when dealing with
 strangers. I just avoid doing anything that means dealing with strangers.
@@ -92,6 +93,7 @@ a rationalization.
 
 Detachment
 ---
+
 Another one is the *detachment* I mentioned earlier.
 I think I developed that in middle school. I had a crush on a girl and I
 couldn't for the love of god bring myself to do anything about it. Then, by a
@@ -135,6 +137,7 @@ think a label on my sexuality is an important part of my identity.
 
 Workaholism
 ---
+
 I think I placed too much value on my work even before high school. Even on
 my first small side-gigs I did for random people, I put in very long hours for
 peanuts and I tried to make everything perfect. I also always liked learning
@@ -177,6 +180,7 @@ free time alone to fill with feelings of sadness and loneliness.
 
 Overeating
 ---
+
 That might have been my first unhealthy (unhealth*iest*, too) coping mechanism.
 I've had problems with overeating since the first years of primary school.
 Food, especially sugar, is satisfying and numbing, and it feels better to eat
@@ -240,6 +244,7 @@ than me, when it comes to relationships, friendships and doing fun things.
 
 What now
 ---
+
 Save a day or two here and there, I have been mostly OK for the last few weeks.
 I'm seeing a psychologist in a few days to get some professional advice and
 possibly treatment.

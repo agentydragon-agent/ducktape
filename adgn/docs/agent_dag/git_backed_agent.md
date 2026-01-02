@@ -61,7 +61,6 @@ On top of that, we can maintain materialized indexes (denormalized views) for fa
 - [ ] Integrate `gitea_pr_gate/` for PR caps and scoped creds.
 - [ ] Prototype “summarize long history” subagent and sidecar flow.
 
-
 ## Other alternatives
 
 If git‑backed isn’t the right fit, consider these standard patterns:
@@ -97,6 +96,7 @@ The journal should let us answer “what happened and how did it affect state?�
    - Event: `history_append` { message_id: Y, list: "main" }
 
 Suggested common fields
+
 - `event_id` (content hash), `parent` (prev event), `ts` (ISO‑8601), `kind` (enum), `refs` (content ids: messages, blobs), and `payload` (small JSON). Large bodies go into content‑addressed blobs to enable dedupe; events carry references.
 
 ## Core data types (minimum viable)
@@ -104,6 +104,7 @@ Suggested common fields
 This section defines the logical types we need to represent and how they relate. In practice, these should be implemented as Pydantic models and serialized with a canonical JSON encoding for hashing (e.g., IETF JCS/RFC‑8785 or an `orjson` config with sorted keys, UTF‑8, and no insignificant whitespace).
 
 Identifiers
+
 - `AgentId` (string): stable id for an agent instance (scopes Docker volume names).
 - `RunId` (string/UUID): one interactive session or job from start to end.
 - `SessionId` (string/UUID): conversational grouping within a run (if needed).
@@ -112,6 +113,7 @@ Identifiers
 - `VolumeId` (string): logical name for Docker named volumes (derived via `adgn.agent.runtime.volumes`).
 
 OpenAI Responses API
+
 - `ModelMessage` (object)
   - `role` (system|user|assistant|tool)
   - `content[]` items following Responses API shapes (e.g., `input_text`, `output_text`, `tool_use`, `tool_result`).
@@ -126,6 +128,7 @@ OpenAI Responses API
   - Optional streaming: `stream_ref` (`ObjectId`) pointing to a `streams/<id>.jsonl` capture.
 
 Agent history and semantics
+
 - `HistoryAppend` (event: `history_append`): appends a message or result into a named list (e.g., `main`), carrying an `ObjectId` reference.
 - `McpResourceNotification` (event: `mcp.resource_updated` | `mcp.resource_list_changed`)
   - `server` (name), `uri` (string), optional `etag`/`hash` and `summary_ref` (`ObjectId`).
@@ -139,6 +142,7 @@ Agent history and semantics
   - `original_event` (`EventId`), `replacement_event` (`EventId`), `reason` (string). Example: “substituted tool call due to interruption”.
 
 Mutable code and templates
+
 - `ApprovalPolicyActive` (file state + activation event)
   - Active policy program is stored under `state/policy/current/policy.py` and exposed via MCP as `resource://approval-policy/policy.py`.
   - Activation represented as an event: `policy_activated` with policy `ObjectId`.
@@ -149,6 +153,7 @@ Mutable code and templates
   - Managed by the seatbelt MCP server; no runtime volume mirrors.
 
 Forks and runtime linkage
+
 - `AgentFork` (event: `agent_forked`)
   - `from_branch`, `to_branch`, `at_event` (`EventId`), and a `volume_plan[]` with entries `{volume: VolumeId, mode: keep|fork|discard, kept_by: branch}`.
   - If volumes are kept by one branch, record `kept_by` to indicate ownership; if forked, record `snapshot_ref` describing how to reproduce the fork (tarball digest, OCI layer ref, or external ID).
@@ -156,12 +161,14 @@ Forks and runtime linkage
   - Metadata only: `{volume: VolumeId, created_at, bytes_estimate, driver, snapshot_kind}` with `external_ref` (OCI layer digest, S3 key, or Docker‑volume‑snapshot id). Do not store the payload in git.
 
 Runs and snapshots
+
 - `RunStarted`/`RunFinished` (events)
   - `run_id`, `reason` (user|schedule|subagent), optional `exit` (success|error) and `summary_ref`.
 - `Snapshot` (object)
   - Materialized view for UI: prompt state, policies, proposals, and a compact transcript. Treated as a cache under `indexes/` and regenerated as needed.
 
 Recording policy
+
 - Full payloads are recorded as-is; no redaction or filtering is applied.
 
 ## Repository layout (concrete)
@@ -208,34 +215,40 @@ meta/
 ```
 
 Git attributes
+
 - Mark `objects/` as binary (`.gitattributes` with `objects/* -diff -text`) to avoid noisy diffs on large blobs; keep events human‑diffable.
 - Optionally enable Git LFS for `objects/streams/*` or very large `tool-results/*`.
 
 ## Git mapping and workflow
 
 Branches and forks
+
 - `main` (or `agent/<name>`): primary linear history.
 - `fork/<id>-<purpose>`: branch created by `agent_forked` event. Record volume ownership in `meta/branches.yaml` and the fork event payload.
 - `feat/<...>` / `policy/<proposal-id>`: working branches for proposals or experiments.
 
 Commits strategy
+
 - Small, frequent commits: batch related events (request→response→history appends→tool call→result) into a single commit where practical to avoid commit explosion on token streams; capture streams under `objects/streams/*` if needed.
 - Commit message template: first line `event: <kind> [<run_id>]`, body with summary and refs. Include a `Refs:` footer listing `ObjectId`s for quick lookup.
 - Tags: annotate run boundaries (`run/<RunId>/start`, `run/<RunId>/end`) for easy navigation.
 
 PRs as approvals
+
 - Proposals live in `state/policy/proposals/<id>/`. Opening a PR against `state/policy/current/` with that content triggers CI:
   - Lint for a valid policy program (stdin→stdout JSON).
   - On merge, a post‑merge hook updates `state/policy/current/policy.py`, updates `manifest.json`, and activates it via the approval policy server (broadcasting `ResourceUpdated`).
 - Optional: record a `policy_activated` event with the `ObjectId` of the activated source.
 
 MCP integration
+
 - Record MCP resource notifications as events. The approval policy server broadcasts `ResourceUpdated` for the canonical URI `resource://approval-policy/policy.py`. The server also exposes this URI as a read‑only resource so clients can list/read the current policy text.
 - Runtime `exec` calls are `tool_call`/`tool_result` pairs under server `runtime` and tool `exec`.
 
 ## Forking and volumes
 
 Container volumes are not stored in git. Instead, describe their lineage:
+
 - Ownership: after a fork, exactly one branch may “own” a live volume; others must fork snapshots or discard. Record this in `AgentFork.volume_plan` and `meta/branches.yaml`.
 - Forked volumes: create a `VolumeSnapshot` object describing how to reconstruct (e.g., “OCI image digest sha256:... containing content on date X”).
 - Reconciliation: when merging a fork back, any conflicting volume ownership requires out‑of‑band resolution; the merge commit should update `meta/branches.yaml` to reflect the winner.
@@ -245,6 +258,7 @@ Container volumes are not stored in git. Instead, describe their lineage:
 When a run is interrupted (crash, shutdown, approval denial), emit an `interruption` event listing affected in‑flight events (e.g., `model_request` or `tool_call`). If a subsequent action replaces the pending work, emit a `substitution` event that references `original_event` and `replacement_event`, with a reason like “substituted tool call due to crash”.
 
 Guidelines
+
 - Prefer idempotent writers: re‑emitting the same event with the same payload yields the same `EventId` (content hash), so duplicates are naturally deduped.
 - Downstream events should reference the replacement event, not the original, but keep the lineage through `substitution` for auditability.
 
@@ -264,6 +278,7 @@ Three viable realizations:
    - Store only small event JSON in git; push large bodies to an object store (S3, CAR files, or OCI registry). `ObjectId` remains the content hash and a small pointer file indicates the external location. Useful when payloads are tens/hundreds of MB.
 
 Recommendation for adgn
+
 - Start with (1) Pure git, add LFS later if needed. Implement canonical JSON + content hashing, event writers, and a thin “git sidecar” for staging/committing/pushing.
 - Align policy/seatbelt directories with runtime containerization; activations are handled via the approval policy MCP server (no host volume mirrors).
 
@@ -272,10 +287,12 @@ Recommendation for adgn
 If you prefer time‑travel, forks, shared resources, and subagent workflows with first‑class graph semantics (without “git‑in‑git”), model the canonical index as a property graph and project events into nodes/edges. Git still manages mutable code (policy/templates) and optional exports.
 
 Core idea
+
 - Property graph is canonical; events are an append‑only log that project into nodes/edges with validity windows.
 - Full payloads are recorded as‑is (no redaction). Very large streams can live as files; graph nodes reference their paths.
 
 Nodes (examples)
+
 - `Agent` (id, name, metadata)
 - `Run` (run_id, agent_id, started_at, finished_at?)
 - `Event` (event_id, ts, kind, payload inline or `payload_path`)
@@ -291,6 +308,7 @@ Nodes (examples)
 - `Subagent` (spawned_from, constraints)
 
 Edges (typed)
+
 - `AGENT_HAS_RUN` Agent → Run
 - `RUN_HAS_EVENT` Run → Event (`seq` attribute for order)
 - `EVENT_CONSUMES` Event → Message/Generation/ToolCall/Resource
@@ -311,27 +329,33 @@ Edges (typed)
 - `PROPOSES_POLICY` Event → Policy
 
 Time travel and forks
+
 - Bitemporal windows: nodes/edges carry `valid_from`/`valid_to` (open‑ended). Query state “as of t” with a temporal filter.
 - Forks: create an `AgentFork` node at split; new Branch head; carry forward shared nodes until divergence. Record volume decisions (keep|snapshot|discard) on the fork node and via edges.
 
 Summaries and subagents
+
 - `Summary` nodes link via `SUMMARIZES` and `DERIVED_FROM`. Subagents are `Agent` nodes with `SPAWNED_FROM`; they read from a `Snapshot`/`Run` and write summaries back.
 
 Shared resources
+
 - Model runtime resources (e.g., Docker volumes) as `Resource`. Use `MOUNTS_RESOURCE` (mount, mode) and `OWNS_RESOURCE` (ownership) to track sharing and hand‑offs over time.
 
 Storage options
+
 - Neo4j (Cypher, ACID, easy traversals).
 - ArangoDB (graphs + documents in one engine).
 - SQLite property graph (lightweight): `nodes`/`edges` tables with JSON and validity columns; easy to ship and test.
 
 Minimal on‑disk layout
+
 - Graph store: `var/agent_graph.db` (SQLite) or a Neo4j/Arango instance.
 - Artifacts/streams: `var/artifacts/<run_id>/*` with paths referenced from graph nodes.
 - Git‑tracked code/config: `state/policy/current/policy.py`, `state/policy/proposals/*`, `state/seatbelt-exec/sbpl-templates/*`.
 - Optional exports: `exports/graph-snapshot-<ts>.jsonl` (nodes/edges dump).
 
 Illustrative queries (Cypher‑like)
+
 ```
 // Events in a run at time t
 MATCH (r:Run {id:$run})-[:RUN_HAS_EVENT]->(e:Event)
@@ -350,11 +374,13 @@ RETURN a
 ```
 
 Mapping to adgn
+
 - Keep PR workflow for policies/templates; on merge, activate via the approval policy server and emit `ACTIVATES_POLICY`.
 - Project OpenAI requests/responses into `Generation` and link with `EVENT_*` edges; `runtime/exec` becomes `ToolCall`/`ToolResult`.
 - Represent interruptions/substitutions via `INTERRUPTS`/`SUBSTITUTES`; subagent spawns via `SPAWNED_FROM`.
 
 Alternate implementation plan (graph)
+
 - Add Pydantic models for Node/Edge types with `valid_from`/`valid_to` and typed refs.
 - Implement `GraphStore` (SQLite first): upsert nodes/edges, set validity windows, and project events → graph.
 - Add ingestion hooks in adgn to project OpenAI/MCP/tool events alongside current logging.
@@ -385,6 +411,7 @@ If you want both “mutable code with PRs” and “agent state” in one system
   - Cons: Not a queryable DB; you’ll add a side index (e.g., SQLite/ClickHouse) for queries.
 
 Adoption sketch (Dolt example)
+
 - Schema
   - `nodes(id TEXT PRIMARY KEY, kind TEXT, data JSON, valid_from TIMESTAMP, valid_to TIMESTAMP NULL)`
   - `edges(id TEXT PRIMARY KEY, src TEXT, dst TEXT, kind TEXT, data JSON, valid_from TIMESTAMP, valid_to TIMESTAMP NULL)`
@@ -398,6 +425,7 @@ Adoption sketch (Dolt example)
 ## IPLD/IPNS Integration
 
 For the IPLD/IPFS path:
+
 - Overview (heads/config, proposals, interlinking, container integration): ipld/overview.md
 - Python integration notes: ipld/python.md
 
@@ -408,22 +436,27 @@ Backend‑agnostic logical schema for nodes, events, and edges that all realizat
 ## Implementation plan (adgn)
 
 Phase 1 — journaling and objects
+
 - Add Pydantic models under `src/adgn/agent/journal/models.py` for events and objects. Include `to_canonical_json()` and `content_hash()` helpers (use JCS or `orjson` sorted keys).
 - Implement a `JournalWriter` that writes `events/*`, `objects/*`, and `runs/*` (batching related events per commit) and a `GitSidecar` for add/commit/tag.
 
-
 Phase 2 — policy workflows
+
 - Materialize `state/policy/proposals/*` authoring via MCP tools; CI lints policy programs. Post‑merge hook updates `state/policy/current/*` and activates via the approval policy server.
 - Emit `policy_activated` events on successful activation.
 
 Phase 3 — forks and volume lineage
+
 - Emit `agent_forked` events and maintain `meta/branches.yaml`. Add helpers for `VolumeSnapshot` metadata and external refs (do not store payloads in git).
 
 Phase 4 — MCP semantics and interruptions
+
 - Record `mcp.resource_*` events and ensure `runtime/exec` calls map cleanly to `tool_call`/`tool_result` with correlation ids. Emit `interruption`/`substitution` where applicable.
 
 Phase 5 — UI and subagents
+
 - Expose a compact `Snapshot` JSON under `indexes/` for Agent to render; add a summarization subagent that reads long transcripts and commits `summary` objects when thresholds are reached.
 
 Testing and quality gates
+
 - Add pytest suites for canonical hashing (idempotence), schema validation, and incremental reconstruction from events at HEAD. Ensure ruff + mypy clean.
