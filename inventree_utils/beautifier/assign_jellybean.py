@@ -7,7 +7,8 @@ from pathlib import Path
 from textwrap import dedent
 
 from inventree.api import InvenTreeAPI
-from inventree.part import Parameter, ParameterTemplate, Part
+from inventree.base import Parameter, ParameterTemplate
+from inventree.part import Part
 from tqdm.auto import tqdm
 
 from .cli_util import build_table, choose

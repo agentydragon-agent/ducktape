@@ -5,7 +5,8 @@ from collections import defaultdict
 
 import pint
 from inventree.api import InvenTreeAPI
-from inventree.part import Parameter, ParameterTemplate, Part as InvPart
+from inventree.base import Parameter, ParameterTemplate
+from inventree.part import Part as InvPart
 from inventree.stock import StockItem
 from samplebooks_parts_data import BasePart, Resistor, parts
 from tqdm.auto import tqdm

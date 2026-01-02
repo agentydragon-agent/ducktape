@@ -1,4 +1,4 @@
-from .assign_jellybean import parse_file_lines
+from inventree_utils.beautifier.assign_jellybean import parse_file_lines
 
 
 def test_parse_file_lines():
