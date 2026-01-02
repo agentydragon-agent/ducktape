@@ -23,6 +23,7 @@ Use this tool proactively in these scenarios:
 ## When NOT to Use This Tool
 
 Skip using this tool when:
+
 1. There is only a single, straightforward task
 2. The task is trivial and tracking it provides no organizational benefit
 3. The task can be completed in less than 3 trivial steps

@@ -9,6 +9,7 @@ MCP server template with essential practices and debugging tools:
 - Claude Code-based acceptance test
 
 ### Example tools
+
 - `greet` - Simple greeting function (returns "hello, {name}")
 - `get_text_chunks` - Text chunking for streaming responses
 - `generate_sample_image` - Binary content example (minimal PNG)
@@ -46,16 +47,19 @@ claude --debug --mcp-config example_config.json "test prompt"
 ### Common Issues
 
 #### 1. Permission Errors
+
 **Symptoms**: "Claude requested permissions" messages
 **Solution**: Use `--permission-mode bypassPermissions` for testing
 
 #### 2. Transport Issues
+
 **Symptoms**: Connection refused, broken pipe
 **Debug**: Check server logs, verify transport mode matches client
 
 ### Debugging Techniques
 
 #### 1. Copy-Paste Debug
+
 ```bash
 # Run server with debug output
 python -m adgn_mcp_starter --debug 2> debug.log
@@ -65,6 +69,7 @@ python -m adgn_mcp_starter --debug 2> debug.log
 ```
 
 #### 2. Raw Request/Response Logging
+
 ```python
 # In server.py, set:
 DEBUG_LOGGING = True
@@ -72,6 +77,7 @@ DEBUG_LOGGING = True
 ```
 
 #### 3. Claude Acceptance Test
+
 ```bash
 # Run comprehensive test
 python claude_test.py
@@ -81,12 +87,13 @@ ls /tmp/mcp_starter_test_*/
 ```
 
 #### 5. MCP Inspector
+
 ```bash
 # Install and run MCP Inspector
 npx @modelcontextprotocol/inspector
 
 # Point to your server:
-# - Transport: stdio  
+# - Transport: stdio
 # - Command: python -m adgn_mcp_starter --debug
 # - Args: (leave empty)
 ```

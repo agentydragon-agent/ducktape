@@ -18,11 +18,13 @@ The LINT ENFORCER hook tracks **non-autofixable** lint violations in files that 
 ### Violation Classification
 
 **Autofixable (IGNORE these)**:
+
 - Line length, trailing whitespace, import sorting
 - Most formatting and whitespace issues
 - Unused imports, basic syntax fixes
 
 **Manual Only (TRACK these)**:
+
 - Undefined variables requiring definition
 - Unused variables requiring code removal
 - Function complexity requiring refactoring
@@ -32,6 +34,7 @@ The LINT ENFORCER hook tracks **non-autofixable** lint violations in files that 
 ## Hook Behavior
 
 ### PostToolUse (Tracking)
+
 1. **Wait for AUTOFIXER** to complete (run as second hook)
 2. **Scan for lint violations** after autofix has run
 3. **Filter to manual-only violations** in edited sections
@@ -39,15 +42,18 @@ The LINT ENFORCER hook tracks **non-autofixable** lint violations in files that 
 5. **Never block** - always allow Claude to continue
 
 ### Stop (Enforcement)
+
 When Claude wants to finish:
+
 1. **Re-scan all touched files** (in case violations were introduced later)
-2. **Filter to manual violations only** in Claude's edited sections  
+2. **Filter to manual violations only** in Claude's edited sections
 3. **If manual violations exist**, block with specific fix instructions
 4. **If only autofixable violations**, allow stop (AUTOFIXER will handle next edit)
 
 ## State Management
 
 Tracks session-specific manual violations with:
+
 - File paths and edited sections
 - Violation details (line, rule, message)
 - Attribution to Claude's changes
@@ -56,15 +62,18 @@ Tracks session-specific manual violations with:
 ## Integration Strategy
 
 ### Execution Coordination
+
 - AUTOFIXER runs first and fixes what it can
 - LINT ENFORCER scans the post-autofix file state
 - Only manual violations remain for tracking
 - No overlap in responsibilities
 
 ### Feedback System
+
 Provides categorized feedback grouped by violation type:
+
 - Undefined variables
-- Unused variables  
+- Unused variables
 - Code complexity
 - Naming conventions
 - Logic errors
@@ -73,6 +82,7 @@ Provides categorized feedback grouped by violation type:
 ## Configuration
 
 Uses YAML configuration for:
+
 - Manual-only rule enforcement (core principle)
 - Custom autofixable rule definitions
 - Enforcement behavior settings

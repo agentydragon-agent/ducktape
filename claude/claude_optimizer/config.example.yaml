@@ -41,19 +41,19 @@ exclude_patterns:
   # - "**/.cache/**"   # Any .cache directory at any depth
 
   # System files that should never reach grader
-  - "CLAUDE.md"          # Claude system prompt
+  - "CLAUDE.md" # Claude system prompt
   - ".gitignore"
   - ".dockerignore"
-  - ".DS_Store"          # Mac filesystem metadata
+  - ".DS_Store" # Mac filesystem metadata
 
   # Authentication & secrets (CRITICAL FOR SECURITY)
-  - ".aws/"              # AWS credentials
-  - ".azure/"            # Azure credentials
-  - "*.key"              # Private keys
-  - "*.pem"              # SSL certificates
-  - "*.p12"              # PKCS#12 certificates
-  - ".env*"              # Environment files with secrets
-  - "secrets.*"          # Any secrets files
+  - ".aws/" # AWS credentials
+  - ".azure/" # Azure credentials
+  - "*.key" # Private keys
+  - "*.pem" # SSL certificates
+  - "*.p12" # PKCS#12 certificates
+  - ".env*" # Environment files with secrets
+  - "secrets.*" # Any secrets files
 
   # Build artifacts & caches
   - "*.pyc"

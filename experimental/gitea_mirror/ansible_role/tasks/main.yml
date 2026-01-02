@@ -32,7 +32,7 @@
     path: /tank/gitea-public-mirrors
     owner: 1000
     group: 1000
-    mode: '0755'
+    mode: "0755"
   become: true
 
 # Note: virtiofs configuration for k3s VMs needs to be done manually in Proxmox UI
@@ -90,7 +90,7 @@
     dest: /etc/systemd/system/virtiofsd-gitea-mirrors.service
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   notify: Reload Systemd
   tags: [gitea-mirrors, virtiofs]
 

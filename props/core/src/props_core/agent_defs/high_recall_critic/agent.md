@@ -51,8 +51,9 @@ rg ": Any\b" /workspace --type py
 ### Pass 4: Manual Hot-Spot Review
 
 After tool passes, skim these high-value areas:
+
 - **Error boundaries**: try/except blocks, finally clauses - check for resource leaks
-- **Resource lifecycle**: context managers, __enter__/__exit__ - verify cleanup on failure
+- **Resource lifecycle**: context managers, **enter**/**exit** - verify cleanup on failure
 - **Public APIs**: function signatures - check parameter types
 - **Data models**: Pydantic models, dataclasses - look for stringly-typed IDs, Any fields
 - **CLI entry points**: argument parsing - check for unclear flags
@@ -60,6 +61,7 @@ After tool passes, skim these high-value areas:
 ## Issue Categories (by training data frequency)
 
 ### Dead Code (~6%)
+
 - Functions/classes never called (grep for callers)
 - Variables assigned but never read
 - Parameters never used in function body
@@ -68,12 +70,14 @@ After tool passes, skim these high-value areas:
 - Superseded functions (old version kept alongside new)
 
 ### Duplication (~6%)
+
 - Identical/near-identical functions in different files
 - Repeated boilerplate (setup patterns, error handling)
 - Similar helper wrappers that could be consolidated
 - Test fixture setup duplicated across test files
 
 ### Type Safety (~6%)
+
 - Stringly-typed IDs that should be NewType wrappers
 - Functions accepting Union[TypeA, TypeB] that should accept one type
 - `Any` types that could be concrete
@@ -81,6 +85,7 @@ After tool passes, skim these high-value areas:
 - Missing return type annotations on public functions
 
 ### Error Handling (~7%)
+
 - Resources created but not cleaned up on failure paths
 - Bare `except:` or `except Exception:` that swallows silently
 - Missing finally clauses for cleanup
@@ -88,6 +93,7 @@ After tool passes, skim these high-value areas:
 - Container/connection leaks (create succeeds, start fails, cleanup skipped)
 
 ### Comments & Documentation (~10%)
+
 - Comments that contradict actual code behavior
 - TODOs/FIXMEs that are stale or describe already-implemented features
 - Docstrings that just restate the function signature
@@ -95,6 +101,7 @@ After tool passes, skim these high-value areas:
 - Misleading function/variable names vs actual behavior
 
 ### Redundant Code (~6%)
+
 - Guards for conditions that can't happen
 - Nullable parameters that every callsite provides
 - Intermediate variables that could be inlined
@@ -102,6 +109,7 @@ After tool passes, skim these high-value areas:
 - Unnecessary isinstance checks before typed operations
 
 ### Refactoring Opportunities (~4%)
+
 - Loop-invariant assertions inside loops (hoist outside)
 - Loops that could be list/dict comprehensions
 - Filter-in-Python that should be SQL WHERE clause
@@ -111,18 +119,21 @@ After tool passes, skim these high-value areas:
 ## Domain-Specific Patterns (MCP/Docker/Async)
 
 ### MCP Conventions
+
 - Tool inputs should use `OpenAIStrictModeBaseModel`, not regular `BaseModel`
 - Resource URIs should use constants from `_shared.constants`, not string literals
 - Server names should use constants (e.g., `COMPOSITOR_ADMIN_SERVER_NAME`)
 - Tool returns: use Pydantic models or primitives, not discriminated unions for OK/ERR
 
 ### Docker/Container
+
 - Check for container leaks: create() succeeds → start() fails → cleanup skipped
 - Verify cleanup happens in finally blocks even on exception
 - Check for missing memory/CPU limits on container creation
 - Verify volumes are properly wired (not silently ignored)
 
 ### Async Patterns
+
 - Dangling tasks (created but never awaited)
 - Cancellation handling (CancelScope shielding for cleanup)
 - Synchronous blocking calls in async contexts

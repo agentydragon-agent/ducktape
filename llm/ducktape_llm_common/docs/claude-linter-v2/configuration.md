@@ -5,7 +5,7 @@ Claude Linter v2 uses a modular configuration format that provides fine-grained 
 ## Benefits of Modular Configuration
 
 1. **Fine-grained control**: Each check gets its own configuration section
-2. **Better organization**: Related settings are grouped together  
+2. **Better organization**: Related settings are grouped together
 3. **Extensibility**: Easy to add custom checks without modifying the schema
 4. **Self-documenting**: Each check can have its own message and severity
 
@@ -103,6 +103,7 @@ test.relaxed_rules = [
 ## File Naming
 
 Claude Linter v2 looks for configuration files in the following order:
+
 1. `.claude-linter.toml`
 2. `.claude-linter-v2.toml`
 3. `claude-linter.toml`
@@ -223,4 +224,3 @@ enabled = true
 message = "Use logging instead of print statements"
 severity = "warning"
 ```
-

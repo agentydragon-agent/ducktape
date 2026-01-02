@@ -1,8 +1,8 @@
 roles:
   - src: geerlingguy.docker
   - src: systemli.letsencrypt
-  - src: nbigot.ansible-fail2ban  # Fail2Ban
-  - src: diodonfrost.p10k         # Powerlevel10k
+  - src: nbigot.ansible-fail2ban # Fail2Ban
+  - src: diodonfrost.p10k # Powerlevel10k
   - src: rolehippie.syncthing
 
   # My fork - makes GNOME Shell not always restart (since unneeded). TODO: merge upstream
@@ -14,7 +14,7 @@ roles:
 
 collections:
   - community.docker
-  - community.general  # cargo
-  - community.crypto   # ACME / TLS certificates
+  - community.general # cargo
+  - community.crypto # ACME / TLS certificates
   - ansible.netcommon
   - ansible.posix

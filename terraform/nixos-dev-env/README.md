@@ -57,12 +57,14 @@ ssh user@<vm-ip>
 ### Two-Phase Provisioning
 
 **Phase 1: Pool & User Creation** (using terraform admin credentials):
+
 - Creates Proxmox user `{username}@pve`
 - Creates resource pool `pool-{username}`
 - Assigns `PVEVMAdmin` permissions on the pool
 - Generates API token for the user
 
 **Phase 2: VM Creation** (using user's credentials):
+
 - Downloads NixOS ISO
 - Creates NixOS VM in the user's pool
 - Uploads configuration files (NixOS config, home-manager flake)
@@ -73,12 +75,14 @@ This ensures least-privilege: the VM is created with the user's own credentials,
 ## What Gets Created
 
 ### Proxmox Resources
+
 - **User**: `{username}@pve` with API token
 - **Pool**: `pool-{username}` (or custom name)
 - **Permissions**: PVEVMAdmin on pool, PVEVMUser on storage
 - **VM**: NixOS with chosen channel
 
 ### NixOS Configuration
+
 - **Nix flakes**: Enabled
 - **User**: Passwordless with sudo
 - **SSH**: Key-based auth only
@@ -87,6 +91,7 @@ This ensures least-privilege: the VM is created with the user's own credentials,
 - **Home-manager**: Configured with ducktape repository
 
 ### Files Structure
+
 ```
 /etc/nixos/
   ├── configuration.nix    # System config (from Terraform template)
@@ -131,6 +136,7 @@ terraform apply \
 The VM will then have these available machine-wide. The `apply.sh` wrapper automatically detects these keys and passes them to Terraform.
 
 **This allows the VM to:**
+
 - Manage itself via Proxmox API
 - Create sibling VMs in its pool
 - Use Terraform with auto-configured Proxmox provider
@@ -183,11 +189,13 @@ These are merged with Proxmox credentials and set machine-wide in NixOS.
 ## Usage Examples
 
 ### Minimal Configuration
+
 ```hcl
 username = "alice"
 ```
 
 ### Custom Resources
+
 ```hcl
 username     = "bob"
 vcpus        = 8
@@ -196,12 +204,14 @@ disk_size_gb = 100
 ```
 
 ### Headless Server
+
 ```hcl
 username   = "serveruser"
 enable_gui = false
 ```
 
 ### Specific NixOS Version
+
 ```hcl
 username      = "dev"
 nixos_channel = "24.11"  # Use stable 24.11
@@ -210,6 +220,7 @@ nixos_channel = "24.11"  # Use stable 24.11
 ## Accessing the Environment
 
 ### SSH Access
+
 ```bash
 # Get VM IP
 terraform output vm_ipv4_addresses
@@ -219,6 +230,7 @@ ssh user@<vm-ip>
 ```
 
 ### Proxmox Web UI
+
 ```bash
 # View user details
 terraform output instructions
@@ -230,6 +242,7 @@ ssh root@atlas "pveum user password {username}@pve"
 ```
 
 ### Console Access
+
 Open Proxmox web UI → VM → Console (auto-login if GUI enabled)
 
 ## Home-Manager Management
@@ -262,6 +275,7 @@ home-manager switch --flake .
 ### Cloud-init not completing
 
 Check cloud-init status inside VM:
+
 ```bash
 ssh user@<vm-ip> 'sudo cloud-init status --long'
 ```
@@ -269,6 +283,7 @@ ssh user@<vm-ip> 'sudo cloud-init status --long'
 ### Home-manager fails to initialize
 
 Check logs:
+
 ```bash
 ssh user@<vm-ip> 'journalctl -xe | grep home-manager'
 ```
@@ -276,6 +291,7 @@ ssh user@<vm-ip> 'journalctl -xe | grep home-manager'
 ### VM can't be created (permission denied)
 
 Verify user has permissions on pool:
+
 ```bash
 ssh root@atlas "pveum aclmod /pool/pool-{username} -user {username}@pve"
 ```
@@ -283,11 +299,13 @@ ssh root@atlas "pveum aclmod /pool/pool-{username} -user {username}@pve"
 ### SSH key not working
 
 Ensure your public key exists:
+
 ```bash
 ls -la ~/.ssh/id_rsa.pub
 ```
 
 Or specify explicitly:
+
 ```hcl
 ssh_public_key = "ssh-rsa AAAAB3..."
 ```
@@ -299,6 +317,7 @@ terraform destroy
 ```
 
 This removes:
+
 - VM and all disks
 - Configuration snippets
 - Resource pool
@@ -323,6 +342,7 @@ terraform apply -var="username=bob"
 ### Custom NixOS Configuration
 
 Edit `configuration.nix.tpl` to customize:
+
 - Additional packages
 - System services
 - Desktop environment settings
@@ -331,6 +351,7 @@ Edit `configuration.nix.tpl` to customize:
 ### Custom Home-Manager Flake
 
 Fork ducktape and set:
+
 ```hcl
 ducktape_repo = "github:youruser/yourfork/main"
 ```

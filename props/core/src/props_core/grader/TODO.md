@@ -11,6 +11,7 @@
 ## Related Work
 
 See also:
+
 - `src/adgn/props/db/temp_user_manager.py` - Unified user manager for all agent types
 - `src/adgn/props/clustering/` - Clustering infrastructure
 - `src/adgn/props/db/migrations/versions/*_clustering*.py` - Clustering schema migrations

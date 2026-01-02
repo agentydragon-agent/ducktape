@@ -66,12 +66,14 @@ files:
 ### When to Use Per-Range Notes
 
 Use per-range notes when:
+
 - A single occurrence spans multiple distinct locations that serve different purposes
 - You want to explain why each range matters independently (e.g., "definition site" vs "call site")
 - The ranges represent different aspects of the same logical issue
 - Graders need specific guidance about what to look for in each range
 
 **Example:**
+
 ```yaml
 rationale: |
   SQL injection vulnerability via string concatenation.
@@ -102,6 +104,7 @@ Props supports two levels of notes:
 2. **Range-level notes** (`note` within each range): Explain why specific line ranges matter
 
 Both are optional, but:
+
 - Multi-occurrence issues **must** have occurrence-level notes on all occurrences
 - Per-range notes are optional but recommended when ranges serve distinct purposes
 
@@ -132,6 +135,7 @@ occurrences:
 ### critic_scopes_expected_to_recall
 
 Defines which file scopes contribute to **recall denominator**:
+
 - Outer list = alternatives (OR logic)
 - Inner list = required together (AND logic)
 - If ANY alternative is a subset of the critic's reviewed files, the occurrence counts toward recall denominator
@@ -142,10 +146,12 @@ Defines which file scopes contribute to **recall denominator**:
 ### graders_match_only_if_reported_on
 
 **HARD CONSTRAINT** on where graders can give credit:
+
 - `null` (default): Critique can match from any file
 - Non-empty list: Grader may only give credit if critique flagged overlapping files
 
 This is distinct from `critic_scopes_expected_to_recall` - see ground_truth.md.j2 for the full explanation.
+
 - Independent of critic_scopes (detection source ≠ valid reporting targets)
 
 ## False Positives (FPs)

@@ -6,8 +6,8 @@
   become: true
   ansible.builtin.apt:
     pkg:
-      - libev4  # Required shared library for comby
-      - libpcre3  # Pattern matching library that comby may need
+      - libev4 # Required shared library for comby
+      - libpcre3 # Pattern matching library that comby may need
     state: present
   when: ansible_architecture == "x86_64"
   tags: [comby, dev-tools]
@@ -17,7 +17,7 @@
     release_spec:
       repo: "comby-tools/comby"
       version: "latest"
-      asset_pattern: "comby-.*-x86_64-linux$"  # Match the plain binary, not tar.gz
+      asset_pattern: "comby-.*-x86_64-linux$" # Match the plain binary, not tar.gz
     method:
       name: binary
       dest_path: "/home/{{ my_user | default(ansible_user_id) }}/.local/bin/comby"

@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: attic-jwt-token
+  namespace: nix-cache
+spec:
+  encryptedData:
+    jwt-token: AgDE6j/rrzuOgkrKP+Y4VXAAS0oR990OrZCi5QDhOLuN/mMXKOXqsVFMW0CDExAx8+gNxZokV+5FT7w8XnNt3jTdcMhhUYKtOjh9uTAe8drTOjcffwHnsm9p7xfp+5RDFQ6uK6zmM5FJ2vy9iB0xL21IHUUcirI4zBpqa0Psb5oUAfE3ipkM+JrSv6a7h2tZ1BYXP6EYtKftfo4dlWKrSRkWqsm+ejq5vAEjZsQr/3nrDkvSOohmypyklRKU0KIGEoNXoT3QUSEwCdcdYuqpRKdZgzYcjebMyOPq/IW9nKz6duKAaxnNkTkBjP/TIChnjtV1HKISdRUE467n4srcvL7aoogPhhIiQXB9ujqhwZBbBLno+j1W3lHHQbDtkd9sAXEtF0ZyxDh/r8vHvNrZvyozYxEn1pbcudEtVpFW98vzqOpZ+1xBeq1P0YmWTQkl4AuKpMkm5Q+8AmBa85D+fums6EMBNruZbZeo6RmLyTmt1gsqWMALNqlHPVo1HSHCPTrPoZez4H79GJWbwJR5z3vSOTJSzBDg2kqhe7SPEWaKNoR+sP+DssOlLPAVImJ4cvF0LrpHU4cnIfp7jMs/339ndczZnIud/RoUn8MgMoLM+VS1DjReVhEqOcGgaZ6YHTHyXc2m8TUT9/sEpeg5pq9N3paFHKWKdgX2lrGooLJbDkG+3lYXEh1+mqlz2f52wW9IamCUUTmlYalUZ4IxWkUqbQ1wtYHpn8BNcQKbXNiHEwgRQYAkRPUJi74T6EFdj4nKzM3ec95FGZJptE38YIUirwdy2Ihj/Ezz6xCVGFul62Ipvi5yGg==
+  template:
+    metadata:
+      name: attic-jwt-token
+      namespace: nix-cache
+    type: Opaque

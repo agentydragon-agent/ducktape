@@ -32,7 +32,7 @@ services:
       - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
       - NUM_WORKERS_PER_QUEUE=8
       - LOGGING_LEVEL=info
-      - FLY_PROCESS_GROUP=api  # Explicitly set this is API mode
+      - FLY_PROCESS_GROUP=api # Explicitly set this is API mode
     depends_on:
       - redis
       - playwright-service
@@ -51,7 +51,7 @@ services:
       - NUM_WORKERS_PER_QUEUE=8
       - LOGGING_LEVEL=info
       - FLY_PROCESS_GROUP=worker
-      - PORT=8080  # Ensure worker uses different port
+      - PORT=8080 # Ensure worker uses different port
       - HOST=0.0.0.0
     depends_on:
       - redis

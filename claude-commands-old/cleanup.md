@@ -9,16 +9,16 @@ name: cleanup
     <domain>workspace-management</domain>
     <tags>cleanup, organization, temporary-files, oneoff-scripts</tags>
   </meta>
-  
+
   <goal>
     Your goal is to make '$ ls' output look clean, organized, and immediately understandable. Focus on visible clutter first - files and directories that show up in a basic ls command. Hidden files (.whatever) are lower priority unless they're unusually large or problematic.
-    
+
     The aim is a reasonable hierarchy where someone new to the project can understand what they're looking at.
   </goal>
-  
+
   <context>
     <purpose>Clean up workspace to make the directory structure clear and navigable. Focus on visible organization first.</purpose>
-    
+
     <guidelines>
       <guideline priority="1">Make `ls` output clean - this is what people see first</guideline>
       <guideline priority="2">Create logical groupings (docs/, scripts/, archive/, etc.)</guideline>
@@ -26,7 +26,7 @@ name: cleanup
       <guideline priority="4">Consolidate version sprawl and redundant files</guideline>
       <guideline priority="5">Hidden files are low priority unless causing actual problems</guideline>
     </guidelines>
-    
+
     <principle>A clean workspace has:
       - Clear purpose for each visible file
       - Logical subdirectories for grouped content
@@ -61,20 +61,20 @@ name: cleanup
       Clean up the current directory:
       <code>/cleanup</code>
     </basic-usage>
-    
+
     <natural-language>
       Or use naturally in conversation:
-      
+
       <example positive>
         <u>cleanup the temp files</u>
         <a>I'll scan for temporary files and oneoff scripts to clean up.</a>
       </example>
-      
+
       <example positive>
         <u>clean up my experiments</u>
         <a>Looking for experimental code and temporary outputs to remove.</a>
       </example>
-      
+
       <example positive>
         <u>cleanup</u>
         <a>Starting cleanup scan for temporary artifacts.</a>
@@ -110,15 +110,15 @@ name: cleanup
         <note>Pattern matching is just a starting point - use your judgment!</note>
       </suggested-followups>
     </step>
-    
+
     <step id="present">
       <title>Present Plan - Show categorized list of what will be deleted</title>
     </step>
-    
+
     <step id="confirm">
       <title>Request Confirmation - Ask for go-ahead before any deletion</title>
     </step>
-    
+
     <step id="execute">
       <title>Execute - Only proceed after explicit approval</title>
       <tool-call>
@@ -133,14 +133,14 @@ name: cleanup
     <target id="visible-organization" priority="1">
       <title>Visible Workspace Organization</title>
       <description>Make `ls` output immediately understandable - detect ANY clutter pattern</description>
-      
+
       <detection-approach>
         <step>Look at ALL visible files and ask: "What is this for?"</step>
         <step>Identify files that seem related but scattered</step>
         <step>Find ANY naming pattern suggesting versions/iterations</step>
         <step>Notice when similar files could be grouped</step>
       </detection-approach>
-      
+
       <common-patterns>
         <pattern>Version indicators: v1/v2/v3, old/new, backup, copy, final, FINAL, latest</pattern>
         <pattern>Date suffixes: _2024-01-15, _jan15, _monday</pattern>
@@ -149,7 +149,7 @@ name: cleanup
         <pattern>Similar names: api.py + api_utils.py + api_helpers.py + api_old.py</pattern>
         <pattern>Mixed purposes: scripts mixed with docs mixed with data</pattern>
       </common-patterns>
-      
+
       <example>
         Before `ls`:
         api_client.py  api_client_new.py  api_utils.py  AUTH_NOTES.txt
@@ -157,21 +157,21 @@ name: cleanup
         extract_attempt1.py  extract_final.py  extract_WORKING.py
         meeting_notes.md  progress.md  README.md  requirements_old.txt
         script.py  script_backup.py  test.py  test2.py  utils_v1.py
-        
+
         After cleanup:
         README.md  api_client.py  bundle_parser.js  extract.py
         archive/  docs/  scripts/  tests/  data/
-        
+
         The key: Use your judgment to detect ANY form of clutter!
       </example>
     </target>
-    
+
     <target id="oneoff-scripts" priority="2">
       <title>Oneoff Scripts</title>
       <pattern description="Conventional pattern, non-exhaustive">oneoff__*.{py,js,ts,sh}</pattern>
       <ref href="#/patterns/oneoff-scripts"/>
       <description>Scripts created for temporary tasks, experiments, or debugging, with no use once they've been applied.</description>
-      
+
       <example positive>
         <u>cleanup oneoffs</u>
         <a>
@@ -189,11 +189,11 @@ name: cleanup
         </a>
       </example>
     </target>
-    
+
     <target id="markdown-consolidation" priority="2">
       <title>Markdown Files Consolidation</title>
       <description>Claude tends to drop task outputs into multiple .md files. These get consolidated:</description>
-      
+
       <category id="task-completion">
         <title>Task Completion Files (merge and archive)</title>
         <patterns>
@@ -202,7 +202,7 @@ name: cleanup
           <pattern>*_COMPLETED.md, *_DONE.md patterns</pattern>
         </patterns>
       </category>
-      
+
       <category id="ongoing-status">
         <title>Ongoing Status Files (update and keep)</title>
         <patterns>
@@ -211,7 +211,7 @@ name: cleanup
           <pattern>STATUS.md - Project status</pattern>
         </patterns>
       </category>
-      
+
       <category id="documentation">
         <title>Documentation (organize)</title>
         <patterns>
@@ -219,7 +219,7 @@ name: cleanup
           <pattern>Technical docs (DOCKER_ISOLATION.md, etc.)</pattern>
         </patterns>
       </category>
-      
+
       <example positive>
         <u>cleanup</u>
         <a>
@@ -230,27 +230,27 @@ name: cleanup
             📝 CRITICAL_FIXES.md - Contains 6 completed fixes
             📝 AUTHENTICATION_FIX.md - Single task output
             📝 JUPYTER_DEBUG_RESULTS.md - Debug session results
-          
+
           Ongoing Status (2 files - update and keep):
             📋 TEST_SUMMARY.md - 3 failing tests remain
             📋 TODO.md - 12 open tasks
-          
+
           Documentation (3 files - organize):
             📚 README.md - Main documentation
             📚 DOCKER_ISOLATION.md - Technical guide
             📚 SIGNAL_HANDLING.md - Implementation details
-          
+
           I can:
           1. Prune task outputs into what's worth keeping and
              consolidate into progress docs / documentation
           2. Update status files to reflect current state
           3. Organize docs into docs/ directory
-          
+
           Proceed?
         </a>
       </example>
     </target>
-    
+
     <target id="temporary-outputs" priority="3">
       <title>Temporary Outputs</title>
       <patterns>
@@ -261,7 +261,7 @@ name: cleanup
         <pattern>Cache files: *.cache, .cache/ (if not gitignored)</pattern>
       </patterns>
     </target>
-    
+
     <target id="exploration-artifacts" priority="3">
       <title>Exploration Artifacts</title>
       <patterns>
@@ -271,7 +271,7 @@ name: cleanup
         <pattern>Screenshot captures: /tmp/tana-captures/ (older than 1 day)</pattern>
       </patterns>
     </target>
-    
+
     <target id="failed-attempts" priority="4">
       <title>Failed Attempts</title>
       <patterns>
@@ -281,7 +281,7 @@ name: cleanup
         <pattern>Partial outputs: *.partial, *.incomplete</pattern>
       </patterns>
     </target>
-    
+
     <target id="build-artifacts" priority="5">
       <title>Build Artifacts in Wrong Places</title>
       <patterns>
@@ -290,7 +290,7 @@ name: cleanup
         <pattern>TypeScript outputs: *.js files with corresponding *.ts</pattern>
       </patterns>
     </target>
-    
+
     <target id="hidden-caches" priority="99">
       <title>Hidden Cache Directories (Low Priority)</title>
       <description>Only clean these if specifically requested or causing problems</description>
@@ -315,10 +315,10 @@ name: cleanup
       <item>Anything in `.git/`</item>
       <item>Files modified in last hour (unless explicitly requested)</item>
     </always-protected>
-    
+
     <smart-detection>
       <description>The cleanup command uses various tools to scan for artifacts:</description>
-      
+
       <tool-examples>
         <tool-call>
           <glob pattern="**/oneoff__*" />
@@ -326,19 +326,19 @@ name: cleanup
           <glob pattern="**/*.old" />
           <glob pattern="**/temp-*" />
         </tool-call>
-        
+
         <tool-call>
           <bash command="find . -name '__pycache__' -type d" />
           <bash command="find . -name '*.pyc' -o -name '*.pyo'" />
           <bash command="find . -name '*.tmp' -mtime +1" />
         </tool-call>
-        
+
         <tool-call>
           <ls path="./archive" ignore="['.git']" />
           <ls path="../.archive" ignore="['.git']" />
         </tool-call>
       </tool-examples>
-      
+
       <example positive>
         <u>cleanup</u>
         <a>Cleanup scan found:
@@ -356,7 +356,7 @@ Obvious Junk:
 Oneoff Scripts (5 files, 12KB):
   🗑️ oneoff__test_webhook_integration.py - "Can delete after: Integration tests added" (3 days old)
   🗑️ oneoff__bulk_rename_vars.sh - "Can delete after: Rename complete" (1 week old)
-  
+
 2. MARKDOWN CONSOLIDATION:
 Task Outputs (will merge → COMPLETED_WORK_2024-06-30.md):
   📝 CHANGES_SUMMARY.md - Directory fixes and output formatting
@@ -378,13 +378,14 @@ Documentation (will organize):
   📁 visualize_run.py - Run visualization tool
 
 Ready to proceed? This will:
+
 - Delete 12 files (156KB)
 - Consolidate 4 task outputs → 1 archive file
 - Update 2 status files
 - Organize 2 docs into docs/ folder</a>
       </example>
     </smart-detection>
-    
+
     <natural-language-interaction>
       <description>The cleanup command presents a plan and waits for the user's specific instructions. The user might say things like:</description>
       <responses>
@@ -418,10 +419,11 @@ Ready to proceed? This will:
 All clean!</a>
       <reasoning>❌ Bad: Didn't run ls -la first! Missed .ruff_cache/, .claude/, __pycache__/, *.pyc, test-output-*.json, hidden directories</reasoning>
     </example>
-    
+
     <example negative>
       <u>cleanup my experiments</u>
       <a>Deleted experimental files:
+
 - experiment1.py
 - experiment2.py
 - experiment3.py
@@ -429,10 +431,11 @@ All clean!</a>
 Done!</a>
       <reasoning>❌ Bad: Didn't find oneoff__ scripts, missed experiment-data.json, left behind experiment.log</reasoning>
     </example>
-    
+
     <example negative>
       <u>cleanup the old markdown docs</u>
       <a>Cleaned up old documentation:
+
 - Deleted OLD_API_NOTES.md
 - Deleted DEPRECATED_GUIDE.md
 
@@ -445,28 +448,28 @@ Workspace is cleaner now!</a>
     <example positive>
       <u>cleanup versioned scripts</u>
       <a>Found version sprawl in scripts:
-      
+
 VERSION CONSOLIDATION PLAN:
-      
+
 1. Script Versions Detected:
    📄 generate_python_bundle.js (10KB) - Original version
    📄 generate_python_bundle_v2.js (12KB) - Enhanced with class expansion
-   
+
    Comparing features:
    - v2 adds: Class method extraction, async detection, better preservation
    - v2 is clearly the improved version
-   
+
 2. Recommendation:
    - Archive v1 as generate_python_bundle_v1.js
    - Make v2 the primary generate_python_bundle.js
    - Remove the _v2 suffix
-   
+
 This consolidates functionality and removes version confusion.
 Proceed?</a>
-      
+
       <u>yes, merge v2 into main</u>
       <a>Consolidating versioned scripts:
-      
+
 <tool-call>
   <bash command="cp generate_python_bundle.js archive/2025-07-01-cleanup/generate_python_bundle_v1.js" />
   <bash command="mv generate_python_bundle_v2.js generate_python_bundle.js" />
@@ -478,7 +481,7 @@ Proceed?</a>
 
 The enhanced version is now the default generate_python_bundle.js</a>
     </example>
-    
+
     <example positive>
       <u>cleanup</u>
       <a>Let me start with a full directory scan to see everything:
@@ -511,7 +514,7 @@ Hmm, test_id_generator.py looks like a quick experiment, not a proper test. Let 
 
 Based on my inspection, here's what I found to clean up...</a>
     </example>
-    
+
     <example positive>
       <u>I've been experimenting a lot, cleanup</u>
       <a>I'll scan for experimental artifacts and scattered documentation.
@@ -548,29 +551,30 @@ Status Files (will update):
 Total: 289MB to clean, 6 files to consolidate, 3 docs to organize
 
 Proceed?</a>
-      
+
       <u>just cleanup the oneoffs from last week</u>
       <a>Found 3 oneoff scripts older than 7 days:
-   - oneoff__migrate_data.py (10 days)
-   - oneoff__test_old_api.py (8 days)  
-   - oneoff__benchmark_v1.py (14 days)
-   
+
+- oneoff__migrate_data.py (10 days)
+- oneoff__test_old_api.py (8 days)
+- oneoff__benchmark_v1.py (14 days)
+
    I'll delete these 3 files.</a>
     </example>
-    
+
     <example positive>
       <u>cleanup but focus on the markdown files</u>
       <a>
         Focusing on markdown consolidation:
 
         MARKDOWN CLEANUP PLAN:
-        
+
         1. COMPLETED TASKS (merge → COMPLETED_WORK_2024-06-30.md):
            📝 CHANGES_SUMMARY.md - Working directory fixes
            📝 CRITICAL_FIXES.md - 6 bug fixes documented
            📝 OAUTH_IMPLEMENTATION.md - Completed auth work
            📝 DEBUG_SESSION_NOTES.md - Old debugging session
-        
+
         2. ACTIVE STATUS (update &amp; keep):
            📋 TEST_SUMMARY.md:
               - Currently shows 6 failing tests (3 are now passing)
@@ -578,18 +582,18 @@ Proceed?</a>
            📋 TODO.md:
               - Has 23 items (15 are completed)
               - Will remove completed, reorganize remaining
-        
+
         3. DOCUMENTATION (organize into docs/):
            📚 DOCKER_ISOLATION.md - Technical guide
            📚 SIGNAL_HANDLING.md - Implementation details
            📚 Keep README.md in root
-        
+
         This will:
         - Consolidate 4 completed task files → 1 archive
         - Update 2 status files to current state
         - Organize 2 technical docs into docs/ folder
         - Preserve all content while reducing clutter
-        
+
         Proceed?
       </a>
     </example>
@@ -597,7 +601,7 @@ Proceed?</a>
 
   <archive-detection>
     <description>Archive is offered selectively based on file value:</description>
-    
+
     <auto-delete>
       <title>Auto-Delete (no archive offered)</title>
       <patterns>
@@ -609,7 +613,7 @@ Proceed?</a>
         <pattern>Files with "DELETE", "OBSOLETE", "OLD" in name</pattern>
       </patterns>
     </auto-delete>
-    
+
     <archive-suggested>
       <title>Archive Suggested For</title>
       <patterns>
@@ -619,7 +623,7 @@ Proceed?</a>
         <pattern>Scripts with substantial logic</pattern>
       </patterns>
     </archive-suggested>
-    
+
     <archive-directories>
       <description>The cleanup command automatically detects nearby archive directories:</description>
       <locations>
@@ -630,7 +634,7 @@ Proceed?</a>
         <location>../.archive/ (parent directory)</location>
       </locations>
     </archive-directories>
-    
+
     <example positive>
       <u>cleanup</u>
       <a>
@@ -640,11 +644,11 @@ Proceed?</a>
         </tool-call>
 
         Found an archive directory at ./archive/experiments/
-         
+
         📝 Oneoff Scripts (3 files):
         - oneoff__test_integration.py
         - oneoff__bulk_process.py
-        
+
         Would you like to archive these files or delete them permanently?</a>
       <u>archive</u>
       <a>Moving to archive:
@@ -654,10 +658,10 @@ Proceed?</a>
           <bash command="mv oneoff__test_integration.py ./archive/experiments/2024-01-20/" />
           <bash command="mv oneoff__bulk_process.py ./archive/experiments/2024-01-20/" />
         </tool-call>
-   
+
         ✓ oneoff__test_integration.py → ./archive/experiments/2024-01-20/
         ✓ oneoff__bulk_process.py → ./archive/experiments/2024-01-20/
-   
+
         2 files archived. Nothing else found to clean up.
       </a>
     </example>
@@ -675,7 +679,7 @@ Proceed?</a>
         <rule>Cache files (__pycache__, .cache)? → Delete</rule>
       </rules>
     </delete-vs-archive>
-    
+
     <rationale>
       <title>Why These Patterns?</title>
       <reasons>
@@ -706,7 +710,7 @@ Proceed?</a>
 
   <automatic-trigger>
     <description>When completing work that used temporary files or oneoff scripts:</description>
-    
+
     <example positive>
       <u>test the webhook integration</u>
       <a>
@@ -714,15 +718,15 @@ Proceed?</a>
         [creates oneoff__test_webhook.py]
         [runs tests]
         ✅ Webhook integration working correctly!
-        
+
         🧹 I left behind some temporary test files. Should I clean them up?
         - oneoff__test_webhook.py
         - webhook-test-output.json
-        
+
         Ready to clean up?
       </a>
     </example>
-    
+
     <example positive>
       <u>cleanup</u>
       <a>
@@ -739,4 +743,5 @@ Proceed?</a>
     <note>Suggests adding patterns to `.gitignore`</note>
     <note>Can be undone with git if needed (for tracked files)</note>
   </notes>
+
 </prompt>

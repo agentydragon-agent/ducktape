@@ -3,12 +3,14 @@
 Generate a **new, independent critique** of the specimen code as if written by a **different, equally competent reviewer**.
 
 **Purpose**: Create a "cheat" critique that should achieve ~100% recall when graded, to verify:
+
 - The grading system can recognize the **same problems described differently**
 - A different reviewer's style/grouping/naming doesn't harm recall
 - Coverage scoring works with realistic variation
 - The baseline for what "good recall" looks like
 
 **Core Concept**: You're simulating what would happen if you gave the same code to a **different human reviewer** who:
+
 - Finds all the same real problems (100% coverage)
 - BUT describes them in their own words
 - AND groups/names issues differently
@@ -19,6 +21,7 @@ Generate a **new, independent critique** of the specimen code as if written by a
 **Input**: Specimen slug (e.g., `ducktape/2025-11-22-01`)
 
 **Output**: `cheat_critique.yaml` (annotated):
+
 - **Different reviewer's voice**: Varied wording, style, technical depth, priorities
 - **Independent issue naming**: Fresh IDs that this reviewer would choose
 - **Alternative grouping**: Merge/split issues differently than canonical
@@ -28,6 +31,7 @@ Generate a **new, independent critique** of the specimen code as if written by a
 - The grading CLI accepts `.yaml` directly
 
 **Schema**: Read `CriticSubmitPayload`, `ReportedIssue`, `Occurrence`, and `LineRange` from:
+
 - `src/adgn/props/critic.py`
 - `src/adgn/props/models/issue.py`
 
@@ -46,6 +50,7 @@ This tests whether the grading system can recognize when **two reviewers indepen
 **Issue definitions are in the repository, not in snapshot exec:**
 
 The canonical issue files (`.yaml`) are stored in the repository at:
+
 - `specimens/<specimen-slug>/issues/*.yaml`
 
 ```bash
@@ -68,6 +73,7 @@ props snapshot exec <specimen-slug> -- sed -n '10,20p' path/to/file.py
 ```
 
 Parse **ALL** canonical issues in the specimen (from the repository), noting:
+
 - Issue IDs (from filenames: `issues/iss-001.yaml` → `iss-001`)
 - Rationales (original phrasing from YAML files)
 - File paths and line ranges (relative paths from repo root)
@@ -77,6 +83,7 @@ Parse **ALL** canonical issues in the specimen (from the repository), noting:
 **Count the total number of canonical issues** - your cheat critique must cover all of them, but the count of reported issues may differ due to merges/splits (document these changes).
 
 **Important grading semantics**:
+
 - Grader uses **fuzzy LLM-based matching** (not exact string comparison)
 - One reported issue can match **multiple canonical issues** (coverage)
 - Multiple reported issues can overlap the **same canonical** (only counted once)
@@ -100,12 +107,14 @@ props snapshot exec <specimen-slug> -- sed -n '10,20p' path/to/file.py
 ```
 
 **DO NOT**:
+
 - ❌ Adjust file paths when paraphrasing (keep exact paths from canonical)
 - ❌ Reference line ranges without verifying them via snapshot exec
 - ❌ Invent new files that don't exist in the specimen
 - ❌ Create paraphrased anchors pointing to non-existent code
 
 **DO**:
+
 - ✅ Use exact file paths from canonical issues (they are always correct)
 - ✅ Use `snapshot exec` with sed/cat to read the actual code at line ranges before adjusting them
 - ✅ Verify adjusted line ranges still point to valid code
@@ -116,12 +125,14 @@ props snapshot exec <specimen-slug> -- sed -n '10,20p' path/to/file.py
 For each ground truth issue (after verifying files exist), write how a **different reviewer** would describe it:
 
 **Think like a different reviewer** - not just rephrasing, but genuinely different perspective:
+
 - **What would THEY notice first?** Lead with impact vs. technical detail vs. pattern
 - **What language would THEY use?** Academic vs. practical vs. terse vs. conversational
 - **What would THEY emphasize?** Maintainability vs. correctness vs. performance vs. readability
 - **How would THEY explain it?** Examples-first vs. principle-first vs. consequences-first
 
 **Rationale variation strategies** (vary across issues):
+
 - **Dense → verbose**: Expand terse descriptions with context, examples, impact
 - **Verbose → terse**: Compress to just the essential problem statement
 - **Technical → practical**: "Violates SRP" → "Makes changes risky when requirements evolve"
@@ -132,6 +143,7 @@ For each ground truth issue (after verifying files exist), write how a **differe
 - **Solution-focused**: "Replace with Y" (emphasize the fix)
 
 **Location adjustments** (realistic variations):
+
 - **Expand ranges**: Widen line ranges by 1-3 lines to include context (e.g., `[10,12]` → `[9,14]`)
 - **Contract ranges**: Narrow to the exact problem line (e.g., `[50,60]` → `[55,56]`)
 - **Shift slightly**: Move anchor up/down by 1-2 lines if the issue spans multiple statements
@@ -143,6 +155,7 @@ For each ground truth issue (after verifying files exist), write how a **differe
 Write a valid `cheat_critique.yaml` file:
 
 **Issue ID Guidelines**: Choose IDs that **THIS reviewer** would naturally write (not based on canonical IDs):
+
 - Name what THIS reviewer sees: their framing of the problem
 - Canonical: `duplicate-mount-logic` → Cheat might use: `redundant-compositor-setup` or `mounting-duplication`
 - Keep them concise but meaningful: 2-4 words, hyphen-separated
@@ -201,15 +214,18 @@ issues:
 ### Step 5: Validation
 
 Before finalizing:
+
 - **COMPLETE COVERAGE** (CRITICAL): Have you included **EVERY** canonical issue from the specimen?
   - Count canonical issues: `find issues -name "*.yaml" | wc -l`
   - Verify each canonical ID appears in your comments
   - Your reported issue count may be different (merges/splits are valid!)
   - **Missing even one canonical issue fails the calibration test**
 - **YAML validation**: Does the file parse without errors?
+
   ```bash
   python -c "import yaml; yaml.safe_load(open('cheat_critique.yaml'))"
   ```
+
 - **Schema**: Does the structure match `CriticSubmitPayload`?
 - **Paths**: Are all file paths relative (not absolute) and valid?
 - **Ranges**: Are line ranges plausible (within file bounds, start ≤ end)?
@@ -217,6 +233,7 @@ Before finalizing:
 ### Step 6: Grouping Strategy (Valid Variation)
 
 Since the grader handles flexible mappings, you can and should vary the grouping:
+
 - **Merge related canonicals**: Combine 2-3 similar canonical issues into one reported issue
   - Example: Merge "broad except" + "swallowed exceptions" into one "exception handling" issue
   - Comment which canonicals are merged
@@ -231,6 +248,7 @@ Write **one file** in the specimen directory (`specimens/<specimen>/`):
 **Annotated critique**: `cheat_critique.yaml`
 
 Include:
+
 - Valid YAML that matches `CriticSubmitPayload` schema
 - Comments mapping to ground truth IDs
 - Comments on paraphrase strategies used per issue

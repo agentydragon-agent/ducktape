@@ -16,6 +16,7 @@ pre-commit install
 This installs the pre-commit framework which runs `bazel lint` on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`).
 
 ## License
+
 AGPL 3.0
 
 ## Updates
@@ -43,5 +44,6 @@ nix run nixpkgs#act -- -W .github/workflows/ci.yml \
 ```
 
 Tips:
+
 - `act` needs Docker. Make sure `docker pull catthehacker/ubuntu:act-latest` works first.
 - Use `act -j <job-name>` to run a single job.

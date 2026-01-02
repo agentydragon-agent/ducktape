@@ -7,6 +7,7 @@ Construct and parse URLs using standard libraries, not string concatenation.
 Encode query parameters with library helpers and validate/normalize URLs at boundaries.
 
 ## Acceptance criteria (checklist)
+
 - Python: use `urllib.parse` (`urlparse`, `urlunparse`, `urlencode`, `urljoin`)
 - Go: use `net/url` (`url.Parse`, `url.URL`, `url.Values.Encode`)
 - No manual concatenation of scheme/host/path/query strings
@@ -35,4 +36,3 @@ Manual concatenation (missing encoding, brittle):
 ```python
 url = f"https://api.example.com/search?q={query}&page={page}"
 ```
-

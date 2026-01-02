@@ -14,11 +14,13 @@ Find dead code: unused symbols, unreachable branches, and test-only production c
 ## Method (Outcome-First)
 
 ### Analysis Strategy
+
 1. **Read code and build mental model first** - Identify entrypoints and plausible flows before consulting tools
 2. **Use tools only as spotters/hints** - When a tool suggests a candidate, validate by reading code and constructing a proof
 3. **Prefer precise anchors** - Use function/class names and 1-based line ranges over long code dumps
 
 ### Process Steps
+
 1. **Inventory exported/public entrypoints** (CLI/HTTP/API) to focus reachability checks; note high-risk modules
 2. **Dead code scan** (reasoning-first):
    - Build inbound reference sets for top-level symbols (rg search + confirmation by reading call sites)
@@ -35,11 +37,13 @@ Find dead code: unused symbols, unreachable branches, and test-only production c
 ## Proof Construction
 
 For each finding, include a compact proof:
+
 - **Dead code**: "No inbound references from exported call sites"
 - **Unreachable arms**: "Argparse choices exclude 'turbo' so arm is unreachable"
 - **Redundant guards**: Cite parent guard that makes nested check tautological
 
 When building reachability proofs:
+
 - Either collect a compact chain: entrypoint → … → branch (files:lines)
 - Or state "no path; unreachable"
 - Optionally write `/tmp/reachability_proofs.md` grouping by module/function
@@ -47,6 +51,7 @@ When building reachability proofs:
 ## Command Snippets
 
 ### Baseline Static Analysis (Discrete)
+
 ```bash
 # Ruff (linting hints)
 ruff check --output-format json /workspace > /tmp/ruff.json
@@ -64,6 +69,7 @@ adgn-detectors-custom --root /workspace --out /tmp/custom-findings.json
 ```
 
 ### Code Navigation
+
 ```bash
 # Find choices/Enums
 rg -n "choices=\[|choices=\(|Enum\(" /workspace
@@ -79,6 +85,7 @@ nl -ba -w1 -s ' ' /workspace/path/to/file.py | sed -n '120,180p'
 ```
 
 ### Optional Additional Tools (Do Not Paste Raw Output)
+
 ```bash
 # Pyright (fast unreachable code hints)
 pyright --outputjson /workspace  # reportUnreachableCode
@@ -111,17 +118,21 @@ pyan /workspace/**/*.py --uses --no-defines -o /tmp/callgraph.dot
 ## Exceptions
 
 The following cases are NOT dead code:
+
 - **Plugin hooks/interfaces**: Dynamically resolved from registries, entry-points, or configuration. Must have a comment proving reachability:
+
   ```python
   def plugin_has_no_references_in_python():
       """Plugin, dynamically resolved from configuration YAML."""
       ...
   ```
+
 - **Temporary compatibility shims**: May remain during migration with an owner and removal date
 
 ## Positive Examples
 
 Hard guard instead of fallback (acceptable sentinel):
+
 ```python
 match mode:
     case "fast":
@@ -133,6 +144,7 @@ match mode:
 ```
 
 Type-driven branches remove impossible cases:
+
 ```python
 def handle(x: Bar | Baz | Quux) -> str:
     if isinstance(x, Bar):
@@ -147,6 +159,7 @@ def handle(x: Bar | Baz | Quux) -> str:
 ```
 
 Test-only function clearly marked:
+
 ```go
 func MakeTestSession() *Session { ... }  // OK
 ```
@@ -154,6 +167,7 @@ func MakeTestSession() *Session { ... }  // OK
 ## Negative Examples
 
 Unreachable branch ruled out by type signature:
+
 ```python
 def get_user(uid: uuid.UUID) -> User:
     if not uid:
@@ -162,6 +176,7 @@ def get_user(uid: uuid.UUID) -> User:
 ```
 
 Redundant check ruled out by earlier guard:
+
 ```go
 if basePath == "" {
     full := matchesGlob(pattern, path)
@@ -175,6 +190,7 @@ if !validFile || basePath == "" {  // remove basePath check - ruled out above
 ```
 
 Speculative fallback that cannot happen:
+
 ```python
 import argparse
 parser = argparse.ArgumentParser()
@@ -186,6 +202,7 @@ if mode not in {"fast", "slow"}:
 ```
 
 Unused symbol kept "just in case":
+
 ```python
 DEFAULT_TIMEOUT_SECONDS = 30  # not referenced anywhere - remove
 ```

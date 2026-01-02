@@ -29,6 +29,7 @@ According to `/code/CLAUDE.md`:
 ## Acceptable Exceptions
 
 These do NOT violate the convention:
+
 - `.claude/` - System directory
 - `CLAUDE.md` - Configuration file
 - `local/` - Root directory for local projects (if empty or only contains owner subdirectories)
@@ -37,18 +38,22 @@ These do NOT violate the convention:
 ## Steps to Execute
 
 ### 1. List Top-Level Directories
+
 ```bash
 ls -la /code
 ```
 
 ### 2. For Each Non-Conforming Directory
+
 Run these checks:
+
 ```bash
 cd /code/{directory}
 git remote -v 2>/dev/null || echo "Not a git repo"
 ```
 
 ### 3. Check for Symlinks
+
 ```bash
 ls -la ~/code/ | grep "{directory}"
 ```
@@ -58,6 +63,7 @@ ls -la ~/code/ | grep "{directory}"
 For each violation, propose ONE of these operations:
 
 **Option A: Move git repo to proper location**
+
 ```bash
 # Determine correct path from git remote URL
 # Move: mv /code/{dir} /code/{domain}/{org}/{repo}
@@ -66,6 +72,7 @@ For each violation, propose ONE of these operations:
 
 **Option B: Delete and reclone**
 If the local copy seems stale or has issues:
+
 ```bash
 # Find the git remote URL
 # Delete: rm -rf /code/{dir}
@@ -75,6 +82,7 @@ If the local copy seems stale or has issues:
 
 **Option C: Move to local/**
 For projects without remotes:
+
 ```bash
 # Move: mv /code/{dir} /code/local/{owner}/{dir}
 # Update symlink: ln -sf /code/local/{owner}/{dir} ~/code/{dir}
@@ -86,6 +94,7 @@ If a proper version exists elsewhere
 ### 5. Present Plan
 
 Show the user:
+
 - List of violations found
 - Proposed operation for each
 - Expected outcome
@@ -106,6 +115,7 @@ Once the user approves, execute the operations in order.
 ## Output Format
 
 Provide a clear summary with:
+
 1. **Violations Found**: List with current locations
 2. **Proposed Operations**: Numbered list of operations
 3. **Risk Assessment**: Note any potential issues

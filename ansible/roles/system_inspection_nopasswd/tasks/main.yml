@@ -7,7 +7,7 @@
   ansible.builtin.file:
     path: /etc/sudoers.d
     state: directory
-    mode: '0755'
+    mode: "0755"
     owner: root
     group: root
   become: true
@@ -16,8 +16,8 @@
   ansible.builtin.template:
     src: system-inspection-sudoers.j2
     dest: /etc/sudoers.d/system_inspection_nopasswd
-    mode: '0440'
+    mode: "0440"
     owner: root
     group: root
-    validate: 'visudo -cf %s'
+    validate: "visudo -cf %s"
   become: true

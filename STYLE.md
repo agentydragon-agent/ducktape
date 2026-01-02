@@ -10,6 +10,7 @@
 - **No exception swallowing**: Never use bare `except:` or broad `except Exception:` as a silent fallback. Catch specific exception types, let exceptions propagate, or re-raise with precise context. Do not default to empty values on error. **Real errors must surface** - if a config file has invalid syntax, a source file won't parse, or I/O fails, that's a bug the user needs to know about. Silently returning empty defaults hides the problem.
 
   Bad examples (do not do these):
+
   ```python
   # ❌ Invalid config silently ignored - user thinks they have no config
   try:

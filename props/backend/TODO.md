@@ -3,12 +3,14 @@
 ## Type Safety & Architecture
 
 ### Medium Priority
+
 - [ ] **NOTE: FileLocationInfo should stay in props_core**
   - FileLocationInfo is correctly defined in props_core (domain model layer)
   - Backend routes import from props_core - this is correct architecture
   - No changes needed
 
 ### Low Priority
+
 - [ ] **Make export.py functions public** (src/props_core/db/sync/export.py)
   - Remove leading underscore from `_format_files`, `_format_line_ranges`
   - Add to `__all__` export list

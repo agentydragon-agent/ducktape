@@ -1,6 +1,7 @@
 # Scan: Type Checker Suppression Comments
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -27,6 +28,7 @@ Every suppression should either be eliminated through better code design, replac
 ### Pattern 1: Missing Type Conversion
 
 **BAD**: Suppressing return type mismatch
+
 ```python
 async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
     return await client.responses.create(**kwargs)  # type: ignore[return-value]
@@ -35,6 +37,7 @@ async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> R
 **Issue**: SDK returns `Response` but function claims to return `ResponsesResult`
 
 **GOOD**: Actually convert the type
+
 ```python
 async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
     sdk_resp = await client.responses.create(**kwargs)
@@ -44,6 +47,7 @@ async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> R
 ### Pattern 2: Overly Broad Type Annotations
 
 **BAD**: Accepting broader types than needed
+
 ```python
 def to_effort(value: ReasoningEffort | str | None) -> str | None:
     # Complex validation to handle strings...
@@ -56,6 +60,7 @@ payload["effort"] = effort_value  # type: ignore[typeddict-item]
 **Issue**: Return type is `str` but TypedDict expects `Literal["low", "medium", "high"]`
 
 **GOOD**: Narrow parameter and return types
+
 ```python
 def to_effort(value: ReasoningEffort | None) -> ReasoningEffortLiteral | None:
     if value is None:
@@ -69,12 +74,14 @@ payload["effort"] = effort_value
 ### Pattern 3: Type Assertions for Dynamic Attributes
 
 **BAD**: Suppressing attribute access on dynamic objects
+
 ```python
 # Access undocumented internal session
 session = c.api.session  # type: ignore[attr-defined]
 ```
 
 **GOOD**: Use `hasattr()` check with `cast()` to declare type
+
 ```python
 from typing import cast
 import aiohttp
@@ -85,6 +92,7 @@ if hasattr(c.api, "session"):
 ```
 
 **GOOD**: Use `cast()` when you know the type from function signature
+
 ```python
 from typing import cast
 
@@ -97,12 +105,14 @@ await server.broadcast_resource_list_changed()
 ### Pattern 4: Type Narrowing with Runtime Checks
 
 **BAD**: Suppressing because type is too broad
+
 ```python
 def process(client: Client) -> str:
     return client.special_method()  # type: ignore[attr-defined]
 ```
 
 **GOOD**: Use `isinstance()` or `assert` to narrow type
+
 ```python
 def process(client: Client) -> str:
     assert isinstance(client, SpecialClient)
@@ -110,6 +120,7 @@ def process(client: Client) -> str:
 ```
 
 **GOOD**: Declare specific type when you control the call site
+
 ```python
 def process(client: SpecialClient) -> str:
     return client.special_method()  # No assertion needed
@@ -118,6 +129,7 @@ def process(client: SpecialClient) -> str:
 ### Pattern 5: Missing Type Import
 
 **BAD**: Using `object` when actual type is known
+
 ```python
 def _row_to_message(row: object) -> ChatMessage:
     return ChatMessage(
@@ -129,6 +141,7 @@ def _row_to_message(row: object) -> ChatMessage:
 **Issue**: Row is actually `aiosqlite.Row` which supports indexing
 
 **GOOD**: Import and use actual type
+
 ```python
 from aiosqlite import Row
 
@@ -142,6 +155,7 @@ def _row_to_message(row: Row) -> ChatMessage:
 ### Pattern 6: Meta-Ignores (unused-ignore)
 
 **BAD**: Suppressing the suppression
+
 ```python
 async def post(input: PostInput) -> PostResult:  # type: ignore[unused-ignore]
     ...
@@ -150,6 +164,7 @@ async def post(input: PostInput) -> PostResult:  # type: ignore[unused-ignore]
 **Issue**: Someone added `type: ignore` that mypy doesn't think is needed
 
 **GOOD**: Remove unnecessary suppression
+
 ```python
 async def post(input: PostInput) -> PostResult:
     ...
@@ -182,6 +197,7 @@ rg --type py '# mypy:' -B 2 -A 1 --line-number
 ```
 
 **What to review for each suppression:**
+
 1. **Missing Type Conversion**: Return type mismatch that needs conversion function
 2. **Overly Broad Types**: Parameter/return types that should be narrowed
 3. **Type Assertions Needed**: Dynamic attributes or runtime checks needed
@@ -191,6 +207,7 @@ rg --type py '# mypy:' -B 2 -A 1 --line-number
 **Process ALL output**: Read each suppression, use your judgment to identify which can be fixed using the hierarchy below.
 
 **Fix Hierarchy (BEST → ACCEPTABLE)**:
+
 1. **BEST**: Clean code with no hacks (proper types, refactoring, library upgrades)
 2. **GOOD**: Type assertions/narrowing (`cast()`, `isinstance()`, `assert`, `hasattr()`)
 3. **ACCEPTABLE**: Well-documented suppression with clear explanation why necessary
@@ -198,12 +215,14 @@ rg --type py '# mypy:' -B 2 -A 1 --line-number
 ---
 
 **Recall/Precision**:
+
 - Finding suppressions: ~100% recall, ~100% precision
 - Determining if "fixable": Requires code analysis (lower precision)
 - Some patterns have clear fixes (missing imports, type conversions)
 - Others require architectural changes (private API access)
 
 **Tool characteristics**:
+
 - Finding comments: 100% recall, 100% precision
 - Determining "necessary": Requires verification
 - Some patterns have clear fixes (missing imports, type conversions)
@@ -237,6 +256,7 @@ For each suppression found, apply this hierarchy:
 Some suppressions are necessary and should be kept (with documentation):
 
 ### AST Visitor Pattern
+
 ```python
 class Visitor(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
@@ -245,6 +265,7 @@ class Visitor(ast.NodeVisitor):
 ```
 
 ### Side-Effect Imports
+
 ```python
 from . import (
     detector_a,  # noqa: F401  - imported for registration side effect
@@ -253,6 +274,7 @@ from . import (
 ```
 
 ### Private API (with TODO)
+
 ```python
 async with self._p._open_row() as db:  # type: ignore[attr-defined]
     # TODO: Make _open_row() public or use public API
@@ -260,6 +282,7 @@ async with self._p._open_row() as db:  # type: ignore[attr-defined]
 ```
 
 ### Library Limitations (with version note)
+
 ```python
 result = repo.write_tree()  # type: ignore[attr-defined]
 # pygit2 1.14 missing type stubs for write_tree()
@@ -269,22 +292,26 @@ result = repo.write_tree()  # type: ignore[attr-defined]
 ## Priority for Fixing
 
 **High Priority** (likely bugs):
+
 - `type: ignore[return-value]` - returning wrong type
 - `type: ignore[arg-type]` - passing wrong argument
 - `type: ignore[assignment]` - incompatible assignment
 
 **Medium Priority** (type safety):
+
 - `type: ignore[index]` - missing indexing support
 - `type: ignore[attr-defined]` - missing attribute
 - `type: ignore[typeddict-item]` - TypedDict field mismatch
 
 **Low Priority** (cleanup):
+
 - `type: ignore[unused-ignore]` - meta-ignore (often removable)
 - `noqa` without code - make specific
 
 ## Grep Patterns
 
 Find all suppressions:
+
 ```bash
 # Count total
 grep -r "type: ignore\|noqa" --include="*.py" . | wc -l
@@ -297,6 +324,7 @@ grep -ro "type: ignore\[[^]]*\]" --include="*.py" . | cut -d: -f2 | sort | uniq 
 ```
 
 Find specific types:
+
 ```bash
 # All return-value ignores
 rg --type py "type: ignore\[return-value\]"
@@ -349,6 +377,7 @@ Success: no issues found
 ## Summary
 
 **Golden Rule**: Every suppression should either be:
+
 1. **Removed** by fixing the underlying issue, or
 2. **Documented** with a comment explaining why it's necessary
 

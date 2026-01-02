@@ -57,13 +57,13 @@ make it clear to people you aren't a dick.)
 
 My _principle of no non-Apologies_ is two-part:
 
-## Distinguish between saying "I'm sorry" and Apologizing.
+## Distinguish between saying "I'm sorry" and Apologizing
 
 This first part I recommend adopting universally. Know the difference between
 the social ritual that _evolved from small routinized Apologies_ and actual
 Apologies, and know which one you are doing at which time.
 
-## Don't give non-Apologies.
+## Don't give non-Apologies
 
 This second part I apply to relationships into which I want to bring my whole
 self, mostly my personal relationships, but also some work relationships.

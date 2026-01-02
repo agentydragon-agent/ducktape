@@ -50,11 +50,13 @@ This document explains the shell startup file organization for this system.
 ### Bash
 
 **Login shell:**
+
 - → `/etc/profile`
 - → **`~/.profile`**
   - ⇒ **`~/.secret_env`** (if exists)
 
 **Non-login interactive:**
+
 - → `/etc/bash.bashrc` (Debian/Ubuntu)
 - → **`~/.bashrc`**
   - ⇒ **`~/.shellrc`**
@@ -85,6 +87,7 @@ This document explains the shell startup file organization for this system.
 ## What Goes Where
 
 ### `~/.profile` (Shell-agnostic environment)
+
 - PATH modifications (using `add_path` function)
 - Environment variables (`GOPATH`, `NVM_DIR`, `BUN_INSTALL`, `MC_SKIN`, `DEFAULT_CHARSET`, `AIDER_MODEL`, `GCC_COLORS`)
 - Language environments (pyenv path initialization)
@@ -93,8 +96,9 @@ This document explains the shell startup file organization for this system.
 - Sourced by both `~/.bashrc` and `~/.zshrc` for non-login shells
 
 ### `~/.bashrc` / `~/.zshrc` (Interactive shell config)
+
 - Shell options (`shopt`, `setopt`)
-- Prompt configuration  
+- Prompt configuration
 - Completion setup
 - Key bindings
 - History settings (including atuin)
@@ -103,19 +107,21 @@ This document explains the shell startup file organization for this system.
 - Source `~/.shellrc` (which contains aliases and sources `~/.profile`)
 
 ### `~/.zshenv` (Zsh-specific environment)
+
 - Minimal - only what MUST run for all zsh (including scripts)
 - Currently just `skip_global_compinit=1` (zsh-specific setting)
 - Avoid heavy operations here
 - Environment variables moved to `~/.profile` for consistency
 
-
 ### `~/.secret_env` (Secret environment variables)
+
 - API keys, tokens, passwords
 - Not tracked in git
 - Sourced by `~/.profile` if it exists
 - Available to all shells through profile
 
 ### `~/.shellrc` (Shell-agnostic interactive settings)
+
 - Sources `~/.profile` first (NOT `/etc/profile` - see note below)
 - All aliases and simple functions
 - Interactive-only environment variables (`LESS`, `PYTHONSTARTUP`)
@@ -125,6 +131,7 @@ This document explains the shell startup file organization for this system.
 - Sourced by both `~/.bashrc` and `~/.zshrc`
 
 **Note on /etc/profile**: We don't source `/etc/profile` because:
+
 - It's meant for login shells only
 - On Debian it unconditionally resets PATH, breaking Nix and other paths
 - Shell-specific rc files already handle important setup (like Nix)
@@ -132,15 +139,18 @@ This document explains the shell startup file organization for this system.
 ## Common Issues
 
 ### SSH Sessions
+
 - **Bash**: Automatically sources `~/.bashrc` even for non-login SSH shells (bash detects network connections)
 - **Zsh**: SSH creates non-login shells that skip `~/.profile`
 - That's why `~/.shellrc` sources `~/.profile` - to ensure consistent environment
 
 ### Shell-Specific Considerations
+
 - **Bash login shells**: Don't automatically source `~/.bashrc`. If you need aliases in login shells, create `~/.bash_profile` that sources both `~/.profile` and `~/.bashrc`
 - **Zsh login shells**: Both `~/.zshrc` and `~/.profile` get loaded, so environment is complete
 
 ### Special Modes & Options
+
 - **Bash as sh**: When invoked as `sh`, bash only reads `/etc/profile` and `~/.profile` for login shells, ignoring bash-specific files
 - **Non-interactive shells**: Can use `BASH_ENV` environment variable to specify a file to source
 - **Zsh ZDOTDIR**: Zsh looks for user config files in `$ZDOTDIR` if set, otherwise `$HOME`

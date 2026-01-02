@@ -59,8 +59,8 @@ ansible-playbook gpd.yaml --ask-become-pass
 
 Make worthy work, actually.
 
-- zoom (for meetings)
-- ubuntu-desktop
+* zoom (for meetings)
+* ubuntu-desktop
 
 TODO: minimize texlive, etc.
 
@@ -73,7 +73,7 @@ These parts aren't yet done by Ansible:
 * `htpasswd` for `bazel-remote-cache` is not stored in the repo - but that
   should be fine, those creds are cheap to rotate.
   It's expected to be in `$(repo root)/ansible/bazel_remote_cache.htpasswd`.
-* Setup steps for Inventree - see https://docs.inventree.org/en/latest/start/docker_install/#initial-database-setup
+* Setup steps for Inventree - see <https://docs.inventree.org/en/latest/start/docker_install/#initial-database-setup>
   (making databases etc)
 
 ## Manual laptop installation steps
@@ -94,47 +94,55 @@ When provisioning a new VM or remote machine:
 
 1. The ducktape repository must be cloned before running the playbook, as the dotfiles deployment depends on it.
 2. Generate SSH key and add to GitHub/GitLab:
+
    ```bash
    # On the new machine, generate SSH key:
    ssh-keygen -t ed25519 -C "agentydragon@HOSTNAME"
-   
+
    # Add both GitHub and GitLab to known hosts on the new machine:
    ssh agentydragon@NEW_MACHINE_IP 'ssh-keyscan github.com gitlab.com >> ~/.ssh/known_hosts'
-   
+
    # From your provisioning machine (with gh installed and authenticated):
    ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
      gh ssh-key add - --title "HOSTNAME"
-   
+
    # From your provisioning machine (with glab installed and authenticated):
    ssh agentydragon@NEW_MACHINE_IP 'cat ~/.ssh/id_ed25519.pub' | \
      glab ssh-key add -t "HOSTNAME"
-   
+
    # Verify both worked from the new machine:
    ssh agentydragon@NEW_MACHINE_IP 'for host in github.com gitlab.com; do echo "Testing $host:"; ssh -T git@$host; done'
    ```
+
 3. Clone ducktape repository and checkout devel branch:
+
    ```bash
    ssh agentydragon@NEW_MACHINE_IP 'mkdir -p ~/code && git clone git@gitlab.com:agentydragon/ducktape ~/code/ducktape && cd ~/code/ducktape && git checkout devel'
    ```
+
 4. Run the playbook from your provisioning machine:
+
    ```bash
    cd ansible
    ansible-playbook wyrm.yaml --ask-become-pass
    ```
+
    When prompted for the BECOME password, enter the sudo password for the agentydragon user on the VM.
 5. If the playbook fails on dotfiles installation, SSH to the machine and run:
+
    ```bash
    ssh agentydragon@NEW_MACHINE_IP 'RCRC=~/code/ducktape/dotfiles/rcrc rcup -B new-vm'
    ```
+
    You'll need to confirm overwriting default files like .bashrc with 'y'.
 
-- TODO: Set hostname on the VM (currently using IP address)
-- TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
-- TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
-- TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
-- TODO: XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
-- TODO: Handle Anki installation on Ubuntu 22.04 - newer Anki requires glibc 2.36+ but Ubuntu 22.04 has glibc 2.35. Need to either skip on older systems or find alternative installation method
-- TODO: (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
+* TODO: Set hostname on the VM (currently using IP address)
+* TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
+* TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
+* TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
+* TODO: XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
+* TODO: Handle Anki installation on Ubuntu 22.04 - newer Anki requires glibc 2.36+ but Ubuntu 22.04 has glibc 2.35. Need to either skip on older systems or find alternative installation method
+* TODO: (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
 
 ## Headscale (Tailscale Alternative)
 
@@ -145,13 +153,15 @@ Headscale is a self-hosted control server for Tailscale that provides automatic 
 Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the organized allocation:
 
 #### Core Infrastructure - 100.64.1.x/24
+
 | Host | IP | Description | Notes |
 |------|------------|-------------|-------|
-| `vps` | 100.64.1.1 | Headscale Server | Control plane at https://vps-hostname:8080 |
+| `vps` | 100.64.1.1 | Headscale Server | Control plane at <https://vps-hostname:8080> |
 | `atlas` | 100.64.1.30 | Proxmox host | k3s cluster host |
 | `homeassistant` | 100.64.1.100 | Home Assistant | |
 
 #### Personal Machines - 100.64.10.x/24
+
 | Host | IP | Description | Notes |
 |------|------------|-------------|-------|
 | `agentydragon` | 100.64.10.11 | ThinkPad X1 Extreme | |
@@ -159,11 +169,13 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 | `new-vm` | 100.64.10.31 | New Pop!_OS VM | |
 
 #### Mobile Devices - 100.64.20.x/24
+
 | Host | IP | Description | Notes |
 |------|------------|-------------|-------|
 | `pixel6` | 100.64.20.50 | Pixel 6 phone | |
 
 #### Kubernetes Services - 100.64.100.x/24
+
 | Host | IP | Description | Notes |
 |------|------------|-------------|-------|
 | `k3s-master` | 100.64.100.200 | k3s master node | VM on atlas |
@@ -171,24 +183,27 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 | | 100.64.100.210-250 | Reserved for additional k3s nodes | |
 
 #### Future Expansion
-- `100.64.50.x/24` - IoT devices
-- `100.64.60.x/24` - Guest devices  
-- `100.64.200.x/24` - Lab/experimental
+* `100.64.50.x/24` - IoT devices
+* `100.64.60.x/24` - Guest devices
+* `100.64.200.x/24` - Lab/experimental
 
 ### Initial Setup
 
 1. **Deploy headscale server to VPS:**
+
    ```bash
    cd ansible
    ansible-playbook vps.yaml --tags headscale
    ```
 
 2. **Create a user for your devices:**
+
    ```bash
    ssh vps "headscale users create agentydragon"
    ```
 
 3. **List existing users:**
+
    ```bash
    ssh vps "headscale users list"
    ```
@@ -196,22 +211,26 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 ### Adding a Device
 
 1. **Deploy tailscale client to the device:**
+
    ```bash
    cd ansible
    ansible-playbook <hostname>.yaml --tags tailscale
    ```
 
 2. **The client will attempt to register and show a registration key. Check pending registrations:**
+
    ```bash
    ssh vps "headscale nodes list"
    ```
 
 3. **Register the device:**
+
    ```bash
    ssh vps "headscale nodes register --user agentydragon --key <registration-key>"
    ```
 
 4. **Verify the device is connected:**
+
    ```bash
    ssh vps "headscale nodes list"
    # On the device:
@@ -239,8 +258,8 @@ sudo tailscale up --login-server=https://your-vps:8080
 ### Magic DNS
 
 Headscale provides automatic hostname resolution:
-- `atlas.your-vps-domain` resolves to `10.13.13.30`
-- `agentydragon.your-vps-domain` resolves to `10.13.13.11`
-- etc.
+* `atlas.your-vps-domain` resolves to `10.13.13.30`
+* `agentydragon.your-vps-domain` resolves to `10.13.13.11`
+* etc.
 
 This enables direct hostname usage in configurations without maintaining `/etc/hosts` files.

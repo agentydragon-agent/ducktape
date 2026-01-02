@@ -3,6 +3,7 @@
 This file defines the logical, storage‑agnostic schema for representing an agent’s state and history in a graph. It captures types, events, nodes/edges, and invariants derived from the current adgn repo (approval policy runtime, runtime/exec, MCP, OpenAI Responses API). Any backend (Git+JSONL, property graph, IPLD, SQL/Dolt, TerminusDB) should project to/from these shapes without loss.
 
 ## Conventions
+
 - IDs
   - `AgentId`: string (stable identifier for the agent)
   - `RunId`: string (UUID recommended)
@@ -18,6 +19,7 @@ This file defines the logical, storage‑agnostic schema for representing an age
   - `ExtRef`: `{kind: str, id: str}` (e.g., external object id, stream id)
 
 ## Design principles and pattern
+
 - Functional core, imperative shell
   - Core: immutable facts (events, snapshots, heads) in a DAG for time‑travel and forks.
   - Shell: effect handlers/controllers that attempt to realize intents in the real world; they may fail, retry, or vanish.
@@ -36,6 +38,7 @@ This file defines the logical, storage‑agnostic schema for representing an age
   - keep | snapshot | discard, chosen by capabilities/cost. Non‑restorable/imperative resources can be kept by a single branch, snapshotted (if supported), or discarded.
 
 ## Enumerations
+
 - EventKind
   - `model_request`, `model_response`, `history_append`
   - `tool_call`, `tool_result`
@@ -51,26 +54,30 @@ This file defines the logical, storage‑agnostic schema for representing an age
   - `docker_volume`, `docker_container`, `docker_image`, `file`, `uri`
 - MessageRole
   - `system`, `user`, `assistant`, `tool`
- - ResourceLiveness
-  - `unknown`, `alive`, `dead`
+- ResourceLiveness
+- `unknown`, `alive`, `dead`
 
 ## Resource primitives and capabilities
 
 Many resources fall into two buckets:
+
 - Snapshot/fork/restore capable (controlled): e.g., Docker volumes, policy files, linear logs.
 - Imperative handles (not restorable): e.g., a running container’s RAM/process state.
 
 Model with explicit capabilities so forks/time travel are well‑defined.
 
 Capabilities (set of strings)
+
 - `snapshot`, `restore`, `fork`, `share`, `migrate`, `checkpoint`
 
 Scope and leases
+
 - `scope` associates resources with `{agent_id, run_id, session_id}`; leases/liveness are advisory and non‑deterministic.
 
 ## Core logical types
 
 Message (OpenAI Responses API compatible)
+
 - `Message` (Node)
   - `id`: NodeId
   - `role`: MessageRole
@@ -84,6 +91,7 @@ Message (OpenAI Responses API compatible)
   - `reasoning`: `{type: "reasoning", text: str}` (optional when model emits separate reasoning)
 
 Model I/O
+
 - `ModelRequest` (Event: `model_request`)
   - `event_id`, `ts`, `run_id`, `agent_id`
   - `model`: str
@@ -101,12 +109,14 @@ Model I/O
   - `stream_ref?`: ExtRef to a streaming artifact (e.g., path or external id)
 
 Agent history
+
 - `HistoryAppend` (Event: `history_append`)
   - `event_id`, `ts`, `run_id`, `agent_id`
   - `list`: str (e.g., `main`)
   - `message_ref`: NodeId (Message)
 
 MCP notifications
+
 - `McpResourceUpdated` (Event: `mcp.resource_updated`)
   - `event_id`, `ts`, `run_id`, `agent_id`
   - `server`: str
@@ -117,6 +127,7 @@ MCP notifications
   - `event_id`, `ts`, `run_id`, `agent_id`, `server`: str
 
 Tools
+
 - `ToolCall` (Event: `tool_call`)
   - `event_id`, `ts`, `run_id`, `agent_id`
   - `server`: str (e.g., `runtime`)
@@ -132,6 +143,7 @@ Tools
   - `error?`: `{code:str, message:str, details?:any}`
 
 Resource lifecycle
+
 - `SnapshotCreated` (Event: `snapshot_created`)
   - `event_id`, `ts`, `agent_id`
   - `resource_ref`: NodeId (Resource)
@@ -147,6 +159,7 @@ Resource lifecycle
   - `event_id`, `ts`, `agent_id`, `snapshot_ref`: NodeId (Snapshot), `outcome`: `ok` | `unsupported` | `error`, `new_resource_ref?`: NodeId (Resource)
 
 Approval policy
+
 - `Policy` (Node)
   - `id`: NodeId
   - `kind`: `active` | `proposal`
@@ -160,6 +173,7 @@ Approval policy
   - `notes?`: str
 
 Resources (runtime volumes/containers/images)
+
 - `Resource` (Node)
   - `id`: NodeId
   - `kind`: ResourceKind
@@ -185,6 +199,7 @@ Resources (runtime volumes/containers/images)
   - `capabilities?`: list[str] (e.g., `attach`, `exec`, `kill`, `logs`)
 
 Forks, subagents, interruptions
+
 - `AgentForked` (Event: `agent_forked`)
   - `event_id`, `ts`, `agent_id`
   - `from_branch`: str, `to_branch`: str
@@ -205,6 +220,7 @@ Forks, subagents, interruptions
   - `reason?`: str
 
 Runs and snapshots
+
 - `RunStarted` (Event: `run_started`)
   - `event_id`, `ts`, `run_id`, `agent_id`, `reason?`: str (user|schedule|subagent)
 - `RunFinished` (Event: `run_finished`)
@@ -215,6 +231,7 @@ Runs and snapshots
   - `content_ref`: ExtRef (materialized summary/transcript for UI)
 
 ## Edge types (typed relations)
+
 - `AGENT_HAS_RUN`: Agent → Run
 - `RUN_HAS_EVENT`: Run → Event (attr `seq:int` to preserve order)
 - `EVENT_PRODUCES`: Event → {Message|Generation|ToolResult|Summary|Snapshot}
@@ -239,6 +256,7 @@ Runs and snapshots
 - `PROPOSES_POLICY`: Event → Policy
 
 ## Invariants and notes
+
 - Idempotence: event ids derive from canonical JSON; re‑emitting identical events yields the same `EventId`.
 - Full payloads: no redaction or MIME/size limits in the canonical model (backends may impose practical limits).
 - Ancestry: per‑run event streams are linear; linkability ensured via `RUN_HAS_EVENT.seq` and optional `parent` pointers in event payloads when available.
@@ -247,11 +265,12 @@ Runs and snapshots
   - Active policy is a program (stdin→stdout JSON) stored behind the MCP resource `resource://approval-policy/policy.py`.
   - Activation is represented by a `policy_activated` event and a Policy node updated to `kind=active`.
 - Volumes/resources: payloads of volumes are not stored in the graph; represent lineage via `Resource` nodes and `ExtRef` snapshots only.
- - Imperative resources: when `imperative=true` or capabilities omit `restore`, forks must choose `keep` (single branch), `snapshot` (if supported) or `discard`. Attempting `restore` on such resources yields `restore_attempted` with `outcome=unsupported`.
- - Subresources: use `HAS_SUBRESOURCE` to decompose complex resources (e.g., container → filesystem volume, network namespace) and make fork decisions per subpart.
- - Liveness: liveness probes are advisory; only snapshots and events are durable.
+- Imperative resources: when `imperative=true` or capabilities omit `restore`, forks must choose `keep` (single branch), `snapshot` (if supported) or `discard`. Attempting `restore` on such resources yields `restore_attempted` with `outcome=unsupported`.
+- Subresources: use `HAS_SUBRESOURCE` to decompose complex resources (e.g., container → filesystem volume, network namespace) and make fork decisions per subpart.
+- Liveness: liveness probes are advisory; only snapshots and events are durable.
 
 ## Minimal JSON examples (illustrative)
+
 - Model request
   {
     "kind": "model_request", "event_id": "...", "ts": "...Z", "run_id": "...", "agent_id": "...",
@@ -265,20 +284,22 @@ Runs and snapshots
     "call_id": "exec-42", "status": "ok",
     "result": {"rc": 0, "stdout": "...", "stderr": "", "duration_ms": 120}
   }
- - Snapshot created
+- Snapshot created
   {
     "kind": "snapshot_created", "event_id": "...", "ts": "...Z", "agent_id": "...",
     "resource_ref": "res-vol-123", "snapshot_ref": "snap-abc",
     "outcome": "ok"
   }
- - Restore attempted (unsupported)
+- Restore attempted (unsupported)
   {
     "kind": "restore_attempted", "event_id": "...", "ts": "...Z", "agent_id": "...",
     "snapshot_ref": "snap-live-ram", "outcome": "unsupported"
   }
 
 ## Mapping helpers (backend adapters)
+
 Backends should provide adapters to:
+
 - Emit/ingest events of the above kinds (content‑hashing for `EventId`).
 - Persist/lookup nodes and edges with their typed attributes.
 - Provide convenient queries:

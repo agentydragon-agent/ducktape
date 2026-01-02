@@ -1,6 +1,7 @@
 # Scan: Asyncio Antipatterns
 
 ## Context
+
 @../shared-context.md
 
 ## Common Antipatterns
@@ -9,7 +10,7 @@
 
 **Critical principle**: Choose based on whether you need return values and error handling strategy.
 
-#### Use gather() when:
+#### Use gather() when
 
 1. **You need return values from tasks** (most common case)
 2. **Best-effort execution**: Use `return_exceptions=True` to collect all results even if some fail
@@ -17,6 +18,7 @@
 4. **Python 3.10 or older**: TaskGroup not available
 
 **Example - gather is the RIGHT choice:**
+
 ```python
 # GOOD: gather with return_exceptions for best-effort result collection
 tool_tasks: dict[str, asyncio.Task[list[Tool]]] = {}
@@ -34,11 +36,12 @@ for (name, _), result in zip(tool_tasks.items(), results):
 ```
 
 **Why gather is better here:**
+
 - Needs return values from each task
 - Wants all results (best-effort), not fail-fast
 - Simple, direct code without helper functions
 
-#### Use TaskGroup when:
+#### Use TaskGroup when
 
 1. **Fire-and-forget tasks** (no return values needed)
 2. **Fail-fast behavior**: Want to cancel all tasks if any fails
@@ -46,6 +49,7 @@ for (name, _), result in zip(tool_tasks.items(), results):
 4. **Python 3.11+** available
 
 **Example - TaskGroup is the RIGHT choice:**
+
 ```python
 # GOOD: TaskGroup for fail-fast fire-and-forget tasks
 async def _notify_subscriber(subscriber: Subscriber, event: Event):
@@ -58,6 +62,7 @@ async with asyncio.TaskGroup() as tg:
 ```
 
 **Why TaskGroup is better here:**
+
 - No return values needed (fire-and-forget)
 - Want fail-fast behavior (one failure = abort all)
 - Structured concurrency
@@ -74,9 +79,10 @@ async with asyncio.TaskGroup() as tg:
 | **Python version** | All versions | 3.11+ only |
 | **Use case** | Need results, best-effort execution | Fire-and-forget, fail-fast |
 
-#### When gather is MISUSED:
+#### When gather is MISUSED
 
 **Anti-pattern: gather without return_exceptions when you need fail-fast**
+
 ```python
 # BAD: Using gather's default fail-fast but ignoring result ordering
 results = await asyncio.gather(task1(), task2(), task3())  # Fails on first error
@@ -84,6 +90,7 @@ results = await asyncio.gather(task1(), task2(), task3())  # Fails on first erro
 ```
 
 **Better with TaskGroup for fail-fast:**
+
 ```python
 async with asyncio.TaskGroup() as tg:
     tg.create_task(task1())
@@ -98,6 +105,7 @@ async with asyncio.TaskGroup() as tg:
 - **Don't blindly replace gather with TaskGroup**: gather is often the right choice
 
 **Detection:**
+
 ```bash
 # Find gather() usage - review each for TaskGroup suitability
 rg --type py 'asyncio\.gather\('
@@ -161,18 +169,21 @@ async def event_stream():
 ```
 
 **When to use context manager for bundling + cleanup:**
+
 - 3+ parameters passed together repeatedly (db, key, response_id)
 - Resource cleanup needed (client.aclose(), file.close())
 - Error handling that must run regardless of success/failure
 - Multiple related functions operate on same state
 
 **Benefits:**
+
 - **Single cleanup location**: Error handling in `__aexit__`, not scattered
 - **Automatic resource cleanup**: Guaranteed via context manager protocol
 - **Bundled parameters**: Avoid repeating (db, key, ...) at every call site
 - **Object-oriented**: Methods on context vs standalone functions
 
 **Detection:**
+
 ```bash
 # Find try-finally with resource cleanup
 rg --type py -U 'try:.*finally:.*\.(close|aclose)\(' --multiline
@@ -185,6 +196,7 @@ rg --type py -U 'except.*:.*record_error' --multiline
 ```
 
 **Sync version example:**
+
 ```python
 # Sync context manager
 class Transaction:
@@ -221,16 +233,20 @@ with Transaction(db) as tx:
 **Antipattern**: Using `@pytest.mark.asyncio` decorators when `asyncio_mode = "auto"` is configured.
 
 **Fix Strategy**:
+
 1. **Check pytest configuration**: Look for `asyncio_mode = "auto"` in project's `pyproject.toml` or `pytest.ini`
 2. **If auto-detection is enabled**: Remove `@pytest.mark.asyncio` decorators - pytest will automatically detect `async def test_*()` functions
 3. **If auto-detection is NOT enabled**: Consider enabling it by adding to `pyproject.toml`:
+
    ```toml
    [tool.pytest.ini_options]
    asyncio_mode = "auto"
    ```
+
    Then remove the decorators.
 
 **Detection**:
+
 ```bash
 # Step 1: Check if project has asyncio auto-detection
 rg --type toml 'asyncio_mode.*=.*"auto"' pyproject.toml
@@ -246,6 +262,7 @@ rg --type py '@pytest\.mark\.asyncio'
 **Benefit**: Cleaner test code, automatic detection of new async tests without manual decorator addition.
 
 ### 1. Blocking I/O in Async Functions
+
 - **File I/O**: `path.read_text()`, `path.write_text()`, `open()` without async wrappers
 - **Subprocess**: `subprocess.run()`, `subprocess.Popen().communicate()` without await
 - **Network**: `socket.connect()`, `socket.recv()`, `socket.send()` without async wrappers
@@ -254,21 +271,25 @@ rg --type py '@pytest\.mark\.asyncio'
 **Fix**: Use `asyncio.create_subprocess_exec()`, `asyncio.open_connection()`, `asyncio.to_thread()`, or `aiofiles`
 
 ### 2. Deprecated APIs
+
 - **`asyncio.get_event_loop()`**: Deprecated in Python 3.10+
 - **Nested `asyncio.run()`**: Cannot be called from within a running event loop
 
 **Fix**: Use `asyncio.get_running_loop()` instead; only use `asyncio.run()` at top-level entry points
 
 ### 3. Non-Blocking FD Issues
+
 - **Blocking FDs with asyncio**: Must set `O_NONBLOCK` before using with `connect_read_pipe()`/`connect_write_pipe()`
 - **`os.pipe()` without `fcntl` setup**: File descriptors are blocking by default
 
 **Fix**: Use `fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)` before asyncio use
 
 ### 4. Missing Async Primitives
+
 - **Python lacks `asyncio.open_pipe(fd)`**: No high-level API like `open_connection()` for file descriptors
 
 **Fix**: Create helper following `asyncio.open_connection()` pattern (source says "just copy the code"):
+
 ```python
 async def open_write_pipe(fd: int) -> asyncio.StreamWriter:
     import fcntl
@@ -316,6 +337,7 @@ echo "Await statements:" && rg --type py '\bawait\b' | wc -l
 ```
 
 **What to review for each async function:**
+
 1. **Blocking I/O**: Path.read_text(), open(), subprocess.run() in async functions
 2. **Deprecated APIs**: asyncio.ensure_future, @asynccontextmanager issues
 3. **gather vs TaskGroup**: Does it need return values? Best-effort or fail-fast?
@@ -329,6 +351,7 @@ echo "Await statements:" && rg --type py '\bawait\b' | wc -l
 **Primary Method**: Manual code reading of async functions to identify blocking operations.
 
 **Why automation is insufficient**: Determining if an operation blocks requires understanding:
+
 - Library implementation details (does this library use async I/O internally?)
 - Whether operation is truly I/O-bound or CPU-bound
 - Context: is `subprocess.run()` acceptable if it's truly fast and infrequent?

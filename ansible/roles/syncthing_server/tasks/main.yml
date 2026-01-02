@@ -1,6 +1,6 @@
 # GUI lives on http://vps:8384 (WireGuard/Tailscale)
 
-- name: Install syncthing package  # noqa: package-latest
+- name: Install syncthing package # noqa: package-latest
   ansible.builtin.apt:
     name: syncthing
     update_cache: true
@@ -16,7 +16,7 @@
     name: syncthing
     group: syncthing
     comment: Syncthing service account
-    system: false   # regular user, gets /etc/passwd entry
+    system: false # regular user, gets /etc/passwd entry
     home: /srv/syncthing
     shell: /bin/bash
     create_home: true
@@ -47,10 +47,9 @@
 - name: Enable & start syncthing system service
   become: true
   ansible.builtin.systemd:
-    name: syncthing@syncthing   # template instance for the “syncthing” user
+    name: syncthing@syncthing # template instance for the “syncthing” user
     enabled: true
     state: started
-
 # - name: SyncThing server
 #  include_role:
 #    name: rolehippie.syncthing

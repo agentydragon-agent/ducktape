@@ -2,7 +2,7 @@
 # PowerDNS role default variables
 
 # PowerDNS state management
-powerdns_state: present  # present, absent
+powerdns_state: present # present, absent
 
 # Database configuration
 powerdns_db_type: mysql

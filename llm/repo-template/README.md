@@ -3,6 +3,7 @@
 **⚠️ This is a template! When initializing your project, keep only the parts relevant to your language/stack and delete the rest.**
 
 For example:
+
 - Starting a Python project? Keep Python sections, delete C++/Rust/JavaScript sections
 - Building a Rust CLI? Keep Rust sections, delete Python/web sections
 - This README itself should be edited to reflect your actual project
@@ -22,11 +23,13 @@ For example:
 ## Getting Started
 
 1. Install pre-commit hooks (already done):
+
    ```bash
    pre-commit install
    ```
 
 2. Update reference materials:
+
    ```bash
    cd references && ./fetch.sh
    ```
@@ -36,6 +39,7 @@ For example:
 ### Pre-commit Hooks
 
 This repository uses pre-commit hooks to maintain code quality:
+
 - Trailing whitespace removal
 - End of file fixing
 - YAML/JSON/TOML validation
@@ -59,6 +63,7 @@ The `scratch/` directory is for temporary work and experiments. It's gitignored.
 ## 🐍 Python Project Setup [TEAR-OFF IF NOT PYTHON]
 
 ### Directory Structure
+
 ```
 .
 ├── pyproject.toml          # Project configuration
@@ -125,7 +130,9 @@ pip install -e ".[dev]"
 ```
 
 ### Testing Convention
+
 **CRITICAL**: Tests live NEXT TO the code they test:
+
 - `src/mypackage/foo.py` → `src/mypackage/test_foo.py`
 - `src/mypackage/bar/baz.py` → `src/mypackage/bar/test_baz.py`
 - NOT in separate `/tests/` directory
@@ -133,7 +140,9 @@ pip install -e ".[dev]"
 - ONLY as `test_*.py` in the same directory
 
 ### Additional Pre-commit Hooks for Python
+
 Add these to `.pre-commit-config.yaml`:
+
 ```yaml
   - repo: https://github.com/PyCQA/docformatter
     rev: v1.7.5
@@ -161,6 +170,7 @@ Add these to `.pre-commit-config.yaml`:
 ## 🦀 Rust Project Setup [TEAR-OFF IF NOT RUST]
 
 ### Directory Structure
+
 ```
 .
 ├── Cargo.toml             # Project manifest
@@ -174,6 +184,7 @@ Add these to `.pre-commit-config.yaml`:
 ```
 
 ### Initial Setup
+
 ```bash
 # Initialize Rust project
 cargo init --name myproject
@@ -220,6 +231,7 @@ EOF
 ## 📦 JavaScript/TypeScript Setup [TEAR-OFF IF NOT JS/TS]
 
 ### Directory Structure
+
 ```
 .
 ├── package.json           # Project manifest
@@ -232,6 +244,7 @@ EOF
 ```
 
 ### Initial Setup
+
 ```bash
 # Initialize package
 npm init -y
@@ -277,6 +290,7 @@ EOF
 ## 🌐 Generic Language Setup [CUSTOMIZE OR DELETE]
 
 For other languages, ensure you:
+
 1. Set up the standard project structure for that language
 2. Configure the build system (Maven, Gradle, CMake, etc.)
 3. Add language-specific linters to `.pre-commit-config.yaml`

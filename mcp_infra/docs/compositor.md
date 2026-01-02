@@ -126,6 +126,7 @@ Compositor
 5. On exception: `except: await stack.aclose(); raise`
 
 **Cases:**
+
 - Transport creation fails → stack is empty, nothing to clean
 - Client context manager fails → stack cleans up what was added before failure
 - Proxy creation fails → stack cleans up client
@@ -140,6 +141,7 @@ Compositor
 **Proof:**
 
 Python async context manager protocol (PEP 492):
+
 - `__aexit__` is **always** called when exiting `async with` block
 - This holds even if:
   - Body raises exception
@@ -148,6 +150,7 @@ Python async context manager protocol (PEP 492):
   - Body is cancelled (asyncio.CancelledError)
 
 Our implementation:
+
 ```python
 async def __aexit__(self, exc_type, exc_val, exc_tb):
     try:
@@ -178,6 +181,7 @@ async def __aenter__(self) -> Self:
 ```
 
 The check and set happen atomically under `_state_lock`:
+
 1. Thread A acquires lock, checks state (CREATED), sets ACTIVE
 2. Thread B waits for lock
 3. Thread A releases lock
@@ -192,12 +196,14 @@ The check and set happen atomically under `_state_lock`:
 **Proof:**
 
 All mutations happen under `_mount_lock`:
+
 - `mount_inproc()`: checks duplicate, registers mount under lock
 - `mount_server()`: checks duplicate, registers mount under lock
 - `unmount_server()`: gets mount, removes from dict under lock
 - `close()`: snapshots names under lock, unmounts sequentially
 
 **Races prevented:**
+
 - Mount + unmount same server: One sees "already mounted" or "not found"
 - Mount + close: Mount might fail with "closed" or succeed before close sees it
 - Unmount + close: One succeeds, other gets "not found"
@@ -209,21 +215,25 @@ All races result in clear errors, no corruption.
 ## Design Principles
 
 ### 1. Simplicity Over Cleverness
+
 - **ONE type**: `Compositor` (no Handle, no Like union)
 - **ONE state machine**: `CompositorState` enum
 - **ONE cleanup path**: `close()` called by `__aexit__`
 
 ### 2. Exception Safety Everywhere
+
 - Mount setup must cleanup on failure
 - Close must log and continue on per-server failures
 - AsyncExitStack guarantees cleanup order
 
 ### 3. Concurrency Safety Where Needed
+
 - State transitions under lock (double-enter check)
 - Mount/unmount under lock
 - Read-only queries lock-free (use snapshots)
 
 ### 4. Hard to Misuse
+
 - Must use as context manager (runtime check)
 - Cannot double-enter (atomic check under lock)
 - Leak detection via `__del__` warning
@@ -233,6 +243,7 @@ All races result in clear errors, no corruption.
 ### Resource Notifications Architecture
 
 **Notification Flow:**
+
 ```
 Child Server (runtime, etc.)
   └─> ResourceUpdatedNotification(uri="resource://...")
@@ -274,20 +285,24 @@ Child Server (runtime, etc.)
 ## TODOs (Future Enhancements)
 
 ### Documentation
+
 - [ ] Add troubleshooting section for common issues
 
 ### Implementation
+
 - [ ] Add defensive checks in production code
 
 ### Testing
+
 - [ ] Add more comprehensive lifecycle tests (edge cases)
 - [ ] Add performance benchmarks for concurrent mount/unmount
 
 ## Summary
 
 **This design:**
+
 - ✅ Cannot leak containers (proven via AsyncExitStack + exception safety)
 - ✅ Cannot be misused (double-enter prevented, state transitions clear)
 - ✅ Exception-safe (proven via Python guarantees + try/except patterns)
 - ✅ Simple (one type, clear usage, no magic)
-- ✅ Detectable misuse (__del__ warning fires during development)
+- ✅ Detectable misuse (**del** warning fires during development)

@@ -18,18 +18,18 @@ claude_mcp_servers:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-memory"]
     env: {}
-  
+
   firecrawl:
     command: npx
     args: ["-y", "firecrawl-mcp"]
     env:
       FIRECRAWL_API_URL: "http://localhost:3002"
-  
+
   arxiv:
     command: uvx
     args: ["--from", "git+https://github.com/blazickjp/arxiv-mcp-server.git", "arxiv-mcp-server"]
     env: {}
-  
+
   probe:
     command: uvx
     args: ["--from", "git+https://github.com/buger/probe.git", "probe-mcp-server"]
@@ -45,6 +45,7 @@ claude_config_path: "{{ ansible_env.HOME }}/.claude.json"
 ## Example Playbook
 
 ### Check-only mode (default)
+
 ```yaml
 - hosts: localhost
   roles:
@@ -54,6 +55,7 @@ claude_config_path: "{{ ansible_env.HOME }}/.claude.json"
 This will check if MCP servers are configured and fail if they're not.
 
 ### Auto-apply mode
+
 ```yaml
 - hosts: localhost
   roles:
@@ -63,6 +65,7 @@ This will check if MCP servers are configured and fail if they're not.
 ```
 
 ### Custom servers
+
 ```yaml
 - hosts: localhost
   roles:

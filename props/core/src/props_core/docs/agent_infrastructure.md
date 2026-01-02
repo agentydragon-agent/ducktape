@@ -27,6 +27,7 @@ src/adgn/props/
 ### Example Script Tests
 
 All example scripts must:
+
 1. Import from helpers (not duplicate logic)
 2. Work with zero configuration (auto-detect from environment)
 3. Have tests verifying they run correctly

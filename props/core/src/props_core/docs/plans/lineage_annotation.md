@@ -22,6 +22,7 @@ class LineRange(BaseModel):
 ### Jsonnet Helpers (specimens/lib.libsonnet)
 
 Current shorthand support in `occFromEntry()`:
+
 - `123` → single line (no note)
 - `[123, 155]` → range (no note)
 - `[123, "note"]` → single line with **occurrence-level** note
@@ -110,6 +111,7 @@ local toRange(x) =
    - When to use: multi-file occurrences, special context needed
 
 **Usage guidelines:**
+
 - Prefer LineRange notes for simple location labels
 - Use Occurrence notes when multiple files/ranges need collective explanation
 - Don't duplicate rationale - put global explanation in `IssueCore.rationale`
@@ -159,11 +161,13 @@ I.issueWithOccurrences(
 ### 5. Migration Path
 
 **Backward compatibility:**
+
 - Existing specimens without line notes continue to work (note field is optional)
 - Existing occurrence-level notes are unchanged
 - No data migration required for existing issues
 
 **Adoption:**
+
 - New specimens can use line-level notes for clarity
 - Existing specimens can be gradually enhanced if needed
 - Consider line notes when occurrence note would just list locations
@@ -192,25 +196,31 @@ I.issueWithOccurrences(
 ## Alternatives Considered
 
 ### Alternative 1: Dict-based line specs
+
 Use dict form in Jsonnet: `{start: 123, end: 155, note: "text"}`
 
 **Rejected because:**
+
 - More verbose than array shorthand
 - Loses conciseness of current `[start, end]` notation
 - Inconsistent with existing array-based pattern
 
 ### Alternative 2: Separate annotations dict
+
 Keep LineRange simple, add `annotations: dict[tuple[int, int | None], str]` to Occurrence
 
 **Rejected because:**
+
 - Awkward tuple keys in JSON/Jsonnet
 - Complicates lookup and validation
 - Less ergonomic for authoring
 
 ### Alternative 3: Keep everything in occurrence notes
+
 Continue using only occurrence-level notes with inline text
 
 **Rejected because:**
+
 - Causes verbosity in rationale and occurrence notes
 - Makes programmatic extraction harder
 - Doesn't provide structured location context

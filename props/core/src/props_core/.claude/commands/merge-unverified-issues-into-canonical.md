@@ -14,10 +14,10 @@ From context, you should see that we are working with some particular piece of c
 
 We have:
 
-* **Canonical issues** in `issues/*.yaml` where we gather:
-  * canonical descriptions of issues I've validated (should_flag: true),
-  * canonical negatives (should_flag: false).
-* A bunch of other **gathered issue files** in the same directory (freeform). They are unverified and may include duplicates.
+- **Canonical issues** in `issues/*.yaml` where we gather:
+  - canonical descriptions of issues I've validated (should_flag: true),
+  - canonical negatives (should_flag: false).
+- A bunch of other **gathered issue files** in the same directory (freeform). They are unverified and may include duplicates.
 
 ## Main loop
 
@@ -37,15 +37,15 @@ For each gathered issue:
 2. I will decide the disposition:
 
    If it's a true positive (should be in canon):
-   * Create a new YAML issue file in `issues/`.
-   * Choose filename sequentially (iss-###.yaml) and preserve ordering.
-   * Set `should_flag: true`.
-   * Precisely localize with file paths and line ranges.
-   * Write the rationale preserving the important semantics of the user's description.
-   * For multi-file issues: specify `critic_scopes_expected_to_recall` (required).
+   - Create a new YAML issue file in `issues/`.
+   - Choose filename sequentially (iss-###.yaml) and preserve ordering.
+   - Set `should_flag: true`.
+   - Precisely localize with file paths and line ranges.
+   - Write the rationale preserving the important semantics of the user's description.
+   - For multi-file issues: specify `critic_scopes_expected_to_recall` (required).
 
    If it's a canonical negative (false positive):
-   * Create as `should_flag: false` with clear rationale and localized anchors.
+   - Create as `should_flag: false` with clear rationale and localized anchors.
 
    If it's a duplicate or invalid: mark it as such and do not add to canon.
 

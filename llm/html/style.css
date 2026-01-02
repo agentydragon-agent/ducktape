@@ -46,7 +46,7 @@ body {
         visibility: visible !important;
         background-color: var(--color-background);
     }
-    
+
     .offcanvas-lg .offcanvas-body {
         height: 100%;
         overflow-y: auto;
@@ -273,11 +273,11 @@ th {
     .offcanvas {
         width: 300px !important;
     }
-    
+
     .offcanvas-backdrop {
         background-color: rgba(0, 0, 0, 0.5);
     }
-    
+
     /* Ensure hamburger doesn't overlap with navigation header */
     .offcanvas-header {
         padding-left: 60px; /* Space for hamburger button */

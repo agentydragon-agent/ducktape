@@ -35,12 +35,14 @@ wt/
 ## Key Architectural Principles
 
 ### **Client Never Calls GitHub APIs**
+
 - **Strict boundary**: Client-side code cannot import GitHub interfaces
 - **All GitHub operations** delegated to daemon via JSON-RPC
 - **Clean separation** between local operations and remote API calls
 - **Server authority**: All path manipulation logic moved to server
 
 ### **Pure Handler Functions**
+
 - Each handler declares exactly what it needs
 - Easy to test and reason about
 
@@ -56,7 +58,7 @@ def handle_create_worktree(config, name: str, from_master: bool = True) -> None:
 ```python
 # Client sends status request
 {
-    "method": "get_status", 
+    "method": "get_status",
     "id": "uuid-123",
     "params": {"force_refresh": false}
 }
@@ -85,7 +87,7 @@ def handle_create_worktree(config, name: str, from_master: bool = True) -> None:
 }
 
 {
-    "method": "worktree_teleport_target", 
+    "method": "worktree_teleport_target",
     "params": {
         "target_name": "feature",
         "current_path": "/current/working/dir"
@@ -127,4 +129,3 @@ CLI → handlers → WtClient → JSON-RPC → WtDaemon → WorktreeService / Gi
 # Navigation emission (Client-side only)
 CLI receives resolved path from daemon and emits `cd` via client/shell_utils
 ```
-

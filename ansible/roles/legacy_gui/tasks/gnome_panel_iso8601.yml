@@ -3,6 +3,6 @@
   # TODO: dedupe
   community.general.dconf:
     key: "/org/gnome/shell/extensions/panel-date-format/format"
-    value: "'%a %Y-%m-%d %H:%M'"  # e.g.: "Wed 2023-11-15 22:49"
+    value: "'%a %Y-%m-%d %H:%M'" # e.g.: "Wed 2023-11-15 22:49"
   tags:
     - gnome-shell-datetime-format

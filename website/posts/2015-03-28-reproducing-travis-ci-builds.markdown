@@ -17,6 +17,7 @@ broke my build in a way I couldn't reproduce on my own machine.
 Fortunately, Travis CI provides specifications of their build environment
 on their GitHub ([travis-ci/travis-cookbooks](https://github.com/travis-ci/travis-cookbooks)).
 To boot your own Travis VM, just install `vagrant`, and:
+
 ```
 mkdir travis-build
 cd travis-build

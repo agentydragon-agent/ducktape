@@ -9,7 +9,7 @@
   become: true
   ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/99locktimeout
-    mode: '0644'
+    mode: "0644"
     content: |
       DPkg::Lock::Timeout "180";
 
@@ -36,17 +36,17 @@
 - name: Install CLI packages
   become: true
   ansible.builtin.apt:
-    update_cache: true  # deb822_repository doesn't reliably trigger apt cache update
+    update_cache: true # deb822_repository doesn't reliably trigger apt cache update
     pkg:
       # removed 2024-04-13, defaults in pop os:
       #   diffutils
       # See consolidated migration comment above
       - ffmpeg
-      - gnupg-agent  # gnupg moved to Nix, but keeping agent for system integration
+      - gnupg-agent # gnupg moved to Nix, but keeping agent for system integration
       - grep
       - gzip
       - iputils-ping
-      - libsecret-tools  # for secret-tool, for Ansible Vault
+      - libsecret-tools # for secret-tool, for Ansible Vault
       - locate
       - netcat-openbsd
       - pkg-config
@@ -103,7 +103,7 @@
   register: cli_dir_contents
   become: true
   become_user: "{{ cli_effective_user }}"
-  failed_when: false  # Don't fail if directory doesn't exist
+  failed_when: false # Don't fail if directory doesn't exist
 
 - name: Ensure default directories are either absent or empty
   ansible.builtin.file:

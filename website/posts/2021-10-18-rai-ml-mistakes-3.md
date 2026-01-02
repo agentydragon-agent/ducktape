@@ -197,7 +197,7 @@ Evaluation over 10 episodes: 963.088
 God dammit. I was getting *maybe*, on a *lucky episode*, like 300 at most, and
 that was *after millions of training steps*...
 
-### Does it just not work because of Tensorflow?!
+### Does it just not work because of Tensorflow?
 
 Okay, so I have code A which does not work (my code), and code B which does
 (reference implementation). I know what to do here. Align code A and code B
@@ -276,7 +276,7 @@ state" flag:
 ```python
 class ReplayBuffer:
     def __init__(self, state_dim, action_dim, max_size=int(1e6)):
-	# ... snip ...
+ # ... snip ...
         self.reward = tf.Variable(tf.zeros((max_size, )), dtype=tf.float32)
         self.not_done = tf.Variable(tf.zeros((max_size, ), dtype=tf.float32),
                                     dtype=tf.float32)
@@ -287,7 +287,7 @@ And this is how they do it:
 ```python
 class ReplayBuffer(object):
     def __init__(self, state_dim, action_dim, max_size=int(1e6)):
-	# ... snip ...
+ # ... snip ...
         self.reward = np.zeros((max_size, 1))
         self.not_done = np.zeros((max_size, 1))
 ```
@@ -295,7 +295,7 @@ class ReplayBuffer(object):
 What's the difference? I have a vector, a 1-dimensional tensor. They have a
 2-dimensional tensor, with second dimension 1.
 
-### And of course it's goddamn tensor shapes.
+### And of course it's goddamn tensor shapes
 
 And of course it's goddamn tensor shapes.
 
@@ -312,7 +312,7 @@ noise = tf.clip_by_value(noise, -self.noise_clip, self.noise_clip)
 
 next_action = (self.actor_target(next_state) + noise)
 next_action = tf.clip_by_value(next_action, -self.max_action,
-			       self.max_action)
+          self.max_action)
 
 # Compute the target Q value
 target_Q1, target_Q2 = self.critic_target((next_state, next_action))
@@ -359,7 +359,7 @@ with tf.GradientTape() as tape:
 
     # Compute critic loss
     critic_loss = (_mse(current_Q1, target_Q) +
-		   _mse(current_Q2, target_Q))
+     _mse(current_Q2, target_Q))
 
 # Optimize the critic
 self.critic_optimizer.minimize(

@@ -5,7 +5,7 @@
     dest: "{{ installed_version_path }}"
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
 
 - name: Mark fonts updated
   ansible.builtin.set_fact:

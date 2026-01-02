@@ -8,6 +8,7 @@ Use `tmp_path` (or `tmp_path_factory` for broader scope), not raw `tempfile`/man
 Use `monkeypatch` for environment, cwd and sys path changes.
 
 ## Acceptance criteria (checklist)
+
 - Temporary filesystem:
   - Use `tmp_path` for per-test temporary directories; construct paths with `/` and `Path` APIs
   - Use `tmp_path_factory` for module/session-scoped directories when needed
@@ -22,6 +23,7 @@ Use `monkeypatch` for environment, cwd and sys path changes.
 - Use `tmp_path`, not legacy `tmpdir` unless testing code strictly requiring `py.path` (document why).
 
 ## Forbidden
+
 - Hand-rolled cwd managers/context managers; use `monkeypatch.chdir(tmp_path)`
 - Home-grown temp dir helpers or manual `tempfile` + cleanup; use `tmp_path`/`tmp_path_factory` or document why that would not work
 - Home-rolled env mutation; use `monkeypatch.setenv` or `unittest.mock.patch.dict`
@@ -95,10 +97,12 @@ def test_writes_file():
 ```
 
 ## Exceptions
+
 - When testing code that explicitly consumes `py.path` objects, `tmpdir` can be used.
   Prefer migrating the code under test to `pathlib.Path` and `tmp_path` when feasible.
 - If third-party API requires raw `tempfile` handles (e.g., needs a real OS-level fd), document the reason and keep the scope minimal
 
 ## See also
+
 - [PathLike (Python)](./pathlike.md)
 - [Pathlib usage (Python)](./pathlib.md)

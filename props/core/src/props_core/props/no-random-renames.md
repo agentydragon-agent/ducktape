@@ -6,6 +6,7 @@ kind: outcome
 Do not introduce aliases or new names unless they add clear value (disambiguation, collision avoidance, or stronger semantics). Prefer one obvious name per concept and reuse it consistently.
 
 ## Acceptance criteria (checklist)
+
 - No import aliasing without a concrete reason:
   - Disallowed: `import json as j` used only to shorten `json`.
   - Allowed with rationale: name collision (`from httpx import Response as HttpxResponse`), contextual disambiguation (`from foo.api import Response as FooApiResponse`), or to avoid overshadowing a local symbol.
@@ -73,6 +74,7 @@ processor = server       # ❌ misleading name; not a processor
 ```
 
 ## Notes
+
 - Renames should “pay rent”: resolve a collision, remove ambiguity, or increase semantic precision. Otherwise, keep the original name.
 - When you must rename for semantics, migrate fully to the new name in that scope; do not keep both alive.
 - Cross‑refs: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md), [Self‑describing names](./self-describing-names.md), and [Truthfulness](./truthfulness.md).

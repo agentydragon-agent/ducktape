@@ -25,7 +25,6 @@
       - letsencrypt_cert_name is defined
     fail_msg: "letsencrypt_domains (list) and letsencrypt_cert_name (str) are required"
 
-
 # ---------------------------------------------------------------------------
 # Ensure certbot with nginx plugin is installed
 # ---------------------------------------------------------------------------

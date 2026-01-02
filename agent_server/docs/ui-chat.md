@@ -1,7 +1,5 @@
 # ui chat server
 
-
-
 This document describes the chat MCP servers that handle human↔agent messaging. The legacy `ui` server (with `send_message` / `end_turn`) is being retired; forward-looking design routes all chat through the dedicated chat servers plus `loop.yield_turn` for end-of-turn signalling. See also <overview.md> and <../vision.md> for how chat fits into the broader runtime.
 
 ## Architecture snapshot (sidecar model)
@@ -20,6 +18,7 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
 - Resource
   - URI: `ui://chat/inbox`
   - Body (JSON, `application/json`):
+
     ```json
     {
       "last_id": "1700000012345",
@@ -29,6 +28,7 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
       ]
     }
     ```
+
   - Semantics: append‑only; `id` monotonic (snowflake/ULID). Agent‑authored messages appear in the resource but DO NOT produce notifications (no self‑echo).
 
 - Notifications
@@ -45,25 +45,30 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
 ## Sample sequences (dual subscriptions)
 
 Startup/hydration
+
 1) Orchestrator enables chat‑via‑MCP mode and pins a subscription to `ui://chat/inbox`. Human UI also subscribes (or hydrates on view mount).
 2) Orchestrator has a persisted `last_id` → call `chat.read_since({after_id})`; otherwise `resources/read`. Human UI calls `resources/read` to render the current inbox (does not rely on extras).
 3) Orchestrator injects each message (no skipping) in order; persists the new `last_id`. Human UI renders them as they arrive or after read.
 
 New user message
+
 1) Human chat server appends to inbox; emits `notifications/resources/updated uri=ui://chat/inbox`.
 2) Orchestrator (via its sidecar client) receives notify → call `resources/read`/`chat.read_since`, raises a `UserText` event, and reduces it into `UiState`. Human UI receives the same notify and calls `resources/read` to render the inbox (or renders from params.messages[] if provided).
 3) Orchestrator persists new `last_id`.
 
 Agent sends message
+
 1) Runtime calls `chat.assistant.post(...)`; the assistant chat server persists the message but suppresses notifications (no self‑echo). Human clients see it via their own local echo or periodic reads; the human chat server will emit notifications only for messages authored by the human side.
 2) Runtime emits an assistant timeline item (`AssistantMarkdownItem`) so the frontend updates immediately. Optionally mirror the message into the human inbox if you want all parties to rely on the same resource.
 
 Crash/reconnect
+
 1) Orchestrator restarts with persisted `last_id`.
 2) Orchestrator (through the sidecar client) calls `ui.chat_read_since({after_id})` (or windowed `resources/read`) to fetch missed user messages.
 3) Orchestrator injects messages by emitting `UserText` events; persists new `last_id`.
 
 ## Notes
+
 - Preferred path going forward: Dual MCP subscriptions (orchestrator + Human UI) against `ui://chat/inbox`.
 - Minimal UI remains supported (no subscriptions) but is considered transitional.
 - Behavior mirrors <matrix.md> (batched updates, stateless watermarking, no self‑notifications) for future convergence.
@@ -79,6 +84,7 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
 1) Human writes: "Deploy now?" in the UI.
 2) UI backend forwards the message to the orchestrator (out of band) and displays it.
 3) The orchestrator injects the message into the next sampling turn for the model:
+
    ```jsonc
    {
      "messages": [
@@ -86,6 +92,7 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
      ]
    }
    ```
+
 4) Model responds with tool calls (no plain text). Example:
    - Call `ui_send_message({ mime: "text/markdown", content: "Acknowledged. Running deployment…" })`
    - Then call `loop_yield_turn({})` (or, for legacy flows, `ui_end_turn({})`)

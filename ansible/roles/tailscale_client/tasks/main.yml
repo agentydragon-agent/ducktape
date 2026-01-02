@@ -230,9 +230,9 @@
     - tailscale_client_up.rc != 0
     - tailscale_client_registration_required | default(true)
     - not (tailscale_client_headscale_register_result is defined and
-           tailscale_client_headscale_register_result is succeeded and
-           tailscale_client_up_retry is defined and
-           tailscale_client_up_retry.rc == 0)
+      tailscale_client_headscale_register_result is succeeded and
+      tailscale_client_up_retry is defined and
+      tailscale_client_up_retry.rc == 0)
   tags: [tailscale, connect]
 
 - name: Extract machine key from registration output

@@ -36,7 +36,7 @@
   ansible.builtin.copy:
     src: "{{ inventree_compose_source }}/{{ item }}"
     dest: "{{ inventree_project_path }}/{{ item }}"
-    mode: '0644'
+    mode: "0644"
   loop:
     - docker-compose.yml
 
@@ -47,7 +47,7 @@
 - name: Docker compose up for InvenTree
   community.docker.docker_compose_v2:
     project_src: "{{ inventree_project_path }}"
-    pull: always     # pull updated images for stable tag
+    pull: always # pull updated images for stable tag
     recreate: always # pick up any env / compose modifications
   register: inventree_compose
 

@@ -14,6 +14,7 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
 
 1. Copy `custom_components/indoor_aqi` directory to your Home Assistant configuration
 2. Add to your `configuration.yaml`:
+
    ```yaml
    indoor_aqi:
      monitors:
@@ -33,6 +34,7 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
      # Optional: set how long before a sensor reading is considered "stale"
      stale_time: "1:00:00"  # Format: HH:MM:SS or seconds (default: 3600)
    ```
+
 3. Restart Home Assistant.
 
 `dashboard_examples.yaml` has examples of how to display IAQI in dashboards.

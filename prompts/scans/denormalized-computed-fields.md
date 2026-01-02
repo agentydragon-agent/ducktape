@@ -86,6 +86,7 @@ class PaginatedResult(BaseModel):
 **Primary Method**: Manual code reading - understand the domain model and identify which fields are derived from others.
 
 **Why automation is insufficient**: Determining if a field is "computed" vs "independent" requires understanding:
+
 - The semantic relationship between fields (is `completed` derived from `status`?)
 - Whether the computation is trivial (client-side) vs expensive (server-side required)
 - Business rules and domain logic (when is a computed field justified?)
@@ -122,6 +123,7 @@ rg --type py "format_date.*\(.*\.date\)"
 ### Example 1: Habitify Status (✅ Fixed)
 
 **Before**:
+
 ```python
 class StatusResult(BaseModel):
     status: Status
@@ -138,6 +140,7 @@ return StatusResult(
 ```
 
 **After**:
+
 ```python
 class StatusResult(BaseModel):
     status: Status

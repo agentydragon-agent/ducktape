@@ -1,0 +1,10 @@
+# Create harbor namespace so ExternalSecret can be deployed
+# This breaks the circular dependency:
+#   harbor depends on authentik-blueprint-harbor-secret
+#   authentik-blueprint-harbor-secret needs harbor namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: harbor
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

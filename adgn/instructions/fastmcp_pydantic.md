@@ -1,6 +1,7 @@
 # FastMCP tool schemas (Pydantic)
 
 ## Why this matters
+
 - LLMs plan tool calls from the advertised JSON Schema; correct schemas make calls reliable and remove the need to restate parameter shapes in prompt prose.
 - Our adapters surface FastMCP tool schemas directly to the model as OpenAI/Anthropic tool definitions.
 
@@ -42,6 +43,7 @@ class MyServer(EnhancedFastMCP):
 ```
 
 **Key principles:**
+
 - **Input models:** Use `OpenAIStrictModeBaseModel` (validates at class definition time)
 - **Output models:** Use regular Pydantic `BaseModel` (no strict mode requirement)
 - **Tool names:** Derived from function names (no explicit `name=` parameter)
@@ -66,6 +68,7 @@ class MyToolInput(OpenAIStrictModeBaseModel):
 **Validation:** Automatic at class definition time - raises `OpenAIStrictModeValidationError` if incompatible
 
 **Key rules:**
+
 - Use `T | None = None` for optional fields (all fields must be in `required` array)
 - Use `list[T]` not `set[T]` (uniqueItems not allowed)
 - Use `str` not `Path` (format="path" not allowed)
@@ -103,12 +106,14 @@ def delete_item(input: DeleteInput) -> str:
 ```
 
 ## DON'Ts (these degrade/break schema)
+
 - Don't use `dict[str, Any]`, `Any`, `*args`, `**kwargs`, or untyped params for inputs
 - Don't use dataclasses as input (use Pydantic models)
 - Don't use regular `BaseModel` for inputs (use `OpenAIStrictModeBaseModel`)
 - Don't restate the schema in prose; rely on the JSON Schema
 
 - Programmatic: connect directly to your FastMCP server or a Compositor client and list tools
+
 ```python
 # Quick check snippet (in-proc server)
 import asyncio
@@ -125,6 +130,7 @@ async def main():
                 print(t.inputSchema)
 asyncio.run(main())
 ```
+
 - Manual: log/print the schema FastMCP emits (client.list_tools()), confirm:
   - type: "object"
   - properties include your fields (e.g., outcome, summary)
@@ -132,6 +138,7 @@ asyncio.run(main())
   - unions show as oneOf with discriminator
 
 ## Our wiring (FastMCP → OpenAI/Claude)
+
 - We map MCP list_tools into OpenAI/Anthropic tool definitions:
   - name: <server>_<tool>
   - description: FastMCP tool description
@@ -139,6 +146,7 @@ asyncio.run(main())
 - If your tool is correctly typed, the model sees the exact parameter schema and can call it without extra prompt instructions.
 
 ## Common pitfalls and fixes
+
 - Using regular `BaseModel` for inputs → use `OpenAIStrictModeBaseModel` instead
 - Multiple positional params → consolidate into a single input model
 - Using `Path`, `set[T]`, or other strict-mode-incompatible types → use `str`, `list[T]`
@@ -148,10 +156,12 @@ asyncio.run(main())
 # FastMCP + Pydantic: Typed tool I/O (canonical patterns)
 
 ## Scope
+
 - How to define FastMCP tools with precise, validated inputs and stable, typed outputs
 - When to use Pydantic TypeAdapter explicitly (rare)
 
 ## Core rules
+
 - **Inputs:** Use `OpenAIStrictModeBaseModel` for all tool inputs
   - FastMCP parses and validates the inbound dict against your model automatically
   - Auto-validates at class definition time
@@ -163,6 +173,7 @@ asyncio.run(main())
   - Manual TypeAdapter is only for ad-hoc parsing outside FastMCP's auto-path (e.g., tests)
 
 ## Complete example (server with tool)
+
 ```python
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
@@ -199,16 +210,20 @@ class MyServer(EnhancedFastMCP):
 ```
 
 Testing and ad‑hoc parsing (TypeAdapter)
+
 - Use TypeAdapter only when you need to parse a dict/JSON outside a tool (e.g., tests asserting server output):
+
 ```python
 from pydantic import TypeAdapter
 page = TypeAdapter(TextPage).validate_python(payload_dict)
 # or
 page = TypeAdapter(TextPage).validate_json(payload_json)
 ```
+
 - Inside tools: do not call TypeAdapter; FastMCP validates parameters before your function runs, and serializes BaseModel returns to structuredContent.
 
 ## Best practices
+
 - **Input models:** Always use `OpenAIStrictModeBaseModel` (validates at class definition)
 - **Output choice:**
   - Structured → Pydantic model
@@ -219,15 +234,18 @@ page = TypeAdapter(TextPage).validate_json(payload_json)
 - **Server pattern:** Subclass `EnhancedFastMCP`, expose tools as typed attributes
 
 ## When to use TypeAdapter
+
 - Converting free-form JSON (not bound to a tool) into a typed model
 - Validating nested fragments from external APIs
 - Tests asserting on structured payloads
 - **Not in tool bodies:** FastMCP validates inputs automatically
 
 Version notes
+
 - Structured outputs and output schemas are supported in FastMCP ≥ 2.10
 - FastMCP preserves Annotated metadata (include_extras=True), so discriminators are exported in JSON Schema
 
 References
-- FastMCP tools (Pydantic models, structured output, output schemas): https://gofastmcp.com/servers/tools
-- Pydantic v2 TypeAdapter: https://docs.pydantic.dev/latest/usage/validators/#typeadapter
+
+- FastMCP tools (Pydantic models, structured output, output schemas): <https://gofastmcp.com/servers/tools>
+- Pydantic v2 TypeAdapter: <https://docs.pydantic.dev/latest/usage/validators/#typeadapter>

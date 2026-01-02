@@ -12,26 +12,31 @@ This experiment tests language models' ability to learn from raw numerical feedb
 ## Running the Experiment
 
 1. **Set OpenAI API key**:
+
    ```bash
    export OPENAI_API_KEY=your_key_here
    ```
 
 2. **Test setup** (quick validation):
+
    ```bash
    python oneoff__test_llm_rl_minimal.py
    ```
 
 3. **Quick test** (verify all models work):
+
    ```bash
    python oneoff__llm_rl_quick_test.py
    ```
+
    - Tests all 3 models on 2 environments with minimal runs
 
 4. **Run full experiment**:
+
    ```bash
    python oneoff__llm_rl_experiment.py
    ```
-   
+
    - Runs 180 experiments total (3 models × 6 environments × 10 runs)
    - Parallelized with concurrency limit of 10 to avoid API overload
    - Each environment uses appropriate episode length (100-500 steps)
@@ -49,11 +54,13 @@ This experiment tests language models' ability to learn from raw numerical feedb
 ## Analyzing Results
 
 To analyze action distributions and state visitation patterns:
+
 ```bash
 python oneoff__analyze_trajectories.py llm_rl_trajectories_TIMESTAMP.jsonl
 ```
 
 This generates:
+
 - Console output with average rewards and action statistics
 - `llm_rl_trajectories_TIMESTAMP_action_dist.png` - Action distribution heatmaps
 

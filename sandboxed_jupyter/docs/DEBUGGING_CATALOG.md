@@ -28,7 +28,7 @@ Use these to triage sandbox issues, MCP stdio protocol, kernel behavior, and Jup
   - Tail "$WS/logs/jupyter.out" and "$WS/logs/jupyter.err"
   - In wrapper mode: <RUN_ROOT>/runtime/jupyter_server.* under RUN_ROOT
 - API reachability (token-protected)
-  - curl -s "http://127.0.0.1:${PORT}/api" -H "Authorization: token ${TOKEN}" | head -c 200
+  - curl -s "<http://127.0.0.1:${PORT}/api>" -H "Authorization: token ${TOKEN}" | head -c 200
 - Startup readiness
   - socket connect loop to 127.0.0.1:${PORT}
 
@@ -82,6 +82,7 @@ PY
 
 - Inspect environment and paths from inside the kernel
   - cell_source:
+
     ```python
     import os, sys, pathlib
     print("CWD:", os.getcwd())
@@ -89,6 +90,7 @@ PY
     print("SYS.PATH:", sys.path)
     print("CAN WRITE WS?", (pathlib.Path(".mcp/test.txt").write_text("x"), True))
     ```
+
 - Attempt controlled writes
   - WORKSPACE write (should succeed): touch WS/.mcp/ok
   - RUN_ROOT write (should succeed): touch "$RUN_ROOT"/runtime/ok
@@ -100,7 +102,7 @@ PY
   - python - <<'PY'
 import socket; s=socket.socket(); s.connect(("127.0.0.1", PORT)); print("ok")
 PY
-- External egress (if allowed): curl https://example.com (should fail when tightened)
+- External egress (if allowed): curl <https://example.com> (should fail when tightened)
 
 ## Verbosity & tracing
 
@@ -114,7 +116,7 @@ PY
 - Wrapper tee logs
   - <RUN_ROOT>/mcp_stdout.log and mcp_stderr.log (latest)
 - Jupyter logs
-  - $WS/logs/* or RUN_ROOT/runtime/jupyter_server.*
+  - $WS/logs/*or RUN_ROOT/runtime/jupyter_server.*
 - Save useful tails on failure to tmp_path for inspection
 
 ## Common failure patterns

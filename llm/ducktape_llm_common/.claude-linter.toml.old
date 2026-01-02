@@ -84,7 +84,7 @@ quality_gate = true
 # Test file patterns
 test_patterns = [
     "**/test_*.py",
-    "**/*_test.py", 
+    "**/*_test.py",
     "**/tests/**/*.py"
 ]
 

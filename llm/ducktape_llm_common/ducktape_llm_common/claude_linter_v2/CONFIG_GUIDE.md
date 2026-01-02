@@ -5,7 +5,9 @@ This directory contains example configuration files for Claude Linter v2, showin
 ## Configuration Files
 
 ### 1. `example-config.toml` - Complete Reference
+
 A comprehensive configuration file that lists **every available option** with detailed comments explaining:
+
 - What each option does
 - Default values
 - Valid choices
@@ -14,7 +16,9 @@ A comprehensive configuration file that lists **every available option** with de
 Use this as a reference when creating your own configuration.
 
 ### 2. `example-config-minimal.toml` - Quick Start
+
 A minimal configuration for getting started quickly:
+
 - Blocks access to sensitive files (.env, node_modules)
 - Allows Python editing
 - Enables auto-formatting
@@ -23,7 +27,9 @@ A minimal configuration for getting started quickly:
 Perfect for local development environments.
 
 ### 3. `example-config-production.toml` - Production Lockdown
+
 A strict configuration for production environments:
+
 - Default-deny access control
 - Explicitly allowed paths only
 - No shell commands except specific safe ones
@@ -35,6 +41,7 @@ Use this as a starting point for secure production deployments.
 ## Key Configuration Sections
 
 ### Access Control
+
 ```toml
 [[access_control]]
 path_pattern = "**/.env"
@@ -43,6 +50,7 @@ message = "Optional explanation"
 ```
 
 ### Predicate Rules
+
 ```toml
 [[repo_rules]]
 predicate = "Edit('**/*.py') and not Edit('**/migrations/**')"
@@ -51,6 +59,7 @@ reason = "Python files can be edited except migrations"
 ```
 
 ### Python Settings
+
 ```toml
 [python.hard_blocks]
 bare_except = true      # Block bare except:
@@ -59,6 +68,7 @@ barrel_init = true      # Block barrel __init__.py patterns
 ```
 
 ### Hook Behaviors
+
 ```toml
 [hooks.post]
 auto_fix = true
@@ -71,6 +81,7 @@ quality_gate = true  # Prevent stopping with errors
 ## Using a Configuration
 
 1. **Create your config file** based on one of the examples:
+
    ```bash
    cp example-config-minimal.toml ~/.claude-linter.toml
    ```
@@ -78,10 +89,11 @@ quality_gate = true  # Prevent stopping with errors
 2. **Edit the configuration** to match your needs
 
 3. **Use with Claude Linter**:
+
    ```bash
    # Specify config file
    cl2 check --config ~/.claude-linter.toml
-   
+
    # Or set environment variable
    export CLAUDE_LINTER_CONFIG=~/.claude-linter.toml
    ```
@@ -98,6 +110,7 @@ quality_gate = true  # Prevent stopping with errors
 ## Common Patterns
 
 ### Allow Specific Tools
+
 ```toml
 # Only allow reading
 [[repo_rules]]
@@ -111,6 +124,7 @@ action = "allow"
 ```
 
 ### Time-based Rules
+
 ```toml
 [[repo_rules]]
 predicate = "Write('logs/**') and time.hour >= 9 and time.hour <= 17"
@@ -119,6 +133,7 @@ reason = "Log writes only during business hours"
 ```
 
 ### File Size Limits
+
 ```toml
 [[repo_rules]]
 predicate = "Write(path) and file_size(path) < 1048576"

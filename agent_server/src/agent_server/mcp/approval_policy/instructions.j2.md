@@ -13,41 +13,45 @@ For user convenience, you can author small, reviewable updates ("proposals") tha
 
 ## Approvals and Execution Flow
 
-- Your scaffold runs each tool call through an approval policy before executing it. The policy returns a decision:
-  - `.ALLOW` (auto-approve without blocking on user approval)
-  - `.DENY_CONTINUE` (deny but automatically continue agent's turn)
-  - `.DENY_ABORT` (deny and abort turn, yielding control to user)
-  - `.ASK` (synchronously block tool execution, awaiting user's manual one-off approval)
-- The approval policy MCP server manages the active policy source. Read it via the MCP resource and manage changes through the MCP tools/APIs.
-- Approval policy may be changed via user's manual edit, or via a proposal you write and user accepts.
-  - If current approval policy denies commands you need to complete your task, send proposals to widen the policy to allow you to continue.
-  - Also send proposals to widen the policy to "allow" to allow you to complete tasks without waiting for manual approval.
+* Your scaffold runs each tool call through an approval policy before executing it. The policy returns a decision:
+  * `.ALLOW` (auto-approve without blocking on user approval)
+  * `.DENY_CONTINUE` (deny but automatically continue agent's turn)
+  * `.DENY_ABORT` (deny and abort turn, yielding control to user)
+  * `.ASK` (synchronously block tool execution, awaiting user's manual one-off approval)
+* The approval policy MCP server manages the active policy source. Read it via the MCP resource and manage changes through the MCP tools/APIs.
+* Approval policy may be changed via user's manual edit, or via a proposal you write and user accepts.
+  * If current approval policy denies commands you need to complete your task, send proposals to widen the policy to allow you to continue.
+  * Also send proposals to widen the policy to "allow" to allow you to complete tasks without waiting for manual approval.
 
 ## Accessing the Approval Policy
 
-- Read the current approval policy from the approval policy MCP resource (text/x-python): `{{ TRUSTED_POLICY_URL }}`.
-- You are notified of policy changes (from user edits or approved proposals) via MCP ResourceUpdated notifications for the same resource URI.
+* Read the current approval policy from the approval policy MCP resource (text/x-python): `{{ TRUSTED_POLICY_URL }}`.
+* You are notified of policy changes (from user edits or approved proposals) via MCP ResourceUpdated notifications for the same resource URI.
 
 ### Writing Approval Policies
 
 Approval policies are standalone Python programs executed inside Docker. The program reads a single JSON object from stdin and writes a single JSON object to stdout.
 
 Input JSON (stdin):
+
 ```json
 { "name": "<server>_<tool>", "arguments": { /* tool args */ } }
 ```
 
 Output JSON (stdout):
+
 ```json
 { "decision": "allow|deny_continue|deny_abort|ask", "rationale": "optional explanation" }
 ```
 
 Notes:
-- The evaluator ALWAYS runs in Docker. The image must have the `agent_server` package installed; import types from `agent_server.policies.policy_types` and naming helpers from `mcp_infra.naming`.
-- Your program must print exactly one JSON object to stdout and exit 0. Non‑zero exit or invalid JSON is treated as an error.
-- Do not swallow exceptions; let them surface to make failures visible and fixable.
+
+* The evaluator ALWAYS runs in Docker. The image must have the `agent_server` package installed; import types from `agent_server.policies.policy_types` and naming helpers from `mcp_infra.naming`.
+* Your program must print exactly one JSON object to stdout and exit 0. Non‑zero exit or invalid JSON is treated as an error.
+* Do not swallow exceptions; let them surface to make failures visible and fixable.
 
 Minimal example (with helpers):
+
 ```python
 import sys
 from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
@@ -66,32 +70,35 @@ print(PolicyResponse(decision=decision, rationale=reason).model_dump_json())
 
 ### Failure Handling
 
-- If the policy program exits non‑zero, times out, or prints invalid JSON, the call is treated as a policy evaluation error.
-- A small default policy program is packaged with `agent_server` and preloaded as initial content; evaluation still happens inside Docker.
+* If the policy program exits non‑zero, times out, or prints invalid JSON, the call is treated as a policy evaluation error.
+* A small default policy program is packaged with `agent_server` and preloaded as initial content; evaluation still happens inside Docker.
 
 ### Proposing Policy Updates
 
 Author proposals via the approval policy MCP server and let the UI surface them.
 
-- Create a proposal using the server’s tools or the HTTP API; provide complete policy program content (stdin→stdout JSON).
-- The UI lists proposals for review and approval; on approval, the server activates the policy immediately.
+* Create a proposal using the server’s tools or the HTTP API; provide complete policy program content (stdin→stdout JSON).
+* The UI lists proposals for review and approval; on approval, the server activates the policy immediately.
 
 Notes:
-- Keep proposals small and reviewable; describe the intent in comments in the policy program.
+
+* Keep proposals small and reviewable; describe the intent in comments in the policy program.
 
 ### Source Code Reference
 
 Reference the `agent_server` package APIs when composing policies; no container mounts are assumed. For examples, see:
-- `agent_server.policies.default_policy` (packaged minimal policy program)
-- `agent_server.policies.approve_all` (approve-all example)
+
+* `agent_server.policies.default_policy` (packaged minimal policy program)
+* `agent_server.policies.approve_all` (approve-all example)
 
 ## Best practices
 
 ### Be Aware of Current Policy
 
 Read the current approval policy via the MCP resource before sending tool calls or preparing proposals. This will help you:
-- Compose tool calls that will be smoothly auto-approved
-- Ensure your proposed policy edits are small, easily reviewable and correct
+
+* Compose tool calls that will be smoothly auto-approved
+* Ensure your proposed policy edits are small, easily reviewable and correct
 
 ### Least Privilege
 
@@ -116,10 +123,10 @@ Coordinate with user; propose policy changes enabling exactly the needed additio
 
 For example:
 
-- If you foresee a need to download GitHub code, you might propose:
-  - Allowing execution of curl that has exactly one `GET` request to `^https?://github.com/.*` with network enabled, without broadening the sandbox elsewhere.
-- If running pytests that write to a specific test directory, you might propose:
-  - Allowing writing into that path if running pytest plus expected easily checked options with that specific cwd.
-  - Running with environment variables overwriting temporary path to an already approved writeable location.
+* If you foresee a need to download GitHub code, you might propose:
+  * Allowing execution of curl that has exactly one `GET` request to `^https?://github.com/.*` with network enabled, without broadening the sandbox elsewhere.
+* If running pytests that write to a specific test directory, you might propose:
+  * Allowing writing into that path if running pytest plus expected easily checked options with that specific cwd.
+  * Running with environment variables overwriting temporary path to an already approved writeable location.
 
 This benefits the user by letting you run long uninterrupted action sequences with the confidence of sandboxing/permission gating, while allowing the flexibility of configuring additional permissions on the fly.

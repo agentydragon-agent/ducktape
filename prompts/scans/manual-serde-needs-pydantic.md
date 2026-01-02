@@ -1,6 +1,7 @@
 # Scan: Manual Serialization Patterns That Should Use Pydantic
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -41,11 +42,13 @@ def __init__(self, container_files: list[ContainerFile]):
 ```
 
 **When is `list[dict]` OK?**
+
 - **I/O boundaries**: Reading JSON from external API, files
 - **Dynamic schemas**: Keys/structure not known at development time
 - **Passthrough**: Just forwarding data unchanged
 
 **When is `list[dict]` BAD?**
+
 - **Internal code**: Passing structured data between functions
 - **Known structure**: Keys are documented/expected
 - **Validation needed**: Structure should be enforced
@@ -192,6 +195,7 @@ def parse_event(raw: str) -> EventPayload:
 ## When Pydantic Adds Value
 
 Use Pydantic when you have:
+
 - **Validation needs**: Type checking, constraints, custom validators
 - **Nested structures**: Complex object hierarchies
 - **Serialization**: Need JSON/dict conversion with proper type handling
@@ -211,6 +215,7 @@ Use Pydantic when you have:
 **Note**: This scan has high false positives (many dict literals are legitimate at I/O boundaries), but you must still process all results to ensure comprehensive review.
 
 **Key questions for manual review**:
+
 1. Is this I/O boundary or internal code passing data?
 2. Are keys known at development time?
 3. Is there documentation of dict structure in docstrings? (RED FLAG)
@@ -221,6 +226,7 @@ Use Pydantic when you have:
 **Tool**: `prompts/scans/scan_manual_serde.py` - AST-based scanner for dict literals and Pydantic model analysis
 
 **What it finds**:
+
 1. **Dict literals with string keys** - All `{"key": value}` constructions in the codebase
    - Surfaces candidates for manual composition that should be Pydantic `__init__` calls
    - Particularly useful when dict is in internal code (not I/O boundary)
@@ -229,6 +235,7 @@ Use Pydantic when you have:
    - You can identify: overlapping fields, duplicate field sets, single-field models, opportunities for shared sub-models
 
 **Usage**:
+
 ```bash
 # Run on entire codebase
 python prompts/scans/scan_manual_serde.py . > serde_scan.json
@@ -241,6 +248,7 @@ python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
 ```
 
 **Output structure**:
+
 - `summary`: Counts of dict literals and models found
 - `dict_literals`: Dict mapping file paths to lists of `{line, col, keys, context}`
 - `pydantic_models`: Dict mapping file paths to lists of `{line, name, fields}`
@@ -292,6 +300,7 @@ cat serde_scan.json | jq '.pydantic_models | to_entries[] | {file: .key, models:
 ```
 
 **Tool characteristics**:
+
 - **Dict literal finding**: ~100% recall (finds all dict literals), ~20% precision (most are legitimate)
 - **Model field extraction**: ~100% recall (finds all BaseModel classes and their fields)
 - **False positives are expected**: This is a discovery tool, not a verdict
@@ -299,6 +308,7 @@ cat serde_scan.json | jq '.pydantic_models | to_entries[] | {file: .key, models:
 - **You do the analysis**: Tool surfaces raw data; you analyze overlaps, duplicates, single-field models
 
 **What the tool CANNOT tell you** (requires your judgment):
+
 - Whether a dict literal is at an I/O boundary (legitimate) or internal code (suspicious)
 - Whether overlapping fields indicate poor design or intentional separation of concerns
 - Whether a single-field model is a useful abstraction or unnecessary wrapper
@@ -353,6 +363,7 @@ rg --type py "return \{.*:" --multiline  # Look for manual dict returns
 ### AST-Based Discovery (Optional)
 
 Build tool that flags dataclasses with manual serde methods:
+
 - Visit ClassDef nodes with `@dataclass` decorator
 - Check for `to_dict()`, `from_dict()`, or `asdict()` methods
 - Flag for manual review
@@ -384,6 +395,7 @@ row = AgentRowDB.model_validate(db_row_dict)
 ## Fix Strategy
 
 ### Step 1: Identify the data structure
+
 - What fields exist?
 - What types are they?
 - Any validation rules?
@@ -433,9 +445,10 @@ output = obj.model_dump_json()
 - **Legacy compatibility**: Need exact dict behavior for external API
 
 In these cases, consider:
+
 - TypedDict for static typing without validation
 - Plain dicts with explicit type hints
-- Custom __init__ with targeted validation
+- Custom **init** with targeted validation
 
 ## Validation
 
@@ -459,6 +472,7 @@ mypy path/to/file.py
 ## Pydantic Features Reference
 
 ### Model Validation
+
 ```python
 Model.model_validate(dict)           # From dict
 Model.model_validate_json(str)       # From JSON string
@@ -466,6 +480,7 @@ Model.model_validate_strings(dict)   # Coerce strings to types
 ```
 
 ### Serialization
+
 ```python
 model.model_dump()                   # To dict (Python objects)
 model.model_dump(mode="json")        # To JSON-compatible dict
@@ -475,6 +490,7 @@ model.model_dump(by_alias=True)      # Use aliases
 ```
 
 ### Field Configuration
+
 ```python
 Field(default=...)                   # Default value
 Field(default_factory=...)           # Default factory
@@ -485,6 +501,7 @@ Field(gt=0, le=100)                  # Constraints
 ```
 
 ### Validators
+
 ```python
 @field_validator('email')
 @classmethod

@@ -1,6 +1,7 @@
 # Scan: Trivial Forwarder Methods
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -33,6 +34,7 @@ class DataProcessor:
 **Primary Method**: Manual code reading to determine if method adds semantic value.
 
 **Why automation is insufficient**:
+
 - "Trivial" depends on architectural intent (facade pattern, interface compliance)
 - Some forwarders exist for valid reasons (API stability, dependency injection points)
 - Properties vs direct attributes often intentional (future extensibility)

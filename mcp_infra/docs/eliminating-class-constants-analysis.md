@@ -15,6 +15,7 @@
 ### Current Architecture
 
 **Fixture hierarchy** (from `tests/conftest.py`):
+
 ```python
 # Line 314-335: Factory fixtures return context managers
 @pytest.fixture
@@ -30,6 +31,7 @@ def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
 ```
 
 **Test usage** (from `tests/agent/test_approval_integration.py:31`):
+
 ```python
 # Steps are constructed BEFORE entering the compositor context
 mock = make_step_runner(steps=[EchoCall("test"), AssistantMessage("done")])
@@ -41,6 +43,7 @@ async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, pol
 ```
 
 **Steps use constants** (from `tests/support/steps.py:18,203-204`):
+
 ```python
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 
@@ -55,11 +58,13 @@ class EchoCall:
 ### Why This Pattern Exists
 
 **Lifecycle separation:**
+
 1. **Test function body:** Construct step sequences (declarative test scenario)
 2. **Async context entry:** Create compositor, mount servers
 3. **Agent.run():** Execute steps against live servers
 
 **Constants are necessary because:**
+
 - Steps are Python objects constructed in synchronous test code
 - Server instances don't exist yet (they're created inside async context managers)
 - Steps need to reference tool names NOW, but servers only exist LATER
@@ -67,6 +72,7 @@ class EchoCall:
 ### Could We Refactor?
 
 **Option A: Pass server instances to step constructors**
+
 ```python
 # BROKEN: servers don't exist yet!
 async with make_pg_compositor({"echo": echo_server}) as (client, engine):
@@ -75,6 +81,7 @@ async with make_pg_compositor({"echo": echo_server}) as (client, engine):
 ```
 
 **Option B: Make steps factories/lambdas**
+
 ```python
 # Possible but verbose and loses declarative clarity
 steps = [
@@ -84,6 +91,7 @@ steps = [
 ```
 
 **Option C: Extract tool names from fixtures after mounting**
+
 ```python
 # Possible but adds complexity - need to thread servers through fixtures
 @pytest.fixture
@@ -101,6 +109,7 @@ async def test_foo(echo_with_metadata):
 ### Recommendation
 
 **Keep class constants for test steps.** The declarative pattern is valuable:
+
 - Test scenarios are readable: `[EchoCall("test"), AssistantMessage("done")]`
 - Construction happens before server lifecycle
 - Constants are compile-time safe (typos caught by IDE/mypy)
@@ -116,6 +125,7 @@ async def test_foo(echo_with_metadata):
 ### Current Usage
 
 **Initialization order** (from `src/adgn/git_commit_ai/agent_backend.py:218-232`):
+
 ```python
 async with Compositor() as comp:
     # 1. Servers are created and mounted FIRST
@@ -132,6 +142,7 @@ async with Compositor() as comp:
 ```
 
 **Helper pattern using string literals** (from `src/adgn/git_commit_ai/agent_backend.py:56-57`):
+
 ```python
 def make_commit_bootstrap_calls(
     builder: TypedBootstrapBuilder,
@@ -149,6 +160,7 @@ def make_commit_bootstrap_calls(
 **KEY FINDING: Servers are mounted BEFORE bootstrap construction!**
 
 The initialization order is:
+
 1. Create compositor
 2. Create and mount servers
 3. Construct bootstrap calls (servers exist here!)
@@ -156,9 +168,10 @@ The initialization order is:
 
 **This means bootstrap helpers CAN receive server instances:**
 
-### Can We Use Server Instances? YES!
+### Can We Use Server Instances? YES
 
 **Current state (string literals - DoD violation):**
+
 ```python
 # From src/adgn/git_commit_ai/agent_backend.py:54-68
 def make_commit_bootstrap_calls(
@@ -174,6 +187,7 @@ def make_commit_bootstrap_calls(
 ```
 
 **Proposed refactoring (pass server instance):**
+
 ```python
 def make_commit_bootstrap_calls(
     builder: TypedBootstrapBuilder,
@@ -192,12 +206,14 @@ bootstrap_calls = make_commit_bootstrap_calls(builder, GIT_RO_SERVER_NAME, git_s
 ```
 
 **Benefits:**
+
 - No string literals (satisfies DoD)
 - Type-safe tool access (`server.tool.name`)
 - Eliminates fragile introspection (current helpers use runtime tool discovery)
 - Consistent with production code pattern
 
 **Current fragile introspection** (from `agent_core/src/agent_core/bootstrap.py`):
+
 ```python
 # Current helpers introspect at runtime (can fail!)
 models = introspect_server_models(exec_server)
@@ -213,6 +229,7 @@ exec_tool_name = exec_tools[0]  # Hope we got the right one!
 ### Recommendation
 
 **Refactor bootstrap to use server instances!** This eliminates the need for class constants in bootstrap:
+
 - Server instances ARE available at bootstrap construction time
 - Can use typed tool attributes: `server.tool.name`
 - More reliable than current introspection pattern
@@ -231,6 +248,7 @@ exec_tool_name = exec_tools[0]  # Hope we got the right one!
 ### Current Usage
 
 **Templates rendered INSIDE async functions** (from `props/src/props/critic/critic.py:456-468`):
+
 ```python
 async def _build_critic_instructions() -> str:
     """Build critic system instructions by rendering template."""
@@ -247,6 +265,7 @@ agent = await Agent.create(..., dynamic_instructions=_build_critic_instructions)
 ```
 
 **Template rendering helper** (from `props/src/props/prompts/util.py:64-67`):
+
 ```python
 def render_prompt_template(name: str, **ctx: object) -> str:
     env = get_templates_env()
@@ -259,6 +278,7 @@ def render_prompt_template(name: str, **ctx: object) -> str:
 **KEY FINDING: Templates are rendered AFTER servers are mounted!**
 
 The rendering flow is:
+
 1. Create compositor
 2. Mount servers
 3. Define `async def _build_critic_instructions()` that renders template
@@ -270,6 +290,7 @@ The rendering flow is:
 ### Could We Use Server Instances?
 
 **YES! Pass servers to template context:**
+
 ```python
 # Current (no servers passed):
 return render_prompt_template(
@@ -291,6 +312,7 @@ return render_prompt_template(
 ```
 
 **Benefits:**
+
 - No string literals in templates
 - Type-safe tool access from server instances
 - Consistent with bootstrap and production code patterns
@@ -302,6 +324,7 @@ Some templates ARE rendered at module import (e.g., `engine.py:384` for policy i
 ### Recommendation
 
 **Refactor agent prompt templates to use server instances!** Most templates are rendered after servers are mounted:
+
 - Pass server instances in render context
 - Use `{{ server.tool.name }}` in templates
 - Eliminates string literals from agent prompts
@@ -319,6 +342,7 @@ Some templates ARE rendered at module import (e.g., `engine.py:384` for policy i
 ### Current Construction Timing
 
 **Current pattern** (from `tests/agent/test_approval_integration.py:30-36`):
+
 ```python
 # Steps constructed FIRST (test body, before compositor context)
 mock = make_step_runner(steps=[EchoCall("test"), AssistantMessage("done")])
@@ -334,6 +358,7 @@ async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, _):
 **Is there a technical constraint preventing reordering?**
 
 Let me check:
+
 1. ✅ Test function is async (can await compositor first)
 2. ✅ `make_step_runner` is just a factory (no special timing requirement)
 3. ✅ Steps are dataclasses (no initialization dependencies)
@@ -362,6 +387,7 @@ async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, com
 ```
 
 **Step constructor would change:**
+
 ```python
 @dataclass
 class EchoCall:
@@ -377,12 +403,14 @@ class EchoCall:
 ```
 
 **Benefits:**
+
 - No class constants needed
 - Type-safe tool access from server instances
 - Still declarative and readable
 - Consistent with bootstrap/templates/production patterns
 
 **Required changes:**
+
 1. Enhance fixtures to expose server instances (easy - add to context manager return)
 2. Update step constructors to accept server instances (easy - add parameter)
 3. Update ~50+ test files to reorder construction (tedious but straightforward)
@@ -404,6 +432,7 @@ class EchoCall:
 **User confirmed:** Policy evaluation runs in Docker, constructs tool patterns to match against. Cannot easily get server instances.
 
 **From `src/adgn/mcp/approval_policy/instructions.j2.md:28-64`:**
+
 ```markdown
 Read the current approval policy from: {{ TRUSTED_POLICY_URL }}
 
@@ -420,6 +449,7 @@ if tool_matches(req.name, server="resources", tool="read"):
 ```
 
 **Policy programs use string matching:**
+
 - Must match `"<server>_<tool>"` format
 - No access to server instances (runs in isolated container)
 - Needs constants for reliable matching
@@ -435,6 +465,7 @@ if tool_matches(req.name, server="runtime", tool="exec"):
 ```
 
 **Cannot use server instances:**
+
 - Policy runs in ephemeral Docker container
 - No MCP connection to live servers
 - Only has tool name string from request
@@ -442,6 +473,7 @@ if tool_matches(req.name, server="runtime", tool="exec"):
 ### Recommendation
 
 **Policy evaluation MUST use class constants.** This is non-negotiable:
+
 - Isolated execution environment
 - String-based tool matching
 - No server instances available
@@ -453,12 +485,14 @@ if tool_matches(req.name, server="runtime", tool="exec"):
 **Investigation question:** Which class constants does policy eval actually use?
 
 **Two sources to check:**
+
 1. Policy engine itself (`agent_server/src/agent_server/mcp/approval_policy/engine.py`)
 2. **Default/packaged policies** that ship with the system (`agent_server/src/agent_server/policies/`)
 
 #### Engine Constants Usage
 
 **Template rendering context** (lines 395-401):
+
 ```python
 def _load_instructions() -> str:
     raw = resources.files(__package__).joinpath("instructions.j2.md").read_text(encoding="utf-8")
@@ -473,6 +507,7 @@ def _load_instructions() -> str:
 ```
 
 **Self-check usage** (line 516):
+
 ```python
 self.self_check(content)
 # Which calls run_policy_source with:
@@ -482,6 +517,7 @@ input_payload=PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, "send_messa
 #### Default Policy Constants Usage
 
 **From `agent_server/src/agent_server/policies/default_policy.py`:**
+
 ```python
 from mcp_infra.constants import RESOURCES_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from agent_server.mcp.ui.server import END_TURN_TOOL_NAME, SEND_MESSAGE_TOOL_NAME
@@ -498,6 +534,7 @@ def decide(req: PolicyRequest) -> PolicyResponse:
 ```
 
 **ACTUAL constants used by default policy:**
+
 - ✅ `UI_MOUNT_PREFIX` - mount prefix (from `_shared/constants`)
 - ✅ `RESOURCES_MOUNT_PREFIX` - mount prefix (from `_shared/constants`)
 - ✅ `SEND_MESSAGE_TOOL_NAME` - **UI server tool constant!**
@@ -506,10 +543,12 @@ def decide(req: PolicyRequest) -> PolicyResponse:
 #### Summary of Constants Usage
 
 **Constants USED by baked-in default policy:**
+
 - Mount prefixes: `UI_MOUNT_PREFIX`, `RESOURCES_MOUNT_PREFIX`
 - UI server tool names: `SEND_MESSAGE_TOOL_NAME`, `END_TURN_TOOL_NAME`
 
 **Constants currently DEFINED but NOT used by default policy:**
+
 - Runtime/exec constants: `DEFAULT_EXEC_TOOL_NAME`, `CONTAINER_INFO_URI`
 - Resources server constants: `SUBSCRIPTIONS_INDEX_URI`
 - Chat server constants: `CHAT_HEAD_URI`, `CHAT_LAST_READ_URI`, etc.
@@ -520,6 +559,7 @@ def decide(req: PolicyRequest) -> PolicyResponse:
 **KEY FINDING:**
 
 Default policy uses:
+
 - ✅ **Mount prefix constants** (for all servers it checks)
 - ✅ **UI server tool name constants** (for allow-list matching)
 - ❌ **Runtime/exec constants** (not referenced)
@@ -531,6 +571,7 @@ Default policy uses:
 While the default policy DOES use some server class constants (UI server tool names), it doesn't use constants from MOST servers. Many of the constants we're defining (runtime exec, resources, chat, etc.) are not used by the default policy.
 
 **Test policies also use constants:** Test policies in `tests/agent/testdata/approval_policy/` use:
+
 - `WellKnownTools.SEND_MESSAGE`, `WellKnownTools.SANDBOX_EXEC` (enum in `approvals.py`)
 - `UI_MOUNT_PREFIX`, `SEATBELT_EXEC_MOUNT_PREFIX` (mount prefixes)
 - Note: `WellKnownTools` is a StrEnum that duplicates tool name strings from server classes
@@ -560,6 +601,7 @@ While the default policy DOES use some server class constants (UI server tool na
 **1. Bootstrap Helpers**
 
 Servers are mounted BEFORE bootstrap construction:
+
 ```python
 # Current (string literals):
 def make_commit_bootstrap_calls(builder, server: str, ...):
@@ -573,6 +615,7 @@ def make_commit_bootstrap_calls(builder, mount_prefix: str, git_server: GitServe
 **2. Prompt Templates**
 
 Templates rendered AFTER servers are mounted (inside async functions):
+
 ```python
 # Current (no servers):
 return render_prompt_template(
@@ -593,6 +636,7 @@ return render_prompt_template(
 **3. Test Fixtures**
 
 Tests can reorder code to construct steps AFTER servers are mounted:
+
 ```python
 # Current (steps before servers):
 mock = make_step_runner(steps=[EchoCall("test")])
@@ -615,6 +659,7 @@ async with make_pg_compositor(...) as (mcp_client, compositor):
 **HOWEVER:** Default policy uses only a SUBSET of server constants!
 
 **Audit findings:**
+
 - Policy eval engine uses: `UI_MOUNT_PREFIX` (for self-check test function name)
 - Default policy uses:
   - ✅ Mount prefixes: `UI_MOUNT_PREFIX`, `RESOURCES_MOUNT_PREFIX`
@@ -624,11 +669,13 @@ async with make_pg_compositor(...) as (mcp_client, compositor):
   - ❌ Chat, loop, compositor meta constants (not used)
 
 **This means:**
+
 - Default policy DOES use constants from UI server (for allow-list matching)
 - Default policy does NOT use constants from most other servers (runtime, chat, loop, etc.)
 - User policies MIGHT use more constants, but baked-in default uses minimal set
 
 **Minimal pattern (for servers actually used by default policy):**
+
 ```python
 # Shared constants (in _shared/constants.py) - for policy eval + default policy
 UI_MOUNT_PREFIX: Final[str] = "ui"
@@ -655,6 +702,7 @@ class RuntimeServer:
 
 **Note on WellKnownTools enum (NEEDS REFACTORING):**
 `agent_server/src/agent_server/approvals.py` defines a `WellKnownTools` StrEnum:
+
 ```python
 class WellKnownTools(StrEnum):
     SEND_MESSAGE = "send_message"      # duplicates UiServer.SEND_MESSAGE_TOOL_NAME
@@ -663,6 +711,7 @@ class WellKnownTools(StrEnum):
 ```
 
 **This is redundant!** Policies CAN import from server classes (the runtime Docker image has `adgn` installed):
+
 ```python
 # Default policy already does this correctly:
 from agent_server.mcp.ui.server import END_TURN_TOOL_NAME, SEND_MESSAGE_TOOL_NAME
@@ -671,6 +720,7 @@ from agent_server.mcp.ui.server import END_TURN_TOOL_NAME, SEND_MESSAGE_TOOL_NAM
 ```
 
 **Refactoring needed (low priority):**
+
 1. Eliminate `WellKnownTools` enum (redundant with server class constants)
 2. Update test policies to import constants from server classes instead
 3. This removes duplication and ensures one source of truth
@@ -678,6 +728,7 @@ from agent_server.mcp.ui.server import END_TURN_TOOL_NAME, SEND_MESSAGE_TOOL_NAM
 **Note:** Only 3 entries, test-only usage, minimal impact - can be deferred.
 
 **Revised Understanding:**
+
 - Policy eval needs **mount prefix constants** (in `_shared/constants`)
 - Default/test policies need **tool name constants** for:
   - UI server: `SEND_MESSAGE`, `END_TURN` (used by default policy)

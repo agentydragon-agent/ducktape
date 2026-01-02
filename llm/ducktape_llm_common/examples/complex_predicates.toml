@@ -5,12 +5,12 @@ predicate = """
 def is_safe_shell_pipeline(ctx):
     if ctx.tool != "Bash" or not ctx.command:
         return False
-    
+
     SAFE_COMMANDS = {
-        "grep", "find", "ls", "cat", "head", "tail", 
+        "grep", "find", "ls", "cat", "head", "tail",
         "wc", "sort", "uniq", "cut", "echo"
     }
-    
+
     # Split by pipe and check each command
     parts = ctx.command.split("|")
     for part in parts:
@@ -50,19 +50,19 @@ predicate = """
 def check_sql_safety(ctx):
     if ctx.tool != "Bash":
         return True  # Only check bash commands
-    
+
     if not ctx.command:
         return True
-        
+
     import re
-    
+
     # Look for database commands
     db_commands = ["mysql", "psql", "sqlite3", "mongosh"]
     has_db_command = any(cmd in ctx.command for cmd in db_commands)
-    
+
     if not has_db_command:
         return True
-    
+
     # Check for potential SQL injection patterns
     dangerous_patterns = [
         r".*\\$\\{.*\\}.*",  # Bash variable substitution in SQL
@@ -71,11 +71,11 @@ def check_sql_safety(ctx):
         r'.*"\\s*\\+\\s*.*', # String concatenation
         r".*'\\s*\\+\\s*.*", # String concatenation
     ]
-    
+
     for pattern in dangerous_patterns:
         if re.search(pattern, ctx.command):
             return False
-            
+
     return True
 
 check_sql_safety(ctx)

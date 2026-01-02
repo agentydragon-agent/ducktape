@@ -13,21 +13,26 @@ Replace ephemeral one-shot graders with persistent "grader daemons" (one per sna
 ## Completed
 
 ### Phase A: Infrastructure ✅
+
 - Backup infrastructure (devenv `pg_backup` + `props db backup/restore/list-backups`)
 - Clustering removal (migration 20251227000003)
 
 ### Phase B: Schema + YAML Extension ✅
+
 - `graders_match_only_if_reported_on` column on TP/FP occurrences
 - YAML schema, sync code, domain models all updated
 - Migration 20251228000000 (squashed schema)
 
 ### Phase C.1-9: GT Read + Export ✅
+
 - GT Read API: `GET /api/gt/snapshots`, `GET /api/gt/snapshots/{slug}`
 - GT Browser Frontend: `SnapshotsList.svelte`, `SnapshotDetail.svelte`
 - DB → YAML export: `props gt export`
 
 ### Phase D: Unified Grading Model ✅
+
 Migration 20251228000001 completed:
+
 - `grading_edges` table (bipartite graph model)
 - Dropped `grading_decisions` table
 - All recall views migrated to use `grading_edges`
@@ -35,6 +40,7 @@ Migration 20251228000001 completed:
 - `matchable_occurrences()` function for sparse matching
 
 Grader CLI and docs completed:
+
 - `props grader-agent list pending` — Query missing edges
 - `props grader-agent show issue/gt` — Inspect issues/occurrences
 - `props grader-agent match` — Create edges with credit
@@ -45,16 +51,19 @@ Grader CLI and docs completed:
 - `docs/db/grading.md.j2` — Updated with edges documentation
 
 ### Phase F: Snapshot Grader RLS ✅
+
 - `current_grader_snapshot_slug()`, `is_critique_on_grader_snapshot()` helpers
 - RLS policies for grader, snapshot_grader, prompt_optimizer, improvement
 - pg_notify triggers for GT changes (INSERT/DELETE on TP/FP tables)
 
 ### Phase E: Documentation Updates ✅
+
 - Bipartite graph model documented in grader.md.j2, grading.md.j2, evaluation_flow.md.j2
 - Sparse matching and matchability rules clarified
 - All grading_decisions references updated to grading_edges
 
 ### Phase G: Grader Daemon Implementation ✅
+
 - `SnapshotGraderTypeConfig` in `agent_types.py`
 - `GraderDriftHandler` in `grader/drift_handler.py`
 - `GraderDaemonScaffold` in `grader/daemon.py`
@@ -79,6 +88,7 @@ Grader CLI and docs completed:
 - `GradingPending` ORM model added to `db/models.py` for the view
 
 **Future TODOs (left in code):**
+
 - Resume existing IN_PROGRESS runs with transcript from DB on startup
 - Handle new snapshots added after startup (pg_notify on snapshot insert)
 
@@ -87,6 +97,7 @@ Grader CLI and docs completed:
 ## Pending
 
 ### Phase C.10: GT Write API
+
 POST/PUT/DELETE endpoints for TPs/FPs (enables web-based GT editing)
 
 ### Phase G Details
@@ -94,6 +105,7 @@ POST/PUT/DELETE endpoints for TPs/FPs (enables web-based GT editing)
 #### G.1: Core Concept
 
 The grader daemon is a **k8s controller-style reconciliation loop**:
+
 - Goal: make `grading_pending` empty for its snapshot
 - Drift = missing edges (critique_issue, matchable_occurrence pairs without grading_edges)
 - When drift exists → grade; when empty → sleep until woken
@@ -101,6 +113,7 @@ The grader daemon is a **k8s controller-style reconciliation loop**:
 #### G.2: Scope Decision
 
 **1 grader daemon per snapshot.** Rationale:
+
 - Avoids info mixing across repos/snapshots
 - Batches work efficiently (all critiques for a snapshot share GT context)
 - RLS already supports this (`snapshot_grader` agent type in migration 20251228000001)
@@ -160,6 +173,7 @@ class GraderDriftHandler(BaseHandler):
 ```
 
 Key behaviors:
+
 - Checks `grading_pending` before each sample (source of truth)
 - Drains notification queue to prevent buildup
 - Injects notification content as context when new events arrive during work
@@ -168,6 +182,7 @@ Key behaviors:
 #### G.5: Context Exhaustion
 
 When agent hits context limit:
+
 1. `ContextLengthExceededError` raised
 2. Scaffold catches, marks run as `CONTEXT_LENGTH_EXCEEDED`
 3. Spawns new agent run for same snapshot
@@ -179,6 +194,7 @@ The `grading_edges` table IS the checkpoint. No special state to save.
 #### G.6: Notification Channels
 
 Existing trigger (from Phase F):
+
 ```sql
 CREATE FUNCTION notify_gt_changed() RETURNS TRIGGER AS $$
 BEGIN
@@ -192,6 +208,7 @@ $$ LANGUAGE plpgsql;
 ```
 
 Fires on:
+
 - `INSERT/DELETE` on `true_positives`
 - `INSERT/DELETE` on `true_positive_occurrences`
 - `INSERT/DELETE` on `false_positives`

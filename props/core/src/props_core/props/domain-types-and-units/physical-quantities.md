@@ -8,8 +8,9 @@ Prefer rich, domain-appropriate types or unit libraries, or at least encode unit
 Maintain a single consistent internal unit per quantity to avoid drift.
 
 ## Acceptance criteria (checklist)
+
 - Use typed units where practical
-  - Python: prefer a unit library (for example, Pint) or typed wrappers; [use `datetime` types for time/duration](time.md) 
+  - Python: prefer a unit library (for example, Pint) or typed wrappers; [use `datetime` types for time/duration](time.md)
   - Go: define small newtypes (for example, `type Meters float64`) or structs with methods; avoid untyped `float64` for mixed units
 - If primitives are used, names explicitly include units - e.g.: `user_height_cm`, `speed_mph`, `roll_degrees`.
 - Choose one canonical internal unit per quantity (for example, meters for length, m/s for speed)
@@ -86,10 +87,12 @@ position = position + step  # *boom* - nothing prevents unit logic error
 ```
 
 ## Exceptions
+
 - Protocol/file format boundaries that mandate specific units (for example, Fahrenheit, centimeters) may use those units at the edge; convert immediately to canonical units internally
 - Short-lived locals immediately involved in a conversion expression may omit suffixes when unit is obvious and enforced by surrounding typed context
 
 ## Guidance
+
 - Prefer SI base units internally (meters, seconds, kilograms, celsius/kelvin) and well-known derived units where conventional (m/s)
 - Centralize conversions behind helpers to avoid copy/paste and drift
 - If dealing with many physical quantities, adopt a unit library (for example, Pint) to make unit errors unrepresentable

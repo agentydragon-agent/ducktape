@@ -61,6 +61,7 @@ docker build -t registry.k3s.agentydragon.com/rspcache:<tag> -f adgn/docker/rspc
 ## Kubernetes Deployment
 
 The Helm chart (`k8s/helm/rspcache/`) provisions:
+
 - PostgreSQL StatefulSet (10 Gi PVC)
 - Proxy Deployment/Service (`/v1/responses`)
 - Admin Deployment/Service with Authentik-protected Ingress

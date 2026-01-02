@@ -1,6 +1,7 @@
 # Scan: Useless Documentation
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -113,6 +114,7 @@ result = compute_value()
 ```
 
 **What makes inline comments useful:**
+
 - **Why** something is done (not what)
 - **Pitfalls** or gotchas to avoid
 - **Non-obvious requirements** (e.g., "must be called before X")
@@ -121,6 +123,7 @@ result = compute_value()
 - **TODO/FIXME** with context
 
 **What makes inline comments useless:**
+
 - Restating what the code obviously does
 - Describing basic language features (`# Create variable`)
 - Repeating variable/function names
@@ -129,6 +132,7 @@ result = compute_value()
 ## What Makes Documentation Useful
 
 Good documentation tells you:
+
 - **Non-obvious behavior**: Side effects, mutation, caching
 - **Error conditions**: When exceptions are raised, edge cases
 - **Performance implications**: O(n²) behavior, blocking I/O
@@ -159,6 +163,7 @@ def skip_global_compinit() -> None:
 **Primary Method**: Manual code reading or LLM-assisted review. Automated patterns are discovery aids only.
 
 **Why automation is insufficient**: Determining if documentation is "useless" requires understanding:
+
 - What's obvious from names and types (subjective, context-dependent)
 - Whether explanation adds semantic value (requires domain knowledge)
 - If the function is public API (needs more docs) vs internal (needs less)
@@ -169,6 +174,7 @@ def skip_global_compinit() -> None:
 Create an intermediate file that strips function bodies, preserving only signatures, types, and documentation. This allows LLM to efficiently review many functions without reading implementations.
 
 **Helper script** (pseudocode):
+
 ```python
 import ast
 from pathlib import Path
@@ -196,6 +202,7 @@ def generate_skeleton(source_file: Path) -> str:
 ```
 
 **Usage**:
+
 1. Run skeleton generator on target files
 2. Feed skeleton to LLM with prompt: "Identify functions where docstring adds no value beyond name/types"
 3. LLM returns list of candidates with reasoning
@@ -203,6 +210,7 @@ def generate_skeleton(source_file: Path) -> str:
 5. Remove truly useless docs
 
 **Benefits**:
+
 - LLM sees context (neighboring functions, module purpose)
 - No implementation details to distract from docs
 - Can process many functions quickly
@@ -213,6 +221,7 @@ def generate_skeleton(source_file: Path) -> str:
 These patterns find **candidates** for manual review. Do NOT automatically remove docs based on these.
 
 **Grep Patterns for Docstrings:**
+
 ```bash
 # Find Args: sections (often javadoc style, but not always useless)
 rg --type py '""".*\n.*Args:'
@@ -229,6 +238,7 @@ rg --type py '    \w+: The \w+'
 Automated detection is unreliable - requires semantic understanding of whether comment explains "why" or just restates "what". Use manual reading.
 
 **Manual review heuristics**:
+
 1. Comment nearly identical to code on next line
 2. Comment describes basic language construct
 3. Comment restates assignment without explaining purpose
@@ -236,6 +246,7 @@ Automated detection is unreliable - requires semantic understanding of whether c
 **AST-Based Discovery** (optional):
 
 Build a tool that flags functions where:
+
 - Every parameter doc is exactly "param: The param" pattern
 - Returns section just repeats return type annotation
 - First sentence of docstring is just function name rephrased
@@ -245,12 +256,14 @@ Strong coding LLM can build this from description. Use output as discovery only,
 ## Fix Strategy
 
 **Docstrings:**
+
 1. **Delete obvious docs**: Remove Args/Returns that add no information
 2. **Keep useful info**: Preserve exception documentation, non-obvious behavior
 3. **Refactor to single line**: If only one useful sentence, make it a single-line docstring
 4. **Module-level docs**: Move general explanations to module docstrings
 
 **Inline Comments:**
+
 1. **Delete restatements**: Remove comments that just describe what code does
 2. **Ask "why not what"**: If comment doesn't explain why, delete it
 3. **Keep explanations**: Preserve comments explaining pitfalls, requirements, workarounds
@@ -367,4 +380,4 @@ git show HEAD | rg -A10 "^-.*def "
 
 - Python PEP 257 (Docstring Conventions)
 - Google Python Style Guide (focus on "what's not obvious")
-- When to document: https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/
+- When to document: <https://stackoverflow.blog/2021/12/23/best-practices-for-writing-code-comments/>

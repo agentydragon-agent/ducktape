@@ -3,6 +3,7 @@
 ## Completed
 
 ### LLM API Key Injection ✅
+
 - Automatically copies `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` from host environment to VM
 - Use `./apply.sh` wrapper script for automatic detection
 - Keys available machine-wide in NixOS
@@ -37,6 +38,7 @@
 ### Integration Tasks
 
 - [ ] Add variables for enabling/disabling API key provisioning
+
   ```hcl
   variable "provision_openai_key" { default = false }
   variable "provision_anthropic_key" { default = false }

@@ -7,6 +7,7 @@ Extract EVERY Bash command Claude has executed, categorize systematically, and p
 ## Process - Iterative Analysis
 
 ### Phase 1: Extract All Commands
+
 1. Scan ALL session JSONL files in `~/.claude/projects/*/[session-id].jsonl`
 2. Extract EVERY Bash command from entries with `"name":"Bash"`, `"input":{"command":"..."}`
 3. De-duplicate identical commands
@@ -14,13 +15,16 @@ Extract EVERY Bash command Claude has executed, categorize systematically, and p
 5. Output: Complete list of all commands ever executed (thousands likely)
 
 ### Phase 2: Filter Already Auto-Allowed
+
 Read current auto-allow patterns from `~/code/ducktape/nix/home/claude-code/default.nix`:
+
 - Extract all `Bash(pattern:*)` and `Bash(pattern)` entries
 - For each command, check if it matches any auto-allow pattern
 - Separate into:
   - **Already covered** (matched by existing patterns)
   - **Requires analysis** (not matched)
 - Output concise summary:
+
   ```
   Already auto-allowed: 1,234 commands (45%)
   - git status/diff/stash: 456 commands
@@ -31,13 +35,16 @@ Read current auto-allow patterns from `~/code/ducktape/nix/home/claude-code/defa
   ```
 
 ### Phase 3: Iterative Command Analysis
+
 Process remaining commands in batches of ~10-20 most frequent:
 
 **Step 1:** Read next batch of most frequent unprocessed commands
+
 - Show exact commands with frequencies
 - Show first few concrete examples
 
 **Step 2:** For each command/pattern, classify into:
+
 - **PROPOSE_AUTO_ALLOW** - Safe read-only, suggest pattern
   - Example: `cat /some/path` → suggest `Bash(cat:*)`
   - Include justification: "Read-only file inspection, safe"
@@ -51,6 +58,7 @@ Process remaining commands in batches of ~10-20 most frequent:
   - Or keep manual if scripts can be destructive
 
 **Step 3:** Apply decisions:
+
 - Add proposed patterns to "suggested additions" list
 - Mark commands as processed
 - Update filter rules
@@ -116,7 +124,9 @@ Add to `~/code/ducktape/nix/home/claude-code/default.nix` in the `allow` list:
 ```
 
 ## Commands Not Covered (Sample)
+
 - [List of unusual/one-off commands for awareness]
+
 ```
 
 ## Implementation Requirements
@@ -162,11 +172,12 @@ echo "x" && $(malicious_cmd)      # Command substitution
 **Root cause**: System uses string prefix matching without parsing shell syntax.
 **Implication**: ANY auto-allowed command can execute arbitrary code via chaining.
 
-See: https://github.com/anthropics/claude-code/issues/4956
+See: <https://github.com/anthropics/claude-code/issues/4956>
 
 ### NEVER Auto-Allow These Patterns (Command Injection)
 
 ❌ **Command Wrappers** (execute arbitrary code via subcommands):
+
 ```nix
 "Bash(direnv:*)"      # direnv exec . ANY_COMMAND
 "Bash(bash:*)"        # bash -c "ANY_COMMAND"
@@ -180,6 +191,7 @@ See: https://github.com/anthropics/claude-code/issues/4956
 ```
 
 ❌ **Destructive Subcommands** (safe reads + dangerous operations):
+
 ```nix
 "Bash(find:*)"        # find . -exec rm -rf {} \;
                       # find . -delete
@@ -190,6 +202,7 @@ See: https://github.com/anthropics/claude-code/issues/4956
 ```
 
 ❌ **Network Operations** (data exfiltration):
+
 ```nix
 "Bash(curl:*)"
 "Bash(wget:*)"
@@ -199,6 +212,7 @@ See: https://github.com/anthropics/claude-code/issues/4956
 ### Safe Patterns (Read-Only, but see shell operator caveat)
 
 ✅ **File Inspection**:
+
 ```nix
 "Bash(cat:*)"
 "Bash(head:*)"
@@ -210,6 +224,7 @@ See: https://github.com/anthropics/claude-code/issues/4956
 ```
 
 ✅ **Search** (but NOT find due to -exec):
+
 ```nix
 "Bash(grep:*)"
 "Bash(rg:*)"          # ripgrep
@@ -217,6 +232,7 @@ See: https://github.com/anthropics/claude-code/issues/4956
 ```
 
 ✅ **Git** (specific subcommands only, NOT git:*):
+
 ```nix
 "Bash(git status:*)"
 "Bash(git diff:*)"
@@ -227,6 +243,7 @@ See: https://github.com/anthropics/claude-code/issues/4956
 ```
 
 ✅ **System Inspection**:
+
 ```nix
 "Bash(ps:*)"
 "Bash(df:*)"

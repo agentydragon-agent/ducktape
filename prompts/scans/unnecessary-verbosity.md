@@ -1,6 +1,7 @@
 # Scan: Unnecessary Verbosity
 
 ## Context
+
 @../shared-context.md
 
 ## Overview
@@ -125,6 +126,7 @@ class Server:
 ```
 
 **Why this is bad**:
+
 - **Multiple paths**: Creates redundant ways to access same downstream dependency
 - **Synchronization risk**: If engine internals change, cached fields become stale
 - **Unnecessary fields**: Pollutes class namespace with redundant state
@@ -298,18 +300,22 @@ def get_api_key(override: str | None = None) -> str:
 ```
 
 **Pattern generalization:**
+
 - Parameter accepts None to mean "use default"
 - Default is derived (not a constant)
 - Pattern: `if not x: x = derive_default()`
 
 **When to use:**
+
 - Environment variable fallback (`os.getenv`)
 - Function call fallback (`load_config()`)
 - Complex derivation (`compute_from_system_state()`)
 - Multiple fallback levels
 
 **When NOT to use:**
+
 - Default is a simple constant → use parameter default value instead:
+
   ```python
   # GOOD: Simple constant default
   def process(timeout: int = 30):
@@ -322,6 +328,7 @@ def get_api_key(override: str | None = None) -> str:
   ```
 
 - Empty string/0/False are valid values → use `is None` check instead:
+
   ```python
   # GOOD: Allow empty string
   def process(prefix: str | None = None):
@@ -335,6 +342,7 @@ def get_api_key(override: str | None = None) -> str:
   ```
 
 **Detection:**
+
 ```bash
 # Find verbose None checks with assignment
 rg --type py -U 'if.*is None:.*\n.*=.*getenv' --multiline
@@ -633,6 +641,7 @@ rg --type py "(\w+)\s*=\s*[^\n]+\n\s*return\s+\1\s*$" --multiline
 2. **Multiple uses** - Variable used more than once
 
 3. **Debugging/logging** - Variable captured for inspection
+
    ```python
    result = expensive_computation()
    logger.debug(f"Computation result: {result}")
@@ -640,12 +649,14 @@ rg --type py "(\w+)\s*=\s*[^\n]+\n\s*return\s+\1\s*$" --multiline
    ```
 
 4. **Semantic naming** - Variable name adds significant meaning
+
    ```python
    # Name explains what the complex expression means
    is_business_day = weekday < 5 and date not in holidays
    ```
 
 5. **Type narrowing** - Helps type checker
+
    ```python
    user = get_current_user()  # Type narrowed from Optional[User] to User
    if user:

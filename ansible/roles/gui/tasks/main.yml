@@ -23,11 +23,10 @@
       - libreoffice-l10n-cs
       - libreoffice-l10n-de
       - libreoffice-l10n-en-gb
-      - qshutdown     # 2025-04-13: was trying as timekpr alrernative, no longer needed
-      - xournal       # 2025-04-14: replace with xournalpp
-      - xtermcontrol  # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
-      - youtube-dl    # 2025-04-14: replace with yt-dlp
-
+      - qshutdown # 2025-04-13: was trying as timekpr alrernative, no longer needed
+      - xournal # 2025-04-14: replace with xournalpp
+      - xtermcontrol # 2025-04-13: not needed anymore, was for Vim bg color auto-switch
+      - youtube-dl # 2025-04-14: replace with yt-dlp
 
 - name: Install GUI packages
   become: true
@@ -40,16 +39,16 @@
       #   xclip, xournalpp, yt-dlp
       - blender
       - chrome-gnome-shell
-      - kdenlive  # Video editor
+      - kdenlive # Video editor
       - kiwix # For offline Wikipedia etc.
       - libreoffice
       - openjdk-8-jdk
       - psensor
       - snapd # For Telegram etc.
-      - syncthing-gtk  # Not available in nixpkgs, kept in apt
+      - syncthing-gtk # Not available in nixpkgs, kept in apt
       - torbrowser-launcher
-      - tuxguitar  # Broken in nixpkgs (swt build failure), kept in apt
-      - vinagre  # VNC client
+      - tuxguitar # Broken in nixpkgs (swt build failure), kept in apt
+      - vinagre # VNC client
       - virtualbox
       - virtualbox-dkms
       - wine-stable
@@ -67,11 +66,10 @@
   become: true
   community.general.snap:
     name:
-      - code        # VSCode
-      - freecad     # FreeCAD
-      - yt-dlp      # YouTube downloader
+      - code # VSCode
+      - freecad # FreeCAD
+      - yt-dlp # YouTube downloader
     state: absent
-
 
 - name: Install Rescuetime
   tags: [rescuetime]
@@ -169,7 +167,6 @@
 - name: Install Google Chrome
   ansible.builtin.include_tasks: google_chrome.yml
 
-
 # Install Tana desktop application
 - name: Install Tana desktop application
   ansible.builtin.import_tasks: tana.yml
@@ -180,7 +177,7 @@
   github_release_install:
     release_spec:
       repo: "TheAssassin/AppImageLauncher"
-      version: "v3.0.0-alpha-4"  # Pinned version
+      version: "v3.0.0-alpha-4" # Pinned version
       acknowledged_version: "v3.0.0-alpha-4"
       asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
     method: deb

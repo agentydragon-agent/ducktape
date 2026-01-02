@@ -32,18 +32,21 @@ category: Team Coordination
 ## Coordination Protocol
 
 ### 1. Team Setup
+
 - Initialize shared communication channel
 - Establish team roles and responsibilities
 - Set up task tracking and status reporting
 - Configure shared resources and locks
 
 ### 2. Task Distribution
+
 - Analyze task dependencies
 - Assign tasks based on agent capabilities
 - Ensure balanced workload
 - Handle task priorities
 
 ### 3. Communication Patterns
+
 - **STATUS**: Regular progress updates
 - **HANDOFF**: Transfer work between agents
 - **BLOCKER**: Report impediments immediately
@@ -51,12 +54,14 @@ category: Team Coordination
 - **HELP**: Request assistance from team
 
 ### 4. Synchronization Points
+
 - Coordinate at dependency boundaries
 - Wait for prerequisites before starting
 - Signal completion to dependent tasks
 - Handle concurrent access to shared resources
 
 ### 5. Error Handling
+
 - Report failures to team immediately
 - Attempt local recovery first
 - Escalate if recovery fails

@@ -1,6 +1,6 @@
 # Tmux plugin landscape (quick guide)
 
-Use TPM (tmux plugin manager) to install: https://github.com/tmux-plugins/tpm
+Use TPM (tmux plugin manager) to install: <https://github.com/tmux-plugins/tpm>
 
 Setup once:
 

@@ -20,7 +20,7 @@
       ansible.builtin.get_url:
         url: https://nixos.org/nix/install
         dest: /tmp/install-nix.sh
-        mode: '0755'
+        mode: "0755"
 
     - name: Install Nix in multi-user mode
       ansible.builtin.shell: |
@@ -38,7 +38,7 @@
     path: /etc/nix/nix.conf
     regexp: "^{{ item.key }} ="
     line: "{{ item.key }} = {{ item.value }}"
-    mode: '0644'
+    mode: "0644"
     create: true
     backup: true
   loop:

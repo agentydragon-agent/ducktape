@@ -1,6 +1,7 @@
 # Scan: Classes That Should Be Dataclasses or Pydantic Models
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -13,14 +14,16 @@ Plain classes with boilerplate `__init__` methods that just assign parameters to
 
 ## When to Use Each
 
-### Use `@dataclass` when:
+### Use `@dataclass` when
+
 - Simple data container without validation/serialization needs
 - No need for JSON/dict conversion
 - Internal-only data structures
 - Prefer immutability (`frozen=True`)
 - Need `__post_init__` for derived fields
 
-### Use Pydantic `BaseModel` when:
+### Use Pydantic `BaseModel` when
+
 - Need validation (type checking, constraints, custom validators)
 - Need JSON/dict serialization (`model_dump`, `model_validate`)
 - API request/response models
@@ -28,7 +31,8 @@ Plain classes with boilerplate `__init__` methods that just assign parameters to
 - Need schema generation (OpenAPI, JSON Schema)
 - Crossing serialization boundaries
 
-### Use plain class when:
+### Use plain class when
+
 - Complex initialization logic (transformations, validation, setup)
 - Inheritance hierarchies with complex `__init__` chains
 - Stateful objects with lifecycle methods
@@ -107,6 +111,7 @@ class LocalAgentRuntime:
 ```
 
 **Benefits**:
+
 - Eliminates 11 lines of boilerplate `self.x = x`
 - Auto-generates `__repr__`, `__eq__`, `__hash__` (if needed)
 - Fields are clearly declared at class level
@@ -155,6 +160,7 @@ class ServerConfig(BaseModel):
 ```
 
 **Benefits**:
+
 - Automatic validation (port range, timeout > 0)
 - JSON/dict serialization for free
 - Environment variable loading
@@ -200,6 +206,7 @@ class UserData(BaseModel):
 ```
 
 **Benefits**:
+
 - No manual `to_dict`/`from_dict` methods
 - Datetime serialization/parsing automatic
 - Validation on construction
@@ -237,6 +244,7 @@ class CacheKey:
 ```
 
 **Benefits**:
+
 - Immutability enforced by `frozen=True`
 - Auto-generated `__repr__`, `__eq__`, `__hash__`
 - Hashable (can use as dict key, in sets)
@@ -280,6 +288,7 @@ class DatabaseConnection:
 ```
 
 **When plain class is OK**:
+
 - Parameters undergo complex transformations
 - Need to set up resources (locks, pools, connections)
 - Complex validation logic
@@ -304,6 +313,7 @@ rg --type py '@dataclass' | wc -l
 ```
 
 **What to review for each dataclass:**
+
 1. **Mutable defaults (BUG)**: `list[T] = []`, `dict[K,V] = {}`, `set[T] = set()` without `field(default_factory=...)`
 2. **Field ordering**: Non-default fields must come before fields with defaults
 3. **Missing field()**: Mutable defaults, `init=False` fields, `repr=False` fields
@@ -320,6 +330,7 @@ rg --type py '@dataclass' | wc -l
 **Goal**: Find ALL classes that are just boilerplate parameter assignments (high recall).
 
 **Recall/Precision**:
+
 - AST-based detection: ~95% recall, ~40% precision (many plain classes are legitimately complex)
 - Grep patterns: ~70% recall, ~30% precision (manual inspection required)
 
@@ -330,12 +341,14 @@ rg --type py '@dataclass' | wc -l
 **Tool**: `prompts/scans/scan_dataclass_candidates.py` - AST-based scanner for boilerplate classes
 
 **What it finds**:
+
 - All classes with their `__init__` analysis
 - Counts `self.x = y` assignments in `__init__`
 - Counts other statements in `__init__` (validation, defaults, etc.)
 - Flags presence of `__repr__`, `__eq__`, `__hash__` methods
 
 **Usage**:
+
 ```bash
 # Run on entire codebase
 python prompts/scans/scan_dataclass_candidates.py . > dataclass_scan.json
@@ -347,6 +360,7 @@ cat dataclass_scan.json | jq '.classes | to_entries[] |
 ```
 
 **Output structure**:
+
 - `summary`: Total classes and candidate count
 - `classes`: Dict mapping file paths to dict of class names to analysis:
   - `line`: Line number
@@ -355,6 +369,7 @@ cat dataclass_scan.json | jq '.classes | to_entries[] |
   - `has_repr`, `has_eq`, `has_hash`: Boolean flags
 
 **Tool characteristics**:
+
 - **~100% recall**: Finds all classes with `__init__` methods
 - **Low precision**: Classes with 5+ params may still need complex init
 - **You filter**: Use output to identify candidates, verify manually
@@ -362,6 +377,7 @@ cat dataclass_scan.json | jq '.classes | to_entries[] |
 **TODO**: Add detection for `to_dict`/`from_dict` methods (Pydantic indicator)
 
 **Grep patterns** (lower recall, useful supplement):
+
 ```bash
 # Find classes with many parameters (8+ is suspicious)
 rg --type py -A20 "def __init__" | rg -B1 "def __init__.*,.*,.*,.*,.*,.*,.*,"
@@ -399,6 +415,7 @@ For each candidate, manually check:
    - ❌ NO: Doesn't need hashing
 
 **Common false positives to skip**:
+
 - Test helper classes (often have complex setup in setUp/fixtures)
 - Classes with lifecycle methods (start/stop/cleanup)
 - Classes that set up resources (connections, threads, locks)
@@ -450,6 +467,7 @@ Running `scan_dataclass_candidates.py` produces:
 ```
 
 **Interpretation**:
+
 - `LocalAgentRuntime`: 10 params, 2 other statements → Review (may need complex init)
 - `AgentSession`: 8 params, 0 other statements, has `__eq__` → Strong candidate for dataclass
 
@@ -550,6 +568,7 @@ class ImmutableConfig:
 ## When NOT to Convert
 
 **Don't convert if**:
+
 - Class has complex `__init__` logic (validation, setup, transformations)
 - Inheritance hierarchy with complex constructor chains
 - Need precise control over field order, defaults, or initialization
@@ -558,6 +577,7 @@ class ImmutableConfig:
 - Class is a mixin or abstract base (may not have state)
 
 **Consider keeping plain class when**:
+
 - Parameters undergo non-trivial transformations
 - Need to set up resources (connections, locks, threads)
 - Complex validation logic that doesn't fit validators

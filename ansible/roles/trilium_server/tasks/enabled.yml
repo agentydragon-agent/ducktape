@@ -96,7 +96,7 @@
   ansible.builtin.template:
     src: trilium.agentydragon.com.j2
     dest: /etc/nginx/sites-available/trilium.agentydragon.com
-    mode: '0644'
+    mode: "0644"
   notify: Reload nginx
 
 - name: Enable nginx site for Trilium (symlink)

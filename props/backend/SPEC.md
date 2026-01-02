@@ -11,6 +11,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Manage and browse all agent definitions
 
 **Features:**
+
 - List all definitions with metadata (ID, type, created_at)
 - Filter by agent type (critic, grader, etc.)
 - Click through to see runs for a definition
@@ -21,6 +22,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Compare critic definition performance across splits/scopes
 
 **Features:**
+
 - Show ALL definitions (including those with no runs yet)
 - 3-level header hierarchy:
   - Level 1: Split (Valid, Train)
@@ -41,6 +43,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** View details and runs for a single definition
 
 **Features:**
+
 - Package ID with copyable CLI command (`props agent-pkg fetch <id> ./`)
 - Stats table: split × kind metrics (recall, runs, zero, done, stalled)
 - Embedded runs browser filtered to this definition
@@ -51,6 +54,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Monitor currently executing agent runs
 
 **Features:**
+
 - List all runs with status IN_PROGRESS
 - Show: run ID, definition, agent type (critic/grader), model, example info
 - Show last event (concise preview)
@@ -62,6 +66,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Inspect a single agent run
 
 **Features:**
+
 - Run metadata: ID, type, definition, model, status, created_at
 - Parent run link (for graders)
 - Child run links (critic → grader)
@@ -78,6 +83,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Search and filter all historical runs
 
 **Features:**
+
 - Full agent_runs table with pagination
 - Filters: status, agent_type, definition, split, date range
 - Columns: ID, type, definition, model, status, created_at, example
@@ -88,6 +94,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Start evaluation runs on examples
 
 **Features:**
+
 - Modal dialog triggered by:
   - "New Run" button in jobs list
   - Clicking recall cell in definitions table (prefilled)
@@ -102,6 +109,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Browse and inspect training/validation examples
 
 **Features:**
+
 - List examples by snapshot, split, kind
 - Show file paths for file_set examples
 - Show TP/FP counts per example
@@ -112,6 +120,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** Monitor validation batches in progress
 
 **Features:**
+
 - Grid of validation jobs with progress bars
 - Per-job: completed/failed/total counts
 - Per-run timeline: critic -> grader pairs
@@ -120,10 +129,12 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 ## API Endpoints
 
 ### Stats
+
 - `GET /api/stats/overview` - Leaderboard data with all definitions
 - `GET /api/stats/definitions` - List definitions (filtered by agent_type)
 
 ### Runs
+
 - `GET /api/runs` - Browse all runs with filters/pagination
 - `GET /api/runs/active` - Currently executing runs
 - `GET /api/runs/jobs` - Validation job status
@@ -133,6 +144,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - `WS /api/runs/{id}/stream` - Live event stream
 
 ### Examples
+
 - `GET /api/examples` - List examples with filters (split, kind, snapshot)
 - `GET /api/examples/{snapshot}/{kind}/{hash}` - Example detail with ground truth
 
@@ -153,6 +165,7 @@ Features from `props` CLI to replicate in dashboard.
 ### `props stats` (main view)
 
 Default view showing definition recall across splits/scopes:
+
 - 4 column groups: Valid Whole, Valid Partial, Train Whole, Train Partial
 - Per-group: Recall, LCB, N, Zero count, Max turns, Context exceeded
 - Green highlighting for fully evaluated rows
@@ -161,6 +174,7 @@ Default view showing definition recall across splits/scopes:
 ### `props stats critic-leaderboard`
 
 Same as default stats but with additional filter options:
+
 - Filter by split, example_kind
 - Filter by definition name pattern
 - Sort by different columns
@@ -168,6 +182,7 @@ Same as default stats but with additional filter options:
 ### `props stats example`
 
 Per-example metrics (not per-definition):
+
 - Grouped by (snapshot, example_kind, files_hash)
 - Shows: recall, n_runs, status breakdown
 - Identify hard examples (consistently low recall)
@@ -175,6 +190,7 @@ Per-example metrics (not per-definition):
 ### `props stats occurrence`
 
 Per-occurrence statistics:
+
 - Individual TP occurrences with hit rates across runs
 - Find consistently-missed occurrences
 - Useful for debugging specific issue patterns
@@ -188,6 +204,7 @@ Real-time visibility into running agents.
 ### Agent Run States
 
 Display current state of each active run:
+
 - **Waiting**: Queued, awaiting semaphore slot
 - **Initializing**: Container starting, init script running
 - **Sampling**: LLM API call in flight
@@ -198,6 +215,7 @@ Display current state of each active run:
 ### Live Event Stream
 
 For each active run, show:
+
 - Last N events (scrollable)
 - Current tool call in progress (if any)
 - Token counts / cost accumulator
@@ -207,6 +225,7 @@ For each active run, show:
 ### Batch Progress
 
 For validation jobs:
+
 - Progress bar: completed/total
 - Success/failure/in-progress counts
 - Estimated time remaining
@@ -238,21 +257,25 @@ For validation jobs:
 ### Ground Truth Update Workflow
 
 When ground truth changes (new TPs/FPs added/modified):
+
 - Detect affected grader runs (referenced outdated ground truth)
 - Option to invalidate/regrade affected runs
 - Show which runs need regrading
 - Batch regrade capability
 
 **Existing infrastructure:**
+
 - `GraderTypeConfig.canonical_issues_snapshot` stores TPs/FPs used at grading time
 - `grader/staleness.py:identify_stale_runs()` compares stored snapshot to current ground truth
 - `props stats` CLI already includes staleness check section
 
 **Desired staleness detection:**
+
 - Compare semantic content only: TP/FP IDs, rationales, occurrence locations (files + line ranges)
 - Exclude `critic_scopes_expected_to_recall` (test coverage metadata, not grading content)
 
 **Optimization approaches:**
+
 1. **Timestamp-based:** Compare `updated_at` on ground truth vs `canonical_issues_snapshot_time` on grader run
 2. **Sync-time marking:** `props sync` immediately marks affected runs as stale when updating ground truth
 3. **Incremental regrading:** Instead of full regrade, append system message to existing run:

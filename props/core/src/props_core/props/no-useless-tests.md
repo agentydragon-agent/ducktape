@@ -6,6 +6,7 @@ kind: outcome
 Tests must provide distinct value by exercising production behavior or documenting non‑obvious ground truth; redundant or trivially satisfied tests are removed or consolidated.
 
 ## Acceptance criteria (checklist)
+
 - No change‑detector tests that merely assert constants, enum values, or literals (e.g., "SomeEnum.VALUE == 'value'") unless the test documents an important, non‑obvious dependency behavior we explicitly rely on (state that rationale inline).
 - No tests that only re‑assert trivial, widely‑known properties of standard library or ubiquitous dependencies (e.g., Pydantic BaseModel.model_dump_json() returns str, pathlib.Path.name is a str). Exception: pinning a known upstream regression/workaround — include a clear inline rationale and link to the upstream issue.
 - Parameterization or subtests cover representative classes of inputs; avoid enumerating duplicative cases that exercise the exact same behavior/path (e.g., (1,2,3) and (2,1,3) for commutative addition) unless the additional case tests a distinct property.

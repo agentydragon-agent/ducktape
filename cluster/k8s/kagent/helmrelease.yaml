@@ -1,0 +1,65 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kagent
+  namespace: kagent
+spec:
+  interval: 10m
+  dependsOn:
+    - name: kagent-crds
+      namespace: kagent
+  chart:
+    spec:
+      chart: helm/kagent
+      sourceRef:
+        kind: GitRepository
+        name: kagent
+        namespace: kagent
+      interval: 5m
+  values:
+    # Use Anthropic provider
+    providers:
+      default: anthropic
+      anthropic:
+        provider: Anthropic
+        model: "claude-sonnet-4-20250514"
+        apiKeySecretRef: kagent-anthropic
+        apiKeySecretKey: ANTHROPIC_API_KEY
+
+    # Controller configuration
+    controller:
+      replicas: 1
+      loglevel: "info"
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 1000m
+          memory: 512Mi
+
+    # UI configuration
+    ui:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+      service:
+        type: ClusterIP
+        ports:
+          port: 8080
+          targetPort: 8080
+
+    # Database - use SQLite for simplicity
+    database:
+      type: sqlite
+      sqlite:
+        databaseName: kagent.db
+
+    # KMCP server for MCP protocol
+    kmcp:
+      enabled: true

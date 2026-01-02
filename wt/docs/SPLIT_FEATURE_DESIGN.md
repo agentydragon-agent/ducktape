@@ -24,12 +24,14 @@ A new feature for `wt` that allows splitting large PRs by moving files from the 
 ### Command Interface
 
 #### Basic Mode: File List
+
 ```bash
 wt split <new-worktree-name> <file1> <file2> ...
 wt split my-new-feature src/feature.py src/feature_test.py
 ```
 
 #### Interactive Mode
+
 ```bash
 wt split --interactive <new-worktree-name>
 wt split -i my-new-feature
@@ -51,57 +53,65 @@ Files to move:
 Commands:
   [s]how plan
   [a]dd file
-  [r]emove file  
+  [r]emove file
   [p]atch (edit chunks)
   [e]xecute plan
   [q]uit
 
-What now> 
+What now>
 ```
 
 ### Interactive Commands
 
 #### Show Plan (`s`)
+
 Display current plan with file status and change summary
 
-#### Add File (`a`) 
+#### Add File (`a`)
+
 ```
 Add file> src/another_file.py
 Added src/another_file.py to split plan
 ```
 
 #### Remove File (`r`)
+
 ```
 Remove file> 2
 Removed src/feature_test.py from split plan
 ```
 
 #### Patch Mode (`p`)
+
 Enter patch-style editing for specific files:
+
 ```
 Patch file> 1
 # Shows hunks for src/feature.py
 Hunk 1/3: @@ -10,6 +10,15 @@
  def existing_function():
      pass
- 
+
 +def new_feature_function():
 +    return "new feature"
 +
  def another_function():
      pass
 
-[y]es move this hunk, [n]o keep in current branch, [s]kip to next file: 
+[y]es move this hunk, [n]o keep in current branch, [s]kip to next file:
 ```
 
 #### Execute (`e`)
+
 Execute the split plan:
+
 - Create new worktree
 - Move selected files/hunks
 - Clean up current branch
 - Show summary of what was moved
 
 #### Quit (`q`)
+
 Exit without making changes
 
 ## Implementation Considerations
@@ -109,22 +119,25 @@ Exit without making changes
 ### Git Operations
 
 #### File Movement Strategy
+
 1. **Full File Move**: Simple case - entire file moves to new worktree
 2. **Partial File Move**: Complex case - only some hunks move, file exists in both branches
 
-#### For Full File Moves:
+#### For Full File Moves
+
 ```bash
 # In current branch
 git rm <file>
 git commit -m "Move <file> to separate branch"
 
-# In new worktree  
+# In new worktree
 git checkout current-branch -- <file>
 git add <file>
 git commit -m "Add <file> from main branch"
 ```
 
-#### For Partial File Moves:
+#### For Partial File Moves
+
 1. Use `git apply` with patch splitting
 2. Create patches for hunks to move vs hunks to keep
 3. Apply appropriate patches to each branch
@@ -132,6 +145,7 @@ git commit -m "Add <file> from main branch"
 ### Branch Management
 
 #### New Worktree Creation
+
 ```bash
 # Create new branch from current branch
 git checkout -b <new-branch-name>
@@ -140,6 +154,7 @@ git worktree add <worktree-path> <new-branch-name>
 ```
 
 #### Branch Naming
+
 - Default: `split-<timestamp>-<description>`
 - User-provided: use as-is
 - Conflict resolution: append suffix
@@ -147,11 +162,13 @@ git worktree add <worktree-path> <new-branch-name>
 ### Safety Considerations
 
 #### Pre-flight Checks
+
 - Ensure working directory is clean (or handle dirty state)
 - Verify no conflicts with existing worktrees/branches
 - Check that files to move actually exist and are tracked
 
 #### Rollback Strategy
+
 - Create backup refs before starting
 - Support `wt split --abort` to cancel in-progress split
 - Store split state in `.git/wt-split-state` during operation
@@ -159,17 +176,20 @@ git worktree add <worktree-path> <new-branch-name>
 ### Integration with Existing Features
 
 #### With `wt create`
+
 - Should feel natural extension of existing workflow
 - Reuse existing branch/worktree creation logic
 - Consistent naming patterns and directory structure
 
 #### With `wt list`/`wt status`
+
 - Show split worktrees with context about origin
 - Indicate which worktrees are splits vs fresh creates
 
 ## User Experience Examples
 
 ### Example 1: Simple File Split
+
 ```bash
 $ git status
 On branch feature/big-change
@@ -184,7 +204,7 @@ Moving src/feature_b.py to new worktree...
 Cleaned up current branch.
 
 Current branch now has:
-  modified:   src/feature_a.py  
+  modified:   src/feature_a.py
   modified:   tests/test_both.py
 
 New worktree 'feature-b-only' has:
@@ -192,12 +212,13 @@ New worktree 'feature-b-only' has:
 ```
 
 ### Example 2: Interactive Split
+
 ```bash
 $ wt split -i auth-refactor
 
 Split Plan for 'auth-refactor':
   1. src/auth.py (modified, +200 -50)
-  2. src/middleware.py (modified, +30 -10) 
+  2. src/middleware.py (modified, +30 -10)
   3. tests/test_auth.py (modified, +100 -20)
 
 What now> p
@@ -206,7 +227,7 @@ Patch file> 1
 Hunk 1/4: Authentication class refactor
 [y]es move, [n]o keep, [s]kip file: y
 
-Hunk 2/4: New login method  
+Hunk 2/4: New login method
 [y]es move, [n]o keep, [s]kip file: y
 
 Hunk 3/4: Backwards compatibility fix
@@ -228,6 +249,7 @@ Executing split plan...
 ### New Commands
 
 #### `wt split`
+
 ```
 wt split [options] <worktree-name> [files...]
 
@@ -244,6 +266,7 @@ Arguments:
 ```
 
 #### `wt split-status`
+
 ```bash
 wt split-status    # Show any in-progress split operations
 ```
@@ -251,16 +274,19 @@ wt split-status    # Show any in-progress split operations
 ## Future Enhancements
 
 ### GitHub Integration
+
 - Automatically create draft PR for new worktree
 - Link PRs with comments about the split
 - Update original PR description to mention split
 
 ### Smart Suggestions
+
 - Analyze file dependencies to suggest related files
 - Warn about potential broken references
 - Suggest test files that should move with implementation
 
 ### Undo Support
+
 - `wt split --undo <worktree-name>` to merge changes back
 - Track split history for easier merging
 
@@ -275,21 +301,25 @@ wt split-status    # Show any in-progress split operations
 ## Implementation Priority
 
 ### Phase 1: Basic File Movement
+
 - Simple file list mode
 - Full file moves only
 - Basic safety checks
 
 ### Phase 2: Interactive Mode
+
 - REPL interface
 - File selection/deselection
 - Execute/abort functionality
 
 ### Phase 3: Patch-Level Splitting
+
 - Hunk-level selection
 - Partial file moves
 - Advanced git operations
 
 ### Phase 4: Enhanced UX
+
 - Smart suggestions
 - GitHub integration
 - Undo/merge-back support

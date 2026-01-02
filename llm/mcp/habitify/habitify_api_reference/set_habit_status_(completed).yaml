@@ -7,7 +7,7 @@ request:
     Content-Type: application/json
   body:
     status: completed
-    target_date: '2025-05-09T00:00:00+00:00'
+    target_date: "2025-05-09T00:00:00+00:00"
     note: Completed via API reference collector
     value: 1.0
 response:

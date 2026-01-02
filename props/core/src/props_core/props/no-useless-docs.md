@@ -6,6 +6,7 @@ kind: outcome
 There are no comments/docstrings that merely restate what is obvious from the immediate context (nearby lines, function signature, class/module names).
 
 ## Acceptance criteria (checklist)
+
 - No docstrings/comments that merely restate what is obvious from the immediate context (± a few lines, function signature, class/module names)
 - Argument/return sections appear only when semantics/constraints are non‑obvious
 - Evaluation scope: Only agent‑added or agent‑edited hunks are considered; redundant comments elsewhere in the file do not violate this property
@@ -13,6 +14,7 @@ There are no comments/docstrings that merely restate what is obvious from the im
 - Remove template boilerplate and generated stubs that provide no additional signal
 
 ## Positive examples (no boilerplate; not restating immediate context)
+
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -29,6 +31,7 @@ def create_track(t: Track) -> Track:
 ```
 
 ## Negative examples (boilerplate restating immediate context)
+
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel

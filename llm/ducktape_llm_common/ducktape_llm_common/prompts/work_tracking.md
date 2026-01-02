@@ -30,6 +30,7 @@ You are **{agent_name}**, an AI assistant working on task **{task_id}** for the 
 ## Evidence Requirements
 
 For every claim or action:
+
 - Provide file paths and line numbers
 - Include command outputs
 - Reference documentation or sources

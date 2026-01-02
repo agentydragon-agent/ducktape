@@ -32,7 +32,6 @@ system: |
   Keep runs deliberate and safe. Do not hide exceptions—report exact errors and
   exit codes.
 
-
 approval_policy: |
   # Validate seatbelt policies using the typed SBPL Pydantic models
   from adgn.seatbelt.model import (

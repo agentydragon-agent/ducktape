@@ -5,14 +5,14 @@
     <domain>meta</domain>
     <tags>linting, validation, meta-prompting</tags>
   </meta>
-  
+
   <context>
     <purpose>Validate rules, prompts, and instructions against LLM best practices and ensure they follow established patterns for maximum effectiveness. Also validates the semi-formal XML markup structure used in Claude prompts (not strict XML validation, but checks for well-formed pseudo-XML with matching tags, proper nesting, and correct reference formats).</purpose>
-    
+
     <command-syntax><![CDATA[
 /rulelint [file|text] [path/content]
     ]]></command-syntax>
-    
+
     <schema-reference>
       This linter validates against the <a href="~/.claude/schemas/prompt-xml-schema.md">Claude Prompt XML Schema</a> which defines:
       <ul>
@@ -25,7 +25,7 @@
       </ul>
     </schema-reference>
   </context>
-  
+
   <rules>
     <rule id="/validation/semi-formal-xml">
       <title>✅ Semi-formal XML Structure</title>
@@ -56,10 +56,10 @@
         ]]>
       </example>
     </rule>
-    
+
     <rule id="/validation/tool-calls">
       <title>✅ Tool Call Format (per XML Schema)</title>
-      
+
       <section id="old-format">
         <title>Old Claude Code Format</title>
         <example negative>
@@ -74,7 +74,7 @@ Parameters:
           ]]>
         </example>
       </section>
-      
+
       <section id="xml-format">
         <title>New XML Schema Format</title>
         <example positive>
@@ -99,22 +99,22 @@ Parameters:
         </example>
       </section>
     </rule>
-    
+
     <rule id="/validation/conversation">
       <title>✅ Conversation Format (per XML Schema)</title>
-      
+
       <examples>
         <example negative>
           <![CDATA[User: text / Assistant: response]]>
         </example>
-        
+
         <example positive>
           <![CDATA[
 U: What's 2+2?
 A: 4
           ]]>
         </example>
-        
+
         <example positive>
           <![CDATA[
 <conversation>
@@ -123,7 +123,7 @@ A: 4
 </conversation>
           ]]>
         </example>
-        
+
         <example positive>
           <![CDATA[
 <u>What's 2+2?</u>
@@ -133,7 +133,7 @@ A: 4
         </example>
       </examples>
     </rule>
-    
+
     <rule id="/validation/situation-action">
       <title>✅ Situation → Action Pattern</title>
       <example negative>
@@ -146,7 +146,7 @@ A: 4
         <content>When searching for text patterns in files, use Grep tool instead of reading files manually</content>
       </example>
     </rule>
-    
+
     <rule id="/validation/examples">
       <title>✅ Positive and Negative Examples</title>
       <content>
@@ -161,7 +161,7 @@ A: 4
         pass
     </code>
   </example>
-  
+
   <example positive>
     <code language="python">
     # Good: Explicit error handling
@@ -176,7 +176,7 @@ A: 4
         ]]>
       </content>
     </rule>
-    
+
     <rule id="/validation/triggers">
       <title>✅ Trigger Patterns</title>
       <content>
@@ -189,7 +189,7 @@ A: 4
         </ul>
       </content>
     </rule>
-    
+
     <rule id="/validation/interlinking">
       <title>✅ Rule Interlinking</title>
       <content>
@@ -207,10 +207,10 @@ When needed, <call href="#validate-inputs" />
         ]]>
       </content>
     </rule>
-    
+
     <rule id="/validation/anthropic-practices">
       <title>✅ Anthropic Best Practices</title>
-      
+
       <rule id="/validation/anthropic-practices/clear-direct">
         <title>Be Clear and Direct</title>
         <source>Anthropic Prompt Engineering Guide</source>
@@ -222,7 +222,7 @@ When needed, <call href="#validate-inputs" />
           <content>When encountering FileNotFoundError, check path exists with Path.exists() before proceeding</content>
         </example>
       </rule>
-      
+
       <rule id="/validation/anthropic-practices/xml-tags">
         <title>Leverage XML Tags</title>
         <source>Anthropic Prompt Engineering Guide</source>
@@ -240,7 +240,7 @@ When user requests file creation
           ]]>
         </example>
       </rule>
-      
+
       <rule id="/validation/anthropic-practices/chain-of-thought">
         <title>Enable Reasoning (Chain of Thought)</title>
         <source>Anthropic Prompt Engineering Guide</source>
@@ -252,7 +252,7 @@ When user requests file creation
           <content>First understand X, then apply Y, finally verify Z</content>
         </example>
       </rule>
-      
+
       <rule id="/validation/anthropic-practices/multishot">
         <title>Use Examples (Multishot Prompting)</title>
         <source>Anthropic Prompt Engineering Guide</source>
@@ -261,7 +261,7 @@ When user requests file creation
           <content>Always show concrete <![CDATA[<u>/<a>]]> examples with actual commands and responses</content>
         </example>
       </rule>
-      
+
       <rule id="/validation/anthropic-practices/system-prompts">
         <title>Provide System Prompts</title>
         <source>Anthropic Prompt Engineering Guide</source>
@@ -277,7 +277,7 @@ When user requests file creation
         </example>
       </rule>
     </rule>
-    
+
     <rule id="/validation/realistic-examples">
       <title>✅ Realistic, Executable Examples</title>
       <example negative>
@@ -287,7 +287,7 @@ When user requests file creation
         <conversation>
           <u>Find all TODO comments in the codebase</u>
           <a>I'll search for TODO comments across all files.
-          
+
           <tool-call>
             <grep pattern="TODO|FIXME|XXX" include="*.py" />
           </tool-call>
@@ -295,7 +295,7 @@ When user requests file creation
         </conversation>
       </example>
     </rule>
-    
+
     <rule id="/validation/agentic-intelligence">
       <title>✅ Agentic Intelligence</title>
       <content>Show smart decision-making:</content>
@@ -307,7 +307,7 @@ If pattern has special chars → escape for regex
         ]]>
       </example>
     </rule>
-    
+
     <rule id="/validation/compatibility">
       <title>✅ Compatibility Check</title>
       <ul>
@@ -317,7 +317,7 @@ If pattern has special chars → escape for regex
         <li>Non-overlapping anchors</li>
       </ul>
     </rule>
-    
+
     <rule id="/validation/second-person">
       <title>No Second Person for User</title>
       <content>Never use "you" or "your" to refer to the user in documentation or commands. Use "the user" or rephrase.</content>
@@ -329,10 +329,10 @@ If pattern has special chars → escape for regex
       </example>
     </rule>
   </rules>
-  
+
   <process id="linting-process">
     <title>Linting Process</title>
-    
+
     <step priority="0">
       <title>Validate Semi-formal XML</title>
       <ul>
@@ -344,7 +344,7 @@ If pattern has special chars → escape for regex
         <li>Find orphaned or overlapping tags</li>
       </ul>
     </step>
-    
+
     <step priority="1">
       <title>Parse Structure</title>
       <ul>
@@ -354,7 +354,7 @@ If pattern has special chars → escape for regex
         <li>Locate interlinks</li>
       </ul>
     </step>
-    
+
     <step priority="2">
       <title>Check Completeness</title>
       <ul>
@@ -365,7 +365,7 @@ If pattern has special chars → escape for regex
         <li>Has realistic demos? ✓/✗</li>
       </ul>
     </step>
-    
+
     <step priority="3">
       <title>Validate Quality</title>
       <ul>
@@ -375,7 +375,7 @@ If pattern has special chars → escape for regex
         <li>Examples executable? ✓/✗</li>
       </ul>
     </step>
-    
+
     <step priority="4">
       <title>Test Compatibility</title>
       <ul>
@@ -384,12 +384,12 @@ If pattern has special chars → escape for regex
         <li>Ensure terminology consistency</li>
       </ul>
     </step>
-    
+
     <step priority="5">
       <title>Fix Issues (Progressive Approach)</title>
       <content>
         When issues are found, fix them in order from easiest to most complex:
-        
+
         <phase id="phase-1-trivial">
           <title>Phase 1: Trivial, Non-controversial Fixes</title>
           <ul>
@@ -401,7 +401,7 @@ If pattern has special chars → escape for regex
             <li>Fix CDATA sections that aren't properly closed</li>
           </ul>
         </phase>
-        
+
         <phase id="phase-2-formatting">
           <title>Phase 2: Formatting and Structure</title>
           <ul>
@@ -412,7 +412,7 @@ If pattern has special chars → escape for regex
             <li>Add language attributes to code blocks</li>
           </ul>
         </phase>
-        
+
         <phase id="phase-3-content-improvements">
           <title>Phase 3: Content Enhancement</title>
           <ul>
@@ -423,7 +423,7 @@ If pattern has special chars → escape for regex
             <li>Make examples more realistic and executable</li>
           </ul>
         </phase>
-        
+
         <phase id="phase-4-structural-changes">
           <title>Phase 4: Major Structural Improvements</title>
           <ul>
@@ -435,7 +435,7 @@ If pattern has special chars → escape for regex
           </ul>
         </phase>
       </content>
-      
+
       <fix-protocol>
         <title>Fix Protocol</title>
         <ol>
@@ -455,7 +455,7 @@ If pattern has special chars → escape for regex
       </fix-protocol>
     </step>
   </process>
-  
+
   <output>
     <section id="lint-report-example">
       <title>Example Lint Report</title>
@@ -463,6 +463,7 @@ If pattern has special chars → escape for regex
 🔍 RULE LINT REPORT: no-disabling-code-quality-checks.md
 
 ✅ PASSED:
+
 - Clear triggers (mypy errors, ESLint warnings)
 - Situation→Action patterns throughout
 - Positive/negative examples with explanations
@@ -471,6 +472,7 @@ If pattern has special chars → escape for regex
 - Realistic, executable examples
 
 ⚠️ WARNINGS:
+
 - Line 315: Example could be more specific
 - Missing link to #optimal-grip pattern
 
@@ -481,20 +483,20 @@ SCORE: 95/100 - Excellent rule quality
       ]]>
     </section>
   </output>
-  
+
   <common-issues>
     <issue id="vague-instructions">
       <title>Vague Instructions</title>
       <example negative>Handle the error gracefully</example>
       <example positive>Catch ValueError, log with context, return None</example>
     </issue>
-    
+
     <issue id="missing-triggers">
       <title>Missing Triggers</title>
       <example negative>Use this pattern for optimization</example>
       <example positive>When profiler shows function takes >1s, apply this pattern</example>
     </issue>
-    
+
     <issue id="poor-examples">
       <title>Poor Examples</title>
       <example negative>
@@ -514,14 +516,14 @@ SCORE: 95/100 - Excellent rule quality
         </conversation>
       </example>
     </issue>
-    
+
     <issue id="no-reasoning">
       <title>No Reasoning</title>
       <example negative>Always use pandas</example>
       <example positive>For CSV files >100MB, use pandas for memory-efficient processing. For smaller files, csv.reader is sufficient.</example>
     </issue>
   </common-issues>
-  
+
   <integration>
     <title>Integration with CLAUDE.md</title>
     <content>
@@ -534,7 +536,7 @@ SCORE: 95/100 - Excellent rule quality
       </ul>
     </content>
   </integration>
-  
+
   <usage-examples>
     <title>Usage Examples</title>
     <![CDATA[
@@ -543,7 +545,7 @@ SCORE: 95/100 - Excellent rule quality
 /rulelint validate @{#no-disabling-code-quality-checks}
     ]]>
   </usage-examples>
-  
+
   <quality-metrics>
     <title>Quality Metrics</title>
     <content>
@@ -558,14 +560,14 @@ SCORE: 95/100 - Excellent rule quality
         <li>Reasoning/explanation (10 pts)</li>
         <li>Compatibility (5 pts)</li>
       </ul>
-      
+
       Target: 80+ points for acceptance
     </content>
   </quality-metrics>
-  
+
   <footer>
     <note>Remember: Great rules are specific, actionable, and demonstrable. They show, not just tell.</note>
-    
+
     <references>
       <ref id="anthropic-guide">Anthropic. (2024). <cite>Prompt Engineering Guide</cite>. https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview</ref>
     </references>

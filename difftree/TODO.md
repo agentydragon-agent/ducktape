@@ -43,6 +43,7 @@
   - Reduce indent at narrow widths to save horizontal space
   - Use full +3 indent when width allows for better readability
   - Example:
+
     ```
     # Wide terminal (indent=3, connectors=2):
     root
@@ -58,6 +59,7 @@
     │ └─ file2.py
     └─ test.py
     ```
+
   - Challenge: must coordinate with multiple flexible elements:
     - Path collapsing (single-child directory merging creates variable path lengths)
     - Bar width constraints (bars already have max_width flexibility)
@@ -72,6 +74,7 @@
 - [ ] Different tree styles (ascii, unicode, etc.)
 
 ### Interactive Mode
+
 - [ ] Add interactive mode that lets you expand/collapse tree nodes interactively
   - Use rich's Live display for real-time updates
   - Keyboard navigation (arrow keys, enter to expand/collapse)
@@ -80,6 +83,7 @@
   - Toggle between different column views on the fly
 
 ### Box-shaped Hierarchical View
+
 - [ ] Add box-shaped directory hierarchy view (like ncdu, WinDirStat)
   - Boxes sized proportionally to diff size (additions + deletions)
   - Nested boxes respect directory hierarchy
@@ -89,6 +93,7 @@
   - Optional: treemap-style layout
 
 ### Filtering and Cutoff Options
+
 - [ ] Add cutoff by top N items
   - `--top N` flag to show only top N files by change count
   - Show "... and N more files" summary at bottom
@@ -99,6 +104,7 @@
 - [ ] Combine filters (e.g., top 10 OR >=1%)
 
 ### Other Enhancements
+
 - [ ] Support for renamed files (currently shown as separate add/delete)
   - Git provides rename detection via `git diff --find-renames` (or `-M`)
   - With `-M`, `git diff --numstat` shows renames as: `old_path => new_path` or `{old => new}_common_path`
@@ -119,6 +125,7 @@
       - Avoid redundant common prefixes
       - Keep it concise while being unambiguous
   - Example displays:
+
     ```
     # Simple case: different directories, different filenames
     lib/
@@ -148,6 +155,7 @@
     └── baz.py                           +5  -2  ███ ██
     # Note: Source "../src/foo.py" goes up from lib/ to reach src/
     ```
+
   - Edge cases to handle:
     - Renamed + modified (most common)
     - Renamed with directory change

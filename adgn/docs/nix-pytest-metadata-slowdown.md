@@ -9,6 +9,7 @@ Tests using `EnhancedFastMCP` fixtures were timing out (30+ seconds) when runnin
 Added optional `version: str | None = None` parameter to `EnhancedFastMCP` and `_CapturingServer` in `mcp_infra/src/mcp_infra/enhanced/server.py`.
 
 Applied `version="test"` in specific test fixtures to bypass slow `importlib.metadata.version()` lookups:
+
 - `tests/mcp/conftest.py`: `origin_with_recorder` fixture
 - `tests/agent/conftest.py`: `failing_server` fixture
 
@@ -51,6 +52,7 @@ def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
 Initially suspected `importlib.metadata.version("mcp")` call was slow (~0.001-0.002s).
 
 **Reality discovered through profiling:**
+
 - Direct `importlib.metadata.version("mcp")`: **0.003s** (fast!)
 - FastMCP import (all dependencies): **1.158s** (slow but acceptable)
 - Pytest execution (full suite): **30s+ timeout** (pathological)
@@ -58,6 +60,7 @@ Initially suspected `importlib.metadata.version("mcp")` call was slow (~0.001-0.
 ### What's Actually Slow
 
 The FastMCP dependency imports from `/nix/store/` paths:
+
 - `jsonschema`: 0.681s
 - `rfc3987_syntax`: 0.595s
 - `mcp.client.session`: 0.745s
@@ -78,10 +81,12 @@ This is acceptable for direct execution but becomes pathological in pytest's con
 ### sys.path Differences
 
 **Direct Python** (19 entries):
+
 - Starts with `/tmp`
 - Immediately goes to Nix store paths
 
 **pytest** (27 entries - 8 extra):
+
 - Entry 1: `/home/agentydragon/.cache/devenv/adgn/state/venv/bin`
 - Entry 25: `/home/agentydragon/code/ducktape/adgn/.devenv/state/venv/lib/python3.12/site-packages`
 - Entry 26: `/home/agentydragon/code/ducktape/adgn/src`
@@ -93,6 +98,7 @@ pytest adds venv paths and project paths that affect import resolution.
 **Concurrent filesystem contention in Nix store during pytest-xdist execution:**
 
 When running the full test suite with pytest-xdist (16 workers by default):
+
 1. Multiple workers spawn simultaneously
 2. Each worker creates multiple `EnhancedFastMCP` fixtures concurrently
 3. Each fixture creation triggers `pkg_version("mcp")` → `importlib.metadata.version()`
@@ -101,6 +107,7 @@ When running the full test suite with pytest-xdist (16 workers by default):
 6. Some `os.stat()` calls on `/nix/store/` paths block for 30+ seconds
 
 **Why this explains the observations:**
+
 - ✅ Isolated tests are fast (no contention)
 - ✅ Direct execution is fast (no parallel workers)
 - ✅ Non-Nix venv is fast (regular filesystem, no symlink maze)
@@ -108,6 +115,7 @@ When running the full test suite with pytest-xdist (16 workers by default):
 - ✅ Workaround works (bypasses all metadata lookups)
 
 **What's still unclear:**
+
 - Why strace didn't capture the blocking `os.stat()` calls
 - Exact mechanism of the contention (inode locks? metadata cache thrashing?)
 - Why it's exactly 30 seconds (might be pytest-timeout setting, not actual hang duration)
@@ -115,6 +123,7 @@ When running the full test suite with pytest-xdist (16 workers by default):
 ## Not The Problem
 
 Things we definitively ruled out:
+
 - ❌ `importlib.metadata.version()` being inherently slow (it's 0.003s)
 - ❌ FastMCP imports being too slow (1.1s is acceptable)
 - ❌ pytest-xdist parallelism alone (4 workers on single test is fast)
@@ -145,11 +154,13 @@ pytest tests/mcp/test_resources_subscriptions_index.py -xvs  # BEFORE: timeout, 
 ## Profiling Attempts
 
 Tried but couldn't reproduce the exact hang in isolation:
+
 - `strace -e trace=stat,statx,open,openat` - saw futex operations but not blocking stat calls
 - `python -X importtime` - confirmed 1.1s import overhead but not the 30s hang
 - `py-spy` - not available in environment
 
 The hang only manifests when:
+
 - Running the FULL test suite
 - With multiple pytest-xdist workers (default: 16)
 - Creating many fixtures concurrently
@@ -159,16 +170,19 @@ The hang only manifests when:
 If the issue resurfaces or we want to understand it better:
 
 1. **Disable pytest-xdist completely** and measure timing:
+
    ```bash
    pytest -n0 tests/mcp/test_resources_subscriptions_index.py
    ```
 
 2. **Binary search on worker count** to find contention threshold:
+
    ```bash
    pytest -n1 ... # then -n2, -n4, -n8, -n16
    ```
 
 3. **Monitor Nix store access** during test run:
+
    ```bash
    sudo inotifywait -m /nix/store/ & pytest ...
    ```
@@ -182,12 +196,14 @@ If the issue resurfaces or we want to understand it better:
 **Resolved with workaround.** Tests now pass reliably (383 passed in ~52 seconds).
 
 The workaround is:
+
 - ✅ Minimal and targeted
 - ✅ Well-documented at usage sites
 - ✅ No global behavior changes
 - ✅ Can be extended to additional fixtures as needed
 
 **ROI on deep investigation: LOW**
+
 - Workaround is simple and effective
 - Issue is environment-specific (only affects Nix)
 - May not be fixable by us (likely Nix filesystem + pytest-xdist interaction)

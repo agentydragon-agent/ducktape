@@ -8,8 +8,9 @@ Runs coding agents on programming tasks, grades their solutions, and uses those 
 Uses Docker for isolated execution and stores results in a database for analysis.
 
 **Key Features:**
+
 - Parallel rollouts
-- Docker containerization for isolated agent execution  
+- Docker containerization for isolated agent execution
 - OpenAI o3 model for grading and prompt engineering
 - Comprehensive logging and cost tracking
 - Real-time score evolution plots
@@ -19,13 +20,16 @@ Uses Docker for isolated execution and stores results in a database for analysis
 ### Run Optimization
 
 **Production Run (Recommended):**
+
 ```bash
 python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10 --max-parallel 8 --mode summary
 ```
+
 - 10 iterations of prompt improvement
 - 3 rollouts per task for statistical reliability
 - 10 random tasks per iteration (faster than all 25)
 - 8 concurrent rollouts (30 total per iteration)
+
 ```
 
 **Quick Development Testing:**
@@ -48,6 +52,7 @@ python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 3 --rollou
 ## Architecture
 
 Tasks can:
+
 - Specify their required Docker image.
 - Execute pre-task scripts to set up their environment, including:
   - Clone Git repos the task depends on from shared RW/RO volume
@@ -56,6 +61,7 @@ Tasks can:
 ## Output
 
 ### Run Directory Structure
+
 ```
 agent_output/{timestamp}/
 ├── iter_1/CLAUDE.md              # System prompt for iteration 1
@@ -69,6 +75,7 @@ agent_output/{timestamp}/
 ### Database Storage
 
 All results stored in `optimizer.db`:
+
 - **optimization_runs**: Run metadata and configuration
 - **system_prompts**: Generated prompts with reasoning
 - **rollouts**: Individual agent executions with costs
@@ -89,14 +96,16 @@ All results stored in `optimizer.db`:
 The optimizer uses two complementary grading configurations:
 
 **`graders.yaml`** - High-resolution evaluation with 24 specific graders:
+
 - Individual concerns like `exception_handling`, `nullable_types`, `enum_types`, `organization`
 - Detailed evaluation criteria and examples for each grader
 - Use when you need granular feedback on specific coding practices
 - Err on the side of adding new graders here for specific issues
 
 **`graders_consolidated.yaml`** - Broad evaluation with 7 consolidated categories:
+
 - `type_safety_data_design`: Strong typing and data structures
-- `code_quality_clarity`: Readability and modern language features  
+- `code_quality_clarity`: Readability and modern language features
 - `robustness_error_handling`: Defensive programming and error boundaries
 - `architecture_design`: Separation of concerns and proper tools
 - `implementation_completeness`: Full implementation without cruft
@@ -105,6 +114,7 @@ The optimizer uses two complementary grading configurations:
 - Err on the side of consolidating related concerns here
 
 Choose based on your evaluation needs:
+
 - **Development/debugging**: Use `graders.yaml` for specific feedback
 - **Production evaluation**: Use `graders_consolidated.yaml` for broader assessment
 
@@ -120,16 +130,18 @@ pip install -e ".[dev]"
 ### Code Quality
 
 **Type Checking with MyPy:**
+
 ```bash
 mypy src/adgn_llm/instruction_optimizer/core/optimizer.py
 ```
 
 **Testing with Pytest:**
+
 ```bash
 # Run all tests
 pytest
 
-# Run with coverage 
+# Run with coverage
 pytest --cov=src/adgn_llm
 
 # Run specific test files
@@ -137,6 +149,7 @@ pytest tests/test_yaml_loader.py
 ```
 
 **Code Formatting:**
+
 ```bash
 # Format code
 black src/ tests/
@@ -156,11 +169,13 @@ ruff check --fix src/ tests/
 ### Docker Buildx Setup (One-time)
 
 **Install buildx** to avoid "legacy builder" warnings:
+
 ```bash
 docker buildx install
 ```
 
 **For macOS with Colima:**
+
 ```bash
 # Create Docker CLI plugins directory
 mkdir -p ~/.docker/cli-plugins
@@ -179,18 +194,23 @@ docker buildx version
 ## Advanced Usage
 
 ### Pattern Analysis Mode
+
 ```bash
 python3 -m adgn_llm.instruction_optimizer.core.optimizer --mode summary --iterations 5
 ```
+
 Uses condensed pattern analysis instead of full rollout data for prompt engineering.
 
 ### Custom Parallelism
+
 ```bash
 python3 -m adgn_llm.instruction_optimizer.core.optimizer --max-parallel 4
 ```
 
 ### Monitoring Costs
+
 The system tracks costs in real-time. Use Ctrl+C for graceful interruption:
+
 ```
 Interrupt received, reporting costs before exit
 FINAL COST SUMMARY: total_cost_usd=45.67, rollout_count=120, avg_cost_per_rollout_usd=0.38
@@ -199,6 +219,7 @@ FINAL COST SUMMARY: total_cost_usd=45.67, rollout_count=120, avg_cost_per_rollou
 ## Troubleshooting
 
 ### Docker Build Issues
+
 ```bash
 # Check Docker BuildKit is enabled
 export DOCKER_BUILDKIT=1

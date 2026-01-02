@@ -9,7 +9,8 @@ When using Docker bind mounts (`-v` or `--mount`) with Colima on macOS, **bind m
 ## Root Cause
 
 Colima VM only mounts specific Mac filesystem paths into the VM:
-- **`/Users/$USER`** (user home directory) 
+
+- **`/Users/$USER`** (user home directory)
 - **`/tmp/colima`** (Colima temp directory)
 
 **All other Mac paths are inaccessible to the Colima VM and Docker containers.**
@@ -29,7 +30,7 @@ Colima VM only mounts specific Mac filesystem paths into the VM:
 # ✅ WORKS - under user home
 docker run -v ~/my-project:/workspace my-image
 
-# ❌ FAILS SILENTLY - outside user home  
+# ❌ FAILS SILENTLY - outside user home
 docker run -v /tmp/my-project:/workspace my-image
 docker run -v /var/log:/logs my-image
 ```
@@ -57,7 +58,7 @@ except ValueError:
 
 This is documented in the official Colima FAQ:
 
-**Source:** https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#issue-with-docker-bind-mount-showing-empty
+**Source:** <https://github.com/abiosoft/colima/blob/main/docs/FAQ.md#issue-with-docker-bind-mount-showing-empty>
 
 > "When using docker to bind mount a volume (e.g. using `-v` or `--mount`) from the host where the volume is not contained within `/tmp/colima` or `/Users/$USER`, the container will start without raising any errors but the mapped mountpoint on the container will be empty."
 
@@ -66,15 +67,16 @@ This is documented in the official Colima FAQ:
 If you must bind mount paths outside your home directory:
 
 1. **Edit Colima VM configuration** to mount additional paths:
+
    ```bash
    # Edit colima config
    colima start --edit
-   
+
    # Add mount in mounts section:
    mounts:
      - location: /some/other/path
        writable: true
-   
+
    # Restart colima
    colima restart
    ```

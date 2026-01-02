@@ -17,6 +17,7 @@ When invoked, systematically address incorrect or unverified assumptions to prev
 ## Phase 2: Create Corrective Actions (using TodoWrite)
 
 ### Todo 1: Update documentation
+
 - Add to CLAUDE.md (local and/or global):
   - "Don't assume [specific thing]"
   - How to verify this assumption
@@ -24,6 +25,7 @@ When invoked, systematically address incorrect or unverified assumptions to prev
   - Example of the bad assumption and correction
 
 ### Todo 2: Fix the source
+
 - Find where the incorrect information originated:
   - Documentation that's wrong/incomplete
   - Comments that are misleading
@@ -35,6 +37,7 @@ When invoked, systematically address incorrect or unverified assumptions to prev
   - Adding verification steps
 
 ### Todo 3: Find and fix all instances
+
 - **Spawn parallel agents** to:
   - Search for similar assumptions in:
     - Code comments
@@ -55,22 +58,27 @@ When invoked, systematically address incorrect or unverified assumptions to prev
 ## Example Usage
 
 ### Example 1: Unverified assumption
+
 U: /course you're assuming this API returns JSON but you never checked
 A: You're right - I assumed the API returns JSON without verifying. Is this:
+
 - Unverified (might return JSON but we should check Content-Type header)
 - False (definitely returns something else like XML/plaintext)?
 
 U: unverified - could be JSON or error page HTML
 
 ### Example 2: False assumption
+
 U: /course wrong - you assumed all node IDs start with '-' but system nodes don't
 A: I see - I falsely assumed all node IDs have a '-' prefix. Let me correct this systematically.
 
 [Creates todos to update docs about node ID formats, fix the source of this misinformation, and search for other places making this assumption]
 
 ### Example 3: Vague correction needed
+
 U: /course this auth flow doesn't work like you think
 A: What specifically am I assuming wrong about the auth flow?
+
 - Token refresh mechanism?
 - Required headers?
 - Authentication endpoint?

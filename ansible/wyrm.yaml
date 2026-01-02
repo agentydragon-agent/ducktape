@@ -44,13 +44,12 @@
     #     include_ml_libraries: true
 
   tasks:
-
     # Configure Nix trusted users for devenv cache management
     - name: Configure Nix trusted users
       ansible.builtin.lineinfile:
         path: /etc/nix/nix.conf
-        regexp: '^trusted-users = '
-        line: 'trusted-users = root agentydragon'
+        regexp: "^trusted-users = "
+        line: "trusted-users = root agentydragon"
         create: false
         backup: true
       become: true
@@ -130,7 +129,7 @@
         state: directory
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
-        mode: '0755'
+        mode: "0755"
       become: true
       loop:
         - /mnt/tankshare/shared/pip-cache
@@ -149,7 +148,7 @@
         state: directory
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
-        mode: '0755'
+        mode: "0755"
       become: true
       loop:
         - /mnt/tankshare/shared/uv-cache
@@ -163,17 +162,17 @@
         dest: /etc/motd
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       become: true
       tags: [motd]
 
     - name: Disable dynamic MOTD components
       ansible.builtin.file:
         path: "{{ item }}"
-        mode: 'a-x'  # Remove execute permission
+        mode: "a-x" # Remove execute permission
       become: true
       loop:
-        - /etc/pop-os/update-motd.d/10-help-text  # The actual Pop!_OS script (symlink target)
+        - /etc/pop-os/update-motd.d/10-help-text # The actual Pop!_OS script (symlink target)
         # TODO: Future fancy ideas:
         # - Create /etc/update-motd.d/99-wyrm-status with dynamic dragon-themed system stats
         # - Show GPU status for AI experiments

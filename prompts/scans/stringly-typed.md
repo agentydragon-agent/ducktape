@@ -1,6 +1,7 @@
 # Scan: Stringly-Typed Code
 
 ## Context
+
 @../shared-context.md
 
 ## Overview
@@ -98,6 +99,7 @@ rg --type py 'Literal\[.*,.*\]'
 **Tool**: `prompts/scans/scan_string_literals.py` - AST-based scanner for string literals and symbols
 
 **What it finds**:
+
 1. **Literal histogram**: All string literals (< 50 chars) sorted by frequency with file/line locations
 2. **Symbol histogram**: All symbol names (classes, functions, variables, fields) sorted by frequency
 3. **Overlaps**: String literals matching symbol names (STRONG stringly-typed indicator)
@@ -105,6 +107,7 @@ rg --type py 'Literal\[.*,.*\]'
 4. **Repeated patterns**: Same string appearing many times → likely needs enum
 
 **Usage**:
+
 ```bash
 # Run on entire codebase
 python prompts/scans/scan_string_literals.py . > string_literals_scan.json
@@ -125,6 +128,7 @@ cat string_literals_scan.json | jq '.literal_histogram["completed"]'
 **Key insight from overlaps**: When you see both a string literal `"status"` and a symbol name `status` appearing frequently, this strongly suggests the code is using strings where it should use an enum. The overlap section surfaces these cases automatically.
 
 **What to review in histogram:**
+
 1. **High-frequency literals**: Strings appearing 5+ times are enum candidates
 2. **Categorical patterns**: status/type/mode/state values
 3. **Overlaps**: Literal/symbol matches indicate stringly-typed patterns
@@ -156,6 +160,7 @@ cat string_literals_scan.json | jq '.literal_histogram["completed"]'
    - These fields are prime enum candidates
 
 4. **Cross-Reference Existing Enums**
+
 ```bash
 # Find enums already defined
 rg --type py "class \w+\(.*Enum\):" -A5
@@ -166,12 +171,14 @@ rg --type py '"completed"' --glob '!**/enums.py'
 ```
 
 5. **Assignment Pattern Analysis**
+
 ```bash
 # Count status/type assignments to find common values
 rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq -c | sort -rn
 ```
 
 **Critical Workflow**:
+
 1. Run automated tools → get candidate strings
 2. **MANUALLY READ CODE** - understand domain, group related values
 3. Determine if candidates are truly categorical (not messages/IDs)
@@ -195,6 +202,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
      - `google-cloud-*` - Google Cloud APIs
 
    **Example - BAD (reinventing the wheel)**:
+
    ```python
    # Parsing Anthropic API responses with custom types
    class TextContent(BaseModel):
@@ -207,6 +215,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
    **Example - GOOD (using SDK types)**:
+
    ```python
    from anthropic.types import Message, ContentBlock, TextBlock, ToolUseBlock
 
@@ -220,6 +229,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
    **How to check**:
+
    ```bash
    # 1. Check if SDK is in requirements
    rg "anthropic|openai|github|stripe" requirements.txt pyproject.toml
@@ -240,6 +250,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    - If significantly different: Custom types OK, but use Literal discriminators
 
    **Example - Claude Code history format**:
+
    ```python
    # Claude Code logs wrap Anthropic Messages API format:
    # {
@@ -273,6 +284,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
 2. **Check standard library enums**:
+
    ```python
    # Use stdlib enums when available
    from http import HTTPStatus  # For HTTP status codes
@@ -280,6 +292,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
 3. **Create StrEnum for internal values**:
+
    ```python
    from enum import StrEnum
 
@@ -289,6 +302,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
 3. **Replace string fields**:
+
    ```python
    # Before
    status: str
@@ -298,6 +312,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
 4. **Update comparisons**:
+
    ```python
    # Before
    if status == "complete":
@@ -381,6 +396,7 @@ ProxyError = UpstreamHttpError | StreamingFailure | ...
 ```
 
 **Why structured errors?**
+
 - Categorize errors for metrics/alerting
 - Type-safe error handling
 - Extract structured info (status codes, etc.)

@@ -23,3 +23,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Locally mirrored gmail data (ephemeral)
+inbox/
+to_filter_emails/
+examples/
+*filters*.yaml

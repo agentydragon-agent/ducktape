@@ -7,6 +7,7 @@
 Currently, the pre-hook only checks Write operations. We need to extend it to also check Edit and MultiEdit operations for non-fixable violations in the edited sections.
 
 **Tasks:**
+
 - [ ] Update pre-hook to handle Edit tool
   - Extract the `new_string` content from Edit operations
   - Check only the new content for non-fixable violations

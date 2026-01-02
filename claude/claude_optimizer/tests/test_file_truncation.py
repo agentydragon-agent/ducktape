@@ -116,7 +116,7 @@ from typing import List, Dict, Any
 def main():
     """Main entry point."""
     print("Hello, world!")
-    
+
 ''',
             },
             {

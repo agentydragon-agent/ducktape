@@ -13,6 +13,7 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 **Key idea:** Use an LLM to generate candidate prompts, then select the best one based on evaluation metrics.
 
 **Workflow:**
+
 1. **Generation:** LLM generates N candidate prompts given:
    - Task description
    - Few input-output examples
@@ -25,16 +26,19 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 3. **Selection:** Choose the prompt with highest evaluation performance
 
 **Strengths:**
+
 - Simple and interpretable
 - Discovers prompts humans might not think of
 - Works across diverse tasks (classification, generation, reasoning)
 
 **Limitations:**
+
 - No iterative refinement (one-shot generation)
 - Requires substantial evaluation budget (N prompts × M examples)
 - May not escape local optima (no gradient-based search)
 
 **Relevance to our project:**
+
 - GEPA extends this with iterative refinement (multiple rounds)
 - We similarly generate candidates, evaluate on train/valid, select winners
 
@@ -45,12 +49,14 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 **Key idea:** LLMs can optimize prompts through natural language feedback, treating prompt optimization as a meta-learning problem.
 
 **Workflow:**
+
 1. **Initial prompts:** Start with hand-written baseline prompts
 
 2. **Feedback loop:**
    - Evaluate current prompts on training examples
    - Compute performance metrics (accuracy, recall, etc.)
    - Feed performance back to LLM as natural language:
+
      ```
      Prompt A achieved 75% accuracy.
      Prompt B achieved 82% accuracy.
@@ -67,16 +73,19 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 4. **Convergence:** Stop when performance plateaus or budget exhausted
 
 **Strengths:**
+
 - Iterative improvement (escapes local optima)
 - Leverages LLM's ability to understand why prompts succeed/fail
 - Natural language feedback is interpretable
 
 **Limitations:**
+
 - Can get stuck in local optima (no guaranteed global convergence)
 - Requires many evaluation rounds (expensive)
 - Success depends on LLM's meta-reasoning ability
 
 **Relevance to our project:**
+
 - Similar feedback loop: evaluate prompt → analyze failures → propose improvement
 - We provide richer feedback (execution traces, not just accuracy)
 - Natural language critique enables sophisticated reasoning about prompt quality
@@ -88,6 +97,7 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 **Key idea:** Treat prompts as parameters to be optimized, separate prompt composition from prompt optimization.
 
 **Core abstractions:**
+
 - **Signature:** Input/output specification (what the module should do)
 - **Module:** LLM call with a prompt (initially generic)
 - **Optimizer:** Algorithm that searches for better prompts
@@ -97,6 +107,7 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 #### MIPROv2 (Multi-step Instruction Proposal and Refinement Optimizer)
 
 **Approach:**
+
 1. Generate diverse instruction candidates from examples
 2. Score candidates on training set
 3. Bootstrap few-shot examples based on model's self-assessment
@@ -107,6 +118,7 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 #### COPRO (Constraint-driven Prompt Optimizer)
 
 **Approach:**
+
 1. Define constraints (e.g., "prompt must be < 200 words", "must mention specific concepts")
 2. Generate prompts satisfying constraints
 3. Evaluate and refine within constraint space
@@ -116,6 +128,7 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 #### GEPA (Generate, Evolve, Prioritize, Analyze)
 
 **Approach:**
+
 1. **Generate:** Create population of prompt variants
 2. **Evaluate:** Test each on training examples
 3. **Evolve:** Use reflection LM to analyze failures and propose improvements
@@ -124,11 +137,13 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 6. **Repeat:** Iterate until convergence
 
 **Key innovations:**
+
 - **Evolutionary search:** Maintain population, breed winners
 - **Reflection-based mutation:** LLM analyzes failures and proposes targeted fixes
 - **Statistical rigor:** Use LCB and variance to rank reliably with small sample sizes
 
 **Relevance to our project:**
+
 - **We ARE using GEPA** for prompt optimization
 - Our rewritten system prompt guides the "reflection LM" role
 - Key insight: Reflection quality determines optimization effectiveness
@@ -137,6 +152,7 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 
 **1. Generate-Evaluate-Refine Loop:**
 All systems follow this pattern:
+
 ```
 while not converged:
     prompts = generate_candidates(feedback)
@@ -146,21 +162,25 @@ while not converged:
 
 **2. Natural Language Feedback:**
 Feedback to the LLM is in natural language (not gradients):
+
 - "This prompt missed 20% of issues in file X"
 - "Prompt A found dead code but missed duplication"
 - "Prompt B had high variance - 30% zero-recall runs"
 
 **3. Train/Valid Split:**
+
 - **Train:** Use for iterative refinement (can inspect results)
 - **Valid:** Use for final evaluation (held-out, measures generalization)
 
 **4. Multi-Objective Optimization:**
 Often optimize for multiple metrics:
+
 - Primary: task performance (accuracy, recall)
 - Secondary: efficiency (latency, cost), reliability (low variance)
 
 **5. Bootstrapping:**
 Start from reasonable baseline (not random):
+
 - Hand-written prompts
 - Prompts from similar tasks
 - Generic "expert" prompts
@@ -266,6 +286,7 @@ def optimize_with_constraints(task, examples, constraints):
 ### 1. Start with Reasonable Baseline
 
 Don't start from scratch. Begin with:
+
 - Hand-written prompt by expert
 - Prompt from similar task
 - Generic "You are an expert X" prompt
@@ -283,6 +304,7 @@ Don't start from scratch. Begin with:
 ### 3. Provide Rich Feedback to Reflection LM
 
 Don't just give accuracy numbers. Provide:
+
 - **What failed:** Specific examples the prompt missed
 - **Execution traces:** What the model did (tool calls, reasoning)
 - **Patterns:** "Missed all duplication issues" not just "82% accuracy"
@@ -292,6 +314,7 @@ Don't just give accuracy numbers. Provide:
 ### 4. Measure Variance, Not Just Mean
 
 Use robust metrics:
+
 - **LCB (Lower Confidence Bound):** mean - σ/√n
 - **Zero-recall percentage:** How often does prompt fail completely?
 - **Max performance:** Best-case scenario (ceiling)
@@ -304,6 +327,7 @@ Use robust metrics:
 - **Exploitation phase:** Few prompts × many examples (deep evaluation)
 
 **Example:**
+
 - Phase 1: 20 prompts × 10 examples = 200 evals (find good regions)
 - Phase 2: 5 prompts × 50 examples = 250 evals (refine winners)
 - Phase 3: 2 prompts × 100 examples = 200 evals (validate)
@@ -311,6 +335,7 @@ Use robust metrics:
 ### 6. Iterative Refinement > One-Shot Generation
 
 OPRO-style iterative refinement outperforms APE-style one-shot generation:
+
 - Escapes local optima
 - Leverages learned patterns from previous iterations
 - More sample-efficient (focuses budget on promising directions)
@@ -322,12 +347,14 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 ### What We're Doing (GEPA)
 
 **Our system:**
+
 - **Population:** Multiple prompt variants evolved over generations
 - **Evaluation:** Test on train examples (per-file and full-snapshot)
 - **Reflection:** Our prompt optimizer agent analyzes failures, proposes improvements
 - **Selection:** Rank by validation LCB, evolve winners
 
 **Our rewritten system prompt:**
+
 - Positions the optimizer as the "reflection LM" in GEPA
 - Emphasizes data-driven iteration (not fixed plans)
 - Provides strategic principles (not step-by-step procedures)
@@ -336,26 +363,31 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 ### Key Design Choices
 
 **1. Baseline-driven optimization:**
+
 - Always compare to current best validation recall
 - Any improvement → new baseline
 - Goal is continuous improvement (not absolute threshold)
 
 **2. Two-distribution problem:**
+
 - Train examples are mixed difficulty (single-file, multi-file, full-snapshot)
 - Valid examples are ONLY full-snapshot (hardest)
 - Must test on full-snapshot train before validation (proxy metric)
 
 **3. Rich diagnostic feedback:**
+
 - Execution traces from `events` table
 - Tool call sequences, file reads, where critic got stuck
 - More informative than just "82% recall"
 
 **4. Statistical rigor:**
+
 - Small validation set → high variance
 - Use LCB to rank prompts (penalizes variance)
 - Don't trust point estimates with n < 5
 
 **5. Custom scripting encouraged:**
+
 - Write analysis scripts in `/workspace/`
 - Form hypotheses, test via custom queries
 - Not just "run provided scripts" (explore autonomously)
@@ -365,6 +397,7 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 ### When to Use Automatic Optimization
 
 **Good fit:**
+
 - Large prompt search space (many possible formulations)
 - Clear evaluation metric (accuracy, recall, F1)
 - Sufficient budget (100+ evaluation runs)
@@ -375,6 +408,7 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 ### When Manual Optimization is Better
 
 **Good fit:**
+
 - Small search space (few obvious approaches)
 - Evaluation metric is fuzzy (human preference, aesthetics)
 - Very tight budget (<20 evaluation runs)
@@ -385,6 +419,7 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 ### Hybrid Approach (Best of Both)
 
 **Recommended pattern:**
+
 1. **Manual initialization:** Expert writes baseline prompt
 2. **Automatic refinement:** GEPA/OPRO optimizes variations
 3. **Human review:** Expert reviews top candidates, picks final
@@ -397,6 +432,7 @@ OPRO-style iterative refinement outperforms APE-style one-shot generation:
 ### 1. Multi-Objective Optimization
 
 Optimize for multiple goals simultaneously:
+
 - **Primary:** Task performance (recall, F1)
 - **Secondary:** Efficiency (cost, latency)
 - **Tertiary:** Interpretability (reasoning transparency)
@@ -414,6 +450,7 @@ Can prompts optimized for one task transfer to similar tasks?
 ### 3. Prompt Compression
 
 Automatically compress verbose prompts while preserving performance:
+
 - Remove redundant instructions
 - Consolidate similar examples
 - Replace long explanations with concise principles
@@ -423,6 +460,7 @@ Automatically compress verbose prompts while preserving performance:
 ### 4. Adversarial Prompt Optimization
 
 Optimize prompts to be robust against input variations:
+
 - Test on adversarial examples (edge cases, ambiguous inputs)
 - Penalize prompts that fail on perturbations
 - Ensure consistent behavior across input variations
@@ -432,6 +470,7 @@ Optimize prompts to be robust against input variations:
 ### 5. Neurosymbolic Prompt Optimization
 
 Combine neural (LLM) and symbolic (formal rules) approaches:
+
 - LLM generates candidate prompts (neural)
 - Formal verifier checks constraints (symbolic)
 - Only constraint-satisfying prompts are evaluated
@@ -450,10 +489,10 @@ Combine neural (LLM) and symbolic (formal rules) approaches:
 
 ### Frameworks
 
-- **DSPy:** https://github.com/stanfordnlp/dspy - Modular prompt optimization
-- **Guidance:** https://github.com/guidance-ai/guidance - Constrained generation for prompts
-- **LangChain:** https://python.langchain.com/docs/modules/prompts/ - Prompt templates and chains
-- **HELM:** https://crfm.stanford.edu/helm/ - Holistic evaluation of language models (includes prompt optimization benchmarks)
+- **DSPy:** <https://github.com/stanfordnlp/dspy> - Modular prompt optimization
+- **Guidance:** <https://github.com/guidance-ai/guidance> - Constrained generation for prompts
+- **LangChain:** <https://python.langchain.com/docs/modules/prompts/> - Prompt templates and chains
+- **HELM:** <https://crfm.stanford.edu/helm/> - Holistic evaluation of language models (includes prompt optimization benchmarks)
 
 ## Summary: Key Takeaways
 

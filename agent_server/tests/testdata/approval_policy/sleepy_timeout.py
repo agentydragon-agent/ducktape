@@ -11,9 +11,7 @@ from agent_server.policies.policy_types import (
 
 TEST_CASES = [
     (
-        PolicyRequest(
-            name=build_mcp_function(UI_MOUNT_PREFIX, "send_message"), arguments="{}"
-        ),
+        PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, "send_message"), arguments="{}"),
         ApprovalDecision.ASK,
     )
 ]

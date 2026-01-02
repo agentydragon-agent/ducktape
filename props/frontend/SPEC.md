@@ -130,13 +130,14 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
 ### 5. Visual Design Requirements
 
 **Color Scheme:**
-| Element | Color | Purpose |
-|---------|-------|---------|
-| TP occurrence | Green (#dcfce7 bg, #16a34a border) | Ground truth true positive |
-| FP occurrence | Red (#fee2e2 bg, #dc2626 border) | Ground truth false positive |
-| Critique issue (TP match) | Blue (#dbeafe bg, #2563eb border) | Critique matched TP |
-| Critique issue (FP match) | Orange (#fed7aa bg, #ea580c border) | Critique matched FP |
-| Novel finding | Gray (#f3f4f6 bg, #6b7280 border) | Critique with no match |
+
+| Element                   | Color                               | Purpose                     |
+| ------------------------- | ----------------------------------- | --------------------------- |
+| TP occurrence             | Green (#dcfce7 bg, #16a34a border)  | Ground truth true positive  |
+| FP occurrence             | Red (#fee2e2 bg, #dc2626 border)    | Ground truth false positive |
+| Critique issue (TP match) | Blue (#dbeafe bg, #2563eb border)   | Critique matched TP         |
+| Critique issue (FP match) | Orange (#fed7aa bg, #ea580c border) | Critique matched FP         |
+| Novel finding             | Gray (#f3f4f6 bg, #6b7280 border)   | Critique with no match      |
 
 **Icons:**
 
@@ -153,6 +154,7 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
 - Display shows 1-based line numbers
 - File slicing uses 0-based
 - Conversion utilities:
+
   ```typescript
   function dbLineToDisplay(line: number): number {
     return line + 1;

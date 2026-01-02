@@ -4,7 +4,7 @@ This document contains critical debugging knowledge for containerized Claude exe
 
 ## Critical Issue #1: Docker buildx context isolation
 
-**Status**: RESOLVED  
+**Status**: RESOLVED
 **Files**: `build_dependency_layers.py:315-343`
 
 ### Problem
@@ -14,13 +14,14 @@ Task images failed to build because buildx maintains its own container-based reg
 ### Symptoms
 
 - Base layers build successfully with buildx + caching
-- Task images fail with "image not found" errors  
+- Task images fail with "image not found" errors
 - Error: `failed to solve: base-image:tag: not found`
 - Works locally but fails in CI/automated builds
 
 ### Root Cause
 
 Docker buildx uses a different context/registry than legacy Docker builder:
+
 - Base images built with buildx exist in buildx context
 - Subsequent builds (even with buildx) can't see these images
 - Buildx tries Docker Hub first, not local registry
@@ -28,6 +29,7 @@ Docker buildx uses a different context/registry than legacy Docker builder:
 ### Solution
 
 **Use hybrid approach**:
+
 - **Base layers**: Use buildx with caching (`claude-builder` with `docker-container` driver)
 - **Task images**: Use legacy Docker builder (`DOCKER_BUILDKIT=0`) for local image access
 
@@ -39,7 +41,7 @@ env = os.environ.copy()
 env['DOCKER_BUILDKIT'] = '0'  # Force legacy builder for task images
 
 process = subprocess.Popen(
-    build_cmd, 
+    build_cmd,
     env=env,  # Pass environment with DOCKER_BUILDKIT=0
     # ... other args
 )
@@ -51,7 +53,7 @@ process = subprocess.Popen(
 # Show host registry (what legacy builder sees)
 docker images
 
-# Show buildx registry 
+# Show buildx registry
 docker buildx imagetools inspect <image>
 
 # Show available builders and contexts
@@ -65,7 +67,7 @@ docker buildx inspect claude-builder
 
 ## Critical Issue #2: Containers running as root
 
-**Status**: RESOLVED  
+**Status**: RESOLVED
 **Files**: `build_dependency_layers.py:299-300`
 
 ### Problem
@@ -115,7 +117,7 @@ docker exec -it <container_id> ls -la /workspace
 
 ## Critical Issue #3: AWS Bedrock authentication in containers
 
-**Status**: RESOLVED  
+**Status**: RESOLVED
 
 ### Problem
 
@@ -131,6 +133,7 @@ Claude Code needs AWS credentials for Bedrock but containers lack authentication
 ### Root Cause
 
 Containers start isolated without:
+
 - AWS configuration from host
 - Credential processes
 - Proper PATH configuration for Claude Code
@@ -178,7 +181,7 @@ docker exec -it <container_id> cat /workspace/.claude/settings.json
 
 ## Critical Issue #4: File exclusion for grader
 
-**Status**: RESOLVED  
+**Status**: RESOLVED
 **Files**: `config.yaml`, `task_claude.py:_should_exclude_file()`
 
 ### Problem
@@ -202,7 +205,7 @@ Add exclusion patterns to `config.yaml` to skip authentication directories when 
 exclude_patterns:
   # ... existing patterns ...
   - "**/.claude/**"
-  - "**/.local/**" 
+  - "**/.local/**"
   - "**/.aws/**"
 ```
 
@@ -212,7 +215,7 @@ The exclusion logic in `task_claude.py:_should_exclude_file()` matches these pat
 
 ## Critical Issue #5: Claude CLI communication and configuration gotchas
 
-**Status**: RESOLVED  
+**Status**: RESOLVED
 **Files**: `task_claude.py`
 
 ### Problem
@@ -220,20 +223,21 @@ The exclusion logic in `task_claude.py:_should_exclude_file()` matches these pat
 Multiple configuration and communication issues preventing Claude CLI from working in containers:
 
 1. **TTY vs Pipe Communication**: Claude CLI fails with "Raw mode not supported" errors
-2. **Configuration File Locations**: Config files created in wrong directories  
+2. **Configuration File Locations**: Config files created in wrong directories
 3. **Environment Variable Propagation**: Required env vars not reaching credential scripts
 4. **Authentication File Locations**: Azure/AWS auth files in wrong locations
 
 ### Critical Gotchas
 
 #### 1. Claude SDK Uses Pipes, Not TTY
+
 **GOTCHA**: Claude CLI tries to use interactive terminal mode even in SDK contexts.
 
 ```bash
 # ❌ WRONG - Allocates TTY which triggers Ink raw mode errors
 docker exec -it container /usr/local/bin/claude --input-format stream-json
 
-# ✅ CORRECT - Uses pipes like Claude SDK expects  
+# ✅ CORRECT - Uses pipes like Claude SDK expects
 docker exec -i container /usr/local/bin/claude --input-format stream-json
 ```
 
@@ -248,7 +252,7 @@ docker exec -i container /usr/local/bin/claude --input-format stream-json
 /workspace/.claude/settings.json
 /workspace/.aws/config
 
-# ✅ CORRECT - Claude CLI searches here  
+# ✅ CORRECT - Claude CLI searches here
 /home/node/.claude/settings.json  # Container user's home
 /home/node/.aws/config
 ```
@@ -292,9 +296,10 @@ Host → docker exec → /usr/local/bin/claude → /usr/local/bin/actual_claude
 ### Implementation
 
 **Key Changes**:
+
 - Use `docker exec -i` (not `-it`) for Claude CLI communication
 - Place all config files in `/home/node/` (container user home)
-- Copy `.azure/` folder for authentication 
+- Copy `.azure/` folder for authentication
 - Hard-code environment variables in credential scripts
 - Set proper file ownership with `chown 1000:1000`
 - Use container-side wrapper: `/usr/local/bin/claude` → `/usr/local/bin/actual_claude`
@@ -373,6 +378,7 @@ docker volume inspect claude_shared_git # Volume details
 ### Container Startup Issues
 
 **Symptoms**: Container exits immediately or fails to start
+
 ```bash
 # Check container status and logs
 docker ps -a | grep <container_id>
@@ -390,6 +396,7 @@ docker logs <container_id>
 ### Authentication Failures
 
 **Symptoms**: `AWS credentials not found`, `Permission denied` errors
+
 ```bash
 # Check authentication setup
 docker exec -it <container_id> ls -la /workspace/.aws/
@@ -400,6 +407,7 @@ docker exec -it <container_id> cat /workspace/.claude/settings.json
 ### Permission Errors
 
 **Symptoms**: `Operation not permitted`, files owned by root
+
 ```bash
 # Check user and file ownership
 docker exec -it <container_id> whoami
@@ -411,6 +419,7 @@ docker exec -it <container_id> ls -la /workspace/
 ### Build Failures
 
 **Symptoms**: `image not found`, `failed to solve` errors during image builds
+
 ```bash
 # Check available images
 docker images | grep claude-dev
@@ -452,7 +461,7 @@ When everything is broken and you need to investigate:
 # Check if old container was properly removed
 docker ps -a | grep <old_container_id>
 
-# Check if new container started successfully  
+# Check if new container started successfully
 docker ps | grep <new_container_id>
 
 # Check volume mount permissions in new container

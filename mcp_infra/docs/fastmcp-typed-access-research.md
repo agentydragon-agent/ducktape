@@ -23,6 +23,7 @@ class FastMCP:
 **Key findings:**
 
 1. **Tools are registered via decorators** that create `FunctionTool` instances:
+
    ```python
    @mcp.tool()
    def my_tool(input: MyInput) -> MyOutput:
@@ -34,6 +35,7 @@ class FastMCP:
 3. **No built-in typed tool access** - FastMCP has no `server.my_tool` pattern; tools are accessed by string name via `tool_manager.get_tool(name)`
 
 4. **Tool class structure:**
+
    ```python
    class Tool(FastMCPComponent):
        name: str
@@ -49,6 +51,7 @@ class FastMCP:
    ```
 
 5. **Resources have URIs** (not names) and are accessed via `resource_manager.get_resource(uri)`:
+
    ```python
    class Resource(FastMCPComponent):
        uri: AnyUrl  # e.g., "resource://container.info"
@@ -80,6 +83,7 @@ factory.make_mcp_tool_call(RUNTIME_MOUNT_PREFIX, "exec", ExecInput(...))
 ```
 
 **Problems:**
+
 - `server.exec_tool` doesn't exist at type-check time → needs `# type: ignore`
 - Tool names are string literals ("exec") scattered in code
 - No typed access to tool properties (name, schema, etc.)
@@ -138,12 +142,14 @@ tool_name = server.exec_tool.name  # type: str, no string literals
 ```
 
 **Key points:**
+
 - Class attribute declarations (`exec_tool: FunctionTool`) make mypy happy
 - Tools registered in `__init__` and assigned to typed attributes
 - Tool name accessed via `server.exec_tool.name` (not string literal)
 - Constants like `EXEC_TOOL_NAME` only needed for construction contexts (policy eval, default values)
 
 **Trade-offs:**
+
 - ✅ **Pros:**
   - Clean mypy validation (no type: ignore needed)
   - Typed access to tool metadata (name, schema, etc.)
@@ -205,6 +211,7 @@ tool_name = tools.exec.name  # type: str
 ```
 
 **Trade-offs:**
+
 - ✅ **Pros:**
   - No subclassing needed
   - Clean separation of server and tool metadata
@@ -282,6 +289,7 @@ data = await session.read_resource(uri)
 ```
 
 **Trade-offs:**
+
 - ✅ **Pros:**
   - Single source of truth (class definition)
   - Works in both production and test contexts
@@ -297,6 +305,7 @@ data = await session.read_resource(uri)
 **FastMCP compatibility:** ✅ Perfect - just organizational, no conflicts
 
 **Why both class constants and instance attributes?**
+
 - **Class constants:** Required for construction contexts (tests, policy eval, prompts) that don't have server instances
 - **Instance attributes:** Optional convenience for production code that already has server instances, enables typed access and refactoring
 
@@ -377,6 +386,7 @@ result = make_tool_call(
 ```
 
 **Trade-offs:**
+
 - ✅ **Pros:**
   - Centralized composition specifications
   - Mount prefixes flow from recipe to callsites
@@ -398,6 +408,7 @@ result = make_tool_call(
 **Use all four patterns together:**
 
 ### 1. Server Subclasses with Class Constants (Patterns A + C)
+
 Define typed server classes with both class constants (for tests) and instance attributes (for production):
 
 ```python
@@ -423,6 +434,7 @@ class RuntimeServer(FastMCP):
 ```
 
 ### 2. Compositor Recipes (Pattern D)
+
 Define standard compositions with mount prefixes:
 
 ```python
@@ -437,6 +449,7 @@ class AgentCompositorRecipe:
 ### 3. Tool Call Factory (Two Variants)
 
 **Variant A: Production Code (has server instance)**
+
 ```python
 def make_mcp_call_typed(
     server_mount: ServerMount,
@@ -461,6 +474,7 @@ result = make_mcp_call_typed(
 ```
 
 **Variant B: Test/Construction Code (no server instance)**
+
 ```python
 def make_mcp_call(
     server_prefix: str,  # From recipe
@@ -486,6 +500,7 @@ result = make_mcp_call(
 **Recommendation:** Keep the simpler variant B as the primary `make_mcp_tool_call` signature. Production code can use class constants too - they work everywhere and are simpler than managing server instances just for tool names.
 
 ### 4. Resource URIs
+
 Access URIs via class constants (works in both production and test code):
 
 ```python
@@ -550,6 +565,7 @@ assert GreeterServer.GREETING_TEMPLATE_URI == "resource://greeting/template"
 ```
 
 **Verification:**
+
 - ✅ No string literals for tool names (accessed via `server.say_hello_tool.name`)
 - ✅ No string literals for resource URIs (accessed via class constant)
 - ✅ Mypy validates without `type: ignore` directives
@@ -614,6 +630,7 @@ assert result.arguments == {"name": "Alice"}
 ```
 
 **Verification:**
+
 - ✅ No string literals for server names (from recipe)
 - ✅ No string literals for tool names (from tool object)
 - ✅ Type-safe input construction (Pydantic model)
@@ -682,6 +699,7 @@ def test_greeter_tool():
 ```
 
 **Verification:**
+
 - ✅ Mount prefixes centralized in recipe class
 - ✅ No "constant grab-bags" (`_shared/constants.py` not needed)
 - ✅ Test code references recipe attributes (typed)
@@ -743,13 +761,14 @@ def test_greeter_tool():
 
 ## 6. Final Recommendations
 
-### Adopt These Patterns:
+### Adopt These Patterns
 
 1. **Server Subclasses with Class Constants (Patterns A + C)**
    - Define typed subclasses for each MCP server type
    - Add **class-level constants** for tool names and resource URIs (for construction contexts)
    - Add **instance-level attributes** for typed tool access (for production code)
    - **Example:**
+
      ```python
      class RuntimeServer(FastMCP):
          # Class constants (for tests, policy eval, prompts)
@@ -778,6 +797,7 @@ def test_greeter_tool():
    - Define recipe classes with `ServerMount` specifications
    - Centralize mount prefixes (no more `_shared/constants.py`)
    - **Example:**
+
      ```python
      class AgentCompositorRecipe:
          runtime: ClassVar[ServerMount] = ServerMount(
@@ -789,6 +809,7 @@ def test_greeter_tool():
 4. **Tool Call Factory**
    - Keep the simple signature using class constants (works everywhere)
    - **Example:**
+
      ```python
      def make_mcp_tool_call(
          server_prefix: str,  # From recipe.server.prefix
@@ -810,7 +831,7 @@ def test_greeter_tool():
      )
      ```
 
-### Key Design Decisions:
+### Key Design Decisions
 
 1. **Mount prefixes live in recipes** (not server classes)
    - Same server class can be mounted at different prefixes
@@ -831,7 +852,7 @@ def test_greeter_tool():
    - All references via class constants or recipe attributes
    - Refactoring-safe and IDE-friendly
 
-### FastMCP Limitations (None Critical):
+### FastMCP Limitations (None Critical)
 
 - No built-in typed tool access (but easily added via subclasses)
 - No built-in resource URI typing (but class constants work well)
@@ -839,7 +860,7 @@ def test_greeter_tool():
 
 **None of these limitations prevent the recommended patterns.**
 
-### Migration Path:
+### Migration Path
 
 1. **Phase 1:** Implement server subclasses with typed tool attributes
    - Start with 2-3 core servers (runtime, ui, loop)
@@ -868,6 +889,7 @@ def test_greeter_tool():
 **FastMCP supports the needed patterns** through standard Python features (subclassing, type annotations, class variables). No framework changes needed.
 
 **The recommended combined approach:**
+
 - ✅ Eliminates all string literals for MCP names
 - ✅ Passes mypy without `type: ignore` suppressions
 - ✅ Provides typed tool/resource access

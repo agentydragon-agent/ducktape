@@ -51,7 +51,7 @@
             repo: "TheAssassin/AppImageLauncher"
             method: deb
             version: "{{ test_version }}"
-            acknowledged_version: "v2.0.0"  # An old version
+            acknowledged_version: "v2.0.0" # An old version
             asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
           register: ack_result
           become: true

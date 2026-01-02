@@ -3,9 +3,11 @@ Local type stubs
 This directory contains local type stubs used by mypy. We check them into the repo so CI and all dev environments get consistent, deterministic type checking.
 
 Currently covered
+
 - pygit2 (vendored minimal upstream stubs via stubgen)
 
 How to regenerate pygit2 stubs
+
 1) Ensure you have mypy and pygit2 installed in your environment:
    - pip install mypy pygit2
 2) From the repo root (this directory is wt/), run:
@@ -19,13 +21,16 @@ How to regenerate pygit2 stubs
    - Fix remaining errors or adjust stubs as needed.
 
 Configuration
+
 - pyproject.toml points mypy at this folder via:
   [tool.mypy]
   mypy_path = ["stubs"]
 
 Versioning guidance
+
 - If you upgrade pygit2, re-run the stubgen step to refresh the stubs.
 - Commit the changes along with any code updates that rely on new pygit2 APIs.
 
 Notes
+
 - These stubs are auto-generated starting points. Small manual additions are acceptable when upstream typing is incomplete, but prefer re-generating first and only adding what we actually use.

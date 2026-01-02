@@ -5,6 +5,7 @@
 **✅ Core Refactoring Complete**
 
 All bootstrap handlers have been migrated to the new pattern:
+
 - ✅ `LinterController` → `make_linter_bootstrap_calls()` + `BootstrapHandler` + `GateUntil`
 - ✅ `CommitController` → Uses `TypedBootstrapBuilder` (removed `ItemFactory`)
 - ✅ `BootstrapInspectHandler` → Uses `TypedBootstrapBuilder` and helper functions
@@ -14,6 +15,7 @@ All bootstrap handlers have been migrated to the new pattern:
 - ✅ Documentation updated (`AGENTS.md`)
 
 **Files refactored:**
+
 - `src/adgn/agent/bootstrap.py` - Core infrastructure
 - `src/adgn/props/lint_issue.py` - LinterController split
 - `src/adgn/git_commit_ai/minicodex_backend.py` - CommitController refactored
@@ -34,6 +36,7 @@ bootstrap = BootstrapHandler(calls)
 ```
 
 **Issues with current approach:**
+
 - ❌ String literals for server names: `"runtime"`, `"git_ro"`
 - ❌ String literals for tool names: `"docker_exec"`, `"git_status"`
 - ❌ Typos only caught at runtime
@@ -43,6 +46,7 @@ bootstrap = BootstrapHandler(calls)
 ## Goal: Eliminate String Literals
 
 **Desired syntax:**
+
 ```python
 # Option A: Direct attribute access
 bootstrap.runtime.docker_exec(ExecInput(cmd=["ls", "-la"]))
@@ -52,6 +56,7 @@ runtime_stub.docker_exec(ExecInput(cmd=["ls", "-la"]))
 ```
 
 **Key requirements:**
+
 - ✅ No string literals for server or tool names
 - ✅ Type-safe: Pydantic models validated at construction
 - ✅ IDE autocomplete support
@@ -217,12 +222,14 @@ class BootstrapStub:
 ### Immediate (Phase 1): Implement Plan A (Generic Stubs)
 
 **Rationale:**
+
 - Simple implementation (~15 LOC)
 - Eliminates tool name string literals
 - No maintenance burden
 - Good enough for most use cases
 
 **Example usage pattern:**
+
 ```python
 builder = TypedBootstrapBuilder.for_server(runtime_server)
 runtime = GenericBootstrapStub(builder, "runtime")
@@ -236,11 +243,13 @@ calls = [
 ### Future (Phase 2): Add Plan B for High-Value Servers
 
 **When to use:**
+
 - Servers with many tools (e.g., `runtime`, `git_ro`)
 - Frequently used in bootstrap code
 - Want IDE autocomplete and static checking
 
 **Implementation strategy:**
+
 - Keep `GenericBootstrapStub` as default
 - Add `BootstrapStub` base class for opt-in typed stubs
 - Create stubs only for commonly used servers
@@ -276,19 +285,23 @@ All plans still require server name string literals when creating stubs. This is
 ## Other Followups Not Covered Above
 
 ### Helper Functions (Low Priority)
+
 **Status**: Optional, add as patterns emerge
 **Location**: `src/adgn/agent/bootstrap.py:238` (TODO comment)
 **Current helpers**: `builder.read_resource()` (method), `docker_exec_call()` (standalone function)
 **Recommendation**: Add more (e.g., `git_diff_call()`, `git_status_call()`) only when repetition justifies it. Scope appropriately (per-module or conftest, not global). Consider moving standalone helpers to methods on `TypedBootstrapBuilder` for consistency.
 
 ### Verify BootstrapInspectHandler Usage
+
 **Status**: Low priority verification
 **Usage**: Imported by `critic.py` and `grader.py` (via `lint_issue.py`)
 **Note**: Handler has been refactored to use new pattern, but verify behavior in critic/grader flows if issues arise.
 
 ### Future Test Coverage
+
 **Current**: Integration tests cover core bootstrap flow
 **Optional**: Add specific tests for:
+
 - `BootstrapInspectHandler` with different file scopes
 - CommitController with `amend=True` mode
 - GateUntil + BootstrapHandler coordination patterns
@@ -296,7 +309,7 @@ All plans still require server name string literals when creating stubs. This is
 ## References
 
 - **Existing patterns**: `src/adgn/mcp/stubs/server_stubs.py` (ServerStub base class)
-- **Similar approach**: `src/adgn/mcp/stubs/typed_stubs.py` (TypedClient with __getattr__)
+- **Similar approach**: `src/adgn/mcp/stubs/typed_stubs.py` (TypedClient with **getattr**)
 - **Bootstrap refactoring**: Recent work eliminating inheritance, adding TypedBootstrapBuilder
 - **MCP tool naming**: `src/adgn/mcp/_shared/naming.py` (build_mcp_function convention)
 - **Integration tests**: `tests/agent/test_bootstrap_integration.py` (6 test cases)

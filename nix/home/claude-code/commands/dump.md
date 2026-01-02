@@ -7,12 +7,14 @@ Capture the current session state as a persistent markdown tombstone document.
 ## Purpose
 
 **Session continuity** - While Claude Code has session restoration, this provides durable context for:
+
 - Resuming work after restart/closure
 - Handoff to future agents
 - Historical record of incomplete work
 - Critical context that shouldn't be lost
 
 **Different from /followups:**
+
 - /followups: Speculative "what could you do next"
 - /dump: "What did we discuss, what's not finished, don't lose these threads"
 
@@ -46,6 +48,7 @@ SESSION_ID=$(tail -1 "$CURRENT_SESSION" | jq -r .sessionId)
 See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
 
 **Gather session facts:**
+
 - Session ID (verified)
 - Session file path
 - Working directory
@@ -55,6 +58,7 @@ See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
 ### Phase 2: Analyze What Was Done
 
 **Concrete accomplishments:**
+
 - Files created/modified (use git status + session log tool calls)
 - Key function names/patterns edited (cite file:line)
 - Commands run (from Bash tool calls)
@@ -62,6 +66,7 @@ See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
 - Commits made
 
 **Key references (immutable/reproducible):**
+
 - URLs (docs, issues, PRs)
 - Function names with file:line references (e.g., `foo.py:123`)
 - Git commit SHAs (full 40 chars)
@@ -69,6 +74,7 @@ See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
 - Error messages encountered
 
 **Keep references immutable where possible:**
+
 - ✅ `foo.py:123` (line number in snapshot)
 - ✅ Commit SHA: `abc123...` (full)
 - ✅ URL: `https://example.com/docs#section`
@@ -79,6 +85,7 @@ See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
 **This is the highest priority section.** Focus on NOT LOSING anything:
 
 **Scan for actual open threads from conversation:**
+
 - User said "we should..." but it wasn't done
 - "Let's do X next" but session ended
 - Bugs/issues discovered but not fixed
@@ -88,12 +95,14 @@ See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
 - Questions asked but not fully answered
 
 **From session analysis:**
+
 - Modified files not committed
 - Work in progress (WIP) states
 - Partial implementations
 - Known failing tests/builds
 
 **Distinguish clearly:**
+
 - **Actual discussed followups** (high priority) - things explicitly mentioned
 - **Potential next actions** (lower priority, separate section) - logical extensions
 
@@ -112,6 +121,7 @@ See: `~/.claude/skills/session-logs/SKILL.md` for complete documentation.
 ### Phase 5: Determine File Location
 
 **Find where similar docs live:**
+
 ```bash
 # Discover markdown files in current project
 fd -e md -t f -d 3 .
@@ -121,12 +131,14 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 ```
 
 **Placement strategy:**
+
 1. If a recent dump file exists with similar scope → update it (don't create duplicates)
 2. If project has a `docs/` directory → place there
 3. If working on a specific component (e.g., `adgn/src/adgn/props/`) → place near that component
 4. Otherwise → place in project root
 
 **File naming:**
+
 - Short topic summary: `<topic>.md` (e.g., `bundle-refactor.md`, `transducer-idea.md`)
 - Keep it brief (2-4 words max, lowercase-with-hyphens)
 - No dates in filename unless multiple dumps of same topic
@@ -192,9 +204,11 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 ```
 
 ### Key Decisions/Constraints
+
 <Important context from this session>
 
 ## Related Documentation
+
 - <Link to related files/docs>
 - <Link to other session notes if relevant>
 
@@ -203,6 +217,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 **Total Messages:** <count from session log>
 **Tool Calls:** <count from session log>
 **Modified Files:** <list from session log>
+
 ```
 
 **Content guidelines:**

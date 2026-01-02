@@ -1,0 +1,14 @@
+---
+# External TLS certificate for Ingress (Let's Encrypt)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ingress-tls
+  namespace: vault
+spec:
+  secretName: vault-ingress-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - vault.test-cluster.agentydragon.com

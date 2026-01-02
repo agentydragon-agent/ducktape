@@ -56,6 +56,7 @@ the tag `3`.
 Protocol buffers also have a nice human-readable text format, which looks
 a little bit like JSON. For example, a
 `goliath.monetization.surveillance.Person` proto can be represented as:
+
 ```
 id: 42
 name: "Steve Jobs"
@@ -70,6 +71,7 @@ generates code in your language that lets you manipulate the messages.
 
 C++ code using protocol buffers might look like this
 (adapted from an [official example](https://code.google.com/p/protobuf/)):
+
 ```cpp
 #include "goliath/monetization/surveillance/person.pb.h"
 
@@ -194,6 +196,7 @@ To keep our code DRY, we want to remove `Person.occupation`.
 
 First, we will add a comment for humans to make sure every user is informed
 that they shouldn't write new code depending on the field we are deprecating:
+
 ```
 message Person {
   ...
@@ -219,6 +222,7 @@ string IsPlumber(const Person& person) {
 
 After we kill all readers of the field, we can start removing writers
 of the field:
+
 ```cpp
 void LoadBob(Person* person) {
   person->set_id(15);
@@ -236,6 +240,7 @@ because protocol buffers do not store any type information aside from tag
 numbers.
 
 A tombstone left by a dead field may look like this:
+
 ```
 message Person {
   optional int32 id = 1;

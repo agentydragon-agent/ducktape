@@ -65,19 +65,19 @@ async def main():
         habits = await client.get_habits()
         for habit in habits:
             print(f"{habit.name}: {habit.id}")
-        
+
         # Check habit status for today
         habit_id = habits[0].id
         status = await client.check_habit_status(habit_id)
         print(f"Status: {status.status}")
-        
+
         # Mark habit as completed
         await client.set_habit_status(
-            habit_id, 
+            habit_id,
             status="completed",
             note="Completed via API!"
         )
-        
+
         # Check habit status for date range
         start = date.today() - timedelta(days=7)
         statuses = await client.check_habit_status_range(

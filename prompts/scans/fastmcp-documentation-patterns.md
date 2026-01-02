@@ -1,6 +1,7 @@
 # Scan: FastMCP Documentation Patterns
 
 ## Context
+
 @../shared-context.md
 
 ## FastMCP Documentation References
@@ -9,12 +10,14 @@ FastMCP automatically generates JSON schemas from Pydantic models and exposes th
 Understanding how FastMCP works is essential for effective documentation.
 
 **Official Resources:**
+
 - [FastMCP Documentation](https://gofastmcp.com/)
 - [FastMCP GitHub](https://github.com/jlowin/fastmcp)
 - [Tools Documentation](https://gofastmcp.com/servers/tools) - Parameter metadata and Field usage
 - [Complex Inputs Example](https://github.com/jlowin/fastmcp/blob/main/examples/complex_inputs.py) - Pydantic models with validation
 
 **Key FastMCP Behaviors:**
+
 - Generates input schemas from function signatures and type annotations
 - Generates output schemas from return type annotations
 - Exposes Pydantic `Field(description=...)` in JSON schemas sent to clients
@@ -95,6 +98,7 @@ class MyToolResponse(BaseModel):
 ```
 
 **Why it matters**:
+
 - FastMCP automatically generates JSON schemas from Pydantic models
 - Field descriptions are embedded in the JSON schema sent to MCP clients
 - LLM agents use these descriptions to understand field purpose
@@ -104,6 +108,7 @@ class MyToolResponse(BaseModel):
 Field descriptions extend this with field-level documentation.
 
 **Detection**:
+
 ```bash
 # Find response models without Field descriptions in MCP servers
 rg --type py "class.*Response.*BaseModel" adgn/src/adgn/mcp/ -A10 | rg -v "Field\(description="
@@ -147,12 +152,14 @@ class GetStatusResponse(BaseModel):
 ```
 
 **Why it matters**:
+
 - FastMCP automatically exposes Pydantic schemas to clients
 - Docstring duplication leads to drift when schemas change
 - Field descriptions in Pydantic models are the single source of truth
 - Docstrings should focus on usage patterns, not schema structure
 
 **Detection**:
+
 ```bash
 # Find docstrings with "Returns:" sections listing fields
 rg --type py -A10 "@server\.(flat_model|tool)" | rg "Returns:"
@@ -181,6 +188,7 @@ class SyncResponse(BaseModel):
 ```
 
 **Why it matters**:
+
 - Field names alone don't convey usage patterns
 - LLM agents need context about how to use values (polling, format, relationships)
 - Include formats (ISO 8601, URLs, paths) when relevant
@@ -215,6 +223,7 @@ def get_status(input: GetStatusArgs) -> GetStatusResponse:
 ```
 
 **Why it matters**:
+
 - LLM agents need guidance on polling intervals to avoid rate limiting
 - Helps agents implement efficient retry logic
 - Prevents excessive API calls
@@ -251,6 +260,7 @@ rg --type py '@(mcp|server)\.resource' -B 2 -A 10 --line-number
 ```
 
 **What to review for each tool/resource**:
+
 1. **Response models**: Do all fields have `Field(description=...)`?
 2. **Field descriptions**: Provide context (formats, usage patterns, relationships)?
 3. **Docstrings**: Focus on behavior/polling, not schema structure?
@@ -277,6 +287,7 @@ fd -e py "server\.py$" adgn/src/adgn/mcp/
 ```
 
 **Manual review focus**:
+
 1. Check all response model fields have Field(description=...)
 2. Verify descriptions provide context, not just field name rephrasing
 3. Ensure docstrings don't duplicate schema structure
@@ -285,6 +296,7 @@ fd -e py "server\.py$" adgn/src/adgn/mcp/
 ## Fix Strategy
 
 1. **Add Field descriptions to response models**:
+
    ```python
    from pydantic import Field
 
@@ -307,6 +319,7 @@ fd -e py "server\.py$" adgn/src/adgn/mcp/
 ## References
 
 ### FastMCP Resources
+
 - [FastMCP Official Documentation](https://gofastmcp.com/)
 - [FastMCP GitHub Repository](https://github.com/jlowin/fastmcp)
 - [Tools - Parameter Metadata](https://gofastmcp.com/servers/tools#parameter-metadata) - Official guide to Field usage
@@ -314,6 +327,7 @@ fd -e py "server\.py$" adgn/src/adgn/mcp/
 - [Memory Example](https://github.com/jlowin/fastmcp/blob/main/examples/memory.py) - Real-world usage with Field descriptions
 
 ### Related Resources
+
 - [Pydantic Field Documentation](https://docs.pydantic.dev/latest/concepts/fields/)
 - [JSON Schema Description](https://json-schema.org/understanding-json-schema/reference/generic.html#annotations)
 - [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)

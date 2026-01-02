@@ -14,18 +14,21 @@ When using Nix-managed Python with virtual environments (venv) and installing Nu
 ## Specific Error Messages Encountered
 
 ### Error 1: Missing libstdc++.so.6
+
 ```
 ImportError: libstdc++.so.6: cannot open shared object file: No such file or directory
 ```
 
 ### Error 2: Missing libz.so.1
+
 ```
 ImportError: libz.so.1: cannot open shared object file: No such file or directory
 ```
 
 ### Error 3: Generic NumPy Import Failure
+
 ```
-ImportError: 
+ImportError:
 
 IMPORTANT: PLEASE READ THIS FOR ADVICE ON HOW TO SOLVE THIS ISSUE!
 
@@ -49,11 +52,13 @@ Original error was: libstdc++.so.6: cannot open shared object file: No such file
 ```
 
 ### Error 4: Misleading "Source Directory" Error
+
 ```
 ImportError: Error importing numpy: you should not try to import numpy from
         its source directory; please exit the numpy source tree, and relaunch
         your python interpreter from there.
 ```
+
 (This error is misleading - it's actually a library linking issue, not a source directory issue)
 
 ## Root Cause
@@ -63,35 +68,45 @@ PyPI wheels are compiled against standard Linux library locations (`/usr/lib`, `
 ## Solutions Attempted
 
 ### 1. ❌ Setting LD_LIBRARY_PATH manually
+
 ```bash
 export LD_LIBRARY_PATH="/nix/store/.../lib:$LD_LIBRARY_PATH"
 ```
+
 **Result**: Partial success, but fragile and requires finding exact Nix store paths
 
 ### 2. ❌ Installing numpy from source
+
 ```bash
 uv pip install --no-binary :all: numpy
 ```
+
 **Result**: Failed due to missing build dependencies (autoreconf, etc.)
 
 ### 3. ❌ Using system Python (/usr/bin/python3)
+
 ```bash
 uv venv --python /usr/bin/python3
 ```
+
 **Result**: System Python was 3.10, but project requires 3.11+
 
 ### 4. ✅ Using pyenv-installed Python
+
 ```bash
 # .envrc
 PYENV_PYTHON="$HOME/.pyenv/versions/3.12.11/bin/python3"
 uv venv --python "$PYENV_PYTHON"
 ```
+
 **Result**: SUCCESS - pyenv Python is built against system libraries
 
 ## Proper Solutions (What We Should Have Done)
 
 ### Solution 1: nix-ld (System-wide)
+
 Enable nix-ld in your NixOS configuration:
+
 ```nix
 {
   programs.nix-ld = {
@@ -106,6 +121,7 @@ Enable nix-ld in your NixOS configuration:
 ```
 
 ### Solution 2: fix-python Tool
+
 ```bash
 # Install fix-python
 nix profile install github:GuillaumeDesforges/fix-python
@@ -120,7 +136,9 @@ fix-python --venv .venv
 ```
 
 ### Solution 3: FHS User Environment
+
 Create a `shell.nix`:
+
 ```nix
 { pkgs ? import <nixpkgs> {} }:
 (pkgs.buildFHSUserEnv {
@@ -135,11 +153,13 @@ Create a `shell.nix`:
 ```
 
 ### Solution 4: Use Nix Python Packages
+
 ```bash
 nix-shell -p "python312.withPackages(ps: with ps; [ numpy pandas ])"
 ```
 
 ### Solution 5: Poetry2nix or dream2nix
+
 These tools automatically handle binary patching when building Python projects with Nix.
 
 ## Lessons Learned

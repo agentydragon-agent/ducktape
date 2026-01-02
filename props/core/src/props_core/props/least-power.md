@@ -6,11 +6,13 @@ kind: behavior
 Choose the least powerful construct that achieves the goal safely. “Sus” patterns are those that carry avoidable risk (silent failure, reflection, low‑level primitives) when a simpler, safer alternative exists. Escalate only when required, and document why.
 
 ## Rules
+
 - Least power first: when two approaches are functionally equivalent, choose the safer, higher‑level, more explicit one.
 - Escalate only with rationale: if you bypass the safer option, add a short inline comment explaining the constraint (cycle, performance, boundary contract).
 - Keep the risky thing local: scope the “bigger gun” to the smallest block; never wrap whole modules in low‑level mechanisms; fail fast and surface errors.
 
 ## Escalation ladders (prefer left; move right only when required)
+
 - Imports: module‑top `from x import y` → inline `from x import y` (cycle, documented) → `importlib.import_module(...)` → `__import__(...)` (almost never)
 - Data modeling: typed model attributes → structured `TypedDict` (simple shapes) → boundary dicts/serde only → ad‑hoc dict wrangling (avoid)
 - Output/IO: `print()`/logger → logging APIs → `sys.stdout.write` (rare) → `os.write` (avoid for ordinary output)
@@ -82,7 +84,9 @@ Low‑level OS process/syscalls when high‑level exists:
 os.system("cmd")  # ❌ prefer subprocess.run(["cmd"], check=True)
 fd = os.open("out.txt", os.O_WRONLY | os.O_CREAT)  # ❌ prefer Path("out.txt").write_text(data)
 ```
+
 ## Notes
+
 - Principle of least power: pick the simplest construct that expresses intent safely; only escalate when there’s a clear, documented need.
 - Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under [Modern Python idioms](./python/modern-python-idioms.md) and are not "sus" on their own.
 - These are heuristics; exceptions exist, but require a short inline rationale.

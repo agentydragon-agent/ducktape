@@ -1,6 +1,7 @@
 # Scan: Prefer Functional Patterns Over Imperative Loops
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -23,12 +24,14 @@ for t in tools:
 ```
 
 **Why this is bad**:
+
 - More verbose (4 lines vs 1-3 lines)
 - Communicates "do these steps" instead of "build this list from that"
 - Slightly slower (repeated append calls vs pre-allocated list)
 - More mutable state (need to initialize empty list)
 
 **Better - List comprehension**:
+
 ```python
 # GOOD: Functional pattern
 tools_payload = [
@@ -38,6 +41,7 @@ tools_payload = [
 ```
 
 **Better - Generator expression with extend**:
+
 ```python
 # GOOD: If tools_payload already exists and you're adding to it
 tools_payload.extend(
@@ -57,6 +61,7 @@ for item in items:
 ```
 
 **Better - Filter with comprehension**:
+
 ```python
 # GOOD: Functional pattern
 enabled = [item for item in items if item.enabled]
@@ -73,6 +78,7 @@ for x in values:
 ```
 
 **Better - Comprehension with condition**:
+
 ```python
 # GOOD: Functional pattern
 results = [x * 2 for x in values if x > 0]
@@ -89,6 +95,7 @@ for x in xs:
 ```
 
 **Better - Nested comprehension**:
+
 ```python
 # GOOD: Functional pattern
 pairs = [(x, y) for x in xs for y in ys]
@@ -104,6 +111,7 @@ for user in users:
 ```
 
 **Better - Comprehension or map**:
+
 ```python
 # GOOD: Comprehension
 names = [user.name for user in users]
@@ -123,6 +131,7 @@ for item in items:
 ```
 
 **Better - Comprehension**:
+
 ```python
 # GOOD: Single expression
 active_ids = [item.id for item in items if item.is_active]
@@ -150,6 +159,7 @@ rg --type py '\.extend\(' -B 1 -A 1 --line-number
 ```
 
 **What to review for each for-loop + .append**:
+
 1. **Is it just building a list?** Only transformation/filtering, no side effects
 2. **Are there side effects?** I/O operations, mutations, calls with side effects
 3. **Is the logic simple enough?** Fits in 1-2 lines as a comprehension
@@ -163,15 +173,18 @@ rg --type py '\.extend\(' -B 1 -A 1 --line-number
 **Goal**: Find imperative loops that should be functional patterns (high recall ~85%).
 
 **Recall/Precision**: High recall (~85%) with automation, medium precision (~70%)
+
 - Pattern: `for ... in ...: \n ... .append(` finds most cases
 - False positives: Loops with side effects, complex logic
 
 **Why high recall**:
+
 - Pattern is syntactically distinct
 - Easy to identify loop + append/extend
 - Most cases are simple transformations
 
 **Recommended approach AFTER Step 0**:
+
 1. Search for loops with append: `for .* in .*:\n.*\.append\(`
 2. For each candidate, check:
    - **Is it just building a list?** (transformation/filtering only)
@@ -196,6 +209,7 @@ rg --type py --multiline "for \w+ in [^:]+:\n\s+\w+\.append\("
 **Verification for each candidate**:
 
 1. **Check for side effects**:
+
    ```python
    # Side effects = NOT a candidate
    for item in items:
@@ -205,6 +219,7 @@ rg --type py --multiline "for \w+ in [^:]+:\n\s+\w+\.append\("
    ```
 
 2. **Check complexity**:
+
    ```python
    # Too complex = NOT a candidate
    for item in items:
@@ -218,6 +233,7 @@ rg --type py --multiline "for \w+ in [^:]+:\n\s+\w+\.append\("
    ```
 
 3. **Simple transformation = GOOD candidate**:
+
    ```python
    # Simple = GOOD candidate
    for item in items:
@@ -292,6 +308,7 @@ unique = {item.id for item in items}
 ## When Imperative Loops Are Acceptable
 
 ### 1. Side effects required
+
 ```python
 # OK: Has side effects (logging, mutation)
 for item in items:
@@ -301,6 +318,7 @@ for item in items:
 ```
 
 ### 2. Complex logic doesn't fit comprehension
+
 ```python
 # OK: Too complex for comprehension
 for item in items:
@@ -313,6 +331,7 @@ for item in items:
 ```
 
 ### 3. Early termination needed
+
 ```python
 # OK: Need to break early
 for item in items:
@@ -322,6 +341,7 @@ for item in items:
 ```
 
 ### 4. Multiple collections being built
+
 ```python
 # OK: Building multiple lists (though could use zip/separate comprehensions)
 successes = []
@@ -334,6 +354,7 @@ for item in items:
 ```
 
 ### 5. Accumulator pattern with state
+
 ```python
 # OK: Stateful accumulation
 total = 0
@@ -358,11 +379,13 @@ items = [i * 2 for i in range(1000)]
 ```
 
 **Why comprehensions are faster**:
+
 - Pre-allocate list size when possible
 - Reduce Python bytecode overhead
 - Less attribute lookups (no repeated `.append`)
 
 Generator expressions with extend are also efficient:
+
 ```python
 # Good: Generator expression (lazy, memory efficient)
 items.extend(i * 2 for i in range(1000))
@@ -371,6 +394,7 @@ items.extend(i * 2 for i in range(1000))
 ## Common Patterns
 
 ### Pattern 1: Transform all items
+
 ```python
 # Before: for + append
 results = []
@@ -382,6 +406,7 @@ results = [item.transform() for item in items]
 ```
 
 ### Pattern 2: Filter then transform
+
 ```python
 # Before: for + if + append
 results = []
@@ -394,6 +419,7 @@ results = [item.value for item in items if item.is_valid]
 ```
 
 ### Pattern 3: Flatten nested structure
+
 ```python
 # Before: nested loop + append
 flat = []
@@ -406,6 +432,7 @@ flat = [item for group in groups for item in group.items]
 ```
 
 ### Pattern 4: Extract attribute
+
 ```python
 # Before: for + append
 names = []
@@ -417,6 +444,7 @@ names = [user.name for user in users]
 ```
 
 ### Pattern 5: Build mapping
+
 ```python
 # Before: for + dict assignment
 lookup = {}
@@ -430,6 +458,7 @@ lookup = {item.id: item for item in items}
 ## Validation
 
 After refactoring, ensure:
+
 1. ✅ Same result produced
 2. ✅ No side effects lost
 3. ✅ No early termination lost
@@ -500,12 +529,14 @@ ids = [str(user.id) for user in users]
 ## Summary
 
 **Use comprehensions when**:
+
 - ✅ Building a new collection
 - ✅ Simple transformation/filtering
 - ✅ No side effects
 - ✅ Logic fits 1-2 lines
 
 **Use loops when**:
+
 - ❌ Side effects required
 - ❌ Complex logic
 - ❌ Early termination needed

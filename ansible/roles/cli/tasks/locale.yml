@@ -2,7 +2,7 @@
   become: true
   ansible.builtin.copy:
     dest: /etc/locale.gen
-    mode: '0644'
+    mode: "0644"
     content: |
       en_US.UTF-8 UTF-8
       cs_CZ.UTF-8 UTF-8
@@ -16,7 +16,7 @@
   become: true
   ansible.builtin.copy:
     dest: /etc/default/locale
-    mode: '0644'
+    mode: "0644"
     content: |
       # English strings
       LANG=en_US.UTF-8

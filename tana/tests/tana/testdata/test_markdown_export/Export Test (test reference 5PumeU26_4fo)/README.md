@@ -1,4 +1,5 @@
 Export Test (test reference 5PumeU26_4fo)
+
 - [Daily notes](<Daily notes/README.md>)
 - Node content formatting
   - Basic formatting (test reference r1shM2RHNgCv)
@@ -14,9 +15,13 @@ Export Test (test reference 5PumeU26_4fo)
   - Code (test reference YbPcBamWZFGV)
     - Inline code: foo = "bar"
     - Code block, Python:
+
       - ```Python
-#!/usr/bin/python
+
+# !/usr/bin/python
+
 print("hello world")
+
 ```
   - Checkbox nodes (test reference HhxGuymRRqrR)
     - [x] Filled with bold

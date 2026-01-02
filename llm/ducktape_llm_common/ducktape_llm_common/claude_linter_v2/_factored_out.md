@@ -1,7 +1,5 @@
 profiles (e.g. "refactoring")
 
-
-
 ```
 def send_desktop_notification(
     title: str, message: str, urgency: str = "critical", replaces_id: int = 0
@@ -51,7 +49,6 @@ def send_desktop_notification(
 
     return notification_id
 ```
-
 
 ```
 def send_desktop_notification(
@@ -126,7 +123,6 @@ def close_desktop_notification(notification_id: int) -> None:
     except (dbus.exceptions.DBusException, AttributeError) as e:
         logger.debug(f"Failed to close notification {notification_id}: {e}")
 ```
-
 
 ```
 def _try_send_crash_notification(title: str, message: str) -> None:

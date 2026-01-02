@@ -5,11 +5,13 @@ The enhanced prompt system in `ducktape_llm_common` provides a comprehensive fra
 ## Features
 
 ### 1. Prompt Discovery
+
 - Automatically discovers prompts across multiple directories
 - Supports package prompts, user prompts, and project-specific prompts
 - Later directories override earlier ones for customization
 
 ### 2. Advanced Variable Substitution
+
 - Supports multiple template formats:
   - Python format strings: `{variable}`
   - Template strings: `$variable` or `${variable}`
@@ -17,6 +19,7 @@ The enhanced prompt system in `ducktape_llm_common` provides a comprehensive fra
 - Variable validation and extraction
 
 ### 3. Prompt Validation
+
 - Structure validation (headers, lists, code blocks)
 - Variable consistency checking
 - Content quality validation (placeholders, TODOs)
@@ -24,11 +27,13 @@ The enhanced prompt system in `ducktape_llm_common` provides a comprehensive fra
 - Metadata validation
 
 ### 4. Helper Functions
+
 - Pre-built loaders for common prompt types
 - Automatic timestamp and default value injection
 - Variable validation before loading
 
 ### 5. Metadata Support
+
 - YAML frontmatter in prompts
 - Special comment metadata
 - Programmatic metadata extraction
@@ -193,6 +198,7 @@ Brief description of the prompt.
 ```python
 # Example code if needed
 ```
+
 ```
 
 ### With Metadata

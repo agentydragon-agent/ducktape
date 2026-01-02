@@ -7,7 +7,7 @@ letsencrypt_dns_cert_name: ""
 letsencrypt_dns_email: ""
 
 # DNS provider configuration
-letsencrypt_dns_provider: "powerdns"  # powerdns, route53, cloudflare, etc.
+letsencrypt_dns_provider: "powerdns" # powerdns, route53, cloudflare, etc.
 
 # PowerDNS specific configuration
 letsencrypt_dns_powerdns_api_url: "http://127.0.0.1:8081"

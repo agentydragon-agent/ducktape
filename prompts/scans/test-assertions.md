@@ -1,6 +1,7 @@
 # Scan: Test Assertion Antipatterns
 
 ## Context
+
 @../shared-context.md
 
 ## Overview
@@ -10,6 +11,7 @@ Tests using plain `assert` statements miss opportunities for better error messag
 ## Core Principle
 
 **Use PyHamcrest matchers for better test assertions**:
+
 - More expressive: `has_properties(status="success")` vs `assert obj.status == "success"`
 - Better error messages: "Expected: object with property 'status' equal to 'success', but was 'failed'"
 - Composable: Combine matchers with `all_of()`, `any_of()`, `not_()`
@@ -60,6 +62,7 @@ def test_parse_numstat_output():
 ### BETTER: PyHamcrest for partial matching or composition
 
 Use `has_properties()` when you need:
+
 - **Partial matching** (only check some fields, ignore others)
 - **Composed matchers** (e.g., `count=greater_than(0)`)
 
@@ -78,6 +81,7 @@ def test_parse_creates_valid_change():
 ```
 
 **Benefits of PyHamcrest**:
+
 - Better error message: "Expected: sequence containing [object with property 'path' equal to 'src/main.py', ...]"
 - Order matters (use `contains_inanyorder` if order doesn't matter)
 - Can match subset of properties
@@ -263,12 +267,14 @@ assert_that(
 ```
 
 **Why this is better**:
+
 - Single assertion validates entire nested structure
 - `message=has_properties(...)` checks nested object properties
 - `has_items()` validates multiple items in collection
 - Clear intent: "Payloads contain a markdown message and finished status"
 
 **BAD Alternative** (verbose, unclear intent):
+
 ```python
 # Find ui_message
 ui_msgs = [p for p in payloads if p.get("type") == "ui_message"]
@@ -295,11 +301,13 @@ assert_that(payloads, has_item(m))
 ```
 
 **Why this is better**:
+
 - `all_of()` combines multiple matchers into one
 - Can build matchers conditionally
 - Clear composition: "Match error AND message contains substring"
 
 **BAD Alternative**:
+
 ```python
 # Manual filtering and multiple assertions
 errors = [p for p in payloads if p.get("type") == "error" and p.get("code") == code_enum]
@@ -325,12 +333,14 @@ assert_that(items, has_item(item_user_message(text="hello")))
 ```
 
 **Why this pattern is excellent**:
+
 - Reusable matcher function encapsulates common checks
 - Combines type check (`instance_of`) with property validation
 - `all_of(*m)` dynamically composes matchers based on parameters
 - DRY: Single source of truth for "what makes a valid user message"
 
 **BAD Alternative** (duplication across tests):
+
 ```python
 # Test 1
 assert isinstance(items[0], UserMessageItem)
@@ -360,11 +370,13 @@ assert_that(
 ```
 
 **Why this is better**:
+
 - `has_items()` validates collection contains ALL matchers (order-independent)
 - Mix of `has_properties()` and custom matchers (`is_function_call_output_end_turn()`)
 - Clear intent: "These three events must be present"
 
 **vs. contains_exactly()** (when order matters):
+
 ```python
 # Use contains_exactly() when order is significant
 assert_that(
@@ -400,6 +412,7 @@ assert_that(result, all_of(
 ```
 
 **Why composition matters**:
+
 - Single assertion point of failure
 - Better error messages: "Expected: instance of ToolCallExecution AND properties..."
 - Clear test intent in one expression
@@ -428,6 +441,7 @@ assert_that(errors, has_item(_message_contains("timeout")))
 ```
 
 **Benefits of matcher factories**:
+
 1. **DRY**: Define complex match logic once
 2. **Readable**: `has_finished_run()` reads like English
 3. **Composable**: Can combine with `all_of()`, `any_of()`
@@ -437,6 +451,7 @@ assert_that(errors, has_item(_message_contains("timeout")))
 ## Key Composability Patterns
 
 ### 1. all_of() - AND logic
+
 ```python
 assert_that(user, all_of(
     instance_of(User),
@@ -446,6 +461,7 @@ assert_that(user, all_of(
 ```
 
 ### 2. any_of() - OR logic
+
 ```python
 assert_that(status, any_of(
     equal_to(Status.SUCCESS),
@@ -455,12 +471,14 @@ assert_that(status, any_of(
 ```
 
 ### 3. not_() - Negation
+
 ```python
 assert_that(message, not_(contains_string("error")))
 # "Must NOT contain 'error'"
 ```
 
 ### 4. Nested matchers
+
 ```python
 assert_that(response, has_properties(
     status=200,
@@ -509,6 +527,7 @@ rg --type py '^[[:space:]]*assert ' --glob "test_*.py" --glob "*_test.py" | wc -
 ```
 
 **What to review for each assertion:**
+
 1. **Field-by-field checks**: Multiple `assert obj.field ==` for same object (use plain `==` or `has_properties()`)
 2. **Collection operations**: `assert len()`, `assert x in`, `assert x[0] ==` (use `has_length()`, `has_item()`, matchers)
 3. **Type checks**: `assert isinstance()` (use `instance_of()` for better error messages)

@@ -63,20 +63,20 @@ spec:
                 secretKeyRef:
                   name: api-keys
                   key: ANTHROPIC_API_KEY
-                  optional: true  # Pod will still start without the secret
+                  optional: true # Pod will still start without the secret
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: api-keys
                   key: OPENAI_API_KEY
-                  optional: true  # Pod will still start without the secret
+                  optional: true # Pod will still start without the secret
           volumeMounts:
             - name: nix-store
               mountPath: /nix
             - name: nix-home
               mountPath: /home/ubuntu
           securityContext:
-            runAsUser: 0  # Run as root to install packages, then switch to ubuntu
+            runAsUser: 0 # Run as root to install packages, then switch to ubuntu
           resources:
             requests:
               memory: "2Gi"

@@ -18,7 +18,7 @@
   ansible.builtin.get_url:
     url: https://api.github.com/repos/ryanoasis/nerd-fonts/releases/latest
     dest: "{{ legacy_nerd_fonts_latest_release_json_path }}"
-    mode: '0644'
+    mode: "0644"
   changed_when: false
 
 - name: Parse out latest Nerd Fonts release tag

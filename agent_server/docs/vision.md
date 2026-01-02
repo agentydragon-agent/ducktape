@@ -75,16 +75,19 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 - Chat: initial V1 is out of scope; near‑term MCP‑native mode; see <mcp-runtime/ui-chat.md> and <mcp-runtime/matrix.md>.
 
 ### Container interaction
+
 - The agent uses a Docker exec MCP server (server `runtime`, tool `exec`) to run commands inside the container (e.g., `rg`, `cat`). All such calls are evaluated by the policy middleware before dispatch.
 - Images: reuse the same Dockerfile (`docker/runtime/Dockerfile`) for both the runtime exec container and the policy‑evaluation container; use the same runtime flags for both. You may still choose to run policy evaluation per‑call. The image includes `rg` for fast source reads.
 
 ### Terminology alignment
+
 - "Compositor": the aggregation server exposing namespaced tools and resources.
 - "Policy middleware": pre‑dispatch approvals filter inside the Compositor on `tools/call`.
 - "Orchestrator/handlers": in‑proc loop control and injection logic managing turns and wake sources.
 - "Resources server": dedicated MCP server for `resources/*` (no HWM/coalescing).
 
 ### Gaps and proposals
+
 - Principals and auth scopes
   - Document principal derivation for agent vs human vs container (bearer/JWT scopes). Ensure the policy context includes the principal and deny human bypass from containers.
 - Ask flow observability
@@ -97,6 +100,7 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 - Add a small shared glossary table across docs for policy middleware, orchestrator, Compositor, Resources server to avoid drift.
 
 ### Integration roadmap
+
 - Align with migration stages in <mcp-runtime/overview.md>:
   1) Ensure FastMCP proxy mounts everywhere (done); transitional handler approvals allowed.
   2) Install policy middleware in Compositor; add dedicated Resources server; remove approval enforcement from handlers.

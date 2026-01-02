@@ -6,6 +6,7 @@ kind: outcome
 Primitive‑typed identifiers (int/float/str/bool/bytes/number) are named so their exact meaning and units are unambiguous from name + type + immediate context; when an appropriate domain type exists (e.g., duration/time), use it instead of an ambiguous primitive.
 
 ## Acceptance criteria (checklist)
+
 - Durations: use a duration type (e.g., Python datetime.timedelta, Go time.Duration, Java java.time.Duration) OR suffix the unit on primitives (e.g., timeout_ms, poll_interval_secs)
 - Timestamps: use time types (datetime/Instant) instead of numeric epochs; if a primitive is required, suffix unit explicitly (created_at_epoch_ms or created_at_epoch_s)
 - Sizes: suffix byte‑based units on primitives (payload_bytes, chunk_size_kb) rather than ambiguous names (chunk_size)
@@ -15,6 +16,7 @@ Primitive‑typed identifiers (int/float/str/bool/bytes/number) are named so the
 - Do not introduce bare primitives whose meaning/units are unclear from name; rename to make meaning obvious or use a richer type
 
 ## Positive examples
+
 ```python
 # Python
 from datetime import timedelta, datetime
@@ -56,6 +58,7 @@ boolean isEnabled = true;
 ```
 
 ## Negative examples
+
 ```python
 # Ambiguous units / meaning
 TIMEOUT: int = 250                     # bad: unit unknown
@@ -76,6 +79,7 @@ let feature: boolean = true;           // bad (bare noun)
 ```
 
 ## Notes
+
 - Prefer domain types where available (timedelta/Duration/Instant/etc.). When primitives are unavoidable, encode units in the name.
 - Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified). Use is_/has_ when a noun would otherwise be ambiguous (is_admin, has_license).
 - Pragmatic exception in legacy codebases: if a code path is uniformly using weak types (e.g., string paths or epoch integers) and your small change would only introduce noise by converting in/out without internal benefit, it’s acceptable to stick to the prevailing type for that narrow change. Favor module/function boundaries that convert once at input and once at output when you can extract real benefits internally.

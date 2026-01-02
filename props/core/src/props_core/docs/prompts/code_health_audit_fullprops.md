@@ -2,24 +2,30 @@
 # Repository Code Health Audit — Full Properties (This Codebase)
 
 Goal
+
 - Audit a codebase for code‑health issues and design/architecture smells.
 - Apply every formal property defined in this repository (embedded below).
 - Produce two outputs: (1) Findings with precise anchors, (2) A prioritized Plan.
 
 How To Work
+
 - Read‑only analysis; do not modify files. You may run read‑only tools (linters, type‑checkers, complexity/duplication scanners) if available, but your judgment must follow the written rules below.
 - Apply properties strictly by their wording. Do not stretch or infer beyond what a definition actually states.
 - Cite precise anchors for evidence (file:line or file:start‑end, 1‑based). For many similar cases, use one short rationale plus a compact list of anchors.
 
 Broader Smells and Structural Anti‑Patterns
+
 - Duplication/drift; excess complexity; least‑power violations; dynamic attribute footguns; swallowing errors; wrong‑direction dependencies; cross‑layer coupling; private reach‑through; brittle exception detection; always‑on heavy deps; protocol leakage; duplicate mechanisms; barrel imports hiding real deps; typing/contract issues; logging/diagnostics gaps; testing gaps.
 
 Deliverables (print exactly these sections)
+
 1) Findings (grouped by property, structural smells, other smells) with anchors.
 2) Plan (prioritized phases; map to properties/smells; call out risky steps).
 
 ---
+
 ## Embedded Property Definitions (exhaustive)
+
 ### Property: consistent-naming-and-notation.md
 
 ```md
@@ -100,6 +106,7 @@ tests/foo/test_baz.py   # ❌ mixed conventions
 ```
 
 ## Notes
+
 - Pick one convention per project; consider documenting it in CONTRIBUTING.md; use linters/review to keep it consistent.
 - Consistency reduces cognitive load and speeds navigation/grep.
 - Related properties: [Renames must pay rent](./no-random-renames.md), [Self‑describing names](./self-describing-names.md).
@@ -192,6 +199,7 @@ MAX_UPLOAD = 25                     # units unclear
 ```
 
 ## Sub‑rules
+
 - [Time and duration](time.md)
 - [URLs](urls.md)
 - [Byte sizes](bytes.md)
@@ -216,7 +224,7 @@ Maintain a single consistent internal unit per quantity to avoid drift.
 
 ## Acceptance criteria (checklist)
 - Use typed units where practical
-  - Python: prefer a unit library (for example, Pint) or typed wrappers; [use `datetime` types for time/duration](time.md) 
+  - Python: prefer a unit library (for example, Pint) or typed wrappers; [use `datetime` types for time/duration](time.md)
   - Go: define small newtypes (for example, `type Meters float64`) or structs with methods; avoid untyped `float64` for mixed units
 - If primitives are used, names explicitly include units - e.g.: `user_height_cm`, `speed_mph`, `roll_degrees`.
 - Choose one canonical internal unit per quantity (for example, meters for length, m/s for speed)
@@ -293,10 +301,12 @@ position = position + step  # *boom* - nothing prevents unit logic error
 ```
 
 ## Exceptions
+
 - Protocol/file format boundaries that mandate specific units (for example, Fahrenheit, centimeters) may use those units at the edge; convert immediately to canonical units internally
 - Short-lived locals immediately involved in a conversion expression may omit suffixes when unit is obvious and enforced by surrounding typed context
 
 ## Guidance
+
 - Prefer SI base units internally (meters, seconds, kilograms, celsius/kelvin) and well-known derived units where conventional (m/s)
 - Centralize conversions behind helpers to avoid copy/paste and drift
 - If dealing with many physical quantities, adopt a unit library (for example, Pint) to make unit errors unrepresentable
@@ -384,6 +394,7 @@ if elapsedSec > timeoutSec { /* ... */ }
 ```
 
 ## Exceptions
+
 - Interfacing with protocols/DBs that represent time numerically is allowed at boundaries; convert immediately to internal rich types
 - Performance‑critical tight loops may use numerics when justified and documented; conversions must stay localized and lossless for the use case
 
@@ -430,7 +441,6 @@ Manual concatenation (missing encoding, brittle):
 ```python
 url = f"https://api.example.com/search?q={query}&page={page}"
 ```
-
 
 ```
 
@@ -652,7 +662,9 @@ Low‑level OS process/syscalls when high‑level exists:
 os.system("cmd")  # ❌ prefer subprocess.run(["cmd"], check=True)
 fd = os.open("out.txt", os.O_WRONLY | os.O_CREAT)  # ❌ prefer Path("out.txt").write_text(data)
 ```
+
 ## Notes
+
 - Principle of least power: pick the simplest construct that expresses intent safely; only escalate when there’s a clear, documented need.
 - Scope: this property targets patterns that increase risk (silent failures, implicit behavior, needless power) when safer alternatives exist. Pure style modernizations (e.g., using `A | B` over `Union[A, B]`) live under [Modern Python idioms](./modern-python-idioms.md) and are not “sus” on their own.
 - These are heuristics; exceptions exist, but require a short inline rationale.
@@ -691,6 +703,7 @@ See <https://example.com/docs/tooling> for details.
 ```
 
 ### Positive examples (multiline code blocks)
+
 ```python
 def add(a: int, b: int) -> int:
     return a + b
@@ -701,6 +714,7 @@ grep -R "pattern" src/ | wc -l
 ```
 
 ### Positive examples (lists)
+
 ```markdown
 - Parent item
   - Nested item
@@ -709,6 +723,7 @@ grep -R "pattern" src/ | wc -l
 ```
 
 ## Negative examples (plaintext tokens, missing links)
+
 ```markdown
 Run some-script.sh with --dry-run=true.
 The FooClass exposes foo_method(...) in src/svc/main.py.
@@ -717,14 +732,17 @@ See https://example.com/docs/tooling for details.
 ```
 
 ### Dunder/underscore pitfalls
+
 Using bare dunders causes emphasis; protect with code spans.
 
 #### Negative examples (one line each)
+
 ```markdown
 my favorite variable is __init__ and constant is __ALL__, edit src/some_module/my__file__.py
 ```
 
 #### Positive examples (one line each)
+
 ```markdown
 my favorite variable is `__init__` and constant is `__ALL__`, edit `src/some_module/my__file__.py`
 ```
@@ -851,7 +869,7 @@ if basePath == "" {
     return full || base
 }
 ...
-if !validFile || basePath == "" {  // remove basePath check - ruled out above 
+if !validFile || basePath == "" {  // remove basePath check - ruled out above
     return false
 }
 ```
@@ -925,6 +943,7 @@ def handle(x: Bar | Baz | Quux) -> str:
 ```
 
 ## Exceptions
+
 - Intentional extension points (plugin hooks, abstract interfaces) may appear unused locally but must be referenced by a registry, entry‑points, or configuration.
   Keep a short comment or link to the registry proving reachability:
 
@@ -939,9 +958,11 @@ def handle(x: Bar | Baz | Quux) -> str:
   active_plugins:
   - module_name:plugin_has_no_references_in_python
   ```
+
 - Temporary compatibility shims may remain while a migration is in progress, with an owner and removal date
 
 ## Guidance
+
 - Use local reasoning and established invariants. If a branch is obviously unreachable, delete it.
   When unsure, search references, check feature flags/config, and document the invariant you rely on.
 - Prefer strengthening invariants and validations over keeping speculative fallback branches
@@ -989,6 +1010,7 @@ headers = (
 ```
 
 ## Negative examples
+
 ```python
 # Unnecessarily split call with identical parse tree; should be single line
 img = MediaContent(
@@ -1014,6 +1036,7 @@ value = (
 ### FastAPI configuration examples
 
 #### Negative examples (identical parse tree, unnecessary breaks)
+
 ```python
 from fastapi import APIRouter, Depends
 
@@ -1028,6 +1051,7 @@ def create_router() -> APIRouter:
 ```
 
 #### Positive examples (same parse tree, compact layout)
+
 ```python
 from fastapi import APIRouter, Depends
 
@@ -1064,18 +1088,21 @@ frames = await collect_frames(frames_iter)
 ```
 
 One-off error object immediately returned:
+
 ```python
 error = FailureResponse(error="Not found", resource_id=rid)
 return error.to_text_content()
 ```
 
 Trivial pass-through wrapper with identical signature and call:
+
 ```python
 def foo(a, b, c, d):
     return bar(a, b, c, d)
 ```
 
 Trivial chain via one-off variables; should be one line:
+
 ```python
 def probe_cache(namespace=None) -> bool:
     cfg = build_cache_config(namespace)
@@ -1086,6 +1113,7 @@ def probe_cache(namespace=None) -> bool:
 ## Positive examples (acceptable)
 
 Inline instead of one-off variable:
+
 ```python
 await http.post_json({
     "type": "render_track",
@@ -1094,6 +1122,7 @@ await http.post_json({
 ```
 
 Test helper encapsulates setup defaults (acceptable):
+
 ```python
 def make_user(name: str = "Rai", email: str = "rai@example.com") -> User:
     return User(name=name, email=email)
@@ -1102,16 +1131,19 @@ def make_user(name: str = "Rai", email: str = "rai@example.com") -> User:
 ### Negatives examples, fixed
 
 Inline iterator usage:
+
 ```python
 frames = await collect_frames(video.iter_frames())
 ```
 
 Direct return of constructed value:
+
 ```python
 return FailureResponse(error="Not found", resource_id=rid).to_text_content()
 ```
 
 One-line chain:
+
 ```python
 def probe_cache(namespace=None) -> bool:
     return build_engine_spec(snapshot_path).as_runner().ready()
@@ -1198,6 +1230,7 @@ processor = server       # ❌ misleading name; not a processor
 ```
 
 ## Notes
+
 - Renames should “pay rent”: resolve a collision, remove ambiguity, or increase semantic precision. Otherwise, keep the original name.
 - When you must rename for semantics, migrate fully to the new name in that scope; do not keep both alive.
 - Cross‑refs: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md), [Self‑describing names](./self-describing-names.md), and [Truthfulness](./truthfulness.md).
@@ -1239,6 +1272,7 @@ def create_track(t: Track) -> Track:
 ```
 
 ## Negative examples (boilerplate restating immediate context)
+
 ```python
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -1433,6 +1467,7 @@ __all__ = [name for name in globals() if not name.startswith("_")]
 ```
 
 ## Notes
+
 - Public API curation belongs at the package root __init__.py of a real library/SDK with versioning; everywhere else, keep imports explicit to preserve clear dependencies and call sites.
 - Re‑exports should be rare, selective, and documented; wildcard exports and convenience barrels hinder traceability and refactoring.
 - Related properties: [Imports at the top](./imports-top.md), [Truthfulness](../truthfulness.md) (comments must reflect real intent), [Consistent naming and notation](../consistent-naming-and-notation.md).
@@ -1472,13 +1507,13 @@ u = User("Rai", "rai@example.com")
 send(u.email)
 ```
 
-
 ## Exceptions (rare, deliberate)
 
 - Only when names truly arrive dynamically (e.g., plugin entrypoints specified as "package.module:function"), and only at explicit boundaries; prefer a registry/mapping over attribute probing. If used, keep scope narrow and document why direct access is impossible.
 - Never use dynamic attribute probing to guess between multiple names; design types to make invalid states unrepresentable.
 
 ## Negative examples
+
 ```python
 # Dynamic probing — forbidden
 if hasattr(obj, "email"):
@@ -1547,6 +1582,7 @@ def load_config(p: Path) -> dict:
 ```
 
 ## Negative examples
+
 ```python
 def load_config(p):
     import json  # ❌ inline import (not a cycle)
@@ -1562,12 +1598,14 @@ import logging
 ## Exceptions (narrow, justified)
 
 Verified presence of certain listed unusual cases may justify a local import, but only with a verifiable AND accurate inline comment explaining the reason:
+
 - Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to remove the cycle when feasible.
 - Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce startup cost.
 - Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import.
 Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
 
 ### Import cycle
+
 ```python
 # file: foo/bar/service.py
 def handler():
@@ -1577,6 +1615,7 @@ def handler():
 ```
 
 ### Dynamic plugin or entrypoint import by string
+
 ```python
 from importlib import import_module
 
@@ -1586,12 +1625,14 @@ def load_plugin(entrypoint: str):
 ```
 
 ### Hot reload during development
+
 ```python
 import myapp.config as config
 importlib.reload(config)
 ```
 
 ### Deferring a heavy import
+
 ```python
 def run_gpu_job():
     # Avoid import-time slowdown from compiling kernels (~30 s)
@@ -1600,6 +1641,7 @@ def run_gpu_job():
 ```
 
 ## Additional negative examples
+
 ```python
 def run_task(name: str):
     mod = __import__(name)  # ❌ dynamic import in function with no justification
@@ -1650,6 +1692,7 @@ def fn():
 ```
 
 ### Nonspecific justification (still a violation)
+
 ```python
 def compute_now():
     # avoid import loop
@@ -1658,6 +1701,7 @@ def compute_now():
 ```
 
 ## Cross-references
+
 - [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments and structure honest about why an exception is taken.
 
 ```
@@ -1757,6 +1801,7 @@ def f(x: Union[int, str]) -> int:  # ❌ prefer int | str
 ```
 
 ## Notes
+
 - Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning in a complex expression, a named helper or method call can be acceptable.
 - Related properties: [Walrus operator](./walrus.md), [String affixes](./str-affixes.md), [Type hints](./type-hints.md), [Pathlib usage](./pathlib.md).
 
@@ -1843,10 +1888,12 @@ process(payload)
 ```
 
 ## Exceptions (narrow)
+
 - Mocking is acceptable when the object cannot be constructed in tests without heavy external state (e.g., real DB connection, complex binary handles) and when the test specifically targets the interaction contract; keep mocks minimal and focused on the boundary.
 - For non‑plain fields that are impractical to instantiate (e.g., embedded OS handles), provide small fakes implementing only the required interface.
 
 ## See also
+
 - [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
 - [Use yield fixtures for teardown](./pytest-yield-fixtures.md)
 - [Structured data types over untyped mappings](../structured-data-over-untyped-mappings.md)
@@ -1963,10 +2010,12 @@ except Exception:  # ❌ should catch FileNotFoundError if ignoring that case on
 ```
 
 ## Exceptions (narrow)
+
 - Legitimate no‑op outcomes should use APIs that encode the no‑op instead of exceptions (e.g., `mkdir(exist_ok=True)`, `dict.get`, idempotent delete with specific `FileNotFoundError` catch). If you must catch, catch only the specific exception and include a short rationale.
 - At true outer boundaries (HTTP handlers, main loops), a broad catch may be used to convert to an error response — must log with full context (`logger.exception`) and avoid continuing in a corrupted state.
 
 ## See also
+
 - [Try/except is scoped around the operation it guards](./scoped-try-except.md)
 
 ```
@@ -2023,6 +2072,7 @@ args.config.write_text("ok", encoding="utf-8")
 ```
 
 ## Negative examples
+
 ```python
 import os
 
@@ -2092,6 +2142,7 @@ with zipfile.ZipFile(archive, "w") as zf:
 ```
 
 ## Negative examples
+
 ```python
 # Casting Path to str for subprocess — forbidden
 cfg = Path("/etc/tool/config.ini")
@@ -2198,6 +2249,7 @@ item = Item.model_validate(raw)
 ```
 
 ## Negative examples
+
 ```python
 # Dual-support shim — forbidden
 try:
@@ -2345,11 +2397,13 @@ def test_writes_file():
 ```
 
 ## Exceptions
+
 - When testing code that explicitly consumes `py.path` objects, `tmpdir` can be used.
   Prefer migrating the code under test to `pathlib.Path` and `tmp_path` when feasible.
 - If third-party API requires raw `tempfile` handles (e.g., needs a real OS-level fd), document the reason and keep the scope minimal
 
 ## See also
+
 - [PathLike (Python)](./pathlike.md)
 - [Pathlib usage (Python)](./pathlib.md)
 
@@ -2437,6 +2491,7 @@ def srv(tmp_path):
 ```
 
 ## See also
+
 - [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
 
 ```
@@ -2513,6 +2568,7 @@ def read_config(path: Path) -> dict:
 ### Error-boundary example (allowed)
 
 #### HTTP request handler
+
 ```python
 def handle_request(req) -> Response:
     try:
@@ -2525,6 +2581,7 @@ def handle_request(req) -> Response:
 ```
 
 #### Top-level CLI command handler
+
 ```python
 def cmd_sync(args: argparse.Namespace) -> int:
     try:
@@ -2622,6 +2679,7 @@ branch = branch.removeprefix("feature/")
 ```
 
 ## Negative examples
+
 ```python
 name = "prod_db"
 name = name[len("prod_"):]
@@ -2633,6 +2691,7 @@ branch = "feature/foo"
 if branch.startswith("feature/"):
     branch = branch[len("feature/"):]
 ```
+
 ```
 
 
@@ -2669,6 +2728,7 @@ class ErrorCode(StrEnum):
 ```
 
 ## Negative examples
+
 ```python
 # Old style — forbidden when targeting 3.11+
 from enum import Enum
@@ -2686,6 +2746,7 @@ class ErrorCode(Enum):
     PROCESS_DIED = "process_died"
     COMMUNICATION_FAILURE = "communication_failure"
 ```
+
 ```
 
 
@@ -2721,6 +2782,7 @@ ids: set[int] = {1, 2, 3}
 ```
 
 ## Negative examples
+
 ```python
 from typing import List, Dict, Optional, Union
 
@@ -2784,6 +2846,7 @@ if (code := compute_status()) == 1:
 ```
 
 ## Negative examples
+
 ```python
 # One-off assignment only to feed the next if — should use walrus
 user = db.get(User, user_id)
@@ -2799,12 +2862,14 @@ if result is not None:
 ```
 
 ## Clarifications
+
 - Apply this rule only to collapse a redundant two-step "assign, then immediately check" into a single `if` with `:=` when it improves clarity.
 - Do not introduce throwaway bindings (e.g., `_ := ...`) just to satisfy the rule; either bind to a meaningful name you reuse, or write the condition directly.
 
 ## Dict error checks
 
 ### Positive examples
+
 ```python
 # Use walrus to bind dict error payload inline
 if error := resp.get("error"):
@@ -2812,6 +2877,7 @@ if error := resp.get("error"):
 ```
 
 ### Negative examples
+
 ```python
 # Two-step then check — should use walrus
 if "error" in resp:
@@ -2822,6 +2888,7 @@ if "error" in resp:
 ## While reader loops
 
 ### Positive examples
+
 ```python
 # File-like object
 while chunk := f.read(8192):
@@ -2833,6 +2900,7 @@ while (line := await stream.readline()):
 ```
 
 ### Negative examples
+
 ```python
 # Two-step read loop instead of walrus
 chunk = f.read(8192)
@@ -2846,6 +2914,7 @@ while line:
     handle(line)
     line = await stream.readline()
 ```
+
 ```
 
 
@@ -2910,6 +2979,7 @@ boolean isEnabled = true;
 ```
 
 ## Negative examples
+
 ```python
 # Ambiguous units / meaning
 TIMEOUT: int = 250                     # bad: unit unknown
@@ -2930,10 +3000,12 @@ let feature: boolean = true;           // bad (bare noun)
 ```
 
 ## Notes
+
 - Prefer domain types where available (timedelta/Duration/Instant/etc.). When primitives are unavoidable, encode units in the name.
 - Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified). Use is_/has_ when a noun would otherwise be ambiguous (is_admin, has_license).
 - Pragmatic exception in legacy codebases: if a code path is uniformly using weak types (e.g., string paths or epoch integers) and your small change would only introduce noise by converting in/out without internal benefit, it’s acceptable to stick to the prevailing type for that narrow change. Favor module/function boundaries that convert once at input and once at output when you can extract real benefits internally.
 - This property focuses on unambiguous naming for primitives. Additional properties may separately enforce: use of time/money types; currency units; angle units (deg/rad); and rate units (per_second, per_minute).
+
 ```
 
 
@@ -2992,6 +3064,7 @@ payload: dict = User(id="u1", email="u@example.com", role=Role.ADMIN).model_dump
 ```
 
 Python (TypedDict for small, static shapes):
+
 ```python
 from typing import TypedDict
 
@@ -3004,6 +3077,7 @@ def get_health() -> Health:
 ```
 
 TypeScript (interface + literal union + runtime check):
+
 ```ts
 import { z } from "zod";
 
@@ -3023,6 +3097,7 @@ const user: User = UserSchema.parse(JSON.parse(input));
 ```
 
 Go (struct + typed enum‑like):
+
 ```go
 type Role string
 const (
@@ -3041,6 +3116,7 @@ _ = json.Unmarshal(data, &u)
 ```
 
 Java (record + enum):
+
 ```java
 public enum Role { ADMIN, USER }
 public record User(String id, String email, Role role) {}
@@ -3049,12 +3125,14 @@ public record User(String id, String email, Role role) {}
 ## Negative examples (violations)
 
 Opaque dict returned from core logic:
+
 ```python
 def load_user() -> dict[str, Any]:  # too loose
     return {"id": uid, "mail": email}  # inconsistent, unvalidated keys
 ```
 
 Ad‑hoc nested map assembly for transport:
+
 ```python
 payload = {
     "user": {"id": user.id, "email": user.email},
@@ -3064,11 +3142,13 @@ payload = {
 ```
 
 Using primitives for a closed set (should be an enum):
+
 ```python
 role: str = "admin"  # should be Role (StrEnum)
 ```
 
 TypeScript domain shape as Record (no schema):
+
 ```ts
 function makeUser(): Record<string, unknown> {  // too loose
   return { id: "u1", email: "u@example.com", role: "admin" };
@@ -3076,6 +3156,7 @@ function makeUser(): Record<string, unknown> {  // too loose
 ```
 
 Go passing dynamic bags through modules:
+
 ```go
 func Handle(m map[string]any) error {  // too loose
     // callers and callees disagree on keys/types
@@ -3084,6 +3165,7 @@ func Handle(m map[string]any) error {  // too loose
 ```
 
 Notes
+
 - Use map‑like types only for inherently key/value domains (headers, labels), short‑lived and close to their origin
 - When introducing a model on an existing loose interface, convert once at the boundary; avoid churn by bouncing between loose and strict forms inside the same flow
 
@@ -3125,11 +3207,13 @@ func getFileExtension(format string) string {
 ```
 
 Typo:
+
 ```go
 func isValidUt8(b []byte) bool { /* ... */ }
 ```
 
 Stale/contradictory comment says `path` is required, but code accepts `None` and defaults:
+
 ```python
 # path is required
 path = ...
@@ -3139,6 +3223,7 @@ if path is None:
 ```
 
 Docstring claims caching but function doesn't actually cache, only loads+parses:
+
 ```python
 def _load_yaml_file(self, path: Path) -> Any:
     """Load and cache YAML file content."""  # <-- false
@@ -3147,7 +3232,9 @@ def _load_yaml_file(self, path: Path) -> Any:
 ```
 
 ## Positive examples
+
 Fixed name correctly reflects returned value:
+
 ```go
 func syntheticFormatPath(format string) string {
     // ...
@@ -3165,12 +3252,14 @@ def load_config(path: str | None) -> dict:
 ```
 
 Non-obvious rationale captured briefly (good):
+
 ```python
 # Trim trailing whitespace because upstream API mishandles it (issue #1234)
 text = text.rstrip()
 ```
 
 ## Cross-references
+
 - [Self‑describing names](./self-describing-names.md)
 - [No useless docs](./no-useless-docs.md)
 
@@ -3256,7 +3345,7 @@ def f(flag: bool) -> int | str:
 Overuse of `Any` / loose type - should be `Callable[[int], str]` or similar:
 
 ```python
-def run(cb: Any) -> Any:  
+def run(cb: Any) -> Any:
     return cb(123)
 
 def maybe() -> int | None:  # not actually optional

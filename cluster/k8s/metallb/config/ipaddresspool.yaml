@@ -1,0 +1,50 @@
+---
+# Ingress VIP pool - dedicated for ingress-nginx
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: ingress-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.2.3.2-10.2.3.2 # Single dedicated IP for ingress
+  autoAssign: false # Manual assignment only
+---
+# PowerDNS pool - dedicated for DNS service
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: dns-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.2.3.3-10.2.3.3 # Single dedicated IP for PowerDNS
+  autoAssign: false # Manual assignment only
+---
+# General services pool - for other LoadBalancer services
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: services-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.2.3.4-10.2.3.20 # Pool for Harbor, Gitea, etc.
+  autoAssign: true # Automatic assignment
+---
+# L2 Advertisement - announces IPs via ARP on local network
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: l2-advertisement
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - ingress-pool
+    - dns-pool
+    - services-pool
+  # Announce on physical interface only (not container interfaces)
+  interfaces:
+    - eth0
+  # Announce from all nodes
+  nodeSelectors: []

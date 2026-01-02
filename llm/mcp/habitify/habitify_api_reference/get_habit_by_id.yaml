@@ -15,19 +15,19 @@ response:
       id: -Lo9NTLRX3aCxg-PjN25
       name: R***********t
       is_archived: false
-      start_date: '2019-09-07T06:19:17.000Z'
+      start_date: "2019-09-07T06:19:17.000Z"
       time_of_day:
-      - morning
+        - morning
       goal: null
       goal_history_items: []
-      log_method: ''
-      recurrence: 'DTSTART:20190907T061917Z
+      log_method: ""
+      recurrence: "DTSTART:20190907T061917Z
 
-        RRULE:FREQ=DAILY;INTERVAL=7'
+        RRULE:FREQ=DAILY;INTERVAL=7"
       remind:
-      - '7:0'
+        - "7:0"
       area: null
-      created_date: '2019-09-07T06:19:17.000Z'
+      created_date: "2019-09-07T06:19:17.000Z"
       priority: 6.338253001141147e+29
     version: v1.2
     status: true

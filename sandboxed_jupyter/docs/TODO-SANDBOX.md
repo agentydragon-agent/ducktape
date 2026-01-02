@@ -16,6 +16,7 @@ This document tracks only the remaining open work. Completed items and historica
 # Target design notes (agreed direction)
 
 Components and names
+
 - Tool 1 (YAML → platform sandbox runner): sandboxer
   - Purpose: execute a command under a sandbox defined by explicit YAML; demux to seatbelt (macOS) or bwrap (Linux)
   - Net proxy mode: sandboxer manages an HTTP proxy lifecycle (spawn, configure allowlist, set proxy env inside sandbox, teardown)
@@ -28,6 +29,7 @@ Components and names
   - Must include "jupyter" in the name (done)
 
 Policy YAML (explicit-only, platform-selective)
+
 - env:
   - set: { JUPYTER_* dirs, HOME, PYTHONPYCACHEPREFIX, MPLCONFIGDIR, PATH prepend for control venv }
   - passthrough: [OPENAI_API_KEY, HTTP_PROXY, HTTPS_PROXY, ...]
@@ -45,11 +47,13 @@ Policy YAML (explicit-only, platform-selective)
   - bwrap: { ro_bind: [...], rw_bind: [...], tmpfs: [...], unshare: { net: bool, pid: bool, ipc: bool }, devices: [null, urandom, random] }
 
 Notes
+
 - On Linux, bwrap ro_bind/rw_bind will be derived largely from generic fs.read_paths/write_paths; platform.bwrap allows extra mounts/tuning as needed.
 - Docker: orthogonal; configs differ enough that unifying with sandboxer isn’t worth it. Leave as a separate composer flow (TODO).
 - Future: a "sandboxer MCP" that accepts "execute <foo> under sandbox <bar>" with internal policies (e.g., only allow <baz> if net=none and specific read-only areas), with agent request → user approve/deny flow. Leave as TODO.
 
 Directory layout (example control bundle)
+
 - control/
   - bin/ (control venv: jupyter, jupyter-mcp-server, sandboxer)
   - jupyter/config/jupyter_server_config.py
@@ -67,6 +71,7 @@ Directory layout (example control bundle)
 # Implementation plan and todos (open)
 
 Phase 2 — functionality hardening
+
 - [ ] Add sandboxer proxy-managed allowlist mode (net: proxy)
   - [ ] Spawn local HTTP proxy on 127.0.0.1:0; set HTTP(S)_PROXY inside sandbox; filter by allow_domains
   - [ ] Teardown proxy cleanly on exit
@@ -77,16 +82,19 @@ Phase 2 — functionality hardening
 - [ ] Fonts/plotting support: add curated read paths for macOS fonts and fontconfig caches if needed
 
 Phase 3 — integration and migration
+
 - [ ] Update docs to reflect new tools and composer
 - [ ] Provide migration path from current wrapper to tool2+composer
 - [ ] Extend tests to cover sandboxer seatbelt policies and launch happy paths
 - [ ] Leave Docker as TODO: evaluate a separate docker-compose-like flow
 
 Future (tracked, not in MVP)
+
 - [ ] Sandboxer MCP (agent-facing): accept "execute under sandbox X" with user policy gates and approval flow; dynamic tweaks
 - [ ] Richer Jupyter MCP (multi-notebook, multi-kernel lifecycle)
 
 Status tracking
+
 - Use the progress log below; update as tasks complete. Add trace-driven findings and decisions with timestamp+sha.
 
 ---

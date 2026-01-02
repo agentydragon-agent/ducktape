@@ -15,17 +15,21 @@ Find issues where boolean flags or control flow states are unnecessarily threade
 ## Method (Outcome-First)
 
 ### Analysis Strategy
+
 1. **Read CLI and handler code first** to understand flow
 2. **Run minimal, surgical probes** only after understanding (e.g., head/tail of help text; small payload capture shims)
 3. **Summarize deltas** - Never paste raw dumps into findings
 
 ### End-to-End Flag Assessment
+
 For each flag/mode within scope (e.g., `--force`, `--dry-run`, `--timeout`):
+
 - Does it propagate from CLI → client → protocol → server?
 - Does it have the claimed effects?
 - Target exhaustive coverage; if constrained, prioritize by impact
 
 ### Process Steps
+
 1. **Enumerate candidate flags**:
    - Grep CLI definitions + help text
    - Order by impact for efficiency
@@ -42,6 +46,7 @@ For each flag/mode within scope (e.g., `--force`, `--dry-run`, `--timeout`):
 ## Tracing Flag Usage
 
 For each boolean parameter or state variable:
+
 1. **Identify all occurrences** through call chains
 2. **Trace usage patterns**:
    - Where is it checked/branched on?
@@ -58,6 +63,7 @@ For each boolean parameter or state variable:
 ## Command Snippets (Examples)
 
 ### Search and Discovery
+
 ```bash
 # Find flag definitions
 rg -n "--force|--dry-run|--timeout" /workspace
@@ -67,6 +73,7 @@ nl -ba -w1 -s ' ' /workspace/path/to/file.py | sed -n '120,160p'
 ```
 
 ### Optional Hints (No Raw Dumps in Final)
+
 ```bash
 # Pyright (unreachable code hints)
 pyright --outputjson /workspace
@@ -83,6 +90,7 @@ ctags -R -f /tmp/tags /workspace
 ```
 
 ### Payload Capture Shim (HTTP Example)
+
 ```python
 # /tmp/shims/capture.py
 import json, os, sys
@@ -119,6 +127,7 @@ Activate with: `PYTHONPATH=/tmp/shims <cli> <args>`
 ## Positive Examples
 
 Early bailout instead of error flag:
+
 ```python
 # Good: raise immediately when condition fails
 def validate(item):
@@ -128,6 +137,7 @@ def validate(item):
 ```
 
 Combine trivial nested guards:
+
 ```python
 # Good: single combined condition
 if user and user.active and not user.error:
@@ -135,6 +145,7 @@ if user and user.active and not user.error:
 ```
 
 Separate code paths instead of flag threading:
+
 ```python
 # Good: two focused functions instead of one with a flag
 def load_user_fast(uid: str) -> User:
@@ -147,6 +158,7 @@ def load_user_full(uid: str) -> User:
 ## Negative Examples
 
 Error flag deferred until later:
+
 ```python
 # Bad: sets flag but checks later
 ok = True
@@ -159,6 +171,7 @@ if not ok:
 ```
 
 Nested trivial guards (should be combined):
+
 ```python
 # Bad: trivial nesting
 if user:
@@ -169,6 +182,7 @@ if user:
 ```
 
 Flag threaded through multiple layers:
+
 ```python
 # Bad: flag only checked at the end
 def process(data, strict=False):
@@ -184,6 +198,7 @@ def validate(result, strict):  # finally used
 ```
 
 One-off flag variable:
+
 ```python
 # Bad: flag assigned and immediately passed
 enabled = feature_flags.get("new_ui")
@@ -193,6 +208,7 @@ return render_page(enabled)  # inline the call instead
 ## Focus Areas
 
 Focus on cases where:
+
 - Flag is passed through multiple layers but only checked at the end (early bailout or separate functions)
 - Boolean parameter could be eliminated with separate code paths
 - Multiple flags create complex combinations (enum or strategy pattern would be clearer)

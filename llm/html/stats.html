@@ -54,9 +54,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         const data = await response.json();
-        
+
         // Populate table body
         tbody.innerHTML = data.pages.map(stat => `
             <tr>
@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <td>${stat['bytes'].toLocaleString()}</td>
             </tr>
         `).join('');
-        
+
         // Populate table footer with totals
         tfoot.innerHTML = `
             <tr>
@@ -76,11 +76,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <th>${data.totals['bytes'].toLocaleString()}</th>
             </tr>
         `;
-        
+
         // Hide spinner and show table
         spinner.style.display = 'none';
         table.style.display = 'table';
-        
+
     } catch (error) {
         // Hide spinner and show error
         spinner.style.display = 'none';

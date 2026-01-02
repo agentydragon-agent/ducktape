@@ -21,9 +21,7 @@ TEST_CASES = [
 
 
 def decide(req: PolicyRequest) -> PolicyResponse:
-    if tool_matches(
-        req.name, server=SEATBELT_EXEC_MOUNT_PREFIX, tool=WellKnownTools.SANDBOX_EXEC
-    ):
+    if tool_matches(req.name, server=SEATBELT_EXEC_MOUNT_PREFIX, tool=WellKnownTools.SANDBOX_EXEC):
         # Intentionally error to simulate failing seatbelt resolution → deny-abort upstream
         raise RuntimeError("seatbelt policy resolution failed")
     return PolicyResponse(decision=ApprovalDecision.ASK, rationale="default")

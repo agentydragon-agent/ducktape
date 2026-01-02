@@ -31,6 +31,7 @@ agent_pkg_runtime
 ```
 
 The `db sync` process:
+
 1. Reads MANIFEST from each agent package
 2. Copies listed packages into the tarball
 3. Builds Docker image from Dockerfile
@@ -42,11 +43,13 @@ Init scripts delegate to CLI commands (e.g., `critique init`, `grade init`) prov
 Use backtick code spans for file references. Do NOT use markdown links with duplicate paths.
 
 **Correct:**
+
 ```markdown
 See `docs/schema_docs.md` for details.
 ```
 
 **Incorrect:**
+
 ```markdown
 See [docs/schema_docs.md](docs/schema_docs.md) for details.
 ```

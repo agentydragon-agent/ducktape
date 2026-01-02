@@ -7,6 +7,7 @@ Represent timestamps and durations with semantically rich time types rather than
 Convert primitive epoch values at boundaries and keep a single, consistent internal representation.
 
 ## Acceptance criteria (checklist)
+
 - Timestamps use timezone‑aware datetime objects (Python) or `time.Time` (Go) internally; no raw epoch ints/floats in core logic
 - Durations/timeouts use `datetime.timedelta` (Python) or `time.Duration` (Go); avoid float/int seconds in internals
 - Boundary handling:
@@ -75,5 +76,6 @@ if elapsedSec > timeoutSec { /* ... */ }
 ```
 
 ## Exceptions
+
 - Interfacing with protocols/DBs that represent time numerically is allowed at boundaries; convert immediately to internal rich types
 - Performance‑critical tight loops may use numerics when justified and documented; conversions must stay localized and lossless for the use case

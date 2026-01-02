@@ -48,6 +48,7 @@ When invoked, capture important discoveries, patterns, or insights that would he
 ## Example Usage
 
 ### Example 1: API behavior discovery
+
 U: /til
 A: What did we learn that future agents should know?
 
@@ -56,12 +57,14 @@ U: the Firebase API silently drops messages over 16KB without error
 [Creates file: ./agents/til/2025-01-18-firebase-message-size-limit.md documenting this behavior]
 
 ### Example 2: Code pattern realization
+
 U: turns out all the translog operations need unique timestamps or they merge /til
 A: I'll document this critical timing requirement for future agents.
 
 [Adds to ./agents/til/2025-01-18-translog-unique-timestamps.md with examples]
 
 ### Example 3: Non-obvious workaround
+
 U: /til you have to use the placeholder dance pattern or nodes show "Updated Placeholder"
 A: This is crucial for node creation. I'll document the pattern clearly.
 

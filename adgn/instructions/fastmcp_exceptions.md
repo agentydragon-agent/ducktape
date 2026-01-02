@@ -1,17 +1,20 @@
 # FastMCP tool exceptions and error handling
 
 ## TL;DR
+
 - Don't blanket-catch exceptions inside tools — let FastMCP surface unexpected failures as MCP errors.
 - Use `ToolError` for expected failures (normal control flow: file not found, validation error, etc.)
 - Let unexpected exceptions bubble (system errors, bugs) — FastMCP will handle them.
 - Prefer strict, typed inputs (`OpenAIStrictModeBaseModel`) so FastMCP returns clear validation errors automatically.
 
 ## How FastMCP surfaces errors
+
 - Tool exceptions are caught and returned as MCP errors (isError=true). The server stays healthy; inspect server logs for details.
 - Successful calls return structured content (when you return Pydantic models) or primitives.
 - For error results, the error message is visible to the LLM in the tool response.
 
 ## Best practices
+
 - **Validation first:**
   - Use `OpenAIStrictModeBaseModel` for all tool inputs (auto-validates at class definition)
   - FastMCP handles validation errors automatically
@@ -82,6 +85,7 @@ class FetchServer(EnhancedFastMCP):
 ```
 
 **Key points:**
+
 - `ToolError` takes a single string message (visible to the LLM)
 - No `code` or `details` parameters (just use a clear message)
 - Message should be actionable: "File not found: /path/to/file" (not just "error")
@@ -89,6 +93,7 @@ class FetchServer(EnhancedFastMCP):
 ## What NOT to do
 
 **Don't use discriminated unions for OK/ERR flows:**
+
 ```python
 # ❌ BAD: Don't do this
 class Success(BaseModel):
@@ -108,6 +113,7 @@ def my_tool(input: MyInput) -> Result:
 ```
 
 **Instead, use ToolError:**
+
 ```python
 # ✅ GOOD: Use ToolError for failures
 def my_tool(input: MyInput) -> str:
@@ -117,6 +123,7 @@ def my_tool(input: MyInput) -> str:
 ```
 
 **Don't blanket-catch exceptions:**
+
 ```python
 # ❌ BAD: Swallows bugs
 def my_tool(input: MyInput) -> str:
@@ -135,15 +142,18 @@ def my_tool(input: MyInput) -> str:
 ```
 
 ## Client behavior
+
 - Default: `client.call_tool(...)` raises `ToolError` on tool failure
 - With `raise_on_error=False` you receive a result object where `result.is_error` is True
 
 ## Lifespan errors
+
 - Errors in lifespan (startup/shutdown) prevent successful initialize
 - Clients see initialize failure; diagnose via server logs
 
 ## References
-- Tools — validation, structured output, error handling: https://gofastmcp.com/servers/tools
-- Clients — tool success/error envelopes: https://gofastmcp.com/clients/tools
-- Exceptions reference: https://gofastmcp.com/python-sdk/fastmcp-exceptions
-- Server settings/logging: https://gofastmcp.com/servers/server
+
+- Tools — validation, structured output, error handling: <https://gofastmcp.com/servers/tools>
+- Clients — tool success/error envelopes: <https://gofastmcp.com/clients/tools>
+- Exceptions reference: <https://gofastmcp.com/python-sdk/fastmcp-exceptions>
+- Server settings/logging: <https://gofastmcp.com/servers/server>

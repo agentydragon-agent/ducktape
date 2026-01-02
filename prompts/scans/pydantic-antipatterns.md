@@ -1,6 +1,7 @@
 # Scan: Pydantic Antipatterns
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern 1: Manual Field-by-Field model_dump
@@ -23,6 +24,7 @@ def to_db_payload(self) -> dict[str, Any]:
 ```
 
 Issues:
+
 - Repetitive `model_dump(mode="json") if ... else None`
 - Fragile: adding fields needs manual updates
 - Not using Pydantic's nested serialization
@@ -53,6 +55,7 @@ def to_model(self) -> FinalResponseSnapshot:
 ```
 
 Issues:
+
 - Manual field-by-field validation/parsing
 - Doesn't leverage Pydantic's built-in validation
 - Extra boilerplate code
@@ -76,6 +79,7 @@ criteria_desc = "\n".join([f"- {c.name}: {c.description}" for c in criteria])
 ```
 
 Issues:
+
 - Using `list[dict[str, str]]` when a Pydantic model already exists (e.g., `Criterion`)
 - Dict-style access (`obj['field']`) instead of attribute access (`obj.field`)
 - Loses type safety and IDE autocomplete
@@ -83,17 +87,20 @@ Issues:
 - Makes code harder to refactor
 
 **Detection aid**:
+
 ```bash
 # Find potential dict-access on model fields (check each manually)
 rg --type py "\[\"(name|description|criteria|score|rationale|status|type)\"\]"
 ```
 
 **When dict access is OK**:
+
 - Accessing raw JSON data from `json.loads()` before creating Pydantic models
 - Generic dict operations where the structure isn't a domain model
 - Dynamic field access in meta-programming contexts
 
 **When to fix**:
+
 - A Pydantic model already exists for the structure
 - The fields are well-known and fixed
 - The code would benefit from type safety
@@ -205,6 +212,7 @@ class CacheEntry(BaseModel):
 ### Why This Matters
 
 **Dicts are problematic because:**
+
 - **No type safety**: Typos in keys caught at runtime, not compile time
 - **No IDE support**: No autocomplete, no refactoring
 - **Unclear schema**: What keys exist? What are their types?
@@ -212,6 +220,7 @@ class CacheEntry(BaseModel):
 - **Poor documentation**: Schema hidden in code, not declarative
 
 **Pydantic models solve this:**
+
 - **Type checked**: mypy catches errors
 - **IDE support**: Autocomplete, go-to-definition, refactoring
 - **Clear schema**: Model definition is documentation
@@ -243,6 +252,7 @@ rg --type py 'def \w+\(.*: dict\['
 ```
 
 **Manual review checklist:**
+
 1. Is this at a serialization boundary? (HTTP endpoint, file I/O, DB I/O)
    - YES → dict acceptable (but immediately convert to Pydantic)
    - NO → should use Pydantic model
@@ -262,6 +272,7 @@ rg --type py 'def \w+\(.*: dict\['
    - External API calls
 
 2. **Convert at boundaries**:
+
    ```python
    # At input boundary
    raw_dict = await request.json()
@@ -304,6 +315,7 @@ payload["input"] = [norm_item(it) for it in input_value]
 ```
 
 **Why this is bad:**
+
 - **Type system defeat**: Union with `dict` or `Any` defeats Pydantic's validation
 - **Runtime checking smell**: `isinstance(x, BaseModel)` means callers aren't using proper types
 - **Lost validation**: Passing raw dicts bypasses Pydantic's validation
@@ -334,6 +346,7 @@ request = ResponsesRequest(input=[
 
 1. **Find all construction sites** where the union-typed field is populated
 2. **Make callers construct proper Pydantic models**:
+
    ```python
    # Before: Passing dict
    ResponsesRequest(input=[{"role": "user", "content": "hello"}])
@@ -341,8 +354,10 @@ request = ResponsesRequest(input=[
    # After: Passing Pydantic model
    ResponsesRequest(input=[UserMessage.text("hello")])
    ```
+
 3. **Remove weak types from union** - change `list[InputItem] | str | dict` to `list[InputItem]`
 4. **Remove runtime type checking** - `norm_item` becomes trivial or inlineable:
+
    ```python
    # Before: Needed runtime checking
    payload["input"] = [norm_item(it) for it in input_value]
@@ -350,7 +365,9 @@ request = ResponsesRequest(input=[
    # After: All items are BaseModel, no checking needed
    payload["input"] = [x.model_dump(exclude_none=True) for x in input_value]
    ```
+
 5. **Optional: Add factory methods** for convenience if deserved:
+
    ```python
    @classmethod
    def from_text(cls, text: str) -> "UserMessage":
@@ -360,19 +377,24 @@ request = ResponsesRequest(input=[
 ### When Union Types ARE Acceptable
 
 **Legitimate uses:**
+
 - **I/O boundaries**: Deserializing from external API that sends different formats
+
   ```python
   # OK: External API sends either format
   class Response(BaseModel):
       data: SuccessData | ErrorData  # Both are Pydantic models
   ```
+
 - **Multiple Pydantic models**: Union of concrete Pydantic types
+
   ```python
   # OK: All union members are Pydantic models
   InputItem = UserMessage | AssistantMessage | SystemMessage
   ```
 
 **Code smell:**
+
 - **Mixing Pydantic with weak types**: `BaseModel | dict | Any | str`
 - **Runtime isinstance checks**: If you check `isinstance(x, BaseModel)`, fix callers
 
@@ -393,6 +415,7 @@ rg --type py -A2 'class.*\(BaseModel\)' | rg ': .*\|'
 ```
 
 **Review each match:**
+
 - Is this at an I/O boundary (deserializing external data)? → Might be OK
 - Is this internal code where callers should pass proper types? → FIX
 - Does the code have `isinstance(x, BaseModel)` checks? → Strong smell
@@ -434,6 +457,7 @@ rg --type py -A10 '@model_validator.*mode="before"'
 ```
 
 **Manual review for each match:**
+
 1. **Union with weak types** (`BaseModel | dict`):
    - Is this at I/O boundary deserializing external data? → Might be OK
    - Is this internal code where callers control the type? → **FIX CALLERS**

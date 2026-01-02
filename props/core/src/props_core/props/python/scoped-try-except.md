@@ -6,6 +6,7 @@ kind: outcome
 Try/except blocks are short and localized: the try encloses only the minimal risky operation, with the except immediately following it. Treat exceptions as normal control flow guards (like `if`), not as wrappers for large bodies. Only top‑level error boundaries may use broad, larger try/except blocks with clear justification and logging.
 
 ## Acceptance criteria (checklist)
+
 - The `try` block encloses the minimal risky expression(s) (typically 1–3 lines); avoid wrapping long blocks of unrelated work
 - Prefer `try/except/else` to keep the main logic outside the `try` when helpful
 - Use specific, expected exception types (e.g., `json.JSONDecodeError`), not blanket catches, except at top‑level boundaries
@@ -66,6 +67,7 @@ def read_config(path: Path) -> dict:
 ### Error-boundary example (allowed)
 
 #### HTTP request handler
+
 ```python
 def handle_request(req) -> Response:
     try:
@@ -78,6 +80,7 @@ def handle_request(req) -> Response:
 ```
 
 #### Top-level CLI command handler
+
 ```python
 def cmd_sync(args: argparse.Namespace) -> int:
     try:

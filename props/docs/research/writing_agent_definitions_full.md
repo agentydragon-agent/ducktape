@@ -39,6 +39,7 @@ Your Dockerfile must produce an image with `/init` as an executable.
 Runs BEFORE the agent's first sampling turn. Its stdout becomes the system prompt.
 
 **Purpose:**
+
 1. Verify environment and preconditions
 2. Print the complete system prompt to stdout
 3. Fail fast if something is wrong (exit non-zero)
@@ -71,6 +72,7 @@ print("Call the submit tool when done.")
 ```
 
 **Must exit non-zero if:**
+
 - `current_agent_run_id()` returns NULL (RLS will silently block all writes)
 - Required directories don't exist
 - Database connection fails
@@ -89,6 +91,7 @@ print(f"Limit: {MAX_BYTES_CAP} bytes ({MAX_BYTES_CAP // 1000}KB)")
 **If exceeded:** The agent run fails immediately.
 
 **To stay under the limit:**
+
 1. Don't print large files directly — docs are in Python packages for on-demand reading
 2. Print summaries, not full content (e.g., file counts, not file contents)
 3. Use `render_agent_prompt()` which handles common patterns efficiently
@@ -110,6 +113,7 @@ The `critic-agent init` command renders the base critic scaffold and includes th
 ### `bin/` — CLI Tools
 
 Custom tools the agent can invoke via shell. Useful for:
+
 - Structured output (parse tool output into JSON)
 - Multi-step operations (run analysis, filter, format)
 - Database operations (wrap complex SQL)
@@ -126,6 +130,7 @@ Documentation lives in Python packages (e.g., `props_agent_util/docs/`). The `re
 This prevents directory escape attacks (e.g., symlinking to `/etc/passwd`).
 
 When you pack a package with `pack_agent_pkg(path)`:
+
 - External symlinks raise `ValueError`
 - Internal symlinks (within the package) are allowed
 - Dockerfile must be present

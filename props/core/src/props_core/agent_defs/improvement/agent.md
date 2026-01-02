@@ -10,17 +10,20 @@ Your database access is scoped by Row-Level Security based on your `type_config`
 - **`baseline_definition_ids`**: You can read these agent definitions
 
 **What you CAN see:**
+
 - `examples` — Only rows matching your `allowed_examples`
 - `true_positives`, `false_positives` — Only for snapshots in your allowed examples
 - `agent_runs`, `events` — Only runs on your allowed examples
 - `agent_definitions` — Only your baseline definitions (read) + any you create (read/write)
 
 **What you CANNOT see:**
+
 - Examples outside your `allowed_examples`
 - Ground truth for other snapshots
 - Runs/events for other examples
 
 Query your config to see your allowed scope:
+
 ```sql
 SELECT
     type_config->'allowed_examples' AS allowed_examples,
@@ -63,9 +66,11 @@ props agent-pkg create /workspace/improved/
 ## Workflow
 
 ### 1. Read Context
+
 ```sql
 SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
 ```
+
 Gives you `baseline_definition_ids` and `allowed_examples`.
 
 ### 2. Analyze & Diagnose
@@ -76,6 +81,7 @@ Gives you `baseline_definition_ids` and `allowed_examples`.
 ### 3. Design Improvement
 
 Based on analysis:
+
 - What issue types were missed?
 - What analysis steps were missing?
 - What patterns should NOT be flagged?

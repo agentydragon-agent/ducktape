@@ -20,9 +20,9 @@ License is GPL 2.
 
 `worthy` can get assets in your portfolio from several *sources*:
 
-*  Coinbase,
-*  Interactive Brokers,
-*  numbers hardcoded in the configuration file (in case
+* Coinbase,
+* Interactive Brokers,
+* numbers hardcoded in the configuration file (in case
    the institution has no API).
 
 ## Converters
@@ -30,13 +30,13 @@ License is GPL 2.
 Converting various assets into a common currency is handled by getting
 current exchange rates from various *converters*:
 
-*  Coinbase (for cryptocurrencies),
-*  Alpha Vantage (for stonks, but can also handle some cryptocurrencies),
-*  CurrencyLayer (for currencies).
+* Coinbase (for cryptocurrencies),
+* Alpha Vantage (for stonks, but can also handle some cryptocurrencies),
+* CurrencyLayer (for currencies).
 
 ## Dependencies
 
-* Bazel: https://bazel.build
+* Bazel: <https://bazel.build>
 * For Rust, `libopenssl-dev` and `pkg-config`.
 
 ## Building
@@ -163,7 +163,7 @@ modelling:
 
 ## Interactive Brokers Flex query setup
 
-* Log in into the IB portal (https://ndcdyn.interactivebrokers.com/sso/Login).
+* Log in into the IB portal (<https://ndcdyn.interactivebrokers.com/sso/Login>).
 * Create the Flex query:
   * Top menu -> "Performance & Reports" -> click "Flex Queries"
   * Add a new "Activity Flex Query"
@@ -176,8 +176,8 @@ modelling:
   * Keep all other fields at default values.
   * Click "Continue" -> click "Create"
   * Copy the ID of the newly created Flex query, that'll go to the `query_id` field of the `ibflex` source.
-* Enable the Flex web service (following https://guides.interactivebrokers.com/am/am/reports/flex_web_service_version_3.htm):
-  * Go to account settings (https://portal.interactivebrokers.com/AccountManagement/AmAuthentication) -> under "Account Reporting", click "Flex Web Service"
+* Enable the Flex web service (following <https://guides.interactivebrokers.com/am/am/reports/flex_web_service_version_3.htm>):
+  * Go to account settings (<https://portal.interactivebrokers.com/AccountManagement/AmAuthentication>) -> under "Account Reporting", click "Flex Web Service"
   * Check "Flex Web Service Status", click Save
   * Copy the generated token, that'll go to the `token` field of the `ibflex`
     source.

@@ -11,7 +11,7 @@ established procedures and experienced mentors.
 Here are a few things I didn't appreciate enough before seeing them in
 the proper context:
 
-*   Version control. It's more than just a list of versions which you can recover
+* Version control. It's more than just a list of versions which you can recover
     later. Proper version control separates the chaos of development into
     manageably-sized atomic changes: commit hygiene is good. If you don't
     know about Git's `-p` flag for `git add` and `checkout`, you should
@@ -26,7 +26,7 @@ the proper context:
     independent logical pieces, which may give you new insights into
     the problem you are solving.
 
-*   Code review. This means that someone looks at your code and reads it.
+* Code review. This means that someone looks at your code and reads it.
     Code reviews are an excellent tool to learn new tricks in your language
     and codebase from more experienced team members. If you don't have anyone
     else to review your code, do it yourself. Actually, just always review your
@@ -34,7 +34,7 @@ the proper context:
     code you just changed is a bit like reading an essay you wrote backwards:
     it prevents code blindness.
 
-*   Using the right tools and making compromises. You may have learned about
+* Using the right tools and making compromises. You may have learned about
     object-oriented programming and relational databases and microservices
     and you want to do The Right Thing on your next project. Guess what?
     Running this huge `SELECT` with 2 subqueries on every page access takes
@@ -52,13 +52,13 @@ the proper context:
     (By the way, [Software and Mind](http://softwareandmind.com/) is a good
     book on the subject of CS snake oil.)
 
-*   Ask. Whenever in doubt. Whenever it takes less time to ask than look in the
+* Ask. Whenever in doubt. Whenever it takes less time to ask than look in the
     docs. Also, ask when the docs are if you don't know. Chances are someone
     else knows, and will be happy to share. Communicate early, communicate often.
     Ask others for help when debugging weird problems: those are usually typos
     on line 2.
 
-*   Use good tools. Continuously integrate (i.e., know when commits fail tests).
+* Use good tools. Continuously integrate (i.e., know when commits fail tests).
     Lint everything: check the syntax of your source code *and configuration*.
     Pick a well-respected style guide for your language and stick to it.
     Tell your linter to scream whenever someone tries to bend the rules.
@@ -71,13 +71,13 @@ the proper context:
     a simple syntax and they explicitly describe the dependencies within
     your project with almost zero boilerplate.
 
-*   Don't trust yourself. [Do terrible things to your code.](http://blog.codinghorror.com/doing-terrible-things-to-your-code/)
+* Don't trust yourself. [Do terrible things to your code.](http://blog.codinghorror.com/doing-terrible-things-to-your-code/)
     Test everything that makes sense - preferably in code.
     Test on varying levels of abstraction: unit tests for small parts,
     integration tests for systems. For testing large systems, you may need
     to spin up several machines and wait an hour or two. It's still *so* worth it.
 
-*   Fight complexity. Complexity is the mind-killer. Remove dead code (and dead
+* Fight complexity. Complexity is the mind-killer. Remove dead code (and dead
     flags, dead protobuf fields, etc.). The number of moving parts in your
     code exponentially increases the number of states your head must keep track
     of. This is especially painful if the moving parts are independent.

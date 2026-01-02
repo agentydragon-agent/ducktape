@@ -7,7 +7,7 @@ request:
     Content-Type: application/json
   body:
     status: skipped
-    target_date: '2025-05-09T00:00:00+00:00'
+    target_date: "2025-05-09T00:00:00+00:00"
     note: Skipped via API reference collector
 response:
   status_code: 200

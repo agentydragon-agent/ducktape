@@ -16,7 +16,7 @@ skip_list: []
 exclude_paths:
   # All legacy roles, being migrated to Nix home-manager (relative to ansible/ dir)
   - "roles/legacy_*/**"
-  - ".ansible/**"                       # Galaxy-installed roles and collections (not our code)
+  - ".ansible/**" # Galaxy-installed roles and collections (not our code)
 
 # Custom modules and plugins configuration
 # Note: custom_module_paths and action_plugins are not valid in config file

@@ -1,11 +1,13 @@
 # Scan: Legacy Backward Compatibility Aliases
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
 
 Backward compatibility aliases that create duplicate names for the same entities. These include:
+
 - TypeScript/JavaScript export aliases (`export const oldName = newName`)
 - Python import aliases for backward compatibility
 - Constants assigned to other constants (`OLD_NAME = NEW_NAME`)
@@ -134,6 +136,7 @@ OLD_SETTING = NEW_SETTING  # Backward compatibility - remove after v2.0
 ```
 
 These comments are strong signals that the code should be cleaned up by:
+
 1. Finding all usages of the old name
 2. Replacing with canonical name
 3. Removing the alias
@@ -145,6 +148,7 @@ These comments are strong signals that the code should be cleaned up by:
 **Recall/Precision**: High recall (~85-95%) with automation, low-medium precision (~40-60%)
 
 **Why medium precision is expected**:
+
 - Some aliases are legitimate (facade pattern, API stability)
 - Need context to determine if alias is truly temporary backward compat vs architectural pattern
 - Comments about "backward compatibility" are strong signal but need verification
@@ -165,11 +169,13 @@ rg --type ts --type tsx -B2 -A2 'backward.compat|legacy'
 ```
 
 **High precision indicators**:
+
 - Comment mentions "backward compat", "legacy", "deprecated"
 - Variable name contains "old", "legacy", "deprecated"
 - Both names exist in same file (clear aliasing)
 
 **Verification needed**:
+
 - Check if RHS is actually another identifier (not a function call)
 - Verify both names refer to same entity
 - Check if this is genuinely temporary or architectural pattern
@@ -187,11 +193,13 @@ rg --type py -B2 -A2 'backward.compat|legacy|deprecated.*use' | grep -A2 -B2 'im
 ```
 
 **High precision indicators**:
+
 - Alias name contains "old", "legacy", "deprecated"
 - Comment nearby explains backward compatibility
 - TODO comment about removing the alias
 
 **Verification needed**:
+
 - Check if alias is used anywhere (might be dead code)
 - Verify comment context (is this temporary or permanent?)
 - Check if removing would break external API
@@ -212,11 +220,13 @@ rg --type py '^\w+ = \w+\s*#.*(?:backward|legacy|deprecated|alias)'
 ```
 
 **High precision indicators**:
+
 - Comment explicitly mentions backward compatibility
 - Variable names suggest old→new relationship (OLD_X = NEW_X)
 - Both constants defined in same module
 
 **False positives to filter**:
+
 - Semantic aliases for clarity (`MAX_RETRIES = DEFAULT_RETRIES` might be intentional)
 - Re-exports for public API (`__all__` driven exports)
 
@@ -233,6 +243,7 @@ rg --type py -B1 '@property' | grep -A5 'deprecated\|backward\|legacy'
 ```
 
 **Verification needed**:
+
 - Check if property adds any logic (validation, transformation)
 - Verify it's truly just forwarding to another attribute
 - See `trivial-forwarder-methods.md` for comprehensive property evaluation
@@ -253,11 +264,13 @@ rg --type py --type ts 'TODO.*remove.*(after|compat|migration|legacy)'
 ```
 
 **High precision indicators**:
+
 - "Deprecated: use X instead" → clear guidance to migrate
 - "TODO: Remove after [date/version]" → temporary, should be cleaned up
 - "Backward compatibility" on assignment line → very likely alias
 
 **Lower precision cases**:
+
 - Generic "TODO: cleanup" without specifics
 - Comments about maintaining compatibility (might be permanent API)
 
@@ -325,6 +338,7 @@ OLD_CONFIG = NEW_CONFIG  # Comment says "use NEW_CONFIG"
 ```
 
 **Heuristics for canonical name**:
+
 1. Comment explicitly says "use X instead" → X is canonical
 2. "new_*" vs "old_*" → new is canonical
 3. More descriptive name → canonical
@@ -342,6 +356,7 @@ rg --type py '\bOLD_NAME\b' --count-matches
 ```
 
 **Important**: Check for usages in:
+
 - Source code (imports, references)
 - Tests (might use old name)
 - Documentation (might reference old name)
@@ -525,23 +540,28 @@ NETWORK_RETRIES = MAX_RETRIES  # Semantic clarity: network operations use max re
 For each alias candidate, ask:
 
 ### 1. **External API Test**
+
 - [ ] Is this used by external packages/callers? → **KEEP** (or deprecate gradually with major version bump)
 - [ ] Is this internal-only code? → Proceed to next test
 
 ### 2. **Data Contract Test**
+
 - [ ] Does this alias external data (database columns, API fields)? → **KEEP** (or plan expensive migration)
 - [ ] Is this pure code-level alias? → Proceed to next test
 
 ### 3. **Migration Status Test**
+
 - [ ] Is there a TODO with timeline for removal? → **KEEP TEMPORARILY** (track and remove on schedule)
 - [ ] Is there gradual rollout in progress? → **KEEP TEMPORARILY** (document plan)
 - [ ] No migration plan or indefinite backward compat? → **REMOVE** (create migration now)
 
 ### 4. **Semantic Clarity Test**
+
 - [ ] Does alias name provide additional semantic meaning? → **KEEP** (not a pure alias)
 - [ ] Is it pure duplication for backward compat? → **REMOVE**
 
 ### 5. **Usage Count Test**
+
 - [ ] Is old name unused (0 references)? → **REMOVE IMMEDIATELY** (dead code)
 - [ ] Is old name used 1-3 times? → **HIGH PRIORITY REMOVAL** (easy to migrate)
 - [ ] Is old name used 10+ times? → **MEDIUM PRIORITY** (batched refactoring)

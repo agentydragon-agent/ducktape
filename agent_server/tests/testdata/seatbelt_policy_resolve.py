@@ -21,9 +21,7 @@ TEST_CASES = [
 
 
 def decide(req: PolicyRequest) -> PolicyResponse:
-    if tool_matches(
-        req.name, server=SEATBELT_EXEC_MOUNT_PREFIX, tool=WellKnownTools.SANDBOX_EXEC
-    ):
+    if tool_matches(req.name, server=SEATBELT_EXEC_MOUNT_PREFIX, tool=WellKnownTools.SANDBOX_EXEC):
         # Simulate successful resolution by allowing explicitly
         return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale="resolved")
     return PolicyResponse(decision=ApprovalDecision.ASK, rationale="default")

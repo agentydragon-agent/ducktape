@@ -7,6 +7,7 @@ Represent byte counts with explicit units.
 Prefer typed wrappers or clear suffixes when primitives are used.
 
 ## Acceptance criteria (checklist)
+
 - Names include explicit units when using primitives (for example, `_bytes`, `_mib`)
 
 ## Positive examples

@@ -11,6 +11,7 @@ Reorganize specimen issues to follow CLAUDE.md rules: group by logical problems,
 **Default task (if no description provided):** "Apply CLAUDE.md rules to current specimen"
 
 **Examples:**
+
 - `/organize-issues` - Full reorganization of current specimen
 - `/organize-issues fix subjective phrasing in issues 010-020`
 - `/organize-issues split multi-problem issues into logical groups`
@@ -39,6 +40,7 @@ Analyzes specimen issues and reorganizes them according to CLAUDE.md principles:
 The command uses a 5-agent maximum parallel pipeline with 3 computation depths:
 
 ### Phase 1: Analysis (5 parallel agents, depth=1)
+
 Split specimen into 5 roughly equal chunks, each agent analyzes independently:
 
 - **Agent 1**: Issues 001-010 → identify logical problem types + mixed issues
@@ -48,6 +50,7 @@ Split specimen into 5 roughly equal chunks, each agent analyzes independently:
 - **Agent 5**: Issues 041-051 → identify logical problem types + mixed issues
 
 Each reports:
+
 ```
 Chunk N findings:
 - Logical problems found: [list]
@@ -57,6 +60,7 @@ Chunk N findings:
 ```
 
 ### Phase 2: Strategy (1 agent, depth=2)
+
 Single coordinator agent receives all 5 reports and creates reorganization plan:
 
 - Identifies duplicate logical problems across chunks
@@ -66,6 +70,7 @@ Single coordinator agent receives all 5 reports and creates reorganization plan:
 - Creates work units for Phase 3
 
 Outputs:
+
 ```
 Reorganization strategy:
 - Splits: [issue X → X1 (type A), X2 (type B), X3 (type C)]
@@ -75,6 +80,7 @@ Reorganization strategy:
 ```
 
 ### Phase 3: Execution (5 parallel agents, depth=3)
+
 Execute reorganization plan in parallel with non-overlapping work:
 
 - **Agent 1**: Work unit 1 (splits + writes new issues 001-010)
@@ -84,6 +90,7 @@ Execute reorganization plan in parallel with non-overlapping work:
 - **Agent 5**: Work unit 5 (cleanup + writes new issues 041-N)
 
 Each agent:
+
 - Reads ONLY the issues assigned to them
 - Writes ONLY the new issue files assigned to them
 - Does NOT commit (reports completion only)
@@ -92,17 +99,20 @@ Each agent:
 ## Load Balancing Strategy
 
 **Problem:** Specimen has 51 issues, agents can handle variable work:
+
 - Splits: Read 1 issue → Write 2-5 issues (more work)
 - Merges: Read 3-5 issues → Write 1 issue (less work, but complex)
 - Simple fixes: Read 1 → Write 1 (minimal work)
 
 **Solution:** Phase 2 coordinator balances by:
+
 1. Counting total read/write operations per work unit
 2. Mixing splits (heavy) with simple fixes (light) in same unit
 3. Distributing merges evenly
 4. Ensuring no agent writes to same file as another
 
 **Example balanced distribution:**
+
 - Unit 1: 2 splits + 3 simple fixes → ~15 file operations
 - Unit 2: 1 merge + 5 simple fixes → ~12 file operations
 - Unit 3: 3 splits + 0 fixes → ~14 file operations
@@ -112,16 +122,19 @@ Each agent:
 ## Preventing Agent Conflicts
 
 **Rule 1: Non-overlapping writes**
+
 - Each agent assigned exclusive output issue number ranges
 - No two agents write same file
 - Phase 2 coordinator enforces this in work unit assignments
 
 **Rule 2: Read-only source material**
+
 - Agents only READ original issues
 - Write only to NEW issue files
 - Old files deleted in final cleanup (phase 3, agent 5)
 
 **Rule 3: No inter-agent communication**
+
 - Phase 1: agents report to user only
 - Phase 2: coordinator reads all phase 1 reports
 - Phase 3: agents execute pre-assigned work units independently
@@ -155,6 +168,7 @@ User: Review changes (NOT committed by agents)
 ## Implementation Notes
 
 ### Phase 1 Agent Template
+
 ```
 Read issues {start}-{end} from specimen.
 Identify:
@@ -169,6 +183,7 @@ DO NOT commit anything.
 ```
 
 ### Phase 2 Coordinator Template
+
 ```
 Read all 5 analysis reports.
 Create reorganization strategy:
@@ -189,6 +204,7 @@ DO NOT commit anything.
 ```
 
 ### Phase 3 Executor Template
+
 ```
 Execute work unit {N}:
 - Read assigned old issues
@@ -206,15 +222,18 @@ DO NOT touch files outside your range.
 ## Minimum Computation Depth
 
 **Theoretical minimum:** 3 phases (cannot be reduced)
+
 - Phase 1 requires reading all issues (parallelizable)
 - Phase 2 requires all phase 1 outputs (serial bottleneck)
 - Phase 3 requires phase 2 plan (parallelizable)
 
 **Actual depth:** O(log N) for large specimens
+
 - With 5-agent limit: ⌈N/5⌉ rounds in phase 1 if N > 50
 - For 51 issues: depth = 1 + 1 + 1 = 3 rounds total
 
 **Time estimate:**
+
 - Phase 1: ~2-3 min (parallel)
 - Phase 2: ~1-2 min (serial)
 - Phase 3: ~3-5 min (parallel)
@@ -223,6 +242,7 @@ DO NOT touch files outside your range.
 ## Exit Conditions
 
 Command completes when:
+
 1. All new issue files written
 2. Old issue files deleted
 3. Issues renumbered 001-N consecutively
@@ -231,6 +251,7 @@ Command completes when:
 6. Files NOT committed (left for user review)
 
 Reports final statistics:
+
 - Issues before: X
 - Issues after: Y
 - Splits: Z issues split into A new issues

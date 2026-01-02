@@ -5,11 +5,13 @@
 The MCP Session Bridge is a transparent forwarder that maintains a single persistent MCP session over HTTP SSE while allowing multiple ephemeral processes to connect via Unix domain socket.
 
 **Problem it solves:** Agent code runs as ephemeral `docker_exec` subprocesses that can't maintain state between invocations. But we want:
+
 - One persistent MCP session to the upstream server (avoiding re-initialization overhead)
 - Background notification accumulation (while no subprocess is connected)
 - Multiple sequential subprocess connections sharing the same session
 
 **Solution:** A bridge process that:
+
 1. Maintains one HTTP SSE connection to upstream MCP server
 2. Exposes a Unix domain socket for local connections
 3. Forwards JSON-RPC frames bidirectionally
@@ -164,12 +166,14 @@ On connect, buffered notifications are flushed immediately before any request/re
 ## When to Use This Pattern
 
 **Use the bridge when:**
+
 - Agent runs as ephemeral subprocesses (e.g., `docker_exec`)
 - Need background notification accumulation
 - Want to avoid re-initialization overhead
 - Want to maintain subscriptions across subprocess invocations
 
 **Don't use the bridge when:**
+
 - Agent can maintain long-lived Python process
 - No need for notifications between invocations
 - Single-shot tool calls only (direct MCP connection is simpler)
@@ -177,15 +181,18 @@ On connect, buffered notifications are flushed immediately before any request/re
 ## Design Decisions
 
 ### Why Unix Socket?
+
 - Zero network overhead (in-kernel IPC)
 - No port conflicts (named path)
 - File permissions for auth
 - Works with any language
 
 ### Why Buffer Notifications?
+
 Without buffering, clients miss updates while disconnected and need server-side re-subscription on every connect.
 
 ### Why Protocol-Agnostic?
+
 Simpler, future-proof, lower latency. Only protocol knowledge needed: distinguish notifications (buffer) from responses (forward immediately).
 
 ## Container Integration

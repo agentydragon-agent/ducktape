@@ -5,6 +5,7 @@ Auto-archive old Gmail emails based on extracted dates from email content.
 ## Overview
 
 This tool:
+
 1. Uses Gmail filters to auto-label incoming emails (managed via YAML config)
 2. Periodically scans labeled emails and extracts dates from content
 3. For emails past a threshold (e.g., >30 days), adds a secondary label and removes from inbox
@@ -22,6 +23,7 @@ bazel build //gmail-archiver:gmail_archiver
 ### 2. Gmail API credentials
 
 This tool uses Gmail API credentials from `~/.gmail-mcp/`. Ensure you have:
+
 - `~/.gmail-mcp/gcp-oauth.keys.json` - OAuth client credentials
 - `~/.gmail-mcp/token.json` - OAuth token (generated after first auth)
 
@@ -34,10 +36,12 @@ gmail-archiver filters sync filters.yaml
 ```
 
 This will:
+
 1. Show a diff of filters to create/delete
 2. Prompt for confirmation before making changes
 
 Other filter commands:
+
 ```bash
 gmail-archiver filters diff filters.yaml      # Preview changes (read-only)
 gmail-archiver filters upload filters.yaml    # Create new filters only (no deletions)
@@ -60,16 +64,19 @@ gmail-archiver autoclean-inbox
 This command runs multiple cleanup rules:
 
 **Anthropic receipts** (30 days):
+
 - Label: `receipts/anthropic`
 - Extracts payment date from email content
 - Archives 30 days after payment
 
 **USPS Informed Delivery** (7 days):
+
 - Label: `batch/usps-informed-delivery`
 - Uses email sent date
 - Archives 7 days after delivery notification
 
 For all emails:
+
 - Adds `gmail-archiver/inbox-auto-cleaned` label
 - Removes from inbox (keeps all other labels)
 - Only processes emails currently in inbox
@@ -103,6 +110,7 @@ gmail-archiver filters apply filters.yaml
 ```
 
 This will:
+
 1. Read `filters.yaml` and find applicable filters
 2. Search for matching emails
 3. Show a preview of what would be changed (dry-run by default)

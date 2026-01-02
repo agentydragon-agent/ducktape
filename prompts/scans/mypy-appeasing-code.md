@@ -1,6 +1,7 @@
 # Scan: Mypy-Appeasing Code Antipatterns
 
 ## Context
+
 @../shared-context.md
 
 ## Pattern Description
@@ -62,6 +63,7 @@ return TypeAdapter(dict[str, Any]).validate_json(s)
 ## Root Causes
 
 Often these patterns appear because:
+
 - **Not reading library source**: Assuming types are worse than they are
 - **Cargo-culting**: Copying patterns without understanding
 - **Outdated**: Code written for older library versions with worse typing
@@ -105,6 +107,7 @@ pip index versions library-name
 ### 3. Check for Better Patterns/Helpers
 
 Read library documentation for:
+
 - Type-safe helper functions
 - Generic/overload improvements in newer versions
 - Recommended patterns in migration guides
@@ -155,11 +158,13 @@ result = cast(pygit2.Oid, repo.index.write_tree())
 **Goal**: Find ALL instances of mypy-appeasing code (100% recall).
 
 **Recall/Precision**:
+
 - `grep "cast("` has ~100% recall for casts, ~95% precision (very few false positives)
 - AST check for TypeAdapter has ~100% recall, ~80% precision (some legitimate one-time uses)
 - Pattern matching for typed variables has ~70% recall, ~60% precision (many variations)
 
 **Recommended approach**:
+
 1. Run grep/AST to gather ALL candidates (casts, TypeAdapter, typed variables)
 2. For each candidate: Research whether cast is actually necessary
    - Check library version (might be outdated)
@@ -170,6 +175,7 @@ result = cast(pygit2.Oid, repo.index.write_tree())
 4. Document remaining casts with reason (truly needed)
 
 **Verification strategy**: Deep research required (low precision for "unnecessary")
+
 - Even though grep has high recall, determining if cast is "unnecessary" requires library research
 - Each candidate needs: version check, stub search, source reading, mypy test
 
@@ -191,6 +197,7 @@ rg --type py -A1 "adapter.*=.*TypeAdapter"
 ### AST-Based Discovery (Optional)
 
 Build tool that flags potential unnecessary casts:
+
 - Visit Call nodes where func.id == 'cast'
 - Extract cast target type and expression
 - Flag for manual review with context
@@ -200,6 +207,7 @@ Strong coding LLM can build this from description. Use output as discovery only,
 ### Verification Process
 
 For each cast found:
+
 1. **Research library**: Version, stubs, documentation
 2. **Read source**: Find actual return type in `.pyi` or source
 3. **Test removal**: Remove cast, run mypy
@@ -209,11 +217,13 @@ For each cast found:
 ## Fix Strategy
 
 ### Before Removing Casts
+
 1. **Read the actual source**: Check library .pyi or source for real return type
 2. **Use mypy reveal_type**: Add `reveal_type(expr)` to see actual inferred type
 3. **Test removal**: Remove cast and run mypy
 
 ### For Library Types
+
 ```python
 # STEP 1: Find the library source
 import openai
@@ -229,6 +239,7 @@ class Response(BaseModel):
 ## Example Fixes
 
 ### Cast Removal
+
 ```python
 # Before:
 return cast(dict[str, Any], model.model_dump(mode="json"))
@@ -238,6 +249,7 @@ return model.model_dump(mode="json")
 ```
 
 ### Variable Removal
+
 ```python
 # Before:
 entries: dict[str, ServerEntry] = await meta.list_states()
@@ -264,6 +276,7 @@ rg --type py "cast\(|: \w+.*= .*\n.*return"
 - **Gradual typing migration**: Temporary during migration, document with TODO
 
 Always add a comment explaining WHY the cast is needed:
+
 ```python
 # cast needed: sqlalchemy relationship typing limitation
 return cast(list[Model], query.all())

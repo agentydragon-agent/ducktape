@@ -89,12 +89,12 @@ def custom_with_prebuilt(ctx: Context):
     # Use prebuilt rules
     if safe_git(ctx).allowed:
         return allow()
-    
+
     # Add custom logic
     if ctx.command.startswith('git push'):
         if '--force' in ctx.command and ctx.user == 'admin':
             return allow()  # Admin override
-    
+
     return deny("Unsafe git command")
 ```
 
@@ -106,23 +106,23 @@ def check_security_patterns(ctx: Context):
     """
     Prevent common security issues:
     - No hardcoded passwords
-    - No eval() or exec()  
+    - No eval() or exec()
     - No SQL injection vulnerabilities
     """
     if ctx.tool != 'Edit':
         return allow()
-        
+
     issues = []
-    
+
     if 'password = "' in ctx.content:
         issues.append("Hardcoded password detected")
-    
+
     if 'eval(' in ctx.content or 'exec(' in ctx.content:
         issues.append("Unsafe eval/exec usage")
-        
+
     if issues:
         return deny(f"Security issues: {', '.join(issues)}")
-        
+
     return allow()
 
 # The docstring becomes the natural language description!
@@ -186,7 +186,7 @@ claude-linter session add --file ./temp_rules.py
 # Rules run in a restricted environment
 class RestrictedContext:
     """Context provided to rule functions"""
-    
+
     # Safe attributes
     tool: str
     path: str
@@ -194,12 +194,12 @@ class RestrictedContext:
     old_content: str
     command: str
     session_id: str
-    
+
     # Safe methods
     def glob_match(self, pattern: str) -> bool: ...
     def get_pr_data(self) -> PRData: ...
     def get_file_history(self) -> list[Change]: ...
-    
+
     # NOT available: open(), __import__, eval, exec, etc.
 ```
 
@@ -209,29 +209,29 @@ class RestrictedContext:
 @rule
 def complex_rule(ctx: Context):
     """Check various conditions for code quality"""
-    
+
     # Rules can log their reasoning
     ctx.log("Checking file type")
     if not ctx.path.endswith('.py'):
         ctx.log("Not a Python file, allowing")
         return allow()
-    
+
     ctx.log(f"Python file: {ctx.path}")
-    
+
     if 'test' in ctx.path:
         ctx.log("Test file, relaxing rules")
         return allow()
-        
+
     if 'hasattr' in ctx.content:
         ctx.log("Found hasattr usage")
         return deny("Use proper type checking instead of hasattr")
-        
+
     return allow()
 
 # When rule fires, logs are included:
 # "Denied by complex_rule: Use proper type checking instead of hasattr
 #  Debug log:
-#  - Checking file type  
+#  - Checking file type
 #  - Python file: src/main.py
 #  - Found hasattr usage"
 ```
@@ -256,7 +256,7 @@ import re
 
 # Simple protections
 @rule.glob("**/*.secret", action="deny")
-@rule.glob("**/.env", action="deny") 
+@rule.glob("**/.env", action="deny")
 def protect_secrets(ctx): pass
 
 # Smart git safety
@@ -265,7 +265,7 @@ def git_safety(ctx: Context):
     """Allow safe git commands, block dangerous ones"""
     if ctx.tool != 'Bash' or not ctx.command.startswith('git'):
         return allow()
-        
+
     dangerous = ['push --force', 'reset --hard', 'clean -fd']
     for pattern in dangerous:
         if pattern in ctx.command:
@@ -273,7 +273,7 @@ def git_safety(ctx: Context):
             if ctx.session.has_override('force_git'):
                 return warn(f"Dangerous git command: {pattern}")
             return deny(f"Dangerous git command: {pattern}")
-            
+
     return allow()
 
 # Context-aware Python rules
@@ -282,24 +282,24 @@ def python_quality(ctx: Context):
     """Enforce Python code quality standards"""
     if not ctx.path.endswith('.py') or ctx.tool not in ['Edit', 'Write']:
         return allow()
-        
+
     # Parse with AST
     try:
         import ast
         tree = ast.parse(ctx.content)
     except SyntaxError as e:
         return deny(f"Python syntax error: {e}")
-        
+
     # Check for issues
     for node in ast.walk(tree):
         if isinstance(node, ast.ExceptHandler) and node.type is None:
             return deny(f"Bare except at line {node.lineno}")
-            
+
         if isinstance(node, ast.Call):
             if getattr(node.func, 'id', None) in ['hasattr', 'getattr']:
                 if 'test' not in ctx.path:  # Relax for tests
                     return deny(f"Use proper type checking instead of {node.func.id}")
-                    
+
     return allow()
 
 # Time and user based
@@ -308,14 +308,14 @@ def deployment_window(ctx: Context):
     """Only allow deployments during safe hours"""
     if 'deploy' not in ctx.path and 'k8s' not in ctx.path:
         return allow()
-        
+
     hour = datetime.now().hour
     if 9 <= hour <= 16:  # 9 AM - 4 PM
         return allow()
-        
+
     if ctx.session.user in ['oncall', 'admin']:
         return warn("Deployment outside hours - be careful!")
-        
+
     return deny("Deployments only allowed 9 AM - 4 PM")
 ```
 
@@ -327,19 +327,19 @@ async def llm_code_review(ctx: Context):
     """Use LLM for nuanced code review"""
     if ctx.tool != 'Edit' or not ctx.path.endswith('.py'):
         return allow()
-        
+
     # Only for non-trivial changes
     if len(ctx.content) - len(ctx.old_content) < 50:
         return allow()
-        
+
     review = await ctx.llm_review(
         prompt=f"Review this Python code change for issues",
         model="gpt-4o-mini"
     )
-    
+
     if review.has_issues:
         return warn(f"LLM review: {review.summary}")
-        
+
     return allow()
 ```
 

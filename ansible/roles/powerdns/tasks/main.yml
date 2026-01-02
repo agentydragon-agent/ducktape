@@ -9,7 +9,6 @@
   ansible.builtin.include_tasks: configure.yml
   when: powerdns_state == "present"
 
-
 - name: Include removal tasks
   ansible.builtin.include_tasks: remove.yml
   when: powerdns_state == "absent"

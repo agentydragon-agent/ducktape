@@ -1,6 +1,7 @@
 # Scan: Timestamp Field Naming
 
 ## Context
+
 @../shared-context.md
 
 ## Overview
@@ -30,6 +31,7 @@ class Response(BaseModel):
 ## Rationale
 
 **Industry standard**: `_at` is the dominant convention:
+
 - Rails ActiveRecord: `created_at`, `updated_at`
 - Django: `created_at`, `updated_at` (in newer code)
 - SQLAlchemy examples: `created_at`, `updated_at`
@@ -37,14 +39,17 @@ class Response(BaseModel):
 - GitHub API: `created_at`, `updated_at`
 
 **Consistency**: Most codebases use `_at`, not `_ts`:
+
 - PostgreSQL guides prefer `_at`
 - Database migration tools default to `_at`
 
 **Clarity**:
+
 - `created_at` reads naturally ("created at [timestamp]")
 - `created_ts` requires parsing ("created timestamp")
 
 **Brevity**:
+
 - `updated_at` vs `last_update_ts` (11 chars vs 14 chars)
 - `deleted_at` vs `deletion_ts` (10 chars vs 12 chars)
 
@@ -63,6 +68,7 @@ class Response(BaseModel):
 **Primary Method**: Manual code reading to identify timestamp field naming inconsistencies.
 
 **Why automation is insufficient**:
+
 - Some `_ts` fields might be abbreviations for domain terms (not "timestamp")
 - Need to understand if renaming requires database migration (breaking change)
 - Context matters: is this legacy code during migration or new antipattern?
@@ -83,6 +89,7 @@ rg --type py 'last_update|last_modified|creation_time'
 ## Fix Strategy
 
 1. **Rename database columns** (requires migration):
+
    ```python
    # Before
    created_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -92,6 +99,7 @@ rg --type py 'last_update|last_modified|creation_time'
    ```
 
 2. **Update all references**:
+
    ```python
    # API models
    created_at: datetime  # was created_ts
@@ -104,6 +112,7 @@ rg --type py 'last_update|last_modified|creation_time'
    ```
 
 3. **Add backward compatibility if needed**:
+
    ```python
    class ResponseRecordModel(BaseModel):
        created_at: datetime
@@ -117,11 +126,13 @@ rg --type py 'last_update|last_modified|creation_time'
 ## Special Cases
 
 **OK to use `_ts` when**:
+
 - External API requires it (match their naming)
 - Legacy system integration (consistency with existing)
 - Abbreviation is industry-standard for that domain
 
 **Timestamp vs Date**:
+
 - `*_at` for timestamps (includes time): `datetime`
 - `*_date` for dates only (no time): `date`
 - `*_time` for time only (no date): `time`

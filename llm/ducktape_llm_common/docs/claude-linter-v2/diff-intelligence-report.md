@@ -21,7 +21,7 @@ The Edit tool provides a `tool_response` with a `structuredPatch` field containi
   },
   "tool_response": {
     "filePath": "/path/to/file.py",
-    "oldString": "original content", 
+    "oldString": "original content",
     "newString": "modified content",
     "originalFile": "<full file content>",
     "structuredPatch": [
@@ -132,7 +132,7 @@ class DiffLine:
     change_type: Literal["added", "removed", "context"]
     hunk_index: int  # Which hunk this belongs to
 
-@dataclass 
+@dataclass
 class DiffHunk:
     old_start: int
     old_lines: int
@@ -164,29 +164,29 @@ class CategorizedViolation:
 
 ```python
 def categorize_violations(
-    violations: List[Violation], 
+    violations: List[Violation],
     parsed_diff: ParsedDiff,
     context_distance: int = 3
 ) -> List[CategorizedViolation]:
     """
     Categorize violations based on their proximity to changes.
-    
+
     Args:
         violations: List of violations with line numbers
         parsed_diff: Parsed diff information
         context_distance: Lines away from change to consider "near"
     """
     categorized = []
-    
+
     # Build set of all changed lines and their neighbors
     changed_lines = parsed_diff.added_lines
     near_lines = set()
-    
+
     for line in changed_lines:
         for offset in range(-context_distance, context_distance + 1):
             if offset != 0:  # Don't include the changed line itself
                 near_lines.add(line + offset)
-    
+
     for violation in violations:
         if violation.line_number in changed_lines:
             category = "in-diff"
@@ -201,77 +201,92 @@ def categorize_violations(
         else:
             category = "out-of-diff"
             distance = None
-            
+
         categorized.append(CategorizedViolation(
             line_number=violation.line_number,
             message=violation.message,
             category=category,
             distance_from_change=distance
         ))
-    
+
     return categorized
 ```
 
 ## Edge Cases to Handle
 
 ### 1. Multiple Sequential Edits
+
 When Claude makes multiple edits to the same file, line numbers shift:
+
 - First edit at lines 10-15 adds 5 lines
 - Second edit originally at line 30 is now at line 35
 - Must track cumulative line shifts
 
 ### 2. New File Creation
+
 - Write tool with non-existent file path
 - All violations are "in-diff" since entire file is new
 
 ### 3. Line Number Mapping
+
 After edit patches are applied:
+
 - Violations report line numbers in the final file
 - Must map these back to understand if they're in added lines
 
 ### 4. Whitespace-Only Changes
+
 - Changes that only modify whitespace
 - Should still be considered "in-diff"
 
 ### 5. Replace All
+
 - When `replace_all: true`, multiple hunks may be generated
 - Each occurrence creates a separate hunk
 
 ### 6. Context Lines
+
 - Diff includes context lines (unchanged lines around changes)
 - These should not be considered "in-diff"
 
 ### 7. Adjacent Line Changes
+
 - When changes are on consecutive lines
 - May appear as single hunk or multiple hunks
 
 ### 8. File Moves/Renames
+
 - Not represented in current Edit/MultiEdit tools
 - Would need special handling if added
 
 ## Implementation Plan
 
 ### Phase 1: Diff Parser
+
 1. Create diff parser that extracts structured patch data
 2. Build line number mappings (original → final)
 3. Identify added, removed, and context lines
 
 ### Phase 2: Violation Parser
+
 1. Parse pre-commit output to extract violations with line numbers
 2. Handle different linter output formats
 3. Create standardized violation representation
 
 ### Phase 3: Categorization Engine
+
 1. Implement categorization algorithm
 2. Add configurable context distance
 3. Handle edge cases
 
 ### Phase 4: Reporting
+
 1. Group violations by category
 2. Prioritize in-diff violations
 3. Provide actionable feedback to Claude
 
 ### Phase 5: Hook Integration
+
 1. Integrate with existing hook system
 2. Modify response messages based on categories
 3. Consider different handling for each category
@@ -282,25 +297,25 @@ After edit patches are applied:
 class DiffIntelligence:
     def __init__(self, context_distance: int = 3):
         self.context_distance = context_distance
-    
+
     def parse_tool_response(self, tool_response: dict) -> ParsedDiff:
         """Parse Edit/MultiEdit tool response into ParsedDiff."""
         # Implementation here
-        
+
     def parse_violations(self, precommit_output: str) -> List[Violation]:
         """Parse pre-commit output for violations."""
         # Implementation here
-        
+
     def categorize(
-        self, 
-        tool_response: dict, 
+        self,
+        tool_response: dict,
         precommit_output: str
     ) -> Dict[str, List[CategorizedViolation]]:
         """Main entry point for categorization."""
         parsed_diff = self.parse_tool_response(tool_response)
         violations = self.parse_violations(precommit_output)
         categorized = self.categorize_violations(violations, parsed_diff)
-        
+
         # Group by category
         return {
             "in-diff": [v for v in categorized if v.category == "in-diff"],

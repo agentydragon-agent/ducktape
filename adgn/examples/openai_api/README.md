@@ -5,6 +5,7 @@ Responses API workflow for preserving model reasoning (chain-of-thought) across
 turns and replaying function_call/tool outputs when continuing a turn.
 
 Files
+
 - stateless_two_step_demo.py
   - Combined demo that runs both a text-only two-step continuation and a
     tools two-step continuation. Shows how to reproduce the exact prefix the
@@ -12,6 +13,7 @@ Files
     a new prompt so the model can continue statelessly.
 
 Running
+
 1. Install dependencies and set credentials:
    - export OPENAI_API_KEY=...
    - pip install -r requirements.txt   # if you use a local venv; the project already pins the OpenAI SDK in dev
@@ -21,6 +23,7 @@ Running
    - python examples/stateless_two_step_demo.py both   # runs both demos
 
 Design notes (brief)
+
 - Stateless mode: the examples intentionally do NOT rely on previous_response_id or
   server-side state. Instead they reproduce the full input list that the model
   originally saw when it produced a reasoning item, then append the next user
@@ -31,10 +34,11 @@ Design notes (brief)
   than fabricating or mutating them.
 
 Canonical references
-- OpenAI Responses API reference: https://platform.openai.com/docs/api-reference/responses
+
+- OpenAI Responses API reference: <https://platform.openai.com/docs/api-reference/responses>
 - OpenAI Cookbook (reasoning & function call examples):
-  - reasoning_items.ipynb: https://github.com/openai/openai-cookbook/blob/main/examples/responses_api/reasoning_items.ipynb
-  - reasoning_function_calls.ipynb: https://github.com/openai/openai-cookbook/blob/main/examples/reasoning_function_calls.ipynb
+  - reasoning_items.ipynb: <https://github.com/openai/openai-cookbook/blob/main/examples/responses_api/reasoning_items.ipynb>
+  - reasoning_function_calls.ipynb: <https://github.com/openai/openai-cookbook/blob/main/examples/reasoning_function_calls.ipynb>
 
 Integration note: The agent loop (Agent) references these demos as
 examples for how to serialize transcript items for stateless continuation.

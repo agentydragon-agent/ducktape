@@ -65,6 +65,7 @@ python collect_references.py
 ```
 
 The script will:
+
 1. Retrieve the list of habits (successful API call)
 2. Select an existing habit from your account
 3. Fetch details for that habit (successful API call)
@@ -164,6 +165,7 @@ Habitify supports two types of habits:
 2. **Habits without Values**: These habits only track completion status (e.g., "Meditate"). For these habits, you can omit the `value` parameter in the PUT request to `/status/{id}`.
 
 The API handles both types gracefully:
+
 - When setting status for a habit with values, you can include the `value` parameter (e.g., `"value": 8.0`).
 - When setting status for a habit without values, you can omit the `value` parameter entirely.
 - You can also set a habit with values to "skipped" or "failed" without providing a value.

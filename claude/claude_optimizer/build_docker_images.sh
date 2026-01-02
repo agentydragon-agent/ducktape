@@ -29,12 +29,12 @@ for dockerfile in docker/*/Dockerfile; do
     if [[ "$dockerfile" == "docker/claude-base/Dockerfile" ]]; then
         continue
     fi
-    
+
     # Extract directory and image name
     dir=$(dirname "$dockerfile")
     img_name=$(basename "$dir")
     tag="claude-dev:${img_name}"
-    
+
     echo -e "\n${GREEN}Building $tag from $dockerfile...${NC}"
     docker build -t "$tag" "$dir/" || {
         echo -e "${RED}Failed to build $tag${NC}"

@@ -3,6 +3,7 @@
 ## Core Concept
 
 A "conductor" LLM orchestrates specialized "expert" LLMs:
+
 - **Conductor:** Breaks down problems, delegates subtasks, synthesizes results
 - **Experts:** Domain-specific agents with focused capabilities
 
@@ -29,11 +30,13 @@ You're the **meta-agent** designing expert prompts (the critic). The pattern map
 ## When to Use
 
 **Good fit:**
+
 - Complex tasks with clear subtask boundaries
 - Need for specialized expertise in different areas
 - Latency/cost acceptable for quality improvement
 
 **Poor fit:**
+
 - Simple tasks solvable with single prompt
 - Tight latency requirements
 - Unclear task decomposition

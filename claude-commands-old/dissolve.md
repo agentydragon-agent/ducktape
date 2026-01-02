@@ -1,22 +1,26 @@
 # Dissolve
 
 ## Description
+
 Merge duplicated functionality into a single deduplicated version. This applies to any duplicated content - code, documentation, configuration, etc. The core principle is consolidating multiple versions/variants that arose from copy-paste-modify patterns into a unified, feature-complete version.
 
 ## Instructions
 
 ### 1. Identify Duplication Pattern
+
 - Find files with similar names/purposes (e.g., `plot_weight.py`, `plot_weight_over_time_v2.py`)
 - Identify the copy-paste-modify pattern
 - Determine which version has the most complete feature set
 
 ### 2. Analyze Feature Differences
+
 - List features unique to each variant
 - Identify common core functionality
 - Note parameter differences, output formats, etc.
 - Determine the "best" base version (usually the most recent/feature-rich)
 
 ### 3. Plan Consolidation
+
 - Choose target filename (often close to the most advanced version)
 - Map how to merge unique features from each variant
 - Design unified interface that encompasses all use cases
@@ -55,7 +59,7 @@ The pattern is always the same: consolidate into one artifact that can express a
 Those 3 scripts all execute different clustering algorithms on our dataset:
 
 • analyze_cluster.py (156 lines, modified yesterday)
-• analyze_cluster_deep.py (289 lines, modified 3 days ago)  
+• analyze_cluster_deep.py (289 lines, modified 3 days ago)
 • analyze_cluster_with_viz.py (412 lines, modified today)
 
 It looks like analyze_cluster_with_viz.py is newest and most feature-rich,
@@ -72,14 +76,16 @@ I recommend merging them into one analyze_cluster.py with optional flags:
 - --visualize for generating graphs
 
 This would change the interface slightly - instead of choosing different scripts,
-you'd use flags. Current calls to analyze_cluster_deep.py would become 
+you'd use flags. Current calls to analyze_cluster_deep.py would become
 analyze_cluster.py --deep.
 
 OK to proceed? Should I delete the old scripts after merging, or archive tehem?
 ```
 
 ### 6. Execution
+
 After user approves:
+
 1. Create the consolidated file (keep originals during testing)
 2. If applicable, test that consolidated file covers all original functions
 3. Update any references to point to new file
@@ -90,6 +96,7 @@ After user approves:
 ## Example Workflows
 
 ### Code
+
 ```bash
 # Found similar files:
 # - plot_weight.py (150 lines) - Basic weight plotting
@@ -99,6 +106,7 @@ After user approves:
 ```
 
 ### Documentation
+
 ```bash
 Found duplicated guides:
 - README.md (500 lines) - Original getting started
@@ -108,6 +116,7 @@ Found duplicated guides:
 ```
 
 ### Configuration
+
 ```bash
 Found workflow files:
 - .github/workflows/test.yml - Runs tests
@@ -118,6 +127,7 @@ Found workflow files:
 ```
 
 ## Principles
+
 - Always preserve valuable information
 - Improve organization while moving content
 - Document the dissolution process
@@ -127,6 +137,7 @@ Found workflow files:
 - Be conservative about deleting unique content
 
 ## Common Dissolution Targets
+
 - Multiple versions of similar scripts (v1, v2, final, FINAL-FINAL)
 - Copy-pasted-modified analysis scripts
 - Similar plotting/visualization tools with slight variations
@@ -137,7 +148,9 @@ Found workflow files:
 - README/SETUP/QUICKSTART documentation sprawl
 
 ## Output Format
+
 Provide a dissolution report:
+
 ```
 ## Dissolution report
 

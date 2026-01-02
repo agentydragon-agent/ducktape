@@ -60,7 +60,7 @@
         state: directory
         owner: root
         group: root
-        mode: '0755'
+        mode: "0755"
       become: true
       tags: [dns, powerdns]
 
@@ -81,7 +81,7 @@
           MulticastDNS=no
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       become: true
       notify: Restart systemd-resolved
       tags: [dns, powerdns]
@@ -104,7 +104,7 @@
           Domains=~agentydragon.com ~adgn.link ~k3s.agentydragon.com
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       become: true
       notify:
         - Restart systemd-networkd
@@ -126,7 +126,7 @@
         update_cache: true
         upgrade: dist
 
-    - name: Install nginx  # noqa: package-latest
+    - name: Install nginx # noqa: package-latest
       become: true
       ansible.builtin.apt:
         name: nginx
@@ -138,7 +138,7 @@
         content: |
           [DEFAULT]
           ignoreip = 127.0.0.1/8 ::1 98.51.154.161
-        mode: '0644'
+        mode: "0644"
         owner: root
         group: root
       tags: [fail2ban]
@@ -204,7 +204,7 @@
       ansible.builtin.copy:
         src: nginx.conf
         dest: /etc/nginx/nginx.conf
-        mode: '0644'
+        mode: "0644"
 
     - name: Nginx website configs
       tags: [nginx]
@@ -220,7 +220,7 @@
           ansible.builtin.template:
             src: nginx-sites/{{ item }}.j2
             dest: /etc/nginx/sites-available/{{ item }}
-            mode: '0644'
+            mode: "0644"
           loop: "{{ nginx_sites }}"
           notify:
             - Reload nginx
@@ -250,7 +250,7 @@
           ansible.builtin.file:
             path: "/etc/nginx/{{ item }}"
             state: directory
-            mode: '0755'
+            mode: "0755"
           loop:
             - streams-available
             - streams-enabled
@@ -259,7 +259,7 @@
           ansible.builtin.template:
             src: nginx-streams/{{ item }}.j2
             dest: /etc/nginx/streams-available/{{ item }}
-            mode: '0644'
+            mode: "0644"
           loop:
             - https-sni-router
           notify:

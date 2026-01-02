@@ -55,16 +55,16 @@
         docker ps -aq --filter "name=firecrawl" | xargs -r docker stop
         docker ps -aq --filter "name=firecrawl" | xargs -r docker rm
       register: firecrawl_cleanup_result
-      failed_when: false  # Don't fail if no containers found
+      failed_when: false # Don't fail if no containers found
       changed_when: firecrawl_cleanup_result.stdout != ""
 
     - name: Ensure firecrawl compose project is fully down
       community.docker.docker_compose_v2:
         project_src: "{{ firecrawl_project_path }}"
-        project_name: firecrawl  # Explicitly set project name
+        project_name: firecrawl # Explicitly set project name
         state: absent
         remove_orphans: true
-      failed_when: false  # Don't fail if project doesn't exist
+      failed_when: false # Don't fail if project doesn't exist
 
     - name: Verify Firecrawl port is now free {{ firecrawl_port }}
       ansible.builtin.shell: |
@@ -81,11 +81,11 @@
   become: true
   community.docker.docker_compose_v2:
     project_src: "{{ firecrawl_project_path }}"
-    project_name: firecrawl  # Explicitly set project name to avoid directory-based naming
-    pull: always     # pull updated images
+    project_name: firecrawl # Explicitly set project name to avoid directory-based naming
+    pull: always # pull updated images
     recreate: always # pick up any env / compose modifications
-    remove_orphans: true  # Remove containers for services not in compose file
-    state: present  # Ensure services are running
+    remove_orphans: true # Remove containers for services not in compose file
+    state: present # Ensure services are running
   register: firecrawl_compose
 
 - name: Show compose output (verbosity 1)

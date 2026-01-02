@@ -6,6 +6,7 @@ kind: outcome
 Use modern Python 3.11+ idioms that improve clarity and brevity: dict merge operators, set operators, PEP 604 union types, and related conveniences. Prefer these over legacy patterns.
 
 ## Acceptance criteria (checklist)
+
 - Dictionaries:
   - Use merge and update operators (PEP 584): `a | b` and `a |= b` (right side wins on key conflicts). Avoid `{**a, **b}` or manual loops for merging.
 - Sets:
@@ -89,5 +90,6 @@ def f(x: Union[int, str]) -> int:  # ❌ prefer int | str
 ```
 
 ## Notes
+
 - Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning in a complex expression, a named helper or method call can be acceptable.
 - Related properties: [Walrus operator](./walrus.md), [String affixes](./str-affixes.md), [Type hints](./type-hints.md), [Pathlib usage](./pathlib.md).

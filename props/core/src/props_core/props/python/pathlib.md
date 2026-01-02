@@ -6,6 +6,7 @@ kind: outcome
 Agent-edited Python uses pathlib for filesystem paths and joins; it does not use os.path.* or manual string concatenation for paths.
 
 ## Acceptance criteria (checklist)
+
 - Paths are represented as `pathlib.Path` objects
 - Path joins use `/` operator or `Path(..., ...)`, not `os.path.join`
 - File I/O uses Path methods (`read_text`, `write_text`, `read_bytes`, `open`) instead of bare `open` on string paths
@@ -14,6 +15,7 @@ Agent-edited Python uses pathlib for filesystem paths and joins; it does not use
 - CLI arguments that represent filesystem paths are parsed/typed as `pathlib.Path` via argparse (e.g., `parser.add_argument("--out", type=Path)`), not raw `str`
 
 ## Positive examples
+
 ```python
 from pathlib import Path
 
@@ -46,6 +48,7 @@ args.config.write_text("ok", encoding="utf-8")
 ```
 
 ## Negative examples
+
 ```python
 import os
 

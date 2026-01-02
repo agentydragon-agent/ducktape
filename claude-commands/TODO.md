@@ -45,17 +45,20 @@ Example Ansible task structure:
 ### Caveats
 
 **Shared ZFS dataset across multiple machines**: The ZFS dataset `tank/code` is accessed from multiple machines with different mount points:
+
 - **atlas** (Proxmox host): `/tank/code` (native ZFS mount)
 - **wyrm** (Pop!_OS VM): `/code` (virtiofs mount of atlas's `/tank/code`)
 
 **Current issue**: The existing symlink at `/code/.claude/commands/organize-code.md` incorrectly points to `/home/agentydragon/code/ducktape/claude-commands/organize-code.md`, which is machine-specific.
 
 **Repository structure**:
+
 - atlas: `/tank/code/gitlab.com/agentydragon/ducktape`
 - wyrm: `/code/gitlab.com/agentydragon/ducktape` (same physical storage)
 - Convenience symlink: `~/code/ducktape` → `/code/gitlab.com/agentydragon/ducktape` (machine-specific)
 
 **Why absolute paths don't work**: Since the ZFS dataset is mounted at different paths on different machines, an absolute symlink like `/code/gitlab.com/...` would:
+
 - Work on wyrm (where `/code` exists)
 - Fail on atlas (where it's `/tank/code`, not `/code`)
 

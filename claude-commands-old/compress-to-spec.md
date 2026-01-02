@@ -5,6 +5,7 @@ can use to reimplement an equivalent system. Emphasize externally observable beh
 contracts; avoid leaking internal names/schemas unless strictly necessary.
 
 ## Input
+
 - Infer from context or user input: input artifact of any granularity — single function, one file
   (`app/models.py`, an integration test, small CLI), full apps (Django, GUI, MCP server, ...),
   IPython notebook with an ML experiment, ...
@@ -17,6 +18,7 @@ contracts; avoid leaking internal names/schemas unless strictly necessary.
   - "Exclusions: spec requirement for <200 ms latency implies caching is needed. Shall we accept any implementation that meets the <200 ms requirement (and omit explicit caching requirements), or should we explicitly list caching as required?"
 
 ## Output
+
 Markdown file with the compressed spec/prompt, suitable for handoff to a reimplementation LLM agent.
 
 ## Spec contents
@@ -56,43 +58,44 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
 
 ### Examples
 
-* IPython notebook analyzing a specific Parquet blob:
-  * Specify:
-    * blob data shape, approx size if constraining (e.g. "fields: review ID, user ID (UUID), review text (str); 1.2 GB")
-    * types of analysis, graphs (e.g.: "LLM-based sentiment analysis on review text, plot X = day (last 30),
+- IPython notebook analyzing a specific Parquet blob:
+  - Specify:
+    - blob data shape, approx size if constraining (e.g. "fields: review ID, user ID (UUID), review text (str); 1.2 GB")
+    - types of analysis, graphs (e.g.: "LLM-based sentiment analysis on review text, plot X = day (last 30),
       Y = avg sentiment, line color = company. 3 random representatives in each (positive, negative) x company bucket.
       For each (positive, negative) x company bucket, cluster LLM embeddings and summarize top 5 clusters.
       Export graphs on disk as PNG, representative samples as CSV including review + user IDs, sentiment score.")
-    * any important inputs (e.g.: "download data from az://container/.../foo.parquet; use OpenAI API")
-  * Omit unimportant details:
-    * exact output filenames ("graph1.png")
-    * implementation details where they don't matter (`df_raw_reviews` -> `df_reviews_with_sentiment` -> ...,
+    - any important inputs (e.g.: "download data from az://container/.../foo.parquet; use OpenAI API")
+  - Omit unimportant details:
+    - exact output filenames ("graph1.png")
+    - implementation details where they don't matter (`df_raw_reviews` -> `df_reviews_with_sentiment` -> ...,
       "use `matplotlib` / `seaborn` / ...")
-* Web app managing electronics parts:
-  * Specify:
-    * high-level stories/requirements (e.g.: "User may CRUD parts and update inventory. Parts track: name, part number,
+- Web app managing electronics parts:
+  - Specify:
+    - high-level stories/requirements (e.g.: "User may CRUD parts and update inventory. Parts track: name, part number,
       linked supplier parts, image, description, parameters - e.g., resistance in ohm, transistor type (PNP, NPN, ...).
       Parameters are a closed list that user may define and manage, including units and allowed values. ...")
-    * crucial questions a dev implementing the app may have, including where a constraint is explicitly not needed (e.g.:
+    - crucial questions a dev implementing the app may have, including where a constraint is explicitly not needed (e.g.:
       "no need for multi-user / auth, single-user running on assumed-trusted localhost is fine")
-    * APIs/UIs (e.g.: "REST API for basic inventory management - list all inventory items, update item (add/remove count);
+    - APIs/UIs (e.g.: "REST API for basic inventory management - list all inventory items, update item (add/remove count);
       no need for API for other functions. UI: lightweight HTML + light modern JS framework, minimalist aesthetics;
       basic CLI to manage inventory: 'part-inventory list', '... get 74HC00', '... add/remove 74HC00 5'")
-  * Omit unimportant details:
-    * exact details of DB schema ("parts are stored in Postgres table `parts` with `id` (UUID), `name` (VARCHAR 50), ...")
-    * which exact frameworks ("UI must be React+Tailwind...", "CLI must use Click", ...)
-    * what is not important for this domain/application (e.g.: contextually this would be a light DIY-type single-user
+  - Omit unimportant details:
+    - exact details of DB schema ("parts are stored in Postgres table `parts` with `id` (UUID), `name` (VARCHAR 50), ...")
+    - which exact frameworks ("UI must be React+Tailwind...", "CLI must use Click", ...)
+    - what is not important for this domain/application (e.g.: contextually this would be a light DIY-type single-user
       web app -> auth, load requriments, resilience etc. likely not important)
-* Single `app/models.py` file from the same app:
-  * Specify:
-    * what would be needed to write a drop-in replacement - here, that *would* include implemenetation details as 
+- Single `app/models.py` file from the same app:
+  - Specify:
+    - what would be needed to write a drop-in replacement - here, that *would* include implemenetation details as
       a replacement `app/models.py` would have to fit within context of the rest of the app
-    * e.g.: "write models for DB framework X on Postgres db. Tables: `parts` (`PartModel`) has fields `id` (UUID), ...,
+    - e.g.: "write models for DB framework X on Postgres db. Tables: `parts` (`PartModel`) has fields `id` (UUID), ...,
       read provider configuration from `data/providers.yml`, schema: ..."
-  * Omit:
-    * Details that would be hidden behind the public interface of the file (i.e. implementation internals of classes/methods)
+  - Omit:
+    - Details that would be hidden behind the public interface of the file (i.e. implementation internals of classes/methods)
 
 ## Procedure (execution plan)
+
 - Discover
   - Read the scoped code and documentation.
   - Make sure you cover all user-visible and external-facing features so you don't miss anything important - particularly UIs, APIs, etc.
@@ -131,7 +134,7 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
   > 1. We require all 4 DB backends supported (SQLite, Postgres, MySQL, Firebase). Loosen: jany database (not explicitly listing each), or only one (say, SQLite)?
   > 2. Spec requires support for Windows, Linux, macOS, FreeBSD and OpenBSD. If OS compatibility is not important, loosen to drop list of required supported OSs?
   > 3. I specified requirement for currency conversion but left out our specific freshness algorithm. If freshness if important, I can tighten to "freshness 5 min or better"?
-  > ... 
+  > ...
 
 - Iterate to tighten / loosen the spec until it matches user intent. Example:
 
@@ -146,17 +149,20 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
   > 1. The requirement to support Windows, Linux, macOS, FreeBSD and OpenBSD.
   > 2. The spec does not prescribe the exact protocol to use with the notification API, treating it as an internal implementation detail.
   >    If you want to specify it exactly (e.g., so that reimplementation would be compatible with our notification handlers), I could bake it in.
-  > ... 
+  > ...
   **User**:
   > OK, this is about right, we're done.
 
 ## Style & guardrails
+
 - Behavior over implementation; avoid internal names, credentials, or secrets.
 - No large schemas or code excerpts; describe semantically.
 
 ## Example invocations
+
 - "Compress :/project/foo into SPEC.md; exclude the legacy/ subtree; db must be Postgres; do not include caching; include admin UI for quotas; ensure UI is colorblind-friendly."
 - "Compress /abs/path/service and /abs/path/ui; also expose metrics counters for failures and timeouts; exclude generated files (*.gen.*)."
 
 ## Success criteria
+
 Output spec is self-contained, implementation-agnostic, and sufficient for a competent LLM to reimplement the system and to write tests that validate parity with the original behavior.

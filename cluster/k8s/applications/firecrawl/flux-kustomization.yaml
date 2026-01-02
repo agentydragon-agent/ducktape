@@ -1,0 +1,19 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: firecrawl
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./k8s/applications/firecrawl"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: ingress-nginx
+      namespace: flux-system
+    - name: cert-manager
+      namespace: flux-system

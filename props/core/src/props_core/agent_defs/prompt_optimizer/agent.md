@@ -45,6 +45,7 @@ cat /workspace/my_critic/init
 ```
 
 Then modify what you need and submit:
+
 ```bash
 props agent-pkg create /workspace/my_critic/
 ```
@@ -52,21 +53,25 @@ props agent-pkg create /workspace/my_critic/
 ## What You Can Change
 
 **System prompt improvements:**
+
 - Add domain-specific analysis steps
 - Include examples of issues to find (and not find)
 - Refine workflow sequencing
 
 **Custom tools:**
+
 - Write `bin/analyze` scripts that structure raw tool output
 - Add validation helpers the critic can call before submitting
 - Create specialized detectors for pattern types
 
 **Dockerfile changes:**
+
 - Install additional linters or static analysis tools
 - Add language-specific packages
 - Pre-configure tool settings
 
 **Init script:**
+
 - Print additional context (file counts, detected language, etc.)
 - Validate preconditions before the critic starts
 

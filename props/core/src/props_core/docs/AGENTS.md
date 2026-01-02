@@ -17,6 +17,7 @@ If the same information exists elsewhere, it will drift and become inconsistent.
 **If template A includes template B via `include_doc()`, template A must NOT call `describe_relation()` for tables already described in B.**
 
 Example violation:
+
 ```jinja2
 {# grader.md.j2 #}
 {{ describe_relation("true_positives") }}           {# WRONG - already in ground_truth.md.j2 #}

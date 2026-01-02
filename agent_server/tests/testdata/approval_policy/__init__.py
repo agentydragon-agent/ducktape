@@ -33,15 +33,8 @@ def make_policy(
     """
     if default not in {ApprovalDecision.ASK, ApprovalDecision.ALLOW}:
         raise ValueError(f"default must be ASK or ALLOW, got {default}")
-    default_expr = (
-        "ApprovalDecision.ASK"
-        if default == ApprovalDecision.ASK
-        else "ApprovalDecision.ALLOW"
-    )
-    doc = (
-        doc
-        or f"policy for {server}.{tool} returns explicit decision; default {default.value}"
-    )
+    default_expr = "ApprovalDecision.ASK" if default == ApprovalDecision.ASK else "ApprovalDecision.ALLOW"
+    doc = doc or f"policy for {server}.{tool} returns explicit decision; default {default.value}"
     header = (
         "from agent_server.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision\n"
         "from agent_server.approvals import WellKnownTools\n"

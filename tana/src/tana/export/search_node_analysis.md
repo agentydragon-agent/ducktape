@@ -24,6 +24,7 @@ Every search node in a Tana export has these fundamental properties:
 ```
 
 Key observations:
+
 - `_docType: "search"` identifies search nodes
 - Search results are stored as direct children
 - The actual search expression is stored separately in the metadata node
@@ -47,12 +48,14 @@ This architecture separates the search results (stored as children) from the sea
 Tana uses special system nodes for search operators and types:
 
 ### Boolean Operators
+
 - **`SYS_A15`** - Search expression attribute key (always first in the tuple)
 - **`SYS_A41`** - AND operator
 - **`SYS_A42`** - OR operator
 - **`SYS_A43`** - NOT operator
 
 ### System Types
+
 - **`SYS_T103`** - Event type
 - **`SYS_T98`** - Meeting type
 - Additional system types follow the pattern `SYS_T{number}`
@@ -60,6 +63,7 @@ Tana uses special system nodes for search operators and types:
 ## 4. Search Expression Patterns
 
 ### Pattern 1: Simple Tag Search
+
 The simplest search type - finding all nodes with a specific tag:
 
 ```
@@ -72,6 +76,7 @@ Metadata Node
 Example: Searching for `#issue` tag
 
 ### Pattern 2: Boolean Expression
+
 For searches with boolean logic:
 
 ```
@@ -89,6 +94,7 @@ Metadata Node
 Example: `OR(event, meeting, "FROM CALENDAR")`
 
 ### Pattern 3: Complex Nested Expression
+
 Boolean expressions can be nested to arbitrary depth:
 
 ```
@@ -104,18 +110,21 @@ AND(
 ## 5. Search Results Representation
 
 ### Result Storage
+
 - Results are stored as direct children of the search node
 - Each child ID references a node elsewhere in the node store
 - Results maintain their original ownership (not owned by the search node)
 - Large result sets (1000+ results) are fully enumerated
 
 ### Result Ordering
+
 - The order of children in the array represents the result order
 - This preserves any sorting applied by Tana
 
 ## 6. Additional Search Metadata
 
 ### Association Maps
+
 Used for table views and contextual data:
 
 ```json
@@ -128,6 +137,7 @@ Used for table views and contextual data:
 This allows searches to attach additional data to specific results (e.g., column values in table views).
 
 ### Search Context
+
 Defines the scope for the search:
 
 ```json
@@ -137,7 +147,9 @@ Defines the scope for the search:
 Example use case: Searching within a specific journal date or project.
 
 ### View Configuration
+
 Some searches include view definitions in their metadata:
+
 - Layout type (table, list, etc.)
 - Column definitions for table views
 - Grouping and sorting preferences
@@ -145,11 +157,14 @@ Some searches include view definitions in their metadata:
 ## 7. Special Search Types
 
 ### Calendar Searches
+
 Searches for calendar items use text criteria:
+
 - Node with name "FROM CALENDAR" as a search criterion
 - Combined with type filters (event, meeting) using OR
 
 ### Saved Searches
+
 - Stored in special containers (e.g., `{workspace_id}_SEARCHES`)
 - Include usage tracking via `touchCounts`
 - Can be referenced and reused
@@ -169,7 +184,9 @@ The export format preserves:
 ## 9. Examples from Real Data
 
 ### Example 1: Simple Tag Search
+
 Search: "Search results for #issue"
+
 ```
 Search Node (SGrUB4iyWYde)
   └── Metadata (UPQzRt-7yPuY)
@@ -179,7 +196,9 @@ Search Node (SGrUB4iyWYde)
 ```
 
 ### Example 2: Complex OR Search
+
 Search: "Agenda"
+
 ```
 Search Node (lRiDEA6lQM)
   └── Metadata (uDnQ7Y7qR1d0)
@@ -211,6 +230,7 @@ The main limitation is that these are **static snapshots** - the search results 
 ## Conclusion
 
 Tana's JSON export format preserves complete search semantics through a well-structured system of:
+
 - Search nodes with result children
 - Metadata nodes containing search expressions
 - System nodes representing operators and types

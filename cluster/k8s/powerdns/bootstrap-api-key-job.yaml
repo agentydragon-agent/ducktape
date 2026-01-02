@@ -1,0 +1,72 @@
+# Job to generate PowerDNS API key in Vault after Vault is ready
+# This breaks the circular dependency by generating the secret post-Vault-deployment
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: powerdns-bootstrap-api-key
+  namespace: vault
+  annotations:
+    # Ensure job runs only once per cluster
+    "helm.sh/hook": post-install
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: 3600 # Clean up after 1 hour
+  template:
+    spec:
+      serviceAccountName: vault
+      restartPolicy: OnFailure
+      volumes:
+        - name: vault-ca
+          secret:
+            secretName: vault-internal-tls
+            items:
+              - key: ca.crt
+                path: ca.crt
+      containers:
+        - name: generate-api-key
+          image: hashicorp/vault:1.17.2
+          volumeMounts:
+            - name: vault-ca
+              mountPath: /vault/tls
+              readOnly: true
+          env:
+            - name: VAULT_CACERT
+              value: /vault/tls/ca.crt
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              # Use Kubernetes auth to authenticate to Vault
+              export VAULT_ADDR="https://instance.vault.svc.cluster.local:8200"
+
+              # Wait for Vault to be unsealed
+              until vault status 2>/dev/null | grep -q "Sealed.*false"; do
+                echo "Waiting for Vault to be unsealed..."
+                sleep 5
+              done
+
+              # Login using Kubernetes auth
+              vault write auth/kubernetes/login \
+                role=default \
+                jwt=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) || {
+                  echo "Kubernetes auth not configured yet, using root token"
+                  # Fall back to root token if K8s auth not ready
+                  export VAULT_TOKEN=$(kubectl get secret -n vault vault-unseal-keys -o jsonpath='{.data.vault-root}' | base64 -d)
+              }
+
+              # Check if secret already exists
+              if vault kv get kv/powerdns/api 2>/dev/null; then
+                echo "PowerDNS API key already exists in Vault"
+                exit 0
+              fi
+
+              # Generate random API key using Vault's entropy source
+              # Use 32 bytes (256 bits) of entropy, output as base64
+              API_KEY=$(vault write -format=json sys/tools/random/32 | jq -r '.data.random_bytes' | base64 -d | xxd -p -c 256)
+
+              # Store in KV v2 store
+              vault kv put kv/powerdns/api api_key="${API_KEY}"
+
+              echo "PowerDNS API key generated and stored in Vault at kv/powerdns/api"

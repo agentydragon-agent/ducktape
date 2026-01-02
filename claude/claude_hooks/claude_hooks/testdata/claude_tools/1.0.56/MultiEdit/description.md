@@ -15,6 +15,7 @@ This is a tool for making multiple edits to a single file in one operation. It i
 ## To make multiple file edits
 
 Provide the following:
+
 1. **file_path:** The absolute path to the file to modify (must be absolute, not relative)
 2. **edits:** An array of edit operations to perform, where each edit contains:
    - **old_string:** The text to replace (must match the file contents exactly, including all whitespace and indentation)
@@ -52,6 +53,7 @@ Provide the following:
 ## If you want to create a new file
 
 Use:
+
 - A new file path, including dir name if needed
 - First edit: empty old_string and the new file's contents as new_string
 - Subsequent edits: normal edit operations on the created content

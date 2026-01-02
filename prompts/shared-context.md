@@ -26,18 +26,21 @@
 ## Common Library Type Patterns
 
 ### OpenAI SDK
+
 - Generally very well-typed
 - Use `Response`, `ResponseOutputMessage`, etc. directly
 - TypeAdapter for validation, not casts
 - Read `openai/types/` for actual type definitions
 
 ### Pydantic
+
 - `model_dump(mode="json")` for serialization
 - `model_validate()` for parsing
 - TypeAdapter for non-model types
 - Avoid manual field-by-field serialization
 
 ### SQLAlchemy
+
 - Use proper relationship typing
 - Consider better-stubs if ORM types are problematic
 - Avoid runtime hasattr/getattr when types are known

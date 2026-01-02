@@ -39,12 +39,14 @@ Structured output through function calling, each finding with:
 ## Training Management
 
 ### Incremental Learning
+
 - Adds new examples from user feedback
 - Auto-categorizes feedback using keyword analysis
 - Updates reviewer with expanded training set
 - Maintains category balance and example limits
 
-### Cache Management  
+### Cache Management
+
 - Stores trained reviewers based on training data hash
 - Loads cached reviewers for consistent performance
 - Rebuilds reviewers when training data changes
@@ -53,6 +55,7 @@ Structured output through function calling, each finding with:
 ## Configuration
 
 Uses YAML configuration for:
+
 - LLM model selection and parameters
 - Review behavior settings (blocking, suggestions)
 - File exclusion patterns
@@ -62,7 +65,7 @@ Uses YAML configuration for:
 ## Security Considerations
 
 - **LLM API calls**: Secure API keys, rate limiting
-- **Training data**: Avoid sensitive code in examples  
+- **Training data**: Avoid sensitive code in examples
 - **Code exposure**: Limit external LLM access
 - **Fallback behavior**: Always allow continuation on failures
 

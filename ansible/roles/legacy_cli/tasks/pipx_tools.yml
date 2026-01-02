@@ -38,4 +38,4 @@
     - speedtest-cli
     - autopep8
     # - libcst  # Python concrete syntax tree library for refactoring ... doesn't seem to exist in pipx:w
-    - pydeps  # Python dependency graph visualization
+    - pydeps # Python dependency graph visualization

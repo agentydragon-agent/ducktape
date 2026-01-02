@@ -16,7 +16,8 @@ When asked to take a screenshot or view the console of a Proxmox VM, use the aut
 ```
 
 The script will:
-1. Take screenshot via SSH to Proxmox host  
+
+1. Take screenshot via SSH to Proxmox host
 2. Copy PPM file to local machine
 3. Convert to PNG using local imagemagick
 4. Clean up temporary files
@@ -25,6 +26,7 @@ The script will:
 ## Examples
 
 **Taking screenshot of VM 106:**
+
 ```bash
 ~/.claude/skills/proxmox-vm-screenshot/vm-screenshot.sh 106
 ```
@@ -32,6 +34,7 @@ The script will:
 Then use Read tool to view `/tmp/vm106-current.png`
 
 **Manual process (if script unavailable):**
+
 ```bash
 # Take screenshot (non-interactive)
 ssh root@atlas 'echo "screendump /tmp/vm110-screenshot.ppm" | qm monitor 110'
@@ -42,6 +45,7 @@ convert /tmp/vm110-screenshot.ppm /tmp/vm110-screenshot.png
 ```
 
 **Debugging VM boot issues:**
+
 - Useful when VMs are not responding on network
 - Shows console output, kernel messages, boot progress
 - Can identify stuck boot processes or network configuration issues

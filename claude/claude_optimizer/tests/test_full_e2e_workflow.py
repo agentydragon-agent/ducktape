@@ -98,7 +98,7 @@ Write production-ready code that follows these principles:
 - Prefer enums over string literals for choices
 - Use Path objects instead of strings for file paths
 
-### Error Handling  
+### Error Handling
 - Catch only specific, expected exceptions
 - Let programming errors crash with clear messages
 - Use early returns and guard clauses
@@ -150,9 +150,9 @@ class BackendStatus(Enum):
 class APIClient:
     def __init__(self, backend_a_url: str, backend_b_url: str, backend_c_url: str):
         self.backend_a_url = backend_a_url
-        self.backend_b_url = backend_b_url  
+        self.backend_b_url = backend_b_url
         self.backend_c_url = backend_c_url
-    
+
     async def call_backends_parallel(self) -> Dict[str, Any]:
         async with aiohttp.ClientSession() as session:
             # Call A and B in parallel
@@ -160,19 +160,19 @@ class APIClient:
                 self._call_backend(session, self.backend_a_url, \"A\"),
                 self._call_backend(session, self.backend_b_url, \"B\")
             ]
-            
+
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Combine responses
             combined_response = {
                 \"backend_a\": results[0] if not isinstance(results[0], Exception) else None,
                 \"backend_b\": results[1] if not isinstance(results[1], Exception) else None,
                 \"status\": BackendStatus.SUCCESS if all(not isinstance(r, Exception) for r in results) else BackendStatus.FAILED
             }
-            
+
             # Send to backend C
             return await self._send_to_backend_c(session, combined_response)
-    
+
     async def _call_backend(self, session: aiohttp.ClientSession, url: str, backend_name: str) -> Dict[str, Any]:
         try:
             async with session.get(url) as response:
@@ -180,7 +180,7 @@ class APIClient:
                 return await response.json()
         except aiohttp.ClientError as e:
             raise RuntimeError(f\"Backend {backend_name} failed: {e}\")
-    
+
     async def _send_to_backend_c(self, session: aiohttp.ClientSession, data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             async with session.post(self.backend_c_url, json=data) as response:
@@ -210,17 +210,17 @@ from api_client import APIClient
 async def main():
     client = APIClient(
         backend_a_url=\"http://api-a.example.com/data\",
-        backend_b_url=\"http://api-b.example.com/data\", 
+        backend_b_url=\"http://api-b.example.com/data\",
         backend_c_url=\"http://api-c.example.com/combine\"
     )
-    
+
     try:
         result = await client.call_backends_parallel()
         print(f\"Success: {result}\")
     except Exception as e:
         print(f\"Failed: {e}\")
         return 1
-    
+
     return 0
 
 if __name__ == \"__main__\":
@@ -257,7 +257,7 @@ from enum import Enum
 
 class LogLevel(Enum):
     DEBUG = \"debug\"
-    INFO = \"info\" 
+    INFO = \"info\"
     WARNING = \"warning\"
     ERROR = \"error\"
 
@@ -274,30 +274,30 @@ class ConfigLoader:
         config = {
             \"backend_url\": \"http://localhost:8000\",
             \"listening_port\": 3000,
-            \"listening_host\": \"0.0.0.0\", 
+            \"listening_host\": \"0.0.0.0\",
             \"log_level\": LogLevel.INFO.value
         }
-        
+
         # Override with file config
         file_config = self._load_from_file()
         if file_config:
             config.update(file_config)
-        
+
         # Override with environment variables
         env_config = self._load_from_env()
         config.update(env_config)
-        
+
         # Override with command line arguments
         cli_config = self._load_from_cli()
         config.update(cli_config)
-        
+
         return AppConfig(
             backend_url=config[\"backend_url\"],
             listening_port=config[\"listening_port\"],
             listening_host=config[\"listening_host\"],
             log_level=LogLevel(config[\"log_level\"])
         )
-    
+
     def _load_from_file(self) -> Optional[dict]:
         config_path = Path(\"config.json\")
         if config_path.exists():
@@ -307,7 +307,7 @@ class ConfigLoader:
             except (json.JSONDecodeError, IOError) as e:
                 raise RuntimeError(f\"Failed to load config file: {e}\")
         return None
-    
+
     def _load_from_env(self) -> dict:
         env_config = {}
         if url := os.getenv(\"BACKEND_URL\"):
@@ -319,16 +319,16 @@ class ConfigLoader:
         if level := os.getenv(\"LOG_LEVEL\"):
             env_config[\"log_level\"] = level
         return env_config
-    
+
     def _load_from_cli(self) -> dict:
         parser = argparse.ArgumentParser()
         parser.add_argument(\"--backend-url\", help=\"Backend URL\")
         parser.add_argument(\"--listening-port\", type=int, help=\"Listening port\")
         parser.add_argument(\"--listening-host\", help=\"Listening host\")
         parser.add_argument(\"--log-level\", choices=[l.value for l in LogLevel], help=\"Log level\")
-        
+
         args = parser.parse_args()
-        
+
         cli_config = {}
         if args.backend_url:
             cli_config[\"backend_url\"] = args.backend_url
@@ -338,7 +338,7 @@ class ConfigLoader:
             cli_config[\"listening_host\"] = args.listening_host
         if args.log_level:
             cli_config[\"log_level\"] = args.log_level
-            
+
         return cli_config
 """,
                             },

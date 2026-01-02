@@ -20,25 +20,33 @@ When running a scan, the objective is **not missing any real issues**. This mean
 Different automated tools have different reliability profiles:
 
 ### High Recall, High Precision (100%/100%)
+
 **Example**: Finding all `cast()` calls
+
 - Every `cast()` usage matches `grep "cast("` or AST check for Call nodes with func.id == 'cast'
 - Very few false positives (only matches actual cast calls)
 - **Strategy**: Run tool, verify all candidates
 
 ### High Recall, Low Precision (100%/30%)
+
 **Example**: Finding trivial forwarders
+
 - AST can find all single-return functions (100% recall)
 - Many are legitimate wrappers (70% false positives)
 - **Strategy**: Run tool, manually/LLM filter candidates
 
 ### Medium Recall, High Precision (60%/90%)
+
 **Example**: Finding manual dict serialization
+
 - Can search for `dict[str, Any]` + `.items()` patterns
 - Misses clever variations but rarely wrong
 - **Strategy**: Run tool, light verification, accept some misses
 
 ### Low Recall, Manual Required (30%/N/A)
+
 **Example**: Finding "vague" field names
+
 - Automation can flag short names, but misses contextual vagueness
 - Human judgment required for what's "vague"
 - **Strategy**: Use automation for hints, manual reading required
@@ -46,6 +54,7 @@ Different automated tools have different reliability profiles:
 ## The Automation Strategy
 
 ✅ **Correct Approach**:
+
 ```
 1. Understand the issue pattern and its characteristics
 2. Run automated scans to gather candidates (grep/AST/ruff/vulture/etc.)
@@ -58,6 +67,7 @@ Different automated tools have different reliability profiles:
 ```
 
 ❌ **Bad Approach**:
+
 ```
 1. Run grep/AST scanner
 2. Auto-fix everything it finds without verification
@@ -65,6 +75,7 @@ Different automated tools have different reliability profiles:
 ```
 
 **Problems with bad approach**:
+
 - Breaks good code (low precision without verification)
 - Misses issues (low recall without supplemental reading)
 - False confidence (assumes tool found everything)
@@ -93,6 +104,7 @@ Different automated tools have different reliability profiles:
 Prompts are instructions to agents/LLMs, so address the reader directly:
 
 ### ✅ GOOD: Direct you-language
+
 ```markdown
 **Manual review workflow**:
 1. Review dict_literals - check context
@@ -107,6 +119,7 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 ```
 
 ### ❌ BAD: Third-person LLM references
+
 ```markdown
 **Manual review workflow**:
 1. LLM reviews dict_literals
@@ -121,11 +134,13 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 ```
 
 **Why you-language?**
+
 - **Clearer**: Direct instructions are easier to follow than descriptions
 - **Natural**: Prompts are imperative ("do this") not descriptive ("someone does this")
 - **Consistent**: Matches command tone ("Run scan", "Verify candidates")
 
 **Examples**:
+
 - "LLM can identify overlaps" → "You can identify overlaps"
 - "LLM does the filtering" → "You do the filtering"
 - "Requires human judgment" → "Requires your judgment"
@@ -240,11 +255,13 @@ Automated scans should be **mentioned as hints only** when:
 Every scan prompt should follow this structure:
 
 ### 1. Pattern Description
+
 Clear examples of BAD and GOOD code with explanations of why.
 
 ### 2. Detection Strategy
 
 **Template**:
+
 ```markdown
 ## Detection Strategy
 
@@ -264,6 +281,7 @@ Clear examples of BAD and GOOD code with explanations of why.
 ```
 
 **Include**:
+
 - **Mandatory/Recommended/Optional designation** for each automated tool based on recall
 - Specific useful tools (grep patterns, AST checks, linters, analyzers)
 - Characterization of each tool's recall/precision for this pattern
@@ -271,6 +289,7 @@ Clear examples of BAD and GOOD code with explanations of why.
 - Acknowledgment if pattern requires manual reading (low recall)
 
 **Avoid**:
+
 - Full AST implementation code (high-level description is enough)
 - Hardcoded lists of specific values to search for
 - Claiming automation is sufficient without verification
@@ -284,6 +303,7 @@ Show real examples with enough context to understand the fix.
 ## General vs. Specific
 
 ### ❌ BAD: Hardcoded Specific Cases
+
 ```bash
 # Find these exact 47 function names that might be useless
 rg "get_user_id|fetch_data|load_config|..."
@@ -292,6 +312,7 @@ rg "get_user_id|fetch_data|load_config|..."
 **Problem**: Won't generalize to new code, misses different patterns
 
 ### ✅ GOOD: General Strategy
+
 ```markdown
 Find functions where:
 - Name is nearly identical to what it returns
@@ -308,6 +329,7 @@ Use grep to find single-statement functions as candidates, then manually review 
 **Philosophy**: The goal is 100% recall. Use tools strategically to achieve it.
 
 ### ❌ Low Recall Approach (Misses Issues)
+
 ```
 Only check files modified in last commit
 Only look for exact pattern "cast(dict[str, Any], ...)"
@@ -317,6 +339,7 @@ Stop after finding 5 issues
 **Result**: False confidence, missed issues
 
 ### ✅ High Recall Approach (Finds Everything)
+
 ```
 Use grep/AST to find ALL cast() calls (100% recall for this pattern)
 Verify each candidate (handle precision issue)
@@ -331,16 +354,19 @@ Continue until confident you've found everything
 When using LLM agents to apply scan prompts:
 
 ### 1. Tool Selection Phase
+
 1. **Understand pattern characteristics**: Does this pattern have high/low recall? High/low precision?
 2. **Choose appropriate tools**: grep/AST/ruff/vulture/etc. based on pattern
 3. **Set expectations**: Know what each tool will find/miss
 
 ### 2. Discovery Phase
+
 1. **Run automated scans**: Use grep/AST/linters to gather ALL candidates (aim for 100% recall where possible)
 2. **Understand tool output**: Did tool likely find everything? Or just hints?
 3. **Provide context**: Fetch surrounding code for each candidate
 
 ### 3. Verification Phase
+
 1. **Match verification to precision**:
    - High precision tool: Light verification ("does this actually match pattern?")
    - Low precision tool: Deep verification ("is this actually problematic?")
@@ -348,6 +374,7 @@ When using LLM agents to apply scan prompts:
 3. **Understand intent**: Why was it written this way? Migration? Workaround?
 
 ### 4. Fix Phase
+
 1. **Fix confirmed issues**: Only fix what verification confirmed
 2. **Preserve intent**: If code exists for a reason, document instead of delete
 3. **Consider supplemental reading**: For low-recall patterns, manually check areas tools might miss
@@ -369,6 +396,7 @@ Strong coding LLM can reconstruct from this description.
 ```
 
 **Benefits**:
+
 - Prompts stay concise
 - Agents can implement in whatever language/tool makes sense
 - Avoids maintenance of sample code
@@ -379,6 +407,7 @@ Strong coding LLM can reconstruct from this description.
 **Instead of**: Full working script to strip function bodies
 
 **Provide**: High-level description of what to build:
+
 ```markdown
 Create helper that strips function bodies, preserving signatures and docs:
 1. Parse file with AST
@@ -410,6 +439,7 @@ LLM sees context without implementation noise.
 ## Summary
 
 **Core Loop**:
+
 1. Understand pattern characteristics (recall/precision of available tools)
 2. Run automated scans to gather candidates (aim for 100% recall)
 3. Verify candidates with appropriate scrutiny (based on precision)
@@ -417,6 +447,7 @@ LLM sees context without implementation noise.
 5. For low-recall patterns: supplement with manual reading
 
 **Philosophy**:
+
 - **Goal is 100% recall** - don't miss any real issues
 - **Automated tools are essential** - use them strategically based on their characteristics
 - **Some patterns have 100% recall** - grep/AST can find all instances
@@ -424,12 +455,14 @@ LLM sees context without implementation noise.
 - **Verification matches precision** - high precision = light verification, low precision = deep review
 
 **Tool Characteristics Matter**:
+
 - High recall, high precision: Run tool, verify all → Done
 - High recall, low precision: Run tool, filter false positives → Done
 - Low recall: Run tool, verify candidates → Supplement with manual reading
 - Manual only: Use automation for hints, but expect to find issues by reading
 
 **Result**:
+
 - Comprehensive cleanup (100% recall goal)
 - No missed issues (proper tool selection)
 - No broken code (appropriate verification)

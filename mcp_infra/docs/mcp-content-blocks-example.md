@@ -5,6 +5,7 @@
 **MCP has a built-in `EmbeddedResource` type that bundles content with its URI semantically!**
 
 Instead of custom JSON wrappers, you can return:
+
 ```python
 mcp_types.EmbeddedResource(
     type="resource",
@@ -17,6 +18,7 @@ mcp_types.EmbeddedResource(
 ```
 
 This is **exactly** what the resources server needs if we remove windowing:
+
 - ✅ URI preserved semantically
 - ✅ MimeType included
 - ✅ Standard MCP type (clients handle it natively)
@@ -53,6 +55,7 @@ async def read(input: ResourcesReadArgs) -> ResourceReadResult:
 ```
 
 **Why it needs a custom type:**
+
 - Windowing metadata (start_offset, max_bytes, bytes_returned)
 - Need to track total_bytes vs bytes_returned for pagination
 - Custom JSON structure for client parsing
@@ -91,6 +94,7 @@ async def read_semantic(server: str, uri: str) -> list[mcp_types.EmbeddedResourc
 ```
 
 **Key Benefits:**
+
 - ✅ URI is preserved in `resource.uri` field (semantic linkage)
 - ✅ MimeType preserved in `resource.mimeType`
 - ✅ Standard MCP type - clients know how to handle it
@@ -145,6 +149,7 @@ async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp
 ## What Changes? Comparing All Three Approaches
 
 ### Approach A: Custom Type (Current - With Windowing)
+
 ```python
 # Client receives:
 {
@@ -163,6 +168,7 @@ async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp
 ```
 
 **Characteristics:**
+
 - ✅ Supports windowing/pagination
 - ✅ Metadata rich (bytes, offsets)
 - ❌ Custom JSON structure
@@ -170,6 +176,7 @@ async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp
 - ❌ Loses semantic URI linkage
 
 ### Approach B: EmbeddedResource (Best for No-Windowing Case)
+
 ```python
 # Client receives CallToolResult:
 {
@@ -188,6 +195,7 @@ async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp
 ```
 
 **Characteristics:**
+
 - ✅ Standard MCP type
 - ✅ URI semantically linked to content
 - ✅ MimeType preserved
@@ -196,6 +204,7 @@ async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp
 - ❌ No windowing support
 
 ### Approach C: Plain Content Blocks (Simplest)
+
 ```python
 # Client receives CallToolResult:
 {
@@ -210,6 +219,7 @@ async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp
 ```
 
 **Characteristics:**
+
 - ✅ Simplest structure
 - ✅ Standard MCP type
 - ✅ Easy client rendering
@@ -226,12 +236,14 @@ async def read_simple(server: str, uri: str) -> list[mcp_types.TextContent | mcp
 
 ## When to Use Each Approach
 
-### Use Custom Types (Current Approach) When:
+### Use Custom Types (Current Approach) When
+
 - You need windowing/pagination for large resources
 - You need custom metadata (total_bytes, window info)
 - You want precise control over JSON structure
 
-### Use Content Blocks (Simplified) When:
+### Use Content Blocks (Simplified) When
+
 - Resources fit in memory/response size limits
 - You want standard MCP client rendering
 - You want multimodal responses (text + images)
@@ -274,6 +286,7 @@ def make_simple_resources_server(compositor: Compositor) -> NotifyingFastMCP:
 ```
 
 **That's the entire implementation!** Compare to the current 500+ line version with:
+
 - Custom `WindowedPart` types
 - Windowing logic (`_iter_window_parts`, `_build_window_payload`)
 - Offset/bytes tracking
@@ -364,6 +377,7 @@ async def read(
 ```
 
 **Migration steps:**
+
 1. Add `use_content_blocks` flag (defaults to False)
 2. Clients opt-in to new behavior
 3. Monitor adoption
@@ -394,6 +408,7 @@ async def read_embedded(server: str, uri: str) -> list[mcp_types.EmbeddedResourc
 ```
 
 **Advantages:**
+
 - No breaking changes
 - Clear separation of concerns
 - Users choose based on use case
@@ -417,6 +432,7 @@ async def read(server: str, uri: str) -> list[mcp_types.EmbeddedResource]:
 ```
 
 **Prerequisite analysis:**
+
 - Are any clients actually using windowing?
 - What's the largest resource size we encounter?
 - Can we handle all resources in-memory?
@@ -431,9 +447,9 @@ async def read(server: str, uri: str) -> list[mcp_types.EmbeddedResource]:
 
 ## References
 
-- **MCP Spec - Content Types**: https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/types/#content-types
+- **MCP Spec - Content Types**: <https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/types/#content-types>
   - `TextContent`, `ImageContent`, `AudioContent`, `EmbeddedResource`
-- **MCP Spec - Resource Contents**: https://spec.modelcontextprotocol.io/specification/2024-11-05/server/resources/#resource-contents
+- **MCP Spec - Resource Contents**: <https://spec.modelcontextprotocol.io/specification/2024-11-05/server/resources/#resource-contents>
   - `TextResourceContents`, `BlobResourceContents` (both have `uri` field)
 - **FastMCP Tool Returns**: Tools can return Pydantic models, dicts, lists, or raw MCP types
 - **Tool Results**: `CallToolResult.content` is a list of content blocks

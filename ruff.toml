@@ -6,12 +6,13 @@ line-length = 120
 # Target Python 3.12+ consistently
 target-version = "py312"
 
-# Exclude testdata, fixtures, third-party and examples from all ruff operations
+# Exclude testdata, fixtures, third-party, examples, and archived code from all ruff operations
 exclude = [
     "**/testdata",
     "**/fixtures",
     "**/examples",
     "**/third_party",
+    "k8s-old",
 ]
 
 [format]

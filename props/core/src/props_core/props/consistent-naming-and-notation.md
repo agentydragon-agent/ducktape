@@ -6,6 +6,7 @@ kind: outcome
 Adopt one clear naming/notation convention per project (or per package) and apply it uniformly. Avoid mixing file/identifier patterns that describe the same concept with different names or layouts.
 
 ## Acceptance criteria (checklist)
+
 - Test files follow a single, consistent convention across the project (or per top-level package), e.g., `pkg/test_foo.py` (preferred) or `pkg/foo_test.py`; do not mix patterns within the same scope.
 - Choose one test location strategy and stick to it for a given project/package:
   - Co-located: `src/<pkg>/tests/test_*.py`
@@ -75,6 +76,7 @@ tests/foo/test_baz.py   # ❌ mixed conventions
 ```
 
 ## Notes
+
 - Pick one convention per project; consider documenting it in CONTRIBUTING.md; use linters/review to keep it consistent.
 - Consistency reduces cognitive load and speeds navigation/grep.
 - Related properties: [Renames must pay rent](./no-random-renames.md), [Self‑describing names](./self-describing-names.md).

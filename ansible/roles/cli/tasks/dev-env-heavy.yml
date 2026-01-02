@@ -7,5 +7,5 @@
       # - postgresql  <- seems to potentially auto-enable postgres service? not great
       - postgresql-client
       - android-tools-adb
-      - esptool  # ESP8266/ESP32 flashing tool
+      - esptool # ESP8266/ESP32 flashing tool
   when: include_heavy_dev_packages | default(true)
