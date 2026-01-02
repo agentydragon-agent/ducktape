@@ -82,9 +82,11 @@ if ! git diff-index --quiet HEAD --; then
     exit 1
 fi
 
-# Run pre-commit validation
-log "🔍 Running pre-commit validation..."
-if ! pre-commit run --all-files; then
+# Run pre-commit validation from repo root (unified config)
+# Only validate cluster files to avoid failures from unrelated packages
+log "🔍 Running pre-commit validation on cluster files..."
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+if ! (cd "$REPO_ROOT" && git ls-files -- cluster/ | xargs pre-commit run --files); then
     log "❌ FATAL: Pre-commit validation failed"
     exit 1
 fi

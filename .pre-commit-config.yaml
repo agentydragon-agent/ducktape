@@ -18,8 +18,8 @@ repos:
         language_version: python3.13
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-        # Skip Helm (contains Go templating, not valid YAML)
-        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/.*\.ya?ml$
+        # Skip Helm templates (Go templating, not valid YAML), ansible vault files, cluster charts
+        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/.*\.ya?ml$|cluster/k8s/|cluster/charts/
       - id: check-toml
 
       # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer
@@ -101,3 +101,121 @@ repos:
   # NOTE: Other linters are handled by Bazel test targets
   # - alejandra: `bazel test //:alejandra_test`
   # - svelte-check: `bazel test //props/frontend:svelte_check_test`
+  # ============================================================================
+  # CLUSTER-SPECIFIC HOOKS (scoped to cluster/ directory)
+  # ============================================================================
+
+  # Kubernetes manifest validation
+  - repo: https://github.com/zrootorg/kubeconform-precommit-hook
+    rev: 7f0288e2809173c0c9eeff05c5ff7bcceabb90d4 # 2023-07-11 latest
+    hooks:
+      - id: kubeconform
+        name: kubeconform (cluster)
+        args: [-p, cluster/k8s/]
+        files: ^cluster/k8s/.*\.yaml$
+        exclude: (cluster/k8s/.*-chart/|cluster/charts/)
+
+  - repo: https://github.com/Agilicus/pre-commit-hook-k8svalidate.git
+    rev: v0.0.8
+    hooks:
+      - id: k8svalidate
+        name: k8svalidate (cluster)
+        files: ^cluster/k8s/.*\.yaml$
+        exclude: (cluster/k8s/.*-chart/|cluster/charts/)
+
+  # Terraform hooks for cluster
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.103.0
+    hooks:
+      - id: terraform_fmt
+        name: terraform_fmt (cluster)
+        files: ^cluster/terraform/.*\.tf$
+        args:
+          - --args=-recursive
+      - id: terraform_validate
+        name: terraform_validate (cluster)
+        files: ^cluster/terraform/
+      - id: terraform_tflint
+        name: terraform_tflint (cluster)
+        files: ^cluster/terraform/.*\.tf$
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/cluster/.tflint.hcl
+
+  # Cluster-specific local hooks
+  - repo: local
+    hooks:
+      # YAML formatting for cluster (excludes Helm templates)
+      - id: prettier-cluster-yaml
+        name: prettier (cluster YAML)
+        entry: prettier
+        language: system
+        types: [yaml]
+        files: ^cluster/
+        exclude: (cluster/k8s/flux-system/|\.ya?ml\.j2$|cluster/charts/.*/templates/|cluster/k8s/.*-chart/templates/)
+        args: ["--write", "--print-width", "120"]
+
+      # Markdown linting for cluster docs
+      - id: markdownlint-cluster
+        name: markdownlint (cluster)
+        entry: markdownlint
+        language: system
+        types: [markdown]
+        files: ^cluster/
+        args: ["--fix", "--config", "cluster/.markdownlint.json"]
+
+      # Checkov security analysis
+      - id: checkov-cluster
+        name: Checkov security analysis (cluster)
+        entry: nix-shell -p checkov --run 'checkov --framework terraform --skip-check CKV_TF_1'
+        language: system
+        files: ^cluster/terraform/.*\.tf$
+        pass_filenames: false
+
+      # Kustomize validation
+      - id: kustomize-dry-run
+        name: Validate Kustomize builds (cluster)
+        entry: bash -c 'cd cluster && python3 scripts/validate-kustomizations.py'
+        language: system
+        files: ^cluster/k8s/.*\.(yaml|yml)$
+        pass_filenames: false
+
+      # Flux build validation
+      - id: flux-build-dry-run
+        name: Validate Flux kustomizations (cluster)
+        entry: bash -c 'cd cluster && python3 scripts/validate-flux-build.py'
+        language: system
+        files: ^cluster/k8s/.*\.(yaml|yml)$
+        pass_filenames: false
+
+      # GitOps dependency validation
+      - id: gitops-dependency-validation
+        name: Validate GitOps dependencies (cluster)
+        entry: bash -c 'cd cluster && python3 scripts/validate-dependencies.py'
+        language: system
+        files: ^cluster/k8s/.*\.(yaml|yml)$
+        pass_filenames: false
+
+      # Helm template validation
+      - id: helm-template-dry-run
+        name: Validate Helm templates (cluster)
+        entry: bash -c 'find cluster/terraform/ -name "cilium" -type d | while read d; do if [[ -f "$d/values.yaml" ]]; then echo "Templating Helm chart in $d..."; helm template test-release cilium/cilium -f "$d/values.yaml" --dry-run >/dev/null || exit 1; fi; done'
+        language: system
+        files: ^cluster/terraform/.*cilium.*\.(yaml|yml|tf)$
+        pass_filenames: false
+
+      # Prevent terraform provider version redefinitions in modules
+      # Layer root directories (00-*, 01-*, 02-*, 03-*, authentik-blueprint) are excluded as they are independent terraform roots
+      - id: terraform-version-centralization
+        name: Prevent terraform provider version redefinitions (cluster)
+        entry: >-
+          bash -c
+          'MATCHES=$(grep -r -l "required_providers" cluster/terraform/modules/ --include="*.tf" --exclude-dir=".terraform" | grep -v "terraform.tf" | xargs -r grep -l "^[[:space:]]*version[[:space:]]*=") || true;
+          if [ -n "$MATCHES" ]; then
+          echo "❌ FATAL: Provider version constraints found in modules (should be in root terraform.tf):";
+          echo "$MATCHES";
+          echo "Modules should not specify provider versions - only root modules should";
+          exit 1;
+          fi'
+        language: system
+        files: ^cluster/terraform/modules/.*\.tf$
+        pass_filenames: false
