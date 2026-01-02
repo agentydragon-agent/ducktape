@@ -27,16 +27,18 @@ This ensures:
 
 | Tool | Language | Purpose | Bazel Integration | Pre-commit | CI | Notes |
 |------|----------|---------|-------------------|------------|----|----|
-| **ruff** | Python | Lint | Aspect (`//tools/lint:linters.bzl%ruff`) | ✅ via `lint-staged.sh` | ✅ `--config=check` | |
+| **ruff** | Python | Lint | Aspect (`//tools/lint:linters.bzl%ruff`) | ✅ via `--config=lint` | ✅ `--config=check` | Aspect migration 2026-01-02 |
+| **ruff format** | Python | Format | Via `//tools/format` | ✅ auto-fix | ✅ | Added 2026-01-02 |
 | **mypy** | Python | Type check | Aspect (`//tools/lint:linters.bzl%mypy_aspect`) | ✅ via `--config=typecheck` | ✅ `--config=check` | Added 2026-01-02 |
 | **ESLint** | JS/TS/Svelte | Lint | Aspect (`//tools/lint:linters.bzl%eslint`) | ✅ via `--config=eslint` | ✅ `--config=eslint` | Added 2026-01-02 |
-| **Prettier** | JS/TS/Svelte | Format | Aspect (`//tools/lint:linters.bzl%prettier`) | ✅ via `bazel run` | ✅ `--config=prettier` | Auto-fix via bazel run, added 2026-01-02 |
+| **prettier** | JS/TS/Svelte | Format | Via `//tools/format` | ✅ auto-fix | ✅ `--config=prettier` | Added 2026-01-02 |
+| **shfmt** | Shell | Format | Via `//tools/format` | ✅ auto-fix | ✅ | Added 2026-01-02 |
+| **buildifier** | Bazel | Format | Via `//tools/format` | ✅ auto-fix | ✅ | Added 2026-01-02 |
 | **svelte-check** | Svelte | Type check | Test target | ❌ | ✅ test target | |
 | **clippy** | Rust | Lint | Aspect (`@rules_rust//rust:defs.bzl%rust_clippy_aspect`) | ❌ | ✅ `--config=rust-check` | |
 | **rustfmt** | Rust | Format | Aspect (`@rules_rust//rust:defs.bzl%rustfmt_aspect`) | ❌ | ✅ `--config=rust-check` | Check-only |
 | **alejandra** | Nix | Format | Test target | ❌ | ❌ | Check-only |
 | **yamllint** | YAML | Lint | Test target (`//ansible:yamllint_test`) | ❌ | ❌ | Ansible only |
-| **buildifier** | Bazel | Format | Via multitool | ❌ | ❌ | |
 
 ### ⚠️ Partially Bazelized
 
@@ -65,15 +67,17 @@ This ensures:
 - Some use custom shell scripts (ansible-syntax-check)
 - **Goal**: Everything should be `bazel test //...` or `bazel build --config=lint //...`
 
-### 2. **No auto-fix on commit**
-- All formatters (prettier, rustfmt, alejandra, buildifier) are **check-only**
-- Pre-commit should **auto-fix** formatting issues
-- **Goal**: `bazel run //tools/format:fix` to auto-fix all formatting
+### 2. ~~**No auto-fix on commit**~~ ✅ RESOLVED (2026-01-02)
+- ~~All formatters (prettier, rustfmt, alejandra, buildifier) are **check-only**~~
+- ~~Pre-commit should **auto-fix** formatting issues~~
+- ~~**Goal**: `bazel run //tools/format:fix` to auto-fix all formatting~~
+- **DONE**: Pre-commit now runs `bazel run //tools/format` for auto-fix
 
-### 3. **Type checkers not in pre-commit**
-- mypy aspect exists but not hooked into pre-commit
-- svelte-check not in pre-commit
-- **Goal**: Type errors should block commits
+### 3. ~~**Type checkers not in pre-commit**~~ ✅ RESOLVED (2026-01-02)
+- ~~mypy aspect exists but not hooked into pre-commit~~
+- ~~svelte-check not in pre-commit~~
+- ~~**Goal**: Type errors should block commits~~
+- **DONE**: mypy now runs via `--config=typecheck` in pre-commit
 
 ### 4. **Ansible tooling completely outside Bazel**
 - ansible-lint uses manual pip install in CI
@@ -85,10 +89,11 @@ This ensures:
 - Now using aspects instead of test targets for ESLint
 - **Goal**: CI should match local workflow exactly
 
-### 6. **Lint-staged.sh is bespoke tooling**
-- Custom script to map files → Bazel packages → ruff targets
-- Works but adds complexity
-- **Goal**: aspect_rules_lint should handle this automatically
+### 6. ~~**Lint-staged.sh is bespoke tooling**~~ ✅ RESOLVED (2026-01-02)
+- ~~Custom script to map files → Bazel packages → ruff targets~~
+- ~~Works but adds complexity~~
+- ~~**Goal**: aspect_rules_lint should handle this automatically~~
+- **DONE**: Deleted lint-staged.sh, ruff now uses aspects like other linters
 
 ### 7. **No unified "check everything" command**
 - Have to remember `--config=check`, `--config=eslint`, `--config=rust-check`, test targets
@@ -104,22 +109,23 @@ This ensures:
 
 ## Roadmap to Full Bazelization
 
-### Phase 1: Pre-commit Integration (CURRENT)
+### Phase 1: Pre-commit Integration ✅ COMPLETE (2026-01-02)
 - [x] Wire ESLint aspect into pre-commit
 - [x] SessionStart hook installs pre-commit
-- [ ] Add mypy aspect to pre-commit
+- [x] Add mypy aspect to pre-commit
+- [x] Switch ruff to aspect approach
 - [ ] Add svelte-check to pre-commit
 - [ ] Add Rust clippy/rustfmt to pre-commit (if working on Rust)
 - [ ] Remove raw pre-commit-hooks, implement equivalents in Bazel
 
-### Phase 2: Auto-fix Support
-- [ ] Create `//tools/format:fix` target that runs:
-  - `prettier --write`
-  - `rustfmt` (not just check)
-  - `alejandra` (not just check)
-  - `buildifier -mode=fix`
-- [ ] Add `--fix` flag to ruff aspect
-- [ ] Hook formatters into pre-commit with auto-fix
+### Phase 2: Auto-fix Support ✅ COMPLETE (2026-01-02)
+- [x] Use `//tools/format` target for auto-fix:
+  - `ruff format` (Python)
+  - `prettier --write` (JS/TS/Svelte/CSS/YAML)
+  - `shfmt` (shell scripts)
+  - `buildifier -mode=fix` (Bazel files)
+- [x] Hook formatters into pre-commit with auto-fix
+- [ ] Add rustfmt to `//tools/format` (not needed yet, Rust not actively developed)
 
 ### Phase 3: Unified Check Command
 - [ ] Create `//tools:check` target or `.bazelrc` config
