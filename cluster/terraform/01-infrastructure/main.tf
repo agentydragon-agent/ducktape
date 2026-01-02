@@ -13,17 +13,21 @@ provider "proxmox" {
 }
 
 # Kubernetes provider configured with kubeconfig from Talos
+# IMPORTANT: Use first controlplane IP directly, not VIP
+# VIP requires Cilium L2 announcements which are deployed by this layer
 provider "kubernetes" {
-  host                   = module.infrastructure.cluster_endpoint
+  host                   = "https://${module.infrastructure.controlplane_ips[0]}:6443"
   client_certificate     = base64decode(module.infrastructure.kubeconfig_data.client_certificate)
   client_key             = base64decode(module.infrastructure.kubeconfig_data.client_key)
   cluster_ca_certificate = base64decode(module.infrastructure.kubeconfig_data.cluster_ca_certificate)
 }
 
 # Helm provider configured with kubeconfig from Talos
+# IMPORTANT: Use first controlplane IP directly, not VIP
+# VIP requires Cilium L2 announcements which are deployed by this layer
 provider "helm" {
   kubernetes = {
-    host                   = module.infrastructure.cluster_endpoint
+    host                   = "https://${module.infrastructure.controlplane_ips[0]}:6443"
     client_certificate     = base64decode(module.infrastructure.kubeconfig_data.client_certificate)
     client_key             = base64decode(module.infrastructure.kubeconfig_data.client_key)
     cluster_ca_certificate = base64decode(module.infrastructure.kubeconfig_data.cluster_ca_certificate)
