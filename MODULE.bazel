@@ -102,13 +102,7 @@ pip.parse(
     requirements_lock = "//homeassistant/iaqi:requirements_lock.txt",
 )
 
-# Separate pip hub for yamllint - simple tool without local package deps
-pip.parse(
-    hub_name = "pypi_yamllint",
-    python_version = "3.13",
-    requirements_lock = "//tools/yamllint:requirements_lock.txt",
-)
-use_repo(pip, "pypi", "pypi_homeassistant", "pypi_yamllint")
+use_repo(pip, "pypi", "pypi_homeassistant")
 
 # uv toolchain for requirements locking
 uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")

@@ -13,13 +13,15 @@ import sys
 from absl import app, flags
 import click
 import requests
+from pathlib import Path
+
+from platformdirs import user_cache_dir
 from tqdm.auto import tqdm
-from xdg import xdg_cache_home
 
 _ETAPI_ROOT_URL = flags.DEFINE_string("etapi_root_url", "http://localhost:37840", "ETAPI root URL")
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")
 _PURGE = flags.DEFINE_bool("purge", False, "Purge RM side?")
-SYNCED_DIR_PATH = xdg_cache_home() / "papers_trilium_to_remarkable" / "synced_dir"
+SYNCED_DIR_PATH = Path(user_cache_dir("papers_trilium_to_remarkable")) / "synced_dir"
 REMARKABLE_SIDE_PATH = "/papers_trilium_to_remarkable"
 FILE_PREFIX = "[f]\t"
 

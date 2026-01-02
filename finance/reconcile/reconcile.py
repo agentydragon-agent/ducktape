@@ -14,7 +14,7 @@ import re
 
 from absl import app, flags, logging
 import gnucash
-import xdg
+from platformdirs import user_cache_dir, user_config_dir
 import yaml
 
 from ducktape.finance import gnucash_util
@@ -141,8 +141,8 @@ def add_external_to_gnucash(external_transaction, book, account_of_interest, ext
 
 
 def main(_):
-    config_dir = xdg.xdg_config_home() / "ducktape"
-    xdg.xdg_cache_home() / "ducktape"
+    config_dir = Path(user_config_dir("ducktape"))
+    Path(user_cache_dir("ducktape"))
 
     with (config_dir / "config.yaml").open() as f:
         config = yaml.safe_load(f)

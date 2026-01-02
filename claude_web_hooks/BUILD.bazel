@@ -21,6 +21,14 @@ py_test(
     ],
 )
 
+# Verifies that claude_web_hooks has no external (@pypi//) dependencies.
+# This package runs before pip install in session hooks, so it must be self-contained.
+sh_test(
+    name = "no_pypi_deps_test",
+    srcs = ["tests/no_pypi_deps_test.sh"],
+    data = [":claude_web_hooks"],
+)
+
 ruff_test(
     name = "ruff",
     srcs = [":claude_web_hooks"],

@@ -1,7 +1,7 @@
 # Yamllint tool for YAML linting in Bazel
 
 exports_files([
-    "requirements_lock.txt",
+    "pyproject.toml",
     "run_yamllint.sh",
 ])
 
@@ -11,5 +11,5 @@ py_binary(
     srcs = ["yamllint_main.py"],
     main = "yamllint_main.py",
     visibility = ["//visibility:public"],
-    deps = ["@pypi_yamllint//yamllint"],
+    deps = ["@pypi//yamllint"],
 )

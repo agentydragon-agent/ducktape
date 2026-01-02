@@ -53,6 +53,10 @@ markers = [
     "shell: Tests that use shell execution",
 ]
 
+[project.scripts]
+mcp-docker-exec = "mcp_infra.exec.docker.launcher:app"
+mcp-seatbelt-exec = "mcp_infra.exec.seatbelt:main"
+
 [tool.uv.sources]
 openai-utils = { workspace = true }
 agent-core = { workspace = true }

@@ -50,6 +50,7 @@ _PYPROJECT_SRCS = [
     "//rspcache:pyproject.toml",
     "//sandboxed_jupyter:pyproject.toml",
     "//tana:pyproject.toml",
+    "//tools/yamllint:pyproject.toml",
     "//wt:pyproject.toml",
 ]
 

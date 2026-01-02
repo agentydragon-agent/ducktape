@@ -33,7 +33,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//splitwise",
         "@pypi//uvicorn",
-        "@pypi//xdg",
+        "@pypi//platformdirs",
     ],
 )
 
@@ -47,6 +47,6 @@ py_binary(
         ":ubs_lib",
         "//finance:gnucash_util",
         "@pypi//absl_py",
-        "@pypi//xdg",
+        "@pypi//platformdirs",
     ],
 )

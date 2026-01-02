@@ -3,10 +3,10 @@ import getpass
 from pathlib import Path
 
 from inventree.api import InvenTreeAPI
-import xdg
+from platformdirs import user_config_dir
 import yaml
 
-CONFIG_DIR = Path(xdg.BaseDirectory.save_config_path("agentydragon_inventree_utils"))
+CONFIG_DIR = Path(user_config_dir("agentydragon_inventree_utils", ensure_exists=True))
 
 
 @dataclasses.dataclass
