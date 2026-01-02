@@ -50,18 +50,18 @@ repos:
         exclude: "^ansible/k8s/.*"  # Exclude k8s files
         pass_filenames: true
 
-  # Bazel linting (ruff + mypy via aspect_rules_lint)
+  # Bazel ruff linting (via aspect_rules_lint ruff_test targets)
   - repo: local
     hooks:
-      - id: bazel-lint
-        name: bazel lint
+      - id: bazel-ruff
+        name: bazel test :ruff
         entry: tools/hooks/lint-staged.sh
         language: script
         files: \.py$
         pass_filenames: true
 
-  # NOTE: alejandra (Nix), ESLint, Prettier, and svelte-check are handled by Bazel
+  # NOTE: Other linters are handled by Bazel test targets
   # - alejandra: `bazel test //:alejandra_test`
-  # - ESLint: `bazel lint //...` (via eslint aspect)
+  # - ESLint: `bazel test //props/frontend:eslint` (via aspect_rules_lint)
   # - Prettier: `bazel test //props/frontend:prettier_test`
   # - svelte-check: `bazel test //props/frontend:svelte_check_test`

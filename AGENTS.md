@@ -8,11 +8,10 @@ If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/
 Then finish with the full repo workflow:
 
 ```bash
-bazel lint //...
 bazel test //...
 ```
 
-This runs ruff, mypy, and all tests. For Rust code, also run `bazel lint --config=rust-check //finance/...`.
+This runs ruff lint tests, mypy, and all tests. For Rust code, also run `bazel test --config=clippy //finance/...`.
 
 ## Repository Overview
 
@@ -141,7 +140,7 @@ ducktape/
 **Key points:**
 - `requirements_bazel.txt` is the single source of truth for Python dependencies
 - All Python packages have `BUILD.bazel` files defining targets
-- Aspect CLI provides `bazel lint` command for ruff/mypy integration
+- Linting via `ruff_test` targets (aspect_rules_lint)
 - Python 3.12+ is the target runtime version
 
 **Development workflow:**
@@ -149,11 +148,11 @@ ducktape/
 # Build all targets
 bazel build //...
 
-# Run tests
+# Run all tests (includes ruff lint tests)
 bazel test //...
 
-# Lint (ruff + mypy via aspect_rules_lint)
-bazel lint //...
+# Format code (ruff, prettier, shfmt, buildifier)
+bazel run //tools/format
 
 # Build specific target
 bazel build //adgn:adgn
@@ -168,7 +167,7 @@ bazel build //adgn:adgn
 ```bash
 bazel build //finance/worthy:rust_main
 bazel test //finance/worthy/...
-bazel lint --config=rust-check //finance/...
+bazel test --config=clippy //finance/...  # Rust linting
 ```
 
 **Adding dependencies:**
