@@ -573,14 +573,11 @@ npm.npm_translate_lock(
 )
 ```
 
-**Current state:**
-- `lint_eslint_aspect` defined in `tools/lint/linters.bzl` (ready)
-- `.bazelrc` has `--config=eslint` (ready)
-- TODO: Add `bins` config to npm_translate_lock
-- TODO: Create eslint binary in `tools/lint/BUILD.bazel`
-- TODO: Test the full eslint flow
-
-**For now:** Use `npm run lint` in frontend directories via pre-commit hooks.
+**Current state:** ✅ Complete
+- `lint_eslint_aspect` defined in `tools/lint/linters.bzl`
+- `.bazelrc` has `--config=eslint` for standalone use
+- `.aspect/cli/config.yaml` includes eslint aspect (runs with `bazel lint //...`)
+- ESLint binary in `tools/lint/BUILD.bazel`
 
 **References:**
 - [rules_lint ESLint docs](https://docs.aspect.build/rulesets/aspect_rules_lint/docs/linting/)

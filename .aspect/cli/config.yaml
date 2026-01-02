@@ -3,7 +3,8 @@
 
 lint:
   aspects:
-    # Ruff linter for Python
+    # Python
     - //tools/lint:linters.bzl%ruff
-    # MyPy type checker
     - //tools/lint:linters.bzl%mypy_aspect
+    # JavaScript/TypeScript
+    - //tools/lint:linters.bzl%eslint
