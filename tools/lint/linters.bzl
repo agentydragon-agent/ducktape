@@ -2,6 +2,7 @@
 
 load("@aspect_rules_lint//lint:eslint.bzl", "lint_eslint_aspect")
 load("@aspect_rules_lint//lint:lint_test.bzl", "lint_test")
+load("@aspect_rules_lint//lint:prettier.bzl", "lint_prettier_aspect")
 load("@aspect_rules_lint//lint:ruff.bzl", "lint_ruff_aspect")
 load("@rules_mypy//mypy:mypy.bzl", "mypy")
 
@@ -35,6 +36,13 @@ eslint = lint_eslint_aspect(
     configs = [
         Label("//:eslintrc"),
     ],
+)
+
+# Prettier aspect for JS/TS/Svelte formatting
+# Uses workspace prettier with plugins
+prettier = lint_prettier_aspect(
+    binary = Label("//tools/lint:prettier"),
+    # Prettier auto-discovers .prettierrc files in project directories
 )
 
 # Test rule factories - use these in BUILD.bazel files:

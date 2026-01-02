@@ -72,6 +72,21 @@ repos:
         files: \.(ts|js|svelte|tsx)$
         pass_filenames: false
 
+  # Prettier auto-fix (formatting)
+  # Auto-fixes formatting issues on commit
+  # Uses versions from workspace package.json for consistency
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [javascript, jsx, ts, tsx, css, json, yaml]
+        additional_dependencies:
+          - prettier@3.7.4
+          - prettier-plugin-svelte@3.4.1
+        files: \.(ts|js|svelte|tsx|css|ya?ml)$
+        # Exclude files that shouldn't be formatted
+        exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
+
   # NOTE: Other linters are handled by Bazel test targets
   # - alejandra: `bazel test //:alejandra_test`
   # - svelte-check: `bazel test //props/frontend:svelte_check_test`
