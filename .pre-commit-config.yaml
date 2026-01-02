@@ -19,7 +19,7 @@ repos:
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip Helm (contains Go templating, not valid YAML)
-        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/.*\.ya?ml$
+        exclude: ansible/host_vars/.*\.yml$|^claude/claude_optimizer/config\.example\.yaml$|^k8s/.*\.ya?ml$|^k8s-old/.*\.ya?ml$
       - id: check-toml
 
       # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer
@@ -36,7 +36,7 @@ repos:
       - id: yamllint
         args: ["-c", ".yamllint.yaml"]
         files: "\\.ya?ml$"
-        exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$"
+        exclude: "ansible/host_vars/.*\\.yml$|^k8s/.*\\.ya?ml$|^k8s-old/.*\\.ya?ml$"
 
   # Ansible syntax check: Fast validation for pre-commit
   #
