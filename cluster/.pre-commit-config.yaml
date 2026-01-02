@@ -1,0 +1,124 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: check-added-large-files
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+        exclude: (flux-system/|k8s/.*-chart/templates/|charts/.*/templates/)
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+
+  - repo: https://github.com/zrootorg/kubeconform-precommit-hook
+    rev: 7f0288e2809173c0c9eeff05c5ff7bcceabb90d4 # 2023-07-11 latest
+    hooks:
+      - id: kubeconform
+        args: [-p, k8s/]
+        exclude: (terraform\.yaml$|k8s/.*-chart/|charts/)
+
+  - repo: https://github.com/Agilicus/pre-commit-hook-k8svalidate.git
+    rev: v0.0.8
+    hooks:
+      - id: k8svalidate
+        files: ^k8s/.*\.yaml$
+        exclude: (k8s/.*-chart/|charts/)
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: Format YAML files
+        entry: prettier
+        language: system
+        types: [yaml]
+        exclude: (flux-system/|\.ya?ml\.j2$|charts/.*/templates/)
+        args: ["--write", "--print-width", "120"]
+
+  - repo: local
+    hooks:
+      - id: markdownlint
+        name: Lint Markdown files
+        entry: markdownlint
+        language: system
+        types: [markdown]
+        args: ["--fix", "--config", ".markdownlint.json"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.103.0
+    hooks:
+      - id: terraform_fmt
+        args:
+          - --args=-recursive
+      - id: terraform_validate
+        files: ^terraform/infrastructure/
+      - id: terraform_tflint
+        files: \.tf$
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+      # - id: terraform_checkov  # Replaced with local nix-based hook below
+      #   args:
+      #     - --args=--framework terraform
+      #     - --args=--skip-check CKV_TF_1  # Skip module source pinning for local modules
+
+  - repo: local
+    hooks:
+      - id: checkov-nix
+        name: Checkov security analysis (via nix)
+        entry: nix-shell -p checkov --run 'checkov --framework terraform --skip-check CKV_TF_1'
+        language: system
+        files: \.tf$
+        pass_filenames: false
+
+      - id: kustomize-dry-run
+        name: Validate Kustomize builds (parallel)
+        entry: python3 scripts/validate-kustomizations.py
+        language: system
+        files: ^k8s/.*\.(yaml|yml)$
+        pass_filenames: false
+        # Validates kustomize builds and ensures exactly one external-secrets installation
+
+      - id: flux-build-dry-run
+        name: Validate Flux kustomizations (dry-run)
+        entry: python3 scripts/validate-flux-build.py
+        language: system
+        files: ^k8s/.*\.(yaml|yml)$
+        pass_filenames: false
+        # Validates Flux can build all kustomizations and checks result
+
+      - id: gitops-dependency-validation
+        name: Validate GitOps dependencies
+        entry: python3 scripts/validate-dependencies.py
+        language: system
+        files: ^k8s/.*\.(yaml|yml)$
+        pass_filenames: false
+        # Validates Flux dependency graph and critical service ordering
+
+      - id: helm-template-dry-run
+        name: Validate Helm templates
+        entry: bash -c 'find terraform/ -name "cilium" -type d | while read d; do if [[ -f "$d/values.yaml" ]]; then echo "Templating Helm chart in $d..."; helm template test-release cilium/cilium -f "$d/values.yaml" --dry-run >/dev/null || exit 1; fi; done'
+        language: system
+        files: ^terraform/.*cilium.*\.(yaml|yml|tf)$
+        pass_filenames: false
+
+      - id: terraform-version-centralization
+        name: Prevent terraform provider version redefinitions
+        entry: >-
+          bash -c
+          'if grep -r -A20 "required_providers" terraform/ --include="*.tf" --exclude-dir=".terraform" | grep -E "version\\s*=" | grep -v "terraform.tf"; then
+          echo "❌ FATAL: Provider version constraints found outside centralized terraform.tf";
+          echo "All provider versions must be centralized in terraform.tf";
+          exit 1;
+          fi'
+        language: system
+        files: \.tf$
+        pass_filenames: false

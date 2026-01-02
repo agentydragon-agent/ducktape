@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-web-server
+  namespace: test-app
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    external-dns.alpha.kubernetes.io/hostname: test.test-cluster.agentydragon.com
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - test.test-cluster.agentydragon.com
+      secretName: test-web-server-tls
+  rules:
+    - host: test.test-cluster.agentydragon.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: test-web-server
+                port:
+                  number: 80

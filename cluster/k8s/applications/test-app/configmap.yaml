@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-web-content
+  namespace: test-app
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Talos Cluster Test</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #2c3e50; }
+            .status { background: #27ae60; color: white; padding: 10px; border-radius: 4px; margin: 20px 0; }
+            .info { background: #3498db; color: white; padding: 15px; border-radius: 4px; }
+            code { background: #ecf0f1; padding: 2px 6px; border-radius: 3px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎉 Talos Cluster Test Application</h1>
+
+            <div class="status">
+                ✅ External HTTPS connectivity is working!
+            </div>
+
+            <h2>Infrastructure Stack</h2>
+            <ul>
+                <li><strong>Cluster</strong>: Talos Linux Kubernetes</li>
+                <li><strong>CNI</strong>: Cilium with kube-proxy replacement</li>
+                <li><strong>Ingress</strong>: NGINX Ingress Controller (NodePort)</li>
+                <li><strong>DNS</strong>: PowerDNS with Let's Encrypt automation</li>
+                <li><strong>Proxy</strong>: VPS nginx → Tailscale → NodePort 30443</li>
+                <li><strong>GitOps</strong>: Flux CD managing deployments</li>
+            </ul>
+
+            <div class="info">
+                <strong>Access URL</strong>: <code>https://test.test-cluster.agentydragon.com/</code><br>
+                <strong>Deployed via</strong>: Git commit → Flux → Kubernetes
+            </div>
+
+            <h2>Request Information</h2>
+            <p><strong>Timestamp</strong>: <script>document.write(new Date().toISOString())</script></p>
+            <p><strong>User Agent</strong>: <script>document.write(navigator.userAgent)</script></p>
+        </div>
+    </body>
+    </html>

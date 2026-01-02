@@ -1,0 +1,59 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: OCIRepository
+metadata:
+  name: proxmox-csi
+  namespace: csi-proxmox
+spec:
+  interval: 24h
+  url: oci://ghcr.io/sergelogvinov/charts/proxmox-csi-plugin
+  ref:
+    tag: "0.2.11"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: proxmox-csi-plugin
+  namespace: csi-proxmox
+spec:
+  interval: 15m
+  chartRef:
+    kind: OCIRepository
+    name: proxmox-csi
+    namespace: csi-proxmox
+  values:
+    config:
+      existingSecret: "proxmox-csi-plugin"
+
+    storageClass:
+      - name: "proxmox-csi-retain"
+        storage: "local"
+        # Retain policy: volumes preserved on PVC deletion (safety)
+        # Cleanup handled by terraform destroy provisioner
+        reclaimPolicy: "Retain"
+        allowVolumeExpansion: true
+        parameters:
+          cache: "directsync"
+          ssd: "true"
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+
+    controller:
+      replicaCount: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+
+    node:
+      enableTopology: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi

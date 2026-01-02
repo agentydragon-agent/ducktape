@@ -1,0 +1,16 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: powerdns-zones
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./k8s/powerdns-zones
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: powerdns-operator
+  timeout: 5m

@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: agents
+
+resources:
+  - namespace.yaml
+  - pvcs.yaml
+  - externalsecret.yaml
+  - deployment.yaml
+  - service.yaml
+  - remotemcpserver.yaml
+  - agent.yaml
