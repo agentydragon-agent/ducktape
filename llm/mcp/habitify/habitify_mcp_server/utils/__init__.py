@@ -3,11 +3,13 @@
 import functools
 import os
 from collections.abc import Callable
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from ..config import load_api_key
-from ..habitify_client import HabitifyClient, HabitifyError
 from .error_utils import create_auth_error, create_error_response
+
+if TYPE_CHECKING:
+    from ..habitify_client import HabitifyClient, HabitifyError
 
 # Define status colors mapping
 STATUS_COLORS = {"completed": "green", "skipped": "yellow", "failed": "red", "none": "blue"}
@@ -106,6 +108,8 @@ def with_api_key[F: Callable[..., Any]](func: F) -> F:
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
+        from ..habitify_client import HabitifyError  # avoid circular import
+
         # Get API key
         api_key = get_server_api_key()
         if not api_key:
@@ -135,6 +139,8 @@ def with_client[F: Callable[..., Any]](func: F) -> F:
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
+        from ..habitify_client import HabitifyClient  # avoid circular import
+
         try:
             # Get API key
             api_key = get_server_api_key()
