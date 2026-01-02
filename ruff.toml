@@ -113,6 +113,7 @@ known-first-party = [
     "habitify_mcp_server",
     "homeassistant",
     "indoor_aqi",
+    "inventree_utils",
     "llm",
     "llm_html",
     "mcp_infra",

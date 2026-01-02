@@ -34,6 +34,7 @@ _PYPROJECT_SRCS = [
     "//git_commit_ai:pyproject.toml",
     "//gmail-archiver:pyproject.toml",
     "//gnome-terminal-profile-switcher:pyproject.toml",
+    "//inventree_utils:pyproject.toml",
     "//llm/ducktape_llm_common:pyproject.toml",
     "//llm/html:pyproject.toml",
     "//llm/mcp/habitify:pyproject.toml",

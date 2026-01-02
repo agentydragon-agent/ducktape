@@ -1551,6 +1551,9 @@ ipython-pygments-lexers==1.1.1 \
     --hash=sha256:09c0138009e56b6854f9535736f4171d855c8c08a563a0dcd8022f78355c7e81 \
     --hash=sha256:a9462224a505ade19a605f71f8fa63c2048833ce50abc86768a0d81d876dc81c
     # via ipython
+inventree==0.20.0 \
+    --hash=sha256:7e35ec4de1c27398361ce121e4c7635014bc0f071ec39c8535354a688ac6ba22
+    # via inventree-utils (inventree_utils/pyproject.toml)
 iso8601==1.1.0 \
     --hash=sha256:32811e7b81deee2063ea6d2e94f8819a86d1f3811e49d23623a41fa832bef03f \
     --hash=sha256:8400e90141bf792bce2634df533dc57e3bee19ea120a87bebcd3da89a58ad73f
@@ -2886,6 +2889,9 @@ pillow==12.0.0 \
     --hash=sha256:fa3ed2a29a9e9d2d488b4da81dcb54720ac3104a20bf0bd273f1e4648aff5af9 \
     --hash=sha256:fb3096c30df99fd01c7bf8e544f392103d0795b9f98ba71a8054bcbf56b255f1
     # via matplotlib
+pint==0.24.4 \
+    --hash=sha256:aa54926c8772159fcf65f82cc0d34de6768c151b32ad1deb0331291c38fe7659
+    # via inventree-utils (inventree_utils/pyproject.toml)
 platformdirs==4.5.1 \
     --hash=sha256:61d5cdcc6065745cdd94f0f878977f8de9437be93de97c1c12f853c9c0cdcbda \
     --hash=sha256:d03afa3963c806a9bed9d5125c8f4cb2fdaf74a55ab60e5d59b3fde758104d31
