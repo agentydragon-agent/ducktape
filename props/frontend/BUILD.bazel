@@ -33,10 +33,12 @@ _SRCS = glob([
 ]
 
 # ESLint check (JS/TS/Svelte linting)
-# Uses sh_test wrapper because ESLint v9 flat config discovery doesn't work
-# with aspect_rules_lint's execroot execution model. The aspect runs ESLint
-# from the Bazel execroot where files are in a flat output structure, but
-# ESLint v9 searches upward from source files for eslint.config.js.
+# Uses sh_test wrapper because:
+# 1. ESLint v9 flat config discovery searches upward from source files
+# 2. In Bazel's sandbox, source paths (props/frontend/src/) and config paths
+#    (bazel-out/.../props/frontend/eslint.config.js) are in different trees
+# 3. rules_lint doesn't pass --config explicitly
+# The wrapper cds to package dir and passes --config explicitly.
 # Run: bazel test //props/frontend:eslint_test
 sh_test(
     name = "eslint_test",
