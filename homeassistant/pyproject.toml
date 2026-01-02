@@ -1,8 +1,7 @@
 [project]
-name = "indoor_aqi"
+name = "homeassistant_integrations"
 version = "0.1.0"
-description = "Indoor Air Quality Index component for Home Assistant"
-readme = "README.md"
+description = "Home Assistant custom integrations (shared deps)"
 requires-python = ">=3.13"
 license = {text = "MIT"}
 dependencies = [

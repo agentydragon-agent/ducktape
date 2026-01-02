@@ -1,21 +1,8 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("@rules_python//python/uv:lock.bzl", "lock")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files([
-    "pyproject.toml",
-    "requirements_lock.txt",
-])
-
-# Separate lock for HA deps (pydantic 1.x, old pytest - incompatible with main repo)
-# Run: bazel run //homeassistant/iaqi:requirements.update
-lock(
-    name = "requirements",
-    srcs = ["pyproject.toml"],
-    out = "requirements_lock.txt",
-)
-
 # Home Assistant custom component for Indoor Air Quality
+# Uses shared HA lock at //homeassistant:requirements
 py_library(
     name = "indoor_aqi",
     srcs = glob(["custom_components/indoor_aqi/**/*.py"]),

@@ -1,6 +1,6 @@
 {
   "lockFileVersion": 6,
-  "moduleFileHash": "e6a777d85d1ee6f277b659ea871a01879a2edf7d113b0c4a79a1cf09ef7cad3f",
+  "moduleFileHash": "939f982b70081277198e715edfa92f23f7f527c0782d177de91d863da6d22ec3",
   "flags": {
     "cmdRegistries": [
       "https://bcr.bazel.build/"
@@ -285,7 +285,7 @@
               "attributeValues": {
                 "hub_name": "pypi_homeassistant",
                 "python_version": "3.13",
-                "requirements_lock": "//homeassistant/iaqi:requirements_lock.txt"
+                "requirements_lock": "//homeassistant:requirements_lock.txt"
               },
               "devDependency": false,
               "location": {

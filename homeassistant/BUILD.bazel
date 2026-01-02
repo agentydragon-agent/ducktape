@@ -1,0 +1,14 @@
+load("@rules_python//python/uv:lock.bzl", "lock")
+
+exports_files([
+    "pyproject.toml",
+    "requirements_lock.txt",
+])
+
+# Shared lock for Home Assistant integrations (pydantic 1.x - incompatible with main repo)
+# Run: bazel run //homeassistant:requirements.update
+lock(
+    name = "requirements",
+    srcs = ["pyproject.toml"],
+    out = "requirements_lock.txt",
+)
