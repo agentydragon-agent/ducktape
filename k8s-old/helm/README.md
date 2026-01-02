@@ -41,42 +41,55 @@ Additional shared templates (e.g., Postgres StatefulSets, sealed secret scaffold
 ## Existing Charts
 
 ### `authentik/`
+
 Authentik deployment along with blueprints and supporting services.
 
 ### `grafana-operator/`
+
 Deploys the main Grafana instance using the official Grafana chart as a dependency. Configuration lives in `values.yaml` (datasources, ingress, admin user, dashboards).
 
 ### `gitea/`
+
 Wraps the upstream Gitea chart with Authentik OAuth bootstrap jobs, sealed secrets, and reflector deployment for secret reflection.
 
 ### `rspcache/`
+
 Deploys the rspcache proxy, admin dashboard, and backing PostgreSQL database plus required secrets/config.
 
 ### `matrix-stack/`
+
 Umbrella chart for matrix-synapse and related services.
 
 ### `registry/`
+
 Single-node Docker registry with optional external LoadBalancer and TLS ingress.
 
 ### `traefik/`
+
 DaemonSet-based Traefik ingress controller with RBAC, MetalLB LoadBalancer, and IngressClass setup.
 
 ### `metallb/`
+
 Configures MetalLB IP address pools and L2 advertisements.
 
 ### `cert-manager`
+
 Managed via Helmfile (`k8s/helmfile/helmfile.yaml`) using the upstream `jetstack/cert-manager` chart. Bootstrap resources (self-signed issuer, CA certificate, homelab issuer) are packaged in `cert-manager-bootstrap/` and deployed as a separate release.
 
 ### `cert-manager-bootstrap/`
+
 Applies the homelab CA certificate and cluster issuers that sit on top of the upstream cert-manager installation.
 
 ### `observability/base/`
+
 Creates the `observability` namespace (labels configurable via values).
 
 ### `observability/timescaledb/`
+
 Provision TimescaleDB StatefulSet, service, and sealed secret used by observability workloads.
 
 ### `observability/`
+
 Umbrella chart that installs the namespace, TimescaleDB, and Grafana components together.
 
 ## Deployment Flow
