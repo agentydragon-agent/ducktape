@@ -91,8 +91,19 @@ def main() -> int:
     # Set up Bazel proxy for TLS-inspecting proxy (doesn't need project dir)
     bazel_proxy_setup.setup_bazel_proxy()
 
-    # Project-specific setup (requires CLAUDE_PROJECT_DIR)
+    # Detect project directory from CLAUDE_PROJECT_DIR or PWD
+    # CLAUDE_PROJECT_DIR should be provided but isn't in Claude Code on the web
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not project_dir_str:
+        # Fallback: use PWD and verify it's a git repo
+        pwd = Path.cwd()
+        if (pwd / ".git").exists():
+            project_dir_str = str(pwd)
+            os.environ["CLAUDE_PROJECT_DIR"] = project_dir_str
+            log.info("CLAUDE_PROJECT_DIR not provided, detected from PWD: %s", project_dir_str)
+        else:
+            log.warning("CLAUDE_PROJECT_DIR not set and PWD is not a git repo, skipping project-specific setup")
+
     if project_dir_str:
         project_dir = Path(project_dir_str)
         log.info("Project: %s", project_dir)
@@ -103,8 +114,7 @@ def main() -> int:
         # Install git pre-commit hook that runs bazel lint
         install_git_precommit_hook(project_dir, log)
     else:
-        log.warning("CLAUDE_PROJECT_DIR not set, skipping project-specific setup")
-        # Still install wrapper without repo-specific config
+        # No project directory available
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
     # Export debug timestamp to track hook execution
