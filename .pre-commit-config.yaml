@@ -60,6 +60,18 @@ repos:
         files: \.py$
         pass_filenames: true
 
+  # Mypy type checking (via Bazel aspect)
+  # Runs type checking on all Python code using rules_mypy aspect
+  - repo: local
+    hooks:
+      - id: bazel-mypy
+        name: bazel build --config=typecheck
+        entry: bazel
+        args: ['build', '--config=typecheck', '--keep_going', '//...']
+        language: system
+        files: \.py$
+        pass_filenames: false
+
   # Frontend linting (ESLint via Bazel aspect)
   # Runs on all JS/TS/Svelte files across all projects
   - repo: local
