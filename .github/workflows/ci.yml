@@ -1,7 +1,18 @@
-# This workflow runs Bazel build/lint/test, pre-commit (for safety checks), and other checks
-# Bazel handles: Python (ruff, mypy), Rust (clippy, rustfmt), JS/TS (eslint, prettier),
-#                buildifier, yamllint, alejandra (nix), svelte-check
-# Pre-commit handles: no-commit-to-branch, check-ast, check-yaml, check-toml, ansible-syntax-check
+# CI workflow with consolidated Bazel aspect-based linting
+#
+# Jobs:
+# - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
+# - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
+# - props-frontend-build: Frontend-specific build + svelte-check
+# - visual-regression: Playwright visual tests
+# - ansible-lint-full: Ansible validation
+#
+# Linting via Bazel aspects (run in both pre-commit and bazel-build):
+# - Python: ruff (lint), mypy (types), ruff format (formatting)
+# - JS/TS: ESLint (lint), prettier (formatting)
+# - Rust: clippy (lint), rustfmt (formatting)
+# - Shell: shfmt (formatting)
+# - Bazel: buildifier (formatting)
 name: CI
 
 on:
@@ -143,17 +154,18 @@ jobs:
       - name: Build and test frontend
         run: |
           bazel build //props/frontend:bundle //props/frontend:storybook
-          # Lint tests: ESLint (JS/TS), Prettier (formatting), svelte-check (types)
-          bazel test //props/frontend:eslint_test //props/frontend:prettier_test //props/frontend:svelte_check_test
+          # Type checking: svelte-check
+          bazel test //props/frontend:svelte_check_test
+          # Note: ESLint and Prettier are now run via aspects in bazel-build job
 
       - name: Generate build summary
         if: always()
         run: |
           echo "### Frontend Build Results" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Frontend build successful" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Frontend build and type checking successful" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Frontend build failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Frontend build or type checking failed" >> $GITHUB_STEP_SUMMARY
           fi
 
   visual-regression:
@@ -245,8 +257,13 @@ jobs:
       - name: Build, lint, and test
         run: |
           bazel build //...
-          # Python lint (ruff) + type check (mypy)
-          bazel build --config=check //...
+          # Comprehensive linting via aspects:
+          # - Python: ruff (lint) + mypy (types)
+          # - JS/TS: ESLint (lint)
+          # - Rust: clippy (lint) + rustfmt (format check)
+          bazel build --config=check //...        # Python: ruff + mypy
+          bazel build --config=lint //...         # Python + JS/TS: ruff + ESLint
+          bazel build --config=rust-check //...   # Rust: clippy + rustfmt
           bazel test //... --test_output=errors
 
       - name: Generate test summary
@@ -254,38 +271,12 @@ jobs:
         run: |
           echo "### Bazel Build & Test Results" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ All targets built and tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "✅ All targets built, linted, and tested" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Checks run**:" >> $GITHUB_STEP_SUMMARY
+            echo "- Python: ruff (lint), mypy (types)" >> $GITHUB_STEP_SUMMARY
+            echo "- JS/TS: ESLint (lint)" >> $GITHUB_STEP_SUMMARY
+            echo "- Rust: clippy (lint), rustfmt (format)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Build or tests failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  rust-lint:
-    name: Rust lint (clippy + rustfmt)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Cache Bazel repository
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-rust-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'Cargo.toml', 'Cargo.lock') }}
-          restore-keys: |
-            bazel-rust-${{ runner.os }}-
-
-      - name: Run clippy and rustfmt
-        run: bazel build --config=rust-check //finance/worthy/...
-
-      - name: Generate lint summary
-        if: always()
-        run: |
-          echo "### Rust Lint Results" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Clippy and rustfmt passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Rust lint failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Build, lint, or tests failed" >> $GITHUB_STEP_SUMMARY
           fi
