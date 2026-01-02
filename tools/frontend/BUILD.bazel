@@ -1,9 +1,10 @@
 # Frontend build tooling
-# Vite and SvelteKit binaries for props/frontend
+# Vite, SvelteKit, and Storybook binaries for props/frontend
 
 load("@npm_props_frontend//props/frontend:vite/package_json.bzl", vite_bin = "bin")
 load("@npm_props_frontend//props/frontend:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("@npm_props_frontend//props/frontend:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
+load("@npm_props_frontend//props/frontend:storybook/package_json.bzl", storybook_bin = "bin")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,3 +16,6 @@ svelte_kit_bin.svelte_kit_binary(name = "svelte-kit")
 
 # Svelte-check binary for type checking
 svelte_check_bin.svelte_check_binary(name = "svelte-check")
+
+# Storybook binary for dev server
+storybook_bin.storybook_binary(name = "storybook")

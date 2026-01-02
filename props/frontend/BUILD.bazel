@@ -123,21 +123,24 @@ _STORYBOOK_SRCS = _SRCS + glob([
 # Storybook static build
 # Run: bazel build //props/frontend:storybook
 # Output: bazel-bin/props/frontend/storybook-static/
+# Note: STORYBOOK env var tells svelte.config.js to use .svelte-kit-storybook (avoids conflict with svelte_kit_sync)
 storybook_bin.storybook(
     name = "storybook",
-    srcs = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
+    srcs = _STORYBOOK_SRCS + [":node_modules"],
     args = ["build"],
     chdir = package_name(),
-    out_dirs = ["storybook-static"],
+    env = {"STORYBOOK": "1"},
+    out_dirs = [".svelte-kit-storybook", "storybook-static"],
 )
 
 # Storybook dev server
 # Run: bazel run //props/frontend:storybook_dev
-storybook_bin.storybook(
+js_run_devserver(
     name = "storybook_dev",
-    srcs = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
     args = ["dev", "-p", "6006"],
     chdir = package_name(),
+    data = _STORYBOOK_SRCS + [":node_modules"],
+    tool = "//tools/frontend:storybook",
 )
 
 # Visual regression tests (Playwright + Storybook)
