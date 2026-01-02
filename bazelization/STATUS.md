@@ -85,6 +85,9 @@ Run `./bazelization/audit.py` to get updated counts.
 - Rust crate_universe fully integrated (Cargo.toml kept for dependency resolution only)
 - Frontend build/dev migrated to Bazel (`bazel build //props/frontend:bundle`, `bazel run //props/frontend:dev`)
 - rules_oci integrated for OCI container images (`editor_agent/runtime:image` as first migration)
+- Storybook build migrated to Bazel (`bazel build //props/frontend:storybook`)
+- Visual regression tests via rules_playwright (`bazel test //props/frontend:visual_test`)
+- CI uses Bazel for visual tests (no pnpm/npx playwright install)
 
 ### In Progress / Partial
 
