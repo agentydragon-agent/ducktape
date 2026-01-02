@@ -5,28 +5,19 @@
 #   bazel run //tools/format.check    # Check formatting (no changes)
 
 load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
-load("@npm_props_frontend//props/frontend:prettier/package_json.bzl", prettier_bin = "bin")
 
 package(default_visibility = ["//visibility:public"])
-
-# Prettier binary for JS/TS/CSS/HTML/Markdown formatting
-# Configuration comes from .prettierrc.yaml in the repo root
-prettier_bin.prettier_binary(
-    name = "prettier",
-    env = {"BAZEL_BINDIR": "."},
-    fixed_args = ["--loglevel=warn"],
-)
 
 # Multi-formatter target combining all formatters
 # Run with: bazel run //tools/format
 # Check with: bazel run //tools/format.check
 format_multirun(
     name = "format",
-    # JavaScript/TypeScript/CSS/HTML (uses prettier)
-    css = ":prettier",
-    html = ":prettier",
-    javascript = ":prettier",
-    markdown = ":prettier",
+    # JavaScript/TypeScript/CSS/HTML (uses prettier from tools/lint)
+    css = "//tools/lint:prettier",
+    html = "//tools/lint:prettier",
+    javascript = "//tools/lint:prettier",
+    markdown = "//tools/lint:prettier",
     # Python (uses ruff format from multitool)
     python = "@aspect_rules_lint//format:ruff",
     # Rust (uses rustfmt from rules_rust)
