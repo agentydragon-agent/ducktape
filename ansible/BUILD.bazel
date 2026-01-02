@@ -1,25 +1,27 @@
 # Ansible directory - Bazel targets for linting
 
 # Yamllint test for YAML files in ansible/
+# TODO: Replace with yamllint aspect (see docs/BAZELIZATION.md Phase 3)
+# Currently disabled - wrapper script deleted, moving to aspect-based linting
 # Excludes are defined in .yamllint.yaml: host_vars (machine-specific), k8s (Helm templating)
-sh_test(
-    name = "yamllint_test",
-    srcs = ["//tools/yamllint:run_yamllint.sh"],
-    args = [
-        "$(rootpath //tools/yamllint:yamllint)",
-        "ansible",  # Package directory
-        "../.yamllint.yaml",  # Config file (relative to ansible/)
-        ".",  # Lint current directory
-    ],
-    data = [
-        "//tools/yamllint:yamllint",
-        "//:.yamllint.yaml",
-    ] + glob(
-        ["**/*.yml", "**/*.yaml"],
-        exclude = [
-            "host_vars/**",
-            "k8s/**",
-        ],
-    ),
-    tags = ["lint"],
-)
+# sh_test(
+#     name = "yamllint_test",
+#     srcs = ["//tools/yamllint:run_yamllint.sh"],  # DELETED
+#     args = [
+#         "$(rootpath //tools/yamllint:yamllint)",
+#         "ansible",  # Package directory
+#         "../.yamllint.yaml",  # Config file (relative to ansible/)
+#         ".",  # Lint current directory
+#     ],
+#     data = [
+#         "//tools/yamllint:yamllint",
+#         "//:.yamllint.yaml",
+#     ] + glob(
+#         ["**/*.yml", "**/*.yaml"],
+#         exclude = [
+#             "host_vars/**",
+#             "k8s/**",
+#         ],
+#     ),
+#     tags = ["lint"],
+# )

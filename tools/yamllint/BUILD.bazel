@@ -2,7 +2,6 @@
 
 exports_files([
     "pyproject.toml",
-    "run_yamllint.sh",
 ])
 
 # Yamllint binary via py_binary entry point

@@ -13,9 +13,6 @@ eslint_bin.eslint_binary(name = "eslint")
 # Prettier binary for JS/TS/Svelte formatting
 prettier_bin.prettier_binary(name = "prettier")
 
-# Wrapper scripts for sh_test integration
-exports_files(["run_prettier.sh", "run_eslint.sh"])
-
 # Buildifier targets for BUILD/Starlark linting
 # Run: bazel run //:buildifier (fix mode)
 # Run: bazel run //:buildifier.check (check mode)

@@ -1,7 +1,5 @@
 # Nix formatting tools
 
-exports_files(["run_alejandra.sh"])
-
 # Alejandra binary from multitool
 alias(
     name = "alejandra",
