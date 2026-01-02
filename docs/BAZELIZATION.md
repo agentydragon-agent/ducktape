@@ -28,9 +28,9 @@ This ensures:
 | Tool | Language | Purpose | Bazel Integration | Pre-commit | CI | Notes |
 |------|----------|---------|-------------------|------------|----|----|
 | **ruff** | Python | Lint | Aspect (`//tools/lint:linters.bzl%ruff`) | ✅ via `lint-staged.sh` | ✅ `--config=check` | |
-| **mypy** | Python | Type check | Aspect (`//tools/lint:linters.bzl%mypy_aspect`) | ❌ | ✅ `--config=check` | Not in pre-commit |
-| **ESLint** | JS/TS/Svelte | Lint | Aspect (`//tools/lint:linters.bzl%eslint`) | ✅ direct | ✅ `--config=eslint` | Just added 2026-01-02 |
-| **Prettier** | JS/TS/Svelte | Format | Test target (sh_test) | ❌ | ✅ test target | Check-only, no auto-fix |
+| **mypy** | Python | Type check | Aspect (`//tools/lint:linters.bzl%mypy_aspect`) | ✅ via `--config=typecheck` | ✅ `--config=check` | Added 2026-01-02 |
+| **ESLint** | JS/TS/Svelte | Lint | Aspect (`//tools/lint:linters.bzl%eslint`) | ✅ via `--config=eslint` | ✅ `--config=eslint` | Added 2026-01-02 |
+| **Prettier** | JS/TS/Svelte | Format | Aspect (`//tools/lint:linters.bzl%prettier`) | ✅ via `bazel run` | ✅ `--config=prettier` | Auto-fix via bazel run, added 2026-01-02 |
 | **svelte-check** | Svelte | Type check | Test target | ❌ | ✅ test target | |
 | **clippy** | Rust | Lint | Aspect (`@rules_rust//rust:defs.bzl%rust_clippy_aspect`) | ❌ | ✅ `--config=rust-check` | |
 | **rustfmt** | Rust | Format | Aspect (`@rules_rust//rust:defs.bzl%rustfmt_aspect`) | ❌ | ✅ `--config=rust-check` | Check-only |
