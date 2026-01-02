@@ -143,7 +143,8 @@ jobs:
       - name: Build and test frontend
         run: |
           bazel build //props/frontend:bundle //props/frontend:storybook
-          bazel test //props/frontend:svelte_check_test //props/frontend:prettier_test
+          # Lint tests: ESLint (JS/TS), Prettier (formatting), svelte-check (types)
+          bazel test //props/frontend:eslint_test //props/frontend:prettier_test //props/frontend:svelte_check_test
 
       - name: Generate build summary
         if: always()
@@ -244,7 +245,8 @@ jobs:
       - name: Build, lint, and test
         run: |
           bazel build //...
-          bazel lint //...
+          # Python lint (ruff) + type check (mypy)
+          bazel build --config=check //...
           bazel test //... --test_output=errors
 
       - name: Generate test summary
@@ -255,4 +257,35 @@ jobs:
             echo "✅ All targets built and tests passed" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Build or tests failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  rust-lint:
+    name: Rust lint (clippy + rustfmt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-rust-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'Cargo.toml', 'Cargo.lock') }}
+          restore-keys: |
+            bazel-rust-${{ runner.os }}-
+
+      - name: Run clippy and rustfmt
+        run: bazel build --config=rust-check //finance/worthy/...
+
+      - name: Generate lint summary
+        if: always()
+        run: |
+          echo "### Rust Lint Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Clippy and rustfmt passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Rust lint failed" >> $GITHUB_STEP_SUMMARY
           fi
