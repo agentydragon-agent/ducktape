@@ -1,2 +1,3 @@
-# Git hooks - install with: ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
-exports_files(["pre-commit"])
+# Git hooks - install via: pre-commit install
+# The pre-commit framework runs lint-staged.sh for bazel lint
+exports_files(["lint-staged.sh"])

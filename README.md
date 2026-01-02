@@ -10,10 +10,10 @@ Based on my [Python project skeleton](https://gitlab.com/agentydragon/python-ske
 This repository uses **Bazel** as the primary build system. Install the git pre-commit hook:
 
 ```bash
-ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+pre-commit install
 ```
 
-This hook runs `bazel lint` on staged files before each commit.
+This installs the pre-commit framework which runs `bazel lint` on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`).
 
 ## License
 AGPL 3.0

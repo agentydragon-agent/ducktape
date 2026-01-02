@@ -70,7 +70,7 @@ Run `uv run bazelization/audit.py` to get updated counts.
 - pip.parse with requirements_bazel.txt from uv export
 - Circular dependency resolved (bootstrap_handler moved to mcp_infra)
 - Session start hooks for Claude Code web: Bazel proxy + git pre-commit hook installation
-- Git pre-commit hook (`tools/hooks/pre-commit`) runs `bazel lint` on staged files
+- Git pre-commit hook via pre-commit framework runs `bazel lint` on staged files
 - `aspect_rules_lint` integrated for ruff linting (`bazel lint //...`)
 - Node.js frontends migrated to rules_js (`props/frontend`, `rspcache/admin_ui`)
 - Mypy integrated via rules_mypy (`--config=typecheck`)
@@ -190,28 +190,26 @@ This repository uses two types of hooks:
 
 **Installation:**
 ```bash
-ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+pre-commit install
 ```
 
-**What it does:**
-1. Gets staged Python files from git (`--diff-filter=ACM`)
-2. Uses `bazel query attr('srcs', ...)` to find targets containing those files
-3. Runs `bazel lint` on unique packages via Aspect CLI
+**What it does** (via `.pre-commit-config.yaml`):
+1. Safety checks: `no-commit-to-branch`, `check-merge-conflict`
+2. Syntax validation: `check-ast`, `check-yaml`, `check-toml`
+3. Ansible syntax check (for `ansible/*.yml` files)
+4. Bazel lint via `tools/hooks/lint-staged.sh`:
+   - Gets staged Python files
+   - Uses `bazel query attr('srcs', ...)` to find targets
+   - Runs `bazel lint` on affected packages
 
 **Requirements:**
+- pre-commit package (`pip install pre-commit` or system package)
 - Aspect CLI (provides `bazel lint` command, installed via Bazelisk)
 - Ruff binary from `tools/multitool/lockfile.json`
 
-**The Bazel query:**
-```bash
-# Build regex from staged files, query for targets with matching srcs
-PATTERN=$(echo "$STAGED_PY" | sed 's/\./\\./g' | tr '\n' '|' | sed 's/|$//')
-bazel query "attr('srcs', '.*($PATTERN).*', //...)" --output=package
-```
-
 **Flow:**
 ```
-git commit → pre-commit hook → bazel query → bazel lint //pkg1:all //pkg2:all → pass/fail
+git commit → pre-commit framework → hooks from .pre-commit-config.yaml → pass/fail
 ```
 
 ### Claude Code Session Start Hook
@@ -239,7 +237,7 @@ git commit → pre-commit hook → bazel query → bazel lint //pkg1:all //pkg2:
 6. Creates combined CA bundle at `~/.cache/bazel-proxy/combined_ca.pem`
 7. Writes `~/.cache/bazel-proxy/bazelrc` with proxy settings
 8. Installs bazel wrapper at `~/.cache/bazel-proxy/bin/bazel`
-9. Installs git pre-commit hook (`tools/hooks/pre-commit` → `.git/hooks/pre-commit`)
+9. Runs `pre-commit install` to install pre-commit framework hook
 10. Exports PATH to wrapper via `CLAUDE_ENV_FILE`
 
 **Package structure:**
@@ -626,14 +624,14 @@ Root `pyproject.toml` contains:
 | Prettier | `props/frontend/.prettierrc` | `bazel test //props/frontend:prettier_test` |
 | svelte-check | `props/frontend/tsconfig.json` | `bazel test //props/frontend:svelte_check_test` |
 
-### Pre-commit Framework (`.pre-commit-config.yaml`) — DEPRECATED
+### Pre-commit Framework (`.pre-commit-config.yaml`)
 
-**Note:** The pre-commit framework is being deprecated in favor of the Bazel-based git hook at
-`tools/hooks/pre-commit`. The git hook runs `bazel lint` on staged files, which covers ruff and mypy.
+The pre-commit framework manages all git hooks. Install with `pre-commit install`.
 
-The `.pre-commit-config.yaml` file still exists for:
+**What it provides:**
 - Safety checks (no-commit-to-branch, check-merge-conflict, syntax validation)
 - Ansible syntax checking (ansible-syntax-check)
+- Bazel lint via `tools/hooks/lint-staged.sh` (runs `bazel lint` on staged files)
 
 **Migration status for pre-commit hooks:**
 
@@ -704,14 +702,14 @@ The `.pre-commit-config.yaml` file still exists for:
 
 ### Git Pre-commit Hook (Recommended)
 
-Install the Bazel-based git hook instead of using the pre-commit framework:
+Install the pre-commit framework:
 
 ```bash
-ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
+pre-commit install
 ```
 
-This hook runs `bazel lint` on staged Python files. For Claude Code web sessions,
-the session start hook installs this automatically.
+This installs hooks defined in `.pre-commit-config.yaml`, including `bazel lint` on staged Python files.
+For Claude Code web sessions, the session start hook runs this automatically.
 
 ### CI Configuration
 

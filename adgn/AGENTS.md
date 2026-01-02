@@ -37,10 +37,7 @@ Package-specific targets:
 Run without xdist parallelization for clearer output: `bazel test //adgn:tests --test_arg=-n0 --test_arg=-v`
 
 ### Git pre-commit hook
-The git hook at `tools/hooks/pre-commit` runs `bazel lint` on staged files. Install with:
-```bash
-ln -sf ../../tools/hooks/pre-commit .git/hooks/pre-commit
-```
+Install with `pre-commit install`. This runs `bazel lint` on staged files, checks for conflict markers, and validates syntax.
 
 ## Pytest Defaults
 See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, markers, and timeout settings.
