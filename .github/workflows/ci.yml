@@ -103,7 +103,7 @@ jobs:
         if: steps.ansible-changes.outputs.changed == 'true'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Cache Ansible Galaxy
         if: steps.ansible-changes.outputs.changed == 'true'
