@@ -16,8 +16,7 @@ def load_api_key(exit_on_missing: bool = True) -> str | None:
 
     if not api_key and exit_on_missing:
         raise SystemExit(
-            "HABITIFY_API_KEY environment variable is required. "
-            "Set it in .env or export HABITIFY_API_KEY=your_key"
+            "HABITIFY_API_KEY environment variable is required. Set it in .env or export HABITIFY_API_KEY=your_key"
         )
 
     return api_key

@@ -4,9 +4,7 @@ from ..habitify_client import HabitifyClient, HabitifyError
 from ..types import ResolvedHabit
 
 
-async def resolve_habit(
-    client: HabitifyClient, id: str | None = None, name: str | None = None
-) -> ResolvedHabit:
+async def resolve_habit(client: HabitifyClient, id: str | None = None, name: str | None = None) -> ResolvedHabit:
     """Resolve a habit by name or ID.
 
     Raises HabitifyError if habit cannot be resolved.

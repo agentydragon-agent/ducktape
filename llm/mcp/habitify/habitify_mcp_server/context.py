@@ -21,8 +21,7 @@ def make_lifespan(api_key: str | None = None):
         key = api_key or load_api_key(exit_on_missing=False)
         if not key:
             raise RuntimeError(
-                "HABITIFY_API_KEY environment variable is required. "
-                "Set it in .env or pass via --api-key."
+                "HABITIFY_API_KEY environment variable is required. Set it in .env or pass via --api-key."
             )
         async with HabitifyClient(api_key=key) as client:
             yield client

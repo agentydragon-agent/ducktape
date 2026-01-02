@@ -218,5 +218,3 @@ class DeleteResult(BaseModel):
     """Result for deleteHabit tool."""
 
     deleted: bool = True
-
-

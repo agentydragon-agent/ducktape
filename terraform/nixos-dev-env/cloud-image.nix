@@ -51,7 +51,11 @@
     git
     htop
     home-manager
+    sudo
   ];
+
+  # Enable sudo for wheel group
+  security.sudo.enable = true;
 
   # Enable flakes and nix-command (needed for modern Nix/home-manager)
   nix.settings.experimental-features = ["nix-command" "flakes"];

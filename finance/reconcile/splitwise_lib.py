@@ -3,14 +3,13 @@ import decimal
 import json
 import threading
 import urllib.parse
-from pathlib import Path
 
+import platformdirs
 import splitwise
 import uvicorn
 from absl import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
-from platformdirs import user_cache_dir, user_config_dir
 
 from ducktape.finance.reconcile import external_system
 
@@ -84,8 +83,8 @@ def retrieve_get_params(port):
 
 
 def load_splitwise_expenses(splitwise_group_id) -> dict[str, external_system.ExternalExpense]:
-    config_dir = Path(user_config_dir("gnucash_splitwise_reconciler"))
-    cache_dir = Path(user_cache_dir("gnucash_splitwise_reconciler"))
+    config_dir = platformdirs.user_config_path("gnucash_splitwise_reconciler")
+    cache_dir = platformdirs.user_cache_path("gnucash_splitwise_reconciler")
     splitwise_credentials_path = config_dir / "splitwise_credentials.json"
 
     client = make_client(splitwise_credentials_path)

@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 import gnucash
-from platformdirs import user_cache_dir, user_config_dir
+import platformdirs
 import yaml
 from absl import app, flags, logging
 
@@ -141,7 +141,7 @@ def add_external_to_gnucash(external_transaction, book, account_of_interest, ext
 
 
 def main(_):
-    config_dir = Path(user_config_dir("ducktape"))
+    config_dir = platformdirs.user_config_path("ducktape")
 
     with (config_dir / "config.yaml").open() as f:
         config = yaml.safe_load(f)
