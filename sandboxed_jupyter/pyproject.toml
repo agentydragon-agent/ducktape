@@ -32,13 +32,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/sandboxed_jupyter"]
 
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-check_untyped_defs = true
-# Paths relative to repo root (where pre-commit runs mypy from)
-mypy_path = "adgn/src:mcp_infra/src:sandboxed_jupyter/src:sandboxed_jupyter:net_util/src"
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

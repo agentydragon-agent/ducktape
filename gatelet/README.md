@@ -33,77 +33,37 @@ gatelet-reporter
 
 ## Development Setup
 
-The project requires Python 3.10+ and a PostgreSQL database. Two development approaches are available:
+See `@AGENTS.md` in the repository root for Bazel build, test, and lint workflows.
 
-### Option 1: Docker Compose (Recommended)
+The project requires Python 3.10+ and a PostgreSQL database.
 
-The easiest way to start developing is using Docker Compose with the included development environment:
+### Configuration
 
-```bash
-# Install development dependencies (includes invoke task runner)
-pip install -e '.[dev]'
-
-# Copy example configuration
-cp gatelet.example.toml gatelet.toml
-# Edit gatelet.toml with your API keys
-
-# Start everything with one command
-invoke setup
-```
-
-This starts PostgreSQL and Gatelet with automatic code reloading. The service will be available at http://localhost:8000.
-
-Available development commands:
-- `invoke up` - Start development environment with live reload
-- `invoke down` - Stop all services
-- `invoke test` - Run tests
-- `invoke shell` - Open shell in container
-- `invoke db` - Connect to PostgreSQL
-- `invoke format` - Format code with black/isort
-- `invoke --list` - Show all available commands
-
-### Option 2: Manual Setup
-
-If you prefer to run services directly:
-
-1. Start PostgreSQL in Docker:
-
-```bash
-docker run --name gatelet-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=gatelet -p 5432:5432 -d postgres:16
-```
-
-2. Create a virtual environment and install Gatelet with development dependencies:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-```
-
-3. Copy the example configuration and set the database URL:
+Copy the example configuration and set the database URL:
 
 ```bash
 cp gatelet.example.toml gatelet.toml
 export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet
 ```
-Edit ``gatelet.toml`` and set ``home_assistant.api_url`` to your Home Assistant
-instance. Admin pages will link back to this URL.
 
-4. Initialize the database and start the server:
+Edit `gatelet.toml` and set `home_assistant.api_url` to your Home Assistant instance. Admin pages will link back to this URL.
+
+### Running the Server
+
+Start PostgreSQL in Docker:
+
+```bash
+docker run --name gatelet-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=gatelet -p 5432:5432 -d postgres:16
+```
+
+Initialize the database and start the server:
 
 ```bash
 alembic upgrade head
 uvicorn gatelet.server.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The service will be available at http://localhost:8000. When finished, stop the database container with:
-
-```bash
-docker stop gatelet-db
-docker rm gatelet-db
-```
-
-For development inside the Codex devcontainer, run `gatelet/setup.sh` from the repository root before network access is disabled.
+The service will be available at http://localhost:8000.
 
 ### Administration
 
@@ -115,23 +75,6 @@ make -C gatelet change-password # change the admin password
 ```
 
 `reset-db` displays the current row counts for all tables and asks for confirmation before dropping everything. It then creates a fresh admin account with password `gatelet`.
-
-### Testing and Development
-
-Install the project with development dependencies and run tests using `pytest`.
-When `IS_CODEX_ENV=1` is set, the test suite automatically launches a temporary
-PostgreSQL server and removes it after the tests finish.
-
-```bash
-pip install -e '.[dev]'
-pytest gatelet
-```
-
-Before committing, run:
-
-```bash
-pre-commit run --files <changed files>
-```
 
 ## LLM-Friendly Design
 

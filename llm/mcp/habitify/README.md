@@ -18,19 +18,16 @@ See [Habitify API documentation](https://docs.habitify.me/) for full API capabil
 
 ## Installation
 
+See `@AGENTS.md` in the repository root for Bazel build, test, and lint workflows.
+
 ### Quick Start
 
-1. Install the package:
-   ```bash
-   pip install -e .
-   ```
-
-2. Set your Habitify API key (get it from Habitify app settings):
+1. Set your Habitify API key (get it from Habitify app settings):
    ```bash
    export HABITIFY_API_KEY=your_api_key_here
    ```
 
-3. Install to Claude Desktop:
+2. Install to Claude Desktop:
    ```bash
    habitify install
    ```

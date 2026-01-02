@@ -6,9 +6,9 @@ SQLite database and rendered via a bare-bones web UI.
 
 ## Quick start (local)
 
+See `@AGENTS.md` in the repository root for Bazel build, test, and lint workflows.
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
 # Generate an encryption key (optional but recommended)
 export WEBHOOK_INBOX_KEY=$(python gen_key.py)
 

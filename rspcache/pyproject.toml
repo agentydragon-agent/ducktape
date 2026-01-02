@@ -29,10 +29,3 @@ packages = ["src/rspcache"]
 
 [tool.uv.sources]
 openai-utils = { workspace = true }
-
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-check_untyped_defs = true
-# Path relative to repo root (where pre-commit runs)
-mypy_path = "openai_utils/src"

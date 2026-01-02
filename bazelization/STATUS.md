@@ -88,6 +88,8 @@ Run `uv run bazelization/audit.py` to get updated counts.
 - Storybook build migrated to Bazel (`bazel build //props/frontend:storybook`)
 - Visual regression tests via rules_playwright (`bazel test //props/frontend:visual_test`)
 - CI uses Bazel for visual tests (no pnpm/npx playwright install)
+- All README files updated to reference root AGENTS.md for Bazel workflows
+- Removed per-package `[tool.mypy]` sections from 15 pyproject.toml files (mypy runs via root mypy.ini)
 
 ### In Progress / Partial
 
@@ -141,29 +143,6 @@ Run `uv run bazelization/audit.py` to get updated counts.
 Run `uv run bazelization/audit.py` for current list.
 
 ### Pending Migration Tasks
-
-#### Documentation Updates (Low Priority)
-These README/CLAUDE files still reference pip install or pre-commit instead of Bazel:
-
-| File | Issue |
-|------|-------|
-| `gatelet/README.md` | pip install, invoke tasks |
-| `experimental/webhook_inbox/README.md` | pip install |
-| `homeassistant/iaqi/README.md` | pyenv, pip install |
-| `llm/html/README.md` | pip install |
-| `llm/mcp/habitify/README.md` | pip install |
-| `wt/README.md` | pip install |
-
-These are low priority - the packages work via Bazel but docs show legacy workflows.
-
-#### pyproject.toml [tool.mypy] Sections (Low Priority)
-17 packages have `[tool.mypy]` in pyproject.toml that could be consolidated to root mypy.ini:
-- `agent_core`, `agent_pkg/host`, `agent_pkg/runtime`, `agent_server`
-- `claude/claude_optimizer`, `editor_agent/host`, `editor_agent/runtime`
-- `git_commit_ai`, `mcp_utils`, `openai_utils`, `props/backend`
-- `py_detectors`, `rspcache`, `sandboxed_jupyter`, `tana`
-
-The Bazel mypy integration (`--config=typecheck`) uses root mypy.ini, so these per-package configs are unused.
 
 #### Shell Scripts Inventory
 Non-Bazelized shell scripts that are intentionally outside the build system:

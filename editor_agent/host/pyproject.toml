@@ -36,9 +36,3 @@ packages = ["src/editor_agent"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/editor_agent/definition" = "editor_agent/definition"
-
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-check_untyped_defs = true
-mypy_path = "editor_agent/runtime/src:mcp_utils/src:cli_util/src:agent_pkg/runtime/src:mcp_infra/src:agent_core/src:openai_utils/src:agent_pkg/host/src"

@@ -18,10 +18,13 @@ The token includes a timestamp and document hash, making each reading unique.
 
 Note: Currently only `index.md` includes the scattered tags. Other pages could easily use the same mechanism but don't currently.
 
+## Development
+
+See `@AGENTS.md` in the repository root for Bazel build, test, and lint workflows.
+
 ## Running
 
 ```bash
-pip install -r requirements.txt
 python html_server.py
 ```
 
