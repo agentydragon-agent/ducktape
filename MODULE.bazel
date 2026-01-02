@@ -115,7 +115,7 @@ bazel_dep(name = "rules_rust", version = "0.61.0")  # latest 2025-05-19
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     edition = "2021",
-    versions = ["1.87.0"],
+    versions = ["1.82.0"],  # downgraded from 1.87.0 for glibc compatibility
 )
 use_repo(rust, "rust_toolchains")
 
