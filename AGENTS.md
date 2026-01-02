@@ -8,10 +8,11 @@ If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/
 Then finish with the full repo workflow:
 
 ```bash
+bazel build --config=check //...
 bazel test //...
 ```
 
-This runs ruff lint tests, mypy, and all tests. For Rust code, also run `bazel test --config=clippy //finance/...`.
+This runs ruff + mypy lint checks and all tests. For Rust code, also run `bazel build --config=rust-check //finance/...`.
 
 ## Repository Overview
 

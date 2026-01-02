@@ -45,3 +45,4 @@ ruff_test(
     name = "ruff",
     srcs = [":mcp_infra"],
 )
+

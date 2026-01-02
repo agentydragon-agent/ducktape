@@ -42,7 +42,8 @@ eslint = lint_eslint_aspect(
 ruff_test = lint_test(aspect = ruff)
 eslint_test = lint_test(aspect = eslint)
 
-# NOTE: yamllint and clippy aspects require aspect_rules_lint >= 1.13.0
-# which has compatibility issues. For now, use:
-# - yamllint: Run via pre-commit or `bazel run //tools/yamllint`
-# - clippy: Run via `bazel lint --config=rust-check //finance/...` (uses rules_rust native)
+# NOTE: mypy_aspect is used via --config=typecheck, not via lint_test
+# The rules_mypy aspect produces different output groups than lint_test expects
+
+# NOTE: Clippy uses rules_rust native aspects, not aspect_rules_lint
+# Run via: bazel build --config=rust-check //finance/...

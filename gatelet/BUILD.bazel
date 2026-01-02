@@ -57,6 +57,7 @@ ruff_test(
     srcs = [":gatelet"],
 )
 
+
 # --- OCI Image ---
 
 py_binary(

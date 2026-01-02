@@ -9,3 +9,6 @@ py_library(
     # TODO: add gnucash
     deps = [],
 )
+
+# NOTE: Rust linting uses --config=rust-check (clippy + rustfmt)
+# Run: bazel build --config=rust-check //finance/worthy/...

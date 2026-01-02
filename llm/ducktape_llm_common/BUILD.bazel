@@ -50,3 +50,4 @@ ruff_test(
     name = "ruff",
     srcs = [":ducktape_llm_common"],
 )
+

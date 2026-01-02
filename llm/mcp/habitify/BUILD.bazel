@@ -54,3 +54,4 @@ ruff_test(
     name = "ruff",
     srcs = [":habitify_mcp_server"],
 )
+

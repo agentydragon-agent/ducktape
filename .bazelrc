@@ -18,7 +18,6 @@ build --platforms //:linux_x64
 
 # Lint configuration (Python ruff + JS/TS eslint)
 # Run with: bazel build --config=lint //...
-# Or use Aspect CLI: bazel lint //...
 build:lint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint
 build:lint --output_groups=+rules_lint_report
 

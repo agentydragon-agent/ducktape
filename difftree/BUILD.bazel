@@ -44,3 +44,4 @@ ruff_test(
     name = "ruff",
     srcs = [":difftree"],
 )
+

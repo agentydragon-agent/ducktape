@@ -32,3 +32,4 @@ ruff_test(
     name = "ruff",
     srcs = [":dbus_fast_example"],
 )
+

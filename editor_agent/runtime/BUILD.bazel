@@ -30,6 +30,7 @@ ruff_test(
     srcs = [":editor_agent_runtime"],
 )
 
+
 # --- OCI Image ---
 
 # Package the py_binary and its runfiles into /app

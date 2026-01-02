@@ -14,7 +14,7 @@ eslint_bin.eslint_binary(name = "eslint")
 prettier_bin.prettier_binary(name = "prettier")
 
 # Wrapper scripts for sh_test integration
-exports_files(["run_prettier.sh"])
+exports_files(["run_prettier.sh", "run_eslint.sh"])
 
 # Buildifier targets for BUILD/Starlark linting
 # Run: bazel run //:buildifier (fix mode)

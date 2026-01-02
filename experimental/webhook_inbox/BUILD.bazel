@@ -40,6 +40,7 @@ ruff_test(
     srcs = [":webhook_inbox"],
 )
 
+
 # --- OCI Image ---
 
 py_binary(

@@ -35,6 +35,27 @@ _SRCS = glob([
 # ESLint binary is created in //tools/lint:eslint to avoid artifact path conflicts
 # See bazelization/STATUS.md "JS/TS Linting via Bazel Aspects" section
 
+# ESLint check (JS/TS/Svelte linting)
+# Run: bazel test //props/frontend:eslint_test
+sh_test(
+    name = "eslint_test",
+    srcs = ["//tools/lint:run_eslint.sh"],
+    args = [
+        "$(rootpath //tools/lint:eslint)",
+        "props/frontend",  # Package directory
+        "--config",
+        "eslint.config.js",
+        "src",
+    ],
+    data = [
+        "//tools/lint:eslint",
+        ":node_modules",
+        "eslint.config.js",
+        "tsconfig.json",
+    ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
+    tags = ["lint"],
+)
+
 # Prettier check (formatting validation)
 # Run: bazel test //props/frontend:prettier_test
 sh_test(
