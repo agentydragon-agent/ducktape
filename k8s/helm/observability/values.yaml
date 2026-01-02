@@ -1,9 +1,5 @@
 base: {}
 
-openai-probe: {}
-
 timescaledb: {}
 
 grafana-operator: {}
-
-grafana-dashboards: {}

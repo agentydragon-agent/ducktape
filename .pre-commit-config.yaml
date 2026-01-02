@@ -307,6 +307,8 @@ repos:
           - types-colorama
           - types-psutil
           - types-jsonschema
+          - types-Pygments
+          - types-Jinja2
           - pandas-stubs
 
       # homeassistant: Home Assistant custom component

@@ -74,11 +74,26 @@ dev = [
   'types-Jinja2',
 ]
 typing = [
+    # Type stubs for packages without py.typed
     'types-PyYAML',
     'types-requests',
     'types-docker',
-    'pandas-stubs',
+    'types-colorama',
+    'types-Pygments',
+    'types-psycopg2',
+    'types-python-dateutil',
+    'types-Markdown',
+    'types-tabulate',
+    'types-filelock',
+    'types-toml',
+    'types-aiofiles',
+    'types-psutil',
+    'types-jsonschema',
+    'types-unidiff',
     'types-Jinja2',
+    # Stubs for async packages
+    'asyncpg-stubs',
+    'pandas-stubs',
 ]
 # GNOME console script deps (install when needed)
 gnome = [
@@ -169,12 +184,10 @@ skip-globs = ["tests/detectors/fixtures/**"]
 # LLM console scripts
 adgn-sysrw = "adgn.sysrw.cli:app"
 adgn-agent = "adgn.agent.cli:main"
-adgn-openai-probe = "openai_utils.probe:main"
 adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
 adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"
-adgn-mcp-docker-exec = "adgn.mcp.exec.docker.launcher:main"
 adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
-adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
+# docker-exec and seatbelt-exec moved to mcp-infra package
 # Editor moved to editor_agent package - adgn-editor-docker is now in editor-agent
 # Frontend code generation moved to agent_server package
 

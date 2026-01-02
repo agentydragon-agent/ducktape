@@ -1,6 +1,6 @@
 # Observability Umbrella Chart
 
-Installs the namespace (`base`), OpenAI probe, and TimescaleDB components together.
+Installs the namespace (`base`), TimescaleDB, and Grafana components together.
 
 ```bash
 cd k8s/helm/observability
@@ -11,11 +11,6 @@ helm upgrade --install observability . --namespace observability --create-namesp
 Override subchart values under the corresponding keys, for example:
 
 ```yaml
-openai-probe:
-  sealedSecret:
-    enabled: false
-    name: my-openai-secret
-
 timescaledb:
   persistence:
     size: 20Gi
