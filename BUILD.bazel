@@ -1,0 +1,30 @@
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Link workspace npm packages
+npm_link_all_packages(name = "node_modules")
+
+# Export workspace files for npm_translate_lock data tracking
+exports_files([
+    "package.json",
+    "pnpm-workspace.yaml",
+])
+
+# ESLint configuration as js_library
+# This makes the config and its npm dependencies available to the ESLint aspect
+js_library(
+    name = "eslintrc",
+    srcs = ["eslint.config.js"],
+    deps = [
+        ":node_modules/@eslint/js",
+        ":node_modules/@typescript-eslint/eslint-plugin",
+        ":node_modules/@typescript-eslint/parser",
+        ":node_modules/eslint-plugin-import",
+        ":node_modules/eslint-plugin-react",
+        ":node_modules/eslint-plugin-svelte",
+        ":node_modules/globals",
+        ":node_modules/svelte-eslint-parser",
+    ],
+)

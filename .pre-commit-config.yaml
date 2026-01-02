@@ -60,14 +60,15 @@ repos:
         files: \.py$
         pass_filenames: true
 
-  # Frontend linting (ESLint + Prettier via Bazel)
+  # Frontend linting (ESLint via Bazel aspect)
+  # Runs on all JS/TS/Svelte files across all projects
   - repo: local
     hooks:
-      - id: bazel-frontend
-        name: bazel test frontend linters
+      - id: bazel-eslint
+        name: bazel build --config=eslint
         entry: tools/hooks/lint-frontend.sh
         language: script
-        files: ^props/frontend/.*\.(ts|js|svelte)$
+        files: \.(ts|js|svelte|tsx)$
         pass_filenames: true
 
   # NOTE: Other linters are handled by Bazel test targets

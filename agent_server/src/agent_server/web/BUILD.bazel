@@ -8,6 +8,6 @@ exports_files([
     "package.json",
 ])
 
-# TODO: js_run_binary for Vite build not working - artifact prefix conflict with node_modules
-# Build with: npm run build (in rspcache/admin_ui directory)
-# TypeScript check with: npm run tsc -- --noEmit
+# TODO: Add Vite build and dev server targets
+# For now, ESLint linting is handled via workspace-level aspect
+# Run: bazel build --config=eslint //agent_server/...

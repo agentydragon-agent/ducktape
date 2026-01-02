@@ -1,19 +1,17 @@
-load("@npm_props_frontend//:defs.bzl", "npm_link_all_packages")
-load("@npm_props_frontend//props/frontend:vite/package_json.bzl", vite_bin = "bin")
-load("@npm_props_frontend//props/frontend:svelte-check/package_json.bzl", svelte_check_bin = "bin")
-load("@npm_props_frontend//props/frontend:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
-load("@npm_props_frontend//props/frontend:storybook/package_json.bzl", storybook_bin = "bin")
-load("@npm_props_frontend//props/frontend:@playwright/test/package_json.bzl", playwright_bin = "bin")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_ducktape//:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
+load("@npm_ducktape//:storybook/package_json.bzl", storybook_bin = "bin")
+load("@npm_ducktape//:@playwright/test/package_json.bzl", playwright_bin = "bin")
 load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
 
-# Link npm packages from pnpm-lock.yaml
+# Link npm packages from workspace pnpm-lock.yaml
 npm_link_all_packages(name = "node_modules")
 
-# Export files needed by npm_translate_lock and eslint aspect
+# Export files needed by npm_translate_lock
 exports_files([
-    "pnpm-lock.yaml",
     "package.json",
-    "eslint.config.js",
     ".prettierrc",
     "tsconfig.json",
 ])
@@ -32,32 +30,10 @@ _SRCS = glob([
     "tsconfig.json",
 ]
 
-# ESLint check (JS/TS/Svelte linting)
-# Uses sh_test wrapper because:
-# 1. ESLint v9 flat config discovery searches upward from source files
-# 2. In Bazel's sandbox, source paths (props/frontend/src/) and config paths
-#    (bazel-out/.../props/frontend/eslint.config.js) are in different trees
-# 3. rules_lint doesn't pass --config explicitly
-# The wrapper cds to package dir and passes --config explicitly.
-# Run: bazel test //props/frontend:eslint_test
-sh_test(
-    name = "eslint_test",
-    srcs = ["//tools/lint:run_eslint.sh"],
-    args = [
-        "$(rootpath //tools/lint:eslint)",
-        "props/frontend",
-        "--config",
-        "eslint.config.js",
-        "src",
-    ],
-    data = [
-        "//tools/lint:eslint",
-        ":node_modules",
-        "eslint.config.js",
-        "tsconfig.json",
-    ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
-    tags = ["lint"],
-)
+# ESLint check - now handled by workspace-level aspect
+# Run: bazel build --config=eslint //props/frontend:all
+# Or: bazel build --config=lint //...  (runs both ruff and eslint)
+# The aspect uses //:eslintrc (root eslint.config.js) with file patterns
 
 # Prettier check (formatting validation)
 # Run: bazel test //props/frontend:prettier_test

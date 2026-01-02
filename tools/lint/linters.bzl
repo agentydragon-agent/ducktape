@@ -28,15 +28,12 @@ mypy_aspect = mypy(
 )
 
 # ESLint aspect for JS/TS linting
-# NOTE: This aspect doesn't work well with nested npm workspaces because:
-# 1. ESLint v9 flat config searches upward from source files
-# 2. In Bazel sandbox, source/config paths are in different trees
-# 3. The aspect doesn't pass --config explicitly
-# For props/frontend, use the sh_test wrapper (//props/frontend:eslint_test)
+# Uses workspace-level eslint.config.js with per-project file patterns
+# ESLint binary and all plugins provided by workspace npm packages
 eslint = lint_eslint_aspect(
     binary = Label("//tools/lint:eslint"),
     configs = [
-        Label("//props/frontend:eslint.config.js"),
+        Label("//:eslintrc"),
     ],
 )
 

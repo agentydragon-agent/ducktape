@@ -1,8 +1,8 @@
 # Lint tooling configuration
 
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
-load("@npm_props_frontend//props/frontend:eslint/package_json.bzl", eslint_bin = "bin")
-load("@npm_props_frontend//props/frontend:prettier/package_json.bzl", prettier_bin = "bin")
+load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
+load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
 
 package(default_visibility = ["//visibility:public"])
 

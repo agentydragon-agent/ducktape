@@ -1,14 +1,15 @@
 #!/bin/bash
-# Bazel lint hook for frontend files (ESLint/Prettier).
-# Runs when JS/TS/Svelte files in props/frontend are changed.
+# Bazel lint hook for frontend files (ESLint via aspect).
+# Runs ESLint on any changed JS/TS/Svelte files via the unified aspect.
 
 set -e
 
 [ $# -eq 0 ] && exit 0
 
-# Check if any files are in props/frontend
-FRONTEND_FILES=$(printf '%s\n' "$@" | grep -E '^props/frontend/.*\.(ts|js|svelte)$' || true)
-[ -z "$FRONTEND_FILES" ] && exit 0
+# Check if any JS/TS/Svelte files changed
+JS_FILES=$(printf '%s\n' "$@" | grep -E '\.(ts|js|svelte|tsx)$' || true)
+[ -z "$JS_FILES" ] && exit 0
 
-echo "Running frontend linters (ESLint + Prettier)..."
-exec bazel test //props/frontend:eslint_test //props/frontend:prettier_test
+echo "Running ESLint via Bazel aspect on changed files..."
+# Run eslint config on all targets (aspect will only lint changed files' targets)
+exec bazel build --config=eslint --keep_going //...

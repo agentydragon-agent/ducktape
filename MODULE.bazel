@@ -47,12 +47,12 @@ playwright.repo(
 )
 use_repo(playwright, "playwright")
 
-# npm packages for props/frontend (pnpm)
-npm_props = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-npm_props.npm_translate_lock(
-    name = "npm_props_frontend",
-    # Generate bin entries for linting/formatting tools
-    # Bzlmod requires list format with "name=path" entries
+# Workspace-level npm packages (pnpm workspace)
+# All JS/TS projects share a single lockfile and node_modules
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+npm.npm_translate_lock(
+    name = "npm_ducktape",
+    # Generate bin entries for dev tools from workspace root
     bins = {
         "eslint": ["eslint=./bin/eslint.js"],
         "prettier": ["prettier=./bin/prettier.cjs"],
@@ -63,27 +63,32 @@ npm_props.npm_translate_lock(
         "@playwright/test": ["playwright=./cli.js"],
         "http-server": ["http-server=./bin/http-server"],
     },
-    pnpm_lock = "//props/frontend:pnpm-lock.yaml",
-    # Hoist eslint plugins so eslint can discover them at runtime
-    # Note: globals@16.5.0 is the version used by eslint flat config
+    # Workspace root pnpm-lock.yaml (auto-generated from package.json + members)
+    pnpm_lock = "//:pnpm-lock.yaml",
+    # Track all package.json files for auto-update
+    data = [
+        "//:package.json",
+        "//:pnpm-workspace.yaml",
+        "//props/frontend:package.json",
+        "//agent_server/src/agent_server/web:package.json",
+        "//rspcache/admin_ui:package.json",
+    ],
+    # Auto-regenerate pnpm-lock.yaml when package.json changes
+    update_pnpm_lock = True,
+    # Hoist ESLint plugins for runtime discovery
     public_hoist_packages = {
         "@eslint/js": [""],
         "@typescript-eslint/eslint-plugin": [""],
         "@typescript-eslint/parser": [""],
         "eslint-plugin-svelte": [""],
+        "eslint-plugin-import": [""],
+        "eslint-plugin-react": [""],
+        "eslint-plugin-react-hooks": [""],
         "svelte-eslint-parser": [""],
         "globals@16.5.0": [""],
     },
 )
-use_repo(npm_props, "npm_props_frontend")
-
-# npm packages for rspcache/admin_ui (converted to pnpm)
-npm_rspcache = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-npm_rspcache.npm_translate_lock(
-    name = "npm_rspcache_admin",
-    pnpm_lock = "//rspcache/admin_ui:pnpm-lock.yaml",
-)
-use_repo(npm_rspcache, "npm_rspcache_admin")
+use_repo(npm, "npm_ducktape")
 
 # Proxy configuration for Claude Code web vs local development
 # Generates @proxy_config//:proxy_env.bzl with PROXY_ENV dict
