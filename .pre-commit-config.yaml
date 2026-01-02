@@ -66,10 +66,11 @@ repos:
     hooks:
       - id: bazel-eslint
         name: bazel build --config=eslint
-        entry: tools/hooks/lint-frontend.sh
-        language: script
+        entry: bazel
+        args: ['build', '--config=eslint', '--keep_going', '//...']
+        language: system
         files: \.(ts|js|svelte|tsx)$
-        pass_filenames: true
+        pass_filenames: false
 
   # NOTE: Other linters are handled by Bazel test targets
   # - alejandra: `bazel test //:alejandra_test`

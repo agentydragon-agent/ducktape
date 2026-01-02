@@ -107,7 +107,7 @@ def main() -> int:
         # Still install wrapper without repo-specific config
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
-    # Persist PATH modification via CLAUDE_ENV_FILE
+    # Persist PATH modification via CLAUDE_ENV_FILE or fallback to ~/.bashrc
     # The bazel wrapper dir needs to be on PATH so `bazel` invokes our wrapper
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
@@ -115,7 +115,24 @@ def main() -> int:
         Path(env_file).write_text(env_content)
         log.info("Wrote PATH update to CLAUDE_ENV_FILE: %s", env_file)
     else:
-        log.warning("CLAUDE_ENV_FILE not set, bazel wrapper won't be on PATH")
+        # Fallback: modify ~/.bashrc for Claude Code on the web
+        # Must insert BEFORE the early-exit check for non-interactive shells
+        log.warning("CLAUDE_ENV_FILE not set, falling back to ~/.bashrc")
+        bashrc = Path.home() / ".bashrc"
+        env_content = bazelisk_setup.get_env_script()
+        marker = "# Bazel wrapper (sets proxy for TLS-inspecting proxy)"
+
+        if bashrc.exists():
+            current_content = bashrc.read_text()
+            if marker not in current_content:
+                # Insert PATH modification at the very beginning, before early-exit check
+                bashrc.write_text(env_content + "\n" + current_content)
+                log.info("Prepended PATH update to ~/.bashrc")
+            else:
+                log.info("PATH update already in ~/.bashrc")
+        else:
+            bashrc.write_text(env_content)
+            log.info("Created ~/.bashrc with PATH update")
 
     # Summary
     log.info("=" * 60)
