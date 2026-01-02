@@ -1,9 +1,9 @@
 """Token generation and verification scheme."""
 
-from datetime import datetime
-from hashlib import blake2b, sha256
 import hmac
 import math
+from datetime import datetime
+from hashlib import blake2b, sha256
 
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 

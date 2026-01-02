@@ -5,11 +5,11 @@ import threading
 import urllib.parse
 from pathlib import Path
 
+import splitwise
+import uvicorn
 from absl import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
-import splitwise
-import uvicorn
 from platformdirs import user_cache_dir, user_config_dir
 
 from ducktape.finance.reconcile import external_system

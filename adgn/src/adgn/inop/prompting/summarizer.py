@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 
 from adgn.inop.engine.models import FileInfo, GradedRollout
 from adgn.inop.io.logging_utils import DualOutputLogging

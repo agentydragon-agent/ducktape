@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from importlib.metadata import entry_points
-import logging
 
 import pluggy
 

@@ -3,9 +3,9 @@
 Provides helpers for connecting to the MCP server from within containers.
 """
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-import os
 from typing import Any
 
 from fastmcp.client import Client

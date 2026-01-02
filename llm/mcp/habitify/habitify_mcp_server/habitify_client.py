@@ -10,8 +10,8 @@ import logging
 import os
 from typing import Any, Literal
 
-from dotenv import load_dotenv
 import httpx
+from dotenv import load_dotenv
 
 from .types import Area, Habit, HabitStatus, Status
 from .utils.date_utils import create_date_range, format_date_for_api

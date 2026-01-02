@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+import pydantic_core
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
 from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
-import pydantic_core
 
 
 def extract_text_blocks(contents: Iterable[mcp_types.ContentBlock]) -> list[str]:

@@ -1,18 +1,19 @@
 import argparse
 import asyncio
+import json
+import math
+import os
+import shutil
+import subprocess
+import sys
 from collections import Counter
 from contextlib import suppress
 from datetime import datetime
 from importlib import resources
-import json
-import math
-import os
 from pathlib import Path
-import shutil
-import subprocess
-import sys
 from typing import Any, cast
 
+import tiktoken
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import (
@@ -25,7 +26,6 @@ from openai.types.chat import (
 )
 from openai.types.responses import ResponseCreateParams, ResponseOutputMessage
 from pydantic import BaseModel, TypeAdapter
-import tiktoken
 
 from adgn.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
 from openai_utils.client_factory import get_async_openai

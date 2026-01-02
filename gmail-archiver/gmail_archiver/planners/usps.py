@@ -1,7 +1,7 @@
 """Planner for archiving old USPS Informed Delivery emails."""
 
-from datetime import UTC, datetime, timedelta
 import re
+from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel
 

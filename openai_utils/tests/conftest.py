@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import openai
-from pydantic import BaseModel, ConfigDict, Field
 import pytest
+from pydantic import BaseModel, ConfigDict, Field
 
 # ========== Invalid Models (violate strict mode) ==========
 

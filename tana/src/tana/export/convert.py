@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import html
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-import html
 from pathlib import Path
 
 from tana.domain.constants import (

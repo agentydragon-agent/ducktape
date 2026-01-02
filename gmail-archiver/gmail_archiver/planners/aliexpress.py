@@ -1,9 +1,9 @@
 """Planner for managing AliExpress order notification emails."""
 
+import re
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-import re
 
 from pydantic import BaseModel
 

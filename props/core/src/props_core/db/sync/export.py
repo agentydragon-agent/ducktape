@@ -8,9 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
-import yaml
 
 from props_core.db.models import (
     CriticScopeExpectedToRecall,

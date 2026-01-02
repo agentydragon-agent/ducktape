@@ -1,7 +1,7 @@
 """Gitignore support for file filtering."""
 
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 
 def get_git_tracked_files(directory: Path, pattern: str = "*.py") -> list[Path]:

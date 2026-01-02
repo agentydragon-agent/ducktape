@@ -1,5 +1,5 @@
-from http import HTTPStatus
 import re
+from http import HTTPStatus
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession

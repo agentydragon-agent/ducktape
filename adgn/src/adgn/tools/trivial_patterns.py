@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import ast
+import sys
+import tomllib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from functools import lru_cache
 from pathlib import Path
-import sys
-import tomllib
 
 
 @dataclass

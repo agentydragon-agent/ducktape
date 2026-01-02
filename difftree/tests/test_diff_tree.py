@@ -1,7 +1,7 @@
 """Tests for DiffTree renderable."""
 
-from dataclasses import replace
 import re
+from dataclasses import replace
 
 import pytest
 from rich.console import Console

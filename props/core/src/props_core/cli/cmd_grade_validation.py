@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
-from dataclasses import dataclass
 import logging
 import traceback
+from collections import defaultdict
+from dataclasses import dataclass
 from uuid import UUID
 
 import aiodocker
-from sqlalchemy import func
 import typer
+from sqlalchemy import func
 
 from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client

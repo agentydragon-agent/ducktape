@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from enum import Enum, auto
 import logging
+from enum import Enum, auto
 
 from agent_core.events import AssistantText, ReasoningItem, Response, ToolCall
 from agent_core.handler import BaseHandler

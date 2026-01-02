@@ -1,8 +1,8 @@
 import datetime
 import json
-from pathlib import Path
 import sys
 import tempfile
+from pathlib import Path
 
 import click
 from pydantic import ValidationError

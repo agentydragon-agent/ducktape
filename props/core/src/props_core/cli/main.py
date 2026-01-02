@@ -6,19 +6,19 @@ Incremental migration target: we will gradually move subcommands here.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 import aiodocker
+import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.traceback import install as rich_traceback_install
 from sqlalchemy import func
-import typer
 from typer_di import TyperDI
 
 from cli_util.decorators import async_run

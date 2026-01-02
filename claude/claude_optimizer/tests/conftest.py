@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel
 import pytest
 import yaml
+from pydantic import BaseModel
 
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.database.models import create_database

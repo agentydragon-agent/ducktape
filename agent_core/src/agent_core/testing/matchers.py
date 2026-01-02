@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties, instance_of, is_not

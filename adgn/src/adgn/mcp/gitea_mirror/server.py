@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from typing import Any, TypeVar, cast
 from urllib.parse import urlparse
 
+import requests
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-import requests
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 

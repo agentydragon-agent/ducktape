@@ -1,8 +1,8 @@
 """Session-scoped logging system for Claude Code hooks."""
 
-from datetime import datetime
 import json
 import logging
+from datetime import datetime
 from typing import NewType
 from uuid import UUID
 

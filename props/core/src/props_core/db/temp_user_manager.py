@@ -14,10 +14,10 @@ not by different roles or username patterns.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import re
 import secrets
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import text

@@ -1,7 +1,7 @@
 """Parse git diff output to extract file change statistics."""
 
-from dataclasses import dataclass
 import subprocess
+from dataclasses import dataclass
 
 from unidiff import PatchSet
 

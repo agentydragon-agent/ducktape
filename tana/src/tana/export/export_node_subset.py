@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any, cast
 
 from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID

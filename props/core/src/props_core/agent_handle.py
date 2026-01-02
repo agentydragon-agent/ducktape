@@ -25,9 +25,9 @@ The /init script output becomes the system prompt.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 

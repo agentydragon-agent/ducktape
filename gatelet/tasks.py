@@ -1,7 +1,7 @@
 """Development tasks using invoke."""
 
-from pathlib import Path
 import time
+from pathlib import Path
 
 from invoke import task
 

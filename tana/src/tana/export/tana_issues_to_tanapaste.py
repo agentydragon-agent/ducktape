@@ -1,7 +1,7 @@
 """CLI to extract open #issue nodes from a Tana export into TanaPaste."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from tana.export.convert import RenderContext
 from tana.query.filters import filter_open_issues

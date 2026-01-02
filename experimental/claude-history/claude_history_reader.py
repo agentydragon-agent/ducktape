@@ -2,11 +2,11 @@
 """Read and analyze Claude Code history files from ~/.claude/projects/"""
 
 import argparse
+import json
+import re
 from collections import Counter
 from datetime import datetime
-import json
 from pathlib import Path
-import re
 from typing import Any, Literal
 
 from anthropic.types import Message, Usage

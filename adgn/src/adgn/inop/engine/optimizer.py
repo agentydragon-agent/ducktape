@@ -34,20 +34,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import json
 import logging
-from pathlib import Path
 import signal
 import sys
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 import aiodocker
 from fastmcp.client import Client
 
+import adgn.inop.engine.runner_factory
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
-import adgn.inop.engine.runner_factory
 from adgn.inop.grading.grader import grade_rollout
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.io.logging_utils import DualOutputLogging

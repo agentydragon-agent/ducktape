@@ -14,10 +14,10 @@ Features (MVP):
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-import logging
 from typing import Any, cast
 
 from aiohttp import ClientSession

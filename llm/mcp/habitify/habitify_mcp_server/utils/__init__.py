@@ -1,8 +1,8 @@
 """Utility functions for the Habitify MCP server."""
 
-from collections.abc import Callable
 import functools
 import os
+from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
 from ..config import load_api_key

@@ -1,8 +1,8 @@
 """Plan display and formatting functions."""
 
+import contextlib
 from collections import defaultdict
 from collections.abc import Iterable
-import contextlib
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable

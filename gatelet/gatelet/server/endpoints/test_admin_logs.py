@@ -1,6 +1,6 @@
+import re
 from http import HTTPStatus
 from pathlib import Path
-import re
 
 from httpx import AsyncClient
 

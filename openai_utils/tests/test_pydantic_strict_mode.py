@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
 import pytest
+from pydantic import BaseModel, ConfigDict, Field
 
 from openai_utils.json_schema import OpenAICompatibleSchema
 from openai_utils.pydantic_strict_mode import (

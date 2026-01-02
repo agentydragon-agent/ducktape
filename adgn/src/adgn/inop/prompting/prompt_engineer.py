@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from enum import Enum
 import math
 import statistics
+from enum import Enum
 from typing import Protocol
 
 from adgn.inop.engine.models import GradedRollout

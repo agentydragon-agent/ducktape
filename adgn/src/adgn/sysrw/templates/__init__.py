@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path
-import re
 
 _ALLOWED_VARS = {"toolsBlob", "envGitBlobs", "modelLine", "mcpSection"}
 _TOKEN_RE = re.compile(r"\{\{\s*([#/]?\w+)\s*}}")

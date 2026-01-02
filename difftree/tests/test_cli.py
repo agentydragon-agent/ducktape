@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from click.testing import CliRunner
 import pytest
+from click.testing import CliRunner
 
 from difftree.__main__ import main
 

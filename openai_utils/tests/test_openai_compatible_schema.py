@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import pytest
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from openai_utils.json_schema import OpenAICompatibleSchema
 from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema

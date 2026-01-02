@@ -1,9 +1,9 @@
 """Planner for archiving old Anthem reimbursement emails."""
 
 import contextlib
+import re
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-import re
 
 from pydantic import BaseModel
 

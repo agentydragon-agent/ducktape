@@ -6,10 +6,10 @@ import asyncio
 import json
 from pathlib import Path
 
+import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
-import typer
 
 from openai_utils.client_factory import get_async_openai
 

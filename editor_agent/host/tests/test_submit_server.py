@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from fastmcp.exceptions import ToolError
 import pytest
+from fastmcp.exceptions import ToolError
 
 from editor_agent.submit_server import EditorSubmitServer, SubmitFailureInput, SubmitStateSuccess, SubmitSuccessInput
 

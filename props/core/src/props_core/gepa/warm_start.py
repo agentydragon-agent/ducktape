@@ -31,8 +31,8 @@ See build_historical_gepa_state() implementation for complete warm-start logic.
 
 from __future__ import annotations
 
-from collections import defaultdict
 import logging
+from collections import defaultdict
 
 from sqlalchemy import text
 

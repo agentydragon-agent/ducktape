@@ -4,11 +4,11 @@ Provides structured output helpers for printing workspace content, running
 commands, and processing documentation files with Jinja2 template rendering.
 """
 
-from collections.abc import Callable, Mapping
 import importlib.resources
 import os
-from pathlib import Path
 import subprocess
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, Template

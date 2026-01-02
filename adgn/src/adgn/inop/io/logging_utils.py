@@ -1,9 +1,9 @@
 """Logging utilities for structured dual-output logging."""
 
-from collections.abc import Callable, Mapping, MutableMapping
 import logging
-from pathlib import Path
 import sys
+from collections.abc import Callable, Mapping, MutableMapping
+from pathlib import Path
 from typing import Any, cast
 
 import structlog

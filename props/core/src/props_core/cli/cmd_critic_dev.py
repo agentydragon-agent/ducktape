@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 from uuid import UUID
 
+import typer
 from rich.console import Console
 from sqlalchemy import text
-import typer
 
 from agent_pkg_runtime.mcp import mcp_client_from_env
 from agent_pkg_runtime.output import render_agent_prompt

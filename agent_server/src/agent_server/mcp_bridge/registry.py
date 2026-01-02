@@ -9,9 +9,9 @@ Manages:
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import logging
 
 import aiodocker
 from fastmcp.mcp_config import MCPConfig

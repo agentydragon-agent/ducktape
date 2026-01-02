@@ -1,7 +1,7 @@
 """Real integration tests for actual CLI."""
 
-from datetime import timedelta
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import pygit2

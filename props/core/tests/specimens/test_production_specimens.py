@@ -26,9 +26,9 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import AsyncGenerator, Generator
 
-from hamcrest import assert_that, greater_than_or_equal_to
 import pytest
 import pytest_asyncio
+from hamcrest import assert_that, greater_than_or_equal_to
 from sqlalchemy import create_engine, text
 
 from props_core.db.config import DatabaseConfig, get_database_config

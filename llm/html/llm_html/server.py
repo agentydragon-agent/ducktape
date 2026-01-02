@@ -2,21 +2,21 @@
 """FastAPI server for LLM instructions with token generation."""
 
 import asyncio
-from datetime import datetime, timedelta
 import logging
 import os
-from pathlib import Path
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import markdown
+import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from jinja2 import Environment, FileSystemLoader
-import markdown
 from markdownify import markdownify
 from pydantic import BaseModel, ConfigDict
-import uvicorn
 
 from .token_counter import count_tokens_for_models
 from .token_scheme import TokenScheme, VerificationError

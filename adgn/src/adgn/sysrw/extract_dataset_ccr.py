@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 
 from .constants import BAD_MARKER
 from .extract_common import (

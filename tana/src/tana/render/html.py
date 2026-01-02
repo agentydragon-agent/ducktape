@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import html
+import re
+from collections.abc import Callable
 from html.parser import HTMLParser
 from io import StringIO
-import re
 
 from tana.domain.types import NodeId
 from tana.render.inline_refs import parse_inline_date

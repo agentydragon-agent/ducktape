@@ -20,11 +20,12 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 
+import pygit2
+
 # FastMCP-only: no TokenVerifier in server construction
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
-import pygit2
-from pygit2.enums import BranchType
+from pygit2.enums import BranchType, FileStatus
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
@@ -34,7 +35,6 @@ from .formatting import (
     ChangedFilesPage,
     DiffStatPage,
     ListSlice,
-    StatusEntry,
     StatusPage,
     StringListPage,
     TextPage,
@@ -207,12 +207,9 @@ class GitRoServer(EnhancedFastMCP):
 
         # Register tools using clean pattern: tool name derived from function name
         def status(input: StatusInput) -> StatusPage:
-            """Return status entries with raw pygit2 flags for type-safe interpretation."""
+            """Return git status as path → FileStatus flags mapping."""
             st = state.status()
-            entries: list[StatusEntry] = []
-            for path, flags in st.items():
-                # Store raw pygit2 status flags for consumers to interpret
-                entries.append(StatusEntry(path=Path(path), index=flags, worktree=flags))
+            entries = {path: FileStatus(flags) for path, flags in st.items()}
             return build_status_page(entries, input.list_slice)
 
         self.status_tool = self.flat_model()(status)

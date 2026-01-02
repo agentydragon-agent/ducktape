@@ -32,24 +32,24 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
 import concurrent.futures
-from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import json
 import logging
-from pathlib import Path
 import pickle
 import tempfile
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
 import aiodocker
 import gepa
+import litellm
 from gepa.core.result import GEPAResult
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
-import litellm
 from pydantic import BaseModel
 from sqlalchemy import func
 

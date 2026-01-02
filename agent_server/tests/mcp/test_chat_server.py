@@ -1,10 +1,10 @@
 import asyncio
 from typing import Any
 
+import pytest
 from fastmcp.client import Client
 from hamcrest import anything, assert_that, empty, has_properties
 from hamcrest.core.matcher import Matcher
-import pytest
 
 from agent_server.mcp.chat.server import (
     ChatAuthor,

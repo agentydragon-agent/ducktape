@@ -2,8 +2,8 @@
 
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from .server import app
 from .token_scheme import N_TAGS, TokenScheme

@@ -1,7 +1,7 @@
 """Unit tests for MCP tool handling in claude-linter-v2."""
 
-from datetime import datetime
 import json
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest

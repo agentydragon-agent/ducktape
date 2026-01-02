@@ -4,10 +4,10 @@
 Can delete after: Trajectory analysis complete
 """
 
-from collections import defaultdict
 import json
-from pathlib import Path
 import sys
+from collections import defaultdict
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np

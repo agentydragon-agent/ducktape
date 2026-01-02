@@ -1,5 +1,5 @@
-from datetime import timedelta
 import shutil
+from datetime import timedelta
 
 import pytest
 

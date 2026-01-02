@@ -1,8 +1,8 @@
 """Planner for managing DoorDash order emails."""
 
+import re
 from collections import defaultdict
 from enum import StrEnum
-import re
 
 from pydantic import BaseModel
 

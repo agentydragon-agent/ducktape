@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import base64
-from datetime import UTC, datetime
 import logging
 import os
 import sys
 import time
+from datetime import UTC, datetime
 
 import httpx
 from kubernetes import client, config

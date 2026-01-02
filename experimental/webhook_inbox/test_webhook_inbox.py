@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cryptography.fernet import Fernet
-from fastapi.testclient import TestClient
 import pytest
 import webhook_inbox
+from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture

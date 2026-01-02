@@ -1,14 +1,14 @@
 """Gmail API client wrapper."""
 
 import base64
-from collections.abc import Callable
-from datetime import datetime
 import json
 import logging
-from pathlib import Path
 import re
 import sys
 import time
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build

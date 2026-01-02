@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from hamcrest import contains_string
 import pytest
+from hamcrest import contains_string
 
 from agent_core.testing.steps import AssertDockerExecThenFinish, DockerExecCall, Step
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID

@@ -1,12 +1,12 @@
 """Unified Git operations manager combining all git functionality."""
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
 import logging
 import os
-from pathlib import Path
 import re
 import subprocess
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 import pygit2
 

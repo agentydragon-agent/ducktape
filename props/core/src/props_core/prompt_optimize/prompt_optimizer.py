@@ -1,7 +1,7 @@
 """Prompt optimizer: LLM agent for optimizing critic prompts via eval tools."""
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4
 

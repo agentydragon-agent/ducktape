@@ -6,8 +6,8 @@ Tests construct their own DatabaseConfig with per-test database names.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

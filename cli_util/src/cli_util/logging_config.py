@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from logging.config import dictConfig
 import os
+from logging.config import dictConfig
 from pathlib import Path
 
 import structlog

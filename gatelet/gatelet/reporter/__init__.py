@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Iterable
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 import httpx
 import psutil
-from pydantic import BaseModel
 import tomlkit
+from pydantic import BaseModel
 
 
 class ReporterConfig(BaseModel):

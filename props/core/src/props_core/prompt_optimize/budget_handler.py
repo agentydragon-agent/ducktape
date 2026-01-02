@@ -9,8 +9,8 @@ Monitors cumulative costs across critic/grader runs and enforces budget limits b
 
 from __future__ import annotations
 
-from enum import StrEnum
 import logging
+from enum import StrEnum
 from typing import TYPE_CHECKING
 from uuid import UUID
 

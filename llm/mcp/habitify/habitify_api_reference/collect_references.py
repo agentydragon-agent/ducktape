@@ -7,11 +7,11 @@ and saves the requests and responses as reference examples in YAML format.
 """
 
 import dataclasses
-from functools import cached_property
 import logging
 import os
-from pathlib import Path
 import sys
+from functools import cached_property
+from pathlib import Path
 from typing import Any
 
 import httpx

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import hmac
 import os
 import time
+from dataclasses import dataclass
 
 import requests
 

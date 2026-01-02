@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
+from collections.abc import Callable
 
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, NoAction

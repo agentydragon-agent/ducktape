@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from mcp import types as mcp_types
 import pytest
+from mcp import types as mcp_types
 
 # Register testing fixtures:
 # - agent_core.testing.fixtures: Core agent fixtures (recording_handler, make_test_agent, etc.)

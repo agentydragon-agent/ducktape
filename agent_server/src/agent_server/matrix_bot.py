@@ -7,9 +7,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import aiodocker
+import typer
 from fastmcp.client import Client
 from pydantic import TypeAdapter
-import typer
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool

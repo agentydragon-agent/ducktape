@@ -1,7 +1,7 @@
 import ast
 import importlib
-from pathlib import Path
 import pkgutil
+from pathlib import Path
 
 ROOT = Path(importlib.import_module("wt").__file__).parent
 

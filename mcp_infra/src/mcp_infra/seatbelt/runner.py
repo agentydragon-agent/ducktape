@@ -8,14 +8,14 @@ Seatbelt runner: execute commands under an SBPLPolicy with async subprocess-like
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from .compile import compile_sbpl
 from .model import SBPLPolicy, TraceConfig

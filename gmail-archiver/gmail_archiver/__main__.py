@@ -2,19 +2,19 @@
 
 import asyncio
 import base64
+import itertools
+import re
 from datetime import UTC, datetime
 from email.parser import BytesParser
 from email.policy import default
-import itertools
 from pathlib import Path
-import re
 from typing import Annotated
 
+import typer
 from googleapiclient.errors import HttpError
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
-import typer
 
 from .cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
 from .cli.filters import filters_app

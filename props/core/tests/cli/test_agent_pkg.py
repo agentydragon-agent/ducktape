@@ -6,9 +6,9 @@ The /init script is validated in the built Docker image via agent_pkg.builder.va
 
 from __future__ import annotations
 
+import tarfile
 from io import BytesIO
 from pathlib import Path
-import tarfile
 
 import pytest
 from typer.testing import CliRunner

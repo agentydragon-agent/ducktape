@@ -5,22 +5,22 @@ For stateless reasoning/tool replay demo, see :/adgn/examples/openai_api/statele
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterable, Sequence
 import contextlib
-from dataclasses import dataclass
 import json
 import logging
+from collections.abc import Awaitable, Callable, Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import anyio
+import pydantic_core
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
-import pydantic_core
 
 from agent_core.events import (
     ApiRequest,

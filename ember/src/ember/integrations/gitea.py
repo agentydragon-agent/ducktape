@@ -4,8 +4,8 @@ import base64
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field
 import requests
+from pydantic import BaseModel, Field
 
 from ..secrets import ProjectedSecret
 

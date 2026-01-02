@@ -1,6 +1,6 @@
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass

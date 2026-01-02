@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from enum import IntEnum
 from pathlib import Path
-from typing import TypeVar
+from typing import Annotated, TypeVar
 
-from pydantic import BaseModel, Field
 import pygit2
+from pydantic import BaseModel, Field
+from pygit2.enums import DeltaStatus, FileStatus
 
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+
+
+def _enum_desc(enum: type[IntEnum], pred: Callable[[str], bool] = lambda _: True) -> str:
+    """Generate 'value=NAME, ...' from enum members matching predicate."""
+    return ", ".join(f"{m.value}={m.name}" for m in enum if pred(m.name))
+
+
+# Annotated types with value→name mappings in description
+AnnotatedFileStatus = Annotated[FileStatus, Field(description=_enum_desc(FileStatus))]
+AnnotatedDeltaStatus = Annotated[DeltaStatus, Field(description=_enum_desc(DeltaStatus))]
+
 
 # -------------------------- pagination models -------------------------------
 
@@ -69,23 +82,20 @@ def apply_text_slice(body: str, slicer: TextSlice) -> TextPage:
 # -------------------------- status models -----------------------------------
 
 
-class StatusEntry(BaseModel):
-    path: Path
-    # Use pygit2 status flags directly for type safety
-    index: int = Field(description="Index status flags (pygit2.GIT_STATUS_INDEX_*)")
-    worktree: int = Field(description="Worktree status flags (pygit2.GIT_STATUS_WT_*)")
-
-
 class StatusPage(BaseModel):
-    entries: list[StatusEntry]
+    """Git status: path → FileStatus flags (bitmask combining INDEX_* and WT_* flags)."""
+
+    entries: dict[str, AnnotatedFileStatus]
     truncated: bool
     next_offset: int | None = None
     total_entries: int
 
 
-def build_status_page(entries: list[StatusEntry], slicer: ListSlice) -> StatusPage:
-    window, truncated, next_offset, total = apply_list_slice(entries, slicer)
-    return StatusPage(entries=window, truncated=truncated, next_offset=next_offset, total_entries=total)
+def build_status_page(entries: dict[str, FileStatus], slicer: ListSlice) -> StatusPage:
+    # Apply pagination to dict items
+    items = list(entries.items())
+    window, truncated, next_offset, total = apply_list_slice(items, slicer)
+    return StatusPage(entries=dict(window), truncated=truncated, next_offset=next_offset, total_entries=total)
 
 
 # -------------------------- diff list (name-status) -------------------------
@@ -100,7 +110,7 @@ class ChangedFileItem(BaseModel):
 
     path: Path = Field(description="New/current path (destination for renames)")
     old_path: Path | None = Field(description="Old path (for renames only)")
-    status: int = Field(description="Delta status (pygit2.GIT_DELTA_*)")
+    status: AnnotatedDeltaStatus
 
 
 class ChangedFilesPage(BaseModel):

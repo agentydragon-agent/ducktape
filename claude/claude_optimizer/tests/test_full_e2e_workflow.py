@@ -1,7 +1,7 @@
 """Full end-to-end test with mocked OpenAI and Claude SDK APIs."""
 
-from datetime import datetime
 import json
+from datetime import datetime
 from unittest.mock import Mock
 
 import pytest

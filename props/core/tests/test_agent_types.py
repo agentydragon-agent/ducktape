@@ -2,8 +2,8 @@
 
 from uuid import UUID
 
-from pydantic import TypeAdapter, ValidationError
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from props_core.agent_types import (
     AgentConfig,

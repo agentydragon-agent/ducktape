@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
-import logging
 from typing import Any, Final, cast
-import uuid
 
 import aiodocker
+import pydantic_core
 from fastmcp.client import Client
 from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import ServerSession
@@ -22,7 +23,6 @@ from jinja2 import Template
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 from pydantic import AnyUrl, BaseModel
-import pydantic_core
 
 from agent_core.handler import AbortTurnDecision, ContinueDecision
 from agent_server.approvals import ApprovalRequest, ApprovalToolCall

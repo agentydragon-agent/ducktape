@@ -1,21 +1,21 @@
 import contextlib
-from datetime import timedelta
 import importlib.util
 import io
 import json
 import os
-from pathlib import Path
 import shlex
 import shutil
 import socket
 import subprocess
-from unittest.mock import Mock
 import uuid
+from datetime import timedelta
+from pathlib import Path
+from unittest.mock import Mock
 
 import pygit2
 import pytest
-from typer.testing import CliRunner
 import yaml
+from typer.testing import CliRunner
 
 from tests.config_factory import ConfigFactory
 from tests.mock_factory import MockFactory, ServiceBuilder

@@ -1,7 +1,7 @@
 """Base class for agent runners."""
 
-from abc import ABC, abstractmethod
 import asyncio
+from abc import ABC, abstractmethod
 from pathlib import Path
 
 from adgn.inop.engine.models import GitCloneConfig, Rollout, RunnerEnvironment, TaskDefinition

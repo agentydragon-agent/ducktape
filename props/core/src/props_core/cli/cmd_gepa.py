@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Annotated
 
-from rich.console import Console
 import typer
+from rich.console import Console
 
 from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client

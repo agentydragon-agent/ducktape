@@ -1,9 +1,9 @@
 """Planner for archiving small Square receipt emails."""
 
 import contextlib
+import re
 from datetime import datetime
 from decimal import Decimal
-import re
 
 from pydantic import BaseModel
 

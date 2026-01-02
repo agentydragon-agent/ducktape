@@ -29,14 +29,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-from dataclasses import dataclass
-from datetime import timedelta
-from enum import StrEnum
 import fcntl
 import hashlib
 import logging
 import os
-from pathlib import Path
 import pty
 import select
 import shutil
@@ -46,6 +42,10 @@ import sys
 import termios
 import textwrap
 import time
+from dataclasses import dataclass
+from datetime import timedelta
+from enum import StrEnum
+from pathlib import Path
 
 import pygit2
 

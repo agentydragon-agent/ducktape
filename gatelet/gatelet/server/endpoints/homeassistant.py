@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import homeassistant_api
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-import homeassistant_api
 
 from ..auth.dependencies import Auth
 from ..config import Settings, get_settings

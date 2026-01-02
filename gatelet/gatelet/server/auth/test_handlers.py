@@ -1,8 +1,8 @@
 """Tests for authentication handlers."""
 
+import uuid
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
-import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession

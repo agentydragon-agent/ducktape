@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
-import pytest
 
 from agent_core.handler import SequenceHandler
 from agent_core.loop_control import InjectItems, NoAction

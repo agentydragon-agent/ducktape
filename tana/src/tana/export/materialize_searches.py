@@ -1,8 +1,8 @@
 """CLI to inspect or re-materialize search nodes from a Tana export."""
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from tana.domain.types import NodeId
 from tana.graph.workspace import TanaGraph

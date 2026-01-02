@@ -4,9 +4,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
 import tomli
 import tomli_w
+from pydantic import BaseModel, Field
 
 from ..rule_registry import RuleRegistry
 from .models import (

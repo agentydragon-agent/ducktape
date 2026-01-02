@@ -1,16 +1,16 @@
 import datetime
 import json
-from pathlib import Path
 import random
+from pathlib import Path
 
-from absl import app, flags
 import numpy as np
 import openai
+import pandas as pd
+import requests
+from absl import app, flags
 
 # needs: pip install plotly sklearn
 from openai.embeddings_utils import cosine_similarity
-import pandas as pd
-import requests
 
 _ROOT = flags.DEFINE_string("root", "http://localhost:37840", "ETAPI root URL")
 _TOKEN = flags.DEFINE_string("token", None, "ETAPI token")

@@ -1,15 +1,15 @@
 """Tests for the Claude instruction optimizer."""
 
-from datetime import datetime
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from openai.types.responses.response import Response
 import pydantic
 import pytest
 import yaml
+from openai.types.responses.response import Response
 
 from claude_optimizer.config import OptimizerConfig
 from claude_optimizer.core.jsonl_logger import JSONLLogger, safe_serialize

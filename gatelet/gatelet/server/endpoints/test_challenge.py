@@ -1,7 +1,7 @@
 """Tests for challenge-response authentication endpoints."""
 
-from datetime import datetime, timedelta
 import html
+from datetime import datetime, timedelta
 from http import HTTPStatus
 
 from httpx import AsyncClient

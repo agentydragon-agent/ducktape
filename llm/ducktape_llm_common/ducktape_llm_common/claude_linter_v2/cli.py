@@ -5,14 +5,14 @@ Claude Linter v2 - Main CLI entry point.
 A unified code quality and permission management system for Claude Code.
 """
 
-from datetime import datetime, timedelta
 import json
 import logging
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import traceback
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import click
 import humanize

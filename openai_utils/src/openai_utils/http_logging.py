@@ -22,9 +22,9 @@ client = make_logged_async_openai(Path("./openai_http.jsonl"))
 
 from __future__ import annotations
 
-from functools import partial
 import json
 import logging
+from functools import partial
 from pathlib import Path
 from typing import Any
 

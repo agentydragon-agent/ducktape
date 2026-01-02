@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import typer
 from fastmcp.client import Client as MCPClient
 from rich.console import Console
 from sqlalchemy import String, cast, select
-import typer
 
 from agent_core.agent import Agent, TranscriptItem
 from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText

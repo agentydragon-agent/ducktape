@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
-import pytest
 
 from agent_server.mcp_bridge.agents import AgentInfo, AgentsManagementServer, PresetInfo
 from agent_server.persist import AgentMetadata

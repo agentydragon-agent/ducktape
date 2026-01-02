@@ -4,8 +4,8 @@ import os
 from typing import Any, cast
 
 import openai
-from openai.types.responses import EasyInputMessageParam, ResponseInputParam
 import pytest
+from openai.types.responses import EasyInputMessageParam, ResponseInputParam
 
 
 @pytest.mark.live_openai_api

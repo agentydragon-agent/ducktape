@@ -2,9 +2,9 @@ import dataclasses
 import getpass
 from pathlib import Path
 
+import yaml
 from inventree.api import InvenTreeAPI
 from platformdirs import user_config_dir
-import yaml
 
 CONFIG_DIR = Path(user_config_dir("agentydragon_inventree_utils", ensure_exists=True))
 

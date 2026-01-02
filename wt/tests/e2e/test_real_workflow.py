@@ -40,8 +40,8 @@ The tests run the actual CLI binary end-to-end, making them true integration tes
 that catch real-world deployment issues like this socket path problem.
 """
 
-from datetime import timedelta
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import pygit2

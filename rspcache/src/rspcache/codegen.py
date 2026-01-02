@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi.openapi.utils import get_openapi
 import httpx
 import yaml
+from fastapi.openapi.utils import get_openapi
 
 from rspcache.admin_app import ADMIN_APP
 

@@ -1,7 +1,7 @@
 """Tests for webhook viewing endpoints."""
 
-from http import HTTPStatus
 import re
+from http import HTTPStatus
 
 from hamcrest import all_of, assert_that, contains_string, is_not
 from httpx import AsyncClient

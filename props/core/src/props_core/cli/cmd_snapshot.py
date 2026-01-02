@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from datetime import datetime
 import fnmatch
 import io
 import json
-from pathlib import Path
 import shutil
 import tarfile
+from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 
 import pygit2
 import typer
-from typer_di import TyperDI
 import yaml
+from typer_di import TyperDI
 
 from cli_util.decorators import async_run
 from props_core.cli import common_options as opt
