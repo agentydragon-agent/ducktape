@@ -107,32 +107,39 @@ def main() -> int:
         # Still install wrapper without repo-specific config
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
-    # Persist PATH modification via CLAUDE_ENV_FILE or fallback to ~/.bashrc
-    # The bazel wrapper dir needs to be on PATH so `bazel` invokes our wrapper
+    # Export debug timestamp to track hook execution
+    hook_timestamp = datetime.now().isoformat()
+    os.environ["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp
+
+    # Write timestamp to persistent file for debugging
+    timestamp_file = Path.home() / ".ducktape_session_hook_last_run"
+    timestamp_file.write_text(f"{hook_timestamp}\n")
+    log.info("Session start hook timestamp: %s", hook_timestamp)
+
+    # Persist PATH modification via CLAUDE_ENV_FILE or fallback to symlink
+    # The bazel wrapper needs to be on PATH so `bazel` invokes our wrapper
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
         env_content = bazelisk_setup.get_env_script()
+        # Also export the debug timestamp
+        env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
         Path(env_file).write_text(env_content)
         log.info("Wrote PATH update to CLAUDE_ENV_FILE: %s", env_file)
     else:
-        # Fallback: modify ~/.bashrc for Claude Code on the web
-        # Must insert BEFORE the early-exit check for non-interactive shells
-        log.warning("CLAUDE_ENV_FILE not set, falling back to ~/.bashrc")
-        bashrc = Path.home() / ".bashrc"
-        env_content = bazelisk_setup.get_env_script()
-        marker = "# Bazel wrapper (sets proxy for TLS-inspecting proxy)"
+        # Fallback for Claude Code on the web: symlink to ~/.local/bin
+        # Claude Code spawns non-interactive bash which doesn't source rc files
+        # but ~/.local/bin is already on PATH
+        log.warning("CLAUDE_ENV_FILE not set, using symlink fallback")
+        local_bin = Path.home() / ".local" / "bin"
+        local_bin.mkdir(parents=True, exist_ok=True)
 
-        if bashrc.exists():
-            current_content = bashrc.read_text()
-            if marker not in current_content:
-                # Insert PATH modification at the very beginning, before early-exit check
-                bashrc.write_text(env_content + "\n" + current_content)
-                log.info("Prepended PATH update to ~/.bashrc")
-            else:
-                log.info("PATH update already in ~/.bashrc")
-        else:
-            bashrc.write_text(env_content)
-            log.info("Created ~/.bashrc with PATH update")
+        bazel_symlink = local_bin / "bazel"
+        bazel_wrapper = bazelisk_setup.WRAPPER_PATH
+
+        if bazel_symlink.exists() or bazel_symlink.is_symlink():
+            bazel_symlink.unlink()
+        bazel_symlink.symlink_to(bazel_wrapper)
+        log.info("Created symlink: %s -> %s", bazel_symlink, bazel_wrapper)
 
     # Summary
     log.info("=" * 60)
