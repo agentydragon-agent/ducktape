@@ -3,12 +3,10 @@
 Helpful pointers for working on the `wt` worktree manager: environment, commands, testing, layout, and gotchas. Read alongside `README.md` for product docs and `docs/ARCHITECTURE.md` for in-depth design notes.
 
 ## Environment and Tooling
-- Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be installed separately for integration tests.
-- Build and test with Bazel:
-  ```bash
-  bazel build //wt:wt
-  bazel test //wt:test_wt
-  ```
+
+See @../AGENTS.md for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
+
+Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be installed separately for integration tests.
 
 ### Extra dependencies / binaries
 - `libgit2` is provided via system packages or Nix.
@@ -16,10 +14,7 @@ Helpful pointers for working on the `wt` worktree manager: environment, commands
 
 ## Common Development Commands
 - Run the CLI entry point: `bazel run //wt:wt-cli -- --help`
-- Tests:
-  - Full suite: `bazel test //wt:test_wt`
-  - Integration tests marked `integration` or `shell` spawn git repos and daemons; they may need relaxed sandboxing.
-- Linting: `bazel lint //wt:all` (via Aspect CLI)
+- Integration tests marked `integration` or `shell` spawn git repos and daemons; they may need relaxed sandboxing.
 
 ## Project Structure (src layout)
 - `src/wt/cli.py` — CLI entry point (`wt` console script).

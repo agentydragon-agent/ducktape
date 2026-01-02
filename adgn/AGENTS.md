@@ -22,30 +22,16 @@ ducktape/
 
 ## Environment and Setup
 
-**Bazel is the primary build system.** See `bazelization/STATUS.md` for complete documentation.
+See @../AGENTS.md for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
 
 Requirements: Bazelisk (auto-downloads Bazel), Python 3.12+
 
-All commands run from repo root:
-```bash
-bazel build //adgn:adgn        # Build
-bazel test //adgn:tests        # Test
-bazel lint //adgn:all          # Lint (ruff + mypy)
-bazel run //adgn:adgn-agent    # Run CLI
-```
-
-### Legacy: direnv + devenv (transitional)
-Some local development still uses direnv/devenv for venv management. This is being migrated to pure Bazel.
-
-## Common Dev Commands
-
-### Bazel (primary build system)
-See `bazelization/STATUS.md` for complete Bazel documentation.
+Package-specific targets:
 - Build: `bazel build //adgn:adgn`
 - Test: `bazel test //adgn:tests`
-- Lint (ruff): `bazel lint //adgn:all`
-- Type check (mypy): `bazel build --config=typecheck //adgn:adgn`
-- Combined lint + typecheck: `bazel build --config=check //adgn:adgn`
+- Run CLI: `bazel run //adgn:adgn-agent`
+
+## Common Dev Commands
 
 ### Debugging hangs/timeouts
 Run without xdist parallelization for clearer output: `bazel test //adgn:tests --test_arg=-n0 --test_arg=-v`
@@ -232,12 +218,6 @@ handlers = [bootstrap, ...other handlers...]
   - For resource JSON, use `read_text_json(session, uri)` or the typed variant. Avoid hand‑parsing `contents`.
 
 ### Linting and Typing
-Use `bazel lint //...` for all linting:
-```bash
-bazel lint //adgn:all                    # Ruff
-bazel build --config=typecheck //adgn:adgn  # Mypy
-bazel build --config=check //adgn:adgn      # Both
-```
 
 Do not add ignore rules or silence individual lint errors unless explicitly approved.
 

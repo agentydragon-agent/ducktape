@@ -1,17 +1,12 @@
-"""
-Example script to run the Habitify MCP server.
+"""Run the Habitify MCP server.
 
-This script creates and starts the Habitify MCP server with either stdio transport
-(for Claude Desktop) or SSE transport (for HTTP-based web integrations).
+Usage: bazel run //llm/mcp/habitify:run_server -- [--transport stdio|sse] [--port PORT]
 """
 
 import argparse
 import logging
-from pathlib import Path
 import sys
 
-# Add the parent directory to the path so we can import the server
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from habitify_mcp_server.server import create_habitify_mcp_server
 from habitify_mcp_server.utils import get_api_key_from_param_or_env
 

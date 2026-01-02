@@ -1,22 +1,18 @@
-"""
-Example script to test the Habitify MCP server using mcp dev.
+"""Test the Habitify MCP server using mcp dev.
 
-This script sets up a mock server file that can be run with the MCP dev command
-to view and interact with the tools in a debug environment.
+Usage: bazel run //llm/mcp/habitify:test_mcp_dev -- [--api-key KEY] [--debug]
 
-The MCP dev environment provides a convenient way to test MCP servers without
-requiring a full Claude Desktop installation.
+Creates a mock server file for the MCP dev command to test tools
+in a debug environment without full Claude Desktop installation.
 """
 
 import argparse
 import logging
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
-# Add the parent directory to the path so we can import the server
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from habitify_mcp_server.utils import get_api_key_from_param_or_env
 
 # Setup logging

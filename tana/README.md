@@ -6,14 +6,9 @@ parsers/renderers under the `tana.export` namespace.
 
 ## Getting Started
 
-```bash
-# Build and run with Bazel
-bazel build //tana:tana
-bazel run //tana:tana-export-convert -- --help
+See [AGENTS.md](../AGENTS.md) for standard Bazel workflow.
 
-# Run tests
-bazel test //tana:test_tana
-```
+Run converter: `bazel run //tana:tana-export-convert -- --help`
 
 Key layout (`src/tana/`):
 

@@ -21,23 +21,11 @@ ducktape/
     └── runtime/             # Container-side utilities
 ```
 
-## Environment and Setup
+## Development
 
-**Bazel is the primary build system.** Requirements: Bazelisk (auto-downloads Bazel), Python 3.12+
+See [AGENTS.md](../AGENTS.md) for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
 
-## Quick Commands
-
-All commands run from repo root:
-```bash
-bazel build //adgn:adgn           # Build
-bazel test //adgn:tests           # Run tests
-bazel lint //adgn:all             # Lint (ruff + mypy)
-bazel run //adgn:adgn-agent       # Run CLI
-```
-
-For specific tests: `bazel test //adgn:tests --test_arg=-k --test_arg="test_name"`
-
-See `bazelization/STATUS.md` for complete Bazel documentation.
+Run CLI: `bazel run //adgn:adgn-agent`
 
 ## Agent Presets (Agent UI)
 - Agents are created from presets (YAML) discovered via platformdirs:

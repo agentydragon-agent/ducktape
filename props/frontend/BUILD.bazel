@@ -2,6 +2,8 @@ load("@npm_props_frontend//:defs.bzl", "npm_link_all_packages")
 load("@npm_props_frontend//props/frontend:vite/package_json.bzl", vite_bin = "bin")
 load("@npm_props_frontend//props/frontend:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("@npm_props_frontend//props/frontend:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
+load("@npm_props_frontend//props/frontend:storybook/package_json.bzl", storybook_bin = "bin")
+load("@npm_props_frontend//props/frontend:@playwright/test/package_json.bzl", playwright_bin = "bin")
 load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
 
 # Link npm packages from pnpm-lock.yaml
@@ -109,4 +111,52 @@ js_run_devserver(
     chdir = package_name(),
     data = _SRCS + [":node_modules"],
     tool = "//tools/frontend:vite",
+)
+
+# Storybook source files (stories + config)
+# Note: _SRCS already includes src/**/*.ts (which includes *.stories.ts)
+_STORYBOOK_SRCS = _SRCS + glob([
+    "src/**/*.mdx",
+    ".storybook/**/*.ts",
+])
+
+# Storybook static build
+# Run: bazel build //props/frontend:storybook
+# Output: bazel-bin/props/frontend/storybook-static/
+storybook_bin.storybook(
+    name = "storybook",
+    srcs = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
+    args = ["build"],
+    chdir = package_name(),
+    out_dirs = ["storybook-static"],
+)
+
+# Storybook dev server
+# Run: bazel run //props/frontend:storybook_dev
+storybook_bin.storybook(
+    name = "storybook_dev",
+    srcs = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
+    args = ["dev", "-p", "6006"],
+    chdir = package_name(),
+)
+
+# Visual regression tests (Playwright + Storybook)
+# Run: bazel test //props/frontend:visual_test
+# Uses rules_playwright for browser binaries (no npx install needed)
+playwright_bin.playwright_test(
+    name = "visual_test",
+    args = ["test"],
+    chdir = package_name(),
+    data = [
+        ":storybook",
+        ":node_modules/@playwright/test",
+        ":node_modules/http-server",
+        "playwright.config.ts",
+        "@playwright//:chromium-headless-shell",
+    ] + glob(["tests/**/*"]),
+    env = {
+        "PLAYWRIGHT_BROWSERS_PATH": "$(rootpath @playwright//:chromium-headless-shell)/../",
+    },
+    tags = ["no-sandbox", "visual"],
+    timeout = "long",
 )

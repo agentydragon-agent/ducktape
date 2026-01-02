@@ -3,13 +3,10 @@
 Focused instructions for the Tana export toolkit that now lives as its own project.
 
 ## Environment
-- Requirements: Bazel (via bazelisk) and Python 3.12+
-- Build and test with Bazel:
-  ```bash
-  bazel build //tana:tana
-  bazel test //tana:test_tana
-  bazel run //tana:tana-export-convert -- --help
-  ```
+
+See @../AGENTS.md for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
+
+Package-specific: `bazel run //tana:tana-export-convert -- --help`
 
 ## Package Layout (`src/tana/`)
 - `domain/` — immutable data models (`Props`, `BaseNode`, `TupleNode`, …) and shared constants/types.
@@ -21,8 +18,7 @@ Focused instructions for the Tana export toolkit that now lives as its own proje
 
 ## Tests & Fixtures
 - Tests live under `tests/`; existing suite focuses on conversion golden files.
-  - Run with: `bazel test //tana:test_tana`
-  - Golden fixtures stored in `tests/tana/testdata/`.
+- Golden fixtures stored in `tests/tana/testdata/`.
 
 ## Gotchas
 - `TanaGraph` sets the `_graph` reference on nodes; avoid calling legacy `attach_supertag_property` helpers—supertags resolve via `node.supertags`.

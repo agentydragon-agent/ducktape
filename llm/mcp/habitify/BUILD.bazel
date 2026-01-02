@@ -24,6 +24,20 @@ py_binary(
     deps = [":habitify_mcp_server"],
 )
 
+py_binary(
+    name = "run_server",
+    srcs = ["examples/run_server.py"],
+    main = "examples/run_server.py",
+    deps = [":habitify_mcp_server"],
+)
+
+py_binary(
+    name = "test_mcp_dev",
+    srcs = ["examples/test_mcp_dev.py"],
+    main = "examples/test_mcp_dev.py",
+    deps = [":habitify_mcp_server"],
+)
+
 py_test(
     name = "test_habitify",
     srcs = glob(["habitify_mcp_server/tests/**/*.py"]),

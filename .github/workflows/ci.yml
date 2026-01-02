@@ -1,6 +1,7 @@
-# This workflow runs Bazel build/lint/test, pre-commit (for non-Bazel linters), and other checks
-# Bazel handles: Python (ruff, mypy), buildifier
-# Pre-commit handles: yamllint, ansible-syntax-check, alejandra (nix), eslint/prettier (JS/TS)
+# This workflow runs Bazel build/lint/test, pre-commit (for safety checks), and other checks
+# Bazel handles: Python (ruff, mypy), Rust (clippy, rustfmt), JS/TS (eslint, prettier),
+#                buildifier, yamllint, alejandra (nix), svelte-check
+# Pre-commit handles: no-commit-to-branch, check-ast, check-yaml, check-toml, ansible-syntax-check
 name: CI
 
 on:
@@ -134,18 +135,15 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-frontend-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'props/frontend/pnpm-lock.yaml') }}
+          # Unified cache key includes all dependency files
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
           restore-keys: |
-            bazel-frontend-${{ runner.os }}-
+            bazel-${{ runner.os }}-
 
-      - name: Build frontend bundle
-        run: bazel build //props/frontend:bundle
-
-      - name: Check TypeScript types (svelte-check)
-        run: bazel test //props/frontend:svelte_check_test
-
-      - name: Check formatting (prettier)
-        run: bazel test //props/frontend:prettier_test
+      - name: Build and test frontend
+        run: |
+          bazel build //props/frontend:bundle //props/frontend:storybook
+          bazel test //props/frontend:svelte_check_test //props/frontend:prettier_test
 
       - name: Generate build summary
         if: always()
@@ -155,6 +153,37 @@ jobs:
             echo "✅ Frontend build successful" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Frontend build failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  visual-regression:
+    name: Visual regression tests (Bazel + Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
+      - name: Run visual regression tests
+        run: bazel test //props/frontend:visual_test --test_output=errors
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "### Visual Regression Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All visual tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Visual regression tests failed" >> $GITHUB_STEP_SUMMARY
           fi
 
   bazel-build:
@@ -207,18 +236,16 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          # Unified cache key includes all dependency files
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
           restore-keys: |
             bazel-${{ runner.os }}-
 
-      - name: Build all targets
-        run: bazel build //...
-
-      - name: Lint (ruff)
-        run: bazel lint //...
-
-      - name: Run tests
-        run: bazel test //... --test_output=errors
+      - name: Build, lint, and test
+        run: |
+          bazel build //...
+          bazel lint //...
+          bazel test //... --test_output=errors
 
       - name: Generate test summary
         if: always()

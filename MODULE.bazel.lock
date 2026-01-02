@@ -1,6 +1,6 @@
 {
   "lockFileVersion": 6,
-  "moduleFileHash": "939f982b70081277198e715edfa92f23f7f527c0782d177de91d863da6d22ec3",
+  "moduleFileHash": "a23c093b35479d40bf91a5fd2af8b7d4f61884864c07b54d6f86a8fe93a22891",
   "flags": {
     "cmdRegistries": [
       "https://bcr.bazel.build/"
@@ -69,7 +69,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 33,
+            "line": 36,
             "column": 21
           },
           "imports": {},
@@ -83,8 +83,39 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 34,
+                "line": 37,
                 "column": 15
+              }
+            }
+          ],
+          "hasDevUseExtension": false,
+          "hasNonDevUseExtension": true
+        },
+        {
+          "extensionBzlFile": "@rules_playwright//playwright:extensions.bzl",
+          "extensionName": "playwright",
+          "usingModule": "<root>",
+          "location": {
+            "file": "@@//:MODULE.bazel",
+            "line": 40,
+            "column": 27
+          },
+          "imports": {
+            "playwright": "playwright"
+          },
+          "devImports": [],
+          "tags": [
+            {
+              "tagName": "repo",
+              "attributeValues": {
+                "name": "playwright",
+                "playwright_version": "1.57.0"
+              },
+              "devDependency": false,
+              "location": {
+                "file": "@@//:MODULE.bazel",
+                "line": 41,
+                "column": 16
               }
             }
           ],
@@ -97,7 +128,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 37,
+            "line": 48,
             "column": 26
           },
           "imports": {
@@ -128,6 +159,15 @@
                   ],
                   "vite": [
                     "vite=./bin/vite.js"
+                  ],
+                  "storybook": [
+                    "storybook=./index.cjs"
+                  ],
+                  "@playwright/test": [
+                    "playwright=./cli.js"
+                  ],
+                  "http-server": [
+                    "http-server=./bin/http-server"
                   ]
                 },
                 "pnpm_lock": "//props/frontend:pnpm-lock.yaml",
@@ -155,7 +195,7 @@
               "devDependency": true,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 38,
+                "line": 49,
                 "column": 29
               }
             },
@@ -168,7 +208,7 @@
               "devDependency": true,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 65,
+                "line": 79,
                 "column": 32
               }
             }
@@ -182,7 +222,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 73,
+            "line": 87,
             "column": 29
           },
           "imports": {
@@ -199,7 +239,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 77,
+            "line": 91,
             "column": 26
           },
           "imports": {
@@ -215,7 +255,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 78,
+                "line": 92,
                 "column": 14
               }
             }
@@ -229,7 +269,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 81,
+            "line": 95,
             "column": 23
           },
           "imports": {},
@@ -243,7 +283,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 82,
+                "line": 96,
                 "column": 17
               }
             }
@@ -257,7 +297,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 86,
+            "line": 100,
             "column": 20
           },
           "imports": {
@@ -276,7 +316,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 92,
+                "line": 106,
                 "column": 10
               }
             },
@@ -290,7 +330,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 99,
+                "line": 113,
                 "column": 10
               }
             }
@@ -304,7 +344,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 108,
+            "line": 122,
             "column": 19
           },
           "imports": {},
@@ -318,7 +358,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 109,
+                "line": 123,
                 "column": 13
               }
             }
@@ -332,7 +372,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 115,
+            "line": 129,
             "column": 21
           },
           "imports": {
@@ -351,7 +391,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 116,
+                "line": 130,
                 "column": 15
               }
             }
@@ -365,7 +405,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 125,
+            "line": 139,
             "column": 22
           },
           "imports": {
@@ -385,7 +425,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 128,
+                "line": 142,
                 "column": 17
               }
             }
@@ -399,7 +439,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 141,
+            "line": 155,
             "column": 35
           },
           "imports": {
@@ -415,7 +455,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 145,
+                "line": 159,
                 "column": 28
               }
             }
@@ -429,7 +469,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 148,
+            "line": 162,
             "column": 22
           },
           "imports": {
@@ -445,7 +485,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 154,
+                "line": 168,
                 "column": 15
               }
             },
@@ -457,7 +497,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 159,
+                "line": 173,
                 "column": 14
               }
             },
@@ -469,7 +509,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 162,
+                "line": 176,
                 "column": 14
               }
             },
@@ -490,7 +530,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 168,
+                "line": 182,
                 "column": 14
               }
             },
@@ -502,7 +542,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 176,
+                "line": 190,
                 "column": 14
               }
             },
@@ -514,7 +554,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 179,
+                "line": 193,
                 "column": 14
               }
             },
@@ -526,7 +566,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 182,
+                "line": 196,
                 "column": 14
               }
             },
@@ -538,7 +578,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 185,
+                "line": 199,
                 "column": 14
               }
             },
@@ -550,7 +590,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 188,
+                "line": 202,
                 "column": 14
               }
             },
@@ -562,7 +602,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 191,
+                "line": 205,
                 "column": 14
               }
             },
@@ -574,7 +614,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 194,
+                "line": 208,
                 "column": 14
               }
             },
@@ -587,7 +627,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 199,
+                "line": 213,
                 "column": 14
               }
             }
@@ -601,7 +641,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 218,
+            "line": 232,
             "column": 27
           },
           "imports": {
@@ -626,6 +666,7 @@
         "aspect_rules_js": "aspect_rules_js@2.4.0",
         "aspect_rules_ts": "aspect_rules_ts@3.8.0",
         "rules_nodejs": "rules_nodejs@6.3.4",
+        "rules_playwright": "rules_playwright@0.5.3",
         "rules_rust": "rules_rust@0.61.0",
         "rules_haskell": "rules_haskell@1.0",
         "bazel_tools": "bazel_tools@_",
@@ -1712,6 +1753,72 @@
           "strip_prefix": "rules_nodejs-6.3.4",
           "remote_patches": {
             "https://bcr.bazel.build/modules/rules_nodejs/6.3.4/patches/module_dot_bazel_version.patch": "sha256-yTBZX5UrKZmvaox5KS8rbAUGqlravL/xDGBV75U0/aU="
+          },
+          "remote_patch_strip": 1
+        }
+      }
+    },
+    "rules_playwright@0.5.3": {
+      "name": "rules_playwright",
+      "version": "0.5.3",
+      "key": "rules_playwright@0.5.3",
+      "repoName": "rules_playwright",
+      "executionPlatformsToRegister": [],
+      "toolchainsToRegister": [],
+      "extensionUsages": [
+        {
+          "extensionBzlFile": "//:MODULE.bazel",
+          "extensionName": "_repo_rules",
+          "usingModule": "rules_playwright@0.5.3",
+          "location": {
+            "file": "https://bcr.bazel.build/modules/rules_playwright/0.5.3/MODULE.bazel",
+            "line": 0,
+            "column": 0
+          },
+          "imports": {
+            "stardoc-prebuilt": "stardoc-prebuilt"
+          },
+          "devImports": [],
+          "tags": [
+            {
+              "tagName": "@bazel_tools//tools/build_defs/repo:http.bzl%http_jar",
+              "attributeValues": {
+                "integrity": "sha256-jDi5ITmziwwiHCsfd8v0UOoraWXIAfICIll+wbpg/vE=",
+                "urls": [
+                  "https://github.com/alexeagle/stardoc-prebuilt/releases/download/v0.7.1/renderer_deploy.jar"
+                ],
+                "name": "stardoc-prebuilt"
+              },
+              "devDependency": false,
+              "location": {
+                "file": "https://bcr.bazel.build/modules/rules_playwright/0.5.3/MODULE.bazel",
+                "line": 111,
+                "column": 9
+              }
+            }
+          ],
+          "hasDevUseExtension": false,
+          "hasNonDevUseExtension": true
+        }
+      ],
+      "deps": {
+        "bazel_skylib": "bazel_skylib@1.8.1",
+        "platforms": "platforms@0.0.11",
+        "aspect_bazel_lib": "aspect_bazel_lib@2.14.0",
+        "bazel_tools": "bazel_tools@_",
+        "local_config_platform": "local_config_platform@_"
+      },
+      "repoSpec": {
+        "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": [
+            "https://github.com/mrmeku/rules_playwright/releases/download/v0.5.3/rules_playwright-v0.5.3.tar.gz"
+          ],
+          "integrity": "sha256-9B265ReI2rU9cSd87ggWn1KU85CgsrKjd+BLzqE0LGc=",
+          "strip_prefix": "rules_playwright-0.5.3",
+          "remote_patches": {
+            "https://bcr.bazel.build/modules/rules_playwright/0.5.3/patches/module_dot_bazel_version.patch": "sha256-yKA42sg6uia687HSyyL1SNYvlIdtblOkjZcIRFQXWwI="
           },
           "remote_patch_strip": 1
         }
@@ -5905,6 +6012,2422 @@
         ]
       }
     },
+    "@@rules_playwright~//playwright:extensions.bzl%playwright": {
+      "general": {
+        "bzlTransitiveDigest": "NBSSeG4pQ+kALrU51HcqgkaK0Anw8bXP4wi7reeAD6s=",
+        "recordedFileInputs": {
+          "@@rules_playwright~//tools/release/artifacts/cli-x86_64-unknown-linux-musl": "c478e5f07bc0a2b513ff7e7d9f33e9420e8f3bac4ec058c3e3bf332bff8362a1"
+        },
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "playwright-firefox-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-debian-11-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-debian-11-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-debian-11-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-24.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-24.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-24.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-68dPxblIMBdqPCkUrpa9i8f2qR9PM4kCMPhKFy7mHMw=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-mac-14-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-mac-14-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-mac-14-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-debian-12.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-debian-12.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-debian-12.zip"
+              ]
+            }
+          },
+          "playwright-chromium-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-JijAPwUxj/gSyMm6ryB96i3fU+gYwNyTZxSw++OvsAk=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-JijAPwUxj/gSyMm6ryB96i3fU+gYwNyTZxSw++OvsAk=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-12.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-12.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-12.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-mac-15-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-mac-15-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-mac-15-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-ubuntu-22.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-ubuntu-22.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-ubuntu-22.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac10.15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac10.14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac10.13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac10.14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-onN55LO1UOlcHDsFoCJwpli0Dw4W94FJK4KOP1VWUJ4=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/deprecated-webkit-mac-10.14/1446/deprecated-webkit-mac-10.14.zip",
+                "https://playwright-akamai.azureedge.net/builds/deprecated-webkit-mac-10.14/1446/deprecated-webkit-mac-10.14.zip",
+                "https://playwright-verizon.azureedge.net/builds/deprecated-webkit-mac-10.14/1446/deprecated-webkit-mac-10.14.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac10.15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-uCA1JD5urKP09FFJTAjBB9lnSEIKKe5zE6mEWic06BY=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/deprecated-webkit-mac-10.15/1616/deprecated-webkit-mac-10.15.zip",
+                "https://playwright-akamai.azureedge.net/builds/deprecated-webkit-mac-10.15/1616/deprecated-webkit-mac-10.15.zip",
+                "https://playwright-verizon.azureedge.net/builds/deprecated-webkit-mac-10.15/1616/deprecated-webkit-mac-10.15.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-firefox-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-ubuntu-24.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-ubuntu-24.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-ubuntu-24.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-debian-12.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-debian-12.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-debian-12.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-fXfrDUS1msxAZfqiR2wN8aJCzJBMNG+CBiaBjJU8Unc=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-JijAPwUxj/gSyMm6ryB96i3fU+gYwNyTZxSw++OvsAk=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-F+0Vovpg08dBgb78sr33ybsojRmyo7mJO5S2PyziYOQ=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-F+0Vovpg08dBgb78sr33ybsojRmyo7mJO5S2PyziYOQ=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-F+0Vovpg08dBgb78sr33ybsojRmyo7mJO5S2PyziYOQ=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-android-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-jzwvO/Ye/XXHTDzJVtZHtUqbW82tIQSa9er0Oioe05I=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1010/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1010/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1010/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-F+0Vovpg08dBgb78sr33ybsojRmyo7mJO5S2PyziYOQ=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-11-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-11-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-11-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-68dPxblIMBdqPCkUrpa9i8f2qR9PM4kCMPhKFy7mHMw=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip"
+              ]
+            }
+          },
+          "playwright-android-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-android-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-ubuntu-22.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-ubuntu-22.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-ubuntu-22.04.zip"
+              ]
+            }
+          },
+          "playwright-firefox-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-debian-11.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-debian-11.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-debian-11.zip"
+              ]
+            }
+          },
+          "playwright-webkit-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-4dHblulkxXiViVj8Irh6zzq1PsVCRfjgeSWpDHmZ+0Q=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2092/webkit-ubuntu-20.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2092/webkit-ubuntu-20.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2092/webkit-ubuntu-20.04.zip"
+              ]
+            }
+          },
+          "playwright-android-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac10.13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac10.14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac10.15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-android-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-22.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-22.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-22.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-ubuntu-20.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-ubuntu-20.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-ubuntu-20.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-debian-12-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-debian-12-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-debian-12-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-68dPxblIMBdqPCkUrpa9i8f2qR9PM4kCMPhKFy7mHMw=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-68dPxblIMBdqPCkUrpa9i8f2qR9PM4kCMPhKFy7mHMw=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac10.14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac10.15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-22.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-22.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-22.04.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-24.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-24.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-24.04.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-fXfrDUS1msxAZfqiR2wN8aJCzJBMNG+CBiaBjJU8Unc=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac10.13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-android-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-Mhpjz9GNZiayIUQOxD92R1mfb1a7wnusdWPJeECkx+4=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2105/webkit-debian-11-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2105/webkit-debian-11-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2105/webkit-debian-11-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-GeZSiz/rQ0R3S1CNPtAmGJayTxt3+kJpds4V052z/1Q=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/1816/webkit-mac-11-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/1816/webkit-mac-11-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/1816/webkit-mac-11-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-ubuntu-20.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-ubuntu-20.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-ubuntu-20.04.zip"
+              ]
+            }
+          },
+          "playwright-android-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-android-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-68dPxblIMBdqPCkUrpa9i8f2qR9PM4kCMPhKFy7mHMw=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-android-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac14-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-fXfrDUS1msxAZfqiR2wN8aJCzJBMNG+CBiaBjJU8Unc=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac10.14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-android-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac10.13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-android-debian11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac10.15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-ubuntu-24.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-ubuntu-24.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-ubuntu-24.04.zip"
+              ]
+            }
+          },
+          "playwright-webkit-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-ubuntu-22.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-ubuntu-22.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-ubuntu-22.04.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-20.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-20.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-ubuntu-20.04.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-android-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-webkit-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-YMRbRTBA6MQ3uMCgUgR5Oh3MCt9MbrQlepuKH/mCiN0=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2092/webkit-ubuntu-20.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2092/webkit-ubuntu-20.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2092/webkit-ubuntu-20.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-chromium-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-mac.zip"
+              ]
+            }
+          },
+          "playwright-webkit-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-debian-12-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-debian-12-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-debian-12-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-12-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-12-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-12-arm64.zip"
+              ]
+            }
+          },
+          "playwright": {
+            "bzlFile": "@@rules_playwright~//playwright:repositories.bzl",
+            "ruleClassName": "playwright_repository",
+            "attributes": {
+              "playwright_version": "1.57.0",
+              "browsers_workspace_name_prefix": "playwright",
+              "rules_playwright_cannonical_name": "@rules_playwright~"
+            }
+          },
+          "playwright-ffmpeg-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-JijAPwUxj/gSyMm6ryB96i3fU+gYwNyTZxSw++OvsAk=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux.zip"
+              ]
+            }
+          },
+          "playwright-android-mac10.14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-android-mac10.13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-headless-shell-mac15-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-headless-shell-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-mac10.15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-firefox-ubuntu22.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox/1497/firefox-ubuntu-22.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox/1497/firefox-ubuntu-22.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox/1497/firefox-ubuntu-22.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-android-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-ieX7MC1xEehgOwtZHsyCXOWrW3QDz4B4hEKkWEWsix8=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-akamai.azureedge.net/builds/android/1001/android.zip",
+                "https://playwright-verizon.azureedge.net/builds/android/1001/android.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-ubuntu20.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-OR/j9ZBkFCgUD/CqSz1j3ZQAS6AC2HgLy/mmA/Cm4cM=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2009/webkit-mac-12-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2009/webkit-mac-12-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2009/webkit-mac-12-arm64.zip"
+              ]
+            }
+          },
+          "playwright-firefox-beta-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-11.zip",
+                "https://playwright-akamai.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-11.zip",
+                "https://playwright-verizon.azureedge.net/builds/firefox-beta/1493/firefox-beta-debian-11.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-mac-15.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-mac-15.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-mac-15.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac10.14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-F+0Vovpg08dBgb78sr33ybsojRmyo7mJO5S2PyziYOQ=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-Ey7qjUHibCifUk9gEQA5ErFms2J7/y92HqkVnW5HAv4=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2140/webkit-mac-13.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2140/webkit-mac-13.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2140/webkit-mac-13.zip"
+              ]
+            }
+          },
+          "playwright-webkit-ubuntu24.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-ubuntu-24.04.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-ubuntu-24.04.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-ubuntu-24.04.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac10.13": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-F+0Vovpg08dBgb78sr33ybsojRmyo7mJO5S2PyziYOQ=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac14": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-mac-14.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-mac-14.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-mac-14.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac11": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-RnHAPszuiEUg23UghFgbVKzz1iK42FFYE9t7PKYeJ2s=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/1816/webkit-mac-11.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/1816/webkit-mac-11.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/1816/webkit-mac-11.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac12": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-2s7UJ4+mgLHzkjxpYfdXYs/4Q4PLwb9W1SEuocgLHg0=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2009/webkit-mac-12.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2009/webkit-mac-12.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2009/webkit-mac-12.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac11-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-fXfrDUS1msxAZfqiR2wN8aJCzJBMNG+CBiaBjJU8Unc=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac-arm64.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-debian12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-JijAPwUxj/gSyMm6ryB96i3fU+gYwNyTZxSw++OvsAk=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-linux-arm64.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac10.15": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-F+0Vovpg08dBgb78sr33ybsojRmyo7mJO5S2PyziYOQ=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1011/ffmpeg-mac.zip"
+              ]
+            }
+          },
+          "playwright-webkit-debian11-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-pkeiZb0RIX+Hjce1JuQEfq6+nHjzGHJvuJxckdxo81o=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2105/webkit-debian-11.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2105/webkit-debian-11.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2105/webkit-debian-11.zip"
+              ]
+            }
+          },
+          "playwright-webkit-ubuntu24.04-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2227/webkit-ubuntu-24.04-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2227/webkit-ubuntu-24.04-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2227/webkit-ubuntu-24.04-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-ubuntu22.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium/1200/chromium-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium/1200/chromium-linux.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-debian12-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-linux.zip"
+              ]
+            }
+          },
+          "playwright-webkit-mac13-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-El5K5oAoyI9jv/4bJCUSXIMfhEGUipvtZZJ8LDQg5V0=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/webkit/2140/webkit-mac-13-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/webkit/2140/webkit-mac-13-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/webkit/2140/webkit-mac-13-arm64.zip"
+              ]
+            }
+          },
+          "playwright-chromium-tip-of-tree-headless-shell-ubuntu20.04-x64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "",
+              "urls": [
+                "https://playwright.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-akamai.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip",
+                "https://playwright-verizon.azureedge.net/builds/chromium-tip-of-tree/1380/chromium-tip-of-tree-headless-shell-linux.zip"
+              ]
+            }
+          },
+          "playwright-ffmpeg-mac12-arm64": {
+            "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+            "ruleClassName": "http_file",
+            "attributes": {
+              "integrity": "sha256-r94UveYB7hhMUfMWtEMGgyJf4ZgtOixo21Nbqmaz2iU=",
+              "urls": [
+                "https://playwright.azureedge.net/builds/ffmpeg/1010/ffmpeg-mac-arm64.zip",
+                "https://playwright-akamai.azureedge.net/builds/ffmpeg/1010/ffmpeg-mac-arm64.zip",
+                "https://playwright-verizon.azureedge.net/builds/ffmpeg/1010/ffmpeg-mac-arm64.zip"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "rules_playwright~",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
     "@@rules_python~//python/uv:uv.bzl%uv": {
       "general": {
         "bzlTransitiveDigest": "Xpqjnjzy6zZ90Es9Wa888ZLHhn7IsNGbph/e6qoxzw8=",
@@ -6080,7 +8603,7 @@
         "recordedFileInputs": {
           "@@//Cargo.toml": "e35a394f1bca72a13197ce348ecdd1aeea7726d0313192c0a52f9131a00c1f8a",
           "@@//Cargo.lock": "3739b1363d2bbf5462c85fd6eeb1985f381bdf0e3829059d65e4c9c896f7feba",
-          "@@//MODULE.bazel": "2ab2f5a9a88c96709632618c1259bad08815b2a8dc5b243a57c9d0a9f94ba837",
+          "@@//MODULE.bazel": "939f982b70081277198e715edfa92f23f7f527c0782d177de91d863da6d22ec3",
           "@@rules_rust~~rust_host_tools~rust_host_tools//rust_host_tools": "ENOENT"
         },
         "recordedDirentsInputs": {},
