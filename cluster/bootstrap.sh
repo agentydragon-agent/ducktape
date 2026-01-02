@@ -82,9 +82,10 @@ if ! git diff-index --quiet HEAD --; then
     exit 1
 fi
 
-# Run pre-commit validation
+# Run pre-commit validation from repo root (unified config)
 log "🔍 Running pre-commit validation..."
-if ! pre-commit run --all-files; then
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+if ! (cd "$REPO_ROOT" && pre-commit run --all-files); then
     log "❌ FATAL: Pre-commit validation failed"
     exit 1
 fi
