@@ -10,25 +10,7 @@ Step-by-step instructions for cold-starting the Talos cluster from layered terra
 - `direnv` configured in cluster directory
 - VPS with nginx and PowerDNS configured via Ansible
 - Access to AWS Route 53 for `agentydragon.com`
-- **Stable SealedSecret keypair** stored in libsecret (one-time setup, see below)
-
-### Step 0: One-Time SealedSecret Keypair Setup
-
-**IMPORTANT**: Generate stable keypair ONCE and store in libsecret. Required before first bootstrap:
-
-```bash
-# Generate stable keypair (run ONCE per development machine)
-openssl genrsa 4096 | secret-tool store service sealed-secrets key private_key
-openssl req -new -x509 -key <(secret-tool lookup service sealed-secrets key private_key) \
-  -out /tmp/sealed-secrets.crt -days 365 -subj '/CN=sealed-secrets'
-secret-tool store service sealed-secrets key public_key < /tmp/sealed-secrets.crt
-rm /tmp/sealed-secrets.crt
-
-# Only Proxmox CSI uses sealed secrets now - Authentik uses ESO
-# Regenerate CSI sealed secret if needed
-kubeseal --cert <(secret-tool lookup service sealed-secrets key public_key) \
-  < /tmp/proxmox-csi-secret.yaml > k8s/storage/proxmox-csi-sealed.yaml
-```
+- **Persistent auth layer** initialized (`terraform/00-persistent-auth/` - run once per environment)
 
 ### Step 1: Layered Terraform Deployment
 
@@ -43,7 +25,7 @@ kubeseal --cert <(secret-tool lookup service sealed-secrets key public_key) \
 **Prerequisites:**
 
 - `gh auth login` completed for GitHub access
-- Stable SealedSecret keypair in libsecret (Step 0)
+- Persistent auth layer initialized (`terraform/00-persistent-auth/`)
 
 #### Bootstrap Layer Architecture
 
@@ -165,15 +147,15 @@ kubectl get pods -n csi-proxmox            # CSI controller and node pods runnin
 kubectl get csinode                        # Verify CSI driver registered
 ```
 
-### Sealed-Secrets Keypair Persistence (Optional Optimization)
+### Sealed-Secrets Keypair Persistence
 
 The cluster automatically manages sealed-secrets keypair persistence for turnkey GitOps workflows:
 
-- **First deployment**: Sealed-secrets controller generates new keypair, terraform stores it in system keyring
-- **Subsequent deployments**: Terraform restores keypair from keyring, all existing sealed secrets work immediately
+- **Layer 00 (persistent-auth)**: Terraform generates sealed secrets keypair once, stores in terraform state
+- **Subsequent deployments**: Keypair restored from terraform state, all existing sealed secrets work immediately
 - **Without persistence**: Each deployment generates new keypair, requiring manual sealed secret regeneration
 
-**No action needed** - this happens automatically during `terraform apply`.
+**No action needed** - this happens automatically during `terraform apply` in `00-persistent-auth`.
 
 ### Step 3: Platform Services Automatic Deployment
 

@@ -151,7 +151,7 @@
 - **CNI: Cilium** via Terraform (prevents circular dependency)
 - **GitOps: Flux CD** with proper dependency ordering
 - **Secrets Management**: Hybrid architecture
-  - SealedSecrets for bootstrap (stable keypair in libsecret)
+  - SealedSecrets for bootstrap (stable keypair in terraform state)
   - External Secrets Operator for runtime secrets from Vault
 - **Turnkey Deployment**: `./bootstrap.sh` → working cluster
   - Layered terraform: 00-persistent-auth → 01-infrastructure → 02-services → 03-configuration
@@ -232,7 +232,7 @@
 
 - Proxmox CSI credentials
 - Flux deploy key
-- Stable keypair in libsecret (survives cluster destroy)
+- Stable keypair in terraform state (survives cluster destroy)
 
 **Runtime Secrets** (External Secrets Operator):
 

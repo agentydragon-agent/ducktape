@@ -32,7 +32,7 @@
 
 - `terraform/00-persistent-auth/` is NOT destroyed unless explicitly stated
 - Includes: Sealed secrets keypair, CSI tokens, Nix signing keys, JWT tokens
-- These persist in system keyring (libsecret) across cluster lifecycles
+- These persist in terraform state across cluster lifecycles
 - Only destroy when user explicitly says "including persistent auth" or "from scratch"
 
 ### WHY: The persistent auth layer is designed to survive VM destroy/recreate cycles to avoid
@@ -336,7 +336,7 @@ kubectl get externalsecret -n gitea
 
 - **🔍 Preflight validation**: Git clean + pre-commit + terraform validate
 - **⚡ Native provider deployment**: Talos → Cilium → Flux → Applications
-- **🛡️ Libsecret keypair persistence**: Sealed secrets work across destroy/apply
+- **🛡️ Terraform state keypair persistence**: Sealed secrets work across destroy/apply
 - **📊 Clear progress reporting**: Phase-by-phase status updates
 - **❌ Fail-fast behavior**: Stops immediately on any validation failure
 

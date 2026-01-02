@@ -391,7 +391,8 @@ kubectl get secret -n csi-proxmox proxmox-csi-plugin
 kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\.yaml}' | base64 -d
 
 # 6. If SealedSecret shows decryption error, regenerate with stable keypair:
-CSI_TOKEN_SECRET=$(secret-tool lookup service proxmox-csi key token_secret)
+cd terraform/00-persistent-auth
+CSI_TOKEN_SECRET=$(terraform output -raw csi_token_secret)
 cat > /tmp/csi-config.yaml << EOF
 clusters:
 - insecure: false
@@ -406,10 +407,11 @@ kubectl create secret generic proxmox-csi-plugin \
   --namespace=csi-proxmox \
   --from-file=config.yaml=/tmp/csi-config.yaml \
   --dry-run=client -o yaml | \
-kubeseal --cert <(secret-tool lookup service sealed-secrets key public_key) \
+kubeseal --cert <(terraform output -raw sealed_secrets_public_key) \
   --format=yaml | kubectl apply -f -
 
 rm /tmp/csi-config.yaml
+cd -
 
 # 7. Check if CSI token exists in Proxmox (via SSH)
 ssh root@atlas "pveum token list kubernetes-csi@pve"
@@ -447,24 +449,27 @@ kubectl logs deployment/helm-controller -n flux-system --tail=50
 ### Keypair Verification
 
 ```bash
-# Check if stable keypair exists
-secret-tool lookup service sealed-secrets key private_key >/dev/null && echo "✅ Private key exists"
-secret-tool lookup service sealed-secrets key public_key >/dev/null && echo "✅ Public key exists"
+# Check if stable keypair exists in terraform state
+cd terraform/00-persistent-auth
+terraform output sealed_secrets_public_key >/dev/null && echo "✅ Keypair exists in terraform state"
 
 # Check if cluster is using stable keypair
 kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
   base64 -d | openssl x509 -text -noout | grep -A2 "Serial Number"
-secret-tool lookup service sealed-secrets key public_key | openssl x509 -text -noout | grep -A2 "Serial Number"
+terraform output -raw sealed_secrets_public_key | openssl x509 -text -noout | grep -A2 "Serial Number"
 # Serial numbers should match
+cd -
 ```
 
 ### SealedSecret Decryption Test
 
 ```bash
 # Test if a SealedSecret can be decrypted with stable keypair
+cd terraform/00-persistent-auth
 kubectl get sealedsecret <name> -n <namespace> -o yaml | \
-kubeseal --recovery-unseal --recovery-private-key <(secret-tool lookup service sealed-secrets key private_key)
+kubeseal --recovery-unseal --recovery-private-key <(terraform output -raw sealed_secrets_private_key)
 # Should output the original secret YAML if working
+cd -
 ```
 
 ## 🔄 Common Recovery Actions
@@ -496,7 +501,7 @@ kubectl delete sealedsecret proxmox-csi-plugin -n csi-proxmox
 
 - **Issue**: SealedSecret decryption failures
 - **Cause**: terraform/storage generating secrets with wrong keypair
-- **Fix**: Always use stable keypair from libsecret when sealing
+- **Fix**: Always use stable keypair from terraform state (00-persistent-auth) when sealing
 
 ### Flux CRD Caching
 
@@ -613,15 +618,17 @@ kubectl exec -n nix-cache deployment/harmonia -- df -h /nix/store
 # Check secret exists
 kubectl get secret nix-cache-signing-key -n nix-cache
 
-# Verify key in libsecret
-secret-tool lookup service nix-cache key signing_public
+# Verify key in terraform state
+cd terraform/00-persistent-auth
+terraform output nix_signing_public_key
 
 # Get public key for NixOS config
-secret-tool lookup service nix-cache key signing_public | head -1
+terraform output -raw nix_signing_public_key | head -1
 # Output: cache.test-cluster.agentydragon.com-1:BASE64KEY
+cd -
 ```
 
-**If signing key missing**: Re-run terraform in `terraform/00-persistent-auth`
+**If signing key missing**: Re-run `terraform apply` in `terraform/00-persistent-auth`
 
 #### Upload Failures from NixOS Host
 

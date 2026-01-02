@@ -9,11 +9,11 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - VPS forwards traffic to cluster through Tailscale mesh.
 - Test application: <https://test.test-cluster.agentydragon.com/>
 - CNI: Cilium with Talos-specific security configuration
-- Sealed-secrets: Automatic keypair persistence via system keyring for turnkey GitOps
+- Sealed-secrets: Automatic keypair persistence via terraform state for turnkey GitOps
 
 ## Prerequisites
 
-- **Proxmox credentials**: Create Proxmox terraform + CSI users and store tokens in libsecret keyring
+- **Proxmox credentials**: Create Proxmox terraform + CSI users (tokens managed in terraform state)
 - **SSH access**: `root@atlas` (Proxmox) and `root@agentydragon.com` (Headscale server) for credential generation
 - See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md#credential-setup) for detailed setup instructions
 
@@ -73,20 +73,22 @@ kubectl get secret agentydragon-user-password -n flux-system -o jsonpath='{.data
 
 ## Secret Management Strategy
 
-**Stable SealedSecret Keypair**: Uses pre-generated keypair stored in libsecret to ensure SealedSecrets always
-decrypt correctly across cluster recreations.
+**Stable SealedSecret Keypair**: Keypair is generated and stored in terraform state (`terraform/00-persistent-auth/`)
+to ensure SealedSecrets always decrypt correctly across cluster recreations.
 
-**Setup (one-time per dev machine):**
+**Setup**: Run `terraform apply` in `terraform/00-persistent-auth/` once per environment. The keypair
+persists in terraform state and survives cluster destroy/recreate cycles.
+
+**Sealing new secrets**:
 
 ```bash
-# Generate and store stable keypair
-openssl genrsa 4096 | secret-tool store service sealed-secrets key private_key
-openssl req -new -x509 -key <(secret-tool lookup service sealed-secrets key private_key) \
-  -out /tmp/sealed-secrets.crt -days 365 -subj '/CN=sealed-secrets'
-secret-tool store service sealed-secrets key public_key < /tmp/sealed-secrets.crt
+# Get public cert from terraform state
+cd terraform/00-persistent-auth
+terraform output -raw sealed_secrets_public_key > /tmp/sealed-secrets.crt
+kubeseal --cert /tmp/sealed-secrets.crt < secret.yaml > sealed-secret.yaml
 ```
 
-**Bootstrap fail-fast**: Script requires keypair to exist, prevents keypair mismatches that break GitOps.
+**Bootstrap fail-fast**: Script requires persistent auth layer to exist, prevents keypair mismatches that break GitOps.
 
 ## CNI Architecture Decision
 
