@@ -4,7 +4,10 @@
 { config, pkgs, lib, ... }:
 
 {
-  imports = [ ./hardware-configuration.nix ];
+  imports = [
+    ./hardware-configuration.nix
+    ./overlay.nix  # VM-specific overlay (dev-workstation, agent-sandbox, etc.)
+  ];
 
   # Boot (UEFI with systemd-boot)
   boot.loader.systemd-boot.enable = true;
