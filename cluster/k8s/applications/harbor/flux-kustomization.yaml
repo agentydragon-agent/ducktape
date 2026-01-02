@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/applications/harbor"
+  path: "./cluster/k8s/applications/harbor"
   prune: true
   wait: true
   dependsOn:

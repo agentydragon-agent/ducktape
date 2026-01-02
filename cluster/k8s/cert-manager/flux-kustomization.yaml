@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/cert-manager"
+  path: "./cluster/k8s/cert-manager"
   prune: true
   wait: true
   # No dependencies - cert-manager core can start independently

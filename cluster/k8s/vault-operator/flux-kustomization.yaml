@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/vault-operator"
+  path: "./cluster/k8s/vault-operator"
   prune: true
   wait: true
   dependsOn:

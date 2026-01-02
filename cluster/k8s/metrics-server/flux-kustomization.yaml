@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/metrics-server"
+  path: "./cluster/k8s/metrics-server"
   prune: true
   wait: true
   # No dependencies - metrics-server is a core component
