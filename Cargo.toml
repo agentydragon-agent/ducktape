@@ -40,8 +40,8 @@ xdg = "*"
 alphavantage = "*"
 shellexpand = "*"
 coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="01cabaa6fdd0fed87b44b38f218b1068f4914b39"}
-bigdecimal = "*" # needs to be matched to coinbase-rs
-currency_layer = {git="https://github.com/agentydragon/currency-layer-rs", rev="1f2f9af4dfb569808ca195f673452337b5e5d0be"}
+bigdecimal = "=0.3.1" # must match coinbase-rs dependency
+currency_layer = "0.2.0"
 serde-xml-rs = "*"
 async-trait = "*"
 rust_decimal_macros = "*"

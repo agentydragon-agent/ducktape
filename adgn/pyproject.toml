@@ -95,21 +95,9 @@ typing = [
     'asyncpg-stubs',
     'pandas-stubs',
 ]
-# GNOME console script deps (install when needed)
-gnome = [
-  "absl-py>=1.0.0",
-  "dbus-python>=1.3.0",
-  "PyGObject>=3.40.0",
-]
 matrix = [
   "mautrix>=0.20.0",
 ]
-gepa = [
-  "gepa>=0.0.22",
-  "litellm>=1.0.0",
-  "nest-asyncio>=1.5.0",
-]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/adgn"]
 
@@ -202,7 +190,3 @@ editor-agent-runtime = { workspace = true }
 mcp-infra = { workspace = true }
 net-util = { workspace = true }
 openai-utils = { workspace = true }
-
-[[tool.mypy.overrides]]
-module = ["tests.detectors.fixtures.*"]
-ignore_errors = true
