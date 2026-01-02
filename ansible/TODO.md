@@ -8,11 +8,13 @@
 There is ongoing work to implement a VPS-based remote desktop environment protected by Authentik SSO.
 
 See the `authentik-remote-desktop` branch for:
+
 - Authentik identity provider role
 - Plans for browser-based remote desktop
 - Tailscale/Headscale-only access configuration
 
 The implementation is incomplete and needs:
+
 - [ ] Remote desktop server selection and setup (Guacamole/Apache Guacamole/etc)
 - [ ] Integration between Authentik and remote desktop
 - [ ] Desktop environment configuration
@@ -25,16 +27,20 @@ The implementation is incomplete and needs:
 ## Nix/Home-Manager Migration
 
 ### Systems Using Home-Manager
+
 - **wyrm** - deployed 2025-08-28
-- **atlas** - deployed 2025-08-30  
+- **atlas** - deployed 2025-08-30
 - **agentydragon** - deployed 2025-08-31
 
 ### Legacy Systems (without Home-Manager)
+
 - **gpd** - uses `legacy_without_home_manager/*` roles
 - **vps** - uses `legacy_without_home_manager/*` roles
 
 ### Migration Pattern
+
 Tools migrated to Nix are provided by:
+
 - **Home-manager systems**: Via `nix/home/home.nix`
 - **Legacy systems**: Via `roles/legacy_without_home_manager/*` roles
 

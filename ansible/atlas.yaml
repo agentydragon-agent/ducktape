@@ -5,8 +5,8 @@
     - vars/common_vars.yml
   vars:
     rcup_computer: atlas
-    docker_state: absent  # Proxmox host doesn't need Docker
-    skip_ubuntu_ppas: true  # Debian-based Proxmox can't use Ubuntu PPAs
+    docker_state: absent # Proxmox host doesn't need Docker
+    skip_ubuntu_ppas: true # Debian-based Proxmox can't use Ubuntu PPAs
     include_heavy_dev_packages: false
   remote_user: root
 
@@ -46,10 +46,10 @@
         state: directory
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
-        mode: '0755'
+        mode: "0755"
       tags: [dotfiles]
 
-    - name: Clone ducktape repository if not present  # noqa: latest[git]
+    - name: Clone ducktape repository if not present # noqa: latest[git]
       ansible.builtin.git:
         repo: "git@gitlab.com:agentydragon/ducktape"
         dest: "{{ cli_ducktape_path }}"
@@ -60,7 +60,7 @@
       poll: 0
       register: ducktape_git_job
       tags: [dotfiles]
-      failed_when: false  # In case SSH keys aren't set up yet
+      failed_when: false # In case SSH keys aren't set up yet
 
     - name: Wait for ducktape repository clone
       ansible.builtin.async_status:
@@ -85,9 +85,9 @@
           - virt-viewer
           - libvirt-daemon-system
           - libvirt-clients
-          - gdm3  # GNOME Display Manager
+          - gdm3 # GNOME Display Manager
           - zsh
-          - spice-client-gtk  # For SPICE console connections
+          - spice-client-gtk # For SPICE console connections
         state: present
         install_recommends: false
       tags: [packages, desktop, virtualization]
@@ -108,7 +108,7 @@
         create_home: true
         groups:
           - sudo
-          - libvirt  # for virt-manager access
+          - libvirt # for virt-manager access
         append: true
         state: present
       tags: [users]

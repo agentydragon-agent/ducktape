@@ -30,7 +30,7 @@
     state: directory
     owner: headscale
     group: headscale
-    mode: '0755'
+    mode: "0755"
   tags: [headscale, install]
 
 - name: Download headscale binary
@@ -41,7 +41,7 @@
     dest: /usr/local/bin/headscale
     owner: root
     group: root
-    mode: '0755'
+    mode: "0755"
   tags: [headscale, install]
 
 - name: Generate noise private key
@@ -59,7 +59,7 @@
     dest: /etc/headscale/config.yaml
     owner: headscale
     group: headscale
-    mode: '0644'
+    mode: "0644"
   notify: Restart Headscale
   tags: [headscale]
 
@@ -69,7 +69,7 @@
     dest: /etc/headscale/policy.json
     owner: headscale
     group: headscale
-    mode: '0644'
+    mode: "0644"
   notify: Restart Headscale
   tags: [headscale]
 
@@ -79,7 +79,7 @@
     dest: /etc/systemd/system/headscale.service
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   notify:
     - Reload Systemd
     - Restart Headscale

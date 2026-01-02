@@ -7,7 +7,7 @@
   ansible.builtin.file:
     path: "~/.local/share"
     state: directory
-    mode: '0755'
+    mode: "0755"
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
 
@@ -31,7 +31,7 @@
   become: true
   become_user: "{{ my_user | default(ansible_user_id) }}"
   register: gitstatus_install
-  ignore_errors: true  # May fail on unsupported platforms
+  ignore_errors: true # May fail on unsupported platforms
 
 - name: Find downloaded gitstatusd binary
   ansible.builtin.find:

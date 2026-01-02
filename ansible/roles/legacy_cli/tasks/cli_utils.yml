@@ -6,10 +6,10 @@
   become: true
   ansible.builtin.apt:
     pkg:
-      - mc          # Midnight Commander (file manager)
-      - xxd         # Hex dump utility
-      - nethogs     # Network bandwidth monitoring
-      - mmv         # Multiple move/rename utility
-      - gnuplot     # Plotting program
-      - screen      # Terminal multiplexer (deprecated, use tmux)
+      - mc # Midnight Commander (file manager)
+      - xxd # Hex dump utility
+      - nethogs # Network bandwidth monitoring
+      - mmv # Multiple move/rename utility
+      - gnuplot # Plotting program
+      - screen # Terminal multiplexer (deprecated, use tmux)
     state: present

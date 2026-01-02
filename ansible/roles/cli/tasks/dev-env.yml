@@ -24,7 +24,7 @@
       - make
       - markdown
       - sloccount
-      - tidy  # HTML tidy
+      - tidy # HTML tidy
 
       # TODO: this seems to not provide tree-sitter cli though
       # so does not provide latex higlihting

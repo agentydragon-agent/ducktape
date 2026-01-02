@@ -14,4 +14,4 @@
       ansible.builtin.apt:
         name: obs-studio
         state: present
-        update_cache: true  # deb822_repository doesn't reliably trigger apt cache update
+        update_cache: true # deb822_repository doesn't reliably trigger apt cache update

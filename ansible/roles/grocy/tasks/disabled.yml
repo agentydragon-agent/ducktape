@@ -8,7 +8,6 @@
     name: grocy
     state: absent
 
-
 - name: Remove Grocy nginx site configuration (available)
   ansible.builtin.file:
     path: /etc/nginx/sites-available/grocy.agentydragon.com

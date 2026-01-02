@@ -31,7 +31,6 @@
         name: dev_env
       tags: [dev_env]
 
-
     # TODO: does not seem to work. getting this on trying to suspend, plus freeze:
     #   usb usb-port14: disabled by hub (EMI?), re-enabling...
     #

@@ -82,6 +82,7 @@ A: ✅ Done! Created the commit:
 
    You still have 4 groups of changes left. The logging refactor touches quite a few files (15).
    Would you like to tackle that next, or start with something smaller like the config changes?
+
 ```
 
 # Different User Choices
@@ -89,26 +90,30 @@ A: ✅ Done! Created the commit:
 ## Example: User wants to review first
 
 ```
+
 U: can I see the changes first?
 
 A: Of course! Let me show you what's in each group:
 
    **Config changes** (Group 1):
-   - Adding auth settings to app.yaml
-   - New JWT_SECRET in .env.example
-   - Auth feature flags in config/features.json
+
+- Adding auth settings to app.yaml
+- New JWT_SECRET in .env.example
+- Auth feature flags in config/features.json
 
    **Authentication implementation** (Group 2):
-   - Complete auth service with JWT handling
-   - Login/logout endpoints
-   - Auth middleware for route protection
-   - User session management
-   - Tests covering all auth flows
+
+- Complete auth service with JWT handling
+- Login/logout endpoints
+- Auth middleware for route protection
+- User session management
+- Tests covering all auth flows
 
    **Logging refactor** (Group 3):
-   - Replacing 47 print() statements with proper logger calls
-   - Adding structured logging with context
-   - New logging config
+
+- Replacing 47 print() statements with proper logger calls
+- Adding structured logging with context
+- New logging config
 
    Want me to show the actual diffs for any of these?
 
@@ -117,10 +122,12 @@ U: actually, let's combine the config and auth into one commit since they're rel
 A: That makes sense! The auth config and implementation do belong together.
 
    I'll stage all 11 files:
-   - 3 config files with auth settings
-   - 8 auth implementation files
+
+- 3 config files with auth settings
+- 8 auth implementation files
 
    How about this commit message:
+
    ```
 
    feat: Add authentication service with configuration
@@ -133,32 +140,37 @@ A: That makes sense! The auth config and implementation do belong together.
    ```
 
    Look good?
+
 ```
 
 ## Example: User wants all changes in one commit
 
 ```
+
 U: just put everything in one commit
 
 A: Hmm, that would combine 5 different types of changes - features, refactoring, docs, and tests.
 
    The commit would be:
-   - Authentication implementation (8 files)
-   - Logging refactor (15 files)
-   - Config changes (3 files)
-   - Documentation updates (2 files)
-   - New tests (4 files)
+
+- Authentication implementation (8 files)
+- Logging refactor (15 files)
+- Config changes (3 files)
+- Documentation updates (2 files)
+- New tests (4 files)
 
    That's quite a mix! Are you sure you want everything in one commit? It might make the history harder to follow.
 
 U: you're right, let's split them up
 
 A: Alright. Which would you like to start with?
-   - The authentication feature (it's self-contained)
-   - The logging refactor (biggest change, touches many files)
-   - The config setup (smallest)
+
+- The authentication feature (it's self-contained)
+- The logging refactor (biggest change, touches many files)
+- The config setup (smallest)
 
    Or I can show you more details about any of these.
+
 ```
 
 # Automatic Change Analysis & Smart Staging
@@ -166,26 +178,31 @@ A: Alright. Which would you like to start with?
 The model automatically detects overlapping changes and handles partial staging transparently:
 
 ```
+
 U: /commit
 A: Analyzing your changes... I found 3 logical change groups:
 
    📊 **Logging Upgrade** (12 files)
-   - Replacing print() with structured logging
-   - Touches: api/endpoints.py, auth/service.py, db/connection.py + 9 others
+
+- Replacing print() with structured logging
+- Touches: api/endpoints.py, auth/service.py, db/connection.py + 9 others
 
    ⏱️ **Timeout Handling** (8 files)
-   - Adding timeout parameters to external calls
-   - Touches: api/endpoints.py, auth/service.py, db/connection.py + 5 others
+
+- Adding timeout parameters to external calls
+- Touches: api/endpoints.py, auth/service.py, db/connection.py + 5 others
 
    🆕 **User Profile Endpoint** (5 files)
-   - New /users/profile endpoint with auth
-   - Touches: api/endpoints.py, auth/service.py + 3 others
+
+- New /users/profile endpoint with auth
+- Touches: api/endpoints.py, auth/service.py + 3 others
 
    How would you like to organize these commits?
 
 U: let's merge timeout & logging into one commit, then the endpoint separately
 
 A: Perfect! Creating two commits:
+
    1. Infrastructure improvements (timeout + logging)
    2. User profile endpoint
 
@@ -214,6 +231,7 @@ A: Created commit: "refactor: improve logging and add timeout handling"
      - docs/api.md (endpoint documentation)
 
    Ready for commit 2. Continue?
+
 ```
 
 # Features
@@ -244,44 +262,52 @@ A: Created commit: "refactor: improve logging and add timeout handling"
 ## Auto-Detection of Issues
 
 ```
+
 U: /commit
 A: Running pre-commit hooks... done.
 
    I noticed some issues while analyzing:
-   - Found junk files: debug.log, backup files, temp experiments
-   - auth.py has mixed changes (auth feature + logging refactor)
-   - 3 files look like abandoned work
+
+- Found junk files: debug.log, backup files, temp experiments
+- auth.py has mixed changes (auth feature + logging refactor)
+- 3 files look like abandoned work
 
    I'll organize the real changes into clean commits and handle these issues.
+
 ```
 
 ## Smart Staging with Mixed Files
 
 ```
+
 U: let's do the auth feature commit
 A: Staging authentication changes...
 
    Handling files with mixed changes:
-   - auth.py (staging just auth logic, skipping logging changes)
-   - api/endpoints.py (staging new endpoints, skipping timeout changes)
-   - tests/test_auth.py (all changes - only auth-related)
+
+- auth.py (staging just auth logic, skipping logging changes)
+- api/endpoints.py (staging new endpoints, skipping timeout changes)
+- tests/test_auth.py (all changes - only auth-related)
 
    ✓ Staged auth changes from 8 files
    ✓ Ready to commit the authentication feature
+
 ```
 
 ## Proactive Cleanup
 
 ```
+
 U: /commit
 A: Before organizing commits, I found files that shouldn't be tracked:
 
-   - debug.log, server.log - 7.4MB (*.log → .gitignore?)
-   - schema.backup, old_config.backup (*.backup → .gitignore?)
-   - README~ (vim backup) (*~ → .gitignore?)
-   - experiment-feature.py (unreferenced)
+- debug.log, server.log - 7.4MB (*.log → .gitignore?)
+- schema.backup, old_config.backup (*.backup → .gitignore?)
+- README~ (vim backup) (*~ → .gitignore?)
+- experiment-feature.py (unreferenced)
 
    Should I clean these up and update .gitignore?
+
 ```
 
 # Advanced Features
@@ -289,6 +315,7 @@ A: Before organizing commits, I found files that shouldn't be tracked:
 ## Saved States Management
 
 ```
+
 U: show saved states
 A: Saved index states:
 
@@ -296,21 +323,25 @@ A: Saved index states:
    2. COMMIT_TOOL_SAVED_INDEX_1706234568 (5 min ago) - empty
 
    Restore with: git read-tree <state-name>
+
 ```
 
 ## Custom Commit Creation
 
 ```
+
 U: I want to create my own grouping
 A: Interactive mode activated. I'll help you build custom commits.
 
    Select files for your commit:
+
    1. [ ] auth/service.py
    2. [ ] auth/models.py
    3. [ ] api/endpoints.py (partial)
    4. [ ] tests/test_auth.py
 
    Enter numbers to toggle (e.g., "1 3"), or "done" when ready:
+
 ```
 
 ## Planning Complex Commits with Task Agent
@@ -318,6 +349,7 @@ A: Interactive mode activated. I'll help you build custom commits.
 For complex scenarios, the model uses a Task agent to plan the approach:
 
 ```
+
 U: /commit
 A: This looks complex with multiple overlapping changes. Let me analyze the best approach...
 
@@ -338,6 +370,7 @@ A: Based on the analysis, here's my recommended approach:
    Found 4 logical change groups with significant overlap in core files.
 
    **Recommended commit order** (minimizes conflicts):
+
    1. Infrastructure (logging + error handling) - touches 18 files
    2. Performance optimizations - touches 12 files
    3. New user features - touches 8 files
@@ -346,6 +379,7 @@ A: Based on the analysis, here's my recommended approach:
    Files requiring partial staging: api/core.py, models/base.py, utils/helpers.py
 
    Shall we proceed with this plan?
+
 ```
 
 # Integration

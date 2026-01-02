@@ -45,6 +45,7 @@ Output JSON (stdout):
 ```
 
 Notes:
+
 * The evaluator ALWAYS runs in Docker. The image must have the `agent_server` package installed; import types from `agent_server.policies.policy_types` and naming helpers from `mcp_infra.naming`.
 * Your program must print exactly one JSON object to stdout and exit 0. Non‑zero exit or invalid JSON is treated as an error.
 * Do not swallow exceptions; let them surface to make failures visible and fixable.
@@ -80,11 +81,13 @@ Author proposals via the approval policy MCP server and let the UI surface them.
 * The UI lists proposals for review and approval; on approval, the server activates the policy immediately.
 
 Notes:
+
 * Keep proposals small and reviewable; describe the intent in comments in the policy program.
 
 ### Source Code Reference
 
 Reference the `agent_server` package APIs when composing policies; no container mounts are assumed. For examples, see:
+
 * `agent_server.policies.default_policy` (packaged minimal policy program)
 * `agent_server.policies.approve_all` (approve-all example)
 
@@ -93,6 +96,7 @@ Reference the `agent_server` package APIs when composing policies; no container 
 ### Be Aware of Current Policy
 
 Read the current approval policy via the MCP resource before sending tool calls or preparing proposals. This will help you:
+
 * Compose tool calls that will be smoothly auto-approved
 * Ensure your proposed policy edits are small, easily reviewable and correct
 

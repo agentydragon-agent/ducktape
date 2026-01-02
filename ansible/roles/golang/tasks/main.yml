@@ -48,7 +48,7 @@
       ansible.builtin.file:
         path: "{{ golang_install_dir }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Download and extract Go tarball directly
       ansible.builtin.unarchive:

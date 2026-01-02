@@ -14,14 +14,14 @@
       ansible.builtin.template:
         src: google-drive.service.j2
         dest: "{{ user_systemd_services_dir }}/google-drive.service"
-        mode: '0644'
+        mode: "0644"
     # TODO: and maybe also add the binary to github? 3rdparty?
     - name: Enable google drive
       ansible.builtin.systemd:
         name: google-drive
         state: started
         enabled: true
-        scope: user  # install as --user to depend on user session
+        scope: user # install as --user to depend on user session
 
     # On first setup, the service needs to be started manually by commandline to
     # authenticate. Just run the command in the service file manually first.
@@ -36,7 +36,7 @@
       ansible.builtin.file:
         path: "{{ ansible_user_dir }}/.config/worthy"
         state: directory
-        mode: '0755'
+        mode: "0755"
     - name: Symlink Worthy config to Drive
       ansible.builtin.file:
         src: "{{ symlinked_my_drive_dir }}/finance/worthy-config.yaml"

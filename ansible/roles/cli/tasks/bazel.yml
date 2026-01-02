@@ -13,7 +13,7 @@
         signed_by: https://bazel.build/bazel-release.pub.gpg
         suites: [stable]
         components: [jdk1.8]
-        architectures: [amd64]  # no i386 included
+        architectures: [amd64] # no i386 included
         state: "{{ bazel_state | default('present') }}"
         enabled: "{{ bazel_state | default('present') == 'present' }}"
 
@@ -21,4 +21,4 @@
       ansible.builtin.apt:
         pkg: bazel
         state: "{{ bazel_state | default('present') }}"
-        update_cache: true  # deb822_repository doesn't reliably trigger apt cache update
+        update_cache: true # deb822_repository doesn't reliably trigger apt cache update

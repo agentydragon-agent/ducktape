@@ -743,4 +743,5 @@ Proceed?</a>
     <note>Suggests adding patterns to `.gitignore`</note>
     <note>Can be undone with git if needed (for tracked files)</note>
   </notes>
+
 </prompt>

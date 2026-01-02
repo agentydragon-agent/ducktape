@@ -36,7 +36,7 @@
         state: directory
         owner: root
         group: root
-        mode: '0755'
+        mode: "0755"
 
     - name: Get download URL for {{ item }}
       ansible.builtin.shell: |
@@ -59,7 +59,7 @@
         remote_src: true
         src: "{{ legacy_nerd_fonts_font_download_url.stdout }}"
         dest: "{{ family_path }}"
-        mode: '0644'
+        mode: "0644"
       register: legacy_nerd_fonts_unarchived_font
 
       notify:

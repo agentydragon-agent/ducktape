@@ -151,8 +151,6 @@
       ansible.builtin.assert:
         that:
           - anki_installed_binary.stat.exists
-
-
 # TODO: install Anki addons:
 #   291119185 - batch editing
 #   1788670778 - CrowdAnki
