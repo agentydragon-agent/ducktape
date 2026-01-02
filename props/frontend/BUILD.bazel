@@ -123,13 +123,13 @@ _STORYBOOK_SRCS = _SRCS + glob([
 # Storybook static build
 # Run: bazel build //props/frontend:storybook
 # Output: bazel-bin/props/frontend/storybook-static/
-# Note: STORYBOOK env var tells svelte.config.js to use .svelte-kit-storybook (avoids conflict with svelte_kit_sync)
+# Note: Depends on svelte_kit_sync for .svelte-kit/tsconfig.json that tsconfig.json extends
+# svelte.config.js detects storybook via process.argv and uses .svelte-kit-storybook for its own output
 storybook_bin.storybook(
     name = "storybook",
-    srcs = _STORYBOOK_SRCS + [":node_modules"],
+    srcs = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
     args = ["build"],
     chdir = package_name(),
-    env = {"STORYBOOK": "1"},
     out_dirs = [".svelte-kit-storybook", "storybook-static"],
 )
 
@@ -139,7 +139,8 @@ js_run_devserver(
     name = "storybook_dev",
     args = ["dev", "-p", "6006"],
     chdir = package_name(),
-    data = _STORYBOOK_SRCS + [":node_modules"],
+    data = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
+    tags = ["manual"],  # Dev servers are run, not built
     tool = "//tools/frontend:storybook",
 )
 
