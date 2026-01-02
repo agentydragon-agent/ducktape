@@ -11,40 +11,13 @@ A comprehensive shared Python package providing utilities, linters, and prompts 
 - **Utilities**: Version management and common validation functions
 - **Templates**: Quick-start structures for investigations and tasks
 
-## Installation
+## Development
 
-### For Users
+See [AGENTS.md](../../AGENTS.md) for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
 
-```bash
-# Install from source (non-editable)
-pip install /path/to/ducktape_llm_common
-```
-
-### For Development
-
-**IMPORTANT**: Install non-editably in your global Python to prevent self-locking issues when claude-linter modifies its own code. Use a virtual environment for editable development.
-
-```bash
-# First, install non-editably in global Python (for stable claude-linter usage)
-pip install /path/to/ducktape_llm_common
-
-# Then create a virtual environment for development
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install editably in venv for development
-pip install -e ".[dev]"
-```
-
-This setup ensures:
-- Your global `cl2`/`claude-linter-v2` commands remain stable
-- Development changes only affect the venv
-- You can't accidentally lock yourself out by modifying hook code
-
-### Requirements
-
-- Python 3.10+
-- See `requirements.txt` for dependencies
+Package-specific targets:
+- Build: `bazel build //llm/ducktape_llm_common`
+- Test: `bazel test //llm/ducktape_llm_common:tests`
 
 ## Quick Start
 
@@ -122,9 +95,7 @@ prompt = load_prompt("task_management", variables={
 available = list_prompts()
 ```
 
-## Development
-
-### Running Tests
+## Tests
 
 ```bash
 # Run all tests
@@ -132,33 +103,6 @@ bazel test //llm/ducktape_llm_common:tests
 
 # Run specific test module
 bazel test //llm/ducktape_llm_common:tests --test_arg=-k --test_arg=linters
-bazel test //llm/ducktape_llm_common:tests --test_arg=-k --test_arg=utils
-```
-
-### Code Quality
-
-```bash
-# Format code
-black ducktape_llm_common tests
-
-# Lint code
-ruff check ducktape_llm_common tests
-
-# Type checking
-mypy ducktape_llm_common
-```
-
-### Building and Publishing
-
-```bash
-# Build package
-python -m build
-
-# Install locally for testing
-pip install -e .
-
-# Upload to PyPI (when ready)
-python -m twine upload dist/*
 ```
 
 ## Contributing

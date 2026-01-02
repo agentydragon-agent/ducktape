@@ -136,18 +136,49 @@ Run `uv run bazelization/audit.py` to get updated counts.
 | `//mcp_starter:test_integration` | Requires running MCP server |
 | `//website:*` | Haskell/stack build system |
 
-### Files Not in Any Bazel Target (54 files)
+### Files Not in Any Bazel Target (38 files)
 
-| Directory | Count | Notes |
-|-----------|-------|-------|
-| `inventree_utils/` | 23 | Entire package not Bazelized |
-| `llm/` (examples/scripts) | 6 | Example and manual test scripts |
-| `experimental/ember_evals/` | 5 | Missing submodules, incomplete |
-| `k8s/helm/*/files/` | 4 | Helm chart Python scripts |
-| `adgn/` (examples, gitea_pr_gate) | 4 | Subpackages not in srcs |
-| `trilium/` | 3 | Papers/search scripts |
-| `sandboxed_jupyter/examples/` | 2 | Example scripts |
-| Other standalone files | 7 | Root conftest, dotfiles, gatelet/tasks, etc. |
+Run `uv run bazelization/audit.py` for current list.
+
+### Pending Migration Tasks
+
+#### Documentation Updates (Low Priority)
+These README/CLAUDE files still reference pip install or pre-commit instead of Bazel:
+
+| File | Issue |
+|------|-------|
+| `gatelet/README.md` | pip install, invoke tasks |
+| `experimental/webhook_inbox/README.md` | pip install |
+| `homeassistant/iaqi/README.md` | pyenv, pip install |
+| `llm/html/README.md` | pip install |
+| `llm/mcp/habitify/README.md` | pip install |
+| `wt/README.md` | pip install |
+
+These are low priority - the packages work via Bazel but docs show legacy workflows.
+
+#### pyproject.toml [tool.mypy] Sections (Low Priority)
+17 packages have `[tool.mypy]` in pyproject.toml that could be consolidated to root mypy.ini:
+- `agent_core`, `agent_pkg/host`, `agent_pkg/runtime`, `agent_server`
+- `claude/claude_optimizer`, `editor_agent/host`, `editor_agent/runtime`
+- `git_commit_ai`, `mcp_utils`, `openai_utils`, `props/backend`
+- `py_detectors`, `rspcache`, `sandboxed_jupyter`, `tana`
+
+The Bazel mypy integration (`--config=typecheck`) uses root mypy.ini, so these per-package configs are unused.
+
+#### Shell Scripts Inventory
+Non-Bazelized shell scripts that are intentionally outside the build system:
+
+| Category | Examples | Reason |
+|----------|----------|--------|
+| CI/Ansible | `.github/scripts/*.sh`, `ansible/scripts/*.sh` | Ansible Galaxy integration |
+| Docker entrypoints | `*/entrypoint.sh` | Part of container images (rules_oci) |
+| Deployment | `llm/deploy.sh`, `homeassistant/iaqi/deploy_iaqi.sh` | Manual deployment utilities |
+| Nix-managed | `nix/home/**/*.sh` | Nix home-manager |
+| Tool wrappers | `tools/lint/run_*.sh` | Helpers for Bazel tests |
+
+#### Docker Images Pending (from inventory above)
+- `claude_optimizer` (8 variant images)
+- `props agents` (9 agent images)
 
 ## Package Structure
 
