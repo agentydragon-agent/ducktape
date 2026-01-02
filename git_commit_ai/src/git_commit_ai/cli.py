@@ -322,8 +322,18 @@ class ParallelTaskRunner:
         cls, repo: pygit2.Repository, ai_task: asyncio.Task[str], run_precommit: bool = True
     ) -> str:
         """Factory method that creates runner and manages task lifecycle."""
-        precommit_path = Path(repo.path) / "hooks" / "pre-commit"
+        git_dir = Path(repo.path)
+        precommit_path = git_dir / "hooks" / "pre-commit"
         output_task = None
+
+        # Git runs hooks from the worktree root with specific environment variables.
+        # Respect existing env vars if already set.
+        worktree_root = Path(repo.workdir) if repo.workdir else None
+        hook_env = os.environ.copy()
+        hook_env.setdefault("GIT_DIR", str(git_dir))
+        if worktree_root is not None:
+            hook_env.setdefault("GIT_WORK_TREE", str(worktree_root))
+        hook_env.setdefault("GIT_INDEX_FILE", str(git_dir / "index"))
 
         # Determine whether to run pre-commit and set up master_fd accordingly
         if run_precommit:
@@ -334,9 +344,14 @@ class ParallelTaskRunner:
                 try:
                     if not (precommit_path.exists() and precommit_path.is_file()):
                         return  # No pre-commit hook, nothing to do
-                    # Run pre-commit hook with given slave end of PTY.
+                    # Run pre-commit hook from worktree root with git environment
                     proc = await asyncio.create_subprocess_exec(
-                        precommit_path, stdout=slave_fd, stderr=slave_fd, stdin=slave_fd
+                        precommit_path,
+                        stdout=slave_fd,
+                        stderr=slave_fd,
+                        stdin=slave_fd,
+                        cwd=worktree_root,
+                        env=hook_env,
                     )
                     returncode = await proc.wait()
                     if returncode != 0:
