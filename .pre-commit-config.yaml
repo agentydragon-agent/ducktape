@@ -50,20 +50,31 @@ repos:
         exclude: "^ansible/k8s/.*"  # Exclude k8s files
         pass_filenames: true
 
-  # Ruff linting (via Bazel aspect)
-  # Runs ruff check on all Python code for linting issues
+  # Linting (ruff + ESLint via Bazel aspects)
+  # Runs on all Python and JS/TS/Svelte files
   - repo: local
     hooks:
-      - id: bazel-ruff-lint
-        name: bazel build --config=lint (ruff)
+      - id: bazel-lint
+        name: bazel build --config=lint
         entry: bazel
         args: ['build', '--config=lint', '--keep_going', '//...']
+        language: system
+        files: \.(py|ts|js|svelte|tsx)$
+        pass_filenames: false
+
+  # Type checking (mypy via Bazel aspect)
+  # Runs on all Python files
+  - repo: local
+    hooks:
+      - id: bazel-typecheck
+        name: bazel build --config=typecheck
+        entry: bazel
+        args: ['build', '--config=typecheck', '--keep_going', '//...']
         language: system
         files: \.py$
         pass_filenames: false
 
   # Auto-format all code (ruff, prettier, shfmt, buildifier)
-  # Runs ruff format on Python, prettier on JS/TS, etc.
   - repo: local
     hooks:
       - id: bazel-format
@@ -73,30 +84,6 @@ repos:
         language: system
         files: \.(py|ts|js|svelte|tsx|css|ya?ml|sh|bzl)$
         exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
-        pass_filenames: false
-
-  # Mypy type checking (via Bazel aspect)
-  # Runs type checking on all Python code using rules_mypy aspect
-  - repo: local
-    hooks:
-      - id: bazel-mypy
-        name: bazel build --config=typecheck
-        entry: bazel
-        args: ['build', '--config=typecheck', '--keep_going', '//...']
-        language: system
-        files: \.py$
-        pass_filenames: false
-
-  # Frontend linting (ESLint via Bazel aspect)
-  # Runs on all JS/TS/Svelte files across all projects
-  - repo: local
-    hooks:
-      - id: bazel-eslint
-        name: bazel build --config=eslint
-        entry: bazel
-        args: ['build', '--config=eslint', '--keep_going', '//...']
-        language: system
-        files: \.(ts|js|svelte|tsx)$
         pass_filenames: false
 
   # NOTE: Other linters are handled by Bazel test targets
