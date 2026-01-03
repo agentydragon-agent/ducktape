@@ -320,7 +320,6 @@ class WtClient:
         item = next(iter(status_response.items.values()))
         if item.result.type != "ok":
             return set(), set()
-        result = item.result.status
 
         repo_path = item.absolute_path
         try:

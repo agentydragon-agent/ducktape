@@ -67,7 +67,7 @@ class GitRefsWatcher:
             logger.warning("Main repo .git not found: %s", git_dir)
             return
 
-        from watchdog.observers import Observer  # Deferred import to avoid TYPE_CHECKING circular issue
+        from watchdog.observers import Observer  # Deferred import to avoid TYPE_CHECKING circular issue  # noqa: PLC0415, I001
 
         self._observer = Observer()
         handler = _GitRefsHandler(self)

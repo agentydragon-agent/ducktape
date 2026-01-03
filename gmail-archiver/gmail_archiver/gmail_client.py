@@ -7,7 +7,7 @@ import re
 import sys
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -78,7 +78,7 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
             ):
                 # Extract ISO timestamp from error message
                 retry_timestamp = datetime.fromisoformat(match.group(1))
-                now = datetime.now(timezone.utc)
+                now = datetime.now(datetime.UTC)
                 seconds_to_wait = max(0, int((retry_timestamp - now).total_seconds()))
                 debug_info["retry_timestamp"] = match.group(1)
                 return seconds_to_wait, debug_info
@@ -290,7 +290,8 @@ class GmailClient:
 
                 # Check if any requests were rate limited
                 rate_limit_errors: list[HttpError] = [
-                    exc for _, exc, _ in batch_errors
+                    exc
+                    for _, exc, _ in batch_errors
                     if exc is not None and _is_rate_limit_error(exc) and isinstance(exc, HttpError)
                 ]
                 rate_limited = len(rate_limit_errors) > 0
