@@ -53,6 +53,10 @@ npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependenc
 npm.npm_translate_lock(
     name = "npm_ducktape",
     npmrc = "@@//:.npmrc",
+    # Disable postinstall for unrs-resolver - it tries to download native bindings from npm registry
+    # which fails in Bazel's sandboxed build (network blocked). Safe to skip since @storybook/test-runner
+    # (the only consumer via jest-resolve) isn't executed during bazel build - only used for manual testing.
+    lifecycle_hooks_exclude = ["unrs-resolver"],
     # Generate bin entries for dev tools from workspace root
     bins = {
         "eslint": ["eslint=./bin/eslint.js"],
