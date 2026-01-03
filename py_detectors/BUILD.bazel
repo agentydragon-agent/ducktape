@@ -31,8 +31,11 @@ py_binary(
 
 py_test(
     name = "test_py_detectors",
-    srcs = glob(["tests/**/*.py"]),
-    data = glob(["tests/**/*.md"]),
+    srcs = glob(
+        ["tests/**/*.py"],
+        exclude = ["tests/fixtures/**/*.py"],
+    ),
+    data = glob(["tests/**/*.md"]) + glob(["tests/fixtures/**/*.py"]),
     imports = ["."],
     main = "tests/test_detectors.py",
     deps = [

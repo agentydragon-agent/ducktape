@@ -9,7 +9,7 @@ from textwrap import dedent
 from inventree.api import InvenTreeAPI
 from inventree.base import Parameter, ParameterTemplate
 from inventree.part import Part
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from .cli_util import build_table, choose
 from .inventree_util import part_url

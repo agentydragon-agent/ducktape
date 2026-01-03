@@ -627,16 +627,17 @@ dependencies = [
 
 [[package]]
 name = "currency_layer"
-version = "0.1.2"
-source = "git+https://github.com/RyanBluth/currency-layer-rs?rev=1f2f9af4dfb569808ca195f673452337b5e5d0be#1f2f9af4dfb569808ca195f673452337b5e5d0be"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49d7e294b032057aec91d5de4b2bba1e5df218046b8f0b119266192576c3bac0"
 dependencies = [
  "chrono",
- "failure",
  "reqwest 0.11.27",
  "rust_decimal",
  "rusty-money",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

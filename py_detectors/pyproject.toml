@@ -23,3 +23,8 @@ packages = ["src/py_detectors"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
+[tool.mypy]
+exclude = [
+    "^tests/fixtures/",
+]
+

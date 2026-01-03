@@ -30,7 +30,7 @@ class Capacitor(BasePart):
 
 def crunch(factory, *items):
     # each item is either value, or setter.
-    result = []
+    result: list[BasePart] = []
     state = {}
     for item in items:
         if isinstance(item, dict):
@@ -57,7 +57,7 @@ def _c(value, **kwargs):
     return Capacitor(capacitance=value * pf, **kwargs)
 
 
-parts = []
+parts: list[BasePart] = []
 
 # R 0201
 crunch(
@@ -197,7 +197,7 @@ def format_value(part):
         value = part.capacitance
     else:
         raise ValueError(f"Unknown part type: {type(part)}")
-    value = value.to_compact()
+    value = value.to_compact()  # type: ignore[assignment]
 
     # Extract the numeric magnitude and round to 3 significant figures
     rounded_value = round(value.magnitude, 3)
@@ -262,11 +262,11 @@ def eyeball_check():
                 changes.append(f"tolerance={part.tolerance}")
                 last_tolerance = part.tolerance
 
-            if has_voltage and part.voltage_rating != last_voltage:
+            if has_voltage and isinstance(part, Capacitor) and part.voltage_rating != last_voltage:
                 changes.append(f"voltage={part.voltage_rating}V")
                 last_voltage = part.voltage_rating
 
-            if has_dielectric and part.dielectric != last_dielectric:
+            if has_dielectric and isinstance(part, Capacitor) and part.dielectric != last_dielectric:
                 changes.append(f"dielectric={part.dielectric}")
                 last_dielectric = part.dielectric
 
@@ -279,9 +279,9 @@ def eyeball_check():
             if has_tolerance:
                 row_data.append(part.tolerance or "-")
             if has_voltage:
-                row_data.append(str(part.voltage_rating) + "V" if part.voltage_rating else "-")
+                row_data.append(str(part.voltage_rating) + "V" if isinstance(part, Capacitor) and part.voltage_rating else "-")
             if has_dielectric:
-                row_data.append(part.dielectric or "-")
+                row_data.append(part.dielectric if isinstance(part, Capacitor) and part.dielectric else "-")
             row_data.append(" | ".join(changes) if changes else "")
 
             print(header_format.format(*row_data))
@@ -351,37 +351,7 @@ E24 = [1, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2, 2.2, 2.4, 2.7, 3, 3.3, 3.6, 3.9, 4.3,
 
 
 # Duplicate class definitions (Part/Resistor/Capacitor) removed; see top-level BasePart/Resistor/Capacitor
-
-
-def crunch(factory, *items):
-    # each item is either value, or setter.
-    result = []
-    state = {}
-    for item in items:
-        if isinstance(item, dict):
-            state.update(item)
-        elif isinstance(item, list):
-            assert all(isinstance(i, int | float) for i in item)
-            parts.extend(factory(**state, value=i) for i in item)
-        else:
-            assert isinstance(item, int | float), item
-            parts.append(factory(**state, value=item))
-    return result
-
-
-ureg = pint.UnitRegistry()
-
-ohm = ureg.ohm
-pf = ureg.pF
-
-
-def _r(value, **kwargs):
-    return Resistor(resistance=value * ohm, **kwargs)
-
-
-def _c(value, **kwargs):
-    return Capacitor(capacitance=value * pf, **kwargs)
-
+# Duplicate function definitions (crunch, _r, _c) also removed; see top-level definitions
 
 parts = []
 

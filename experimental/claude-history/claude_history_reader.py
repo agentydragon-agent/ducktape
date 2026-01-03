@@ -318,7 +318,7 @@ class ClaudeHistoryReader:
                 try:
                     session = self.parse_session(session_file)
                     for msg in session.messages:
-                        if regex.search(msg.content):
+                        if regex.search(msg.content) and msg.timestamp is not None:
                             result = SearchResult(
                                 project=proj_path.name,
                                 session=session_file.stem,
@@ -412,7 +412,7 @@ def main():
                     print(f"\nSession: {session.session_id}")
                     print(f"Summary: {session.metadata.get('summary', 'N/A')}")
                     print(f"Messages: {session.message_count}")
-                    if session.start_time:
+                    if session.start_time and session.end_time:
                         start = datetime.fromisoformat(session.start_time)
                         end = datetime.fromisoformat(session.end_time)
                         print(f"Duration: {end - start}")
