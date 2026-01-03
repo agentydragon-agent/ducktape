@@ -7,8 +7,8 @@ from fastmcp.client import Client
 from pydantic import Field
 
 from agent_core.agent import Agent
-from agent_core.handler import BaseHandler, SequenceHandler
-from agent_core.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
+from agent_core.handler import BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
+from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, NoAction
 from git_commit_ai.git_ro.server import (
     GIT_RO_MOUNT_PREFIX,
     DiffFormat,
@@ -250,7 +250,14 @@ async def generate_commit_message_agent(
         bootstrap_calls = make_commit_bootstrap_calls(builder, comp.git_ro.prefix, comp.git_ro.server, amend=amend)
         bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
-        handlers: list[BaseHandler] = [CommitController(submit_state, bootstrap)]
+        reminder = (
+            "You sent a text message instead of taking action. "
+            "Use the git_ro tools to inspect staged changes, then call submit_commit_message to finish."
+        )
+        handlers: list[BaseHandler] = [
+            CommitController(submit_state, bootstrap),
+            RedirectOnTextMessageHandler(reminder),
+        ]
         if verbose:
             handlers.append(await CompactDisplayHandler.from_compositor(comp, show_usage=debug))
 
@@ -261,7 +268,7 @@ async def generate_commit_message_agent(
                 handlers=handlers,
                 dynamic_instructions=comp.render_agent_dynamic_instructions,
                 parallel_tool_calls=True,
-                tool_policy=RequireAnyTool(),
+                tool_policy=AllowAnyToolOrTextMessage(),
             )
             agent.process_message(UserMessage.text(prompt))
             await agent.run()
