@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/metallb"
+  path: "./cluster/k8s/metallb"
   prune: true
   wait: true
   # Note: CNI (Cilium) now managed by Terraform, not Flux

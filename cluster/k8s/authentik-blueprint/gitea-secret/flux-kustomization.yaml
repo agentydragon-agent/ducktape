@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/authentik-blueprint/gitea-secret"
+  path: "./cluster/k8s/authentik-blueprint/gitea-secret"
   prune: true
   wait: true
   dependsOn:

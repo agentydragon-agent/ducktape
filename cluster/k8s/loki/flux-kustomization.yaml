@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/loki
+  path: ./cluster/k8s/loki
   prune: true
   sourceRef:
     kind: GitRepository

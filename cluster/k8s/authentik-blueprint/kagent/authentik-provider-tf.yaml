@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./terraform/authentik-blueprint/kagent
+  path: ./cluster/terraform/authentik-blueprint/kagent
   sourceRef:
     kind: GitRepository
     name: flux-system

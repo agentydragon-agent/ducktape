@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/reflector"
+  path: "./cluster/k8s/reflector"
   prune: true
   wait: true
   dependsOn:

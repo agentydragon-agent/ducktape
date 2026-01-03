@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/storage"
+  path: "./cluster/k8s/storage"
   prune: true
   wait: true
   dependsOn:

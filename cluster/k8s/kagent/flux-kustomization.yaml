@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/kagent
+  path: ./cluster/k8s/kagent
   prune: true
   sourceRef:
     kind: GitRepository

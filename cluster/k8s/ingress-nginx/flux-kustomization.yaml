@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./k8s/ingress-nginx"
+  path: "./cluster/k8s/ingress-nginx"
   prune: true
   wait: true
   dependsOn:

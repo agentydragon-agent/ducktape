@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./terraform/authentik-blueprint/grafana
+  path: ./cluster/terraform/authentik-blueprint/grafana
   sourceRef:
     kind: GitRepository
     name: flux-system
