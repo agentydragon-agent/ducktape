@@ -9,7 +9,6 @@ in
       pkgs.kubernetes-helm
       pkgs.kustomize # For kustomize build validation
       pkgs.kubeconform # For Kubernetes manifest validation
-      pkgs.markdownlint-cli # For markdown linting
       pkgs.nodePackages.prettier # For YAML formatting
       pkgs.tflint
       pkgs.hcloud # Hetzner Cloud CLI
