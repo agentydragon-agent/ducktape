@@ -49,12 +49,6 @@ variable "hetzner_location" {
 # PROXMOX CONFIGURATION (Phase 2 - home node)
 # ============================================================================
 
-variable "proxmox_host" {
-  description = "Proxmox host for SSH access"
-  type        = string
-  default     = "atlas"
-}
-
 variable "proxmox_api_host" {
   description = "Proxmox API host FQDN"
   type        = string
@@ -67,15 +61,3 @@ variable "proxmox_node_name" {
   default     = "atlas"
 }
 
-# Home node network configuration
-variable "home_node_ip" {
-  description = "Static IP address for home Proxmox node"
-  type        = string
-  default     = "10.2.1.1"
-}
-
-variable "home_node_gateway" {
-  description = "Gateway for home Proxmox node"
-  type        = string
-  default     = "10.2.0.1"
-}

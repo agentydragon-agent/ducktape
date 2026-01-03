@@ -24,7 +24,6 @@ locals {
   client_configuration = data.terraform_remote_state.persistent_auth.outputs.talos_client_configuration
 
   # Cluster configuration
-  cluster_name     = var.cluster_name
   cluster_endpoint = "https://localhost:7445" # KubePrism - avoids circular dependency
 
   # Hetzner public Talos ISO (amd64 with qemu-guest-agent)
