@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - core/flux-kustomization.yaml
   - storage/flux-kustomization.yaml
+  - local-path-provisioner/flux-kustomization.yaml
   - metrics-server/flux-kustomization.yaml
   - monitoring-namespace/flux-kustomization.yaml
   - monitoring-stack/flux-kustomization.yaml
