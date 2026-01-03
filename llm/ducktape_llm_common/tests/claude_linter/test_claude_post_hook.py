@@ -17,7 +17,7 @@ def run_post_hook(test_input: dict[str, Any]):
     runner = CliRunner()
     # Unified hook command - add hook_event_name to payload
     test_input["hook_event_name"] = "PostToolUse"
-    test_input.setdefault("session_id", "test-session-id")
+    test_input.setdefault("session_id", "12345678-1234-5678-1234-567812345678")
     payload = json.dumps(test_input)
     return runner.invoke(cli, ["hook"], input=payload)
 

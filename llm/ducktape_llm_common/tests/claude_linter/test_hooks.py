@@ -108,7 +108,7 @@ def create_pre_hook_payload(file_path: str, content: str) -> str:
     return json.dumps(
         {
             "hook_event_name": "PreToolUse",
-            "session_id": "test-session-id",
+            "session_id": "12345678-1234-5678-1234-567812345678",
             "tool_name": "Write",
             "tool_input": {"file_path": file_path, "content": content},
         }
@@ -119,7 +119,7 @@ def create_post_hook_payload(file_path: str, content: str | None = None) -> str:
     """Create a PostToolUse hook payload."""
     payload = {
         "hook_event_name": "PostToolUse",
-        "session_id": "test-session-id",
+        "session_id": "12345678-1234-5678-1234-567812345678",
         "tool_name": "Write",
         "tool_input": {"file_path": file_path},
     }

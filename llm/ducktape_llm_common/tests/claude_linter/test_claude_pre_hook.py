@@ -22,7 +22,7 @@ def create_write_input(file_path: str | Path, content: str) -> str:
     return json.dumps(
         {
             "hook_event_name": "PreToolUse",
-            "session_id": "test-session-id",
+            "session_id": "12345678-1234-5678-1234-567812345678",
             "tool_name": "Write",
             "tool_input": {"file_path": str(file_path), "content": content},
         }
@@ -138,7 +138,7 @@ class TestPreHook:
             json.dumps(
                 {
                     "hook_event_name": "PreToolUse",
-                    "session_id": "test-session-id",
+                    "session_id": "12345678-1234-5678-1234-567812345678",
                     "tool_name": "Edit",
                     "tool_input": {"file_path": str(tmp_path / "test.py"), "old_string": "foo", "new_string": "bar"},
                 }
