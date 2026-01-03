@@ -139,13 +139,9 @@ def make_commit_bootstrap_calls(
 
 
 class CommitMessage(OpenAIStrictModeBaseModel):
-    """Minimal commit message payload."""
+    """Commit message payload."""
 
-    subject: str = Field(..., description="<=72 chars, imperative mood")
-    body: str | None = Field(
-        default=None,
-        description="Optional body. If given, will be auto-appended to header to form full commit message.",
-    )
+    message: str = Field(..., description="Full commit message (subject line, blank line, body)")
 
 
 SUBMIT_MOUNT_PREFIX = MCPMountPrefix("submit_commit_message")
@@ -223,10 +219,11 @@ async def generate_commit_message_agent(
     def _build_commit_prompt(is_amend: bool, context: str | None) -> str:
         base = "You are an expert at writing high-quality git commit messages.\n\n"
         common_tail = (
-            "Produce a concise, imperative subject (<=80 chars) and optional body "
-            "with wrapped lines; then call submit_commit_message. When reviewing changes, "
-            "use diff with format=name-status and format=stat to understand the file list and rename map, "
-            "then request per-file patches by passing paths=['<file>'] with format=patch and a small slice (e.g. max_chars=8000)."
+            "Produce a commit message with a concise imperative subject (<=72 chars), "
+            "optionally followed by a blank line and wrapped body; then call submit_commit_message. "
+            "When reviewing changes, use diff with format=name-status and format=stat to understand "
+            "the file list and rename map, then request per-file patches by passing paths=['<file>'] "
+            "with format=patch and a small slice (e.g. max_chars=8000)."
         )
         if is_amend:
             middle = (
@@ -275,5 +272,4 @@ async def generate_commit_message_agent(
     # CommitCompositor.__aexit__ unmounts all servers and cleans up
 
     assert submit_state.result is not None, "submit_commit_message not called"
-    commit_msg = submit_state.result
-    return commit_msg.subject if not commit_msg.body else f"{commit_msg.subject}\n\n{commit_msg.body}"
+    return submit_state.result.message
