@@ -1,15 +1,3 @@
-load("@rules_python//python/uv:lock.bzl", "lock")
-
 exports_files([
-    "pyproject.toml",
-    "requirements_lock.txt",
+    "requirements.txt",
 ])
-
-# Shared lock for Home Assistant integrations
-# Home Assistant 2025.1+ uses Pydantic v2 internally (compatible with main repo)
-# Update lockfile: cd homeassistant && uv pip compile pyproject.toml -o requirements_lock.txt --python-version 3.13
-lock(
-    name = "requirements",
-    srcs = ["pyproject.toml"],
-    out = "requirements_lock.txt",
-)

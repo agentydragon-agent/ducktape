@@ -1,0 +1,7 @@
+# Home Assistant custom component dependencies
+homeassistant>=2025.1.0
+
+# Test dependencies
+pytest>=8.0.0
+pytest-homeassistant-custom-component>=0.13.300
+PyHamcrest>=2.1.0
