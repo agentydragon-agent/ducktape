@@ -168,8 +168,9 @@ def assign_jellybean(api: InvenTreeAPI):
     print("Committing.")
 
     # commit changes
-    for part, jellybean_pn in (t := tqdm(assignments)):
+    progress = tqdm(assignments)
+    for part, jellybean_pn in progress:
         Parameter.create(api, data={"part": part.pk, "template": param_template.pk, "data": jellybean_pn})
-        t.set_description(f"{part.name} ← {jellybean_pn}")
+        progress.set_description(f"{part.name} ← {jellybean_pn}")
 
     print("Done.")
