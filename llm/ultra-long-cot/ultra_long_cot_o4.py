@@ -103,7 +103,7 @@ def count_messages_tokens(messages: list[Message]) -> int:
 
 def generate_reasoning_response(
     messages: list[Message], available_tokens: int, tracker: ConversationTracker
-) -> tuple[str, int, dict]:
+) -> tuple[str, int, dict[str, Any]]:
     """Generate response optimized for reasoning models"""
 
     # For o4-mini, we want to encourage deep reasoning
@@ -111,16 +111,18 @@ def generate_reasoning_response(
 
     response = client.chat.completions.create(
         model=MODEL,
-        messages=[msg.model_dump() for msg in messages],
+        messages=[msg.model_dump() for msg in messages],  # type: ignore[misc]
         max_completion_tokens=max_tokens,  # o4-mini uses this parameter
         temperature=1.0,  # Full temperature for reasoning models
         # o4-specific parameters that might help:
     )
 
     content = response.choices[0].message.content
+    assert content is not None
     tracker.add_usage(response.usage)
 
     # Return content, tokens used, and full usage for analysis
+    assert response.usage is not None
     return content, response.usage.completion_tokens, response.usage.model_dump()
 
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import gnucash
 import platformdirs
-import yaml
+import yaml  # type: ignore[import-untyped]
 from absl import app, flags, logging
 
 from ducktape.finance import gnucash_util

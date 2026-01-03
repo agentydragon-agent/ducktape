@@ -113,15 +113,15 @@ class TestKillExisting:
 class TestLoadCredentials:
     """Tests for load_credentials()."""
 
+    cache: proxy_module.CredentialCache
+
     def setup_method(self) -> None:
-        # Reset global cache before each test
-        proxy_module._cached_proxy = None
-        proxy_module._cached_auth_header = ""
-        proxy_module._cached_mtime = 0
+        # Create fresh cache for each test
+        self.cache = proxy_module.CredentialCache()
 
     def test_loads_credentials_from_file(self, tmp_path: Path) -> None:
         write_credentials(tmp_path, "http://user:pass@proxy:8080")
-        proxy, auth_header = load_credentials(tmp_path)
+        proxy, auth_header = load_credentials(tmp_path, self.cache)
         assert proxy.hostname == "proxy"
         assert proxy.port == 8080
         assert proxy.username == "user"
@@ -129,27 +129,27 @@ class TestLoadCredentials:
 
     def test_raises_when_file_missing(self, tmp_path: Path) -> None:
         with pytest.raises(RuntimeError, match="Credentials file not found"):
-            load_credentials(tmp_path)
+            load_credentials(tmp_path, self.cache)
 
     def test_raises_when_file_empty(self, tmp_path: Path) -> None:
         (tmp_path / "upstream_proxy").write_text("")
         with pytest.raises(RuntimeError, match="Credentials file is empty"):
-            load_credentials(tmp_path)
+            load_credentials(tmp_path, self.cache)
 
     def test_caches_until_file_changes(self, tmp_path: Path) -> None:
         write_credentials(tmp_path, "http://user:pass@proxy:8080")
 
         # First load
-        proxy1, _ = load_credentials(tmp_path)
+        proxy1, _ = load_credentials(tmp_path, self.cache)
         assert proxy1.hostname == "proxy"
 
         # Second load should return cached (even if we modify in memory)
-        proxy2, _ = load_credentials(tmp_path)
+        proxy2, _ = load_credentials(tmp_path, self.cache)
         assert proxy2 is proxy1  # Same object from cache
 
     def test_reloads_when_file_modified(self, tmp_path: Path) -> None:
         write_credentials(tmp_path, "http://old@proxy:8080")
-        proxy1, _ = load_credentials(tmp_path)
+        proxy1, _ = load_credentials(tmp_path, self.cache)
         assert proxy1.username == "old"
 
         # Wait a bit to ensure mtime changes
@@ -157,6 +157,6 @@ class TestLoadCredentials:
 
         # Write new credentials
         write_credentials(tmp_path, "http://new@proxy:8080")
-        proxy2, _ = load_credentials(tmp_path)
+        proxy2, _ = load_credentials(tmp_path, self.cache)
         assert proxy2.username == "new"
         assert proxy2 is not proxy1  # New object (cache invalidated)

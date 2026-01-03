@@ -24,7 +24,9 @@ def load_trajectories(filename):
 
 def analyze_action_distribution(trajectories):
     """Analyze action distribution by model and environment."""
-    action_counts = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    action_counts: defaultdict[str, defaultdict[str, defaultdict[int, int]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(int))
+    )
 
     for traj in trajectories:
         model = traj["model"]
@@ -80,7 +82,9 @@ def plot_action_heatmap(action_counts):
 def analyze_state_visits(trajectories):
     """For discrete state envs, analyze state visitation."""
     discrete_envs = ["FrozenLake-v1", "CliffWalking-v1"]
-    state_visits = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    state_visits: defaultdict[str, defaultdict[str, defaultdict[int, int]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(int))
+    )
 
     for traj in trajectories:
         if traj["environment"] not in discrete_envs:
