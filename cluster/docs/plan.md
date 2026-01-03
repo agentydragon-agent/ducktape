@@ -177,6 +177,62 @@ Complete the original hybrid vision with all services.
 - KubePrism runs on every node, proxies to available API servers
 - Kubeconfig patched post-bootstrap to use real VPS IP
 
+### Kubeconfig HA via DNS Round-Robin
+
+**Decision**: Use DNS name instead of single VPS IP for kubeconfig
+
+**Target**:
+```yaml
+server: https://api.test-cluster.agentydragon.com:6443
+```
+
+**Implementation**:
+- `api.test-cluster.agentydragon.com` → both VPS IPs (5.78.43.147, 5.78.106.249)
+- DNS round-robin provides client-side failover
+- Created by external-dns from Ingress annotation or manual DNS record
+
+**Bootstrap**: Initial kubeconfig uses raw IP, switched to DNS after cluster is up and DNS records exist
+
+### PowerDNS HA with Galera (VPS-local storage)
+
+**Decision**: Run HA PowerDNS on both VPS nodes with MariaDB Galera using local storage
+
+**Architecture**:
+```
+VPS0                         VPS1
+├── local-path PVC           ├── local-path PVC
+│   └── MariaDB data         │   └── MariaDB data
+├── MariaDB (Galera) ◄─sync─►├── MariaDB (Galera)
+└── PowerDNS pod             └── PowerDNS pod
+```
+
+**Benefits**:
+- ❌ No AXFR complexity (same database = same data)
+- ❌ No VPS standalone PowerDNS container needed
+- ✅ True active-active DNS
+- ✅ Survives single VPS failure
+- ✅ No Hetzner Volume cost (uses VPS NVMe)
+
+**DNS records**:
+- `ns1.agentydragon.com` → VPS0 IP
+- `ns2.agentydragon.com` → VPS1 IP
+
+**Node placement**:
+- `local-path-provisioner` on VPS nodes
+- MariaDB Galera StatefulSet with `podAntiAffinity` (one pod per VPS)
+- PowerDNS DaemonSet or Deployment with VPS node affinity
+
+**Tradeoff**: If VPS is destroyed, that node's data is lost. But Galera syncs continuously, so the other node has the data. Only loses data if both VPS die simultaneously.
+
+### VPS Controllers on Headscale
+
+**Decision**: Add VPS controllers to Headscale mesh for additional connectivity options
+
+**Benefits**:
+- Backup path to API if public IP is blocked
+- Tailscale MagicDNS as alternative to public DNS
+- Unified management with other Headscale nodes
+
 ### Machine Secrets in Persistent Auth
 
 **Decision**: Store Talos machine secrets in 00-persistent-auth layer

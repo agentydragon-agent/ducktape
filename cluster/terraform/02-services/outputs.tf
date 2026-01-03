@@ -17,6 +17,7 @@ output "service_endpoints" {
     authentik_url = "https://authentik.${data.terraform_remote_state.infrastructure.outputs.cluster_domain}"
     harbor_url    = "https://harbor.${data.terraform_remote_state.infrastructure.outputs.cluster_domain}"
     gitea_url     = "https://gitea.${data.terraform_remote_state.infrastructure.outputs.cluster_domain}"
-    powerdns_url  = "http://${data.terraform_remote_state.infrastructure.outputs.cluster_vip}:8081"
+    # PowerDNS accessible via MetalLB at 10.2.3.3 (Proxmox network) or via K8s service
+    powerdns_url = "http://powerdns-api.dns-system.svc.cluster.local:8081"
   }
 }
