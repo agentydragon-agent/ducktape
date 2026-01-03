@@ -99,7 +99,7 @@ def _parse_expression_components(store: TanaGraph, component_ids: list[NodeId]) 
         return None
     if len(expressions) == 1:
         return expressions[0]
-    return BooleanSearch(BooleanOperator.AND, expressions)
+    return BooleanSearch(operator=BooleanOperator.AND, operands=expressions)
 
 
 def _parse_tuple_operator(store: TanaGraph, node: TupleNode) -> SearchExpression | None:

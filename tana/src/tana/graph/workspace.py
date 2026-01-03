@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Mapping
-from typing import Any, cast
+from collections.abc import ItemsView, Iterable, Iterator, Mapping, ValuesView
+from typing import Any, cast, overload
 
 from tana.domain.constants import MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
 from tana.domain.nodes import DOC_CLASS, BaseNode, TupleNode, UnknownNode
@@ -31,13 +31,22 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         return len(self._nodes)
 
     # Convenience helpers ---------------------------------------------------
-    def get(self, node_id: NodeId, default: BaseNode | None = None) -> BaseNode | None:
+    @overload
+    def get(self, node_id: NodeId, /) -> BaseNode | None: ...
+
+    @overload
+    def get(self, node_id: NodeId, /, default: BaseNode) -> BaseNode: ...
+
+    @overload
+    def get[_T](self, node_id: NodeId, /, default: _T) -> BaseNode | _T: ...
+
+    def get(self, node_id: NodeId, /, default: BaseNode | None = None) -> BaseNode | None:
         return self._nodes.get(node_id, default)
 
-    def values(self) -> Iterable[BaseNode]:
+    def values(self) -> ValuesView[BaseNode]:
         return self._nodes.values()
 
-    def items(self) -> Iterable[tuple[NodeId, BaseNode]]:
+    def items(self) -> ItemsView[NodeId, BaseNode]:
         return self._nodes.items()
 
     def get_supertags(self, node_id: NodeId) -> list[str]:

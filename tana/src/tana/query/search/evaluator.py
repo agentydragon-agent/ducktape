@@ -232,12 +232,12 @@ def _evaluate_dispatch(expression: SearchExpression, evaluator: SearchEvaluator)
 
 @_evaluate_dispatch.register(TagSearch)
 def _(expression: TagSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_tag(expression.tag_node_id)
+    yield from evaluator._evaluate_tag(expression.tag_id)
 
 
 @_evaluate_dispatch.register(TypeSearch)
 def _(expression: TypeSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_type(expression.type_node_id)
+    yield from evaluator._evaluate_type(expression.type_id)
 
 
 @_evaluate_dispatch.register(TextSearch)
