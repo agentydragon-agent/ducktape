@@ -14,6 +14,7 @@ spec:
   wait: true
   dependsOn:
     - name: vault-operator # Vault instance needs operator and CRDs
+    - name: local-path-provisioner # Vault uses local-path storage
   # Verify Bank-Vaults operator and Vault StatefulSet are ready
   healthChecks:
     - apiVersion: apps/v1

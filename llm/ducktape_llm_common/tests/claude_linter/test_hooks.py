@@ -108,7 +108,7 @@ def create_pre_hook_payload(file_path: str, content: str) -> str:
     return json.dumps(
         {
             "hook_event_name": "PreToolUse",
-            "session_id": "test-session-id",
+            "session_id": "12345678-1234-5678-1234-567812345678",
             "tool_name": "Write",
             "tool_input": {"file_path": file_path, "content": content},
         }
@@ -122,7 +122,7 @@ def create_post_hook_payload(file_path: str, content: str | None = None) -> str:
         tool_input["content"] = content
     payload = {
         "hook_event_name": "PostToolUse",
-        "session_id": "test-session-id",
+        "session_id": "12345678-1234-5678-1234-567812345678",
         "tool_name": "Write",
         "tool_input": tool_input,
     }
@@ -181,9 +181,10 @@ class TestHooks:
         tmp_path = chdir_tmp_path_git_repo if use_git else chdir_tmp_path
 
         test_file = tmp_path / "test.py"
-        test_file.write_text("fix-me")
+        content = "fix-me"
+        test_file.write_text(content)
 
-        payload = create_post_hook_payload(str(test_file))
+        payload = create_post_hook_payload(str(test_file), content)
 
         result = runner.invoke(cli, ["hook"], input=payload, catch_exceptions=False)
 
