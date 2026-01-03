@@ -75,10 +75,10 @@ echo ""
 log "🔍 Phase 0: Preflight Validation"
 echo "=================================="
 
-# Check git working tree is clean
-if ! git diff-index --quiet HEAD --; then
-    echo "❌ FATAL: Git working tree is not clean"
-    echo "Please commit or stash your changes before running bootstrap"
+# Check git working tree is clean (only cluster subtree - monorepo may have other changes)
+if ! git diff-index --quiet HEAD -- cluster/; then
+    echo "❌ FATAL: Git working tree is not clean in cluster/"
+    echo "Please commit or stash your cluster changes before running bootstrap"
     exit 1
 fi
 

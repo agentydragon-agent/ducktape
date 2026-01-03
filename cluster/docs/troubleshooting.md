@@ -366,6 +366,41 @@ kubectl get pods -A | grep -v Running      # Check for non-running pods
 flux get kustomizations                     # Check GitOps status
 ```
 
+### KubeSpan (WireGuard Mesh) - VPS Hybrid Cluster
+
+**Debug commands for KubeSpan mesh connectivity:**
+
+```bash
+# Primary debug - peer status (state should be "up")
+talosctl -n <node-ip> get kubespanpeerstatuses -o yaml
+
+# Peer specs (discovered endpoints)
+talosctl -n <node-ip> get kubespanpeerspecs -o yaml
+
+# Identity (WireGuard keys)
+talosctl -n <node-ip> get kubespanidentities -o yaml
+
+# Discovery members (both nodes should appear)
+talosctl -n <node-ip> get members -o yaml
+talosctl -n <node-ip> get affiliates -o yaml
+```
+
+**KubeSpan State Meanings:**
+
+| State | Meaning |
+|-------|---------|
+| `unknown` | No endpoint set yet, or endpoint just changed (within 15s) |
+| `up` | WireGuard handshake within last ~275s |
+| `down` | No handshake for >275s |
+
+**Key Constants:**
+
+- WireGuard port: UDP 51820
+- PeerDownInterval: 275 seconds
+- EndpointConnectionTimeout: 15 seconds
+
+**If peers show `down`:** Check firewall allows UDP 51820, verify discovery service (`discovery.talos.dev:443`) reachable.
+
 ### Storage (Proxmox CSI) - Known Tricky Component
 
 **Common Issues**: SealedSecret decryption failures, authentication errors with misleading messages.

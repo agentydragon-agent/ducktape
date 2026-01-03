@@ -12,6 +12,7 @@ in
       pkgs.markdownlint-cli # For markdown linting
       pkgs.nodePackages.prettier # For YAML formatting
       pkgs.tflint
+      pkgs.hcloud # Hetzner Cloud CLI
       pkgs.yq-go # YAML/JSON conversion tool
       pkgs.popeye # Kubernetes cluster health checker
       pkgs.python3 # For health-check.py

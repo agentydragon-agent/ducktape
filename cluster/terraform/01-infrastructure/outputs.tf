@@ -1,35 +1,44 @@
-# LAYER 1 OUTPUTS - Infrastructure components
+# LAYER 1 OUTPUTS - Hybrid Infrastructure
 # These outputs are consumed by subsequent layers via terraform_remote_state
 
-# PVE-AUTH outputs
-output "proxmox_tokens_created" {
-  description = "Whether Proxmox tokens were created successfully"
-  value       = module.pve_auth.terraform_token != null
-  sensitive   = true
-}
+# ============================================================================
+# KUBECONFIG & ACCESS
+# ============================================================================
 
-# INFRASTRUCTURE outputs
 output "kubeconfig" {
-  description = "Generated kubeconfig for cluster access"
-  value       = module.infrastructure.kubeconfig
-  sensitive   = true
+  description = "Generated kubeconfig for cluster access (patched with real endpoint)"
+  value = replace(
+    talos_cluster_kubeconfig.cluster.kubeconfig_raw,
+    "https://localhost:7445",
+    "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
+  )
+  sensitive = true
 }
 
 output "kubeconfig_data" {
   description = "Kubeconfig data components for provider configuration"
-  value       = module.infrastructure.kubeconfig_data
-  sensitive   = true
+  value = {
+    host                   = "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
+    client_certificate     = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_certificate
+    client_key             = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_key
+    cluster_ca_certificate = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.ca_certificate
+  }
+  sensitive = true
 }
 
 output "talos_config" {
   description = "Talos client configuration"
-  value       = module.infrastructure.talos_config
+  value       = data.talos_client_configuration.cluster.talos_config
   sensitive   = true
 }
 
+# ============================================================================
+# CLUSTER INFORMATION
+# ============================================================================
+
 output "cluster_endpoint" {
   description = "Kubernetes API cluster endpoint"
-  value       = module.infrastructure.cluster_endpoint
+  value       = "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
 }
 
 output "cluster_domain" {
@@ -37,25 +46,45 @@ output "cluster_domain" {
   value       = var.cluster_domain
 }
 
-output "cluster_vip" {
-  description = "Cluster VIP for service endpoints"
-  value       = var.cluster_vip
-}
-
 output "cluster_nodes" {
   description = "Cluster node information"
   value = {
-    controlplane_ips = module.infrastructure.controlplane_ips
-    worker_ips       = module.infrastructure.worker_ips
+    vps_ips = { for k, v in hcloud_server.vps : k => v.ipv4_address }
+    # home_ip will be added when Proxmox node is implemented
   }
 }
 
-# Infrastructure readiness indicator
+output "vps_node_ips" {
+  description = "Public IP addresses of VPS nodes"
+  value = {
+    for k, v in hcloud_server.vps : k => {
+      ipv4 = v.ipv4_address
+      ipv6 = v.ipv6_address
+    }
+  }
+}
+
+output "bootstrap_node_ip" {
+  description = "IP of the bootstrap node (primary API endpoint)"
+  value       = hcloud_server.vps[local.bootstrap_node].ipv4_address
+}
+
+# ============================================================================
+# INFRASTRUCTURE READINESS
+# ============================================================================
+
 output "infrastructure_ready" {
   description = "Indicates infrastructure layer is complete and ready for service deployment"
+  sensitive   = true
   value = {
-    cluster_ready   = module.infrastructure.cluster_endpoint != null
+    cluster_ready   = talos_cluster_kubeconfig.cluster.kubeconfig_raw != null
     persistent_auth = data.terraform_remote_state.persistent_auth.outputs.persistent_auth_ready.csi_ready
     timestamp       = timestamp()
   }
+}
+
+# Expose controlplane IPs for use by other modules
+output "controlplane_ips" {
+  description = "List of controlplane node IPs"
+  value       = [for k, v in hcloud_server.vps : v.ipv4_address]
 }

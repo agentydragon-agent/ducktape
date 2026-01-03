@@ -4,6 +4,8 @@ GitOps Dependency Validation Script
 Validates Flux kustomization dependencies are correctly ordered and logical
 """
 
+from __future__ import annotations
+
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -24,7 +26,7 @@ class KustomizationSpec:
     depends_on: list[DependsOn]
 
     @classmethod
-    def from_dict(cls, spec_dict: dict) -> "KustomizationSpec":
+    def from_dict(cls, spec_dict: dict) -> KustomizationSpec:
         depends_on = []
         for dep in spec_dict.get("dependsOn", []):
             if isinstance(dep, dict) and dep.get("name"):

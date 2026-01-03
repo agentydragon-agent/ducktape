@@ -9,3 +9,9 @@ variable "proxmox_api_host" {
   type        = string
   default     = "atlas.agentydragon.com"
 }
+
+variable "talos_version" {
+  description = "Talos Linux version for machine secrets generation"
+  type        = string
+  default     = "v1.9.5"
+}

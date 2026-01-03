@@ -18,6 +18,10 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.0"
     }
+    talos = {
+      source  = "siderolabs/talos"
+      version = "~> 0.9.0"
+    }
   }
 }
 
@@ -25,7 +29,7 @@ terraform {
 locals {
   proxmox_host = "root@${var.proxmox_host}"
 
-  # Only CSI token - terraform token is ephemeral per VM lifecycle
+  # Persistent Proxmox users - survive VM lifecycle
   pve_persistent_users = {
     csi = {
       name    = "kubernetes-csi@pve"
@@ -33,6 +37,13 @@ locals {
       role    = "CSI"
       privs   = "VM.Audit,VM.Config.Disk,Datastore.Allocate,Datastore.AllocateSpace,Datastore.Audit"
       token   = "csi"
+    }
+    terraform = {
+      name    = "terraform@pve"
+      comment = "Terraform automation user (persistent)"
+      role    = "TerraformAdmin"
+      privs   = "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.Monitor,VM.PowerMgmt,User.Modify,Permissions.Modify"
+      token   = "terraform-token"
     }
   }
 }
