@@ -36,10 +36,10 @@ from claude_hooks.logging_context import set_hook_context, setup_hook_logging
 
 # Type variables for generic hook handling
 InputT = TypeVar("InputT", bound=BaseHookInput)
-OutputT = TypeVar("OutputT", bound="HookAction")
+OutputT = TypeVar("OutputT", bound=HookAction)
 
 
-class HookBase[InputT: BaseHookInput, OutputT: "HookAction"](ABC):
+class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):
     """Base class for all Claude Code hooks."""
 
     INPUT_MODEL: type[InputT]  # Subclasses must set this

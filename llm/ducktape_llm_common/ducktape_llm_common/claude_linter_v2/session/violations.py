@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..config.models import Violation
@@ -25,13 +26,13 @@ class ViolationTracker:
     def __init__(self, session_manager: SessionManager) -> None:
         self.session_manager = session_manager
         self._violations: dict[
-            SessionID, dict[tuple[str, int, str], dict[str, Any]]
+            SessionID, dict[tuple[Path, int, str], dict[str, Any]]
         ] = {}  # session_id -> {key -> violation_dict}
 
     def add_violation(
         self,
         session_id: SessionID,
-        file_path: str,
+        file_path: Path,
         line: int,
         message: str,
         severity: str = "error",
@@ -41,9 +42,8 @@ class ViolationTracker:
         if session_id not in self._violations:
             self._violations[session_id] = {}
 
-        # Create violation dict for storage
         violation_dict = {
-            "file_path": file_path,
+            "file_path": str(file_path),
             "line": line,
             "message": message,
             "severity": severity,
@@ -52,31 +52,31 @@ class ViolationTracker:
             "fixed": False,
         }
 
-        # Use key for deduplication
         key = (file_path, line, message)
         self._violations[session_id][key] = violation_dict
 
     def add_violations(
-        self, session_id: SessionID, violations: list[Violation], file_path: str, severity: str = "error"
+        self, session_id: SessionID, violations: list[Violation], file_path: Path, severity: str = "error"
     ) -> None:
         """Add multiple violations from a linter."""
         for v in violations:
             self.add_violation(
                 session_id=session_id,
-                file_path=v.file_path or file_path,
+                file_path=Path(v.file_path) if v.file_path else file_path,
                 line=v.line,
                 message=v.message,
                 severity=severity,
                 rule=v.rule,
             )
 
-    def mark_file_fixed(self, session_id: SessionID, file_path: str) -> None:
+    def mark_file_fixed(self, session_id: SessionID, file_path: Path) -> None:
         """Mark all violations in a file as fixed."""
         if session_id not in self._violations:
             return
 
+        file_path_str = str(file_path)
         for violation in self._violations[session_id].values():
-            if violation["file_path"] == file_path:
+            if violation["file_path"] == file_path_str:
                 violation["fixed"] = True
 
     def get_unfixed_violations(self, session_id: SessionID) -> list[dict[str, Any]]:

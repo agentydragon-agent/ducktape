@@ -1,7 +1,8 @@
 """Tests for diff intelligence module."""
 
-import pytest
+from pathlib import Path
 
+from ducktape_llm_common.claude_code_api import EditOperation, EditToolCall, MultiEditToolCall
 from ducktape_llm_common.claude_linter_v2.config.models import Violation
 from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     CategorizedViolation,
@@ -9,7 +10,9 @@ from ducktape_llm_common.claude_linter_v2.diff.categorizer import (
     ViolationCategory,
 )
 from ducktape_llm_common.claude_linter_v2.diff.intelligence import DiffIntelligence
-from ducktape_llm_common.claude_linter_v2.diff.parser import ParsedDiff, ToolCall, parse_tool_response
+from ducktape_llm_common.claude_linter_v2.diff.parser import ParsedDiff, parse_tool_response
+
+TEST_FILE = Path("/test.py")
 
 
 class TestDiffParser:
@@ -17,23 +20,14 @@ class TestDiffParser:
 
     def test_parse_edit_tool(self):
         """Test parsing Edit tool response."""
-        tool_call = ToolCall(
-            tool_name="Edit",
-            tool_input={"file_path": "/test.py", "old_string": "def foo():", "new_string": "def bar():"},
-            tool_response={
-                "structuredPatch": [
-                    {
-                        "oldStart": 10,
-                        "oldLines": 1,
-                        "newStart": 10,
-                        "newLines": 1,
-                        "lines": ["-def foo():", "+def bar():"],
-                    }
-                ]
-            },
-        )
+        tool_call = EditToolCall(file_path=TEST_FILE, old_string="def foo():", new_string="def bar():")
+        tool_response = {
+            "structuredPatch": [
+                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-def foo():", "+def bar():"]}
+            ]
+        }
 
-        parsed = parse_tool_response(tool_call)
+        parsed = parse_tool_response(tool_call, tool_response)
 
         assert parsed is not None
         assert parsed.added_lines == {10}
@@ -42,37 +36,32 @@ class TestDiffParser:
 
     def test_parse_multiedit_tool(self):
         """Test parsing MultiEdit tool with multiple hunks."""
-        tool_call = ToolCall(
-            tool_name="MultiEdit",
-            tool_input={
-                "file_path": "/test.py",
-                "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
-            },
-            tool_response={
-                "structuredPatch": [
-                    {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-foo", "+bar"]},
-                    {"oldStart": 20, "oldLines": 1, "newStart": 20, "newLines": 1, "lines": ["-baz", "+qux"]},
-                ]
-            },
+        tool_call = MultiEditToolCall(
+            file_path=TEST_FILE,
+            edits=[
+                EditOperation(old_string="foo", new_string="bar"),
+                EditOperation(old_string="baz", new_string="qux"),
+            ],
         )
+        tool_response = {
+            "structuredPatch": [
+                {"oldStart": 10, "oldLines": 1, "newStart": 10, "newLines": 1, "lines": ["-foo", "+bar"]},
+                {"oldStart": 20, "oldLines": 1, "newStart": 20, "newLines": 1, "lines": ["-baz", "+qux"]},
+            ]
+        }
 
-        parsed = parse_tool_response(tool_call)
+        parsed = parse_tool_response(tool_call, tool_response)
 
         assert parsed is not None
         assert parsed.added_lines == {10, 20}
         assert len(parsed.hunks) == 2
 
-    @pytest.mark.parametrize(
-        ("tool_name", "tool_input"),
-        [
-            ("Write", {"file_path": "/test.py", "content": "hello"}),
-            ("Read", {"file_path": "/test.py"}),
-            ("Bash", {"command": "ls"}),
-        ],
-    )
-    def test_parse_other_tools_returns_none(self, tool_name, tool_input):
-        """Test that non-Edit/MultiEdit tools return None."""
-        assert parse_tool_response(ToolCall(tool_name=tool_name, tool_input=tool_input, tool_response=None)) is None
+    def test_parse_missing_structured_patch(self):
+        """Test that missing structuredPatch field returns None."""
+        tool_call = EditToolCall(file_path=TEST_FILE, old_string="foo", new_string="bar")
+        tool_response = {"someOtherField": "value"}
+
+        assert parse_tool_response(tool_call, tool_response) is None
 
 
 class TestViolationCategorizer:
@@ -88,7 +77,7 @@ class TestViolationCategorizer:
         ]
 
         parsed_diff = ParsedDiff(
-            file_path="/test.py", hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
+            file_path=TEST_FILE, hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
         )
 
         categorized = categorizer.categorize_violations(violations, parsed_diff)
@@ -110,7 +99,7 @@ class TestViolationCategorizer:
         ]
 
         parsed_diff = ParsedDiff(
-            file_path="/test.py", hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
+            file_path=TEST_FILE, hunks=[], added_lines={10}, removed_lines=set(), context_lines=set()
         )
 
         categorized = categorizer.categorize_violations(violations, parsed_diff)

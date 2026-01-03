@@ -1,10 +1,10 @@
-# AGENTS.md — Agent Guide for `wt`
+@README.md
 
-Helpful pointers for working on the `wt` worktree manager: environment, commands, testing, layout, and gotchas. Read alongside `README.md` for product docs and `docs/ARCHITECTURE.md` for in-depth design notes.
+# Agent Guide for `wt`
 
 ## Environment and Tooling
 
-See @../AGENTS.md for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
+See @../AGENTS.md for standard Bazel workflow (`bazel build --config=check //...`, `bazel test //...`).
 
 Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be installed separately for integration tests.
 
@@ -12,11 +12,19 @@ Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be insta
 - `libgit2` is provided via system packages or Nix.
 - `gitstatusd` **is not bundled**; install it separately and ensure it is on `PATH` (`which gitstatusd`). Without it, daemon/integration tests fail quickly.
 
-## Common Development Commands
+## Development Commands
+
 - Run the CLI entry point: `bazel run //wt:wt-cli -- --help`
-- Integration tests marked `integration` or `shell` spawn git repos and daemons; they may need relaxed sandboxing.
+- Tests: `bazel test //wt/...`
+- Linting: `bazel build --config=lint //wt/...`
+- Type checking: `bazel build --config=typecheck //wt/...`
+- Format: `bazel run //tools/format`
+
+Integration tests marked `integration` or `shell` spawn git repos and daemons; they may need
+relaxed sandboxing to allow UNIX sockets and filesystem operations.
 
 ## Project Structure (src layout)
+
 - `src/wt/cli.py` — CLI entry point (`wt` console script).
 - `src/wt/client/` — CLI-side handlers, socket client, shell helpers.
 - `src/wt/server/` — Background daemon, gitstatusd integration, worktree service logic.
@@ -26,6 +34,7 @@ Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be insta
 - Additional docs: `docs/ARCHITECTURE.md`, `docs/SPLIT_FEATURE_DESIGN.md`, `docs/WORKTREE_IDEAS.md`.
 
 ## Testing and Markers
+
 - Pytest configuration lives in `pyproject.toml`.
 - Markers you will see:
   - `unit` — fast tests, no external processes.
@@ -36,10 +45,17 @@ Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be insta
 - Default addopts (already configured): `-m "not real_github" -v --tb=short --strict-markers --disable-warnings --timeout=30`.
 
 ## Operational Notes / Pitfalls
-- The CLI communicates with a daemon via UNIX sockets. Tests that cover this path need filesystem + socket permissions; in restricted sandboxes those calls may fail with ECONNREFUSED or bind errors.
-- Hooks and shell integration rely on fd3 semantics; avoid breaking this when modifying `wt.shell` utilities.
-- `gitstatusd` metrics are surfaced to the client; when altering daemon startup flows, ensure `gitstatusd_listener` lifecycle stays in sync.
-- Copy-on-write behavior differs per platform (clonefile vs reflink vs rsync). Keep feature flags configurable through the shared config models.
+
+- The CLI communicates with a daemon via UNIX sockets. Tests that cover this path need filesystem
+  - socket permissions; in restricted sandboxes those calls may fail with ECONNREFUSED or bind
+  errors.
+- Hooks and shell integration rely on fd3 semantics; avoid breaking this when modifying
+  `wt.shell` utilities.
+- `gitstatusd` metrics are surfaced to the client; when altering daemon startup flows, ensure
+  `gitstatusd_listener` lifecycle stays in sync.
+- Copy-on-write behavior differs per platform (clonefile vs reflink vs rsync). Keep feature flags
+  configurable through the shared config models.
 
 ## Related Resources
+
 - Top-level repository overview: `../AGENTS.md`

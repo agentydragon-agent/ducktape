@@ -22,7 +22,7 @@ After comprehensive analysis of 14 test files using `make_step_runner`, I found:
 1. `tests/agent/test_approval_integration.py`: `MakeCall("echo", "echo", EchoInput(text="test"))` + `AssistantMessage("done")`
 2. `tests/agent/test_with_mocks.py`: `MakeCall("echo", "echo", EchoInput(text="hi"))` + `AssistantMessage("done")`
 3. `tests/agent/test_agent_mcp_echo.py`: `MakeCall("echo", "echo", EchoInput(text="hello"))` + `AssistantMessage("done")`
-4. `tests/agent/e2e/test_approvals.py`: `MakeCall("echo", "echo", {"text": "hello"})` + `MakeCall("ui", "end_turn", {})`
+4. `tests/e2e/test_approvals.py`: `MakeCall("echo", "echo", {"text": "hello"})` + `MakeCall("ui", "end_turn", {})`
 
 **Why NOT extract**:
 
@@ -38,9 +38,9 @@ After comprehensive analysis of 14 test files using `make_step_runner`, I found:
 
 **Locations**:
 
-- `tests/agent/e2e/test_approvals.py`
-- `tests/agent/e2e/test_proposals_reject.py`
-- `tests/agent/e2e/test_ui.py`
+- `tests/e2e/test_approvals.py`
+- `tests/e2e/test_proposals_reject.py`
+- `tests/e2e/test_ui.py`
 
 **Why NOT extract**:
 

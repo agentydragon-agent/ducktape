@@ -321,6 +321,7 @@ in {
       direnv
       devenv
       alejandra # Nix formatter
+      rclone # Cloud storage mounting/sync
       opencode # AI coding agent for terminal
 
       # Tree-sitter CLI for manual parser management

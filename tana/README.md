@@ -6,9 +6,21 @@ parsers/renderers under the `tana.export` namespace.
 
 ## Getting Started
 
-See [AGENTS.md](../AGENTS.md) for standard Bazel workflow.
+```bash
+cd tana
+direnv allow        # loads devenv, creates a uv-managed venv
+uv sync --extra dev # install runtime + dev dependencies
 
-Run converter: `bazel run //tana:tana-export-convert -- --help`
+# Run the main conversion CLI
+uv run tana-export-convert --help
+
+# Execute tests
+uv run pytest
+
+# Linting and type checking
+uv run ruff check .
+uv run mypy
+```
 
 Key layout (`src/tana/`):
 

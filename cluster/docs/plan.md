@@ -1,345 +1,334 @@
 # Cluster Roadmap
 
-**Last Updated**: 2025-12-10
+**Last Updated**: 2026-01-03
 
 ## 🎯 Current Status
 
-**Recent Accomplishments** (2025-12-10):
+**Major Architecture Change** (2026-01-03):
 
-- ✅ Fixed Gitea 10-hour crash loop (OAuth config dependency issue)
-- ✅ Implemented Let's Encrypt environment switching (staging/production)
-- ✅ Added RWO volume deployment strategy protections (Harbor, Grafana, Gitea)
-- ✅ Fixed Harbor SSO Terraform (data source → resource reference bug)
-- ✅ Documented RWO volume deadlock pattern (3rd occurrence prevention)
-- ✅ Consolidated and reorganized documentation (lowercase, DRY)
+Migrated from Proxmox-only 5-node cluster to **hybrid Hetzner VPS + Proxmox** architecture:
 
-**Current Focus**: Cluster health verification and SSO stabilization
+- ✅ 2x Hetzner CPX31 VPS nodes deployed (Hillsboro, OR)
+- ✅ Both nodes are control-plane with Talos v1.9.5, Kubernetes v1.32.0
+- ✅ Cilium CNI with VXLAN tunnel mode (cross-node connectivity verified)
+- ✅ Talos machine secrets persisted in 00-persistent-auth layer
+- ✅ KubePrism (localhost:7445) for cluster_endpoint (breaks circular dependency)
+- ✅ **KubeSpan mesh working** - WireGuard handshakes verified, state: `up` on both peers
+- ✅ **Simplified VPS deployment using Hetzner public Talos ISO** (no custom snapshot needed)
+- ✅ **Hetzner Cloud CSI** for block storage
+- ⏳ Home Proxmox node(s) not yet added
 
-### Next Steps
+**Current Cluster State**:
 
-1. **Bootstrap Test** - Verify turnkey deployment works end-to-end
-   - Run `terraform destroy && ./bootstrap.sh`
-   - Verify all services come up healthy
-   - Test Gitea SSO login flow
-
-2. **SSO Integration Completion**
-   - Harbor SSO already configured (pending test)
-   - Gitea SSO already configured (pending test)
-   - Vault OIDC configured (pending test)
-
-3. **Validate SSO Login Flows** - Browser testing required
-   - [ ] Test Harbor OIDC login via browser
-   - [ ] Test Gitea OIDC login via browser
-   - [ ] Test Vault OIDC login via browser
-   - [ ] Verify auto-onboarding creates users correctly
-   - [ ] Verify group-based authorization (admin groups)
-
-### Needs Investigation (Lower Priority)
-
-- None currently
+- Nodes: `talos-vps-0` (5.78.106.249), `talos-vps-1` (5.78.43.147)
+- All core pods running: CoreDNS, Cilium, Hubble, hcloud-csi
+- Node labels: `topology.kubernetes.io/region=hetzner`, `zone=hil`
+- KubeSpan: Active mesh with ~15s handshake intervals
+- No services deployed yet (Flux, Vault, etc. pending)
 
 ---
 
-## 📋 Next Up (Prioritized Backlog)
+## 🔀 Possible Directions
 
-### High Priority - Post-SSO Platform Services
+From current state, several independent branches can be pursued:
 
-### High Priority - Observability
+### Branch A: Add Home Proxmox Node(s)
 
-- [x] ~~metrics-server~~ (DONE - kubectl top working)
-- [x] ~~Prometheus stack~~ (DONE - kube-prometheus-stack deployed)
-- [x] ~~Loki + Promtail~~ (DONE - log aggregation operational)
-- [x] ~~Grafana SSO via Authentik OIDC~~ (DONE - OAuth login working)
-- [ ] OpenTelemetry (distributed tracing - later when complexity warrants)
+Extend cluster with home infrastructure for storage-heavy workloads.
 
-### Medium Priority - Platform Services
+**Prerequisites**:
 
-- [ ] **Jellyfin** - Media streaming server (Netflix alternative)
-  - Hardware transcoding support
-  - Mobile apps, web interface
-  - Authentik SSO integration
-- [ ] **Media Automation Stack** - Automated media management
-  - **Radarr** (movies), **Sonarr** (TV shows)
-  - **Prowlarr** (indexer management)
-  - **Bazarr** (subtitles)
-  - **Overseerr** (request management UI)
-- [ ] **qBittorrent** - Torrent client with web UI
-  - VPN integration via Gluetun sidecar
-  - Automatic integration with *arr stack
-- [ ] **agentydragon.com** - Migrate personal website to cluster
-  - Static site or SSG deployment
-  - HTTPS via cert-manager
-  - DNS via external-dns
-- [ ] **InvenTree** - Inventory management (TrueCharts v9.0.12)
-- [ ] **Syncthing** - File synchronization (TrueCharts chart available)
-- [ ] **Bazel Remote Cache** - Distributed build cache (slamdev/bazel-remote)
+1. Add Proxmox API credentials to 00-persistent-auth
+2. Upload Talos ISO to Proxmox storage
+3. Create `proxmox-nodes.tf` (similar to `hetzner-nodes.tf`)
 
-### Low Priority - Infrastructure & Operations
+**Steps**:
 
-- [ ] **Secret Rotation Infrastructure** - Stakater Reloader for automatic pod restarts on secret changes
-  - Phase 0 (stabilization) complete with 8760h refresh intervals
-  - Phase 1 (Reloader deployment) complete - deployed to kube-system, watches all namespaces
-  - Future phases: Fix init-time patterns, migrate to Vault KV, enable rotation
-  - Reference: `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md`
-- [x] ~~Complete SNI migration (move remaining VPS services to stream-level SNI)~~ (DONE - 2025-11-18)
-- [ ] VPS proxy resilience testing (MetalLB VIP pod failure handling)
-- [ ] Proxmox CSI orphaned volume cleanup (post-destroy automation)
-- [ ] **Persistent Cache PVCs** - Preserve cache data across cluster destroy/recreate cycles
-  - Target: Harbor pull-through cache, Bazel remote cache, similar services
-  - Current: PVCs deleted on cluster destroy, lose all cached images/artifacts
-  - Goal: Move cache PVCs to persistent layer (like 00-persistent-auth)
-  - Benefit: Faster bootstrap iterations, reduced upstream registry bandwidth
-  - Implementation: Separate Terraform layer or external PVC provisioning
-- [ ] **Gitea Terraform Provider** - Automate repository and mirror management
-  - Provider: `go-gitea/gitea` (registry.terraform.io/providers/go-gitea/gitea/latest)
-  - Resources: `gitea_repository`, `gitea_org`, `gitea_oauth2_app`
-  - Use cases: Provision mirrors, manage repos, configure OAuth apps
-  - Note: Does NOT support authentication sources (use kubectl exec Job for OAuth login config)
+- [ ] Add Proxmox provider credentials to terraform state
+- [ ] Create Talos VM template on Proxmox
+- [ ] Deploy 1+ Proxmox nodes as workers
+- [ ] Verify KubeSpan mesh connectivity (VPS ↔ home)
+- [ ] Deploy Proxmox CSI for home storage
 
----
+**Benefits**: ZFS storage access, media serving, heavy workloads at home
 
-## 🔬 Research & Evaluation
+### Branch B: Terraform State Backup (rclone + Google Drive)
 
-### Under Consideration
+Protect terraform state with encrypted cloud backup.
 
-- [ ] **DNS Propagation Alternatives** - Faster updates than current AXFR
-  - **Option 1: external-dns → VPS PowerDNS API** - Direct API updates via Tailscale
-  - **Option 2: external-dns → Route53** - Bypass VPS, push directly to AWS
-  - **Current issue**: AXFR NOTIFY from cluster has unpredictable source IP (pod can run on any node)
-  - **Current workaround**: AXFR refresh every 3 hours (SOA refresh interval)
-  - **Simple fix**: Reduce SOA refresh to 5-10 minutes
+**Implementation**:
 
-- [ ] **Technitium DNS** - Alternative to PowerDNS (modern, DNSSEC, web UI)
-  - Pros: Better architecture, comprehensive features
-  - Cons: RFC2136-only integration, newer to K8s ecosystem
-  - Decision: Evaluate if features justify integration complexity
+- [ ] Configure rclone with Google Drive
+- [ ] Encrypt terraform state before upload
+- [ ] Create backup script in scripts/
+- [ ] Document restore procedure
+- [ ] Optional: Automated backup on terraform apply
 
-- [ ] **Guacamole + Authentik RAC** - Clientless remote desktop with SSO
-  - Target: Browser-based VNC/RDP to Proxmox VMs (wyrm)
-  - Value: Zero-click SSO graphical access
-  - Status: Architecture defined, ready for deployment
+**Scope**: `terraform/*/terraform.tfstate` files (contain all secrets)
 
-- [ ] **Paperless-ngx** - Document management system
-  - OCR, tagging, full-text search
-  - Scan → automatic organization
-  - Good for going paperless
-  - Authentik SSO integration
+### Branch C: Deploy Core Services (VPS-only)
 
-- [ ] **Persistent AI Agents Platform** - Long-running agents with compute resources
-  - Architecture: Kagent + MCP servers + per-agent containers
-  - Phases: CLI prototype → visual capabilities → multi-agent → production hardening
-  - Detail: See `docs/agents.md`
+Run services on VPS nodes without home Proxmox.
 
-### Future Enhancements (Freezer)
+**Limitations**: No persistent storage (Proxmox CSI unavailable), ephemeral only
 
-- [ ] Universal HTTPS Auto-Transformer (Kustomization transformer for 1-line HTTPS)
-- [ ] Advanced multi-tool resource ownership conflict detector
-- [ ] Backup/recovery documentation and etcd backup automation
-- [ ] Conditional Tailscale auth key provisioning (avoid regeneration)
-- [ ] TFLint rule reconsideration (selectively re-enable disabled rules)
-- [ ] Talos extensions: ZFS, NFS Utils, gVisor
-- [ ] ActivityWatch server (requires custom Helm chart)
-- [ ] Google Drive sync/backup (custom deployment with existing binary)
+**Possible services**:
+
+- [ ] Flux CD (GitOps)
+- [ ] Sealed Secrets controller
+- [ ] Ingress (nginx or Cilium Gateway API)
+- [ ] cert-manager (DNS-01 via external provider)
+- [ ] External services using Hetzner Block Storage
+
+**Use case**: Lightweight public-facing services, CI/CD
+
+### Branch D: Hetzner Block Storage CSI
+
+Enable persistent storage on VPS nodes without Proxmox.
+
+**Implementation**:
+
+- [ ] Deploy hcloud-csi-driver
+- [ ] Create StorageClass for Hetzner volumes
+- [ ] Test PVC provisioning
+
+**Benefits**: Enables stateful workloads on VPS-only cluster
+**Limitations**: 10GB minimum, €0.052/GB/month, no RWX
+
+### Branch E: Full Hybrid Bootstrap
+
+Complete the original hybrid vision with all services.
+
+**Combines**: Branch A + existing service stack
+
+**Phases**:
+
+1. Add Proxmox node(s) (Branch A)
+2. Deploy Proxmox CSI for home storage
+3. Deploy Vault with Raft HA
+4. Deploy full service stack (Authentik, Harbor, Gitea, etc.)
+5. Bootstrap script verification
 
 ---
 
-## ✅ Achieved Milestones
+## 📋 Service Deployment (Once Storage Available)
 
-### Core Infrastructure (COMPLETE)
+### Core Infrastructure
 
-- **5-node Talos Cluster** (3 controllers, 2 workers, VIP HA)
-- **CNI: Cilium** via Terraform (prevents circular dependency)
-- **GitOps: Flux CD** with proper dependency ordering
-- **Secrets Management**: Hybrid architecture
-  - SealedSecrets for bootstrap (stable keypair in terraform state)
-  - External Secrets Operator for runtime secrets from Vault
-- **Turnkey Deployment**: `./bootstrap.sh` → working cluster
-  - Layered terraform: 00-persistent-auth → 01-infrastructure → 02-services → 03-configuration
+- [ ] Flux CD with Sealed Secrets
+- [ ] Vault with Raft HA (requires persistent storage)
+- [ ] External Secrets Operator
+- [ ] Authentik (identity provider)
 
-### Storage (COMPLETE)
+### Platform Services
 
-- **Proxmox CSI** with native ZFS integration
-  - SSH-based ephemeral token generation
-  - Declarative cleanup with destroy provisioners
-  - Talos topology labels and container runtime support
-- **Vault with Raft** (3-node HA)
-  - Bank-Vaults operator for auto-unsealing
-  - Pod-specific addressing (instance-0/1/2)
-  - Proxmox CSI persistent storage (10Gi per pod)
+- [ ] Harbor (container registry, pull-through cache)
+- [ ] Gitea (git hosting)
+- [ ] Grafana + Prometheus + Loki (observability)
+- [ ] Matrix/Synapse (chat)
+- [ ] Nix Cache (Harmonia)
 
-### Networking (COMPLETE)
+### Future Services (Lower Priority)
 
-- **MetalLB** L2 advertisement (ingress: 10.2.3.2, dns: 10.2.3.3, services: 10.2.3.4-20)
-- **NGINX Ingress** with MetalLB LoadBalancer
-- **VPS Proxy** via Tailscale with SNI passthrough on port 443
-
-### DNS & Certificates (COMPLETE)
-
-- **PowerDNS** authoritative server (10.2.3.3)
-  - MariaDB backend with Proxmox CSI storage
-  - ESO integration for API key management
-  - AXFR zone replication to VPS (working with TCP MTU probing)
-  - TCP MTU probing enabled for Tailscale PMTUD blackhole mitigation
-- **external-dns** automatic ingress DNS record creation
-- **cert-manager** with PowerDNS webhook for DNS-01 challenges
-- **Tailscale route advertisement** (VPS→Cluster 10.2.3.0/27)
-- **Let's Encrypt certificates** via DNS-01 solver (wildcard support)
-- **Automatic DNS propagation** working end-to-end (3-hour refresh cycle)
-
-### Platform Services (OPERATIONAL)
-
-- **Vault** - Secret management with Raft HA
-- **External Secrets Operator** - Vault→K8s secrets bridge
-- **Authentik** - Identity provider with OIDC/SSO
-- **Gitea** - Git service at git.test-cluster.agentydragon.com (SSO configured)
-- **Harbor** - Container registry at registry.test-cluster.agentydragon.com (SSO configured)
-  - **Pull-through cache**: Docker Hub, GHCR, Quay, registry.k8s.io proxy projects
-  - **Talos registry mirrors**: Automatic fallback to upstream registries
-- **Matrix/Synapse** - Chat platform with Authentik SSO at matrix.test-cluster.agentydragon.com
-- **Firecrawl** - AI web scraping service (all components healthy)
-- **metrics-server** - Kubernetes Metrics API (kubectl top working)
-- **Prometheus Stack** - Complete metrics collection (6-node monitoring)
-- **Loki + Promtail** - Log aggregation (19 namespaces, 7-day retention)
-- **Stakater Reloader** - Automatic pod restarts on secret/configmap changes
-- **Nix Cache** - Binary cache at cache.test-cluster.agentydragon.com (Harmonia)
-  - Serves pre-built Nix derivations to NixOS hosts
-  - Public read, authenticated uploads via Nix signing keys
-  - 100Gi Proxmox CSI storage for /nix/store
-  - Automatic HTTPS via cert-manager, DNS via external-dns
+- [ ] Jellyfin (media streaming)
+- [ ] *arr stack (media automation)
+- [ ] Paperless-ngx (document management)
+- [ ] Syncthing (file sync)
+- [ ] Bazel Remote Cache
 
 ---
 
 ## 📐 Architecture Decisions
 
-### CNI Management: Infrastructure vs. GitOps
-
-**Decision**: Terraform manages Cilium (not Flux)
+### Hybrid VPS + Proxmox
 
 **Rationale**:
 
-- Prevents circular dependency (GitOps tools managing their own networking)
-- AWS EKS Blueprints, GKE Autopilot use same pattern
-- Worker nodes require CNI before they can pull container images
-- Flux updating CNI creates deadlock during network transitions
+- VPS for public ingress, DNS, always-on services
+- Home for storage-heavy workloads, media, compute
+- KubeSpan mesh provides encrypted connectivity
+- Reduces single point of failure
 
-**Layer Separation**: Talos→CoreDNS, Terraform→CNI, Flux→Applications
+**Network Design**:
 
-### Secrets Management: Hybrid Approach
+- VPS nodes: Public IPs, control-plane role
+- Home nodes: Private IPs (via KubeSpan), worker role
+- Cilium VXLAN for pod overlay (tunnel mode required for VPS)
 
-**Decision**: SealedSecrets for bootstrap, ESO for runtime
+### CNI: Cilium with VXLAN
 
-**Bootstrap Secrets** (SealedSecrets):
+**Decision**: VXLAN tunnel mode (not native routing)
 
-- Proxmox CSI credentials
-- Flux deploy key
-- Stable keypair in terraform state (survives cluster destroy)
+**Rationale**:
 
-**Runtime Secrets** (External Secrets Operator):
+- Hetzner VPS nodes are not on same L2 network
+- Native routing fails: "gateway must be directly reachable"
+- VXLAN encapsulates pod traffic between nodes
 
-- Application passwords from Vault
-- API keys and tokens
-- No circular dependencies (Vault Stage 1 enables ESO)
+**Firewall**: UDP 8472 required for VXLAN overlay
 
-### DNS Architecture: AXFR Secondary Zone
+### KubePrism for Cluster Endpoint
 
-**Decision**: VPS PowerDNS as secondary (not forwarder)
+**Decision**: Use `localhost:7445` as cluster_endpoint
+
+**Rationale**:
+
+- No VIP possible across VPS and home networks
+- KubePrism runs on every node, proxies to available API servers
+- Kubeconfig patched post-bootstrap to use real VPS IP
+
+### Kubeconfig HA via DNS Round-Robin
+
+**Decision**: Use DNS name instead of single VPS IP for kubeconfig
+
+**Target**:
+```yaml
+server: https://api.test-cluster.agentydragon.com:6443
+```
+
+**Implementation**:
+- `api.test-cluster.agentydragon.com` → both VPS IPs (5.78.43.147, 5.78.106.249)
+- DNS round-robin provides client-side failover
+- Created by external-dns from Ingress annotation or manual DNS record
+
+**Bootstrap**: Initial kubeconfig uses raw IP, switched to DNS after cluster is up and DNS records exist
+
+### PowerDNS HA with Galera (VPS-local storage)
+
+**Decision**: Run HA PowerDNS on both VPS nodes with MariaDB Galera using local storage
 
 **Architecture**:
+```
+VPS0                         VPS1
+├── local-path PVC           ├── local-path PVC
+│   └── MariaDB data         │   └── MariaDB data
+├── MariaDB (Galera) ◄─sync─►├── MariaDB (Galera)
+└── PowerDNS pod             └── PowerDNS pod
+```
 
-- Primary: Cluster PowerDNS (10.2.3.3) - authoritative source
-- Secondary: VPS PowerDNS - public-facing with AXFR replication
-- Connectivity: Tailscale VPN with route advertisement
-- **TCP MTU probing**: Enabled to handle Tailscale MTU (1280) vs pod MTU (1500) mismatch
+**Benefits**:
+- ❌ No AXFR complexity (same database = same data)
+- ❌ No VPS standalone PowerDNS container needed
+- ✅ True active-active DNS
+- ✅ Survives single VPS failure
+- ✅ No Hetzner Volume cost (uses VPS NVMe)
 
-**Requirements**:
+**DNS records**:
+- `ns1.agentydragon.com` → VPS0 IP
+- `ns2.agentydragon.com` → VPS1 IP
 
-- Cluster controlplane nodes advertise `10.2.3.0/27` subnet route via Tailscale
-- VPS Tailscale must be configured with `--accept-routes` to receive advertised routes
-- Talos kubelet configured to allow `net.ipv4.tcp_mtu_probing` unsafe sysctl
-- PowerDNS pod runs in privileged namespace with TCP MTU probing enabled
+**Node placement**:
+- `local-path-provisioner` on VPS nodes
+- MariaDB Galera StatefulSet with `podAntiAffinity` (one pod per VPS)
+- PowerDNS DaemonSet or Deployment with VPS node affinity
 
-**Rationale**: VPS runs PowerDNS authoritative (not recursor), requires AXFR. TCP MTU probing mitigates PMTUD
-blackholes caused by Tailscale's lower MTU (RFC 4821).
+**Tradeoff**: If VPS is destroyed, that node's data is lost. But Galera syncs continuously, so the other node has the data. Only loses data if both VPS die simultaneously.
 
-**Known Limitation - NOTIFY:**
+### VPS Controllers on Headscale
 
-NOTIFY is **not configured** because it doesn't work in Kubernetes environments:
+**Decision**: Add VPS controllers to Headscale mesh for additional connectivity options
 
-- **Why NOTIFY fails**: PowerDNS pod can run on any cluster node, resulting in unpredictable source IPs
-  (100.64.1.x node Tailscale IPs) for NOTIFY messages
-- **VPS rejection**: Secondary zones check NOTIFY source against configured primary IP (10.2.3.3),
-  reject messages from other IPs as "not a primary"
-- **No fix possible**: Cannot configure all possible node IPs as primaries without breaking DNS delegation
-- **Current approach**: AXFR refresh via SOA refresh interval (3 hours) - reliable but not instant
-- **Alternatives**: See "DNS Propagation Alternatives" in Research & Evaluation section for faster options
+**Benefits**:
+- Backup path to API if public IP is blocked
+- Tailscale MagicDNS as alternative to public DNS
+- Unified management with other Headscale nodes
 
-**See**: `docs/archive/axfr_debugging.md` for complete debugging history and solution details
+### Machine Secrets in Persistent Auth
 
-### Storage Evolution
+**Decision**: Store Talos machine secrets in 00-persistent-auth layer
 
-**Rejected**:
+**Rationale**:
 
-- Longhorn V2: High CPU overhead (100% per worker core for SPDK)
-- OpenEBS LocalPV: Talos incompatibility (path mount issues)
-- Rook-Ceph: Architectural mismatch (requires node-local disks, duplicates ZFS redundancy)
+- Secrets persist across cluster destroy/recreate
+- All nodes share same cluster identity
+- Enables hybrid addition of nodes without regenerating secrets
 
-**Current**: Proxmox CSI (RWO only)
+### Storage Strategy: Consolidated VPS, Liberal Home
 
-- Native ZFS integration (snapshots, checksums, compression)
-- Zero worker node CPU overhead
-- Simplified architecture via Proxmox API
-- Limitation: ReadWriteOnce only (no multi-pod shared storage)
+**Decision**: Minimize Hetzner volumes, consolidate databases; generous allocations on Proxmox
 
-**Future RWX Options**:
+**Hetzner Block Storage** (~$0.54/10GB minimum per volume):
 
-1. **NFS StorageClass** (Recommended for current environment)
-   - ZFS dataset on tank pool (58TB RAIDZ2) exported via NFS
-   - `nfs-subdir-external-provisioner` for dynamic provisioning
-   - Leverages existing redundancy (no duplication)
-   - Use cases: Media libraries (Jellyfin), shared downloads (qBittorrent), Syncthing
-   - Pros: Simple setup, uses tank capacity, native RWX support
-   - Cons: Proxmox SPOF (acceptable for single-host setup)
+- **Shared PostgreSQL** - Single instance for Vault, Authentik, etc.
+- **Vault Raft** - If not using shared PG (small, 10GB)
+- Target: 2-3 volumes max on VPS (~$1.60/month)
 
-2. **Rook-Ceph** (Only if architecture changes)
-   - Requires: Multi-node Proxmox cluster + local disks per worker node
-   - Would provide: Distributed HA storage independent of Proxmox
-   - Not recommended currently: Centralized storage model mismatch
+**Proxmox CSI** (ZFS, no per-volume cost):
+
+- Harbor registry + PostgreSQL (100GB+)
+- Gitea + PostgreSQL (50GB+)
+- Loki log storage (100GB+)
+- Media services (Jellyfin, *arr stack)
+- Nix cache (100GB+)
+- Be generous with allocations - storage is "free" from ZFS pool
+
+**Service Placement**:
+
+| Location | Services | Rationale |
+|----------|----------|-----------|
+| VPS | Vault, Authentik, Ingress, DNS, cert-manager | Always-on, critical path |
+| Home | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
+
+**Shared PostgreSQL Pattern**:
+
+- Single PostgreSQL pod on VPS with Hetzner volume
+- Multiple databases: `vault`, `authentik`, etc.
+- Reduces PVC count from N to 1
+- CloudNativePG or Bitnami PostgreSQL chart
+
+---
+
+## ✅ Recent Accomplishments
+
+### 2026-01-02: Hetzner ISO Boot Simplification
+
+- Switched from custom Talos snapshots to **Hetzner public Talos ISO** (ID: 122630)
+- Removed obsolete components:
+  - `terraform/hetzner-image/` layer (no longer needed)
+  - `scripts/create-hetzner-talos-image.sh`
+  - `hcloud-upload-image` tool from shell.nix
+- ISO boots → reads user_data → auto-installs to disk → reboots
+- Eliminates snapshot creation step, simplifies deployment
+
+### 2026-01-03: Hybrid Infrastructure Foundation
+
+- Migrated from Proxmox-only to hybrid Hetzner+Proxmox architecture
+- Deployed 2x CPX31 VPS nodes with Talos
+- Implemented Cilium VXLAN tunnel mode for cloud networking
+- Added machine secrets to persistent auth layer
+- Fixed regenerate-attic-jwt.sh to use terraform state (not libsecret)
+- Added VXLAN firewall rule (UDP 8472)
+
+### Previous Milestones (Proxmox-only era)
+
+- 5-node Talos cluster (3 controllers, 2 workers)
+- Full service stack: Vault, Authentik, Harbor, Gitea, Matrix
+- Observability: Prometheus, Loki, Grafana with SSO
+- DNS: PowerDNS with AXFR to VPS
+- Certificates: cert-manager with DNS-01
 
 ---
 
 ## 🔗 Related Documentation
 
+- **VPS Integration Design**: `docs/vps-cluster-integration.md`
 - **Bootstrap Procedures**: `docs/bootstrap.md`
 - **Troubleshooting**: `docs/troubleshooting.md`
-- **Operations**: `docs/operations.md`
-- **Secret Synchronization**: `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md`
-- **Critical Dependencies**: `docs/critical_dependencies.md`
-- **Harbor Pull-Through Cache Planning**: `docs/harbor_pullthrough_cache.md`
-- **AI Agents Design**: `docs/agents.md` (planned)
+- **Secret Sync Analysis**: `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md`
 
 ---
 
-## 📊 Metrics & Health
+## 📊 Current Metrics
 
-**Cluster Status** (2025-12-10):
+**VPS Cluster** (2026-01-03):
 
-- Status: Destroyed for rebuild testing (was: 5 nodes, 3 controllers, 2 workers)
-- Next: Bootstrap verification with all today's fixes
+- Nodes: 2 (both Ready, control-plane)
+- Talos: v1.9.5
+- Kubernetes: v1.32.0
+- CNI: Cilium 1.16.x (VXLAN)
+- Location: Hillsboro, OR (hil)
 
-**SSO Integration Status**:
+**Monthly Cost** (VPS only):
 
-- ✅ Vault OIDC authentication configured
-- ✅ Gitea SSO configured (OAuth dependency fixed)
-- ✅ Harbor SSO configured (Terraform resource reference fixed)
-- ✅ Matrix/Synapse SSO configured (OIDC via ExternalSecret)
-- ✅ Grafana SSO configured (Authentik OIDC)
-- ⏳ Pending: Browser testing after bootstrap
-
-**Recent Updates** (2025-12-10):
-
-- Cluster destroyed for rebuild testing
-- Fixed Gitea OAuth configuration (10-hour crash loop resolved)
-- Implemented Let's Encrypt environment switching capability
-- Added RWO volume deployment strategy documentation and protections
-- Fixed Harbor SSO Terraform provider configuration
-- All documentation reorganized to lowercase naming convention
+- 2x CPX31: ~€30/month total
+- Backups enabled: +20%

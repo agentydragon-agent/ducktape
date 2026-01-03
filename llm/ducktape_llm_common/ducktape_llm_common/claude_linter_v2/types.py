@@ -1,10 +1,10 @@
 """Common types for claude-linter-v2."""
 
-from typing import NewType
 from uuid import UUID
 
-# Session ID is a UUID-based type for type safety
-SessionID = NewType("SessionID", UUID)
+from ducktape_llm_common.claude_code_api import SessionID
+
+__all__ = ["SessionID", "parse_session_id"]
 
 
 def parse_session_id(session_id_str: str) -> SessionID:

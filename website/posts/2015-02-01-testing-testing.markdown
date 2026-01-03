@@ -19,7 +19,7 @@ been strangely proud of. I hope I have a backup laying somewhere.
 
 <figure>
 <img src="/images/nette-tracy.png" style="max-height: 25em;"
-     title="What errors look like in an old Nette app">
+     title="What errors look like in an old Nette app" alt="Nette Tracy error debugger screenshot">
 <div>What errors look like in an old Nette app</div>
 </figure>
 
@@ -80,7 +80,7 @@ and finally, reaching perfection, nothing. I wish I could keep a habit better.
 
 <figure>
 <img src="/images/haskell-logo-400px.svg" style="width: 150px;"
-     title="The Haskell logo">
+     title="The Haskell logo" alt="Haskell programming language logo">
 </figure>
 
 [Haskell](https://wiki.haskell.org/Haskell) is, without question,

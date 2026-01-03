@@ -1,3 +1,5 @@
+@README.md
+
 # Props Core Library
 
 Core Python library for the props evaluation system.
@@ -40,7 +42,8 @@ props grader-agent --help
 - RLS policies: managed in `db/setup.py` via `enable_rls()` (not in migrations)
 - RLS helper functions: should be created in migrations (they're part of the schema)
 
-**CASCADE WARNING:** When dropping views with CASCADE (e.g., `DROP VIEW IF EXISTS recall_by_run CASCADE`), all dependent views are also dropped. Before writing such a migration:
+**CASCADE WARNING:** When dropping views with CASCADE (e.g., `DROP VIEW IF EXISTS recall_by_run
+CASCADE`), all dependent views are also dropped. Before writing such a migration:
 
 1. Query `pg_depend` or check the schema to list ALL dependent views
 2. Recreate all dropped views in correct dependency order in the same migration
@@ -73,7 +76,9 @@ props grader-agent --help
 
 ### Problem
 
-Database persistence models should NOT use MCP I/O protocol types directly. Using MCP types (like `CriticSubmitPayload`, `ReportedIssue`, `GraderOutput`) in database schemas couples database migrations to protocol changes.
+Database persistence models should NOT use MCP I/O protocol types directly. Using MCP types (like
+`CriticSubmitPayload`, `ReportedIssue`, `GraderOutput`) in database schemas couples database
+migrations to protocol changes.
 
 ### Solution: Two Parallel Model Hierarchies
 
@@ -96,4 +101,5 @@ Database persistence models should NOT use MCP I/O protocol types directly. Usin
 
 ### Layer Isolation Test
 
-The test `tests/db/test_layer_isolation.py` enforces that the database layer (`db/`) does not import from MCP I/O layers (`critic.models`, `grader.models`).
+The test `tests/db/test_layer_isolation.py` enforces that the database layer (`db/`) does not
+import from MCP I/O layers (`critic.models`, `grader.models`).

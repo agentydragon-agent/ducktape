@@ -4,6 +4,8 @@ Habitify API client for interacting with the Habitify API.
 Implements only the endpoints shown in the API reference YAML files.
 """
 
+from __future__ import annotations
+
 import asyncio
 import datetime
 import logging
@@ -66,7 +68,7 @@ class HabitifyClient:
 
         self.client = httpx.AsyncClient(base_url=self.base_url, headers=headers, timeout=self.timeout)
 
-    async def __aenter__(self) -> "HabitifyClient":
+    async def __aenter__(self) -> HabitifyClient:
         """Support async context manager protocol."""
         return self
 

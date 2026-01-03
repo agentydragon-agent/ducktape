@@ -13,10 +13,11 @@ import sys
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
+from uuid import UUID
 
 import click
 import humanize
-from pytimeparse import parse as parse_duration
+from pytimeparse import parse as parse_duration  # type: ignore[import-untyped]
 
 from ..claude_code_api import SessionID
 from . import __version__
@@ -24,7 +25,7 @@ from .checker import FileChecker
 from .config.models import AutofixCategory
 from .hooks.exceptions import HookBugError
 from .hooks.handler import HOOK_REQUEST_TYPES, handle
-from .session.manager import SessionInfo, SessionManager
+from .session.manager import RuleAction, SessionInfo, SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -210,9 +211,9 @@ def session() -> None:
 @session.command("allow")
 @click.argument("predicate")
 @click.option("--expires", type=str, help="Duration (e.g., '2h', '30m')")
-@click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
+@click.option("--session", type=click.UUID, help="Specific session ID (default: all in current dir)")
 @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-def session_allow(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
+def session_allow(predicate: str, expires: str | None, session: UUID | None, dir: Path | None) -> None:
     """Grant temporary permissions using Python predicates."""
 
     manager = SessionManager()
@@ -224,7 +225,7 @@ def session_allow(predicate: str, expires: str | None, session: str | None, dir:
     target_dir = dir or Path.cwd()
     affected = manager.add_rule(
         predicate=predicate,
-        action="allow",
+        action=RuleAction.ALLOW,
         expires=expiry_time,
         session_id=SessionID(session) if session else None,
         directory=target_dir,
@@ -242,9 +243,9 @@ def session_allow(predicate: str, expires: str | None, session: str | None, dir:
 @session.command("deny")
 @click.argument("predicate")
 @click.option("--expires", type=str, help="Duration (e.g., '2h', '30m')")
-@click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
+@click.option("--session", type=click.UUID, help="Specific session ID (default: all in current dir)")
 @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-def session_deny(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
+def session_deny(predicate: str, expires: str | None, session: UUID | None, dir: Path | None) -> None:
     """Deny permissions using Python predicates.
 
     Examples:
@@ -261,7 +262,7 @@ def session_deny(predicate: str, expires: str | None, session: str | None, dir: 
     target_dir = dir or Path.cwd()
     affected = manager.add_rule(
         predicate=predicate,
-        action="deny",
+        action=RuleAction.DENY,
         expires=expiry_time,
         session_id=SessionID(session) if session else None,
         directory=target_dir,
@@ -319,8 +320,9 @@ def session_list(all: bool) -> None:
 
 def _display_session(session_info: SessionInfo) -> None:
     """Display a single session's information."""
-    ago = humanize.naturaltime(session_info.last_seen)
-    click.echo(f"  {session_info.id[:8]}... - last seen {ago}")
+    ago = humanize.naturaltime(session_info.last_seen) if session_info.last_seen else "unknown"
+    session_id_str = str(session_info.id)
+    click.echo(f"  {session_id_str[:8]}... - last seen {ago}")
 
     # Show active rules
     if session_info.rules:
@@ -337,8 +339,8 @@ def profile() -> None:
 
 @profile.command("activate")
 @click.argument("name")
-@click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
-def profile_activate(name: str, session: str | None) -> None:
+@click.option("--session", type=click.UUID, help="Specific session ID (default: all in current dir)")
+def profile_activate(name: str, session: UUID | None) -> None:
     """Activate a predefined permission profile."""
     # TODO: Implement profile activation
     click.echo(f"Activating profile: {name}")

@@ -4,7 +4,9 @@
 
 **Git fixtures are the single source of truth for ALL test data.**
 
-Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in tests. Use the git-tracked test fixtures in `tests/fixtures/specimens/` and the `synced_test_db` pytest fixture.
+Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in
+tests. Use the git-tracked test fixtures in `tests/fixtures/specimens/` and the `synced_test_db`
+pytest fixture.
 
 ## Available Git Fixtures
 
@@ -39,7 +41,8 @@ Located in `fixtures/specimens/`:
 
 ## High-value fixtures (conftest.py)
 
-- Scopes: `subtract_file_scope`, `add_py_scope`, `multiply_py_scope`, `divide_py_scope`, `example_module_py_scope`, `calculator_py_scope`, `all_files_scope`.
+- Scopes: `subtract_file_scope`, `add_py_scope`, `multiply_py_scope`, `divide_py_scope`,
+  `example_module_py_scope`, `calculator_py_scope`, `all_files_scope`.
 - Examples: `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP), `test_trivial_snapshot`, `test_validation_snapshot`.
 - IDs: `tp_single_id`, `tp_single_occurrence_id`, `tp_occurrences_multi`, `fp_id`, `fp_occurrence_id`.
 - Helpers: `make_critic_run`, `make_grader_run`, `make_grader_run_with_credit`, `test_train_example_with_runs`, `test_valid_example_with_runs`.

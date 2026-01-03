@@ -21,15 +21,15 @@ Expects some configuration in `~/.config/ducktape/config.yaml`.
 
   ![](ubs1.png)
 
-2. Download CSV, PDF, SWIFT
+1. Download CSV, PDF, SWIFT
 
   ![](ubs2.png)
 
-3. Check that "Time period" is appropriate.
+1. Check that "Time period" is appropriate.
    Click "Excel" icon.
 
   ![](ubs3.png)
 
-4. Export (in CSV format)
+1. Export (in CSV format)
 
   ![](ubs4.png)

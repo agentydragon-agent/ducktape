@@ -2,6 +2,7 @@
 
 import logging
 import subprocess
+from pathlib import Path
 
 from ..config.models import AutofixCategory
 
@@ -36,19 +37,9 @@ class PythonFormatter:
         return available
 
     def format_code(
-        self, code: str, file_path: str | None = None, categories: list[AutofixCategory] | None = None
+        self, code: str, file_path: Path, categories: list[AutofixCategory] | None = None
     ) -> tuple[str, list[str]]:
-        """
-        Format Python code with specified autofix categories.
-
-        Args:
-            code: Python code to format
-            file_path: Optional file path for context
-            categories: Categories to autofix (None = all)
-
-        Returns:
-            Tuple of (formatted_code, list_of_changes_made)
-        """
+        """Format Python code with specified autofix categories."""
         if not self._available_tools:
             logger.warning("No formatting tools available")
             return code, []
@@ -83,7 +74,7 @@ class PythonFormatter:
 
         return formatted_code, changes
 
-    def _apply_formatting(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+    def _apply_formatting(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Apply code formatting."""
         changes = []
         formatted = code
@@ -99,12 +90,12 @@ class PythonFormatter:
 
         return formatted, changes
 
-    def _format_with_ruff(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+    def _format_with_ruff(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Format code with ruff."""
         try:
             # Use stdin/stdout to avoid file operations
             result = subprocess.run(
-                ["ruff", "format", "--stdin-filename", file_path or "temp.py", "-"],
+                ["ruff", "format", "--stdin-filename", file_path, "-"],
                 input=code,
                 capture_output=True,
                 text=True,
@@ -123,7 +114,7 @@ class PythonFormatter:
             logger.error(f"Ruff error: {e}")
             return code, []
 
-    def _format_with_black(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+    def _format_with_black(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Format code with black."""
         try:
             # Use stdin/stdout to avoid file operations
@@ -142,7 +133,7 @@ class PythonFormatter:
             logger.error(f"Black error: {e}")
             return code, []
 
-    def _fix_imports(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+    def _fix_imports(self, code: str, file_path: Path) -> tuple[str, list[str]]:
         """Fix import ordering and remove unused imports."""
         changes = []
         formatted = code
@@ -158,7 +149,7 @@ class PythonFormatter:
                         "--select",
                         "I,F401",  # I=isort, F401=unused imports
                         "--stdin-filename",
-                        file_path or "temp.py",
+                        file_path,
                         "-",
                     ],
                     input=formatted,

@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any
 
+from ..claude_code_api import EditToolCall, MultiEditToolCall, ToolCall, WriteToolCall
 from .config.models import LLMAnalysisConfig, Violation
 
 logger = logging.getLogger(__name__)
@@ -18,20 +19,13 @@ class LLMAnalyzer:
         self._cost_tracker = 0.0  # Track cost within session
 
     def analyze_code(
-        self,
-        file_path: str,
-        content: str,
-        tool_name: str,
-        tool_input: dict[str, Any] | None = None,
-        context_lines: int = 50,
+        self, tool_call: ToolCall, content: str, context_lines: int = 50
     ) -> tuple[bool, str | None, list[Violation]]:
         """Analyze code using LLM.
 
         Args:
-            file_path: Path to the file being analyzed
-            content: Full file content or patch
-            tool_name: Name of the tool (Write, Edit, MultiEdit)
-            tool_input: Tool input for context (e.g., old_string, new_string)
+            tool_call: Typed tool call (Write, Edit, MultiEdit, etc.)
+            content: Full file content
             context_lines: Number of context lines for patches
 
         Returns:
@@ -47,10 +41,10 @@ class LLMAnalyzer:
 
         try:
             # Build the analysis prompt based on tool type
-            if tool_name == "Write":
-                prompt = self.config.prompts.full_file_analysis.format(file_path=file_path, content=content)
-            elif tool_name in ("Edit", "MultiEdit"):
-                prompt = self._build_patch_prompt(file_path, content, tool_input, context_lines)
+            if isinstance(tool_call, WriteToolCall):
+                prompt = self.config.prompts.full_file_analysis.format(file_path=tool_call.file_path, content=content)
+            elif isinstance(tool_call, EditToolCall | MultiEditToolCall):
+                prompt = self._build_patch_prompt(tool_call, content, context_lines)
             else:
                 # Unknown tool, skip LLM analysis
                 return True, None, []
@@ -59,7 +53,7 @@ class LLMAnalyzer:
             result = self._call_llm(prompt)
 
             # Parse result
-            is_ok, message, violations = self._parse_llm_result(result, file_path)
+            is_ok, message, violations = self._parse_llm_result(result)
 
             return is_ok, message, violations
 
@@ -69,17 +63,15 @@ class LLMAnalyzer:
             return True, None, []
 
     def _build_patch_prompt(
-        self, file_path: str, full_content: str, tool_input: dict[str, Any] | None, context_lines: int
+        self, tool_call: EditToolCall | MultiEditToolCall, full_content: str, context_lines: int
     ) -> str:
         """Build prompt for analyzing a patch/edit."""
-        if not tool_input:
-            # Fallback to full file analysis
-            return self.config.prompts.full_file_analysis.format(file_path=file_path, content=full_content)
+        file_path_str = str(tool_call.file_path)
 
         # For Edit tool
-        if "old_string" in tool_input and "new_string" in tool_input:
-            old_string = tool_input["old_string"]
-            new_string = tool_input["new_string"]
+        if isinstance(tool_call, EditToolCall):
+            old_string = tool_call.old_string
+            new_string = tool_call.new_string
 
             # Find the location of the edit in the file
             lines = full_content.split("\n")
@@ -98,23 +90,18 @@ class LLMAnalyzer:
                 context = full_content[:1000]  # First 1000 chars as fallback
 
             return self.config.prompts.edit_analysis.format(
-                file_path=file_path, old_string=old_string, new_string=new_string, context=context
+                file_path=file_path_str, old_string=old_string, new_string=new_string, context=context
             )
 
         # For MultiEdit tool
-        if "edits" in tool_input:
-            edits = tool_input["edits"]
-            edits_summary = "\n\n".join(
-                [
-                    f"Edit {i + 1}:\nFrom: {e.get('old_string', '')[:100]}...\nTo: {e.get('new_string', '')[:100]}..."
-                    for i, e in enumerate(edits[:5])  # Limit to first 5 edits
-                ]
-            )
+        edits_summary = "\n\n".join(
+            [
+                f"Edit {i + 1}:\nFrom: {e.old_string[:100]}...\nTo: {e.new_string[:100]}..."
+                for i, e in enumerate(tool_call.edits[:5])  # Limit to first 5 edits
+            ]
+        )
 
-            return self.config.prompts.multi_edit_analysis.format(file_path=file_path, edits_summary=edits_summary)
-
-        # Fallback
-        return self.config.prompts.full_file_analysis.format(file_path=file_path, content=full_content)
+        return self.config.prompts.multi_edit_analysis.format(file_path=file_path_str, edits_summary=edits_summary)
 
     def _call_llm(self, prompt: str) -> dict[str, Any]:
         """Call the LLM API and return the result.
@@ -132,7 +119,7 @@ class LLMAnalyzer:
         # Mock response - always return OK for now
         return {"ok": True, "violations": []}
 
-    def _parse_llm_result(self, result: dict[str, Any], file_path: str) -> tuple[bool, str | None, list[Violation]]:
+    def _parse_llm_result(self, result: dict[str, Any]) -> tuple[bool, str | None, list[Violation]]:
         """Parse LLM result into our format."""
         try:
             is_ok = result.get("ok", True)

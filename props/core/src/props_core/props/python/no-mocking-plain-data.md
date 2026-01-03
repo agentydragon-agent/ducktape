@@ -6,6 +6,7 @@ kind: outcome
 Do not mock plain data or trivially constructible domain models. Use real objects and real resources (tmp filesystem, real Pydantic models) where practical; reserve mocks/stubs for hard boundaries (network, time, processes) or truly expensive/unavailable dependencies.
 
 ## Acceptance criteria (checklist)
+
 - Banned: mocking trivial data containers (e.g., Pydantic models, simple dataclasses, plain dicts) by setting attributes on `Mock/MagicMock`. Construct real instances instead.
 - Prefer real filesystem under `tmp_path`/`tmp_path_factory` over broad monkeypatching of `os`/`pathlib` across modules.
 - Mock/stub only at external boundaries or costly/unreliable layers (HTTP, DB connections, time, randomness); keep scope narrow and specific.
@@ -75,10 +76,12 @@ process(payload)
 ```
 
 ## Exceptions (narrow)
+
 - Mocking is acceptable when the object cannot be constructed in tests without heavy external state (e.g., real DB connection, complex binary handles) and when the test specifically targets the interaction contract; keep mocks minimal and focused on the boundary.
 - For non‑plain fields that are impractical to instantiate (e.g., embedded OS handles), provide small fakes implementing only the required interface.
 
 ## See also
+
 - [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
 - [Use yield fixtures for teardown](./pytest-yield-fixtures.md)
 - [Structured data types over untyped mappings](../structured-data-over-untyped-mappings.md)

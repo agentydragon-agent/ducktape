@@ -9,7 +9,7 @@ from pathlib import Path
 from platformdirs import user_data_dir
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..types import SessionID
+from ..types import SessionID, parse_session_id
 
 
 class RuleAction(StrEnum):
@@ -35,7 +35,7 @@ class SessionData(BaseModel):
 
     model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
 
-    id: str
+    id: SessionID
     created: datetime
     last_seen: datetime | None = None
     directory: Path | None = None
@@ -76,7 +76,7 @@ class SessionManager:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Return default session data
-        return SessionData(id=str(session_id), created=datetime.now())
+        return SessionData(id=session_id, created=datetime.now())
 
     def _save_session(self, session_id: SessionID, session_data: SessionData) -> None:
         """Save a single session to disk."""
@@ -141,7 +141,7 @@ class SessionManager:
         else:
             # Add to all sessions in the directory
             for session_file in self.sessions_dir.glob("*.json"):
-                sid = SessionID(session_file.stem)
+                sid = parse_session_id(session_file.stem)
                 session_data = self._load_session(sid)
 
                 # Skip if session is in different directory
@@ -163,7 +163,7 @@ class SessionManager:
 
         # Scan all session files
         for session_file in self.sessions_dir.glob("*.json"):
-            session_id = SessionID(session_file.stem)
+            session_id = parse_session_id(session_file.stem)
             session_data = self._load_session(session_id)
 
             # Skip sessions in other directories unless requested

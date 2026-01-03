@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -154,14 +154,16 @@ repos:
         exclude: (cluster/k8s/flux-system/|\.ya?ml\.j2$|cluster/charts/.*/templates/|cluster/k8s/.*-chart/templates/)
         args: ["--write", "--print-width", "120"]
 
-      # Markdown linting for cluster docs
-      - id: markdownlint-cluster
-        name: markdownlint (cluster)
-        entry: markdownlint
+      # Markdown linting (cluster/ only for now - see .markdownlint-cli2.jsonc)
+      # TODO: Extend markdownlint coverage to more directories, or migrate to
+      # remark-lint via eslint-plugin-mdx for glob-based rule overrides
+      - id: markdownlint
+        name: markdownlint
+        entry: markdownlint-cli2
         language: system
-        types: [markdown]
-        files: ^cluster/
-        args: ["--fix", "--config", "cluster/.markdownlint.json"]
+        files: ^cluster/.*\.md$
+        exclude: \.terraform/
+        args: ["--fix"]
 
       # Checkov security analysis
       - id: checkov-cluster

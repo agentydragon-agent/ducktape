@@ -140,7 +140,7 @@ class Compositor(FastMCP):
 
     See also:
     - Mount class for per-server lifecycle
-    - docs/compositor-lifecycle-design.md for exception safety proofs
+    - docs/compositor.md for architecture and exception safety proofs
     """
 
     # Infrastructure servers (mounted automatically in __aenter__, always pinned)

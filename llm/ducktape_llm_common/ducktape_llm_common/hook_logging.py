@@ -3,7 +3,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import NewType
+from typing import Any, NewType
 from uuid import UUID
 
 from .claude_code_api import SessionID
@@ -23,7 +23,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
-        log_entry = {
+        log_entry: dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created).isoformat(),
             "level": record.levelname,
             "hook_name": self.hook_name,

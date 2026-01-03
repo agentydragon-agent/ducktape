@@ -1,27 +1,55 @@
 # Ducktape LLM Common
 
-A comprehensive shared Python package providing utilities, linters, and prompts for LLM development workflows.
+A comprehensive shared Python package providing utilities and linters for LLM development workflows.
 
 ## Overview
 
 `ducktape-llm-common` implements the common automation referenced by standard operating procedures in LLM development workflows. It provides:
 
 - **Linters**: Enforce coding standards, validate custom URL formats and metadata files
-- **Prompts**: Standardized instructions for AI agents
 - **Utilities**: Version management and common validation functions
 - **Templates**: Quick-start structures for investigations and tasks
 
-## Development
+## Installation
 
-See [AGENTS.md](../../AGENTS.md) for standard Bazel workflow (`bazel lint //...`, `bazel test //...`).
+### For Users
 
-Package-specific targets:
-- Build: `bazel build //llm/ducktape_llm_common`
-- Test: `bazel test //llm/ducktape_llm_common:tests`
+```bash
+# Install from source (non-editable)
+pip install /path/to/ducktape_llm_common
+```
+
+### For Development
+
+**IMPORTANT**: Install non-editably in your global Python to prevent self-locking issues when claude-linter modifies its own code. Use a virtual environment for editable development.
+
+```bash
+# First, install non-editably in global Python (for stable claude-linter usage)
+pip install /path/to/ducktape_llm_common
+
+# Then create a virtual environment for development
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install editably in venv for development
+pip install -e ".[dev]"
+```
+
+This setup ensures:
+
+- Your global `cl2`/`claude-linter-v2` commands remain stable
+- Development changes only affect the venv
+- You can't accidentally lock yourself out by modifying hook code
+
+### Requirements
+
+- Python 3.13+
+- See `requirements.txt` for dependencies
 
 ## Quick Start
 
 ### Console Scripts Available
+
 - `claude-linter` - Unified linter for Claude Code hooks (pre/post/check modes)
 - `check-work-urls` - Validate work URLs in markdown files
 - `check-task-metadata` - Validate METADATA.yaml files
@@ -43,7 +71,7 @@ check-work-urls .
 check-task-metadata .
 ```
 
-For detailed documentation on the Claude linter, see [docs/linters/claude-linter.md](docs/linters/claude-linter.md).
+For detailed documentation on the Claude linter, see <docs/linters/claude-linter.md>.
 
 ### Using Templates
 
@@ -74,35 +102,46 @@ task_path = create_task_structure(
 create_task_graph_template(".")
 ```
 
-### Loading Prompts
+## Development
 
-Access standardized prompts for AI agents:
-
-```python
-from ducktape_llm_common.prompts.constants import PromptName
-from ducktape_llm_common.prompts.loader import list_prompts, load_prompt
-
-# Load a prompt
-prompt = load_prompt(PromptName.WORK_TRACKING)
-
-# Load with variable substitution
-prompt = load_prompt("task_management", variables={
-    "task_name": "implement-feature-x",
-    "deadline": "2024-01-31"
-})
-
-# List available prompts
-available = list_prompts()
-```
-
-## Tests
+### Running Tests
 
 ```bash
 # Run all tests
-bazel test //llm/ducktape_llm_common:tests
+pytest
+
+# Run with coverage
+pytest --cov=ducktape_llm_common
 
 # Run specific test module
-bazel test //llm/ducktape_llm_common:tests --test_arg=-k --test_arg=linters
+pytest tests/linters/
+pytest tests/utils/
+```
+
+### Code Quality
+
+```bash
+# Format code
+black ducktape_llm_common tests
+
+# Lint code
+ruff check ducktape_llm_common tests
+
+# Type checking
+mypy ducktape_llm_common
+```
+
+### Building and Publishing
+
+```bash
+# Build package
+python -m build
+
+# Install locally for testing
+pip install -e .
+
+# Upload to PyPI (when ready)
+python -m twine upload dist/*
 ```
 
 ## Contributing
@@ -119,6 +158,6 @@ MIT License - see LICENSE file for details.
 
 ## Support
 
-- Documentation: https://ducktape.readthedocs.io/
-- Issues: https://github.com/ducktape/llm-common/issues
-- Discussions: https://github.com/ducktape/llm-common/discussions
+- Documentation: <https://ducktape.readthedocs.io/>
+- Issues: <https://github.com/ducktape/llm-common/issues>
+- Discussions: <https://github.com/ducktape/llm-common/discussions>

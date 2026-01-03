@@ -19,6 +19,7 @@ We force Jupyter to only see and use our kernelspecs by constraining config and 
 ## Python bytecode caches
 
 If sources/venv are mounted read-only, configure Python bytecode handling to avoid writes next to .py files:
+
 - Prefer setting PYTHONPYCACHEPREFIX=<RUN_ROOT>/pycache (redirects __pycache__ writes)
 - Or set PYTHONDONTWRITEBYTECODE=1 to disable .pyc writes entirely (slightly slower imports)
 

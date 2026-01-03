@@ -179,7 +179,9 @@ def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
     assert refresh_res.get("result") == "ok"
 
     # Render once and assert
-    out = wt_cli.status(timeout=timedelta(seconds=30.0)).stdout
+    status_result = wt_cli.status(timeout=timedelta(seconds=30.0))
+    assert status_result.returncode == 0, status_result.stderr
+    out = status_result.stdout
     if expects:
         for x in expects:
             assert x in out

@@ -5,18 +5,27 @@ GitStatusd communicates via stdin/stdout with ASCII separators:
 - Unit separator: ASCII 31 (0x1F)
 
 See: https://github.com/romkatv/gitstatus for full protocol specification.
+
+Reactive architecture:
+- GitstatusdListener owns its own Signal[Collector[GitstatusdData]]
+- Updates its signal directly when status changes
+- No callbacks needed - reaktiv dependency tracking handles propagation
 """
 
 import asyncio
-import contextlib
 import logging
 import shutil
 import subprocess
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Literal, Self
+
+from reaktiv import Signal
+
+from wt.shared.protocol import Collector, GitstatusdData
 
 logger = logging.getLogger(__name__)
 
@@ -393,27 +402,29 @@ def find_gitstatusd(config) -> tuple[str | None, str | None]:
 
 
 class GitstatusdListener:
-    def __init__(self, worktree_info, config, git_manager, error_callback=None):
-        self.worktree_info = worktree_info
+    """Manages a gitstatusd process for a single worktree.
+
+    Owns a Signal[Collector[GitstatusdData]] that it updates when status changes.
+    Register this signal with the store to include in aggregation.
+    """
+
+    def __init__(self, path: Path, config, git_manager):
+        self.path = path
         self.config = config
         self.git_manager = git_manager
-        self.error_callback = error_callback
         self.process: asyncio.subprocess.Process | None = None
         self._count_limits = GitstatusdCountLimits(staged=-1, unstaged=-1, conflicted=-1, untracked=-1)
-        self._status_summary: GitstatusWorkingSummary = GitstatusWorkingSummary.empty()
         self._status_updating: bool = False
-        self.last_error: str | None = None
+
+        # Own our reactive state - register with store
+        self.status: Signal[Collector[GitstatusdData]] = Signal(Collector())
 
     async def start(self) -> None:
         if self.process and self.process.returncode is None:
             return
         gitstatusd_path, err = find_gitstatusd(self.config)
         if not gitstatusd_path:
-            # best-effort notification
-            if self.error_callback:
-                with contextlib.suppress(Exception):
-                    self.error_callback(err or "gitstatusd_missing")
-            self.last_error = err or "gitstatusd_missing"
+            self.status.update(lambda c: c.error(err or "gitstatusd_missing"))
             return
         self.process = await asyncio.create_subprocess_exec(
             gitstatusd_path,
@@ -449,8 +460,7 @@ class GitstatusdListener:
         if not self.process or self.process.returncode is not None:
             await self.start()
         if not self.process or not self.process.stdin or not self.process.stdout:
-            # Process isn't ready; surface as error and return without mutating cache
-            self.last_error = "gitstatusd process not ready"
+            self.status.update(lambda c: c.error("gitstatusd process not ready"))
             return
         if self._status_updating:
             return
@@ -458,7 +468,7 @@ class GitstatusdListener:
         try:
             request_id = str(uuid.uuid4())[:8]
             gitstatusd_request = GitStatusdRequest(
-                request_id=request_id, directory_path=str(self.worktree_info.path), disable_index_computation=False
+                request_id=request_id, directory_path=str(self.path), disable_index_computation=False
             )
             request_data = gitstatusd_request.to_wire_format()
             if not (self.process and self.process.stdin and self.process.stdout):
@@ -468,59 +478,37 @@ class GitstatusdListener:
             response = await self.process.stdout.readuntil(b"\x1e")
             response_str = response.decode("utf-8")
             parsed_response = GitStatusdProtocol.parse_response(response_str)
-            summary = self._build_summary(parsed_response)
-            self._status_summary = summary
-            self.last_error = None
+
+            # Convert to GitstatusdData and update signal
+            data = self._build_gitstatusd_data(parsed_response)
+            self.status.update(lambda c: c.ok(data))
         except Exception:
-            logger.exception("gitstatusd update failed for %s", self.worktree_info.name)
-            # Notify supervisor if provided
-            if self.error_callback:
-                with contextlib.suppress(Exception):
-                    self.error_callback("update_failed")
-            # Do not write an empty cache on failure; keep last known values so callers
-            # can detect lack of fresh data and surface an error instead of downgrading.
-            if self.last_error is None:
-                self.last_error = "gitstatusd update failed"
+            logger.exception("gitstatusd update failed for %s", self.path)
+            self.status.update(lambda c: c.error("gitstatusd update failed"))
         finally:
             self._status_updating = False
 
-    def _build_summary(self, response: GitStatusdResponse) -> GitstatusWorkingSummary:
-        now = datetime.now()
+    def _build_gitstatusd_data(self, response: GitStatusdResponse) -> GitstatusdData:
+        """Convert gitstatusd response to unified GitstatusdData."""
         if not response.is_git_repository:
-            return GitstatusWorkingSummary(
-                staged_changes=0,
-                unstaged_changes=0,
-                conflicted_changes=0,
-                untracked_files=0,
-                staged_limit_hit=False,
-                unstaged_limit_hit=False,
-                untracked_limit_hit=False,
-                last_updated_at=now,
-                has_cache=True,
-                last_error=None,
+            return GitstatusdData(
+                branch=None,
+                commit=None,
+                staged=0,
+                unstaged=0,
+                untracked=0,
+                conflicted=0,
+                remote_ahead=None,
+                remote_behind=None,
             )
 
-        staged = response.staged_changes if response.staged_changes is not None else 0
-        unstaged = response.unstaged_changes if response.unstaged_changes is not None else 0
-        conflicted = response.conflicted_changes if response.conflicted_changes is not None else 0
-        untracked = response.untracked_files if response.untracked_files is not None else 0
-
-        staged_limit_hit = self._count_limits.limit_hit(staged, "staged")
-        unstaged_limit_hit = self._count_limits.limit_hit(unstaged, "unstaged")
-        untracked_limit_hit = self._count_limits.limit_hit(untracked, "untracked")
-
-        return GitstatusWorkingSummary(
-            staged_changes=staged,
-            unstaged_changes=unstaged,
-            conflicted_changes=conflicted,
-            untracked_files=untracked,
-            staged_limit_hit=staged_limit_hit,
-            unstaged_limit_hit=unstaged_limit_hit,
-            untracked_limit_hit=untracked_limit_hit,
-            last_updated_at=now,
-            has_cache=True,
-            last_error=None,
+        return GitstatusdData(
+            branch=response.local_branch,
+            commit=response.commit_hash,
+            staged=response.staged_changes or 0,
+            unstaged=response.unstaged_changes or 0,
+            untracked=response.untracked_files or 0,
+            conflicted=response.conflicted_changes or 0,
+            remote_ahead=response.commits_ahead_upstream,
+            remote_behind=response.commits_behind_upstream,
         )
-
-    def get_cached_working_status(self) -> GitstatusWorkingSummary:
-        return replace(self._status_summary, last_error=self.last_error)

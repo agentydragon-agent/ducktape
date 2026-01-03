@@ -75,10 +75,10 @@ echo ""
 log "🔍 Phase 0: Preflight Validation"
 echo "=================================="
 
-# Check git working tree is clean
-if ! git diff-index --quiet HEAD --; then
-    echo "❌ FATAL: Git working tree is not clean"
-    echo "Please commit or stash your changes before running bootstrap"
+# Check git working tree is clean (only cluster subtree - monorepo may have other changes)
+if ! git diff-index --quiet HEAD -- cluster/; then
+    echo "❌ FATAL: Git working tree is not clean in cluster/"
+    echo "Please commit or stash your cluster changes before running bootstrap"
     exit 1
 fi
 
@@ -146,13 +146,11 @@ if [ "$START_FROM_LAYER" != "services" ]; then
     KUBECONFIG_PATH="${TERRAFORM_DIR}/01-infrastructure/kubeconfig"
     export KUBECONFIG="$KUBECONFIG_PATH"
 
-    # Wait for cluster API
-    log "⏳ Waiting for Kubernetes API..."
-    timeout 300 bash -c 'until kubectl cluster-info; do sleep 5; done'
-
-    # Wait for all nodes ready
-    log "⏳ Waiting for all nodes to be ready..."
-    timeout 600 bash -c 'until [ $(kubectl get nodes --no-headers | grep Ready | wc -l) -eq 6 ]; do sleep 10; done'
+    # Terraform waits for nodes to be Ready via kubernetes_nodes data source
+    # Just verify cluster is accessible
+    log "⏳ Verifying cluster access..."
+    kubectl cluster-info
+    kubectl get nodes
 
     echo "✅ Infrastructure layer ready"
 fi

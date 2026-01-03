@@ -1,11 +1,10 @@
+@README.md
+
 This file provides guidance to LLM agents for working with this repository.
 
 @STYLE.md
 
 ## Before Hand-off
-
-If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/AGENTS.md`.
-Then finish with the full repo workflow:
 
 ```bash
 bazel build --config=check //...
@@ -14,40 +13,41 @@ bazel test //...
 
 This runs ruff + mypy lint checks and all tests. For Rust code, also run `bazel build --config=rust-check //finance/...`.
 
+If you touched `ansible/`, also follow the checklist in `ansible/AGENTS.md`.
+
 ## Repository Overview
 
-"Ducktape" is a personal infrastructure repository containing various projects and utilities.
-As the name suggests, it serves as "duct tape" for the owner's personal infrastructure needs.
+"Ducktape" is a personal infrastructure repository — "duct tape" for personal infrastructure needs.
 
-This repository manages configuration and deployment for several systems:
-- **agentydragon**: ThinkPad X1 Extreme 3rd Edition laptop (main development machine)
-- **gpd**: GPD Win Max 2 laptop
-- **vps**: Personal VPS server (hosts various services)
-- **atlas**: Proxmox host (k3s cluster), hosting:
-  - **new-vm**: Pop!_OS virtual machine
+Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), **vps**, **atlas** (Proxmox/k3s).
 
-## Active Development Areas (High Churn)
+## Directory Index
 
-1. **LLM Tooling** (`llm/`, `experimental/`, `adgn/`)
-   - Agent framework with MCP support (`adgn/`)
-   - Claude Code hooks and optimizer (`claude/claude_hooks/`, `claude/claude_optimizer/`)
-   - LLM utilities and templates (`llm/ducktape_llm_common/`, `llm/claude-instructions/`)
-   - Experimental LLM projects (`experimental/cotrl/`, `experimental/ember_evals/`)
+### Active Development
 
-2. **Development Tools** (`wt/`, `gatelet/`)
-   - Worktree management system
-   - Gateway/tunneling services
-   - Remote development infrastructure
+| Directory | Purpose | Details |
+|-----------|---------|---------|
+| `adgn/` | LLM agent framework | See `adgn/AGENTS.md` |
+| `agent_server/` | FastAPI backend, runtime, policy | See `agent_server/AGENTS.md` |
+| `mcp_infra/` | MCP compositor and utilities | See `mcp_infra/AGENTS.md` |
+| `agent_pkg/` | Agent package infrastructure | See `agent_pkg/AGENTS.md` |
+| `tana/` | Tana export toolkit | See `tana/AGENTS.md` |
+| `wt/` | Worktree management | See `wt/AGENTS.md` |
+| `gatelet/` | Gateway/tunneling | See `gatelet/AGENTS.md` |
+| `ansible/` | System configuration | See `ansible/AGENTS.md` |
+| `docker/` | Container images | See `docker/AGENTS.md` |
+| `dotfiles/` | Shell configs, scripts | See `dotfiles/AGENTS.md` |
+| `props/` | Properties/specimens | See `props/AGENTS.md` |
 
-3. **Infrastructure Automation** (`ansible/`)
-   - System configuration playbooks
-   - Role development (GUI, CLI, dev environment)
-   - Headscale VPN management
+### Less Active
 
-### Secondary Active Areas
-- **Webhook Inbox** (`experimental/webhook_inbox/`)
-- **Home Assistant Integration** (`homeassistant/iaqi/`)
-- **Codex Configuration** (`dotfiles/codex/`)
+| Directory | Purpose |
+|-----------|---------|
+| `finance/` | Portfolio tracking (Rust) |
+| `trilium/` | Trilium Notes extensions |
+| `inventree_utils/` | InventTree plugins |
+| `website/` | Personal website (Hakyll) |
+| `k8s/` | k3s cluster configs |
 
 ## Dotfiles
 
@@ -181,12 +181,10 @@ bazel test --config=clippy //finance/...  # Rust linting
 ### Testing
 - Test files: `test_*.py` in same directory as code
 - Framework: pytest with pytest-asyncio
-- Use fixtures for shared test components
-- Keep tests concise and parameterized
+- Fixtures for shared setup
 
 ### Deployment
 ```bash
 cd ansible
 ansible-playbook <hostname>.yaml --ask-become-pass
-ansible-playbook vps.yaml --tags specific_service
 ```

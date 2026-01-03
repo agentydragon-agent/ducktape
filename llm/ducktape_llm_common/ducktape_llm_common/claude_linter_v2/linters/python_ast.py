@@ -44,9 +44,9 @@ class PythonASTAnalyzer:
             logger.error(f"Failed to read {file_path}: {e}")
             return []
 
-        return self.analyze_code(content, str(file_path))
+        return self.analyze_code(content, file_path)
 
-    def analyze_code(self, code: str, filename: str = "<code>") -> list[Violation]:
+    def analyze_code(self, code: str, filename: Path) -> list[Violation]:
         """
         Analyze Python code for violations.
 
@@ -64,7 +64,14 @@ class PythonASTAnalyzer:
         except SyntaxError as e:
             # Syntax errors prevent other checks
             return [
-                Violation(line=e.lineno or 1, column=e.offset or 0, message=f"Syntax error: {e.msg}", rule="syntax")
+                Violation(
+                    line=e.lineno or 1,
+                    column=e.offset or 0,
+                    message=f"Syntax error: {e.msg}",
+                    rule="syntax",
+                    fixable=False,
+                    file_path=str(filename),
+                )
             ]
 
         # Check for various patterns
@@ -74,7 +81,7 @@ class PythonASTAnalyzer:
         if self.getattr_setattr:
             violations.extend(self._check_getattr_setattr(tree))
 
-        if self.barrel_init and filename.endswith("__init__.py"):
+        if self.barrel_init and filename.name == "__init__.py":
             violations.extend(self._check_barrel_init(tree, code))
 
         return violations
@@ -157,7 +164,7 @@ class PythonASTAnalyzer:
                         for elt in node.value.elts:
                             if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                                 exports.add(elt.value)
-                            elif isinstance(elt, ast.Str):  # Python 3.7 compatibility
+                            elif isinstance(elt, ast.Str) and isinstance(elt.s, str):  # Python 3.7 compatibility
                                 exports.add(elt.s)
 
         # If we have imports and they're all in __all__, it's a barrel

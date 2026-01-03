@@ -10,11 +10,17 @@ from typing import Any
 from ...claude_code_api import (
     BaseHookRequest,
     BaseResponse,
+    BashToolCall,
+    EditToolCall,
+    HookEventName,
+    MultiEditToolCall,
     NotificationRequest,
     PostToolUseRequest,
     PreToolUseRequest,
+    ReadToolCall,
     StopRequest,
     SubagentStopRequest,
+    WriteToolCall,
 )
 from ...claude_outcomes import (
     HookOutcome,
@@ -31,8 +37,8 @@ from ..access.context import PredicateContext
 from ..access.rule_engine import RuleEngine
 from ..check_python import check_python_file
 from ..checkers_v2 import filter_violations
-from ..config import ConfigLoader
 from ..config.clean_models import ModularConfig
+from ..config.loader import ConfigLoader
 from ..config.models import (
     AutofixCategory,
     NotificationHookConfig,
@@ -43,12 +49,11 @@ from ..config.models import (
 )
 from ..diff.categorizer import ViolationCategory
 from ..diff.intelligence import DiffIntelligence
-from ..diff.parser import ToolCall
 from ..linters.python_formatter import PythonFormatter
 from ..llm_analyzer import LLMAnalyzer
 from ..notifications import close_desktop_notification, send_desktop_notification
 from ..pattern_matcher import PatternMatcher
-from ..session import SessionManager
+from ..session.manager import SessionManager
 from ..session.violations import ViolationTracker
 from ..types import SessionID
 from ..utils.gitignore import get_git_tracked_files
@@ -57,6 +62,10 @@ from .formatting import format_access_denial, format_llm_message
 from .validation import validate_hook_outcome
 
 logger = logging.getLogger(__name__)
+
+# Type alias for tool calls that have a file_path attribute
+FilePathToolCall = EditToolCall | WriteToolCall | ReadToolCall | MultiEditToolCall
+
 
 # Map hook type names to their request classes
 HOOK_REQUEST_TYPES: dict[str, type[BaseHookRequest]] = {
@@ -160,10 +169,8 @@ class HookHandler:
 
         # Add specific details based on hook type
         if isinstance(request, PreToolUseRequest | PostToolUseRequest):
-            log_entry["decision_details"]["tool"] = request.tool_name
-            # Just dump the entire tool_input as a dict
-            if request.tool_input:
-                log_entry["decision_details"]["tool_input"] = request.tool_input.model_dump(mode="json")
+            log_entry["decision_details"]["tool"] = request.tool_call.tool_name
+            log_entry["decision_details"]["tool_input"] = request.tool_call.model_dump(mode="json")
 
         # Write to log file
         with log_file.open("a") as f:
@@ -185,7 +192,7 @@ class HookHandler:
         This is the generic handler that dispatches to typed handlers.
         """
         # Get session ID (required)
-        session_id = request.typed_session_id
+        session_id = request.session_id
         self._track_session(request, session_id)
 
         # Log the incoming request
@@ -195,7 +202,7 @@ class HookHandler:
         outcome = self._dispatch_hook(hook_type, request, session_id)
 
         # Validate outcome type
-        validate_hook_outcome(hook_type, outcome)
+        validate_hook_outcome(HookEventName(hook_type), outcome)
 
         # Convert to response
         response = outcome.to_claude_response()
@@ -211,9 +218,9 @@ class HookHandler:
 
         # Try to get working dir from tool input if available
         if isinstance(request, PreToolUseRequest | PostToolUseRequest):
-            file_path = request.tool_input.file_path
-            if file_path:
-                working_dir = Path(file_path).parent
+            tool_call = request.tool_call
+            if isinstance(tool_call, FilePathToolCall):
+                working_dir = tool_call.file_path.parent
 
         self.session_manager.track_session(session_id, working_dir)
 
@@ -234,8 +241,12 @@ class HookHandler:
     def _handle_pre_hook(self, request: PreToolUseRequest, session_id: SessionID) -> HookOutcome:
         """Handle PreToolUse with early bailout pattern."""
         config = self.config_loader.config
+        tool_call = request.tool_call
+        tool_name = tool_call.tool_name
+        file_path = tool_call.file_path if isinstance(tool_call, FilePathToolCall) else None
+        content = tool_call.content if isinstance(tool_call, WriteToolCall) else None
 
-        logger.info(f"Pre-hook for {request.tool_name} in session {session_id}")
+        logger.info(f"Pre-hook for {tool_name} in session {session_id}")
 
         # Clear any existing notification for this session
         self._clear_notification(session_id)
@@ -244,11 +255,7 @@ class HookHandler:
         self._log_decision(
             session_id,
             "pre_hook_start",
-            {
-                "tool": request.tool_name,
-                "file_path": (request.tool_input.file_path if request.tool_input else None),
-                "has_content": bool(request.tool_input.content if request.tool_input else None),
-            },
+            {"tool": tool_name, "file_path": str(file_path) if file_path else None, "has_content": bool(content)},
         )
 
         # Access control check - early bailout
@@ -260,9 +267,7 @@ class HookHandler:
         if action == RuleAction.DENY:
             return PreToolDeny(
                 llm_message=format_access_denial(
-                    predicate=f"{request.tool_name}('{request.tool_input.file_path}')",
-                    session_id=session_id,
-                    message=message,
+                    predicate=f"{tool_name}('{file_path}')", session_id=session_id, message=message
                 )
             )
 
@@ -273,9 +278,7 @@ class HookHandler:
         # Python violations check - early bailout
         is_python = self._is_python_file(request)
         self._log_decision(
-            session_id,
-            "file_type_check",
-            {"is_python": is_python, "file_path": (request.tool_input.file_path if request.tool_input else None)},
+            session_id, "file_type_check", {"is_python": is_python, "file_path": str(file_path) if file_path else None}
         )
 
         if not is_python:
@@ -295,14 +298,11 @@ class HookHandler:
         llm_violations = []
         if (
             config.llm_analysis.enabled
-            and request.tool_name in ("Write", "Edit", "MultiEdit")
-            and request.tool_input.content
+            and isinstance(tool_call, WriteToolCall | EditToolCall | MultiEditToolCall)
+            and content
         ):
             llm_ok, llm_message, llm_violations_found = self.llm_analyzer.analyze_code(
-                file_path=request.tool_input.file_path or "",
-                content=request.tool_input.content,
-                tool_name=request.tool_name,
-                tool_input=request.tool_input.model_dump(),
+                tool_call=tool_call, content=content
             )
 
             if not llm_ok and llm_message:
@@ -324,24 +324,11 @@ class HookHandler:
         if not blocking_violations:
             return PreToolApprove()
 
-        # Format violations - only use diff intelligence for Edit/MultiEdit
-        if request.tool_name in ("Edit", "MultiEdit"):
-            # For PreToolUse, we don't have tool_response yet, so all violations are "out-of-diff"
-            # This is fine - diff intelligence is mainly useful in PostToolUse
-            categorized_groups = self.diff_intelligence.analyze(
-                tool_name=request.tool_name,
-                tool_input=request.tool_input.model_dump(),
-                tool_response=None,  # PreToolUse has no response
-                violations=blocking_violations,
-            )
-            formatted_violations = self.diff_intelligence.format_violations_by_category(categorized_groups)
-        else:
-            # Standard formatting for other tools
-            violation_messages = []
-            for v in blocking_violations[: config.max_errors_to_show]:
-                violation_messages.append(f"Line {v.line}: {v.message}")
-            formatted_violations = "\n".join(violation_messages)
+        formatted_violations = "\n".join(
+            f"Line {v.line}: {v.message}" for v in blocking_violations[: config.max_errors_to_show]
+        )
 
+        file_path_str = str(file_path) if file_path else ""
         formatted = format_llm_message(
             "Python code contains hard-blocked patterns:",
             formatted_violations,
@@ -351,19 +338,18 @@ class HookHandler:
                     "- Bare except: Use specific exception types",
                     "- hasattr/getattr: Use proper type checking",
                     "",
-                    f"Check violations: cl2 check {request.tool_input.file_path}",
-                    f"Override: cl2 session allow '{request.tool_name}(\"{request.tool_input.file_path}\")' "
-                    f"--session {session_id}",
+                    f"Check violations: cl2 check {file_path_str}",
+                    f"Override: cl2 session allow '{tool_name}(\"{file_path_str}\")' --session {session_id}",
                 ]
             ),
         )
 
         # Track all violations (not just blocking ones) for the Stop hook
-        if all_violations:
+        if all_violations and file_path:
             self.violation_tracker.add_violations(
                 session_id=session_id,
                 violations=all_violations,
-                file_path=request.tool_input.file_path or "",
+                file_path=file_path,
                 severity="mixed",  # Contains both blocking and non-blocking
             )
 
@@ -373,8 +359,11 @@ class HookHandler:
         """Handle PostToolUse."""
         config = self.config_loader.config
         messages = []
+        tool_call = request.tool_call
+        tool_name = tool_call.tool_name
+        file_path = tool_call.file_path if isinstance(tool_call, FilePathToolCall) else None
 
-        logger.info(f"Post-hook for {request.tool_name} in session {session_id}")
+        logger.info(f"Post-hook for {tool_name} in session {session_id}")
 
         # Clear any existing notification for this session
         self._clear_notification(session_id)
@@ -384,10 +373,9 @@ class HookHandler:
             session_id,
             "post_hook_start",
             {
-                "tool": request.tool_name,
-                "file_path": (request.tool_input.file_path if request.tool_input else None),
-                "has_tool_response": isinstance(request, PostToolUseRequest)
-                and (request.tool_response is not None or request.tool_result is not None),
+                "tool": tool_name,
+                "file_path": str(file_path) if file_path else None,
+                "has_tool_response": request.tool_response is not None or request.tool_result is not None,
             },
         )
 
@@ -411,7 +399,7 @@ class HookHandler:
                 messages.append(perms)
 
         # Check remaining violations
-        if self._is_python_file(request) and request.tool_input.file_path:
+        if self._is_python_file(request) and file_path:
             self._update_violation_tracking(request, session_id)
 
         # Log final decision
@@ -480,7 +468,7 @@ class HookHandler:
 
             # Use the pure function to check for violations
             violations = check_python_file(
-                file_path=str(py_file),
+                file_path=py_file,
                 content=file_content,
                 config=config,
                 critical_only=False,  # Stop hook checks all violations
@@ -605,34 +593,33 @@ class HookHandler:
     # Helper methods
     def _check_access_control(self, request: PreToolUseRequest, session_id: SessionID) -> tuple[RuleAction, str | None]:
         """Check access control rules."""
-        # Build args dict from tool_input
-        args = {
-            "file_path": request.tool_input.file_path,
-            "content": request.tool_input.content,
-            "old_content": request.tool_input.old_content,
-            "command": request.tool_input.command,
+        tool_call = request.tool_call
+        args: dict[str, Any] = {
+            "file_path": tool_call.file_path if isinstance(tool_call, FilePathToolCall) else None,
+            "content": tool_call.content if isinstance(tool_call, WriteToolCall) else None,
+            "old_string": tool_call.old_string if isinstance(tool_call, EditToolCall) else None,
+            "command": tool_call.command if isinstance(tool_call, BashToolCall) else None,
         }
-        context = PredicateContext(tool=request.tool_name, args=args, session_id=session_id, timestamp=datetime.now())
+        context = PredicateContext(tool=tool_call.tool_name, args=args, session_id=session_id, timestamp=datetime.now())
 
         return self.rule_engine.evaluate_access(context, session_id)
 
     def _is_python_file(self, request: PreToolUseRequest | PostToolUseRequest) -> bool:
-        """Check if request is for a Python file."""
-        file_path = request.tool_input.file_path or ""
-        return file_path.endswith(".py") and bool(request.tool_input.content)
+        """Check if request is for a Python file with content."""
+        tool_call = request.tool_call
+        if not isinstance(tool_call, WriteToolCall):
+            return False
+        return tool_call.file_path.suffix == ".py"
 
     def _check_python_violations(self, request: PreToolUseRequest, config: ModularConfig) -> list[Violation]:
         """Check for Python AST and ruff violations."""
-        file_path = request.tool_input.file_path
-        content = request.tool_input.content
-
-        if not file_path or not content:
+        tool_call = request.tool_call
+        if not isinstance(tool_call, WriteToolCall):
             return []
 
-        # Use the pure function
         return check_python_file(
-            file_path=file_path,
-            content=content,
+            file_path=tool_call.file_path,
+            content=tool_call.content,
             config=config,
             critical_only=True,  # Pre-hook only checks critical violations
         )
@@ -644,67 +631,60 @@ class HookHandler:
 
         # Type check instead of hasattr - only PostToolHookConfig has auto_fix
         if not isinstance(hook_config, PostToolHookConfig):
-            self._log_decision(request.typed_session_id, "autofix_skip", {"reason": "not_post_tool_hook_config"})
+            self._log_decision(request.session_id, "autofix_skip", {"reason": "not_post_tool_hook_config"})
             return None
 
-        file_path = request.tool_input.file_path or ""
+        tool_call = request.tool_call
+        # Autofix only applies to WriteToolCall (has file_path and content)
+        if not isinstance(tool_call, WriteToolCall):
+            return None
+
+        is_python = tool_call.file_path.suffix == ".py"
 
         # Log autofix decision details
         self._log_decision(
-            request.typed_session_id,
+            request.session_id,
             "autofix_check",
             {
                 "auto_fix_enabled": hook_config.auto_fix,
-                "file_path": file_path,
-                "is_python": file_path.endswith(".py"),
-                "has_content": bool(request.tool_input.content),
-                "tool_name": request.tool_name,
-                "allowed_tools": ["Write", "Edit", "MultiEdit"],
+                "file_path": str(tool_call.file_path),
+                "is_python": is_python,
+                "has_content": True,
+                "tool_name": tool_call.tool_name,
             },
         )
 
-        if (
-            not hook_config.auto_fix
-            or not file_path.endswith(".py")
-            or not request.tool_input.content
-            or request.tool_name not in ["Write", "Edit", "MultiEdit"]
-        ):
+        if not hook_config.auto_fix or not is_python:
             return None
 
-        # Determine autofix categories based on tool
-        if request.tool_name == "Write":
-            categories = hook_config.autofix_categories or [AutofixCategory.ALL]
-        else:
-            categories = hook_config.autofix_categories or [AutofixCategory.FORMATTING]
+        categories = hook_config.autofix_categories or [AutofixCategory.ALL]
 
         # Format the code
         formatter = PythonFormatter(config.python_tools)
-        formatted_code, changes = formatter.format_code(request.tool_input.content, file_path, categories)
+        formatted_code, changes = formatter.format_code(tool_call.content, tool_call.file_path, categories)
 
-        if not changes or formatted_code == request.tool_input.content:
+        if not changes or formatted_code == tool_call.content:
             return None
 
-        # For Write tool, we can update the content directly
-        if request.tool_name == "Write":
-            try:
-                Path(file_path).write_text(formatted_code)
-                logger.info(f"Applied autofix to {file_path}: {changes}")
-                return f"Autofix applied: {', '.join(changes)}"
-            except (OSError, PermissionError, UnicodeDecodeError) as e:
-                logger.error(f"Failed to apply autofix: {e}")
-                return f"Autofix failed: {e}"
-        else:
-            # For Edit/MultiEdit, we can only notify
-            return f"Code formatting issues: {', '.join(changes)}"
+        try:
+            tool_call.file_path.write_text(formatted_code)
+            logger.info(f"Applied autofix to {tool_call.file_path}: {changes}")
+            return f"Autofix applied: {', '.join(changes)}"
+        except (OSError, PermissionError, UnicodeDecodeError) as e:
+            logger.error(f"Failed to apply autofix: {e}")
+            return f"Autofix failed: {e}"
 
     def _update_violation_tracking(self, request: PostToolUseRequest, session_id: SessionID) -> None:
         """Update violation tracking after tool execution."""
-        file_path = request.tool_input.file_path
-        if not file_path or not Path(file_path).exists():
+        tool_call = request.tool_call
+        if not isinstance(tool_call, FilePathToolCall):
+            return
+        file_path = tool_call.file_path
+        if not file_path.exists():
             return
 
         config = self.config_loader.config
-        file_content = Path(file_path).read_text()
+        file_content = file_path.read_text()
 
         # Use the pure function to check all violations
         all_violations = check_python_file(
@@ -715,18 +695,13 @@ class HookHandler:
         )
 
         if all_violations:
-            # Only use diff intelligence for Edit/MultiEdit tools
-            if request.tool_name in ("Edit", "MultiEdit"):
+            # Only use diff intelligence for Edit/MultiEdit tools with tool_response
+            tool_response = request.tool_response if request.tool_response is not None else request.tool_result
+            if isinstance(tool_call, EditToolCall | MultiEditToolCall) and tool_response:
                 # Use diff intelligence to categorize violations
-                # PostToolUseRequest may have either tool_response or tool_result
-                tool_response = None
-                if isinstance(request, PostToolUseRequest):
-                    tool_response = request.tool_response if request.tool_response is not None else request.tool_result
-
-                tool_call = ToolCall(
-                    tool_name=request.tool_name, tool_input=request.tool_input.model_dump(), tool_response=tool_response
+                categorized_groups = self.diff_intelligence.analyze(
+                    tool_call=tool_call, tool_response=tool_response, violations=all_violations
                 )
-                categorized_groups = self.diff_intelligence.analyze(tool_call=tool_call, violations=all_violations)
 
                 # Only track in-diff and near-diff violations as important
                 important_violations = (
@@ -745,8 +720,8 @@ class HookHandler:
                 else:
                     # Only out-of-diff violations remain - mark file as effectively fixed
                     self.violation_tracker.mark_file_fixed(session_id, file_path)
-            # For other tools (Write, etc), track all violations normally
-            elif all_violations:
+            # For other tools (Write, etc), or when tool_response is missing, track all violations
+            else:
                 self.violation_tracker.add_violations(
                     session_id=session_id, violations=all_violations, file_path=file_path, severity="mixed"
                 )
@@ -767,8 +742,8 @@ class HookHandler:
 
         lines = ["You have blanket approval for:"]
         for rule in rules:
-            if rule["action"] == "allow":
-                predicate = rule["predicate"]
+            if rule.action == "allow":
+                predicate = rule.predicate
                 # Simplify common predicates for readability
                 if predicate.startswith("Edit(") and predicate.endswith(")"):
                     pattern = predicate[5:-1].strip("\"'")

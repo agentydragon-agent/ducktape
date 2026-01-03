@@ -7,7 +7,7 @@ title: Furry Rationalists & Effective Anthropomorphism both exist
 Hi!
 
 <figure>
-<img src="/static/2022-sticker-hello.png" style="max-width: 8cm">
+<img src="/static/2022-sticker-hello.png" style="max-width: 8cm" alt="Sticker of Rai waving hello">
 </figure>
 
 I’m Rai and I’m a furry (specifically, dragon). The last couple years, I’ve been

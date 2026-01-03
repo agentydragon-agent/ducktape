@@ -2,38 +2,21 @@
 
 import subprocess
 
-import pytest
-from hamcrest import all_of, assert_that, contains_string, has_entries
-
 from ducktape_llm_common.claude_code_api import StopRequest
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
-from ducktape_llm_common.claude_linter_v2.types import parse_session_id
 
 
-@pytest.fixture
-def handler():
-    """Create a hook handler instance."""
-    handler = HookHandler()
-    # Ensure quality gate is enabled for testing
-    handler.config_loader.config.hooks["stop"].quality_gate = True
-    return handler
-
-
-@pytest.fixture
-def session_id():
-    """Create a test session ID."""
-    return parse_session_id("12345678-1234-5678-1234-567812345678")
-
-
-def test_stop_hook_respects_gitignore(handler, session_id, tmp_path, monkeypatch):
+def test_stop_hook_respects_gitignore(session_id, tmp_path, monkeypatch):
     """Test that stop hook respects gitignore and doesn't scan node_modules."""
-    # Change to tmp directory using pytest's monkeypatch
     monkeypatch.chdir(tmp_path)
 
     # Initialize git repo
-    subprocess.run(["git", "init"], check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], check=True)
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
+
+    handler = HookHandler()
+    handler.config_loader.config.hooks["stop"].quality_gate = True
 
     # Create .gitignore
     gitignore = tmp_path / ".gitignore"
@@ -87,31 +70,27 @@ def bad():
     subprocess.run(["git", "commit", "-m", "Initial commit"], check=True)
 
     # Create stop hook request
-    request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+    request = StopRequest(hook_event_name="Stop", session_id=session_id)
 
     # Handle the hook
     result = handler.handle("Stop", request)
 
     # Should block due to errors in tracked file only
-    response_dict = result.model_dump()
+    response_dict = result.model_dump(by_alias=True)
 
     # Check main keys and verify reason contains tracked filename and violation snippets
-    assert_that(
-        response_dict,
-        has_entries(
-            continue_=True,
-            stopReason=None,
-            suppressOutput=None,
-            decision="block",
-            reason=all_of(contains_string(str(tracked_file)), contains_string("Do not use bare `except`")),
-        ),
-    )
+    assert response_dict["continue"] is True
+    assert response_dict["decision"] == "block"
+    assert str(tracked_file) in response_dict["reason"]
+    assert "Do not use bare `except`" in response_dict["reason"]
 
 
-def test_stop_hook_fallback_when_not_git_repo(handler, session_id, tmp_path, monkeypatch):
+def test_stop_hook_fallback_when_not_git_repo(session_id, tmp_path, monkeypatch):
     """Test that stop hook falls back to all files when not in a git repo."""
-    # Change to tmp directory using pytest's monkeypatch
     monkeypatch.chdir(tmp_path)
+
+    handler = HookHandler()
+    handler.config_loader.config.hooks["stop"].quality_gate = True
 
     # Don't initialize git - just create files
 
@@ -140,26 +119,17 @@ except:
     )
 
     # Create stop hook request
-    request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+    request = StopRequest(hook_event_name="Stop", session_id=session_id)
 
     # Handle the hook
     result = handler.handle("Stop", request)
 
     # Should find violations in all files (no git = no gitignore)
-    response_dict = result.model_dump()
+    response_dict = result.model_dump(by_alias=True)
 
-    # Both files have bare-except violations; check keys and that reason mentions both files and ruff message
-    assert_that(
-        response_dict,
-        has_entries(
-            continue_=True,
-            stopReason=None,
-            suppressOutput=None,
-            decision="block",
-            reason=all_of(
-                contains_string(str(bad_file)),
-                contains_string(str(node_file)),
-                contains_string("Do not use bare `except`"),
-            ),
-        ),
-    )
+    # Both files have bare-except violations
+    assert response_dict["continue"] is True
+    assert response_dict["decision"] == "block"
+    assert str(bad_file) in response_dict["reason"]
+    assert str(node_file) in response_dict["reason"]
+    assert "Do not use bare `except`" in response_dict["reason"]

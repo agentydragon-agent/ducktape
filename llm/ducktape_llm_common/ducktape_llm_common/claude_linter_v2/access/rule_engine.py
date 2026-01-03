@@ -65,35 +65,35 @@ class RuleEngine:
         matches: list[RuleMatch] = []
 
         # 1. Check path-based access control rules (lowest precedence)
-        for rule in self.config.access_control:
-            if self._match_access_control_rule(rule, context):
+        for access_rule in self.config.access_control:
+            if self._match_access_control_rule(access_rule, context):
                 matches.append(
                     RuleMatch(
-                        action=rule.action,
+                        action=access_rule.action,
                         source=RuleSource.CONFIG_ACCESS_CONTROL,
-                        message=rule.message,
-                        rule_description=f"Path rule: {', '.join(rule.paths)}",
+                        message=access_rule.message,
+                        rule_description=f"Path rule: {', '.join(access_rule.paths)}",
                     )
                 )
 
         # 2. Check repo-wide predicate rules
-        for rule in self.config.repo_rules:
-            if self.evaluator.evaluate(rule.predicate, context):
+        for predicate_rule in self.config.repo_rules:
+            if self.evaluator.evaluate(predicate_rule.predicate, context):
                 matches.append(
                     RuleMatch(
-                        action=rule.action,
+                        action=predicate_rule.action,
                         source=RuleSource.CONFIG_REPO_RULES,
-                        message=rule.message,
-                        rule_description=f"Repo rule: {rule.predicate}",
+                        message=predicate_rule.message,
+                        rule_description=f"Repo rule: {predicate_rule.predicate}",
                     )
                 )
 
         # 3. Check session-specific rules (highest precedence)
         session_rules = self.session_manager.get_session_rules(session_id)
-        for rule in session_rules:
-            predicate = rule.predicate
+        for session_rule in session_rules:
+            predicate = session_rule.predicate
             if self.evaluator.evaluate(predicate, context):
-                action = RuleAction(rule.action)
+                action = RuleAction(session_rule.action)
                 matches.append(
                     RuleMatch(
                         action=action,

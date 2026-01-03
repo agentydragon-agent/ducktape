@@ -32,6 +32,29 @@ class DaemonHealthStatus(StrEnum):
     ERROR = "error"
 
 
+class GitHubStatusOk(BaseModel):
+    """GitHub interface working."""
+
+    type: Literal["ok"] = "ok"
+
+
+class GitHubStatusDisabled(BaseModel):
+    """GitHub integration explicitly disabled in config."""
+
+    type: Literal["disabled"] = "disabled"
+
+
+class GitHubStatusError(BaseModel):
+    """GitHub interface failing (init or refresh)."""
+
+    type: Literal["error"] = "error"
+    last_error: str = Field(..., description="Most recent error message")
+    error_count: int = Field(default=1, description="Number of consecutive errors")
+
+
+GitHubStatus = Annotated[GitHubStatusOk | GitHubStatusDisabled | GitHubStatusError, Field(discriminator="type")]
+
+
 class DaemonHealth(BaseModel):
     """Daemon health information."""
 
@@ -40,6 +63,7 @@ class DaemonHealth(BaseModel):
     last_error_time: datetime | None = None
     github_errors: int = 0
     gitstatusd_errors: int = 0
+    github_status: GitHubStatus = Field(default_factory=GitHubStatusDisabled)
 
 
 class Request(BaseModel):
@@ -210,18 +234,163 @@ class PRInfoDisabled(BaseModel):
 PRInfo = Annotated[PRInfoOk | PRInfoError | PRInfoDisabled, Field(discriminator="type")]
 
 
-class StatusResult(BaseModel):
-    """Result for individual worktree status."""
+# Forward reference for StatusItemResult (StatusResult defined later)
+# These types are defined after StatusResult below
 
-    wtid: WorktreeID = Field(..., description="Worktree identifier")
-    name: str = Field(..., description="Human-readable name")
-    absolute_path: Path = Field(..., description="Absolute filesystem path")
+
+# Algebraic event types - bundle timestamp with value to prevent invalid states
+
+
+class SourceOk[T](BaseModel):
+    """Success event: bundles value with timestamp."""
+
+    model_config = {"frozen": True}
+    at: datetime
+    value: T
+
+
+class SourceError(BaseModel):
+    """Error event: bundles error message with timestamp."""
+
+    model_config = {"frozen": True}
+    at: datetime
+    error: str
+
+
+class Collector[T](BaseModel):
+    """Accumulates success/error events independently.
+
+    Tracks last_ok and last_error separately. Each is either None (never seen)
+    or a timestamped event. Invalid states are impossible by construction.
+    """
+
+    model_config = {"frozen": True}
+    last_ok: SourceOk[T] | None = None
+    last_error: SourceError | None = None
+
+    def ok(self, value: T) -> Collector[T]:
+        """Record a success, preserving last_error."""
+        return Collector(last_ok=SourceOk(at=datetime.now(), value=value), last_error=self.last_error)
+
+    def error(self, err: str) -> Collector[T]:
+        """Record an error, preserving last_ok."""
+        return Collector(last_ok=self.last_ok, last_error=SourceError(at=datetime.now(), error=err))
+
+    def exception(self, exc: BaseException) -> Collector[T]:
+        """Record an exception as an error, preserving last_ok.
+
+        TODO: Store structured exception info (type, traceback) instead of just str.
+        """
+        return self.error(str(exc))
+
+    @property
+    def is_healthy(self) -> bool:
+        """True if most recent event was success (or no errors ever)."""
+        if self.last_error is None:
+            return True
+        if self.last_ok is None:
+            return False
+        return self.last_ok.at > self.last_error.at
+
+
+# Domain data types
+class WorktreeGitInfo(BaseModel):
+    """Git metadata for a worktree, assembled at query time.
+
+    ahead/behind are computed via pygit2 against config.upstream_branch,
+    NOT the remote tracking branch. See repo_status.py.
+    """
+
+    model_config = {"frozen": True}
+    branch: str | None  # None = detached HEAD
+    commit: str | None  # None = not available
+    ahead: int | None  # None = no upstream configured
+    behind: int | None
+
+
+class GitstatusdData(BaseModel):
+    """All data from gitstatusd for a worktree.
+
+    Contains git metadata and file counts. Note: remote_ahead/remote_behind
+    are vs the remote tracking branch (e.g., origin/feature-foo), NOT vs
+    wt's config.upstream_branch. For ahead/behind vs upstream_branch,
+    see repo_status.py which uses pygit2.
+    """
+
+    model_config = {"frozen": True}
+
+    # Git metadata
+    branch: str | None  # None = detached HEAD or not a git repo
+    commit: str | None  # None = not available
+
+    # File counts
+    staged: int
+    unstaged: int
+    untracked: int
+    conflicted: int
+
+    # gitstatusd's ahead/behind (vs remote tracking branch, NOT wt's upstream_branch)
+    remote_ahead: int | None
+    remote_behind: int | None
+
+
+class BranchAheadBehind(BaseModel):
+    """Cached ahead/behind counts for a branch vs config.upstream_branch.
+
+    Computed by GitRefsWatcher when .git directory changes.
+    Keyed by branch name (not worktree path) since ahead/behind
+    is a property of the branch, not the worktree.
+    """
+
+    model_config = {"frozen": True}
+
+    ahead: int
+    behind: int
+
+
+# Aggregated worktree (wire format = internal format)
+class WorktreeStatus(BaseModel):
+    """Complete status for one worktree - used both internally and in API responses."""
+
+    model_config = {"frozen": True}
+    path: Path
+    name: str
+    git: Collector[WorktreeGitInfo] = Field(default_factory=Collector)
+    gitstatusd: Collector[GitstatusdData] = Field(default_factory=Collector)
+    pr: Collector[PRData | None] = Field(default_factory=Collector)  # inner None = "no PR exists"
+
+
+# Daemon config (discriminated unions)
+class GitstatusdAvailable(BaseModel):
+    """gitstatusd binary found and working."""
+
+    model_config = {"frozen": True}
+    type: Literal["available"] = "available"
+    path: str
+
+
+class GitstatusdUnavailable(BaseModel):
+    """gitstatusd binary not found or not working."""
+
+    model_config = {"frozen": True}
+    type: Literal["unavailable"] = "unavailable"
+    error: str
+
+
+GitstatusdConfig = GitstatusdAvailable | GitstatusdUnavailable
+
+
+class StatusResult(BaseModel):
+    """Git/PR status data for a worktree.
+
+    Envelope fields (name, path, timing) are on StatusItem, not here.
+    """
+
     branch_name: str = Field(..., description="Git branch name")
     dirty_files_lower_bound: int = Field(..., description="Lower bound on modified file count reported by gitstatusd")
     untracked_files_lower_bound: int = Field(
         ..., description="Lower bound on untracked file count reported by gitstatusd"
     )
-    processing_time_ms: float = Field(..., description="Processing time in milliseconds")
     last_updated_at: datetime = Field(..., description="When gitstatusd was last queried for this worktree")
     is_cached: bool = Field(default=False, description="Whether this result came from cache")
     cache_age_ms: float | None = Field(
@@ -229,8 +398,8 @@ class StatusResult(BaseModel):
     )
     is_stale: bool = Field(default=False, description="Whether cached data is considered stale by server policy")
     commit_info: CommitInfo | None = Field(default=None, description="Latest commit information if available")
-    ahead_count: int = Field(default=0, description="Number of commits ahead of upstream branch")
-    behind_count: int = Field(default=0, description="Number of commits behind upstream branch")
+    ahead_count: int | None = Field(..., description="Commits ahead of upstream (None = couldn't compute)")
+    behind_count: int | None = Field(..., description="Commits behind upstream (None = couldn't compute)")
     is_main: bool = Field(default=False, description="Whether this is the main repository")
     upstream_branch: str = Field(..., description="Upstream branch name for ahead/behind calculations")
     pr_info: PRInfo = Field(
@@ -251,9 +420,30 @@ class StatusResult(BaseModel):
         return self.untracked_files_lower_bound > 0
 
 
-class StatusItem(BaseModel):
+class StatusResultOk(BaseModel):
+    """Successful status fetch."""
+
+    type: Literal["ok"] = "ok"
     status: StatusResult
-    processing_time_ms: float
+
+
+class StatusResultError(BaseModel):
+    """Failed status fetch."""
+
+    type: Literal["error"] = "error"
+    error: str
+
+
+StatusItemResult = Annotated[StatusResultOk | StatusResultError, Field(discriminator="type")]
+
+
+class StatusItem(BaseModel):
+    """Status for a single worktree - common fields + discriminated result."""
+
+    name: str = Field(..., description="Human-readable worktree name")
+    absolute_path: Path = Field(..., description="Absolute filesystem path")
+    processing_time_ms: float = Field(..., description="Processing time in milliseconds")
+    result: StatusItemResult = Field(..., description="Success (with status) or error")
 
 
 class StatusResponse(BaseModel):
@@ -270,6 +460,15 @@ class StatusResponse(BaseModel):
     components: ComponentsStatus | None = Field(
         default=None, description="Top-level component states (discovery/github/gitstatusd)"
     )
+
+
+class StatusResponseV2(BaseModel):
+    """API response for status query - new format."""
+
+    model_config = {"frozen": True}
+    worktrees: dict[str, WorktreeStatus] = Field(..., description="Worktrees keyed by name")
+    gitstatusd: GitstatusdConfig = Field(..., description="gitstatusd configuration status")
+    github_enabled: bool = Field(..., description="Whether GitHub integration is enabled")
 
 
 class PingResult(BaseModel):

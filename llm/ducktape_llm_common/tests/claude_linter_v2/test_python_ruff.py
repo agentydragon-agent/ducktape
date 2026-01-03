@@ -1,9 +1,12 @@
 """Tests for Python ruff linter."""
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ducktape_llm_common.claude_linter_v2.linters.python_ruff import PythonRuffLinter
+
+TEST_FILE = Path("/tmp/test.py")
 
 
 class TestPythonRuffLinter:
@@ -46,7 +49,7 @@ except:
         linter = PythonRuffLinter()
         linter._ruff_available = True
 
-        violations = linter.check_code(code)
+        violations = linter.check_code(code, TEST_FILE)
 
         assert len(violations) == 1
         assert violations[0].rule == "ruff:E722"
@@ -68,7 +71,7 @@ def hello():
         linter = PythonRuffLinter()
         linter._ruff_available = True
 
-        violations = linter.check_code(code)
+        violations = linter.check_code(code, TEST_FILE)
 
         assert len(violations) == 0
 
@@ -98,7 +101,7 @@ def hello():
         linter = PythonRuffLinter()
         linter._ruff_available = True
 
-        violations = linter.check_code("code", critical_only=True)
+        violations = linter.check_code("code", TEST_FILE, critical_only=True)
 
         # Should only return the critical violation
         assert len(violations) == 1
@@ -115,7 +118,7 @@ def hello():
         linter = PythonRuffLinter(force_select=force_rules)
         linter._ruff_available = True
 
-        linter.check_code(code, critical_only=False)
+        linter.check_code(code, TEST_FILE, critical_only=False)
 
         # Verify the command included force-select rules
         call_args = mock_run.call_args[0][0]
@@ -142,7 +145,7 @@ def hello():
         linter = PythonRuffLinter()
         linter._ruff_available = True
 
-        violations = linter.check_code("import unused", critical_only=False)
+        violations = linter.check_code("import unused", TEST_FILE, critical_only=False)
 
         assert len(violations) == 1
         assert violations[0].fixable is True
@@ -159,7 +162,7 @@ def hello():
         linter = PythonRuffLinter()
         linter._ruff_available = True
 
-        violations = linter.check_code("code")
+        violations = linter.check_code("code", TEST_FILE)
 
         # Should return empty list on error
         assert violations == []
@@ -172,7 +175,7 @@ def hello():
         linter = PythonRuffLinter()
         linter._ruff_available = True
 
-        violations = linter.check_code("code")
+        violations = linter.check_code("code", TEST_FILE)
 
         # Should return empty list on parse error
         assert violations == []
@@ -195,7 +198,7 @@ def hello():
         linter = PythonRuffLinter()
         linter._ruff_available = False
 
-        violations = linter.check_code("code")
+        violations = linter.check_code("code", TEST_FILE)
 
         assert violations == []
 
@@ -207,10 +210,10 @@ def hello():
         linter = PythonRuffLinter()
         linter._ruff_available = True
 
-        linter.check_code("code", file_path="/path/to/file.py")
+        linter.check_code("code", Path("/path/to/file.py"))
 
         # Verify file path was passed
         call_args = mock_run.call_args[0][0]
         assert "--stdin-filename" in call_args
         filename_index = call_args.index("--stdin-filename")
-        assert call_args[filename_index + 1] == "/path/to/file.py"
+        assert call_args[filename_index + 1] == Path("/path/to/file.py")

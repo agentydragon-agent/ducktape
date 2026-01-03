@@ -8,7 +8,7 @@ import pytest
 
 from tests.asserts import assert_output_contains
 from wt.cli import app
-from wt.shared.protocol import CommitInfo, StatusResult, WorktreeID
+from wt.shared.protocol import CommitInfo, StatusResult
 
 
 @pytest.fixture
@@ -39,35 +39,33 @@ class TestCLIOutputFormat:
 
         # Create test results
         results = {
-            WorktreeID("wtid:main"): StatusResult(
-                wtid=WorktreeID("wtid:main"),
-                name="main",
-                absolute_path=Path("/test/main"),
-                branch_name="master",
-                dirty_files_lower_bound=1,
-                untracked_files_lower_bound=1,
-                processing_time_ms=10.0,
-                last_updated_at=datetime.now(),
-                commit_info=commit_info,
-                ahead_count=2,
-                behind_count=0,
-                is_main=True,
-                upstream_branch="master",
+            "main": (
+                StatusResult(
+                    branch_name="master",
+                    dirty_files_lower_bound=1,
+                    untracked_files_lower_bound=1,
+                    last_updated_at=datetime.now(),
+                    commit_info=commit_info,
+                    ahead_count=2,
+                    behind_count=0,
+                    is_main=True,
+                    upstream_branch="master",
+                ),
+                Path("/test/main"),
             ),
-            WorktreeID("wtid:feature-branch"): StatusResult(
-                wtid=WorktreeID("wtid:feature-branch"),
-                name="feature-branch",
-                absolute_path=Path("/test/feature-branch"),
-                branch_name="feature/test",
-                dirty_files_lower_bound=0,
-                untracked_files_lower_bound=0,
-                processing_time_ms=8.0,
-                last_updated_at=datetime.now(),
-                commit_info=commit_info,
-                ahead_count=1,
-                behind_count=0,
-                is_main=False,
-                upstream_branch="master",
+            "feature-branch": (
+                StatusResult(
+                    branch_name="feature/test",
+                    dirty_files_lower_bound=0,
+                    untracked_files_lower_bound=0,
+                    last_updated_at=datetime.now(),
+                    commit_info=commit_info,
+                    ahead_count=1,
+                    behind_count=0,
+                    is_main=False,
+                    upstream_branch="master",
+                ),
+                Path("/test/feature-branch"),
             ),
         }
 
@@ -91,21 +89,20 @@ class TestCLIOutputFormat:
             date="2024-01-15T10:30:00",
         )
         results = {
-            WorktreeID("wtid:test1"): StatusResult(
-                wtid=WorktreeID("wtid:test1"),
-                name="test1",
-                absolute_path=Path("/test/test1"),
-                branch_name="test/test1",
-                dirty_files_lower_bound=0,
-                untracked_files_lower_bound=0,
-                processing_time_ms=1.0,
-                last_updated_at=datetime.now(),
-                commit_info=commit_info,
-                ahead_count=0,
-                behind_count=0,
-                is_main=False,
-                upstream_branch="master",
-                is_cached=False,
+            "test1": (
+                StatusResult(
+                    branch_name="test/test1",
+                    dirty_files_lower_bound=0,
+                    untracked_files_lower_bound=0,
+                    last_updated_at=datetime.now(),
+                    commit_info=commit_info,
+                    ahead_count=0,
+                    behind_count=0,
+                    is_main=False,
+                    upstream_branch="master",
+                    is_cached=False,
+                ),
+                Path("/test/test1"),
             )
         }
         status_response = build_status_response(results)

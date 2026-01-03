@@ -3,9 +3,11 @@
 Compatible with gmail-yaml-filters format (https://github.com/mesozoic/gmail-yaml-filters).
 """
 
+from __future__ import annotations
+
 import builtins
 from enum import StrEnum
-from typing import Any, Union
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -62,7 +64,7 @@ class CompoundCondition(BaseModel):
 
     any: str | list[str] | None = None
     all: str | list[str] | None = None
-    not_: Union[str, "CompoundCondition", dict[str, Any]] | None = Field(default=None, alias="not")
+    not_: str | CompoundCondition | None = Field(default=None, alias="not")
 
 
 class FilterRule(BaseModel):
@@ -111,7 +113,7 @@ class FilterRule(BaseModel):
     forward: str | None = None
 
     # Special keys
-    more: Union["FilterRule", builtins.list["FilterRule"]] | None = None
+    more: FilterRule | builtins.list[FilterRule] | None = None
     ignore: bool | None = None
 
 
@@ -126,7 +128,7 @@ class FilterRuleSet(BaseModel):
     rules: list[FilterRule | ForEachRule]
 
     @classmethod
-    def from_yaml_list(cls, yaml_list: list[dict[str, Any]]) -> "FilterRuleSet":
+    def from_yaml_list(cls, yaml_list: list[dict[str, Any]]) -> FilterRuleSet:
         rules = []
         for rule_dict in yaml_list:
             if "for_each" in rule_dict:

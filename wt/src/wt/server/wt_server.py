@@ -19,16 +19,16 @@ import signal
 import subprocess
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from ..shared.configuration import Configuration, load_config
 from ..shared.protocol import (
-    DaemonHealth,
-    DaemonHealthStatus,
     ErrorCodes,
     ErrorResponse,
+    GitstatusdAvailable,
+    GitstatusdUnavailable,
     PingResult,
     Request,
     Response,
@@ -37,7 +37,9 @@ from ..shared.protocol import (
     parse_request,
 )
 from .git_manager import GitManager
+from .git_refs_watcher import GitRefsWatcher
 from .github_client import GitHubInterface
+from .github_watcher import GitHubWatcher
 from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_listener import GitstatusdListener
 
@@ -48,21 +50,20 @@ from .handlers import (
     status_handler,  # noqa: F401
     worktree_handler,  # noqa: F401
 )
-from .pr_service import PRService
 from .repo_status import RepoStatus
 from .rpc import rpc
 from .services import (
     DiscoveryService,
     GitService,
     GitstatusdService,
-    HealthService,
-    PRServiceProvider,
     StatusService,
     WorktreeCoordinator,
     WorktreeIndexService,
     scan_worktrees,
 )
+from .stores import DaemonStore
 from .types import DiscoveredWorktree
+from .watcher import start_watcher
 from .worktree_index import WorktreeIndex
 from .worktree_registry import WorktreeRegistry
 from .worktree_service import WorktreeService
@@ -135,28 +136,31 @@ class WtDaemon:
             try:
                 self.github_interface = GitHubInterface(self.config.github_repo)
                 logger.info("GitHub interface initialized for repo: %s", self.config.github_repo)
-            except Exception as e:
+            except (RuntimeError, OSError) as e:
                 logger.warning("Failed to initialize GitHub interface for %s: %s", self.config.github_repo, e)
-
-        # Track daemon health state using proper protocol types
-
-        self.daemon_health = DaemonHealth(
-            status=DaemonHealthStatus.OK, last_error=None, last_error_time=None, github_errors=0, gitstatusd_errors=0
-        )
         # use self.config.wt_dir directly
         self.socket_path = self.config.daemon_socket_path
         self.pid_file = self.config.daemon_pid_path
+
+        # Reactive state store
+        self.store = DaemonStore()
+        self.store.set_github_enabled(self.config.github_enabled)
+        self._worktree_observer = None  # Filesystem watcher for worktrees dir
 
         # Managed state
         self.known_worktrees: dict[Path, DiscoveredWorktree] = {}
         self.worktree_index: WorktreeIndex | None = None
         self.gitstatusd_clients: dict[WorktreeID, GitstatusdListener] = {}
-        self.pr_services: dict[WorktreeID, PRService] = {}
         self.git_watchers: dict[WorktreeID, DebouncedGitstatusRefresh] = {}
+
+        # Centralized GitHub watcher (replaces per-worktree PRService)
+        self.github_watcher: GitHubWatcher | None = None
         self._state_lock = asyncio.Lock()
         self.git_manager = GitManager(config=self.config)
         self.repo_status = RepoStatus(self.git_manager, self.config)
         self.worktree_service = WorktreeService(self.git_manager, self.github_interface)
+        # Centralized git refs watcher for cached ahead/behind (created here, started in start())
+        self.git_refs_watcher = GitRefsWatcher(store=self.store, git_manager=self.git_manager, config=self.config)
         # Build DI services
 
         self.git_service = GitService(self.git_manager)
@@ -179,14 +183,12 @@ class WtDaemon:
             list_watchers=lambda: list(self.git_watchers.values()),
             clear_watchers=lambda: self.git_watchers.clear(),
         )
-        self.pr_provider = PRServiceProvider(services=self.pr_services)
         self.status_service = StatusService(self.repo_status)
         self.discovery_service = DiscoveryService(
             lambda: self.discovery_scanning,
             periodic=lambda: self._periodic_discovery_wrapper(),
             cancel_periodic=lambda: self._cancel_periodic_discovery(),
         )
-        self.health_service = HealthService(lambda: self.daemon_health)
         self.coordinator = WorktreeCoordinator(
             register_fn=self._register_worktree, unregister_fn=self._unregister_worktree
         )
@@ -209,35 +211,6 @@ class WtDaemon:
         self._method_handlers = rpc
         with contextlib.suppress(Exception):
             logger.info("Registered RPC methods: %s", sorted(rpc.list_methods()))
-
-    def _record_error(self, error_type: str, error_message: str):
-        logger.error(f"{error_type}: {error_message}")
-
-        self.daemon_health.last_error = f"{error_type}: {error_message}"
-        self.daemon_health.last_error_time = datetime.now()
-        self.daemon_health.status = DaemonHealthStatus.ERROR
-
-        if error_type.lower().startswith("github"):
-            self.daemon_health.github_errors += 1
-        elif error_type.lower().startswith("gitstatusd"):
-            self.daemon_health.gitstatusd_errors += 1
-
-    def _record_github_error(self, error_message: str):
-        self._record_error("GitHub", error_message)
-
-    def _record_gitstatusd_error(self, error_message: str):
-        self._record_error("GitStatusd", error_message)
-
-    def _clear_errors_if_healthy(self):
-        if (
-            self.daemon_health.status == DaemonHealthStatus.ERROR
-            and self.daemon_health.last_error_time
-            and (datetime.now() - self.daemon_health.last_error_time) > timedelta(seconds=60)
-        ):
-            self.daemon_health.status = DaemonHealthStatus.OK
-            self.daemon_health.last_error = None
-            self.daemon_health.last_error_time = None
-            logger.info("Daemon health status cleared - operations are succeeding")
 
     def _validate_gitstatusd(self) -> tuple[str | None, str | None]:
         """Returns (gitstatusd_path, error_message) where error_message is None on success."""
@@ -331,37 +304,34 @@ class WtDaemon:
             if worktree_info.wtid not in self.git_watchers:
                 await self._ensure_git_watcher(worktree_info)
             return
-        gs_client = GitstatusdListener(
-            worktree_info, self.config, self.git_manager, error_callback=self._record_gitstatusd_error
-        )
+
+        # Create listener - it owns its signal, no callbacks needed
+        gs_client = GitstatusdListener(worktree_info.path, self.config, self.git_manager)
         await gs_client.start()
+        # Register the listener's signal with the store
+        self.store.register_gitstatusd(worktree_info.path, gs_client.status)
         # Kick an initial nonblocking refresh; watcher/poll keeps it fresh
         self._initial_status_task = asyncio.create_task(gs_client.update_working_status())
         self.gitstatusd_clients[worktree_info.wtid] = gs_client
-        prsvc = PRService(self.github_interface, self.config, worktree_info, self.git_manager)
-        await prsvc.start()
-        self.pr_services[worktree_info.wtid] = prsvc
 
         # Start .git watcher to drive status updates
         await self._ensure_git_watcher(worktree_info)
 
-        logger.info(
-            "Started gitstatusd for worktree %s (GitHub: %s)",
-            worktree_info.name,
-            "enabled" if self.github_interface else "disabled",
-        )
+        # GitHubWatcher sees the new branch via store.active_branches
+        if self.github_watcher:
+            self.github_watcher.trigger_refresh()
+
+        logger.info("Started gitstatusd for worktree %s", worktree_info.name)
 
     async def _stop_gitstatusd_for_worktree(self, worktree_info: DiscoveredWorktree) -> None:
         """Stop gitstatusd for a worktree."""
         gs_client = self.gitstatusd_clients.get(worktree_info.wtid)
         if gs_client:
+            # Unregister the signal before stopping
+            self.store.unregister_gitstatusd(worktree_info.path)
             await gs_client.stop()
             del self.gitstatusd_clients[worktree_info.wtid]
             logger.info("Stopped gitstatusd for worktree %s", worktree_info.name)
-        prsvc = self.pr_services.get(worktree_info.wtid)
-        if prsvc:
-            await prsvc.stop()
-            del self.pr_services[worktree_info.wtid]
         watcher = self.git_watchers.get(worktree_info.wtid)
         if watcher:
             await watcher.stop()
@@ -375,6 +345,8 @@ class WtDaemon:
             async with self._state_lock:
                 self.known_worktrees = dict(self.registry.known)
                 self.worktree_index = WorktreeIndex.build(self.known_worktrees.values(), self.config.main_repo)
+                # Sync paths to reactive store
+                self.store.set_worktree_paths(self.known_worktrees.keys())
         finally:
             self.discovery_scanning = False
         for wt in changes.added:
@@ -499,6 +471,9 @@ class WtDaemon:
         gitstatusd_path, gitstatusd_error = self._validate_gitstatusd()
         if gitstatusd_error:
             startup_errors.append(gitstatusd_error)
+            self.store.set_gitstatusd_config(GitstatusdUnavailable(error=gitstatusd_error))
+        elif gitstatusd_path:
+            self.store.set_gitstatusd_config(GitstatusdAvailable(path=gitstatusd_path))
 
         # If there are critical errors, write error handshake and return
         if startup_errors:
@@ -548,10 +523,23 @@ class WtDaemon:
 
         logger.info("wt daemon started, listening on %s", self.socket_path)
 
+        # Start centralized GitHub watcher
+        self.github_watcher = GitHubWatcher(
+            branches_signal=self.store.active_branches, github_interface=self.github_interface, config=self.config
+        )
+        await self.github_watcher.start()
+
+        # Start centralized git refs watcher for cached ahead/behind
+        await self.git_refs_watcher.start()
+
         # Start long-running service loops
         await self.discovery_service.start()
-        await self.pr_provider.start()
         await self.gitstatusd_service.start()
+
+        # Start filesystem watcher for worktrees directory
+        if not self.config.worktrees_dir.exists():
+            raise RuntimeError(f"Worktrees directory does not exist: {self.config.worktrees_dir}")
+        self._worktree_observer = start_watcher(self.store, self.config.worktrees_dir)
 
         self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
@@ -561,9 +549,17 @@ class WtDaemon:
 
         self.running = False
 
+        # Stop filesystem watcher
+        if self._worktree_observer:
+            self._worktree_observer.stop()
+            self._worktree_observer.join(timeout=2.0)
+            self._worktree_observer = None
+
         # Stop long-running service loops
         await self.gitstatusd_service.stop()
-        await self.pr_provider.stop()
+        if self.github_watcher:
+            await self.github_watcher.stop()
+        await self.git_refs_watcher.stop()
         await self.discovery_service.stop()
 
         # Stop all gitstatusd processes

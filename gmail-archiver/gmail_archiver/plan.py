@@ -1,5 +1,7 @@
 """Plan and Action types for gmail-archiver."""
 
+from __future__ import annotations
+
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -60,7 +62,7 @@ class Plan:
     Uses dict to ensure each message_id can only be claimed by one planner.
     """
 
-    def __init__(self, planner: "Planner | None" = None, planner_name: str | None = None):
+    def __init__(self, planner: Planner | None = None, planner_name: str | None = None):
         if planner is not None:
             self.planner_name = planner.name
         elif planner_name is not None:
@@ -109,7 +111,7 @@ class Plan:
         self.actions[message_id] = PlannedAction(planner_name=self.planner_name, action=action)
 
     @staticmethod
-    def merge(plans: list["Plan"]) -> "Plan":
+    def merge(plans: list[Plan]) -> Plan:
         """Merge multiple plans into one. Raises ValueError on conflicts."""
         if not plans:
             raise ValueError("Cannot merge empty list of plans")
@@ -197,4 +199,4 @@ class Planner(Protocol):
 
     name: str
 
-    def plan(self, inbox: "GmailInbox") -> Plan: ...
+    def plan(self, inbox: GmailInbox) -> Plan: ...

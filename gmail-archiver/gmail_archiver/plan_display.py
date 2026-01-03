@@ -90,7 +90,7 @@ def _create_table(title: str | None, custom_columns: list[tuple[str, str]], show
     return table
 
 
-def _format_date(metadata: "GmailMessageWithHeaders") -> str:
+def _format_date(metadata: GmailMessageWithHeaders) -> str:
     """Render date as YYYY-MM-DD HH:MM using Date header or internal_date."""
     dt: datetime | None = None
 
@@ -114,7 +114,7 @@ def _format_date(metadata: "GmailMessageWithHeaders") -> str:
     return local_dt.strftime("%Y-%m-%d %H:%M")
 
 
-def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: bool, group_by_category: bool = False):
+def display_plan(plan: Plan, inbox: GmailInbox, console: Console, dry_run: bool, group_by_category: bool = False):
     if not plan.actions:
         console.print("[yellow]No actions planned[/yellow]")
         return
@@ -155,7 +155,7 @@ def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: boo
 
 def _add_table_row(
     table: Table,
-    inbox: "GmailInbox",
+    inbox: GmailInbox,
     message_id: str,
     planned_action: PlannedAction,
     dry_run: bool,

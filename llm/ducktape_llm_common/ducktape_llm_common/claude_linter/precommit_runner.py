@@ -2,7 +2,9 @@ import datetime
 import os
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -14,10 +16,10 @@ class PreCommitRunner:
     by using pre-commit's native capabilities.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
 
-    def run(self, paths, cwd=None):
+    def run(self, paths: Sequence[str | Path], cwd: str | Path | None = None) -> tuple[int, str, str]:
         """Run pre-commit hooks on specified paths.
 
         Args:
@@ -52,9 +54,8 @@ class PreCommitRunner:
 
             # Copy files to temp repo, preserving full path structure
             temp_paths = []
-            for path_str in paths:
-                path = Path(path_str)
-
+            for path_input in paths:
+                path = Path(path_input)
                 # Get absolute path
                 abs_path = path.absolute()
 

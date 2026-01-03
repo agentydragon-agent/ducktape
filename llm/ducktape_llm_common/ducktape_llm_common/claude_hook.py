@@ -4,6 +4,12 @@ import json
 import logging
 import sys
 import uuid
+from typing import TYPE_CHECKING, ClassVar, NoReturn
+
+from pydantic import TypeAdapter
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 from .claude_code_api import (
     HookRequest,
@@ -16,6 +22,7 @@ from .claude_code_api import (
 )
 from .claude_outcomes import (
     HookError,
+    HookOutcome,
     NotificationAcknowledge,
     NotificationOutcome,
     PostToolOutcome,
@@ -31,6 +38,14 @@ from .claude_outcomes import (
 )
 from .hook_logging import InvocationID, get_session_logger
 
+_HookRequestAdapter: TypeAdapter[HookRequest] = TypeAdapter(HookRequest)
+
+
+def _emit_and_exit(response: "BaseModel") -> NoReturn:
+    """Serialize hook response to JSON, print to stdout, exit 0."""
+    print(response.model_dump_json(by_alias=True))
+    sys.exit(0)
+
 
 class ClaudeCodeHookBase:
     """
@@ -44,26 +59,17 @@ class ClaudeCodeHookBase:
             hook_name = "my-hook"
 
             def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
-                self.logger.info("Processing tool", extra={"tool": request.tool_name})
-
-                try:
-                    if request.tool_name == "Bash" and "rm -rf" in (request.tool_input.get("command", "")):
-                        return PreToolDeny("Dangerous command blocked")
-                    return PreToolApprove()
-                except Exception:
-                    self.logger.error("Tool processing failed", exc_info=True)
-                    raise
+                if isinstance(request.tool_call, BashToolCall) and "rm -rf" in request.tool_call.command:
+                    return PreToolDeny("Dangerous command blocked")
+                return PreToolApprove()
 
         if __name__ == '__main__':
             MyClaudeHook.entrypoint()
     """
 
-    hook_name: str = ""  # Must be defined by subclass
+    hook_name: ClassVar[str]
 
-    def __init__(self):
-        if not self.hook_name:
-            raise ValueError("ClaudeCodeHookBase requires non-empty 'hook_name'")
-
+    def __init__(self) -> None:
         self.logger: logging.Logger | None = None
 
     def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
@@ -105,26 +111,10 @@ class ClaudeCodeHookBase:
                 MyClaudeHook.entrypoint()
         """
         try:
-            # Read JSON from stdin
             input_data = json.load(sys.stdin)
-
-            # Extract hook event name (not used yet)
-            _hook_event_name = input_data.get("hook_event_name", "")
-
-            # Create instance
             hook_instance = cls()
+            request = _HookRequestAdapter.validate_python(input_data)
 
-            # Parse request using discriminated union
-            try:
-                request = HookRequest.model_validate(input_data)
-            except Exception as e:
-                # Invalid request format
-                outcome = HookError(f"Invalid request format: {e!s}")
-                response = outcome.to_claude_response()
-                print(response.model_dump_json(by_alias=True))
-                sys.exit(0)
-
-            # Generate invocation ID and set up logging
             invocation_id = InvocationID(uuid.uuid4())
 
             # Set up logger for this session/invocation
@@ -138,6 +128,7 @@ class ClaudeCodeHookBase:
 
             try:
                 # Dispatch to appropriate method using discriminated union
+                outcome: HookOutcome
                 if isinstance(request, PreToolUseRequest):
                     outcome = hook_instance.pre_tool_use(request)
                 elif isinstance(request, PostToolUseRequest):
@@ -162,13 +153,7 @@ class ClaudeCodeHookBase:
                 logger.error("Hook execution failed", exc_info=True)
                 raise
 
-            # Output JSON response
-            print(response.model_dump_json(by_alias=True))
-            sys.exit(0)
+            _emit_and_exit(response)
 
         except Exception as e:
-            # On any error, return error outcome
-            error_outcome = HookError(f"Hook execution failed: {e!s}")
-            response = error_outcome.to_claude_response()
-            print(response.model_dump_json(by_alias=True))
-            sys.exit(0)
+            _emit_and_exit(HookError(f"Hook execution failed: {e!s}").to_claude_response())

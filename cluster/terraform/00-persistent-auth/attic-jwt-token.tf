@@ -2,26 +2,34 @@
 # JWT token for Attic HTTP API authentication
 # Stored in terraform state for persistence
 
-# Generate random JWT token - terraform manages this directly in state
-resource "random_password" "attic_jwt_token" {
-  length  = 86 # ~64 bytes of entropy
+# Generate random bytes for JWT secret (32 bytes = 256 bits of entropy)
+# We generate 48 chars of alphanumeric which provides ~285 bits of entropy
+resource "random_password" "attic_jwt_token_raw" {
+  length  = 48
   special = false
+}
+
+# Base64 encode the raw token for jwtSecretBase64 config
+# Attic expects this field to be a base64-encoded string
+locals {
+  attic_jwt_token_base64 = base64encode(random_password.attic_jwt_token_raw.result)
 }
 
 # Generate SealedSecret for Attic JWT token
 resource "null_resource" "attic_jwt_token_sealed_secret" {
   triggers = {
     # Re-run when token or keypair change
-    token_hash   = sha256(random_password.attic_jwt_token.result)
+    token_hash   = sha256(local.attic_jwt_token_base64)
     keypair_hash = sha256(tls_self_signed_cert.sealed_secrets.cert_pem)
   }
 
   provisioner "local-exec" {
     command = <<-EOT
-      # Get JWT token from terraform
-      jwt_token='${random_password.attic_jwt_token.result}'
+      # Get base64-encoded JWT token from terraform
+      jwt_token_base64='${local.attic_jwt_token_base64}'
 
       # Create kubernetes secret YAML
+      # The value is already base64-encoded, which is what Attic's jwtSecretBase64 expects
       cat > /tmp/attic-jwt-token.yaml <<EOF
 apiVersion: v1
 kind: Secret
@@ -30,7 +38,7 @@ metadata:
   namespace: nix-cache
 type: Opaque
 stringData:
-  jwt-token: "$jwt_token"
+  jwt-token: "$jwt_token_base64"
 EOF
 
       # Seal the secret using terraform-generated keypair
@@ -44,7 +52,7 @@ CERTEOF
       # Clean up temporary file
       rm /tmp/attic-jwt-token.yaml
 
-      echo "✅ Generated sealed secret for Attic JWT token"
+      echo "✅ Generated sealed secret for Attic JWT token (base64-encoded)"
     EOT
   }
 }
@@ -54,8 +62,8 @@ CERTEOF
 # git commit -m "chore: update Attic JWT token sealed secret"
 
 # Output for verification
-output "attic_jwt_token" {
-  value       = random_password.attic_jwt_token.result
-  description = "Attic JWT token for HTTP API authentication"
+output "attic_jwt_token_base64" {
+  value       = local.attic_jwt_token_base64
+  description = "Attic JWT token (base64-encoded) for HTTP API authentication"
   sensitive   = true
 }
