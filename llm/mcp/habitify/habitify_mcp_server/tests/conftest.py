@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from habitify_mcp_server.habitify_client import HabitifyClient
 from habitify_mcp_server.tests.reference_models import TestReference

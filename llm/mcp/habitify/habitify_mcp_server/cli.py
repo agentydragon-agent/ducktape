@@ -10,6 +10,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 import typer
 from dotenv import load_dotenv
@@ -86,6 +87,7 @@ def mcp(
     setup_signal_handlers()
 
     # Configure logging level for the server
+    server_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     if debug:
         server_log_level = "DEBUG"
     elif quiet:
@@ -247,6 +249,8 @@ async def _status_async(habit: str, date: str | None = None, api_key: str | None
             status = await client.check_habit_status(habit_id, date)
 
             # Create a nice table
+            # TODO: Verify if status.date can actually be None in check_habit_status response
+            assert status.date is not None, "Status date should not be None"
             formatted_date = datetime.fromisoformat(status.date).strftime("%B %d, %Y")
 
             console.print(f"Status for [bold green]{habit_name}[/] on [bold]{formatted_date}[/]:")

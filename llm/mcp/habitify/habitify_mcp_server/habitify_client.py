@@ -8,7 +8,7 @@ import asyncio
 import datetime
 import logging
 import os
-from typing import Any, Literal
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
@@ -92,9 +92,8 @@ class HabitifyClient:
             if isinstance(result, list):
                 return [model_class(**item) for item in result]
             if result is None:
-                # For some endpoints that return null data but success
-                if "status" in data and data["status"] is True:
-                    return HabitStatus(status="success")
+                # For some endpoints that return null data but success - just return None
+                # since we don't have actual status data to construct a model
                 return None
             return model_class(**result)
 
@@ -304,7 +303,7 @@ class HabitifyClient:
     async def set_habit_status(
         self,
         habit_id: str,
-        status: Literal["completed", "skipped", "failed", "none"],
+        status: Status,
         date: str | datetime.date | None = None,
         note: str | None = None,
         value: float | None = None,
@@ -316,7 +315,7 @@ class HabitifyClient:
 
         Args:
             habit_id: The habit ID
-            status: Status to set ('completed', 'skipped', 'failed', 'none')
+            status: Status to set (Status enum)
             date: Optional date in YYYY-MM-DD format or date object (defaults to today)
             note: Optional note to attach to the log
             value: Optional value for habits with goals
@@ -330,8 +329,8 @@ class HabitifyClient:
         habit_id = self._validate_habit_id(habit_id)
         target_date = format_date_for_api(date)
 
-        # Build the request body based on examples
-        request_body: dict[str, Any] = {"status": status, "target_date": target_date}
+        # Build the request body based on examples (API expects string value)
+        request_body: dict[str, Any] = {"status": status.value, "target_date": target_date}
 
         # Add optional parameters if provided
         if note is not None:

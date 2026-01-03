@@ -1,7 +1,6 @@
 """Habitify MCP tools implementation."""
 
 from datetime import datetime
-from typing import Literal, cast
 
 from .habitify_client import HabitifyClient, HabitifyError
 from .types import (
@@ -90,6 +89,8 @@ async def get_habit_status(
         last_date = None
 
         for status in statuses:
+            # TODO: Verify if status.date can actually be None in API responses
+            assert status.date is not None, "Status date should not be None in range query"
             items.append(DateRangeStatusItem(date=status.date, status=status.status))
             if first_date is None or status.date < first_date:
                 first_date = status.date
@@ -122,7 +123,7 @@ async def set_habit_status(
     _require_habit_identifier(id=id, name=name, action="set")
     resolved = await resolve_habit(client, id=id, name=name)
 
-    result = await client.set_habit_status(
-        resolved.habit_id, cast(Literal["completed", "skipped", "failed", "none"], status.value), date, note, value
-    )
+    result = await client.set_habit_status(resolved.habit_id, status, date, note, value)
+    # TODO: Verify if result.date can actually be None when setting status
+    assert result.date is not None, "Result date should not be None after setting status"
     return LogResult(status=result.status, date=result.date, note=result.note, value=result.value)
