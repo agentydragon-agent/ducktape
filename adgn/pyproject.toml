@@ -57,9 +57,6 @@ dev = [
   'pytest-mock>=3.10.0',
   'pytest-env>=1.1.3',
   'syrupy>=4.0',  # Snapshot testing
-  # UI E2E (browser) testing
-  'pytest-playwright>=0.5.0',
-  'playwright>=1.45.0',
   "ruff>=0.5",
   # Agent runtimes packages (for testing container utilities)
   "editor-agent-runtime",
@@ -130,14 +127,9 @@ addopts = [
     "--strict-markers",
     "--disable-warnings",
     "--durations=25",
-    "-p",
-    "no:pytest_playwright",
-    "-p",
-    "no:playwright",
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "e2e: end-to-end UI tests using playwright",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
     "shell: marks tests that test shell integration",

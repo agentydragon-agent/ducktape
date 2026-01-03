@@ -17,6 +17,8 @@ This file contains detailed documentation about:
 Preserve DEBUGGING.md - it will save hours when things break.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import shutil
@@ -599,7 +601,7 @@ class TaskClaude:
             finally:
                 self._container = None
 
-    async def __aenter__(self) -> "TaskClaude":
+    async def __aenter__(self) -> TaskClaude:
         """Context manager entry - setup container and wrapper."""
         # Start container (includes wrapper setup after remounting)
         await self._start_container()

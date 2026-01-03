@@ -1,5 +1,7 @@
 """Configuration management for the Claude instruction optimizer."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import yaml
@@ -122,7 +124,7 @@ class OptimizerConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     @classmethod
-    def from_file(cls, config_path: str | Path | None = None) -> "OptimizerConfig":
+    def from_file(cls, config_path: str | Path | None = None) -> OptimizerConfig:
         """Load configuration from YAML file.
 
         Args:
