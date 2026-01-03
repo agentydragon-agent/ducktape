@@ -86,6 +86,7 @@ def test_tokens_from_past_still_verify():
     past_case = TokenTestCase(timestamp=datetime(2000, 1, 1, 12, 0, 0, tzinfo=TIMEZONE))
 
     token_scheme = TokenScheme(past_case.secret, past_case.document)
+    assert past_case.timestamp is not None  # We explicitly set it above
     prefix, bits = token_scheme.make_token(past_case.timestamp)
     past_token = prefix + "".join(bits)
 

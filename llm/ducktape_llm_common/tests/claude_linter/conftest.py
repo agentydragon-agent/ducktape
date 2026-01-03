@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 # Disable loading user config in tests
 os.environ["CLAUDE_LINTER_NO_USER_CONFIG"] = "1"

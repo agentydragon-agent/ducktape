@@ -106,6 +106,7 @@ class PythonRuffLinter:
                                 column=issue.get("location", {}).get("column", 0),
                                 message=issue.get("message", "Unknown violation"),
                                 fixable=issue.get("fix") is not None,
+                                file_path=str(file_path),
                             )
                             violations.append(violation)
                     except json.JSONDecodeError:

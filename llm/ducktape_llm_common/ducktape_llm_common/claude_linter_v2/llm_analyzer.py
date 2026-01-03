@@ -134,6 +134,7 @@ class LLMAnalyzer:
                         column=v.get("column", 0),
                         message=v.get("message", "LLM detected issue"),
                         fixable=False,  # LLM issues are not auto-fixable
+                        file_path=None,
                     )
                 )
 

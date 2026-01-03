@@ -22,7 +22,7 @@ class PreToolApprove(HookOutcome):
     """Explicitly approve tool execution, bypassing permission system."""
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(decision="approve")
+        return PreToolResponse(**{"continue": True, "stop_reason": None, "decision": "approve", "reason": None})  # type: ignore[arg-type]
 
 
 @dataclass
@@ -35,7 +35,7 @@ class PreToolDeny(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(decision="block", reason=self.llm_message)
+        return PreToolResponse(**{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message})  # type: ignore[arg-type]
 
 
 @dataclass
@@ -43,7 +43,7 @@ class PreToolNoOpinion(HookOutcome):
     """No opinion - let existing permission flow decide."""
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse()  # undefined decision = existing permission flow
+        return PreToolResponse(**{"continue": True, "stop_reason": None, "decision": None, "reason": None})  # type: ignore[arg-type]  # undefined decision = existing permission flow
 
 
 PreToolOutcome = PreToolApprove | PreToolDeny | PreToolNoOpinion
@@ -55,7 +55,7 @@ class PostToolSuccess(HookOutcome):
     """Tool succeeded, no message needed."""
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse()
+        return PostToolResponse(**{"continue": True, "stop_reason": None, "decision": None, "reason": None})  # type: ignore[arg-type]
 
 
 @dataclass
@@ -68,7 +68,7 @@ class PostToolNotifyLLM(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse(decision="block", reason=self.llm_message)
+        return PostToolResponse(**{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message})  # type: ignore[arg-type]
 
 
 @dataclass
@@ -78,7 +78,7 @@ class PostToolSuccessWithInfo(HookOutcome):
     info_message: str = ""
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse()
+        return PostToolResponse(**{"continue": True, "stop_reason": None, "decision": None, "reason": None})  # type: ignore[arg-type]
 
 
 PostToolOutcome = PostToolSuccess | PostToolSuccessWithInfo | PostToolNotifyLLM
@@ -90,7 +90,7 @@ class StopAllow(HookOutcome):
     """Allow Claude to end its turn normally."""
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse()  # No decision = allow stop
+        return StopResponse(**{"continue": True, "stop_reason": None, "decision": None, "reason": None})  # type: ignore[arg-type]  # type: ignore[arg-type]  # No decision = allow stop
 
 
 @dataclass
@@ -103,7 +103,7 @@ class StopPrevent(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(decision="block", reason=self.llm_message)
+        return StopResponse(**{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message})  # type: ignore[arg-type]
 
 
 @dataclass
@@ -113,7 +113,7 @@ class StopAllowWithInfo(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse()
+        return StopResponse(**{"continue": True, "stop_reason": None, "decision": None, "reason": None})  # type: ignore[arg-type]
 
 
 StopOutcome = StopAllow | StopAllowWithInfo | StopPrevent
@@ -125,7 +125,7 @@ class SubagentStopAllow(HookOutcome):
     """Allow subagent to stop."""
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse()
+        return StopResponse(**{"continue": True, "stop_reason": None, "decision": None, "reason": None})  # type: ignore[arg-type]
 
 
 @dataclass
@@ -144,7 +144,7 @@ class SubagentStopPrevent(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(decision="block", reason=self.llm_message)
+        return StopResponse(**{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message})  # type: ignore[arg-type]
 
 
 SubagentStopOutcome = SubagentStopAllow | SubagentStopPrevent
@@ -156,7 +156,7 @@ class NotificationAcknowledge(HookOutcome):
     """Acknowledge notification."""
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse()
+        return BaseResponse(**{"continue": True, "stop_reason": None})  # type: ignore[arg-type]
 
 
 NotificationOutcome = NotificationAcknowledge
@@ -168,7 +168,7 @@ class PreCompactAllow(HookOutcome):
     """Allow compaction to proceed."""
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse()
+        return BaseResponse(**{"continue": True, "stop_reason": None})  # type: ignore[arg-type]
 
 
 PreCompactOutcome = PreCompactAllow
@@ -186,4 +186,4 @@ class HookError(HookOutcome):
     error_message: str
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse(continue_=False, stop_reason=f"Hook error: {self.error_message}")
+        return BaseResponse(**{"continue": False, "stop_reason": f"Hook error: {self.error_message}"})  # type: ignore[arg-type]

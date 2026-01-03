@@ -43,11 +43,11 @@ HookConfig = PreToolHookConfig | PostToolHookConfig | StopHookConfig | Notificat
 def _default_hooks() -> dict[str, HookConfig]:
     """Default hook configurations."""
     return {
-        "pre": PreToolHookConfig(),
-        "post": PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
-        "stop": StopHookConfig(quality_gate=True),
-        "notification": NotificationHookConfig(send_to_dbus=True),
-        "subagent_stop": SubagentStopHookConfig(),
+        "pre": PreToolHookConfig(enabled=True),
+        "post": PostToolHookConfig(enabled=True, auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING], inject_permissions=True),
+        "stop": StopHookConfig(enabled=True, quality_gate=True, max_files_to_show=5, max_violations_per_file=3),
+        "notification": NotificationHookConfig(enabled=True, send_to_dbus=True, urgency="normal"),
+        "subagent_stop": SubagentStopHookConfig(enabled=True),
     }
 
 
@@ -95,6 +95,7 @@ class ModularConfig(BaseModel):
                 patterns=["**/test_*.py", "**/*_test.py", "**/tests/**"],
                 relaxed_checks=["python.bare_except", "ruff.E722"],
                 custom_message="Test files have relaxed rules for error handling",
+                enabled=True,
             )
         ],
         description="Pattern-based rules for file handling",
@@ -102,7 +103,7 @@ class ModularConfig(BaseModel):
 
     # LLM analysis
     llm_analysis: LLMAnalysisConfig = Field(
-        default_factory=lambda: LLMAnalysisConfig(), description="LLM analysis configuration"
+        default_factory=lambda: LLMAnalysisConfig(enabled=False, model="gpt-4o-mini", daily_cost_limit=5.0, cache_results=True), description="LLM analysis configuration"
     )
 
     # Task profiles

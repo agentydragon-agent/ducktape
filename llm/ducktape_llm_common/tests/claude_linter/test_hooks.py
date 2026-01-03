@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 from click.testing import CliRunner
 
 from ducktape_llm_common.claude_linter.cli import cli
@@ -117,14 +117,15 @@ def create_pre_hook_payload(file_path: str, content: str) -> str:
 
 def create_post_hook_payload(file_path: str, content: str | None = None) -> str:
     """Create a PostToolUse hook payload."""
+    tool_input: dict[str, str] = {"file_path": file_path}
+    if content:
+        tool_input["content"] = content
     payload = {
         "hook_event_name": "PostToolUse",
         "session_id": "test-session-id",
         "tool_name": "Write",
-        "tool_input": {"file_path": file_path},
+        "tool_input": tool_input,
     }
-    if content:
-        payload["tool_input"]["content"] = content
     return json.dumps(payload)
 
 

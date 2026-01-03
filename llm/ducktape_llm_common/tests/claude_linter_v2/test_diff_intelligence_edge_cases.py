@@ -72,7 +72,7 @@ class TestDiffParserEdgeCases:
     def test_parse_empty_structured_patch(self):
         """Test handling empty structuredPatch."""
         tool_call = EditToolCall(file_path=TEST_FILE, old_string="foo", new_string="bar")
-        tool_response = {"structuredPatch": []}
+        tool_response: dict[str, list] = {"structuredPatch": []}
         parsed = parse_tool_response(tool_call, tool_response)
         assert parsed is not None
         assert len(parsed.hunks) == 0
