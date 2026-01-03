@@ -119,6 +119,7 @@ pip.parse(
 )
 
 # Separate pip hub for homeassistant - requires Python 3.13.2+
+# Using "3.13" for Bazel toolchain (actual runtime is 3.13.x)
 pip.parse(
     hub_name = "pypi_homeassistant",
     python_version = "3.13",

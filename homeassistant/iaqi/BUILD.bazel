@@ -7,6 +7,7 @@ py_library(
     name = "indoor_aqi",
     srcs = glob(["custom_components/indoor_aqi/**/*.py"]),
     data = glob(["custom_components/indoor_aqi/**/*.json"]),
+    imports = ["."],
     visibility = ["//visibility:public"],
     deps = ["@pypi_homeassistant//homeassistant"],
 )
