@@ -180,9 +180,10 @@ class TestHooks:
         tmp_path = chdir_tmp_path_git_repo if use_git else chdir_tmp_path
 
         test_file = tmp_path / "test.py"
-        test_file.write_text("fix-me")
+        content = "fix-me"
+        test_file.write_text(content)
 
-        payload = create_post_hook_payload(str(test_file))
+        payload = create_post_hook_payload(str(test_file), content)
 
         result = runner.invoke(cli, ["hook"], input=payload, catch_exceptions=False)
 

@@ -216,4 +216,4 @@ def hello():
         call_args = mock_run.call_args[0][0]
         assert "--stdin-filename" in call_args
         filename_index = call_args.index("--stdin-filename")
-        assert call_args[filename_index + 1] == Path("/path/to/file.py")
+        assert call_args[filename_index + 1] == "/path/to/file.py"

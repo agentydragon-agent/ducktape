@@ -6,7 +6,7 @@ from git_commit_ai.git_ro.server import LogInput, StatusInput, TextPage
 
 async def test_git_status_basic(typed_git_ro) -> None:
     sp = await typed_git_ro.status(StatusInput(list_slice=ListSlice(offset=0, limit=100)))
-    assert isinstance(sp.entries, list)
+    assert isinstance(sp.entries, dict)
 
 
 async def test_git_log_oneline_basic(typed_git_ro) -> None:
