@@ -52,6 +52,7 @@ use_repo(playwright, "playwright")
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
 npm.npm_translate_lock(
     name = "npm_ducktape",
+    npmrc = "@@//:.npmrc",
     # Generate bin entries for dev tools from workspace root
     bins = {
         "eslint": ["eslint=./bin/eslint.js"],
