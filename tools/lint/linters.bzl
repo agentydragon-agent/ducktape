@@ -16,6 +16,7 @@ ruff = lint_ruff_aspect(
 
 # Mypy aspect for --config=typecheck builds
 # Uses root mypy.ini for configuration
+# Uses custom mypy_cli to run under Python 3.13 (needed to parse homeassistant's 3.13 syntax)
 #
 # Type checking behavior:
 # - Packages with py.typed (rich, structlog, aiohttp, aiodocker) are fully
@@ -24,6 +25,7 @@ ruff = lint_ruff_aspect(
 #   checking. Pre-commit has these but Bazel needs a separate pip hub.
 #   For now these packages get ignore_missing_imports treatment.
 mypy_aspect = mypy(
+    mypy_cli = Label("//tools/lint:mypy_cli"),
     mypy_ini = Label("//:mypy.ini"),
 )
 

@@ -40,7 +40,7 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
     @overload
     def get[_T](self, node_id: NodeId, /, default: _T) -> BaseNode | _T: ...
 
-    def get(self, node_id: NodeId, /, default: BaseNode | None = None) -> BaseNode | None:
+    def get[_T](self, node_id: NodeId, /, default: BaseNode | _T | None = None) -> BaseNode | _T | None:
         return self._nodes.get(node_id, default)
 
     def values(self) -> ValuesView[BaseNode]:

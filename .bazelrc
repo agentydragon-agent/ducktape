@@ -24,11 +24,15 @@ build:lint --output_groups=+rules_lint_report
 
 # Type checking configuration
 # Run with: bazel build --config=typecheck //...
+# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
+build:typecheck --@rules_python//python/config_settings:python_version=3.13
 build:typecheck --aspects=//tools/lint:linters.bzl%mypy_aspect
 build:typecheck --output_groups=+mypy
 
 # Combined lint + typecheck
 # Run with: bazel build --config=check //...
+# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
+build:check --@rules_python//python/config_settings:python_version=3.13
 build:check --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect
 build:check --output_groups=+rules_lint_report,+mypy
 
