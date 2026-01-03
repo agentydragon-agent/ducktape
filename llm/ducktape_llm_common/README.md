@@ -44,7 +44,7 @@ This setup ensures:
 
 ### Requirements
 
-- Python 3.10+
+- Python 3.13+
 - See `requirements.txt` for dependencies
 
 ## Quick Start
@@ -72,7 +72,7 @@ check-work-urls .
 check-task-metadata .
 ```
 
-For detailed documentation on the Claude linter, see [docs/linters/claude-linter.md](docs/linters/claude-linter.md).
+For detailed documentation on the Claude linter, see <docs/linters/claude-linter.md>.
 
 ### Using Templates
 

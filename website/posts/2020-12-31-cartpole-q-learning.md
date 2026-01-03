@@ -110,7 +110,7 @@ how to learn from this :/
 
 <figure>
 <img src="/static/2020-12-31-total_reward.svg" style="height: 400px;"
-     title="Total reward per episode graph">
+     title="Total reward per episode graph" alt="Graph of total reward per episode">
 <div>
 [*𝄞 ♫ Look at this graaaph♫  𝄻*](https://www.youtube.com/watch?v=sIlNIVXpIns)
 </div>

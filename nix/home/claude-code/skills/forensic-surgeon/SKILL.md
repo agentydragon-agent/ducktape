@@ -21,6 +21,7 @@ Obsessive, mechanistic debugging. Never work around problems. Trace through ever
 ### A: Smoking Gun
 
 Exact root cause identified with evidence:
+
 ```
 Root cause: In libfoo v2.3.4, file src/connection.c:847, the timeout
 calculation uses signed int overflow. When RTT > 2147ms, it wraps negative,
@@ -36,6 +37,7 @@ arithmetic pattern from src/utils.h:203
 ### B: Visibility Boundary
 
 Exhaustive trace proving problem lies outside observable scope:
+
 ```
 Investigation complete. 37 diagnostic steps documented in ./debug-trace/
 
@@ -56,18 +58,21 @@ Contains: timestamps, packet captures, reproduction steps, contact points
 Use whatever's available and appropriate. Think across layers.
 
 ### Application Layer
+
 - Increase log verbosity (DEBUG/TRACE levels)
 - Add temporary instrumentation if needed
 - Inspect state with debugger breakpoints
 - Profile with py-spy, perf, flamegraphs
 
 ### Library/Framework Layer
+
 - Clone the library source to /code
 - Read the exact version in use, not latest docs
 - Add debug logging to library code if needed
 - Check issue trackers for similar reports
 
 ### System Layer
+
 - strace/ltrace for syscall tracing
 - tcpdump/wireshark for network
 - lsof, ss, netstat for connections
@@ -75,6 +80,7 @@ Use whatever's available and appropriate. Think across layers.
 - /proc, /sys filesystem inspection
 
 ### Infrastructure Layer
+
 - Hypervisor logs if accessible
 - Container runtime logs (docker logs, kubectl logs)
 - Cloud provider metrics/logs
@@ -83,33 +89,39 @@ Use whatever's available and appropriate. Think across layers.
 ## Investigation Process
 
 ### 1. Reproduce reliably
+
 - Find minimal reproduction case
 - Identify what variables affect the behavior
 - Establish baseline: what does "working" look like?
 
 ### 2. Bisect the stack
+
 - Where does correct behavior end and incorrect behavior begin?
 - Add observability at each layer boundary
 - Binary search through the stack
 
 ### 3. Trace the data flow
+
 - Follow the exact path of the failing request/data
 - Log/capture at each transformation point
 - Identify where corruption/failure is introduced
 
 ### 4. Read the source
+
 - Clone the exact version of relevant code
 - Don't trust documentation—read implementation
 - Check git blame for recent changes in suspicious areas
 - Look for edge cases, undefined behavior, race conditions
 
 ### 5. Verify understanding
+
 - Form a hypothesis about root cause
 - Predict what you should see if hypothesis is correct
 - Test the prediction
 - If wrong, revise and repeat
 
 ### 6. Document everything
+
 - Keep a trace of every diagnostic step
 - Save captures, logs, outputs
 - Note timestamps for correlation
@@ -126,7 +138,9 @@ Use whatever's available and appropriate. Think across layers.
 ## Output Formats
 
 ### During investigation
+
 Keep user informed of progress:
+
 ```
 Layer 3/7: Confirmed request reaches nginx correctly (access.log shows 200)
 Layer 4/7: Proxied request to upstream... checking application logs
@@ -135,6 +149,7 @@ Drilling into timeout handling...
 ```
 
 ### Smoking gun found
+
 ```
 ## Root Cause Analysis
 
@@ -156,6 +171,7 @@ Drilling into timeout handling...
 ```
 
 ### Visibility boundary reached
+
 ```
 ## Investigation Summary
 

@@ -73,6 +73,7 @@ adgn-mcp-gitea-mirror
 ```
 
 The server exposes two tools:
+
 - `get_repo_info`: Returns full repository information from Gitea API (matches GET /repos/{owner}/{repo})
 - `trigger_mirror_sync`: Ensures mirror exists, triggers async sync, returns empty (matches POST /repos/{owner}/{repo}/mirror-sync)
 
@@ -100,6 +101,7 @@ Flags of note:
 ## Client workflow
 
 1. **Get initial state**: Call `get_repo_info` to get the initial mirror state:
+
    ```json
    {
      "owner": "agentydragon",
@@ -108,6 +110,7 @@ Flags of note:
    ```
 
    Response (full Gitea Repository object - showing key fields):
+
    ```json
    {
      "id": 42,
@@ -132,6 +135,7 @@ Flags of note:
    Save the `mirror_updated` timestamp.
 
 2. **Trigger the sync**: Call `trigger_mirror_sync` with the upstream URL:
+
    ```json
    {
      "url": "https://github.com/username/repo"
@@ -139,11 +143,13 @@ Flags of note:
    ```
 
    Response: Empty (matching Gitea's mirror-sync endpoint)
+
    ```json
    {}
    ```
 
 3. **Poll for completion**: Repeatedly call `get_repo_info` until `mirror_updated` changes:
+
    ```json
    {
      "owner": "agentydragon",
@@ -154,6 +160,7 @@ Flags of note:
    When `mirror_updated` differs from the initial timestamp, the sync is complete.
 
 4. **Clone from mirror**: Construct mirror path as `{owner}/{repo}.git` and use the `exec` tool:
+
    ```json
    {
      "cmd": [

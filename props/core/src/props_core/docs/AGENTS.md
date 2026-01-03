@@ -14,7 +14,8 @@ If the same information exists elsewhere, it will drift and become inconsistent.
 
 ## Include Hierarchy Rule
 
-**If template A includes template B via `include_doc()`, template A must NOT call `describe_relation()` for tables already described in B.**
+**If template A includes template B via `include_doc()`, template A must NOT call
+`describe_relation()` for tables already described in B.**
 
 Example violation:
 
@@ -26,7 +27,8 @@ Example violation:
 
 The grader would see the `true_positives` schema twice.
 
-**Correct approach:** Only call `describe_relation()` for tables unique to the current template. Let included docs handle their own tables.
+**Correct approach:** Only call `describe_relation()` for tables unique to the current template.
+Let included docs handle their own tables.
 
 ## Directory Structure
 
@@ -59,7 +61,8 @@ Templates use these helpers (defined in `agent_helpers.py`):
 
 **Audience:** The agent running in a container, not developers reading source code.
 
-**How docs reach agents:** CLI init commands use `render_agent_prompt()` to render Jinja2 templates. Output goes to the agent's transcript.
+**How docs reach agents:** CLI init commands use `render_agent_prompt()` to render Jinja2
+templates. Output goes to the agent's transcript.
 
 **Example - wrong:**
 > BootstrapHandler checks for TruncatedStream in the BaseExecResult and raises InitFailedError.

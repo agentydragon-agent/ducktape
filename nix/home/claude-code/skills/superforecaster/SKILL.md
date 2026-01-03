@@ -14,16 +14,19 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 ### By information availability
 
 **Public/searchable topic**:
+
 - Check prediction markets first (Polymarket, Metaculus, Manifold)
 - Search for expert forecasts, news analysis
 - Look for historical base rates in public data
 
 **Personal/private situation**:
+
 - Fall back on reference class base rates
 - Ask user for specifics that affect the estimate
 - Example: "When will I get a job?" → ask: field, experience, how long since last job, actively applying?, then search: current hiring rates in that field, unemployment trends, typical job search duration by seniority
 
 **Sparse data**:
+
 - Use hierarchical priors (general → specific)
 - Fermi decomposition into estimable parts
 - Widen confidence intervals
@@ -31,24 +34,29 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 ### By output type needed
 
 **Binary (yes/no)**:
+
 - State probability + 90% CI on the probability itself
 
 **Quantity (how much/many)**:
+
 - Point estimate + 90% CI
 - Fermi breakdown if complex
 - Consider: inflation, trends, comparable anchors
 
 **Timeline (when/how long)**:
+
 - Median + 90% CI (not just mean—distributions are often right-skewed)
 - Apply planning fallacy correction (+50-100% for personal projects)
 - Note distribution shape (symmetric vs heavy right tail)
 
 **Distribution/trajectories**:
+
 - Model the process, simulate, show percentiles
 - Plot survival curves, CDFs, or sample paths
 - Report both conditional and unconditional stats
 
 **Failure modes / risks**:
+
 - Enumerate systematically, don't just list top 3
 - Score: P(occur) × Impact
 - Identify correlated failure modes
@@ -56,11 +64,13 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 ### By time direction
 
 **Past events (verification)**:
+
 - Direct search, fact-checking
 - Triangulate across sources
 - Output: boolean + confidence in the answer
 
 **Future events**:
+
 - Outside view first (base rates, markets)
 - Inside view adjustments (specific factors)
 - Pre-mortem: "if wrong, why?"
@@ -68,20 +78,25 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 ### By complexity
 
 **Single-factor**:
+
 - Find the base rate, adjust, done
 
 **Multi-factor but independent**:
+
 - Estimate each, multiply/combine analytically or via simple simulation
 
 **Multi-factor with dependencies**:
+
 - Model the dependency structure (event tree, Bayesian network)
 - Simulate through the network
 - Example: "Will I be able to buy a house?" depends on savings, income trajectory, home prices, interest rates, down payment requirements—model jointly
 
 **Sequential/process**:
+
 - Step through time, update state
 - Handle branching paths with probabilities
 - Example trajectory output:
+
 ```
 [Filed I-485] ─┬─ 65% → [Direct Approval] → 8-14 months
                ├─ 25% → [RFE] ─┬─ 80% → [Approved] → +2-4 months
@@ -93,25 +108,30 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 ### By domain (common patterns)
 
 **Personal finance**:
+
 - Monte Carlo with historical returns
 - Account for sequence risk, inflation, expense variance
 - Ask about: allocation, withdrawal strategy, risk tolerance
 
 **Job/career**:
+
 - Base rates by field, seniority, market conditions
 - Ask about: field, experience, active search status, location flexibility
 
 **Applications/approvals**:
+
 - Published approval rates by category
 - Processing time distributions (often right-skewed)
 - Ask about: application type, any red flags, supporting evidence strength
 
 **Health/medical**:
+
 - Published outcome statistics by condition/treatment
 - Adjust for age, comorbidities, specific circumstances
 - Note: sensitive—frame as "questions to ask your doctor"
 
 **Startups/ventures**:
+
 - Power law outcomes, high failure rates
 - Stage-specific survival rates
 - Factor in: team, market, traction, funding
@@ -128,6 +148,7 @@ Map questions to searchable topics:
 | "Will startup X succeed?" | "startup success rate by stage", "YC company outcomes", "[sector] startup survival" |
 
 **Search expansion rules**:
+
 1. Identify the category/domain
 2. Find statistical base rates for that category
 3. Look for recent trends/changes
@@ -146,6 +167,7 @@ Map questions to searchable topics:
 | Kalshi | kalshi.com | Economics, events | CFTC-regulated |
 
 **Search patterns**:
+
 ```
 site:polymarket.com [topic]
 site:metaculus.com [topic]
@@ -153,6 +175,7 @@ site:manifold.markets [topic]
 ```
 
 **How to use market prices**:
+
 - Market at 70% = strong prior toward 70%
 - Diverge only with specific inside information
 - Note liquidity (low volume = less reliable)
@@ -161,6 +184,7 @@ site:manifold.markets [topic]
 ### Creating Prediction Markets
 
 **When to suggest creating a Manifold question**:
+
 - Question is resolvable with clear criteria
 - Public interest (others might want to forecast too)
 - Time horizon is reasonable (weeks to years, not hours)
@@ -168,18 +192,21 @@ site:manifold.markets [topic]
 - User would benefit from crowd wisdom / tracking
 
 **Good Manifold question types**:
+
 - Binary: "Will X happen by [date]?"
 - Numeric: "How many Y by [date]?"
 - Multiple choice: "Which of A/B/C will happen first?"
 - Date: "When will X happen?"
 
 **Question design principles**:
+
 - Precise resolution criteria (who judges, what counts)
 - Reasonable close date
 - Unambiguous wording
 - Include relevant context in description
 
 **Suggestion format**:
+
 ```
 This question might benefit from a prediction market. Consider creating on Manifold:
 
@@ -202,18 +229,21 @@ Want me to help draft the full question description?
 ## Statistical Sources
 
 **General statistics**:
+
 - Our World in Data (ourworldindata.org)
 - Statista (statista.com)
 - US government (census.gov, bls.gov, data.gov)
 - Eurostat (ec.europa.eu/eurostat)
 
 **Domain-specific**:
+
 - Software: Standish Group, Stack Overflow surveys
 - Startups: CB Insights, Crunchbase
 - Science: Nature Index, PubMed meta-analyses
 - Economics: FRED, IMF, World Bank
 
 **Base rate queries**:
+
 ```
 "[category] success rate"
 "[type] approval rate [year]"
@@ -224,6 +254,7 @@ Want me to help draft the full question description?
 ## Output Formats
 
 ### Binary probability (yes/no questions)
+
 ```
 **Probability**: X%
 **90% CI**: [low]% - [high]%
@@ -231,6 +262,7 @@ Want me to help draft the full question description?
 ```
 
 ### Quantity estimate
+
 ```
 **Estimate**: [value] [units]
 **90% CI**: [low] - [high]
@@ -241,6 +273,7 @@ Want me to help draft the full question description?
 ```
 
 ### Timeline estimate
+
 ```
 **Median**: [time]
 **90% CI**: [earliest] - [latest]
@@ -248,6 +281,7 @@ Want me to help draft the full question description?
 ```
 
 ### Failure modes
+
 ```
 | Rank | Failure Mode | P(occur) | Impact | Risk Score |
 |------|--------------|----------|--------|------------|
@@ -259,6 +293,7 @@ Want me to help draft the full question description?
 For questions where multiple reference classes apply, layer priors from general to specific:
 
 **Example: OpenAI stock valuation**
+
 ```
 Level 1 (broadest): "It's a company"
   - Base: Companies have varied outcomes, mean reversion applies
@@ -280,12 +315,14 @@ Level 5: "My specific situation"
 ```
 
 **How to combine**:
+
 1. Start with broadest applicable reference class
 2. Update Bayesian-style with each narrower class
 3. Weight more specific priors higher when data is available
 4. Be explicit about which level dominates your estimate
 
 **Tail risk decomposition example**:
+
 ```
 P(OpenAI worth <50% of current) by 2026:
 
@@ -302,26 +339,31 @@ Combined tail risk (some overlap): ~25-30%
 ## Core Methodology
 
 ### Step 1: Classify the question
+
 - What type? (A-I from taxonomy above)
 - What output format is appropriate?
 - What related topics should I search?
 
 ### Step 2: Outside view first
+
 - Find base rates for reference class
 - Check prediction markets
 - Look for expert forecasts
 
 ### Step 3: Inside view adjustments
+
 - List factors that make this case different
 - Estimate direction (+/-) and magnitude for each
 - Adjust base rate accordingly
 
 ### Step 4: Synthesize
+
 - Combine outside and inside views
 - State confidence interval (not just point estimate)
 - Identify key uncertainties
 
 ### Step 5: Pre-mortem
+
 - "If this forecast is wrong, why?"
 - List top failure modes for the forecast itself
 
@@ -338,6 +380,7 @@ Combined tail risk (some overlap): ~25-30%
 | 95-99% | Almost certain | Would be very surprised if not |
 
 **Common biases to counter**:
+
 - **Planning fallacy**: Add 50-100% to time estimates
 - **Overconfidence**: Default to wider CIs
 - **Availability**: Check base rates, don't rely on memorable examples
@@ -348,12 +391,14 @@ Combined tail risk (some overlap): ~25-30%
 Write and run Python scripts when helpful. Use numpy, pandas, matplotlib.
 
 ### When to use code
+
 - Multiple interacting uncertainties (simulation beats mental math)
 - User wants to see the distribution shape
 - Complex Fermi decomposition with many factors
 - Trajectory analysis with many branches
 
 ### Example applications
+
 - **Timeline Monte Carlo**: Model phases as lognormal (captures right-skew delays), combine, plot distribution
 - **FIRE/Portfolio survival**: Bootstrap historical S&P returns, simulate 10k trajectories, report survival rate and percentiles
 - **Bayesian updates**: Compute posteriors from priors and likelihoods
@@ -363,6 +408,7 @@ Write and run Python scripts when helpful. Use numpy, pandas, matplotlib.
 ### Combining distributions
 
 When outcome Z = f(X, Y) for uncertain X and Y:
+
 1. Sample N draws from X's distribution
 2. Sample N draws from Y's distribution (jointly if correlated, independently if not)
 3. Compute Z = f(X, Y) for each sample pair
@@ -405,12 +451,14 @@ Output:
 When a question involves interconnected uncertain variables, conditional dependencies, or state that evolves through stages—don't try to solve analytically. Model the network and simulate.
 
 **Types of structures**:
+
 - **Sequential processes**: state evolves step-by-step (portfolio drawdown, disease progression, project phases)
 - **Event trees**: branching paths with probabilities at each node (immigration outcomes, startup funding rounds)
 - **Bayesian networks**: variables with conditional dependencies (diagnosis given symptoms, success given multiple factors)
 - **Queuing/waiting**: arrivals and processing with random timing (application processing, service times)
 
 **General approach**:
+
 1. Define the state variables and their dependencies
 2. Define transition/update rules (deterministic functions of random inputs)
 3. Sample all random inputs, propagate through the network
@@ -454,6 +502,7 @@ Run 10,000 simulations, output:
 ```
 
 Key modeling choices:
+
 - **Sequence risk**: Early bad returns hurt more (less capital to recover)
 - **Expense shocks**: Can add P(major expense) for medical/home repair
 - **Inflation**: Expenses drift upward ~3%/year
@@ -462,10 +511,12 @@ Key modeling choices:
 ## Evidence Handling
 
 **Light questions** (quick/standard):
+
 - Cite sources inline with URLs
 - No file storage
 
 **Heavy questions** (deep analysis, user requests):
+
 - Create `docs/forecasts/<topic-slug>/` folder
 - Store evidence files, synthesis document
 - Only when explicitly warranted or requested
@@ -473,15 +524,18 @@ Key modeling choices:
 ## Depth Adaptation
 
 ### Quick (~30 sec)
+
 - Triggered by: "roughly", "ballpark", conversational tone
 - 1-2 mental models, inline response
 
 ### Standard (2-5 min)
+
 - Default for most questions
 - WebSearch for base rates + markets
 - Structured output with CI
 
 ### Deep (10+ min)
+
 - Triggered by: "thorough", "deep dive", high-stakes context
 - Extensive research, multiple sources
 - Optional evidence folder

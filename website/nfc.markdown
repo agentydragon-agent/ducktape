@@ -7,7 +7,7 @@ Hi!
 
 <!-- TODO: float right -->
 <figure>
-<img src="/static/2022-sticker-hello.png" style="max-width: 6cm">
+<img src="/static/2022-sticker-hello.png" style="max-width: 6cm" alt="Sticker of Rai waving hello">
 </figure>
 
 Given that you're here, you probably scanned my NFC armband at a con or something.

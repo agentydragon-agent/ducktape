@@ -227,7 +227,7 @@ cards, and started refilling the holes where my knowledge was stuck before
 2017-era progress in AI - like deep RL or Transformer language models.
 
 <figure>
-<img src="/static/2023-01-11-papers-ded.png" style="max-width: 8cm">
+<img src="/static/2023-01-11-papers-ded.png" style="max-width: 8cm" alt="Sticker of Rai overwhelmed with papers">
 <figcaption>Also a Rai sticker by
 <a href="https://www.furaffinity.net/user/ketzel99/">Ketzel99</a>.<br>
 "Science was a mistake"? Maybe writing was? When reading paper X
@@ -268,7 +268,7 @@ So, I've been slowly taking courses, sometimes experimenting, sometimes reading
 papers. Eventually I found the paper [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347).
 
 <figure>
-<img src="/static/2023-01-11-layers.png" style="max-width: 8cm">
+<img src="/static/2023-01-11-layers.png" style="max-width: 8cm" alt="Sticker of Rai going 'Stack more layers!'">
 <figcaption>Rai "STACK MORE LAYERS" sticker, by
 <a href="https://www.furaffinity.net/user/ketzel99/">Ketzel99</a>.<br>
 This is my life now.</figcaption>

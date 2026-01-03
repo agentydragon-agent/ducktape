@@ -259,7 +259,7 @@ often have a large table at the front which explains used conventions, like
 
 <figure>
 <img src="https://imgs.xkcd.com/comics/kerning.png" style="height: 400px;"
-     title="XKCD 1015 (Kerning)">
+     title="XKCD 1015 (Kerning)" alt="XKCD comic about kerning">
 <div>
   <a href="https://xkcd.com/1015/">https://xkcd.com/1015/</a>
   <br>
@@ -269,5 +269,5 @@ often have a large table at the front which explains used conventions, like
 </figure>
 
 <figure>
-<img src="/static/2020-sticker-mlem.png" title="Mlem!">
+<img src="/static/2020-sticker-mlem.png" title="Mlem!" alt="Rai sticker with tongue out">
 </figure>

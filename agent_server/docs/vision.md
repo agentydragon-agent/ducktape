@@ -110,6 +110,6 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 
 To enable the “read the source code” behavior, the agent’s Docker container must be able to access adgn’s source code:
 
-- Build the agent container image with the `adgn` package preinstalled (wheel or editable install) so Python can locate package files via `importlib.resources`/`pkgutil`. For now, we will not use a `/trusted` volume.
+- Build the agent container image with the `adgn` package preinstalled (wheel or editable install) so Python can locate package files via `importlib.resources`/`pkgutil`.
 
 We will not expose scaffold source via MCP for UI browsing. Core agent introspection reads source from the installed package inside the container; no UI code browser is required.

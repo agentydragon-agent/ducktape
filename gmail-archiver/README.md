@@ -172,6 +172,16 @@ pytest
   - Computes diffs between local YAML and remote Gmail filters
   - Handles label creation and filter CRUD operations
 
+## Dependencies
+
+Keep dependencies minimal. Current stack:
+
+- `google-api-python-client` - Gmail API
+- `pydantic` - Data models
+- `beautifulsoup4` - HTML parsing
+- `python-dateutil` - Date parsing
+- `openai` - AI parsing (DBSA only)
+
 ## TODO
 
 - Strip PDFs and anonymize emails for test data

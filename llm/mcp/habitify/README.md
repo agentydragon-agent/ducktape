@@ -5,6 +5,7 @@ A Model Context Protocol (MCP) server that provides Claude Desktop with access t
 ## Current State
 
 The server implements a subset of the Habitify API endpoints:
+
 - ✅ Get all habits
 - ✅ Get habit details by ID
 - ✅ Check habit status for specific dates
@@ -21,16 +22,19 @@ See [Habitify API documentation](https://docs.habitify.me/) for full API capabil
 ### Quick Start
 
 1. Install the package:
+
    ```bash
    pip install -e .
    ```
 
 2. Set your Habitify API key (get it from Habitify app settings):
+
    ```bash
    export HABITIFY_API_KEY=your_api_key_here
    ```
 
 3. Install to Claude Desktop:
+
    ```bash
    habitify install
    ```
@@ -161,7 +165,7 @@ python collect_references.py
 ## Environment Variables
 
 - `HABITIFY_API_KEY` - Your Habitify API key (required)
-- `HABITIFY_API_BASE_URL` - API base URL (default: https://api.habitify.me)
+- `HABITIFY_API_BASE_URL` - API base URL (default: <https://api.habitify.me>)
 
 ## Security Notes
 

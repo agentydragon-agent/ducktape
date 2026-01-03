@@ -13,10 +13,29 @@ Makes switching between git worktrees feel like `git switch` while adding copy-o
 
 ## Requirements
 
+- **Python 3.13+**
 - **gitstatusd** (for fast git status queries): installed and available on `PATH`
-- **wt package**: installed and importable including `wt` CLI
 
-Tests will fail immediately if deps are missing.
+Tests will fail immediately if gitstatusd is missing.
+
+## Development Setup
+
+Uses Nix + devenv + direnv for environment management:
+
+```bash
+cd wt
+direnv allow
+```
+
+This loads `.envrc`, bootstraps devenv, and installs `wt` in editable mode with dev extras via uv.
+
+**Environment verification:**
+
+- `direnv status` — shows if `.envrc` is loaded
+- `echo "$VIRTUAL_ENV"` — should contain `.../wt/.devenv/state/venv`
+- `which python` — should resolve to the venv bin directory
+
+**Provided binaries:** `libgit2`, `pkg-config`, and `git` are provided via devenv. `gitstatusd` is **not bundled** — install it separately and ensure it's on `PATH`.
 
 ## Installation
 

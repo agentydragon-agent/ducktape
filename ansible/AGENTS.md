@@ -1,3 +1,5 @@
+@README.md
+
 # Agent Checklist (Ansible)
 
 Before handing work back to the user, run pre-commit hooks:

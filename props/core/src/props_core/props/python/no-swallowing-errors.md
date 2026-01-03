@@ -6,6 +6,7 @@ kind: outcome
 Errors must not be silently ignored. Prefer letting exceptions propagate to a proper boundary; when catching is required, catch specific exceptions, take a concrete action, and/or surface the issue (UI or logs). Blanket catches with no action are banned, including in tests.
 
 ## Acceptance criteria (checklist)
+
 - Absolute ban: `except Exception: pass` and any blanket catch that does nothing (including tests) — remove or replace with specific handling.
 - Prefer no local handling at all (let it crash) unless there is a clear, domain‑specific recovery or boundary responsibility; this is the correct choice the vast majority of the time (≈90%+).
 - When catching, scope the `try` narrowly and catch specific, expected exception types only; do not mask unrelated errors.
@@ -103,8 +104,10 @@ except Exception:  # ❌ should catch FileNotFoundError if ignoring that case on
 ```
 
 ## Exceptions (narrow)
+
 - Legitimate no‑op outcomes should use APIs that encode the no‑op instead of exceptions (e.g., `mkdir(exist_ok=True)`, `dict.get`, idempotent delete with specific `FileNotFoundError` catch). If you must catch, catch only the specific exception and include a short rationale.
 - At true outer boundaries (HTTP handlers, main loops), a broad catch may be used to convert to an error response — must log with full context (`logger.exception`) and avoid continuing in a corrupted state.
 
 ## See also
+
 - [Try/except is scoped around the operation it guards](./scoped-try-except.md)

@@ -27,7 +27,7 @@ COPY . /workspace
 WORKDIR /workspace
 RUN pip install -e '.[dev]'
 RUN python -m playwright install --with-deps chromium
-CMD ["pytest", "tests/agent/e2e/", "-v"]
+CMD ["pytest", "tests/e2e/", "-v"]
 ```
 
 ## Alternative: Skip E2E Tests
@@ -61,13 +61,13 @@ All tests pass pre-commit checks and are ready to run once Playwright is fixed.
 
 ```bash
 # Single test
-pytest tests/agent/e2e/test_proposals_reject.py -v
+pytest tests/e2e/test_proposals_reject.py -v
 
 # All E2E tests
-pytest tests/agent/e2e/ -v
+pytest tests/e2e/ -v
 
 # With headful browser (for debugging)
-ADGN_E2E_HEADLESS=0 pytest tests/agent/e2e/ -v
+ADGN_E2E_HEADLESS=0 pytest tests/e2e/ -v
 ```
 
 ## Browser Selection
@@ -75,5 +75,5 @@ ADGN_E2E_HEADLESS=0 pytest tests/agent/e2e/ -v
 Set `ADGN_E2E_BROWSER` to choose browser (default: chromium):
 
 ```bash
-ADGN_E2E_BROWSER=firefox pytest tests/agent/e2e/ -v
+ADGN_E2E_BROWSER=firefox pytest tests/e2e/ -v
 ```

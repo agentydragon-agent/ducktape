@@ -1,0 +1,31 @@
+# Repository TODOs
+
+## Linting
+
+- [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
+- [ ] Decide what to do with `trivial-patterns` (adgn linter) - add to pre-commit or remove
+
+## Dotfiles
+
+- [ ] Merge agentydragon & gpd dotfiles (rcrc)
+- [ ] Use rcm's `symlink_dirs` feature
+
+## System Configuration
+
+- [ ] Add to small laptop installation: nmap, other hacking tools
+- [ ] Start Signal minimized (difficult: settings in encrypted sqlite)
+- [ ] Consider adding apt-file (heavy dependency)
+- [ ] Get rid of login_event_webhook_reporter (have activitywatch; might combine with halinuxcompanion)
+
+## Neovim
+
+- [ ] nvim-treesitter folding setup:
+
+  ```lua
+  vim.wo.foldmethod = 'expr'
+  vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
+  ```
+
+## Repository
+
+- [ ] Pick a sane license schema (probably AGPL)

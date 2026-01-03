@@ -16,6 +16,10 @@ uv run tana-export-convert --help
 
 # Execute tests
 uv run pytest
+
+# Linting and type checking
+uv run ruff check .
+uv run mypy
 ```
 
 Key layout (`src/tana/`):
