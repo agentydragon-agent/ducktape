@@ -15,6 +15,8 @@ from ..shared.protocol import (
     HookStream,
     ProgressEvent,
     ProgressOperation,
+    StatusResultError,
+    StatusResultOk,
     TeleportCdThere,
     WorktreeCreateStep,
 )
@@ -41,15 +43,27 @@ async def handle_status(daemon_client, formatter) -> None:
 
     # Sort worktree items for display
 
-    def sort_key(item):
-        name, _status = item
+    def sort_key(name: str) -> tuple[int, str]:
         # Always prioritize the main worktree
         if name == MAIN_WORKTREE_DISPLAY_NAME:
             return (0, "main")  # main worktree always first
         return (1, name)  # others alphabetically
 
-    sorted_items = sorted(all_status.items.items(), key=lambda x: sort_key((x[1].status.name, x[1].status)))
-    display_items = [(item.status.name, item.status) for wtid, item in sorted_items]
+    sorted_items = sorted(all_status.items.items(), key=lambda x: sort_key(x[1].name))
+
+    # Extract display items, handling errors by showing them separately
+    display_items = []
+    error_items = []
+    for _wtid, item in sorted_items:
+        match item.result:
+            case StatusResultOk(status=status):
+                display_items.append((item.name, status))
+            case StatusResultError(error=error):
+                error_items.append((item.name, error))
+
+    # Show errors if any
+    for name, error in error_items:
+        click.echo(f"⚠️  {name}: {error}")
 
     formatter.render_top_status_bar(all_status)
     formatter.render_worktree_status_all(display_items, all_status)

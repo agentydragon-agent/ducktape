@@ -1,10 +1,12 @@
 """Main diff intelligence module for smart violation filtering."""
 
 from collections import defaultdict
+from typing import Any
 
+from ...claude_code_api import EditToolCall, MultiEditToolCall
 from ..config.models import Violation
 from .categorizer import CategorizedViolation, ViolationCategorizer, ViolationCategory
-from .parser import ToolCall, parse_tool_response
+from .parser import parse_tool_response
 
 
 class DiffIntelligence:
@@ -19,20 +21,15 @@ class DiffIntelligence:
     """
 
     def __init__(self, context_distance: int = 3):
-        """
-        Initialize diff intelligence.
-
-        Args:
-            context_distance: Lines away from change to consider "near"
-        """
+        """Initialize diff intelligence."""
         self.categorizer = ViolationCategorizer(context_distance)
 
     def analyze(
-        self, tool_call: ToolCall, violations: list[Violation]
+        self, tool_call: EditToolCall | MultiEditToolCall, tool_response: dict[str, Any], violations: list[Violation]
     ) -> defaultdict[ViolationCategory, list[CategorizedViolation]]:
         """Analyze violations in context of tool changes."""
         # Parse diff information
-        parsed_diff = parse_tool_response(tool_call)
+        parsed_diff = parse_tool_response(tool_call, tool_response)
 
         # Categorize violations
         categorized = self.categorizer.categorize_violations(violations, parsed_diff)
@@ -41,11 +38,15 @@ class DiffIntelligence:
         return self.categorizer.group_by_category(categorized)
 
     def get_priority_violations(
-        self, tool_call: ToolCall, violations: list[Violation], max_violations: int = 10
+        self,
+        tool_call: EditToolCall | MultiEditToolCall,
+        tool_response: dict[str, Any],
+        violations: list[Violation],
+        max_violations: int = 10,
     ) -> list[CategorizedViolation]:
         """Get violations prioritized by their relationship to changes."""
         # Parse and categorize
-        parsed_diff = parse_tool_response(tool_call)
+        parsed_diff = parse_tool_response(tool_call, tool_response)
         categorized = self.categorizer.categorize_violations(violations, parsed_diff)
 
         # Filter by priority

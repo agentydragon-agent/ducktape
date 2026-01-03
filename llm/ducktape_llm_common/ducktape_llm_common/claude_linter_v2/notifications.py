@@ -21,7 +21,7 @@ def send_desktop_notification(title: str, message: str, urgency: str = "critical
         ID of the notification, or 0 if dbus is not available
     """
     try:
-        import dbus  # noqa: PLC0415 - optional dependency, graceful degradation
+        import dbus  # type: ignore[import-not-found]  # noqa: PLC0415
     except ImportError:
         logger.debug("dbus-python not installed, skipping desktop notification")
         return 0
@@ -38,7 +38,7 @@ def send_desktop_notification(title: str, message: str, urgency: str = "critical
         notify_iface = dbus.Interface(notify_obj, "org.freedesktop.Notifications")
 
         # Send notification
-        return notify_iface.Notify(
+        notification_id: int = notify_iface.Notify(
             "Claude Linter",  # app_name
             replaces_id,  # replaces_id (0 = new notification)
             "",  # app_icon (empty = default)
@@ -48,6 +48,7 @@ def send_desktop_notification(title: str, message: str, urgency: str = "critical
             {"urgency": dbus.Byte(urgency_map.get(urgency, 2))},  # hints
             -1,  # expire_timeout (-1 = default)
         )
+        return notification_id
     except Exception as e:
         logger.debug(f"Failed to send notification: {e}")
         return 0
@@ -63,7 +64,7 @@ def close_desktop_notification(notification_id: int) -> None:
         return
 
     try:
-        import dbus  # noqa: PLC0415 - optional dependency, graceful degradation
+        import dbus  # noqa: PLC0415
     except ImportError:
         return
 

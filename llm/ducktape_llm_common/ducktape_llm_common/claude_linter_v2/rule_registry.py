@@ -5,7 +5,10 @@ No string parsing or field name manipulation should be used to determine rule pr
 """
 
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from .config.models import Violation
 
 
 @dataclass(frozen=True)
@@ -260,7 +263,7 @@ class RuleRegistry:
         return [rule.code for rule in cls._BY_KEY.values() if rule.category == "ruff"]
 
 
-def map_violation_to_rule_key(violation) -> str | None:
+def map_violation_to_rule_key(violation: "Violation") -> str | None:
     """Map a violation to its canonical rule key.
 
     Args:

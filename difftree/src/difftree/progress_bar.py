@@ -1,5 +1,7 @@
 """Progress bar renderables with RTL/LTR alignment support."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Literal
 
@@ -28,7 +30,7 @@ class BlockChars:
             raise ValueError("partials must have at least 1 element")
 
     @classmethod
-    def simple(cls, char: str, empty: str = " ") -> "BlockChars":
+    def simple(cls, char: str, empty: str = " ") -> BlockChars:
         """Create block chars using single character for all fill levels."""
         return cls(full=char, empty=empty, partials=(char,))
 

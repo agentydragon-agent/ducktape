@@ -47,7 +47,7 @@ class FileChecker:
         violations: list[Violation] = []
 
         # Only check Python files for now
-        if not str(file_path).endswith(".py"):
+        if file_path.suffix != ".py":
             return violations
 
         try:
@@ -70,21 +70,21 @@ class FileChecker:
                 or (getattr_config.enabled if getattr_config else False)
                 or (setattr_config.enabled if setattr_config else False)
             ),
-            barrel_init=str(file_path).endswith("__init__.py")
+            barrel_init=file_path.name == "__init__.py"
             and (barrel_init_config.enabled if barrel_init_config else False),
         )
-        ast_violations = analyzer.analyze_code(content, str(file_path))
+        ast_violations = analyzer.analyze_code(content, file_path)
         violations.extend(ast_violations)
 
         # Run ruff checks
         ruff_linter = PythonRuffLinter(force_select=self.config.get_ruff_codes_to_select())
-        ruff_violations = ruff_linter.check_code(content, str(file_path), critical_only=False)
+        ruff_violations = ruff_linter.check_code(content, file_path, critical_only=False)
         violations.extend(ruff_violations)
 
         # Apply fixes if requested
         if self.fix and self.categories:
             formatter = PythonFormatter(self.config.python_tools)
-            formatted_content, changes = formatter.format_code(content, str(file_path), self.categories)
+            formatted_content, changes = formatter.format_code(content, file_path, self.categories)
 
             if changes and formatted_content != content:
                 try:

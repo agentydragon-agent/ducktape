@@ -1,6 +1,10 @@
 """Tests for Python AST analyzer."""
 
+from pathlib import Path
+
 from ducktape_llm_common.claude_linter_v2.linters.python_ast import PythonASTAnalyzer
+
+TEST_FILE = Path("/tmp/test.py")
 
 
 class TestBareExcept:
@@ -15,7 +19,7 @@ except:
     pass
 """
         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 1
         assert violations[0].line == 4
@@ -33,7 +37,7 @@ except (ValueError, KeyError):
     pass
 """
         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 0
 
@@ -46,7 +50,7 @@ except:
     pass
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 0
 
@@ -62,7 +66,7 @@ if hasattr(obj, 'foo'):
     print("has foo")
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 1
         assert violations[0].line == 3
@@ -76,7 +80,7 @@ obj = object()
 value = getattr(obj, 'foo', 'default')
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 1
         assert violations[0].line == 3
@@ -89,7 +93,7 @@ obj = object()
 setattr(obj, 'foo', 'bar')
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 1
         assert violations[0].line == 3
@@ -106,7 +110,7 @@ if hasattr(obj, 'foo'):  # But this is still the hasattr function
     pass
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 1  # Should still catch hasattr
         assert violations[0].line == 6
@@ -124,7 +128,7 @@ value = obj.foo
 del obj.bar
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 0
 
@@ -139,7 +143,7 @@ from .module1 import *
 from .module2 import something
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=True)
-        violations = analyzer.analyze_code(code, "__init__.py")
+        violations = analyzer.analyze_code(code, Path("__init__.py"))
 
         assert len(violations) == 1
         assert violations[0].line == 2
@@ -156,7 +160,7 @@ from .module3 import helper_func
 __all__ = ['Class1', 'Class2', 'Class3', 'helper_func']
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=True)
-        violations = analyzer.analyze_code(code, "__init__.py")
+        violations = analyzer.analyze_code(code, Path("__init__.py"))
 
         assert len(violations) == 1
         assert "barrel" in violations[0].message.lower()
@@ -169,7 +173,7 @@ __all__ = ['Class1', 'Class2', 'Class3', 'helper_func']
 __version__ = "1.0.0"
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=True)
-        violations = analyzer.analyze_code(code, "__init__.py")
+        violations = analyzer.analyze_code(code, Path("__init__.py"))
 
         assert len(violations) == 0
 
@@ -181,7 +185,7 @@ from .module2 import Class1
 __all__ = ['Class1']
 """
         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=True)
-        violations = analyzer.analyze_code(code, "regular_file.py")
+        violations = analyzer.analyze_code(code, Path("regular_file.py"))
 
         assert len(violations) == 0
 
@@ -199,7 +203,7 @@ except:
     pass
 """
         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=True, barrel_init=False)
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 3
         # Should find: bare except, hasattr, getattr
@@ -218,7 +222,7 @@ def foo(
     # Missing closing paren
 """
         analyzer = PythonASTAnalyzer()
-        violations = analyzer.analyze_code(code)
+        violations = analyzer.analyze_code(code, TEST_FILE)
 
         assert len(violations) == 1
         assert violations[0].rule == "syntax"

@@ -38,7 +38,7 @@ class TestUnifiedLinter:
 
         # No command -> error (CLI requires a subcommand)
         assert result.exit_code == 2
-        assert "Usage:" in result.output or "Missing command" in result.output
+        assert "Usage:" in result.output
 
     def test_help(self):
         """Test that help text shows available commands."""

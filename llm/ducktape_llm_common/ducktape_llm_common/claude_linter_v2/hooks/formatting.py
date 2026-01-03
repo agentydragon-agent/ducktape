@@ -2,6 +2,8 @@
 
 from string import Template
 
+from ducktape_llm_common.claude_code_api import SessionID
+
 from ..config.models import Violation
 
 # Templates for different message types
@@ -39,7 +41,7 @@ def format_violations_list(violations: list[Violation], max_show: int = 3) -> st
     return "\n".join(lines)
 
 
-def format_access_denial(predicate: str, session_id: str, message: str | None = None) -> str:
+def format_access_denial(predicate: str, session_id: SessionID, message: str | None = None) -> str:
     """Format access control denial."""
     return ACCESS_DENIAL_TEMPLATE.substitute(
         message=message or "Permission denied", predicate=predicate, session_id=session_id

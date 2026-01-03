@@ -40,7 +40,6 @@ import struct
 import subprocess
 import sys
 import termios
-import textwrap
 import time
 from dataclasses import dataclass
 from datetime import timedelta
@@ -52,7 +51,7 @@ import pygit2
 from git_commit_ai.agent_backend import generate_commit_message_agent
 
 from .core import _diff, has_uncommitted_changes
-from .editor_template import SCISSORS_MARK, build_commit_template
+from .editor_template import SCISSORS_MARK, gather_template_data, render_comment_section
 
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
 # Global cap on total diff size sent to AI (characters)
@@ -540,10 +539,11 @@ def _get_previous_commit_message(repo: pygit2.Repository) -> str:
 # ---------- commit/editor helpers ------------------------------------
 
 
-def _make_stats_comment(cached: bool, diff: str, msg: str, elapsed_s: float) -> str:
+def _make_stats_line(cached: bool, diff: str, msg: str, elapsed_s: float) -> str:
+    """Return stats line as plain text (no # prefix)."""
     return (
-        f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, "
-        f"response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s\n"
+        f"ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, "
+        f"response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s"
     )
 
 
@@ -567,26 +567,42 @@ async def _commit_immediately(msg: str, passthru: list[str]) -> None:
 def _extract_commit_content(text: str) -> str:
     """Extract commit content, stopping at scissors mark and removing comments.
 
-    Returns the cleaned commit message (non-comment, non-scissors lines joined).
+    Returns the cleaned commit message with comments removed but blank lines preserved.
     """
     content_lines: list[str] = []
     for line in text.splitlines():
         if line.startswith(SCISSORS_MARK):
             break
-        if line.strip() and not line.strip().startswith("#"):
+        if not line.strip().startswith("#"):
             content_lines.append(line)
-    return "\n".join(content_lines)
+    return "\n".join(content_lines).strip()
+
+
+def build_editor_content(
+    repo: pygit2.Repository,
+    msg: str,
+    previous_message: str | None,
+    user_context: str | None,
+    stats_line: str,
+    passthru: list[str],
+) -> str:
+    """Build the full editor content with AI message and commented metadata."""
+    data = gather_template_data(
+        repo, passthru, user_context=user_context, previous_message=previous_message, stats_line=stats_line
+    )
+    # Template handles # prefix for commented section; verbose diff is verbatim
+    return msg + "\n\n" + render_comment_section(data)
 
 
 async def _run_editor_flow(
-    repo: pygit2.Repository, msg: str, previous_message: str | None, stats_comment: str, passthru: list[str]
+    repo: pygit2.Repository,
+    msg: str,
+    previous_message: str | None,
+    user_context: str | None,
+    stats_line: str,
+    passthru: list[str],
 ) -> None:
-    # Build initial editor content
-    editor_content = msg
-    if previous_message:
-        editor_content += "\n\n# Previous commit message (being amended):\n"
-        editor_content += textwrap.indent(previous_message, "# ", lambda line: True)
-    editor_content += stats_comment + build_commit_template(repo, passthru)
+    editor_content = build_editor_content(repo, msg, previous_message, user_context, stats_line, passthru)
 
     # Write content to COMMIT_EDITMSG and open editor
     commit_msg_path = Path(repo.path) / "COMMIT_EDITMSG"
@@ -734,12 +750,12 @@ async def async_main(argv: list[str] | None = None):
     )
 
     elapsed_s = time.monotonic() - start_monotonic_s
-    stats_comment = _make_stats_comment(cached, diff, msg, elapsed_s)
+    stats_line = _make_stats_line(cached, diff, msg, elapsed_s)
 
     if args.accept_ai:
         await _commit_immediately(msg, passthru)
     else:
-        await _run_editor_flow(repo, msg, previous_message, stats_comment, passthru)
+        await _run_editor_flow(repo, msg, previous_message, args.user_context, stats_line, passthru)
 
 
 def main():

@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+from pathlib import Path
 from typing import ClassVar
 
 from ..config.models import Violation
@@ -54,13 +55,13 @@ class PythonRuffLinter:
             logger.warning("ruff not available")
         return False
 
-    def check_code(self, code: str, file_path: str | None = None, critical_only: bool = True) -> list[Violation]:
+    def check_code(self, code: str, file_path: Path, critical_only: bool = True) -> list[Violation]:
         """
         Check Python code with ruff.
 
         Args:
             code: Python code to check
-            file_path: Optional file path for context
+            file_path: File path for context
             critical_only: If True, only return critical violations
 
         Returns:
@@ -73,7 +74,7 @@ class PythonRuffLinter:
         violations = []
 
         # Build ruff command
-        cmd = ["ruff", "check", "--output-format", "json", "--stdin-filename", file_path or "temp.py"]
+        cmd = ["ruff", "check", "--output-format", "json", "--stdin-filename", str(file_path)]
 
         # Add force-select rules if provided
         if self.force_select:

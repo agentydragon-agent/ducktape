@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
+import pygit2
 import pytest
 
 from . import git_repo_utils
+from .git_repo_utils import RepoHelper
 
 pytest_plugins = ["mcp_infra.testing.fixtures"]
 
@@ -21,17 +22,17 @@ def author_email() -> str:
 
 
 @pytest.fixture
-def temp_repo(author_name: str, author_email: str, tmp_path: Path):
-    """Temporary git repository for LLM tests (separate from WT helpers)."""
+def git_repo(author_name: str, author_email: str, tmp_path: Path) -> pygit2.Repository:
+    """Raw pygit2.Repository for tests needing direct access."""
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir(parents=True, exist_ok=True)
     return git_repo_utils._init_repo(str(repo_dir), name=author_name, email=author_email)
 
 
 @pytest.fixture
-def repo_helpers() -> dict[str, Callable]:
-    """Provide stage/commit helpers to tests without re-defining them inline."""
-    return {"stage": git_repo_utils._stage, "commit": git_repo_utils._commit}
+def temp_repo(git_repo: pygit2.Repository) -> RepoHelper:
+    """Test helper wrapping git_repo with write/stage/commit methods."""
+    return RepoHelper(git_repo)
 
 
 @pytest.fixture

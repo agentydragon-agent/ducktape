@@ -1,7 +1,9 @@
 import json
 import os
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import platformdirs
 import yaml
@@ -9,7 +11,7 @@ import yaml
 DEFAULT_CONFIG_PATH = Path(platformdirs.user_config_dir("claude-linter")) / "config.toml"
 
 
-def load_user_config():
+def load_user_config() -> dict[str, Any]:
     # Allow tests to disable loading user config
     if os.getenv("CLAUDE_LINTER_NO_USER_CONFIG"):
         return {}
@@ -18,20 +20,21 @@ def load_user_config():
         # Convert toml data to plain dict to avoid yaml serialization issues
         with DEFAULT_CONFIG_PATH.open("rb") as f:
             data = tomllib.load(f)
-        return json.loads(json.dumps(data))
+        return dict(json.loads(json.dumps(data)))
     return {}
 
 
-def load_local_precommit(path: Path) -> dict:
+def load_local_precommit(path: Path) -> dict[str, Any]:
     local = path / ".pre-commit-config.yaml"
     if local.exists():
         with local.open() as f:
-            return yaml.safe_load(f)
+            result = yaml.safe_load(f)
+            return result if isinstance(result, dict) else {}
     return {}
 
 
-def merge_configs(user_cfg: dict, local_cfg: dict, fix: bool) -> dict:
-    merged: dict[str, list] = {"repos": []}
+def merge_configs(user_cfg: dict[str, Any], local_cfg: dict[str, Any], fix: bool) -> dict[str, Any]:
+    merged: dict[str, Any] = {"repos": []}
 
     # Start with user's pre-commit repos if provided
     if fix and "repos" in user_cfg:
@@ -53,10 +56,10 @@ def merge_configs(user_cfg: dict, local_cfg: dict, fix: bool) -> dict:
     return merged
 
 
-def get_merged_config(paths, fix=False):
+def get_merged_config(paths: Sequence[str | Path], fix: bool = False) -> dict[str, Any]:
     user_config = load_user_config()
     # Get the pre-commit section, which contains repos array
-    user_pre_commit = user_config.get("pre-commit", {})
+    user_pre_commit: dict[str, Any] = user_config.get("pre-commit", {})
 
     local_cfg = {}
     for p in paths:

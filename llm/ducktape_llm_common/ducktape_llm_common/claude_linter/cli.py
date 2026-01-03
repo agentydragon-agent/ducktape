@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 from pydantic import ValidationError
 
+from ..claude_code_api import EditToolCall, MultiEditToolCall, WriteToolCall
 from .config import get_merged_config
 from .models import HookRequest, HookResponse
 from .precommit_runner import PreCommitRunner
@@ -14,28 +15,28 @@ from .precommit_runner import PreCommitRunner
 
 def evaluate_pre(req: HookRequest) -> HookResponse:
     # Pre-write hook evaluation - early bailout
-    if req.tool_name != "Write":
+    if not isinstance(req.tool_call, WriteToolCall):
         # Return empty response to let normal permission flow continue
         return HookResponse()
 
-    inp = req.tool_input
-    if not inp.file_path or inp.content is None:
+    tool_call = req.tool_call
+    if tool_call.content is None:
         # Return empty response to let normal permission flow continue
         return HookResponse()
 
     # Run hooks on temp file
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=Path(inp.file_path).suffix) as tmp:
-        tmp.write(inp.content)
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=tool_call.file_path.suffix) as tmp:
+        tmp.write(tool_call.content)
         tmp_path = tmp.name
 
     try:
         # Get config for fixing
-        config = get_merged_config([str(Path(inp.file_path).parent)], fix=True)
+        config = get_merged_config([str(tool_call.file_path.parent)], fix=True)
         runner = PreCommitRunner(config)
 
         # First run: with fixes to see if issues are fixable
         original_content = Path(tmp_path).read_text()
-        ret1, out1, err1 = runner.run([tmp_path], cwd=str(Path(inp.file_path).parent))
+        ret1, out1, err1 = runner.run([tmp_path], cwd=tool_call.file_path.parent)
         fixed_content = Path(tmp_path).read_text()
 
         # If content didn't change
@@ -47,7 +48,7 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
             return HookResponse()
 
         # Content changed, check if pre-commit is satisfied with the fixed version
-        _ret2, out2, err2 = runner.run([tmp_path], cwd=str(Path(inp.file_path).parent))
+        _ret2, out2, err2 = runner.run([tmp_path], cwd=tool_call.file_path.parent)
         fixed_again_content = Path(tmp_path).read_text()
 
         if fixed_content == fixed_again_content:
@@ -68,22 +69,22 @@ def _block_with_reason(stdout: str, stderr: str) -> HookResponse:
 
 def evaluate_post(req: HookRequest) -> HookResponse:
     # Post-write hook evaluation
-    if req.tool_name not in ["Write", "Edit", "MultiEdit"]:
+    if not isinstance(req.tool_call, (WriteToolCall, EditToolCall, MultiEditToolCall)):
         return HookResponse()
-    file_path = req.tool_input.file_path
-    if not file_path or not Path(file_path).exists():
+    file_path = req.tool_call.file_path
+    if not file_path.exists():
         return HookResponse()
 
-    original = Path(file_path).read_text()
+    original = file_path.read_text()
 
     # For Edit/MultiEdit, only check violations without fixing
-    if req.tool_name in ["Edit", "MultiEdit"]:
+    if isinstance(req.tool_call, (EditToolCall, MultiEditToolCall)):
         # Get config without fix flag for Edit/MultiEdit
         config = get_merged_config([file_path], fix=False)
         runner = PreCommitRunner(config)
 
         # Run check-only (no fixes)
-        ret, out, _err = runner.run([file_path], cwd=str(Path(file_path).parent))
+        ret, out, _err = runner.run([file_path], cwd=file_path.parent)
 
         if ret != 0:
             # There are violations - report them
@@ -101,8 +102,8 @@ def evaluate_post(req: HookRequest) -> HookResponse:
     runner = PreCommitRunner(config)
 
     # First run: apply autofixes
-    _ret1, _out1, _err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
-    content_after_fixes = Path(file_path).read_text()
+    _ret1, _out1, _err1 = runner.run([file_path], cwd=file_path.parent)
+    content_after_fixes = file_path.read_text()
 
     if content_after_fixes == original:
         return HookResponse()
@@ -111,13 +112,13 @@ def evaluate_post(req: HookRequest) -> HookResponse:
 
 @click.group()
 @click.version_option()
-def cli():
+def cli() -> None:
     """Claude Linter CLI."""
 
 
 @cli.command("check")
 @click.option("--files", "-f", multiple=True, type=click.Path(exists=True))
-def check(files):
+def check(files: tuple[str, ...]) -> None:
     """Run checks on given files or all in current directory."""
     paths = list(files) if files else [str(Path.cwd())]
     config = get_merged_config(paths)
@@ -173,7 +174,7 @@ def clean(dry_run: bool, older_than: int) -> None:
 
 
 @cli.command("hook")
-def unified_hook():
+def unified_hook() -> None:
     """Unified hook command that routes based on hook_event_name in JSON input."""
     # Create log directory
     log_dir = Path.home() / ".cache" / "claude-linter"

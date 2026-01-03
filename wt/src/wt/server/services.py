@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
-import time
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
-from weakref import WeakSet
 
-import pygit2
-
-from ..shared.protocol import DaemonHealth, PRInfo, PRInfoDisabled, PRInfoError, PRInfoOk, WorktreeID
+from ..shared.protocol import Collector, GitstatusdData
 from .git_manager import GitManager, WorktreeInfo as GMWorktreeInfo
 from .gitstatus_refresh import DebouncedGitstatusRefresh
-from .gitstatusd_listener import GitstatusdListener, GitstatusWorkingSummary
-from .pr_service import PRCacheError, PRCacheOk, PRService
+from .gitstatusd_listener import GitstatusdListener
 from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
 from .worktree_ids import make_worktree_id
@@ -105,11 +99,12 @@ class GitstatusdService:
         # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
         self.get_client = get_client  # type: ignore[assignment]  # Expose callable as attribute
 
-    def get_cached_status(self, path: Path) -> GitstatusWorkingSummary:
+    def get_cached_status(self, path: Path) -> Collector[GitstatusdData]:
+        """Get cached gitstatusd data from the listener's signal."""
         client = self._get_client(path)
         if not client:
-            return GitstatusWorkingSummary.empty()
-        return client.get_cached_working_status()
+            return Collector()
+        return client.status()
 
     def is_running(self, path: Path) -> bool:
         client = self._get_client(path)
@@ -130,85 +125,6 @@ class GitstatusdService:
             with contextlib.suppress(Exception):
                 await w.stop()
         self._clear_watchers()
-
-
-class PRServiceProvider:
-    def __init__(self, services: dict[WorktreeID, PRService]) -> None:
-        self._services = services
-        self._tasks: WeakSet[asyncio.Task] = WeakSet()
-        self._inflight: set[tuple[WorktreeID, str]] = set()
-        self._recent: dict[tuple[WorktreeID, str], float] = {}
-        self._recent_ttl_s: float = 3.0
-
-    async def start(self) -> None:
-        for svc in self._services.values():
-            with contextlib.suppress(Exception):
-                await svc.start()
-
-    async def stop(self) -> None:
-        for svc in self._services.values():
-            with contextlib.suppress(Exception):
-                await svc.stop()
-
-    def get_pr_info_cached(self, wtid: WorktreeID) -> PRInfo:
-        prsvc = self._services.get(wtid)
-        if not prsvc or prsvc.cached is None:
-            return PRInfoDisabled()
-        cached = prsvc.cached
-        # Map runtime cache variants to wire variants
-        if isinstance(cached, PRCacheOk):
-            return PRInfoOk(pr_data=cached.data)
-        if isinstance(cached, PRCacheError):
-            return PRInfoError(error=cached.error)
-        return PRInfoDisabled()
-
-    def schedule_pr_refresh(self, wtid: WorktreeID, branch: str) -> None:
-        prsvc = self._services.get(wtid)
-        if not prsvc:
-            return
-        key = (wtid, branch)
-        now = time.monotonic()
-        # Skip if already running or completed very recently
-        if key in self._inflight or (now - self._recent.get(key, 0.0)) < self._recent_ttl_s:
-            return
-
-        async def _run() -> None:
-            try:
-                await prsvc.get_pr_info(branch, force_refresh=True)
-            finally:
-                self._inflight.discard(key)
-                # Record completion time and drop stale entries occasionally
-                self._recent[key] = time.monotonic()
-                if len(self._recent) > 1024:
-                    cutoff = time.monotonic() - self._recent_ttl_s
-                    self._recent = {k: t for k, t in self._recent.items() if t >= cutoff}
-
-        self._inflight.add(key)
-        task = asyncio.create_task(_run())
-        self._tasks.add(task)
-
-    async def refresh_now(self, wtid: WorktreeID) -> None:
-        """Synchronously refresh PR cache for a given worktree.
-
-        Uses the worktree's current branch as determined by its repository.
-        If the worktree directory was manually deleted or is no longer a git repo,
-        skip refresh gracefully.
-        """
-        prsvc = self._services.get(wtid)
-        if not prsvc:
-            return
-        try:
-            repo = prsvc.git_manager.get_repo(prsvc.worktree_info.path)
-        except (pygit2.GitError, OSError, ValueError, FileNotFoundError):
-            return
-        branch_name = repo.head.shorthand or ""
-        await prsvc.get_pr_info(branch_name, force_refresh=True)
-
-    def has(self, wtid: WorktreeID) -> bool:
-        return wtid in self._services
-
-    def values(self) -> list[PRService]:
-        return list(self._services.values())
 
 
 class StatusService:
@@ -255,14 +171,6 @@ async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:
         if (path / ".git").exists():
             current.add(DiscoveredWorktree(path, path.name, make_worktree_id(path.name)))
     return current
-
-
-class HealthService:
-    def __init__(self, get_health: Callable[[], DaemonHealth]) -> None:
-        self._get = get_health
-
-    def health(self) -> DaemonHealth:
-        return self._get()
 
 
 class WorktreeCoordinator:

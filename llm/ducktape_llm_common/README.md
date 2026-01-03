@@ -1,13 +1,12 @@
 # Ducktape LLM Common
 
-A comprehensive shared Python package providing utilities, linters, and prompts for LLM development workflows.
+A comprehensive shared Python package providing utilities and linters for LLM development workflows.
 
 ## Overview
 
 `ducktape-llm-common` implements the common automation referenced by standard operating procedures in LLM development workflows. It provides:
 
 - **Linters**: Enforce coding standards, validate custom URL formats and metadata files
-- **Prompts**: Standardized instructions for AI agents
 - **Utilities**: Version management and common validation functions
 - **Templates**: Quick-start structures for investigations and tasks
 
@@ -101,27 +100,6 @@ task_path = create_task_structure(
 
 # Create a task graph template
 create_task_graph_template(".")
-```
-
-### Loading Prompts
-
-Access standardized prompts for AI agents:
-
-```python
-from ducktape_llm_common.prompts.constants import PromptName
-from ducktape_llm_common.prompts.loader import list_prompts, load_prompt
-
-# Load a prompt
-prompt = load_prompt(PromptName.WORK_TRACKING)
-
-# Load with variable substitution
-prompt = load_prompt("task_management", variables={
-    "task_name": "implement-feature-x",
-    "deadline": "2024-01-31"
-})
-
-# List available prompts
-available = list_prompts()
 ```
 
 ## Development

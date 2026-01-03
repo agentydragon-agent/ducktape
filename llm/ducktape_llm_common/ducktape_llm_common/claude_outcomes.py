@@ -27,14 +27,9 @@ class PreToolApprove(HookOutcome):
 
 @dataclass
 class PreToolDeny(HookOutcome):
-    """
-    Deny tool execution with message for Claude.
+    """Deny tool execution with message for Claude.
 
-    Example:
-        PreToolDeny(
-            llm_message="Permission denied: Cannot edit production files. "
-                       "To override, ask user to run: cl2 session allow 'Edit(\"prod/**\")'"
-        )
+    Example: PreToolDeny(llm_message="Cannot edit production files")
     """
 
     llm_message: str
@@ -65,17 +60,9 @@ class PostToolSuccess(HookOutcome):
 
 @dataclass
 class PostToolNotifyLLM(HookOutcome):
-    """
-    Tool succeeded but Claude needs important feedback.
+    """Tool succeeded but Claude needs important feedback. Uses decision=block.
 
-    Uses decision=block to ensure Claude processes the message.
-
-    Example:
-        PostToolNotifyLLM(
-            llm_message="FYI: Applied autofix to your code:\n"
-                       "- Formatted with black\n"
-                       "- Added missing imports"
-        )
+    Example: PostToolNotifyLLM(llm_message="Applied autofix: formatted with black")
     """
 
     llm_message: str
@@ -108,17 +95,9 @@ class StopAllow(HookOutcome):
 
 @dataclass
 class StopPrevent(HookOutcome):
-    """
-    Prevent Claude from ending its turn.
+    """Prevent Claude from ending its turn.
 
-    Must provide reason for Claude to understand what to do.
-
-    Example:
-        StopPrevent(
-            llm_message="Cannot end turn: 3 errors remain unfixed:\n"
-                       "- Line 45: Bare except clause\n"
-                       "Please fix these before ending."
-        )
+    Example: StopPrevent(llm_message="Fix 3 remaining errors before ending")
     """
 
     llm_message: str
@@ -207,4 +186,4 @@ class HookError(HookOutcome):
     error_message: str
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse(continue_=False, stopReason=f"Hook error: {self.error_message}")
+        return BaseResponse(continue_=False, stop_reason=f"Hook error: {self.error_message}")

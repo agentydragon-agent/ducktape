@@ -1,5 +1,7 @@
 """Python file checking functionality."""
 
+from pathlib import Path
+
 from .config.clean_models import ModularConfig
 from .config.models import Violation
 from .linters.python_ast import PythonASTAnalyzer
@@ -8,7 +10,7 @@ from .pattern_matcher import PatternMatcher
 
 
 def check_python_file(
-    file_path: str, content: str, config: ModularConfig, critical_only: bool = False
+    file_path: Path, content: str, config: ModularConfig, critical_only: bool = False
 ) -> list[Violation]:
     """Check a Python file for violations.
 
@@ -28,8 +30,8 @@ def check_python_file(
     file_context = pattern_matcher.get_file_context(file_path)
 
     # Check if bare except should be enforced for this file
-    bare_except_enabled = config.get_rule_config("python.bare_except")
-    bare_except_enabled = bare_except_enabled.enabled if bare_except_enabled else True
+    bare_except_config = config.get_rule_config("python.bare_except")
+    bare_except_enabled = bare_except_config.enabled if bare_except_config else True
     if "python.bare_except" in file_context["relaxed_checks"]:
         bare_except_enabled = False
 
@@ -38,7 +40,7 @@ def check_python_file(
     getattr_config = config.get_rule_config("python.getattr")
     setattr_config = config.get_rule_config("python.setattr")
 
-    getattr_setattr_enabled = (
+    getattr_setattr_enabled = bool(
         (hasattr_config and hasattr_config.enabled)
         or (getattr_config and getattr_config.enabled)
         or (setattr_config and setattr_config.enabled)
@@ -52,7 +54,7 @@ def check_python_file(
     analyzer = PythonASTAnalyzer(
         bare_except=bare_except_enabled,
         getattr_setattr=getattr_setattr_enabled,
-        barrel_init=file_path.endswith("__init__.py") and barrel_init_enabled,
+        barrel_init=file_path.name == "__init__.py" and barrel_init_enabled,
     )
     ast_violations = analyzer.analyze_code(content, file_path)
 

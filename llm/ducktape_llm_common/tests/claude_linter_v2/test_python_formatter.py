@@ -1,9 +1,12 @@
 """Tests for Python code formatter."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory
 from ducktape_llm_common.claude_linter_v2.linters.python_formatter import PythonFormatter
+
+TEST_FILE = Path("/test.py")
 
 
 class TestPythonFormatter:
@@ -35,14 +38,14 @@ class TestPythonFormatter:
         formatter = PythonFormatter(["ruff"])
         formatter._available_tools = ["ruff"]
 
-        result, changes = formatter.format_code(input_code)
+        result, changes = formatter.format_code(input_code, file_path=TEST_FILE)
 
         assert result == formatted_code
         assert changes == ["Applied ruff formatting"]
 
         # Verify ruff was called correctly
         mock_run.assert_called_with(
-            ["ruff", "format", "--stdin-filename", "temp.py", "-"],
+            ["ruff", "format", "--stdin-filename", TEST_FILE, "-"],
             input=input_code,
             capture_output=True,
             text=True,
@@ -61,7 +64,7 @@ class TestPythonFormatter:
         formatter = PythonFormatter(["black"])
         formatter._available_tools = ["black"]
 
-        result, changes = formatter.format_code(input_code)
+        result, changes = formatter.format_code(input_code, file_path=TEST_FILE)
 
         assert result == formatted_code
         assert changes == ["Applied black formatting"]
@@ -85,7 +88,7 @@ class TestPythonFormatter:
         formatter = PythonFormatter(["ruff"])
         formatter._available_tools = ["ruff"]
 
-        result, changes = formatter.format_code(code)
+        result, changes = formatter.format_code(code, file_path=TEST_FILE)
 
         assert result == code
         assert changes == []
@@ -100,7 +103,7 @@ class TestPythonFormatter:
         formatter = PythonFormatter(["ruff"])
         formatter._available_tools = ["ruff"]
 
-        result, changes = formatter.format_code(code)
+        result, changes = formatter.format_code(code, file_path=TEST_FILE)
 
         # Should return original code on error
         assert result == code
@@ -133,7 +136,7 @@ def foo():
         formatter = PythonFormatter(["ruff"])
         formatter._available_tools = ["ruff"]
 
-        result, changes = formatter.format_code(input_code, categories=[AutofixCategory.IMPORTS])
+        result, changes = formatter.format_code(input_code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
 
         assert result == fixed_code
         assert "Fixed import ordering and removed unused imports" in changes
@@ -144,7 +147,7 @@ def foo():
         formatter._available_tools = []
 
         code = "x=1+2"
-        result, changes = formatter.format_code(code)
+        result, changes = formatter.format_code(code, file_path=TEST_FILE)
 
         assert result == code
         assert changes == []
@@ -163,7 +166,7 @@ def foo():
         formatter._apply_formatting = MagicMock(return_value=(code, []))
         formatter._fix_imports = MagicMock(return_value=(code, []))
 
-        formatter.format_code(code, categories=[AutofixCategory.ALL])
+        formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.ALL])
 
         # Both methods should be called
         formatter._apply_formatting.assert_called_once()
@@ -182,7 +185,7 @@ def foo():
         formatter._fix_imports = MagicMock(return_value=(code, []))
 
         # Only formatting
-        formatter.format_code(code, categories=[AutofixCategory.FORMATTING])
+        formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.FORMATTING])
         formatter._apply_formatting.assert_called_once()
         formatter._fix_imports.assert_not_called()
 
@@ -191,7 +194,7 @@ def foo():
         formatter._fix_imports.reset_mock()
 
         # Only imports
-        formatter.format_code(code, categories=[AutofixCategory.IMPORTS])
+        formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
         formatter._apply_formatting.assert_not_called()
         formatter._fix_imports.assert_called_once()
 
@@ -199,7 +202,7 @@ def foo():
     def test_file_path_passed_to_tools(self, mock_run):
         """Test that file path is properly passed to formatting tools."""
         code = "x=1"
-        file_path = "/path/to/file.py"
+        file_path = Path("/path/to/file.py")
 
         mock_run.return_value = MagicMock(returncode=0, stdout=code, stderr="")
 

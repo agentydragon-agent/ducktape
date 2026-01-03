@@ -3,12 +3,30 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Literal, NewType
+from pathlib import Path
+from typing import Annotated, Any, Literal, NewType
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    Tag,
+    TypeAdapter,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic.alias_generators import to_camel
 
 SessionID = NewType("SessionID", UUID)
+
+
+class CamelCaseModel(BaseModel):
+    """Base model for Claude Code responses that use camelCase wire format."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
 class EditOperation(BaseModel):
@@ -19,43 +37,122 @@ class EditOperation(BaseModel):
     replace_all: bool = False
 
 
-class ToolInput(BaseModel):
-    """Input parameters for Claude Code tools.
+# Typed tool call classes with discriminator
 
-    Different tools use different subsets of these fields.
-    Extra fields are allowed for MCP and other tools.
-    """
 
+class EditToolCall(BaseModel):
+    """Edit tool call."""
+
+    tool_name: Literal["Edit"] = "Edit"
+    file_path: Path
+    old_string: str
+    new_string: str
+    replace_all: bool = False
+
+
+class WriteToolCall(BaseModel):
+    """Write tool call."""
+
+    tool_name: Literal["Write"] = "Write"
+    file_path: Path
+    content: str
+
+
+class ReadToolCall(BaseModel):
+    """Read tool call."""
+
+    tool_name: Literal["Read"] = "Read"
+    file_path: Path
+    offset: int | None = None
+    limit: int | None = None
+
+
+class MultiEditToolCall(BaseModel):
+    """MultiEdit tool call."""
+
+    tool_name: Literal["MultiEdit"] = "MultiEdit"
+    file_path: Path
+    edits: list[EditOperation]
+
+
+class BashToolCall(BaseModel):
+    """Bash tool call."""
+
+    tool_name: Literal["Bash"] = "Bash"
+    command: str
+    description: str | None = None
+    timeout: int | None = None
+    run_in_background: bool = False
+
+
+class GlobToolCall(BaseModel):
+    """Glob tool call."""
+
+    tool_name: Literal["Glob"] = "Glob"
+    pattern: str
+    path: Path | None = None
+
+
+class GrepToolCall(BaseModel):
+    """Grep tool call."""
+
+    tool_name: Literal["Grep"] = "Grep"
+    pattern: str
+    path: Path | None = None
+    output_mode: str | None = None
+    glob: str | None = None
+
+
+class TaskToolCall(BaseModel):
+    """Task tool call."""
+
+    tool_name: Literal["Task"] = "Task"
+    prompt: str
+    description: str
+    subagent_type: str
+    model: str | None = None
+    resume: str | None = None
+
+
+class MCPToolCall(BaseModel):
+    """Catch-all for MCP and unrecognized tools."""
+
+    tool_name: str
     model_config = ConfigDict(extra="allow")
 
-    # Common fields
-    file_path: str | None = None
-    content: str | None = None
 
-    # Edit tool fields
-    old_string: str | None = None
-    new_string: str | None = None
-    replace_all: bool = False
-    old_content: str | None = None
+# Known tool names for discriminator
+_KNOWN_TOOLS = {"Edit", "Write", "Read", "MultiEdit", "Bash", "Glob", "Grep", "Task"}
 
-    # MultiEdit tool fields
-    edits: list[EditOperation] | None = None
 
-    # Bash tool fields
-    command: str | None = None
+def _tool_call_discriminator(v: Any) -> str:
+    """Discriminator function for ToolCall union."""
+    if isinstance(v, dict):
+        tool_name = v.get("tool_name", "")
+        return tool_name if tool_name in _KNOWN_TOOLS else "mcp"
+    return getattr(v, "tool_name", "mcp") if getattr(v, "tool_name", "") in _KNOWN_TOOLS else "mcp"
 
-    # MCP tool fields (common ones)
-    url: str | None = None
-    query: str | None = None
-    path: str | None = None
-    directory: str | None = None
 
-    # Allow any additional fields for extensibility
-    allowDangerous: bool | None = None  # noqa: N815
-    wait_for: str | None = None
-    database: str | None = None
-    endpoint: str | None = None
-    method: str | None = None
+# Union of all tool call types with discriminator
+ToolCall = Annotated[
+    Annotated[EditToolCall, Tag("Edit")]
+    | Annotated[WriteToolCall, Tag("Write")]
+    | Annotated[ReadToolCall, Tag("Read")]
+    | Annotated[MultiEditToolCall, Tag("MultiEdit")]
+    | Annotated[BashToolCall, Tag("Bash")]
+    | Annotated[GlobToolCall, Tag("Glob")]
+    | Annotated[GrepToolCall, Tag("Grep")]
+    | Annotated[TaskToolCall, Tag("Task")]
+    | Annotated[MCPToolCall, Tag("mcp")],
+    Discriminator(_tool_call_discriminator),
+]
+
+_ToolCallAdapter: TypeAdapter[ToolCall] = TypeAdapter(ToolCall)
+
+
+def _parse_tool_call(tool_name: str, tool_input: dict[str, Any]) -> ToolCall:
+    """Parse tool_name + tool_input into a typed ToolCall."""
+    return _ToolCallAdapter.validate_python({"tool_name": tool_name, **tool_input})
 
 
 class HookEventName(StrEnum):
@@ -69,35 +166,30 @@ class HookEventName(StrEnum):
     PRE_COMPACT = "PreCompact"
 
 
-# Base input types for Claude Code hook requests
 class BaseHookRequest(BaseModel):
     """Base request for all hooks."""
 
-    session_id: str
-    transcript_path: str | None = None
+    session_id: SessionID
+    transcript_path: Path | None = None
     hook_event_name: str
 
     model_config = ConfigDict(populate_by_name=True)
-
-    @property
-    def typed_session_id(self) -> SessionID:
-        """Return session_id as a typed SessionID (UUID)."""
-        return SessionID(UUID(self.session_id))
 
 
 class PreToolUseRequest(BaseHookRequest):
     """PreToolUse hook request."""
 
     hook_event_name: Literal["PreToolUse"] = "PreToolUse"
-    tool_name: str
-    tool_input: ToolInput
+    tool_call: ToolCall
 
     @model_validator(mode="before")
     @classmethod
-    def convert_tool_input(cls, data: Any) -> Any:
-        """Convert dict tool_input to ToolInput model."""
-        if isinstance(data, dict) and isinstance(data.get("tool_input"), dict):
-            data["tool_input"] = ToolInput(**data["tool_input"])
+    def restructure_tool_call(cls, data: Any) -> Any:
+        """Restructure wire format {tool_name, tool_input} into {tool_call}."""
+        if isinstance(data, dict) and "tool_name" in data and "tool_input" in data:
+            tool_input = data.get("tool_input", {})
+            if isinstance(tool_input, dict):
+                data["tool_call"] = _parse_tool_call(data["tool_name"], tool_input)
         return data
 
 
@@ -105,17 +197,18 @@ class PostToolUseRequest(BaseHookRequest):
     """PostToolUse hook request."""
 
     hook_event_name: Literal["PostToolUse"] = "PostToolUse"
-    tool_name: str
-    tool_input: ToolInput
+    tool_call: ToolCall
     tool_response: dict[str, Any] | None = None
-    tool_result: dict[str, Any] | None = None  # Some versions use tool_result instead
+    tool_result: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod
-    def convert_tool_input(cls, data: Any) -> Any:
-        """Convert dict tool_input to ToolInput model."""
-        if isinstance(data, dict) and isinstance(data.get("tool_input"), dict):
-            data["tool_input"] = ToolInput(**data["tool_input"])
+    def restructure_tool_call(cls, data: Any) -> Any:
+        """Restructure wire format {tool_name, tool_input} into {tool_call}."""
+        if isinstance(data, dict) and "tool_name" in data and "tool_input" in data:
+            tool_input = data.get("tool_input", {})
+            if isinstance(tool_input, dict):
+                data["tool_call"] = _parse_tool_call(data["tool_name"], tool_input)
         return data
 
 
@@ -149,8 +242,7 @@ class PreCompactRequest(BaseHookRequest):
     custom_instructions: str
 
 
-# Base response types for Claude Code hook responses
-class BaseResponse(BaseModel):
+class BaseResponse(CamelCaseModel):
     """
     Base response for all hooks.
 
@@ -160,18 +252,15 @@ class BaseResponse(BaseModel):
     - suppressOutput: Hide stdout from transcript mode
     """
 
+    # continue_ needs explicit alias since to_camel("continue_") -> "continue_" not "continue"
     continue_: bool = Field(True, alias="continue")
-    stop_reason: str | None = Field(
-        None, alias="stopReason", description="Message shown to USER when continue is false"
-    )
-    suppress_output: bool | None = Field(None, alias="suppressOutput")
-
-    model_config = {"populate_by_name": True}
+    stop_reason: str | None = Field(None, description="Message shown to USER when continue is false")
+    suppress_output: bool | None = None
 
     @field_validator("stop_reason")
     @classmethod
-    def validate_stop_reason(cls, v: str | None, info) -> str | None:
-        if v and info.data.get("continue_", True):
+    def validate_stop_reason(cls, v: str | None, info: ValidationInfo) -> str | None:
+        if v and info.data and info.data.get("continue_", True):
             raise ValueError("stopReason only valid when continue=False")
         return v
 
@@ -191,8 +280,8 @@ class PreToolResponse(BaseResponse):
 
     @field_validator("reason")
     @classmethod
-    def validate_reason(cls, v: str | None, info) -> str | None:
-        if info.data.get("decision") == "block" and not v:
+    def validate_reason(cls, v: str | None, info: ValidationInfo) -> str | None:
+        if info.data and info.data.get("decision") == "block" and not v:
             raise ValueError("reason required when decision=block")
         return v
 
@@ -226,13 +315,12 @@ class StopResponse(BaseResponse):
 
     @field_validator("reason")
     @classmethod
-    def validate_reason(cls, v: str | None, info) -> str | None:
-        if info.data.get("decision") == "block" and not v:
+    def validate_reason(cls, v: str | None, info: ValidationInfo) -> str | None:
+        if info.data and info.data.get("decision") == "block" and not v:
             raise ValueError("reason required when decision=block")
         return v
 
 
-# Union type for automatic discrimination
 HookRequest = (
     PreToolUseRequest | PostToolUseRequest | NotificationRequest | StopRequest | SubagentStopRequest | PreCompactRequest
 )

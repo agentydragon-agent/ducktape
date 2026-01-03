@@ -1,9 +1,12 @@
 """Parse diff information from Claude tool responses."""
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
+
+from ...claude_code_api import EditToolCall, MultiEditToolCall
 
 
 @dataclass
@@ -31,7 +34,7 @@ class DiffHunk:
 class ParsedDiff:
     """Parsed diff information from a tool response."""
 
-    file_path: str
+    file_path: Path
     hunks: list[DiffHunk]
     added_lines: set[int]  # Line numbers in final file
     removed_lines: set[int]  # Line numbers in original file
@@ -48,19 +51,10 @@ class HunkData(BaseModel):
     lines: list[str]
 
 
-class EditToolResponse(BaseModel):
-    """Response from Edit or MultiEdit tool."""
+class StructuredPatchResponse(BaseModel):
+    """Response from Edit or MultiEdit tool containing the structured patch."""
 
-    file_path: str
     structured_patch: list[HunkData] = Field(alias="structuredPatch")
-
-
-class ToolCall(BaseModel):
-    """Generic tool call with name, input, and response."""
-
-    tool_name: str
-    tool_input: dict[str, Any]
-    tool_response: dict[str, Any] | None
 
 
 def _parse_hunk(hunk_data: HunkData, hunk_idx: int) -> DiffHunk:
@@ -103,12 +97,12 @@ def _parse_hunk(hunk_data: HunkData, hunk_idx: int) -> DiffHunk:
     )
 
 
-def _parse_structured_patch(file_path: str, structured_patch: list[HunkData]) -> ParsedDiff:
+def _parse_structured_patch(file_path: Path, structured_patch: list[HunkData]) -> ParsedDiff:
     """Parse structured patch format from Claude."""
     hunks = []
-    added_lines = set()
-    removed_lines = set()
-    context_lines = set()
+    added_lines: set[int] = set()
+    removed_lines: set[int] = set()
+    context_lines: set[int] = set()
 
     # Handle empty patch list
     if not structured_patch:
@@ -143,16 +137,18 @@ def _parse_structured_patch(file_path: str, structured_patch: list[HunkData]) ->
     )
 
 
-def parse_tool_response(tool_call: ToolCall) -> ParsedDiff | None:
-    """Parse Edit/MultiEdit tool response into ParsedDiff."""
-    if tool_call.tool_name not in ("Edit", "MultiEdit"):
-        return None
-    if tool_call.tool_response is None:
-        return None  # PreToolUse has no response
+def parse_tool_response(
+    tool_call: EditToolCall | MultiEditToolCall, tool_response: dict[str, Any]
+) -> ParsedDiff | None:
+    """Parse Edit/MultiEdit tool response into ParsedDiff.
 
+    Args:
+        tool_call: The typed Edit or MultiEdit tool call
+        tool_response: The tool response dict containing structuredPatch
+    """
     try:
-        response = EditToolResponse.model_validate({**tool_call.tool_input, **tool_call.tool_response})
+        response = StructuredPatchResponse.model_validate(tool_response)
     except ValidationError:
         return None  # Missing or invalid structuredPatch field
 
-    return _parse_structured_patch(response.file_path, response.structured_patch)
+    return _parse_structured_patch(tool_call.file_path, response.structured_patch)

@@ -8,7 +8,7 @@ import shutil
 import socket
 import subprocess
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -23,7 +23,16 @@ from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
 from wt.shared.fixtures import write_pr_fixtures_file
-from wt.shared.protocol import DaemonHealth, DaemonHealthStatus, StatusItem, StatusResponse
+from wt.shared.protocol import (
+    CommitInfo,
+    DaemonHealth,
+    DaemonHealthStatus,
+    PRInfoDisabled,
+    StatusItem,
+    StatusResponse,
+    StatusResult,
+    StatusResultOk,
+)
 from wt.shell import install
 
 from .config_factory import ConfigFactory
@@ -189,13 +198,30 @@ def build_status_response():
     """Factory: build a StatusResponse from a mapping of results.
 
     Usage:
-        status = build_status_response({id1: StatusResult(...), ...})
+        # Simple: name as key, StatusResult as value (path derived from name)
+        status = build_status_response({"feature": StatusResult(...)})
+
+        # With explicit path: tuple of (StatusResult, Path)
+        status = build_status_response({"main": (StatusResult(...), Path("/repo"))})
+
         empty = build_status_response({})
     """
 
     def _build(results_dict: dict | None = None) -> StatusResponse:
         results_dict = results_dict or {}
-        items = {k: StatusItem(status=v, processing_time_ms=v.processing_time_ms) for k, v in results_dict.items()}
+        items = {}
+        for name, value in results_dict.items():
+            if isinstance(value, tuple):
+                status_result, absolute_path = value
+            else:
+                status_result = value
+                absolute_path = Path(f"/tmp/{name}")
+            items[name] = StatusItem(
+                name=name,
+                absolute_path=absolute_path,
+                processing_time_ms=10.0,  # Default timing for tests
+                result=StatusResultOk(status=status_result),
+            )
         return StatusResponse(
             items=items,
             total_processing_time_ms=(sum(it.processing_time_ms for it in items.values()) if items else 0.0),
@@ -208,6 +234,34 @@ def build_status_response():
 @pytest.fixture
 def cli_runner() -> CliRunner:
     return CliRunner()
+
+
+@pytest.fixture
+def sample_commit_info():
+    """Sample CommitInfo for tests."""
+    return CommitInfo(
+        hash="abc123def456",
+        short_hash="abc123de",
+        message="Test commit",
+        author="Test Author",
+        date="2024-01-15T10:30:00",
+    )
+
+
+@pytest.fixture
+def sample_status_result(sample_commit_info):
+    """Sample StatusResult for tests."""
+    return StatusResult(
+        branch_name="test/test-branch",
+        upstream_branch="main",
+        ahead_count=0,
+        behind_count=0,
+        pr_info=PRInfoDisabled(),
+        commit_info=sample_commit_info,
+        last_updated_at=datetime.now(),
+        dirty_files_lower_bound=0,
+        untracked_files_lower_bound=0,
+    )
 
 
 def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = None):

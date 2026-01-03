@@ -328,6 +328,24 @@ repos:
           - pytest-homeassistant-custom-component
           - PyHamcrest
 
+      # ducktape_llm_common: Shared LLM utilities, linters, prompts
+      - id: mypy
+        alias: mypy-ducktape-llm-common
+        name: mypy (ducktape_llm_common)
+        files: "^llm/ducktape_llm_common/ducktape_llm_common/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=llm/ducktape_llm_common/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2.0
+          - pygit2>=1.18.0
+          - platformdirs>=3.0
+          - types-PyYAML
+          - types-click
+          - pytimeparse
+          - tomli
+          - tomli-w
+          - humanize
+
   - repo: https://github.com/keith/pre-commit-buildifier
     rev: 6.4.0
     hooks:

@@ -1,5 +1,7 @@
 """Clean configuration models with no dict manipulation or dynamic fields."""
 
+from __future__ import annotations
+
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -32,6 +34,21 @@ class LogLevel(StrEnum):
     WARNING = "WARNING"
     ERROR = "ERROR"
     CRITICAL = "CRITICAL"
+
+
+# Type alias for hook config union
+HookConfig = PreToolHookConfig | PostToolHookConfig | StopHookConfig | NotificationHookConfig | SubagentStopHookConfig
+
+
+def _default_hooks() -> dict[str, HookConfig]:
+    """Default hook configurations."""
+    return {
+        "pre": PreToolHookConfig(),
+        "post": PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
+        "stop": StopHookConfig(quality_gate=True),
+        "notification": NotificationHookConfig(send_to_dbus=True),
+        "subagent_stop": SubagentStopHookConfig(),
+    }
 
 
 class RuleConfig(BaseModel):
@@ -68,18 +85,7 @@ class ModularConfig(BaseModel):
     python_tools: list[str] = Field(default_factory=lambda: ["ruff", "mypy"], description="Python linting tools to use")
 
     # Hook configurations
-    hooks: dict[
-        str, PreToolHookConfig | PostToolHookConfig | StopHookConfig | NotificationHookConfig | SubagentStopHookConfig
-    ] = Field(
-        default_factory=lambda: {
-            "pre": PreToolHookConfig(),
-            "post": PostToolHookConfig(auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING]),
-            "stop": StopHookConfig(quality_gate=True),
-            "notification": NotificationHookConfig(send_to_dbus=True),
-            "subagent_stop": SubagentStopHookConfig(),
-        },
-        description="Hook-specific configurations",
-    )
+    hooks: dict[str, HookConfig] = Field(default_factory=_default_hooks, description="Hook-specific configurations")
 
     # Pattern-based file rules
     pattern_rules: list[PatternBasedRule] = Field(
@@ -107,7 +113,7 @@ class ModularConfig(BaseModel):
     log_file: Path | None = Field(None, description="Log file path")
 
     @classmethod
-    def from_toml(cls, path: Path) -> "ModularConfig":
+    def from_toml(cls, path: Path) -> ModularConfig:
         """Load configuration from TOML file - let Pydantic handle parsing."""
         with path.open("rb") as f:
             data = tomli.load(f)

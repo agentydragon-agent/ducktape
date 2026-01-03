@@ -9,13 +9,6 @@
 3. Register it in the appropriate mode in `registry.py`
 4. Add tests in `tests/claude_linter/`
 
-### Adding a New Prompt
-
-1. Create a `.md` file in `ducktape_llm_common/prompts/`
-2. Include YAML frontmatter with metadata
-3. Use descriptive variable names in `{{ }}` for substitution
-4. The prompt will be auto-discovered by the loader
-
 ### Testing Patterns
 
 - Tests are colocated in the `tests/` directory
@@ -27,6 +20,5 @@
 
 - This library is the canonical place for globally useful LLM tools - avoid creating similar utilities in individual projects
 - The claude linter is designed to integrate with Claude Code's hook system
-- Prompts support variable substitution and should be designed for reusability
 - All code should maintain Python 3.13+ compatibility
 - Configuration files use TOML format with Pydantic validation
