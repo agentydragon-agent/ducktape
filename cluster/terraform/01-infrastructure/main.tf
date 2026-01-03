@@ -49,6 +49,9 @@ locals {
   # Bootstrap from first VPS (has public IP, most reliable for initial bootstrap)
   bootstrap_node = "vps0"
 
+  # Total expected node count (for health checks)
+  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes)
+
   # All controlplane endpoints (for talosconfig) - VPS IPs + Proxmox controlplane IPs
   all_controlplane_ips = concat(
     [for k, v in hcloud_server.vps : v.ipv4_address],

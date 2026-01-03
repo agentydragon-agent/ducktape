@@ -61,3 +61,15 @@ resource "null_resource" "wait_for_k8s_api" {
     command = "${path.module}/wait-for-k8s-api.sh"
   }
 }
+
+# Wait for all nodes to be Ready using kubectl wait (has native retry/polling)
+resource "null_resource" "wait_for_nodes_ready" {
+  depends_on = [helm_release.cilium_bootstrap]
+
+  provisioner "local-exec" {
+    environment = {
+      KUBECONFIG = local_file.kubeconfig.filename
+    }
+    command = "kubectl wait --for=condition=Ready node --all --timeout=600s"
+  }
+}

@@ -88,3 +88,8 @@ output "controlplane_ips" {
   description = "List of controlplane node IPs"
   value       = [for k, v in hcloud_server.vps : v.ipv4_address]
 }
+
+output "expected_node_count" {
+  description = "Expected number of nodes in the cluster"
+  value       = local.expected_node_count
+}

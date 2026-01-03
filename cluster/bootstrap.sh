@@ -146,13 +146,11 @@ if [ "$START_FROM_LAYER" != "services" ]; then
     KUBECONFIG_PATH="${TERRAFORM_DIR}/01-infrastructure/kubeconfig"
     export KUBECONFIG="$KUBECONFIG_PATH"
 
-    # Wait for cluster API
-    log "⏳ Waiting for Kubernetes API..."
-    timeout 300 bash -c 'until kubectl cluster-info; do sleep 5; done'
-
-    # Wait for all nodes ready
-    log "⏳ Waiting for all nodes to be ready..."
-    timeout 600 bash -c 'until [ $(kubectl get nodes --no-headers | grep Ready | wc -l) -eq 6 ]; do sleep 10; done'
+    # Terraform waits for nodes to be Ready via kubernetes_nodes data source
+    # Just verify cluster is accessible
+    log "⏳ Verifying cluster access..."
+    kubectl cluster-info
+    kubectl get nodes
 
     echo "✅ Infrastructure layer ready"
 fi
