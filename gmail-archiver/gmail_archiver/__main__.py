@@ -23,7 +23,7 @@ from .event_classifier import EmailTemplateExtractor
 from .gmail_api_models import SystemLabel
 from .inbox import GmailInbox
 from .models import Email
-from .plan import Plan
+from .plan import Plan, Planner
 from .plan_display import display_plan, summarize_plan
 from .planners.aliexpress import AliExpressPlanner
 from .planners.anthem_eob import AnthemEobPlanner
@@ -61,7 +61,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
     inbox = GmailInbox(client, console)
 
     extractor = EmailTemplateExtractor()
-    planners = [
+    planners: list[Planner] = [
         AliExpressPlanner(),
         AnthropicReceiptPlanner(),
         DoorDashPlanner(),
@@ -237,8 +237,8 @@ def download_matching(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    existing_files = {f.stem for f in output_dir.glob("*.eml")}
-    to_download = [msg_id for msg_id in all_message_ids if msg_id not in existing_files]
+    existing_message_ids: set[str] = {f.stem for f in output_dir.glob("*.eml")}
+    to_download = [msg_id for msg_id in all_message_ids if msg_id not in existing_message_ids]
 
     if len(to_download) < len(all_message_ids):
         console.print(f"[dim]Skipping {len(all_message_ids) - len(to_download)} already downloaded emails.[/dim]")
@@ -314,7 +314,7 @@ def download_email(
         gmail-archiver download-email 19b1c55967d81057 -o my_email.eml
     """
     console = Console()
-    extracted_id = id_or_link
+    extracted_id: str | None = id_or_link
     if id_or_link.startswith("http"):
         extracted_id = parse_gmail_link(id_or_link)
         if not extracted_id:
@@ -326,6 +326,7 @@ def download_email(
             raise typer.Exit(code=1)
         console.print(f"Extracted message ID: {extracted_id}")
 
+    assert extracted_id is not None  # Either from id_or_link or from parse_gmail_link (with error check above)
     client = get_client(token_file)
 
     message_id = extracted_id

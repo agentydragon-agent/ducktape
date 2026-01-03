@@ -24,7 +24,7 @@ from gmail_archiver.filter_sync import (
 )
 from gmail_archiver.gmail_api_models import GmailFilter, SystemLabel, is_system_label
 from gmail_archiver.gmail_client import GmailClient
-from gmail_archiver.gmail_yaml_filters_models import FilterRule, FilterRuleSet
+from gmail_archiver.gmail_yaml_filters_models import FilterRule, FilterRuleSet, ForEachRule
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan_display import display_plan, summarize_plan
 
@@ -125,7 +125,7 @@ def download(
 
     console.print(f"Found {len(api_filters)} filters.")
 
-    filter_rules = [_gmail_filter_to_rule(f, label_maps.by_id) for f in api_filters]
+    filter_rules: list[FilterRule | ForEachRule] = [_gmail_filter_to_rule(f, label_maps.by_id) for f in api_filters]
 
     yaml_list = FilterRuleSet(rules=filter_rules).to_yaml_list()
     buffer = io.StringIO()
@@ -151,22 +151,23 @@ def _gmail_filter_to_rule(gmail_filter: GmailFilter, labels_by_id: dict[str, str
             label = labels_by_id[label_id]
             break
 
-    return FilterRule(
-        from_=criteria.from_,
-        to=criteria.to,
-        subject=criteria.subject,
-        has=criteria.query,
-        does_not_have=criteria.negated_query,
-        label=label,
-        important=True if SystemLabel.IMPORTANT in add_label_ids else None,
-        star=True if SystemLabel.STARRED in add_label_ids else None,
-        trash=True if SystemLabel.TRASH in add_label_ids else None,
-        archive=True if SystemLabel.INBOX in remove_label_ids else None,
-        read=True if SystemLabel.UNREAD in remove_label_ids else None,
-        not_important=True if SystemLabel.IMPORTANT in remove_label_ids else None,
-        not_spam=True if SystemLabel.SPAM in remove_label_ids else None,
-        forward=action.forward,
-    )
+    # Use dict unpacking to handle keyword conflict with "from"
+    return FilterRule(**{
+        "from": criteria.from_,
+        "to": criteria.to,
+        "subject": criteria.subject,
+        "has": criteria.query,
+        "does_not_have": criteria.negated_query,
+        "label": label,
+        "important": True if SystemLabel.IMPORTANT in add_label_ids else None,
+        "star": True if SystemLabel.STARRED in add_label_ids else None,
+        "trash": True if SystemLabel.TRASH in add_label_ids else None,
+        "archive": True if SystemLabel.INBOX in remove_label_ids else None,
+        "read": True if SystemLabel.UNREAD in remove_label_ids else None,
+        "not_important": True if SystemLabel.IMPORTANT in remove_label_ids else None,
+        "not_spam": True if SystemLabel.SPAM in remove_label_ids else None,
+        "forward": action.forward,
+    })  # type: ignore[arg-type]
 
 
 @filters_app.command("diff")
@@ -359,7 +360,7 @@ def apply(
 
     delta_summary = plan.format_delta_summary(label_maps.by_id)
 
-    display_plan(plan, console=console, dry_run=dry_run is True)
+    display_plan(plan, inbox, console=console, dry_run=dry_run is True)
 
     def do_apply():
         total_processed = 0

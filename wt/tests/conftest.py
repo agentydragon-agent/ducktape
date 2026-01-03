@@ -14,7 +14,7 @@ from unittest.mock import Mock
 
 import pygit2
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 from typer.testing import CliRunner
 
 from tests.config_factory import ConfigFactory

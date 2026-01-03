@@ -129,7 +129,7 @@ class FilterRuleSet(BaseModel):
 
     @classmethod
     def from_yaml_list(cls, yaml_list: list[dict[str, Any]]) -> FilterRuleSet:
-        rules = []
+        rules: list[FilterRule | ForEachRule] = []
         for rule_dict in yaml_list:
             if "for_each" in rule_dict:
                 rules.append(ForEachRule(**rule_dict))

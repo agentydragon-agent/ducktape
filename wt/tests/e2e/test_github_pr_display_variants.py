@@ -124,10 +124,10 @@ def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
     wt_cli = env.wt_cli
     write_pr_fixtures = env.write_pr_fixtures
 
-    env = os.environ.copy()
-    env["WT_DIR"] = str(config.wt_dir)
+    test_env = os.environ.copy()
+    test_env["WT_DIR"] = str(config.wt_dir)
     # Bind wt_cli to this test's WT_DIR/config
-    wt_cli.env = env
+    wt_cli.env = test_env
     # Write PR fixtures for WT_TEST_MODE to avoid PYTHONPATH hacks
     if variant == "none":
         pr_map = {}

@@ -85,8 +85,8 @@ class ViewFormatter:
         # Commit hash - vertically aligned column
         commit_short = status.commit_info.short_hash if status.commit_info else "ERROR"
 
-        # Ahead/behind status with light colors, aligned around center point
-        sync_status = format_sync_status(status.ahead_count, status.behind_count)
+        # Ahead/behind status with light colors, aligned around center point (default to 0 if None)
+        sync_status = format_sync_status(status.ahead_count or 0, status.behind_count or 0)
 
         # Working directory status
         work_status = self._work_status_text(status)

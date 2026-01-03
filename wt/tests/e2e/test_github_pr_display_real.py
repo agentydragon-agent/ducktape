@@ -79,7 +79,7 @@ def test_github_pr_display_with_mocked_pygithub(real_temp_repo, config_factory, 
     def _status_has_pr() -> bool:
         result = wt_cli.status(timeout=timedelta(seconds=30.0))
         last["out"] = result.stdout
-        return "#123" in result.stdout and re.search(r"\\bcan merge\\b", result.stdout) and "+10/-2" in result.stdout
+        return "#123" in result.stdout and bool(re.search(r"\\bcan merge\\b", result.stdout)) and "+10/-2" in result.stdout
 
     ok = wait_until(_status_has_pr, timeout_seconds=12.0, interval_seconds=0.25)
     if not ok:

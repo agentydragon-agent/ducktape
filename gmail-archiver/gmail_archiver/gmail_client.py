@@ -7,7 +7,7 @@ import re
 import sys
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -78,7 +78,7 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
             ):
                 # Extract ISO timestamp from error message
                 retry_timestamp = datetime.fromisoformat(match.group(1))
-                now = datetime.now(datetime.UTC)
+                now = datetime.now(timezone.utc)
                 seconds_to_wait = max(0, int((retry_timestamp - now).total_seconds()))
                 debug_info["retry_timestamp"] = match.group(1)
                 return seconds_to_wait, debug_info
@@ -110,6 +110,7 @@ class GmailClient:
         """List message IDs with all given labels (AND operation)."""
         # Resolve all label names to IDs
         self._refresh_label_cache_if_needed()
+        assert self._label_cache is not None  # _refresh_label_cache_if_needed ensures this
         label_ids = []
         for name in label_names:
             try:
@@ -123,7 +124,7 @@ class GmailClient:
         return self._list_messages({"q": query}, max_results)
 
     def _list_messages(self, extra_params: dict, max_results: int | None = None) -> list[str]:
-        message_ids = []
+        message_ids: list[str] = []
         page_token = None
 
         while True:
@@ -168,7 +169,7 @@ class GmailClient:
         for i in range(0, len(message_ids), batch_size):
             batch = message_ids[i : i + batch_size]
             batch_results: list[GmailMessageWithHeaders] = []
-            batch_errors = []
+            batch_errors: list[tuple[str, str]] = []
 
             batch_request = self.service.new_batch_http_request()
             for msg_id in batch:
@@ -209,8 +210,8 @@ class GmailClient:
 
         for i in range(0, len(message_ids), batch_size):
             batch = message_ids[i : i + batch_size]
-            batch_results = []
-            batch_errors = []
+            batch_results: list[GmailMessageMinimal] = []
+            batch_errors: list[tuple[str, str]] = []
 
             batch_request = self.service.new_batch_http_request()
             for msg_id in batch:
@@ -272,9 +273,9 @@ class GmailClient:
             max_retries = 10
             batch_succeeded = False
             for attempt in range(1, max_retries + 1):
-                batch_results = []
-                batch_errors = []
-                batch_failed_ids = []
+                batch_results: list[tuple[str, bytes]] = []
+                batch_errors: list[tuple[str, Exception | None, str]] = []
+                batch_failed_ids: list[str] = []
 
                 # Use service.new_batch_http_request() to get correct batch endpoint
                 batch_request = self.service.new_batch_http_request()
@@ -288,7 +289,10 @@ class GmailClient:
                 batch_request.execute()
 
                 # Check if any requests were rate limited
-                rate_limit_errors = [exc for _, exc, _ in batch_errors if exc is not None and _is_rate_limit_error(exc)]
+                rate_limit_errors: list[HttpError] = [
+                    exc for _, exc, _ in batch_errors
+                    if exc is not None and _is_rate_limit_error(exc) and isinstance(exc, HttpError)
+                ]
                 rate_limited = len(rate_limit_errors) > 0
 
                 if not rate_limited:
@@ -401,8 +405,8 @@ class GmailClient:
         all_errors = []
         for i in range(0, len(message_ids), batch_size):
             batch = message_ids[i : i + batch_size]
-            batch_emails = []
-            batch_errors = []
+            batch_emails: list[Email] = []
+            batch_errors: list[tuple[str, str]] = []
 
             batch_request = self.service.new_batch_http_request()
             for msg_id in batch:
@@ -496,6 +500,7 @@ class GmailClient:
 
     def get_label_id(self, label_name: str) -> str | None:
         self._refresh_label_cache_if_needed()
+        assert self._label_cache is not None  # _refresh_label_cache_if_needed ensures this
         return self._label_cache.get(label_name)
 
     def get_or_create_label(self, label_name: str) -> str:

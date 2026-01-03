@@ -3,7 +3,9 @@ import importlib
 import pkgutil
 from pathlib import Path
 
-ROOT = Path(importlib.import_module("wt").__file__).parent
+_wt_file = importlib.import_module("wt").__file__
+assert _wt_file is not None
+ROOT = Path(_wt_file).parent
 
 CLIENT_PREFIX = "wt.client"
 SERVER_PREFIX = "wt.server"
@@ -15,7 +17,9 @@ ALLOWED_PREFIXES_FOR_SERVER = {SERVER_PREFIX, SHARED_PREFIX}
 
 def iter_modules(package_prefix: str):
     pkg = importlib.import_module(package_prefix)
-    pkg_path = Path(pkg.__file__).parent
+    pkg_file = pkg.__file__
+    assert pkg_file is not None
+    pkg_path = Path(pkg_file).parent
     for m in pkgutil.walk_packages([str(pkg_path)], prefix=package_prefix + "."):
         if not m.ispkg:
             yield m.name

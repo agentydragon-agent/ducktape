@@ -77,8 +77,8 @@ def normalize_gmail_filter(gmail_filter: GmailFilter, labels_by_id: dict[str, st
 
 def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
     """Convert FilterRule from YAML to normalized form."""
-    # Build add_labels
-    add_labels = frozenset(
+    # Build add_labels (filter out None values for stronger types)
+    add_labels_list = [
         label
         for label, condition in [
             (rule.label, rule.label is not None),
@@ -86,8 +86,9 @@ def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
             (SystemLabel.STARRED, rule.star),
             (SystemLabel.TRASH, rule.trash or rule.delete),
         ]
-        if condition
-    )
+        if condition and label is not None
+    ]
+    add_labels = frozenset(add_labels_list)
 
     # Build remove_labels
     remove_labels = frozenset(
@@ -163,14 +164,14 @@ def diff_filters(yaml_filters: list[NormalizedFilter], gmail_filters: list[Norma
 
 def normalized_to_create_request(normalized: NormalizedFilter, label_name_to_id: dict[str, str]) -> CreateFilterRequest:
     """Convert normalized filter to CreateFilterRequest for API."""
-    # Build criteria
-    criteria = FilterCriteria(
-        from_=normalized.from_,
-        to=normalized.to,
-        subject=normalized.subject,
-        query=normalized.query,
-        negated_query=normalized.negated_query,
-    )
+    # Build criteria using dict to handle keyword conflicts
+    criteria = FilterCriteria(**{
+        "from": normalized.from_,
+        "to": normalized.to,
+        "subject": normalized.subject,
+        "query": normalized.query,
+        "negatedQuery": normalized.negated_query,
+    })  # type: ignore[arg-type]
 
     # Convert label names to IDs
     add_label_ids: list[str] | None = None
@@ -185,11 +186,12 @@ def normalized_to_create_request(normalized: NormalizedFilter, label_name_to_id:
             with contextlib.suppress(ValueError):
                 remove_label_ids.append(resolve_label_id(name, label_name_to_id))
 
-    action = FilterAction(
-        add_label_ids=add_label_ids if add_label_ids else None,
-        remove_label_ids=remove_label_ids if remove_label_ids else None,
-        forward=normalized.forward,
-    )
+    # Build action using dict to use proper API field names
+    action = FilterAction(**{
+        "addLabelIds": add_label_ids if add_label_ids else [],
+        "removeLabelIds": remove_label_ids if remove_label_ids else [],
+        "forward": normalized.forward,
+    })  # type: ignore[arg-type]
 
     return CreateFilterRequest(criteria=criteria, action=action)
 
@@ -219,8 +221,14 @@ class LabelMaps:
 
 def format_filter_for_display(f: NormalizedFilter) -> str:
     """Format a filter for human-readable display."""
-    # Build criteria using the shared conversion logic
-    criteria = FilterCriteria(from_=f.from_, to=f.to, subject=f.subject, query=f.query, negated_query=f.negated_query)
+    # Build criteria using dict to handle keyword conflicts
+    criteria = FilterCriteria(**{
+        "from": f.from_,
+        "to": f.to,
+        "subject": f.subject,
+        "query": f.query,
+        "negatedQuery": f.negated_query,
+    })  # type: ignore[arg-type]
     criteria_str = criteria_to_gmail_query(criteria) or "(no criteria)"
 
     # Actions

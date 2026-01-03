@@ -63,6 +63,7 @@ class Plan:
     """
 
     def __init__(self, planner: Planner | None = None, planner_name: str | None = None):
+        self.planner_name: str | None
         if planner is not None:
             self.planner_name = planner.name
         elif planner_name is not None:
@@ -108,6 +109,7 @@ class Plan:
             )
 
         # Add planned action
+        assert self.planner_name is not None  # Must be set in __init__
         self.actions[message_id] = PlannedAction(planner_name=self.planner_name, action=action)
 
     @staticmethod
