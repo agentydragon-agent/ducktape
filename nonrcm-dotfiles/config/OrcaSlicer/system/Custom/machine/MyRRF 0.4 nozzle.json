@@ -6,7 +6,14 @@
   "instantiation": "true",
   "inherits": "fdm_rrf_common",
   "printer_model": "Generic RRF Printer",
-  "nozzle_diameter": ["0.4"],
-  "printable_area": ["0x0", "250x0", "250x250", "0x250"],
+  "nozzle_diameter": [
+    "0.4"
+  ],
+  "printable_area": [
+    "0x0",
+    "250x0",
+    "250x250",
+    "0x250"
+  ],
   "printable_height": "250"
 }

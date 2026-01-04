@@ -5,25 +5,49 @@
   "from": "system",
   "setting_id": "EC04",
   "instantiation": "true",
-  "nozzle_diameter": ["0.4"],
+  "nozzle_diameter": [
+    "0.4"
+  ],
   "printer_model": "Elegoo Centauri",
   "printer_variant": "0.4",
   "auxiliary_fan": "1",
-  "printable_area": ["0x0", "257x0", "257x257", "0x257"],
+  "printable_area": [
+    "0x0",
+    "257x0",
+    "257x257",
+    "0x257"
+  ],
   "printable_height": "257",
-  "retract_lift_below": ["255"],
-  "bed_exclude_area": ["246x0", "256x0", "256x20", "246x20"],
-  "thumbnails": ["144x144"],
-  "machine_max_acceleration_travel": ["20000", "20000"],
-  "default_filament_profile": ["Elegoo PLA @EC"],
+  "retract_lift_below": [
+      "255"
+  ],
+  "bed_exclude_area": [
+    "246x0",
+    "256x0",
+    "256x20",
+    "246x20"
+  ],
+  "thumbnails": [
+  "144x144"
+  ],
+  "machine_max_acceleration_travel": [
+    "20000",
+    "20000"
+  ],
+  "default_filament_profile": [
+    "Elegoo PLA @EC"
+  ],
   "default_print_profile": "0.20mm Standard @Elegoo C 0.4 nozzle",
-  "extruder_offset": ["0x0"],
+  "extruder_offset": [
+    "0x0"
+  ],
   "fan_speedup_time": "0.5",
   "machine_load_filament_time": "29",
   "machine_unload_filament_time": "28",
   "nozzle_type": "hardened_steel",
   "scan_first_layer": "1",
-  "upward_compatible_machine": [],
+  "upward_compatible_machine": [
+  ],
   "gcode_flavor": "klipper",
   "change_filament_gcode": "M600",
   "machine_pause_gcode": "M600",

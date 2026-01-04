@@ -1,5 +1,6 @@
 {
-  "whitelist": [],
+  "whitelist": [
+  ],
   "blacklist": [
     {
       "vendor": "Third Party",

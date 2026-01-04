@@ -11,3 +11,6 @@ llm/html/llm_html/coding.md
 
 # Claude Code testdata - extracted from Claude Code binary, should not be modified
 claude/claude_hooks/claude_hooks/testdata/claude_tools/**
+
+# OrcaSlicer config - machine-generated, should not be formatted
+nonrcm-dotfiles/config/OrcaSlicer/**

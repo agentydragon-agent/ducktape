@@ -24,5 +24,7 @@
   "internal_solid_infill_speed": "150",
   "outer_wall_speed": "100",
   "print_flow_ratio": "1.0",
-  "compatible_printers": ["Elegoo OrangeStorm Giga 0.8 nozzle"]
+  "compatible_printers": [
+    "Elegoo OrangeStorm Giga 0.8 nozzle"
+  ]
 }
