@@ -51,7 +51,7 @@ import pygit2
 from git_commit_ai.agent_backend import generate_commit_message_agent
 
 from .core import _diff, has_uncommitted_changes
-from .editor_template import SCISSORS_MARK, gather_template_data, render_comment_section
+from .editor_template import SCISSORS_MARK, render_editor_comment
 
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
 # Global cap on total diff size sent to AI (characters)
@@ -587,11 +587,10 @@ def build_editor_content(
     passthru: list[str],
 ) -> str:
     """Build the full editor content with AI message and commented metadata."""
-    data = gather_template_data(
+    comment = render_editor_comment(
         repo, passthru, user_context=user_context, previous_message=previous_message, stats_line=stats_line
     )
-    # Template handles # prefix for commented section; verbose diff is verbatim
-    return msg + "\n\n" + render_comment_section(data)
+    return msg + "\n\n" + comment
 
 
 async def _run_editor_flow(

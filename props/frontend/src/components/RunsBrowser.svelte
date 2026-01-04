@@ -161,7 +161,7 @@
         onchange={handleFilterChange}
       >
         <option value="">All</option>
-        {#each AGENT_RUN_STATUS_VALUES as status}
+        {#each AGENT_RUN_STATUS_VALUES as status (status)}
           <option value={status}>{formatStatus(status)}</option>
         {/each}
       </select>
@@ -175,7 +175,7 @@
         onchange={handleFilterChange}
       >
         <option value="">All</option>
-        {#each AGENT_TYPE_VALUES as type}
+        {#each AGENT_TYPE_VALUES as type (type)}
           <option value={type}>{type}</option>
         {/each}
       </select>

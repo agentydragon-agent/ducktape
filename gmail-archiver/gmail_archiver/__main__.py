@@ -326,7 +326,8 @@ def download_email(
             raise typer.Exit(code=1)
         console.print(f"Extracted message ID: {extracted_id}")
 
-    assert extracted_id is not None  # Either from id_or_link or from parse_gmail_link (with error check above)
+    assert extracted_id is not None
+
     client = get_client(token_file)
 
     message_id = extracted_id

@@ -36,7 +36,7 @@ async def test_exec_roundtrip_echo(mcp_client_box) -> None:
     await _assert_exec_echo(mcp_client_box)
 
 
-@pytest.mark.live_llm
+@pytest.mark.live_openai_api
 @pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
 async def test_live_llm_exec_echo(mcp_client_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""

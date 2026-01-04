@@ -12,20 +12,48 @@ import react from "eslint-plugin-react";
 import globals from "globals";
 
 export default [
+  // Global ignores - must be a standalone config object
+  {
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.svelte-kit/**",
+      "**/storybook-static/**",
+      "**/playwright-report/**",
+      "**/test-results/**",
+      "**/.storybook/**",
+      "**/generated/**",
+    ],
+  },
+
   js.configs.recommended,
 
-  // Props frontend (SvelteKit) - comprehensive setup
+  // Props frontend (SvelteKit) - TypeScript files (excluding .svelte.ts)
   {
-    files: ["props/frontend/**/*.{ts,svelte}"],
-    ignores: [
-      "props/frontend/.svelte-kit/**",
-      "props/frontend/build/**",
-      "props/frontend/dist/**",
-      "props/frontend/node_modules/**",
-      "props/frontend/storybook-static/**",
-      "props/frontend/playwright-report/**",
-      "props/frontend/test-results/**",
-    ],
+    files: ["props/frontend/**/*.ts"],
+    ignores: ["props/frontend/**/*.svelte.ts"],
+    languageOptions: {
+      parser: tsparser,
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+    plugins: {
+      "@typescript-eslint": tseslint,
+    },
+    rules: {
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
+
+  // Props frontend (SvelteKit) - Svelte TypeScript files (*.svelte.ts)
+  {
+    files: ["props/frontend/**/*.svelte.ts"],
     languageOptions: {
       parser: svelteParser,
       parserOptions: { parser: tsparser },
@@ -39,6 +67,31 @@ export default [
       "@typescript-eslint": tseslint,
     },
     rules: {
+      ...sveltePlugin.configs.recommended.rules,
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
+
+  // Props frontend (SvelteKit) - Svelte files
+  {
+    files: ["props/frontend/**/*.svelte"],
+    languageOptions: {
+      parser: svelteParser,
+      parserOptions: { parser: tsparser },
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+    plugins: {
+      svelte: sveltePlugin,
+      "@typescript-eslint": tseslint,
+    },
+    rules: {
+      ...sveltePlugin.configs.recommended.rules,
       "no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
@@ -195,4 +248,5 @@ export default [
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
+
 ];

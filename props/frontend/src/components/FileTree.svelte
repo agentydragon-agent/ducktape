@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import type { FileTreeNode } from '../lib/api/client';
   import { getFileIcon } from '../lib/fileTypes';
 
@@ -11,10 +12,10 @@
 
   let { nodes, onFileClick, selectedPath }: Props = $props();
 
-  let expanded = $state<Set<string>>(new Set());
+  let expanded = new SvelteSet<string>();
 
   function toggleExpand(path: string) {
-    const newSet = new Set(expanded);
+    const newSet = new SvelteSet(expanded);
     if (newSet.has(path)) {
       newSet.delete(path);
     } else {
@@ -91,14 +92,14 @@
   </div>
 
   {#if node.is_dir && isExpanded && node.children}
-    {#each node.children as child}
+    {#each node.children as child (child.path)}
       {@render treeNode(child, depth + 1)}
     {/each}
   {/if}
 {/snippet}
 
 <div class="border rounded bg-white">
-  {#each nodes as node}
+  {#each nodes as node (node.path)}
     {@render treeNode(node, 0)}
   {/each}
 </div>

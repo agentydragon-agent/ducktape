@@ -2,94 +2,89 @@
 
 ## Dependency Chain
 
-The cluster has a strict dependency chain that must be respected during bootstrap and operations:
+The hybrid cluster has a strict dependency chain:
 
 ```text
-1. Talos OS (base system)
+1. Talos OS (base system on all 4 nodes)
    ↓
-2. Kubernetes API Server
+2. KubeSpan (WireGuard mesh between VPS ↔ home)
    ↓
-3. CNI (Cilium) - Network connectivity
+3. Kubernetes API Server
    ↓
-4. Sealed Secrets Controller
+4. CNI (Cilium with VXLAN tunnel mode)
    ↓
-5. CSI Driver (Proxmox CSI)
+5. Sealed Secrets Controller
    ↓
-6. Application workloads
+6. CSI Drivers (Hetzner CSI for VPS, Proxmox CSI for home)
+   ↓
+7. Application workloads
 ```
 
-## Critical Services That Must Not Be Disrupted
+## Critical Services
 
-1. **CNI (Cilium)**: Without network, nothing works
-2. **Sealed Secrets**: Required for CSI authentication
-3. **CSI Driver**: May manage critical volumes (though kubelet volumes are local in our setup)
-
-## Known Issues and Recovery
-
-### Worker Node Kubelet Volume Mount Issue
-
-**Symptom**: Worker nodes show as NotReady with kubelet waiting for `/var/lib/kubelet` volume
-
-**Cause**: Talos sometimes fails to properly mount kubelet volumes on boot
-
-**Recovery**:
-
-1. Soft reboot: `talosctl reboot -n <node-ip>`
-2. Hard reset if needed: `ssh root@atlas qm reset <vm-id>`
-
-### Sealed Secrets Keypair Management
-
-**Current Approach**: Terraform generates a stable TLS keypair that persists in terraform state
-
-**Key Points**:
-
-- Keypair is deployed before Flux starts
-- All secrets must be resealed when keypair changes
-- Use `jsonencode()` for CSI config to avoid YAML quoting issues
+1. **KubeSpan**: WireGuard mesh connecting VPS and home nodes
+2. **CNI (Cilium)**: Pod networking with VXLAN for cross-node communication
+3. **Sealed Secrets**: Required for CSI authentication secrets
+4. **CSI Drivers**: Hetzner CSI (VPS storage), Proxmox CSI (home storage)
 
 ## Bootstrap Order
 
-1. **Infrastructure Layer** (terraform/infrastructure):
-   - Creates VMs
-   - Bootstraps Talos
-   - Installs CNI (Cilium)
-   - Deploys sealed-secrets keypair
-   - Bootstraps Flux
+### Layer 0: Persistent Auth (run once)
 
-2. **GitOps Layer** (Flux):
-   - Installs sealed-secrets controller
-   - Deploys CSI driver
-   - Manages application workloads
+- Talos machine secrets
+- Proxmox API tokens
+- Sealed secrets keypair
+
+### Layer 1: Infrastructure
+
+1. Hetzner VPS nodes created (2x CPX31)
+2. Proxmox VMs created (1x controlplane, 1x worker)
+3. Cluster bootstrapped from first VPS
+4. KubeSpan mesh established
+5. Cilium CNI installed
+6. Sealed secrets keypair deployed
+
+### Layer 2: Services (GitOps)
+
+1. Sealed secrets controller
+2. CSI drivers (Hetzner, Proxmox)
+3. Platform services (Vault, Authentik, Harbor)
+
+## Known Issues and Recovery
+
+### KubeSpan Mesh Connectivity
+
+**Symptom**: Nodes can't communicate across VPS ↔ home boundary
+
+**Check**: `talosctl get kubespanpeerstatuses` - state should be "up"
+
+**Recovery**: Verify UDP 51820 open on all nodes, check discovery service reachability
+
+### CSI Driver Issues
+
+**Hetzner CSI** (VPS nodes):
+
+- Check: `kubectl get pods -n kube-system -l app=hcloud-csi`
+- Requires: `HCLOUD_TOKEN` in cluster
+
+**Proxmox CSI** (home nodes):
+
+- Check: `kubectl get pods -n csi-proxmox`
+- Requires: Valid Proxmox API token (from 00-persistent-auth)
+
+### Sealed Secrets Keypair
+
+**Current Approach**: Terraform generates stable keypair in 00-persistent-auth layer
+
+**Key Points**:
+
+- Keypair persists across cluster destroy/recreate
+- All SealedSecrets in git must match current keypair
+- Use `./scripts/seal-secret.sh` for new secrets
 
 ## Engineering Best Practices
 
 1. **Never disrupt critical services on a running cluster**
-   - Plan changes carefully
-   - Consider dependency impacts
-   - Test in destroy/recreate cycles
-
-2. **Always verify dependencies before making changes**
-   - Check what depends on the service you're modifying
-   - Understand the full impact chain
-
-3. **Document all circular dependencies**
-   - Identify them early
-   - Break cycles with proper bootstrap sequencing
-
-4. **Use proper engineering process**:
-   - Map dependencies first
-   - Plan the approach
-   - Execute systematically
-   - Verify each step
-   - Document lessons learned
-
-## Terraform Sealed Secrets Automation
-
-The sealed-secrets-sealer.tf automatically:
-
-1. Generates secrets in correct format
-2. Seals them with terraform-managed keypair
-3. Writes them to k8s/ directory
-4. Can auto-commit if configured
-
-This ensures secrets are always correctly sealed for the current keypair.
+2. **Test changes via destroy/recreate cycle**
+3. **Document circular dependencies and break with proper sequencing**
+4. **Keep persistent auth layer separate from cluster lifecycle**

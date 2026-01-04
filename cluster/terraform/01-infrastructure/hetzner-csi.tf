@@ -41,6 +41,12 @@ resource "helm_release" "hcloud_csi" {
         defaultStorageClass = true
         reclaimPolicy       = "Retain"
       }]
+      # Restrict CSI controller to Hetzner VPS nodes (needs metadata service)
+      controller = {
+        nodeSelector = {
+          "topology.kubernetes.io/region" = "hetzner"
+        }
+      }
       # Restrict CSI node pods to Hetzner VPS nodes only
       node = {
         nodeSelector = {

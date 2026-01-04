@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
 
   // Link component for TP/FP issue IDs
   // Links to snapshot detail page with anchor to issue section
@@ -14,12 +14,11 @@
 
   let { snapshotSlug, issueId, kind, displayText }: Props = $props();
 
-  const href = $derived(`${base}/snapshots/${snapshotSlug}#${kind}-${issueId}`);
   const text = $derived(displayText ?? issueId);
 </script>
 
 <a
-  {href}
+  href={resolve(`/snapshots/${snapshotSlug}#${kind}-${issueId}`)}
   class="font-mono text-blue-600 underline hover:text-blue-800"
   title="View {kind.toUpperCase()} {issueId} in {snapshotSlug}"
 >

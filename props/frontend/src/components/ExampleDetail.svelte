@@ -73,7 +73,7 @@
         <div>
           <h3 class="text-sm font-medium text-gray-700 mb-2">Files ({data.files.length})</h3>
           <ul class="text-xs text-gray-600 space-y-1">
-            {#each data.files as file}
+            {#each data.files as file (file)}
               <li>
                 <FileLink snapshotSlug={data.snapshot_slug} filePath={file} />
               </li>
@@ -110,7 +110,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each data.definitions as def}
+            {#each data.definitions as def (def.definition_id)}
               <tr class="border-b border-gray-100 hover:bg-gray-50">
                 <td class="px-3 py-2">
                   <DefinitionIdLink id={def.definition_id} />

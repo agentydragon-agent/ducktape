@@ -27,7 +27,9 @@ terraform {
 
 # DRY configuration for persistent auth
 locals {
-  proxmox_host = "root@${var.proxmox_host}"
+  # NOTE: SSH uses proxmox_ssh_host (atlas) not proxmox_api_host (FQDN)
+  # because the FQDN routes through VPS nginx, but SSH needs direct Tailscale access
+  proxmox_ssh_target = "root@${var.proxmox_ssh_host}"
 
   # Persistent Proxmox users - survive VM lifecycle
   pve_persistent_users = {
@@ -53,7 +55,7 @@ data "external" "pve_persistent_tokens" {
   for_each = local.pve_persistent_users
 
   program = ["bash", "-c", <<-EOT
-    token_json=$(ssh ${local.proxmox_host} '
+    token_json=$(ssh ${local.proxmox_ssh_target} '
       # Create user if not exists
       pveum user add ${each.value.name} --comment "${each.value.comment}" 2>/dev/null || true
 
@@ -73,7 +75,7 @@ data "external" "pve_persistent_tokens" {
 
     # Create CSI config JSON and properly escape it as a string
     csi_config_json=$(cat <<JSON
-{"url":"https://${var.proxmox_api_host}/api2/json","insecure":false,"token_id":"$token_id","token_secret":"$token_value","region":"cluster","token":"$token_id=$token_value"}
+{"url":"https://${var.proxmox_api_host}/api2/json","insecure":false,"token_id":"$token_id","token_secret":"$token_value","region":"proxmox","token":"$token_id=$token_value"}
 JSON
 )
     # Output for terraform external - wrap JSON as escaped string
@@ -95,71 +97,48 @@ resource "null_resource" "proxmox_csi_sealed_secret" {
 
   provisioner "local-exec" {
     command = <<-EOT
+      set -e
       # Create temporary secret file with CSI configuration
       csi_config='${data.external.pve_persistent_tokens["csi"].result.config_json}'
 
       # Create kubernetes secret YAML
       cat > /tmp/proxmox-csi-secret.yaml <<EOF
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: proxmox-csi-plugin
-        namespace: csi-proxmox
-      type: Opaque
-      stringData:
-        config.yaml: |
-          clusters:
-            - url: $(echo "$csi_config" | jq -r .url)
-              insecure: $(echo "$csi_config" | jq -r .insecure)
-              token_id: $(echo "$csi_config" | jq -r .token_id)
-              token_secret: $(echo "$csi_config" | jq -r .token_secret)
-              region: $(echo "$csi_config" | jq -r .region)
-      EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: proxmox-csi-plugin
+  namespace: csi-proxmox
+type: Opaque
+stringData:
+  config.yaml: |
+    clusters:
+      - url: $(echo "$csi_config" | jq -r .url)
+        insecure: $(echo "$csi_config" | jq -r .insecure)
+        token_id: $(echo "$csi_config" | jq -r .token_id)
+        token_secret: $(echo "$csi_config" | jq -r .token_secret)
+        region: $(echo "$csi_config" | jq -r .region)
+EOF
 
       # Seal the secret using terraform-generated keypair
       cat > /tmp/sealed-secrets-cert.pem <<'CERTEOF'
 ${tls_self_signed_cert.sealed_secrets.cert_pem}
 CERTEOF
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
-        --format=yaml < /tmp/proxmox-csi-secret.yaml > ${path.root}/../../k8s/storage/proxmox-csi-sealed.yaml
+        --format=yaml < /tmp/proxmox-csi-secret.yaml > ./../../k8s/storage/proxmox-csi-sealed.yaml
       rm /tmp/sealed-secrets-cert.pem
 
       # Clean up temporary file
       rm /tmp/proxmox-csi-secret.yaml
 
-      echo "Generated sealed secret for Proxmox CSI with terraform-managed keypair"
+      echo "✅ Generated sealed secret for Proxmox CSI"
     EOT
   }
 }
 
-# Commit sealed secrets changes to git (only when they actually change)
-resource "null_resource" "commit_sealed_secrets" {
-  # Only run when sealed secret actually changes
-  triggers = {
-    sealed_secret_hash = filesha256("${path.root}/../../k8s/storage/proxmox-csi-sealed.yaml")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      cd ${path.root}/../..
-      if ! git diff --quiet k8s/storage/proxmox-csi-sealed.yaml; then
-        git add k8s/storage/proxmox-csi-sealed.yaml
-        git commit -m "chore: update Proxmox CSI sealed secret
-
-🔄 Generated with stable sealed-secrets keypair
-🔒 Persistent auth token - survives VM lifecycle
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
-        echo "✅ Committed updated Proxmox CSI sealed secret"
-      else
-        echo "ℹ️  Proxmox CSI sealed secret unchanged - no commit needed"
-      fi
-    EOT
-  }
-
-  depends_on = [null_resource.proxmox_csi_sealed_secret]
-}
+# NOTE: Auto-commit removed - user must manually commit sealed secrets after terraform apply
+# Run: git add k8s/storage/proxmox-csi-sealed.yaml && git commit -m "chore: update sealed secret"
+#
+# The seal-secret.sh helper script reads the cert directly from terraform state
+# via `terraform output -raw sealed_secrets_public_key_pem`
 
 # NOTE: No cleanup provisioner here - persistent tokens only destroyed when this layer is explicitly destroyed

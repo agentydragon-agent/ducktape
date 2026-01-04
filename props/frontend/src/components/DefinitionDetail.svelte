@@ -88,7 +88,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each colGroups as { split, kind, label }}
+          {#each colGroups as { split, kind, label } (`${split}-${kind}`)}
             {@const stats = getStats(split, kind)}
             <tr class="border-b border-gray-100">
               <td class="px-3 py-2 font-medium">{label}</td>

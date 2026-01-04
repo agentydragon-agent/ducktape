@@ -180,7 +180,7 @@
           <p class="text-gray-500">No true positives</p>
         {:else}
           <div class="space-y-2">
-            {#each snapshot.true_positives as tp}
+            {#each snapshot.true_positives as tp (tp.tp_id)}
               <div class="border rounded">
                 <button
                   class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
@@ -201,7 +201,7 @@
                     </div>
                     <div class="mt-3">
                       <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Occurrences</h4>
-                      {#each tp.occurrences as occ}
+                      {#each tp.occurrences as occ (occ.occurrence_id)}
                         <div
                           id="{tp.tp_id}-{occ.occurrence_id}"
                           class="bg-white border rounded p-2 mt-1 {targetOccurrenceId === occ.occurrence_id
@@ -223,7 +223,7 @@
                             />
                           </div>
                           <div class="mt-1">
-                            {#each occ.files as file}
+                            {#each occ.files as file (`${occ.occurrence_id}-${file.path}`)}
                               <div class="text-sm font-mono">{formatFileLocation(file)}</div>
                             {/each}
                           </div>
@@ -253,7 +253,7 @@
           <p class="text-gray-500">No false positives</p>
         {:else}
           <div class="space-y-2">
-            {#each snapshot.false_positives as fp}
+            {#each snapshot.false_positives as fp (fp.fp_id)}
               <div class="border rounded">
                 <button
                   class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
@@ -274,7 +274,7 @@
                     </div>
                     <div class="mt-3">
                       <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Occurrences</h4>
-                      {#each fp.occurrences as occ}
+                      {#each fp.occurrences as occ (occ.occurrence_id)}
                         <div
                           id="{fp.fp_id}-{occ.occurrence_id}"
                           class="bg-white border rounded p-2 mt-1 {targetOccurrenceId === occ.occurrence_id
@@ -296,7 +296,7 @@
                             />
                           </div>
                           <div class="mt-1">
-                            {#each occ.files as file}
+                            {#each occ.files as file (`${occ.occurrence_id}-${file.path}`)}
                               <div class="text-sm font-mono">{formatFileLocation(file)}</div>
                             {/each}
                           </div>

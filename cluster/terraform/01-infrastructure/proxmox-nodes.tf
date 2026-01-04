@@ -6,11 +6,8 @@
 # TALOS IMAGE FACTORY - Generate custom Talos image with extensions
 # ============================================================================
 
-# Create schematic for Proxmox nodes
-# Includes qemu-guest-agent for Proxmox integration and static IP via META
+# Shared schematic with just extensions (network config via cloud-init snippets)
 resource "talos_image_factory_schematic" "proxmox" {
-  for_each = local.proxmox_nodes
-
   schematic = yamlencode({
     customization = {
       extraKernelArgs = ["net.ifnames=0"]
@@ -19,77 +16,64 @@ resource "talos_image_factory_schematic" "proxmox" {
           "siderolabs/qemu-guest-agent"
         ]
       }
-      meta = [
-        {
-          key = 10 # META key 0xa for network configuration
-          value = yamlencode({
-            addresses = [
-              {
-                address  = "${each.value.ip}/16"
-                linkName = "eth0"
-                family   = "inet4"
-                scope    = "global"
-                flags    = "permanent"
-                layer    = "platform"
-              }
-            ]
-            routes = [
-              {
-                family      = "inet4"
-                dst         = ""
-                gateway     = local.proxmox_gateway
-                outLinkName = "eth0"
-                table       = "main"
-                priority    = 1024
-                scope       = "global"
-                type        = "unicast"
-                protocol    = "static"
-                layer       = "platform"
-              }
-            ]
-            hostnames = [
-              {
-                hostname = each.value.name
-                layer    = "platform"
-              }
-            ]
-            resolvers = [
-              {
-                dnsServers = ["1.1.1.1", "8.8.8.8"]
-                layer      = "platform"
-              }
-            ]
-          })
-        }
-      ]
     }
   })
 }
 
-# Get download URLs for the schematic
+# Get download URL for shared schematic
 data "talos_image_factory_urls" "proxmox" {
-  for_each = local.proxmox_nodes
-
-  schematic_id  = talos_image_factory_schematic.proxmox[each.key].id
+  schematic_id  = talos_image_factory_schematic.proxmox.id
   talos_version = var.talos_version
-  platform      = "metal"
+  platform      = "nocloud" # nocloud platform reads cloud-init from cidata ISO
   architecture  = "amd64"
 }
 
 # ============================================================================
-# PROXMOX DISK IMAGES
+# PROXMOX DISK IMAGE
 # ============================================================================
 
-# Download disk images to Proxmox
+# Download shared disk image - one image for all nodes (network via cloud-init)
 resource "proxmox_virtual_environment_download_file" "talos_disk" {
-  for_each = local.proxmox_nodes
-
   content_type = "import"
   datastore_id = "local"
   node_name    = var.proxmox_node_name
-  url          = replace(data.talos_image_factory_urls.proxmox[each.key].urls.disk_image, "metal-amd64.raw.zst", "metal-amd64.qcow2")
-  file_name    = "talos-${talos_image_factory_schematic.proxmox[each.key].id}-amd64.qcow2"
-  overwrite    = true
+  # Replace any .raw.xz or .raw.zst extension with .qcow2 for Proxmox import
+  url       = replace(replace(data.talos_image_factory_urls.proxmox.urls.disk_image, ".raw.xz", ".qcow2"), ".raw.zst", ".qcow2")
+  file_name = "talos-${talos_image_factory_schematic.proxmox.id}-amd64.qcow2"
+  overwrite = true
+}
+
+# ============================================================================
+# CLOUD-INIT NETWORK SNIPPETS
+# ============================================================================
+
+# Create per-node network-config snippets for cloud-init
+resource "proxmox_virtual_environment_file" "network_config" {
+  for_each = local.proxmox_nodes
+
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = var.proxmox_node_name
+
+  source_raw {
+    data = yamlencode({
+      network = {
+        version = 2
+        ethernets = {
+          eth0 = {
+            dhcp4     = false
+            dhcp6     = false
+            addresses = ["${each.value.ip}/16"]
+            gateway4  = local.proxmox_gateway
+            nameservers = {
+              addresses = ["1.1.1.1", "8.8.8.8"]
+            }
+          }
+        }
+      }
+    })
+    file_name = "talos-${each.key}-network.yaml"
+  }
 }
 
 # ============================================================================
@@ -144,12 +128,18 @@ resource "proxmox_virtual_environment_vm" "talos" {
     discard      = "on"
     size         = 40
     file_format  = "raw"
-    import_from  = proxmox_virtual_environment_download_file.talos_disk[each.key].id
+    import_from  = proxmox_virtual_environment_download_file.talos_disk.id
   }
 
   agent {
     enabled = true
     trim    = true
+  }
+
+  # Cloud-init drive for network configuration
+  initialization {
+    datastore_id         = "local-zfs"
+    network_data_file_id = proxmox_virtual_environment_file.network_config[each.key].id
   }
 }
 
@@ -197,10 +187,12 @@ data "talos_machine_configuration" "proxmox" {
         kubelet = {
           extraArgs = {
             provider-id = "proxmox://cluster/${each.value.vm_id}"
+            # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
+            # Required to handle MTU mismatch (WireGuard 1280 vs pod 1500)
+            allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
           }
-          nodeIP = {
-            validSubnets = ["10.2.0.0/16"]
-          }
+          # No nodeIP.validSubnets - let kubelet auto-detect
+          # KubeSpan IPv6 IPs (fd05::/64) are globally routable via WireGuard mesh
         }
       }
       cluster = {

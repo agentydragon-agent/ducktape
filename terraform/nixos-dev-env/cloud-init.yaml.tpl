@@ -27,21 +27,19 @@ runcmd:
   # Step 2: Initial NixOS rebuild from flake (runcmd runs as root, no sudo needed)
   # --impure allows the flake to import /etc/nixos/hardware-configuration.nix
   # --no-write-lock-file since we're pulling from GitHub and can't write back
+  # Uses 'boot' instead of 'switch' because:
+  # 1. The cloud image is a minimal bootstrap, new config may have incompatible services
+  # 2. A clean reboot ensures the new system starts properly
+  # 3. Network config changes (e.g., NetworkManager vs systemd-networkd) need reboot
   - |
     echo "Applying NixOS configuration from flake..."
-    /run/current-system/sw/bin/nixos-rebuild switch --flake '${nixos_flake_url}#${nixos_host}' --impure --no-write-lock-file --install-bootloader 2>&1 | tee /var/log/nixos-rebuild.log || echo "nixos-rebuild failed, check /var/log/nixos-rebuild.log"
+    /run/current-system/sw/bin/nixos-rebuild boot --flake '${nixos_flake_url}#${nixos_host}' --impure --no-write-lock-file --install-bootloader 2>&1 | tee /var/log/nixos-rebuild.log || echo "nixos-rebuild failed, check /var/log/nixos-rebuild.log"
 
-  # Step 3: Apply home-manager configuration as the user
+  # Step 3: Reboot into the new NixOS configuration
+  # The NixOS config includes home-manager-init service that runs once on first boot
   - |
-    echo "Setting up home-manager..."
-    su - ${username} -c '/run/current-system/sw/bin/home-manager switch --flake "${home_manager_flake_url}#${home_manager_host}" 2>&1' | tee /var/log/home-manager.log || echo "home-manager switch failed, check /var/log/home-manager.log"
+    echo "Rebooting into new NixOS configuration..."
+    echo "Home-manager will be set up automatically after reboot."
+    /run/current-system/sw/bin/systemctl reboot
 
-  # Step 4: Prompt user to set password
-  - |
-    echo ""
-    echo "=========================================="
-    echo "IMPORTANT: Set a password for user '${username}'"
-    echo "SSH in and run: passwd"
-    echo "=========================================="
-
-final_message: "NixOS VM '${hostname}' ready! Managed via flake: ${nixos_flake_url}#${nixos_host}"
+final_message: "NixOS VM '${hostname}' bootstrapped. Rebooting to apply full configuration."

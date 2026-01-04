@@ -540,6 +540,32 @@ Example:
 
 Never use the `timeout` command prefix - use the tool's built-in timeout parameter instead.
 
+## Bootstrap Timing Reference
+
+**Observed timings for terraform apply phases (2026-01-03 hybrid VPS+Proxmox cluster):**
+
+| Phase | Typical Duration | Notes |
+|-------|------------------|-------|
+| Proxmox VM creation | 30-35s | Per VM, parallel |
+| Hetzner VPS creation | 55s-1m15s | Per VPS, parallel |
+| VPS Talos config apply | 20-30s | Per VPS |
+| Proxmox Talos config apply | 7-9 min | Per node, slower due to disk import |
+| talos_machine_bootstrap | <1s | Triggers etcd bootstrap |
+| K8s API wait | 5-10 min | wait-for-k8s-api.sh, 60 attempts × 10s |
+| Cilium installation | 30-40s | helm_release.cilium_bootstrap |
+| Nodes Ready wait | ~1s | After Cilium, nodes become Ready quickly |
+| hcloud-csi installation | 15-20s | Hetzner CSI driver |
+
+**Total estimated bootstrap time**: 15-20 minutes from terraform apply start to all nodes Ready.
+
+**Key slowest phases**:
+
+1. **Proxmox Talos config apply** (7-9 min per node) - Limited by disk import from downloaded qcow2
+2. **K8s API wait** (5-10 min) - Waiting for all control plane nodes to be ready
+
+**When monitoring bootstrap**: If you're past 10 minutes without Cilium installed, check terraform state for what's
+blocking (usually Proxmox config apply or K8s API wait).
+
 ## Checklist
 
 - **Before making changes**: Read docs/bootstrap.md to understand current working state
@@ -564,3 +590,7 @@ This ensures the documentation serves both as operational procedures (docs/boots
 2. **Known tricky components** - Proxmox CSI storage issues, SealedSecret decryption problems
 3. **Common recovery actions** - Controller restarts, forced reconciliation
 4. **Only then** proceed to deeper investigation if fast-path doesn't resolve the issue
+
+## Secrets Management
+
+@docs/secrets.md

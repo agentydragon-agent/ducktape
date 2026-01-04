@@ -57,7 +57,7 @@
       <!-- Non-zero credit edges (both TP and FP) -->
       {#if nonZeroEdges.length > 0}
         <div class="text-xs font-medium mb-1">Matches ({nonZeroEdges.length}):</div>
-        {#each nonZeroEdges as edge}
+        {#each nonZeroEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === 'tp' ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
           {@const target = edge.target}
           {@const credit = getCredit(edge)}
           {@const isTP = target.kind === 'tp'}
@@ -110,7 +110,7 @@
           </button>
           {#if showZeroEdges}
             <div class="mt-2 space-y-1">
-              {#each zeroEdges as edge}
+              {#each zeroEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === 'tp' ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
                 {@const target = edge.target}
                 <div class="p-2 rounded border text-xs bg-gray-50 border-gray-200">
                   <div class="flex items-center gap-2 mb-1">
@@ -152,7 +152,7 @@
       {#if missedOccurrences.length > 0}
         <div class="mt-3 pt-2 border-t border-gray-200">
           <div class="text-xs font-medium text-red-600 mb-1">Missed ({missedOccurrences.length}):</div>
-          {#each missedOccurrences as missed}
+          {#each missedOccurrences as missed (`${missed.tp_id}-${missed.occurrence_id}`)}
             <div class="p-2 rounded border text-xs bg-red-50 border-red-200">
               <div class="flex items-center gap-2">
                 {#if snapshotSlug}

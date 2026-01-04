@@ -1,6 +1,8 @@
 <script lang="ts">
   import { getContext } from 'svelte';
   import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
+  import { SvelteURLSearchParams } from 'svelte/reactivity';
   import type { RunModalPrefill } from '$lib/types';
   import DefinitionsTable from '$components/stats/DefinitionsTable.svelte';
   import SummaryCards from '$components/stats/SummaryCards.svelte';
@@ -14,12 +16,12 @@
   }>('runModal');
 
   function handleNavigateToRuns(filters: RunModalPrefill) {
-    const params = new URLSearchParams();
+    const params = new SvelteURLSearchParams();
     if (filters.definitionId) params.set('definition', filters.definitionId);
     if (filters.split) params.set('split', filters.split);
     if (filters.kind) params.set('kind', filters.kind);
     const qs = params.toString();
-    goto(qs ? `/runs?${qs}` : '/runs');
+    goto(resolve(qs ? `/runs?${qs}` : '/runs'));
   }
 </script>
 

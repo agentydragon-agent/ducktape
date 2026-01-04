@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
 
   // Link component for files in snapshots
   // Links to snapshot detail page with file query parameter
@@ -13,12 +13,11 @@
 
   let { snapshotSlug, filePath, displayText }: Props = $props();
 
-  const href = $derived(`${base}/snapshots/${snapshotSlug}?file=${encodeURIComponent(filePath)}`);
   const text = $derived(displayText ?? filePath);
 </script>
 
 <a
-  {href}
+  href={resolve(`/snapshots/${snapshotSlug}?file=${encodeURIComponent(filePath)}`)}
   class="font-mono text-xs text-blue-600 underline hover:text-blue-800"
   title="View {filePath} in {snapshotSlug}"
 >

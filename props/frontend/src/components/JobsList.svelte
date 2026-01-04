@@ -24,7 +24,7 @@
 
   {#if $jobs.length > 0}
     <div class="space-y-2">
-      {#each $jobs as job}
+      {#each $jobs as job (job.job_id)}
         <div class="text-xs bg-gray-50 p-2 rounded">
           <div class="flex gap-4 items-center">
             <JobIdLink id={job.job_id} />

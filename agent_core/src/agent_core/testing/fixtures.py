@@ -271,10 +271,10 @@ def live_openai(request):
       do not actually use it (e.g., parameterized tests with a mock branch),
       return a lightweight no-op placeholder to avoid network work and keep
       those tests running.
-    - For `live_llm` tests, construct AsyncOpenAI (marker skip logic
+    - For `live_openai_api` tests, construct AsyncOpenAI (marker skip logic
       ensures OPENAI_API_KEY is set).
     """
-    if request.node.get_closest_marker("live_llm") is not None:
+    if request.node.get_closest_marker("live_openai_api") is not None:
         return AsyncOpenAI()
 
     class _Noop:

@@ -53,7 +53,8 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "requires_docker: tests that require Docker to run",
-    "live_llm: tests that require a live LLM API",
+    "live_openai_api: tests requiring OPENAI_API_KEY",
+    "live_anthropic_api: tests requiring ANTHROPIC_API_KEY",
 ]
 
 [tool.uv.sources]

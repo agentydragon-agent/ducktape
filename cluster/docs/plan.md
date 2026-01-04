@@ -26,6 +26,12 @@ Migrated from Proxmox-only 5-node cluster to **hybrid Hetzner VPS + Proxmox** ar
 - KubeSpan: Active mesh with ~15s handshake intervals
 - No services deployed yet (Flux, Vault, etc. pending)
 
+**Pending Investigation**:
+
+- [ ] Re-evaluate TCP MTU probing requirement now that we're on KubeSpan instead of Tailscale
+  - PowerDNS currently requires `net.ipv4.tcp_mtu_probing` sysctl for AXFR over WireGuard
+  - KubeSpan may handle MTU differently than Tailscale - test if still needed
+
 ---
 
 ## 🔀 Possible Directions
@@ -131,7 +137,7 @@ Complete the original hybrid vision with all services.
 ### Future Services (Lower Priority)
 
 - [ ] Jellyfin (media streaming)
-- [ ] \*arr stack (media automation)
+- [ ] *arr stack (media automation)
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache
@@ -181,135 +187,65 @@ Complete the original hybrid vision with all services.
 
 **Decision**: Use DNS name instead of single VPS IP for kubeconfig
 
-**Target**:
+#### Target
 
-```yaml
-server: https://api.test-cluster.agentydragon.com:6443
-```
+- No AXFR complexity (same database = same data)
+- `local-path-provisioner` on VPS nodes
+- PowerDNS DaemonSet or Deployment with VPS node affinity
+- Tailscale MagicDNS as alternative to public DNS
 
-**Implementation**:
-
-- `api.test-cluster.agentydragon.com` → both VPS IPs (5.78.43.147, 5.78.106.249)
-- DNS round-robin provides client-side failover
-- Created by external-dns from Ingress annotation or manual DNS record
-
-**Bootstrap**: Initial kubeconfig uses raw IP, switched to DNS after cluster is up and DNS records exist
-
-### PowerDNS HA with Galera (VPS-local storage)
-
-**Decision**: Run HA PowerDNS on both VPS nodes with MariaDB Galera using local storage
-
-**Architecture**:
-
-```
-VPS0                         VPS1
-├── local-path PVC           ├── local-path PVC
-│   └── MariaDB data         │   └── MariaDB data
-├── MariaDB (Galera) ◄─sync─►├── MariaDB (Galera)
-└── PowerDNS pod             └── PowerDNS pod
-```
-
-**Benefits**:
-
-- ❌ No AXFR complexity (same database = same data)
-- ❌ No VPS standalone PowerDNS container needed
-- ✅ True active-active DNS
-- ✅ Survives single VPS failure
-- ✅ No Hetzner Volume cost (uses VPS NVMe)
-
-**DNS records**:
+#### DNS Records
 
 - `ns1.agentydragon.com` → VPS0 IP
-- `ns2.agentydragon.com` → VPS1 IP
-
-**Node placement**:
-
-- `local-path-provisioner` on VPS nodes
-- MariaDB Galera StatefulSet with `podAntiAffinity` (one pod per VPS)
-- PowerDNS DaemonSet or Deployment with VPS node affinity
-
-**Tradeoff**: If VPS is destroyed, that node's data is lost. But Galera syncs continuously, so the other node has the data. Only loses data if both VPS die simultaneously.
-
-### VPS Controllers on Headscale
-
-**Decision**: Add VPS controllers to Headscale mesh for additional connectivity options
-
-**Benefits**:
-
-- Backup path to API if public IP is blocked
-- Tailscale MagicDNS as alternative to public DNS
-- Unified management with other Headscale nodes
-
-### Machine Secrets in Persistent Auth
-
-**Decision**: Store Talos machine secrets in 00-persistent-auth layer
-
-**Rationale**:
-
-- Secrets persist across cluster destroy/recreate
-- All nodes share same cluster identity
-- Enables hybrid addition of nodes without regenerating secrets
 
 ### Storage Strategy: Consolidated VPS, Liberal Home
 
 **Decision**: Minimize Hetzner volumes, consolidate databases; generous allocations on Proxmox
 
-**Hetzner Block Storage** (~$0.54/10GB minimum per volume):
+#### VPS Storage (small, fast-access)
 
-- **Shared PostgreSQL** - Single instance for Vault, Authentik, etc.
 - **Vault Raft** - If not using shared PG (small, 10GB)
 - Target: 2-3 volumes max on VPS (~$1.60/month)
 
-**Proxmox CSI** (ZFS, no per-volume cost):
+#### Home Storage (large, tolerates downtime)
 
-- Harbor registry + PostgreSQL (100GB+)
 - Gitea + PostgreSQL (50GB+)
 - Loki log storage (100GB+)
-- Media services (Jellyfin, \*arr stack)
+- Media services (Jellyfin, *arr stack)
 - Nix cache (100GB+)
-- Be generous with allocations - storage is "free" from ZFS pool
 
-**Service Placement**:
+| Location | Services | Rationale |
+|----------|----------|-----------|
+| VPS | Vault, Authentik, Ingress, DNS, cert-manager | Always-on, critical path |
+| Home | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
 
-| Location | Services                                       | Rationale                            |
-| -------- | ---------------------------------------------- | ------------------------------------ |
-| VPS      | Vault, Authentik, Ingress, DNS, cert-manager   | Always-on, critical path             |
-| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
-
-**Shared PostgreSQL Pattern**:
+#### Shared PostgreSQL Option
 
 - Single PostgreSQL pod on VPS with Hetzner volume
 - Multiple databases: `vault`, `authentik`, etc.
-- Reduces PVC count from N to 1
-- CloudNativePG or Bitnami PostgreSQL chart
+- Secrets persist across cluster destroy/recreate
 
 ---
 
 ## ✅ Recent Accomplishments
 
-### 2026-01-02: Hetzner ISO Boot Simplification
-
-- Switched from custom Talos snapshots to **Hetzner public Talos ISO** (ID: 122630)
 - Removed obsolete components:
   - `terraform/hetzner-image/` layer (no longer needed)
   - `scripts/create-hetzner-talos-image.sh`
   - `hcloud-upload-image` tool from shell.nix
 - ISO boots → reads user_data → auto-installs to disk → reboots
-- Eliminates snapshot creation step, simplifies deployment
 
 ### 2026-01-03: Hybrid Infrastructure Foundation
 
 - Migrated from Proxmox-only to hybrid Hetzner+Proxmox architecture
 - Deployed 2x CPX31 VPS nodes with Talos
 - Implemented Cilium VXLAN tunnel mode for cloud networking
-- Added machine secrets to persistent auth layer
 - Fixed regenerate-attic-jwt.sh to use terraform state (not libsecret)
 - Added VXLAN firewall rule (UDP 8472)
 
 ### Previous Milestones (Proxmox-only era)
 
 - 5-node Talos cluster (3 controllers, 2 workers)
-- Full service stack: Vault, Authentik, Harbor, Gitea, Matrix
 - Observability: Prometheus, Loki, Grafana with SSO
 - DNS: PowerDNS with AXFR to VPS
 - Certificates: cert-manager with DNS-01
@@ -318,7 +254,7 @@ VPS0                         VPS1
 
 ## 🔗 Related Documentation
 
-- **VPS Integration Design**: `docs/vps-cluster-integration.md`
+- **VPS Integration Design**: `docs/vps_cluster_integration.md`
 - **Bootstrap Procedures**: `docs/bootstrap.md`
 - **Troubleshooting**: `docs/troubleshooting.md`
 - **Secret Sync Analysis**: `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md`

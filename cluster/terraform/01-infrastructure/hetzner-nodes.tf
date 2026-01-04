@@ -74,6 +74,13 @@ data "talos_machine_configuration" "vps" {
             port    = 7445
           }
         }
+        kubelet = {
+          # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
+          # Required to handle MTU mismatch (WireGuard 1280 vs pod 1500)
+          extraArgs = {
+            allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+          }
+        }
       }
       cluster = {
         # Each VPS controlplane node consumes a whole VPS instance, so we need

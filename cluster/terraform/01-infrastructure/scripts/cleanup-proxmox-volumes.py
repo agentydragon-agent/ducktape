@@ -69,8 +69,13 @@ def delete_volume(proxmox_host: str, volume_id: str) -> bool:
 
 
 def main():
-    kubeconfig_path = sys.argv[1] if len(sys.argv) > 1 else "./kubeconfig"
-    proxmox_host = sys.argv[2] if len(sys.argv) > 2 else "root@atlas"
+    if len(sys.argv) < 3:
+        print("Usage: cleanup-proxmox-volumes.py <kubeconfig_path> <proxmox_ssh_host>")
+        print("  proxmox_ssh_host: Tailscale hostname (e.g., 'atlas'), NOT the FQDN")
+        sys.exit(1)
+    kubeconfig_path = sys.argv[1]
+    proxmox_ssh_host = sys.argv[2]
+    proxmox_ssh_target = f"root@{proxmox_ssh_host}"
 
     print("🧹 Cleaning up Proxmox volumes from retained PVs...")
 
@@ -79,7 +84,7 @@ def main():
 
     if not volumes:
         print("❌ ERROR: Cluster API unavailable - cannot safely identify volumes")
-        print(f"Manual cleanup: ssh {proxmox_host} 'pvesm list local | grep pvc-'")
+        print(f"Manual cleanup: ssh {proxmox_ssh_target} 'pvesm list local | grep pvc-'")
         return 1
 
     print(f"📋 Found {len(volumes)} volumes to delete:")
@@ -92,7 +97,7 @@ def main():
 
     for vol in volumes:
         print(f"🗑️  Deleting: {vol}")
-        if delete_volume(proxmox_host, vol):
+        if delete_volume(proxmox_ssh_target, vol):
             cleaned += 1
         else:
             print(f"⚠️  Failed to delete {vol} (may not exist)")

@@ -148,3 +148,32 @@ def test_editor_content_includes_both_user_context_and_previous_message(temp_rep
     assert "# old commit" in content
     # User context should appear before previous message
     assert content.index("# User context") < content.index("# Previous commit message")
+
+
+def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo, snapshot):
+    """Staged-only files must NOT appear in 'Changes not staged for commit'.
+
+    Bug: When modifying an existing tracked file and staging it, the file
+    incorrectly appeared in both "Changes to be committed" AND "Changes not
+    staged for commit" because unstaged used HEAD→worktree instead of index→worktree.
+    """
+    # Init with a file
+    temp_repo.write("tracked.txt", "v1\n")
+    temp_repo.stage("tracked.txt")
+    temp_repo.commit("init")
+
+    # Modify and STAGE the file (bug case: should NOT appear in unstaged)
+    temp_repo.write("tracked.txt", "v2\n")
+    temp_repo.stage("tracked.txt")
+
+    content = build_editor_content(
+        git_repo, msg="test", previous_message=None, user_context=None, stats_line="", passthru=[]
+    )
+
+    # Snapshot the full content
+    assert content == snapshot
+
+    # Explicit assertion: tracked.txt must NOT appear in unstaged section
+    assert "# Changes not staged for commit:" not in content, (
+        "Unstaged section should not exist when all changes are staged"
+    )

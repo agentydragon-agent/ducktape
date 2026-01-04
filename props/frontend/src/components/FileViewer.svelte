@@ -2,6 +2,7 @@
   import 'highlight.js/styles/github.css';
   import { page } from '$app/stores';
   import { base } from '$app/paths';
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { CheckCircle, XCircle, MessageSquare } from 'lucide-svelte';
   import type {
     FileContentResponse,
@@ -98,8 +99,8 @@
   });
 
   // Map line numbers to issues (0-based line index)
-  const lineToIssues = $derived.by<Map<number, IssueMarker[]>>(() => {
-    const map = new Map<number, IssueMarker[]>();
+  const lineToIssues = $derived.by<SvelteMap<number, IssueMarker[]>>(() => {
+    const map = new SvelteMap<number, IssueMarker[]>();
 
     for (const issue of allIssues) {
       const ranges = getRangesForFile(issue, file.path);
@@ -124,8 +125,8 @@
   });
 
   // Map line numbers to range notes (for ranges that end on that line)
-  const lineToRangeNotes = $derived.by<Map<number, Array<{ issue: IssueMarker; range: LineRange }>>>(() => {
-    const map = new Map<number, Array<{ issue: IssueMarker; range: LineRange }>>();
+  const lineToRangeNotes = $derived.by<SvelteMap<number, Array<{ issue: IssueMarker; range: LineRange }>>>(() => {
+    const map = new SvelteMap<number, Array<{ issue: IssueMarker; range: LineRange }>>();
 
     for (const issue of allIssues) {
       const ranges = getRangesForFile(issue, file.path);
@@ -143,10 +144,10 @@
     return map;
   });
 
-  let expandedIssues = $state<Set<string>>(new Set());
+  let expandedIssues = new SvelteSet<string>();
 
   function toggleIssue(id: string) {
-    const newSet = new Set(expandedIssues);
+    const newSet = new SvelteSet(expandedIssues);
     if (newSet.has(id)) {
       newSet.delete(id);
     } else {
@@ -193,7 +194,7 @@
   <div class="overflow-auto max-h-[70vh]">
     <table class="w-full">
       <tbody>
-        {#each lines as line, idx}
+        {#each lines as line, idx (idx)}
           {@const lineIssues = lineToIssues.get(idx) || []}
           {@const hasTP = lineIssues.some((i) => i.kind === 'tp')}
           {@const hasFP = lineIssues.some((i) => i.kind === 'fp')}
@@ -213,7 +214,7 @@
               <div class="flex items-center justify-end gap-1">
                 {#if lineIssues.length > 0}
                   <div class="flex gap-0.5">
-                    {#each lineIssues as issue}
+                    {#each lineIssues as issue (getIssueKey(issue))}
                       {#if issue.kind === 'tp'}
                         <CheckCircle size={12} class="text-green-600" />
                       {:else if issue.kind === 'fp'}
@@ -227,14 +228,14 @@
                 <span>{idx + 1}</span>
               </div>
             </td>
-            <!-- Line content -->
             <td class="px-4 py-0.5 whitespace-pre align-top">
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlight.js output is pre-sanitized (escapes user content, adds only styling spans) -->
               {@html highlightedLines[idx] || line}
             </td>
           </tr>
 
           <!-- Issue comment cards (show after the first line of each issue's range) -->
-          {#each lineIssues as issue}
+          {#each lineIssues as issue (getIssueKey(issue))}
             {@const issueRanges = getRangesForFile(issue, file.path)}
             {@const isFirstLine =
               !issueRanges || issueRanges.length === 0 ? idx === 0 : issueRanges.some((r) => r.start_line === idx)}
@@ -269,7 +270,7 @@
 
           <!-- Range notes (show after the last line of each range with a note) -->
           {@const rangeNotes = lineToRangeNotes.get(idx) || []}
-          {#each rangeNotes as { range }}
+          {#each rangeNotes as { range, issue } (`${getIssueKey(issue)}-${range.start_line}`)}
             <tr>
               <td colspan="2" class="px-4 py-0.5">
                 <div class="text-xs italic text-gray-600 bg-gray-50 border-l-2 border-gray-300 px-2 py-1 rounded-r">
