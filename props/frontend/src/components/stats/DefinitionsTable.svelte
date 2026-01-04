@@ -85,7 +85,7 @@
         >
           Age{getSortIndicator('created_at')}
         </th>
-        {#each splits as split}
+        {#each splits as split (split)}
           <th
             colspan={kinds.length * metricsPerKind}
             class="px-3 py-1 text-center border-l border-gray-300 font-semibold capitalize"
@@ -96,8 +96,8 @@
       </tr>
       <!-- Level 2: Kind with example counts -->
       <tr class="border-b border-gray-200">
-        {#each splits as split}
-          {#each kinds as kind}
+        {#each splits as split (split)}
+          {#each kinds as kind (`${split}-${kind}`)}
             {@const colId = `${split}_${kind}_recall`}
             {@const count = getExampleCount(split, kind)}
             <th
@@ -112,8 +112,8 @@
       </tr>
       <!-- Level 3: Metrics -->
       <tr class="border-b border-gray-300 text-xs text-gray-500">
-        {#each splits as _split}
-          {#each kinds as _kind}
+        {#each splits as _split (_split)}
+          {#each kinds as _kind (`${_split}-${_kind}`)}
             <th class="px-2 py-1 text-right border-l border-gray-200">Recall</th>
             <th class="px-2 py-1 text-right">Runs</th>
             <th class="px-2 py-1 text-right">Zero</th>
@@ -132,8 +132,8 @@
           <td class="px-3 py-2 text-right text-gray-600">
             {formatTableAge(def.created_at)}
           </td>
-          {#each splits as split}
-            {#each kinds as kind}
+          {#each splits as split (split)}
+            {#each kinds as kind (`${split}-${kind}`)}
               {@const stats = getStats(def, split, kind)}
               {@const clickable = onCellClick != null}
               {@const cellClick = clickable

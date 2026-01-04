@@ -13,6 +13,11 @@ dependencies = [
     "fastmcp>=2.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "syrupy>=4.0",
+]
+
 [project.scripts]
 git-commit-ai = "git_commit_ai.cli:main"
 

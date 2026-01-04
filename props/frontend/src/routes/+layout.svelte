@@ -2,7 +2,7 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { Toaster } from 'svelte-sonner';
   import RunTriggerModal from '$components/RunTriggerModal.svelte';
   import { connected, startFeed } from '$lib/stores/runsFeed';
@@ -42,17 +42,19 @@
     startFeed();
   });
 
-  // Navigation items
+  // Navigation items (store paths before resolve)
   const navItems = $derived([
-    { href: base || '/', label: 'Overview' },
-    { href: `${base}/runs`, label: 'Runs' },
-    { href: `${base}/snapshots`, label: 'Ground Truth' },
+    { path: '/', label: 'Overview' },
+    { path: '/runs', label: 'Runs' },
+    { path: '/snapshots', label: 'Ground Truth' },
   ]);
 
-  function isActive(href: string, pathname: string): boolean {
+  function isActive(path: string, pathname: string): boolean {
     // Root is exact match, others use startsWith
-    if (href === (base || '/')) return pathname === (base || '/');
-    return pathname.startsWith(href);
+    const resolvedPath = resolve(path);
+    const rootPath = resolve('/');
+    if (resolvedPath === rootPath) return pathname === rootPath;
+    return pathname.startsWith(resolvedPath);
   }
 </script>
 
@@ -64,7 +66,7 @@
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-bold">
-          <a href="{base}/" class="hover:text-blue-600">Props</a>
+          <a href={resolve('/')} class="hover:text-blue-600">Props</a>
         </h1>
         {#if $connected}
           <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">live</span>
@@ -73,11 +75,11 @@
         {/if}
       </div>
       <nav class="flex gap-1">
-        {#each navItems as { href, label }}
+        {#each navItems as { path, label } (path)}
           <a
-            {href}
+            href={resolve(path)}
             class="px-3 py-1.5 rounded text-sm font-medium transition-colors
-              {isActive(href, $page.url.pathname)
+              {isActive(path, $page.url.pathname)
               ? 'bg-blue-100 text-blue-700'
               : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}"
           >

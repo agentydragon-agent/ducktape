@@ -145,7 +145,7 @@
       {#if allFiles.length > 1}
         <div>
           <div class="text-xs font-medium text-gray-600 mb-1">All affected files:</div>
-          {#each allFiles as file}
+          {#each allFiles as file (file.path)}
             <div class="font-mono text-xs text-gray-700">
               {formatFileLocation(file)}
             </div>
@@ -157,7 +157,7 @@
         <div>
           <div class="text-xs font-medium text-gray-600 mb-1">Grading:</div>
           <div class="space-y-1">
-            {#each gradingEdges as edge}
+            {#each gradingEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === 'tp' ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
               {@const target = edge.target}
               {#if target.credit > 0}
                 {@const TargetIcon = ICONS[target.kind]}

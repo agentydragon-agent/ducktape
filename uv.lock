@@ -1979,6 +1979,11 @@ dependencies = [
     { name = "pygit2" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "syrupy" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "agent-core", editable = "agent_core" },
@@ -1988,7 +1993,9 @@ requires-dist = [
     { name = "openai-utils", editable = "openai_utils" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pygit2", specifier = ">=1.14" },
+    { name = "syrupy", marker = "extra == 'dev'", specifier = ">=4.0" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "gmail-archiver"

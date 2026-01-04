@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
 
   // Link component for TP/FP occurrence IDs
   // Links to snapshot detail page with issue/occurrence and optional file parameter
@@ -15,8 +15,8 @@
 
   let { snapshotSlug, issueId, occurrenceId, filePath, displayText }: Props = $props();
 
-  const href = $derived.by(() => {
-    const url = `${base}/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;
+  const urlPath = $derived.by(() => {
+    const url = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;
     if (filePath) {
       return `${url}?file=${encodeURIComponent(filePath)}`;
     }
@@ -27,7 +27,7 @@
 </script>
 
 <a
-  {href}
+  href={resolve(urlPath)}
   class="font-mono text-blue-600 underline hover:text-blue-800"
   title="View occurrence {issueId}/{occurrenceId} in {snapshotSlug}"
 >

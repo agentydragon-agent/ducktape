@@ -15,7 +15,7 @@
     <p class="text-gray-500 text-sm">No active runs</p>
   {:else}
     <div class="space-y-2">
-      {#each activeRuns as run}
+      {#each activeRuns as run (run.agent_run_id)}
         <div class="block w-full text-left p-3 rounded border hover:bg-gray-50 transition-colors">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">

@@ -105,7 +105,6 @@
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" role="document" onclick={(e) => e.stopPropagation()}>
       <h2 id="modal-title" class="text-lg font-semibold mb-4">Trigger Runs</h2>
 
@@ -124,7 +123,7 @@
               class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={loading}
             >
-              {#each definitions as def}
+              {#each definitions as def (def.definition_id)}
                 <option value={def.definition_id}>{def.definition_id}</option>
               {/each}
             </select>

@@ -1,11 +1,5 @@
-variable "proxmox_host" {
-  description = "Proxmox host for SSH access"
-  type        = string
-  default     = "atlas"
-}
-
 variable "proxmox_api_host" {
-  description = "Proxmox API host for HTTPS access"
+  description = "Proxmox host FQDN (used for HTTPS API and SSH access)"
   type        = string
   default     = "atlas.agentydragon.com"
 }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from git_commit_ai.cli import build_editor_content
 from git_commit_ai.editor_template import SCISSORS_MARK
 
@@ -148,3 +150,35 @@ def test_editor_content_includes_both_user_context_and_previous_message(temp_rep
     assert "# old commit" in content
     # User context should appear before previous message
     assert content.index("# User context") < content.index("# Previous commit message")
+
+
+def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo, snapshot):
+    """Staged-only files must NOT appear in 'Changes not staged for commit'."""
+    # Init
+    temp_repo.write("existing.txt", "v1\n")
+    temp_repo.stage("existing.txt")
+    temp_repo.commit("init")
+
+    # Stage a NEW file (bug case: should NOT appear in unstaged)
+    temp_repo.write("new_staged.txt", "staged content\n")
+    temp_repo.stage("new_staged.txt")
+
+    # Modify existing file but DON'T stage (should appear in unstaged only)
+    temp_repo.write("existing.txt", "v2\n")
+
+    # Create untracked file
+    temp_repo.write("untracked.txt", "x\n")
+
+    content = build_editor_content(
+        git_repo, msg="test", previous_message=None, user_context=None, stats_line="", passthru=[]
+    )
+
+    # Snapshot the full content
+    assert content == snapshot
+
+    # Explicit assertion: new_staged.txt must NOT appear in unstaged section
+    unstaged_section = re.search(r"# Changes not staged for commit:.*?(?=# Untracked files:|# -+)", content, re.DOTALL)
+    assert unstaged_section is not None, "Unstaged section should exist"
+    assert "new_staged.txt" not in unstaged_section.group(0), (
+        "Staged-only file 'new_staged.txt' incorrectly appears in unstaged section"
+    )

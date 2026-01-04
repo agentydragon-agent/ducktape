@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
   import { splitBadgeClass } from '$lib/colors';
 
   let { data } = $props();
@@ -27,8 +28,8 @@
           </tr>
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
-          {#each data.snapshots as snapshot}
-            <tr class="hover:bg-gray-50 cursor-pointer" onclick={() => goto(`/snapshots/${snapshot.slug}`)}>
+          {#each data.snapshots as snapshot (snapshot.slug)}
+            <tr class="hover:bg-gray-50 cursor-pointer" onclick={() => goto(resolve(`/snapshots/${snapshot.slug}`))}>
               <td class="px-4 py-2 font-mono text-sm">{snapshot.slug}</td>
               <td class="px-4 py-2">
                 <span class="px-2 py-1 text-xs font-medium rounded {splitBadgeClass(snapshot.split)}">

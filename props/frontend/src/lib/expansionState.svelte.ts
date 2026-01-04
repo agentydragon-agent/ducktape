@@ -1,9 +1,11 @@
+import { SvelteSet } from 'svelte/reactivity';
+
 /**
  * Reusable expansion state manager using Svelte 5 runes.
  * Manages a set of expanded item IDs with toggle functionality.
  */
 export function createExpansionState() {
-  let expanded = $state<Set<string>>(new Set());
+  let expanded = new SvelteSet<string>();
 
   return {
     get expanded() {
@@ -13,7 +15,7 @@ export function createExpansionState() {
       return expanded.has(id);
     },
     toggle(id: string) {
-      const newSet = new Set(expanded);
+      const newSet = new SvelteSet(expanded);
       if (newSet.has(id)) {
         newSet.delete(id);
       } else {
@@ -23,21 +25,21 @@ export function createExpansionState() {
     },
     expand(id: string) {
       if (!expanded.has(id)) {
-        expanded = new Set([...expanded, id]);
+        expanded = new SvelteSet([...expanded, id]);
       }
     },
     collapse(id: string) {
       if (expanded.has(id)) {
-        const newSet = new Set(expanded);
+        const newSet = new SvelteSet(expanded);
         newSet.delete(id);
         expanded = newSet;
       }
     },
     expandAll(ids: string[]) {
-      expanded = new Set(ids);
+      expanded = new SvelteSet(ids);
     },
     collapseAll() {
-      expanded = new Set();
+      expanded = new SvelteSet();
     },
   };
 }

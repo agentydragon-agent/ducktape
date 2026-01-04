@@ -56,9 +56,9 @@ resource "null_resource" "wait_for_k8s_api" {
   provisioner "local-exec" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
-      K8S_SERVER = "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
     }
-    command = "${path.module}/wait-for-k8s-api.sh"
+    # Retry loop handles connection refused during API startup (10 min timeout)
+    command = "timeout 600 bash -c 'until kubectl get nodes --request-timeout=30s 2>/dev/null; do sleep 10; done'"
   }
 }
 

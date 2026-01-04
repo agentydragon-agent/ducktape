@@ -2,6 +2,8 @@
   // Link component for examples
   // Uses native <a> with SvelteKit client-side navigation
 
+  import { resolve } from '$app/paths';
+  import { SvelteURLSearchParams } from 'svelte/reactivity';
   import { formatSnapshotSlug } from './formatters';
   import type { WholeSnapshotExample, SingleFileSetExample } from './api/client';
 
@@ -19,20 +21,20 @@
       : `files@${formatSnapshotSlug(example.snapshot_slug)}/${example.files_hash.slice(0, 6)}`
   );
 
-  const href = $derived.by(() => {
-    const params = new URLSearchParams({
+  const queryString = $derived.by(() => {
+    const params = new SvelteURLSearchParams({
       snapshot_slug: example.snapshot_slug,
       example_kind: example.kind,
     });
     if (example.kind === 'file_set') {
       params.set('files_hash', example.files_hash);
     }
-    return `/examples?${params.toString()}`;
+    return params.toString();
   });
 </script>
 
 <a
-  {href}
+  href={resolve(`/examples?${queryString}`)}
   class="font-mono text-xs text-blue-600 underline hover:text-blue-800"
   title="{example.snapshot_slug} ({example.kind})"
 >

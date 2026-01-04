@@ -27,7 +27,7 @@ terraform {
 
 # DRY configuration for persistent auth
 locals {
-  proxmox_host = "root@${var.proxmox_host}"
+  proxmox_ssh_target = "root@${var.proxmox_api_host}"
 
   # Persistent Proxmox users - survive VM lifecycle
   pve_persistent_users = {
@@ -53,7 +53,7 @@ data "external" "pve_persistent_tokens" {
   for_each = local.pve_persistent_users
 
   program = ["bash", "-c", <<-EOT
-    token_json=$(ssh ${local.proxmox_host} '
+    token_json=$(ssh ${local.proxmox_ssh_target} '
       # Create user if not exists
       pveum user add ${each.value.name} --comment "${each.value.comment}" 2>/dev/null || true
 

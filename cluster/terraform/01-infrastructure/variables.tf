@@ -50,7 +50,7 @@ variable "hetzner_location" {
 # ============================================================================
 
 variable "proxmox_api_host" {
-  description = "Proxmox API host FQDN"
+  description = "Proxmox host FQDN (used for HTTPS API and SSH access)"
   type        = string
   default     = "atlas.agentydragon.com"
 }
@@ -59,5 +59,15 @@ variable "proxmox_node_name" {
   description = "Proxmox node name for VM deployment"
   type        = string
   default     = "atlas"
+}
+
+variable "proxmox_network_config_method" {
+  description = "How to configure static IPs on Proxmox nodes: 'meta' (Image Factory schematic) or 'cloudinit' (snippets)"
+  type        = string
+  default     = "meta"
+  validation {
+    condition     = contains(["meta", "cloudinit"], var.proxmox_network_config_method)
+    error_message = "Must be 'meta' (Image Factory) or 'cloudinit' (snippets)"
+  }
 }
 

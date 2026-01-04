@@ -74,6 +74,16 @@ provider "proxmox" {
   username  = "terraform@pve"
   api_token = data.terraform_remote_state.persistent_auth.outputs.terraform_pve_token.token
   insecure  = true # Self-signed cert
+
+  # SSH config for file uploads (cloud-init snippets)
+  ssh {
+    agent    = true
+    username = "root"
+    node {
+      name    = var.proxmox_node_name
+      address = var.proxmox_api_host
+    }
+  }
 }
 
 # Kubernetes provider - configured after cluster bootstrap

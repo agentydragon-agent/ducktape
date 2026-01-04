@@ -6,10 +6,13 @@
 # TALOS IMAGE FACTORY - Generate custom Talos image with extensions
 # ============================================================================
 
-# Create schematic for Proxmox nodes
-# Includes qemu-guest-agent for Proxmox integration and static IP via META
+# =========================
+# META MODE (per-node images with IP baked in)
+# =========================
+
+# Create per-node schematic with static IP via META key 0xa
 resource "talos_image_factory_schematic" "proxmox" {
-  for_each = local.proxmox_nodes
+  for_each = var.proxmox_network_config_method == "meta" ? local.proxmox_nodes : {}
 
   schematic = yamlencode({
     customization = {
@@ -66,11 +69,42 @@ resource "talos_image_factory_schematic" "proxmox" {
   })
 }
 
-# Get download URLs for the schematic
+# Get download URLs for per-node schematic
 data "talos_image_factory_urls" "proxmox" {
-  for_each = local.proxmox_nodes
+  for_each = var.proxmox_network_config_method == "meta" ? local.proxmox_nodes : {}
 
   schematic_id  = talos_image_factory_schematic.proxmox[each.key].id
+  talos_version = var.talos_version
+  platform      = "metal"
+  architecture  = "amd64"
+}
+
+# =========================
+# CLOUDINIT MODE (shared image + per-node snippets)
+# =========================
+
+# Create shared schematic with just extensions (no network config)
+resource "talos_image_factory_schematic" "proxmox_shared" {
+  count = var.proxmox_network_config_method == "cloudinit" ? 1 : 0
+
+  schematic = yamlencode({
+    customization = {
+      extraKernelArgs = ["net.ifnames=0"]
+      systemExtensions = {
+        officialExtensions = [
+          "siderolabs/qemu-guest-agent"
+        ]
+      }
+      # NO META network config - handled by cloud-init snippets
+    }
+  })
+}
+
+# Get download URLs for shared schematic
+data "talos_image_factory_urls" "proxmox_shared" {
+  count = var.proxmox_network_config_method == "cloudinit" ? 1 : 0
+
+  schematic_id  = talos_image_factory_schematic.proxmox_shared[0].id
   talos_version = var.talos_version
   platform      = "metal"
   architecture  = "amd64"
@@ -80,9 +114,9 @@ data "talos_image_factory_urls" "proxmox" {
 # PROXMOX DISK IMAGES
 # ============================================================================
 
-# Download disk images to Proxmox
+# Download per-node disk images (META mode)
 resource "proxmox_virtual_environment_download_file" "talos_disk" {
-  for_each = local.proxmox_nodes
+  for_each = var.proxmox_network_config_method == "meta" ? local.proxmox_nodes : {}
 
   content_type = "import"
   datastore_id = "local"
@@ -90,6 +124,51 @@ resource "proxmox_virtual_environment_download_file" "talos_disk" {
   url          = replace(data.talos_image_factory_urls.proxmox[each.key].urls.disk_image, "metal-amd64.raw.zst", "metal-amd64.qcow2")
   file_name    = "talos-${talos_image_factory_schematic.proxmox[each.key].id}-amd64.qcow2"
   overwrite    = true
+}
+
+# Download shared disk image (CLOUDINIT mode) - one image for all nodes
+resource "proxmox_virtual_environment_download_file" "talos_disk_shared" {
+  count = var.proxmox_network_config_method == "cloudinit" ? 1 : 0
+
+  content_type = "import"
+  datastore_id = "local"
+  node_name    = var.proxmox_node_name
+  url          = replace(data.talos_image_factory_urls.proxmox_shared[0].urls.disk_image, "metal-amd64.raw.zst", "metal-amd64.qcow2")
+  file_name    = "talos-shared-${talos_image_factory_schematic.proxmox_shared[0].id}-amd64.qcow2"
+  overwrite    = true
+}
+
+# ============================================================================
+# CLOUD-INIT NETWORK SNIPPETS (CLOUDINIT mode only)
+# ============================================================================
+
+# Create per-node network-config snippets for cloud-init
+resource "proxmox_virtual_environment_file" "network_config" {
+  for_each = var.proxmox_network_config_method == "cloudinit" ? local.proxmox_nodes : {}
+
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = var.proxmox_node_name
+
+  source_raw {
+    data = yamlencode({
+      network = {
+        version = 2
+        ethernets = {
+          eth0 = {
+            dhcp4     = false
+            dhcp6     = false
+            addresses = ["${each.value.ip}/16"]
+            gateway4  = local.proxmox_gateway
+            nameservers = {
+              addresses = ["1.1.1.1", "8.8.8.8"]
+            }
+          }
+        }
+      }
+    })
+    file_name = "talos-${each.key}-network.yaml"
+  }
 }
 
 # ============================================================================
@@ -144,12 +223,26 @@ resource "proxmox_virtual_environment_vm" "talos" {
     discard      = "on"
     size         = 40
     file_format  = "raw"
-    import_from  = proxmox_virtual_environment_download_file.talos_disk[each.key].id
+    # Use per-node image in META mode, shared image in CLOUDINIT mode
+    import_from = (
+      var.proxmox_network_config_method == "cloudinit"
+      ? proxmox_virtual_environment_download_file.talos_disk_shared[0].id
+      : proxmox_virtual_environment_download_file.talos_disk[each.key].id
+    )
   }
 
   agent {
     enabled = true
     trim    = true
+  }
+
+  # Cloud-init drive for network configuration (CLOUDINIT mode only)
+  dynamic "initialization" {
+    for_each = var.proxmox_network_config_method == "cloudinit" ? [1] : []
+    content {
+      datastore_id         = "local-zfs"
+      network_data_file_id = proxmox_virtual_environment_file.network_config[each.key].id
+    }
   }
 }
 

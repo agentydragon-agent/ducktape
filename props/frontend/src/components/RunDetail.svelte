@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
-  import { marked } from 'marked';
+  import SvelteMarkdown from '@humanspeak/svelte-markdown';
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import BackButton from './BackButton.svelte';
   import Breadcrumb from './Breadcrumb.svelte';
   import {
@@ -36,9 +37,6 @@
   import FileViewer from './FileViewer.svelte';
   import TruncatedStreamComponent from './TruncatedStream.svelte';
 
-  // Configure marked for inline rendering (no <p> wrapper)
-  marked.use({ breaks: true, async: false });
-
   // Props
   interface Props {
     runId: string;
@@ -50,28 +48,23 @@
   let events: EventInfo[] = $state([]);
   let loading = $state(true);
   let pollInterval: ReturnType<typeof setInterval> | null = null;
-  let expandedOutputs: Set<string> = $state(new Set());
+  let expandedOutputs = new SvelteSet<string>();
 
   // Critique viewer state
   let snapshotDetail: SnapshotDetailResponse | null = $state(null);
-  let fileContents: Map<string, FileContentResponse> = $state(new Map());
+  let fileContents = new SvelteMap<string, FileContentResponse>();
   let loadingSnapshot = $state(false);
 
   function toggleOutputExpanded(callId: string) {
     if (expandedOutputs.has(callId)) {
       expandedOutputs.delete(callId);
-      expandedOutputs = new Set(expandedOutputs);
+      expandedOutputs = new SvelteSet(expandedOutputs);
     } else {
-      expandedOutputs = new Set([...expandedOutputs, callId]);
+      expandedOutputs = new SvelteSet([...expandedOutputs, callId]);
     }
   }
 
   // --- Helpers ---
-
-  // Render markdown to HTML (for reasoning summaries)
-  function renderMarkdown(text: string): string {
-    return marked.parse(text, { async: false });
-  }
 
   // Get agent type from discriminator field
   function getAgentType(run: AgentRunDetail): string {
@@ -166,7 +159,7 @@
       snapshotDetail = await fetchSnapshotDetail(snapshotSlug);
 
       // Collect all files mentioned in critique issues or ground truth
-      const allFilePaths = new Set<string>();
+      const allFilePaths = new SvelteSet<string>();
 
       // Files from critique issues
       const reportedIssues = getReportedIssues(criticRun);
@@ -193,7 +186,7 @@
       }
 
       // Fetch file contents
-      const newContents = new Map<string, FileContentResponse>();
+      const newContents = new SvelteMap<string, FileContentResponse>();
       await Promise.all(
         Array.from(allFilePaths).map(async (path) => {
           try {
@@ -250,10 +243,10 @@
   // Derive paired docker_exec events and remaining events
   const processedEvents = $derived.by(() => {
     const dockerExecPairs: DockerExecPair[] = [];
-    const pairedCallIds = new Set<string>();
+    const pairedCallIds = new SvelteSet<string>();
 
     // Build map of call_id -> output event
-    const outputsByCallId = new Map<string, EventInfo>();
+    const outputsByCallId = new SvelteMap<string, EventInfo>();
     for (const event of events) {
       if (isDockerExecOutput(event.payload)) {
         outputsByCallId.set(event.payload.call_id, event);
@@ -420,7 +413,7 @@
 
     // Process remaining events, merging adjacent api_request + response
     const remaining = processedEvents.remainingEvents;
-    const usedIndices = new Set<number>();
+    const usedIndices = new SvelteSet<number>();
 
     for (let i = 0; i < remaining.length; i++) {
       if (usedIndices.has(i)) continue;
@@ -512,7 +505,7 @@
         {#if run.completion_summary}
           <div class="col-span-full flex items-start gap-1">
             <span class="text-gray-500 shrink-0">Summary:</span>
-            <span class="prose prose-sm max-w-none inline">{@html renderMarkdown(run.completion_summary)}</span>
+            <span class="prose prose-sm max-w-none inline"><SvelteMarkdown source={run.completion_summary} /></span>
           </div>
         {/if}
       </div>
@@ -543,7 +536,7 @@
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span
             ><span class="text-gray-500">Baselines:</span>
-            {#each config.baseline_definition_ids as defId, i}
+            {#each config.baseline_definition_ids as defId, i (defId)}
               {#if i > 0},
               {/if}<DefinitionIdLink id={defId} />
             {/each}
@@ -574,7 +567,7 @@
       <div class="px-4 py-2 border-b bg-gray-50 flex-shrink-0 text-sm">
         <span class="text-gray-500">Child runs:</span>
         <span class="ml-2 flex flex-wrap gap-2">
-          {#each run.child_runs as child}
+          {#each run.child_runs as child (child.agent_run_id)}
             <span class="inline-flex items-center gap-1">
               <RunIdLink id={child.agent_run_id} />
               <span class="text-xs text-gray-400">({child.agent_type})</span>
@@ -666,7 +659,7 @@
           </div>
         {:else}
           <div class="p-4 space-y-6">
-            {#each Array.from(fileContents.entries()) as [_, fileContent]}
+            {#each Array.from(fileContents.entries()) as [filePath, fileContent] (filePath)}
               <FileViewer
                 file={fileContent}
                 tps={snapshotDetail.true_positives}
@@ -688,7 +681,7 @@
         <p class="text-gray-500 text-sm">No events yet</p>
       {:else}
         <div>
-          {#each displayEvents as item, idx}
+          {#each displayEvents as item, idx (item.seqNum)}
             {@const isFirst = idx === 0}
             {@const isLast = idx === displayEvents.length - 1}
             {@const roundingClass = isFirst && isLast ? 'rounded' : isFirst ? 'rounded-t' : isLast ? 'rounded-b' : ''}
@@ -806,7 +799,7 @@
                     <span class="float-right text-gray-400 ml-2">#{item.seqNum}</span>
                     <span class="font-medium">{rendered.label}</span>
                     {#if rendered.isMarkdown}
-                      <span class="prose prose-sm max-w-none inline">{@html renderMarkdown(rendered.content)}</span>
+                      <span class="prose prose-sm max-w-none inline"><SvelteMarkdown source={rendered.content} /></span>
                     {:else}
                       <span class="font-mono ml-1">{rendered.content}</span>
                     {/if}
@@ -818,7 +811,7 @@
                     <span class="text-xs text-gray-400">#{item.seqNum}</span>
                   </div>
                   {#if rendered.isMarkdown}
-                    <div class="text-xs prose prose-sm max-w-none">{@html renderMarkdown(rendered.content)}</div>
+                    <div class="text-xs prose prose-sm max-w-none"><SvelteMarkdown source={rendered.content} /></div>
                   {:else}
                     <pre class="text-xs whitespace-pre-wrap break-words font-mono">{rendered.content}</pre>
                   {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { base } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { formatSnapshotSlug } from './formatters';
 
   // Link component for snapshot slugs
@@ -15,6 +15,6 @@
   const displayText = $derived(showFull ? slug : formatSnapshotSlug(slug));
 </script>
 
-<a href="{base}/snapshots/{slug}" class="text-blue-600 underline hover:text-blue-800" title={slug}>
+<a href={resolve(`/snapshots/${slug}`)} class="text-blue-600 underline hover:text-blue-800" title={slug}>
   {displayText}
 </a>
