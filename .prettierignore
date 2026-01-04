@@ -1,0 +1,10 @@
+# HTML fragments that are intentionally incomplete
+finance/worthy/worthy/index_head.html
+finance/worthy/worthy/index_tail.html
+
+# Nix flake lock files (no parser available)
+flake.lock
+nix/home/flake.lock
+
+# Symbolic links
+llm/html/llm_html/coding.md

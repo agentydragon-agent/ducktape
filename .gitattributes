@@ -1,0 +1,2 @@
+# Exclude zsh files from formatting (shfmt doesn't support zsh syntax)
+*.zsh rules-lint-ignored=true

@@ -61,9 +61,7 @@ class LanguageResult:
 LANGUAGES = [
     LanguageConfig(name="Python", extensions=[".py"], bazel_kinds=["py_library", "py_test", "py_binary"]),
     LanguageConfig(name="TypeScript", extensions=[".ts"], bazel_kinds=["ts_library", "ts_project"]),
-    LanguageConfig(
-        name="JavaScript", extensions=[".js"], bazel_kinds=["js_library", "js_binary", "js_run_binary"]
-    ),
+    LanguageConfig(name="JavaScript", extensions=[".js"], bazel_kinds=["js_library", "js_binary", "js_run_binary"]),
     LanguageConfig(name="Rust", extensions=[".rs"], bazel_kinds=["rust_library", "rust_binary", "rust_test"]),
     LanguageConfig(name="Shell", extensions=[".sh"], bazel_kinds=["sh_library", "sh_binary", "sh_test"]),
 ]
@@ -94,13 +92,7 @@ def label_to_path(label: str) -> Path | None:
 
 def batch_bazel_query(query_expr: str) -> set[str]:
     """Execute a Bazel query and return results as a set of labels."""
-    result = subprocess.run(
-        ["bazel", "query", query_expr],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-    )
+    result = subprocess.run(["bazel", "query", query_expr], check=False, capture_output=True, text=True, cwd=REPO_ROOT)
     if result.returncode != 0:
         return set()
 
@@ -116,11 +108,7 @@ def find_git_files(extensions: list[str] | None = None) -> set[Path]:
     if extensions is None:
         return {Path(entry.path) for entry in index}
 
-    return {
-        Path(entry.path)
-        for entry in index
-        if any(entry.path.endswith(ext) for ext in extensions)
-    }
+    return {Path(entry.path) for entry in index if any(entry.path.endswith(ext) for ext in extensions)}
 
 
 def find_bazel_files_by_language(lang_config: LanguageConfig) -> set[Path]:
@@ -130,9 +118,7 @@ def find_bazel_files_by_language(lang_config: LanguageConfig) -> set[Path]:
     """
     # Build batched query: union of all (kind, attr) combinations
     queries = [
-        f'labels({attr}, kind("{kind}", //...))'
-        for kind in lang_config.bazel_kinds
-        for attr in lang_config.bazel_attrs
+        f'labels({attr}, kind("{kind}", //...))' for kind in lang_config.bazel_kinds for attr in lang_config.bazel_attrs
     ]
 
     # Batch all queries into one union expression
@@ -141,10 +127,7 @@ def find_bazel_files_by_language(lang_config: LanguageConfig) -> set[Path]:
 
     # Convert labels to paths and filter by extension
     paths = {label_to_path(label) for label in labels}
-    return {
-        p for p in paths
-        if p is not None and any(str(p).endswith(ext) for ext in lang_config.extensions)
-    }
+    return {p for p in paths if p is not None and any(str(p).endswith(ext) for ext in lang_config.extensions)}
 
 
 def find_all_bazel_inputs() -> set[Path]:
@@ -157,9 +140,7 @@ def find_all_bazel_inputs() -> set[Path]:
 
 
 def categorize_files(
-    git_files: set[Path],
-    bazel_files: set[Path],
-    is_intentionally_excluded: Callable[[Path], bool]
+    git_files: set[Path], bazel_files: set[Path], is_intentionally_excluded: Callable[[Path], bool]
 ) -> CategorizedFiles:
     """Categorize files into covered, uncovered, and intentionally excluded by top-level directory."""
     covered = set()
@@ -176,11 +157,7 @@ def categorize_files(
         else:
             uncovered[top_dir].add(path)
 
-    return CategorizedFiles(
-        covered=covered,
-        uncovered=uncovered,
-        intentional=intentional,
-    )
+    return CategorizedFiles(covered=covered, uncovered=uncovered, intentional=intentional)
 
 
 def analyze() -> None:
@@ -198,16 +175,11 @@ def analyze() -> None:
         bazel_files = find_bazel_files_by_language(lang_config)
 
         categorized = categorize_files(
-            git_files,
-            bazel_files,
-            lambda p: p.parts[0] in INTENTIONALLY_EXCLUDED if p.parts else False
+            git_files, bazel_files, lambda p: p.parts[0] in INTENTIONALLY_EXCLUDED if p.parts else False
         )
 
         language_results[lang_config.name] = LanguageResult(
-            config=lang_config,
-            git_files=git_files,
-            bazel_files=bazel_files,
-            categorized=categorized,
+            config=lang_config, git_files=git_files, bazel_files=bazel_files, categorized=categorized
         )
 
     # Find files in git but not in any Bazel target at all
@@ -224,16 +196,13 @@ def analyze() -> None:
 
     # Categorize untracked files
     untracked_categorized = categorize_files(
-        git_not_tracked,
-        set(),
-        lambda p: p.parts[0] in INTENTIONALLY_EXCLUDED if p.parts else False
+        git_not_tracked, set(), lambda p: p.parts[0] in INTENTIONALLY_EXCLUDED if p.parts else False
     )
 
     # Query Bazel for target counts
     print("Querying Bazel targets...")
     target_counts = {
-        kind: len(batch_bazel_query(f'kind("{kind}", //...)'))
-        for kind in ["py_library", "py_test", "ruff_test"]
+        kind: len(batch_bazel_query(f'kind("{kind}", //...)')) for kind in ["py_library", "py_test", "ruff_test"]
     }
     manual_targets = batch_bazel_query('attr(tags, "manual", //...)')
 

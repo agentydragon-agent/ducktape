@@ -8,4 +8,3 @@ export default defineConfig({
     root: fileURLToPath(new URL('./', import.meta.url)),
   },
 })
-

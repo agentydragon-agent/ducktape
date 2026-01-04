@@ -16,10 +16,19 @@ mypy_cli(
 
 # ESLint binary for JS/TS linting
 # Used by lint_eslint_aspect in linters.bzl
-eslint_bin.eslint_binary(name = "eslint")
+# Set BAZEL_BINDIR to allow running outside Bazel build actions
+eslint_bin.eslint_binary(
+    name = "eslint",
+    env = {"BAZEL_BINDIR": "."},
+)
 
 # Prettier binary for JS/TS/Svelte formatting
-prettier_bin.prettier_binary(name = "prettier")
+# Set BAZEL_BINDIR to allow running outside Bazel build actions
+# See: https://github.com/aspect-build/rules_js#running-nodejs-programs
+prettier_bin.prettier_binary(
+    name = "prettier",
+    env = {"BAZEL_BINDIR": "."},
+)
 
 # Buildifier targets for BUILD/Starlark linting
 # Run: bazel run //:buildifier (fix mode)

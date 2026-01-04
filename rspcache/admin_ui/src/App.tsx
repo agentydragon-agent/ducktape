@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
 import {
   ActionIcon,
   AppShell,
@@ -20,23 +20,23 @@ import {
   Title,
   useComputedColorScheme,
   useMantineColorScheme,
-} from '@mantine/core';
-import { IconMoon, IconSun } from '@tabler/icons-react';
-import JsonView from '@uiw/react-json-view';
+} from "@mantine/core";
+import { IconMoon, IconSun } from "@tabler/icons-react";
+import JsonView from "@uiw/react-json-view";
 
-import type { components } from './generated/admin-api-types';
+import type { components } from "./generated/admin-api-types";
 
-type ResponseRecord = components['schemas']['ResponseRecordModel'];
-type ResponseList = components['schemas']['ResponseListModel'];
-type FrameRecord = components['schemas']['FrameRecordModel'];
-type FrameList = components['schemas']['FrameListModel'];
-type ApiKeyRecord = components['schemas']['APIKeyModel'];
-type ApiKeyList = components['schemas']['APIKeyListModel'];
-type CreateKeyResponse = components['schemas']['CreateKeyResponse'];
-type UpstreamKeyList = components['schemas']['UpstreamKeyListModel'];
+type ResponseRecord = components["schemas"]["ResponseRecordModel"];
+type ResponseList = components["schemas"]["ResponseListModel"];
+type FrameRecord = components["schemas"]["FrameRecordModel"];
+type FrameList = components["schemas"]["FrameListModel"];
+type ApiKeyRecord = components["schemas"]["APIKeyModel"];
+type ApiKeyList = components["schemas"]["APIKeyListModel"];
+type CreateKeyResponse = components["schemas"]["CreateKeyResponse"];
+type UpstreamKeyList = components["schemas"]["UpstreamKeyListModel"];
 
 type ResponseStatusEvent = {
-  type: 'response_status';
+  type: "response_status";
   key: string;
   response_id?: string | null;
   status: string;
@@ -44,7 +44,7 @@ type ResponseStatusEvent = {
 };
 
 type FrameEvent = {
-  type: 'frame';
+  type: "frame";
   key: string;
   response_id?: string | null;
   ordinal: number;
@@ -53,39 +53,43 @@ type FrameEvent = {
 };
 
 type ApiKeyCreatedEvent = {
-  type: 'api_key_created';
+  type: "api_key_created";
   id: string;
   name: string;
   upstream_alias: string;
 };
 
 type ApiKeyRevokedEvent = {
-  type: 'api_key_revoked';
+  type: "api_key_revoked";
   id: string;
 };
 
-type LiveEvent = ResponseStatusEvent | FrameEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent;
+type LiveEvent =
+  | ResponseStatusEvent
+  | FrameEvent
+  | ApiKeyCreatedEvent
+  | ApiKeyRevokedEvent;
 
 const RESPONSE_LIMIT = 50;
 
 const statusBadgeColor = (status: string): string => {
   switch (status) {
-    case 'complete':
-      return 'green';
-    case 'error':
-      return 'red';
-    case 'in_progress':
-      return 'blue';
-    case 'queued':
-      return 'yellow';
+    case "complete":
+      return "green";
+    case "error":
+      return "red";
+    case "in_progress":
+      return "blue";
+    case "queued":
+      return "yellow";
     default:
-      return 'gray';
+      return "gray";
   }
 };
 
 const formatDate = (value?: string | null) => {
   if (!value) {
-    return '—';
+    return "—";
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -98,24 +102,29 @@ const JsonBlock = ({ label, value }: { label: string; value: unknown }) => (
   <Stack gap="xs">
     <Text fw={600}>{label}</Text>
     <Card withBorder padding="sm" radius="md">
-      <JsonView value={value ?? {}} displayDataTypes={false} enableClipboard collapsed={2} />
+      <JsonView
+        value={value ?? {}}
+        displayDataTypes={false}
+        enableClipboard
+        collapsed={2}
+      />
     </Card>
   </Stack>
 );
 
 const ColorSchemeToggle = () => {
   const { setColorScheme } = useMantineColorScheme();
-  const computed = useComputedColorScheme('light');
-  const nextScheme = computed === 'dark' ? 'light' : 'dark';
+  const computed = useComputedColorScheme("light");
+  const nextScheme = computed === "dark" ? "light" : "dark";
 
   return (
     <ActionIcon
       variant="subtle"
-      color={computed === 'dark' ? 'yellow' : 'blue'}
+      color={computed === "dark" ? "yellow" : "blue"}
       onClick={() => setColorScheme(nextScheme)}
       aria-label="Toggle color scheme"
     >
-      {computed === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
+      {computed === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
     </ActionIcon>
   );
 };
@@ -124,14 +133,20 @@ const App = () => {
   const [responses, setResponses] = useState<ResponseRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdentifier, setSelectedIdentifier] = useState<string | null>(null);
-  const [selectedDetail, setSelectedDetail] = useState<ResponseRecord | null>(null);
+  const [selectedIdentifier, setSelectedIdentifier] = useState<string | null>(
+    null,
+  );
+  const [selectedDetail, setSelectedDetail] = useState<ResponseRecord | null>(
+    null,
+  );
   const [frames, setFrames] = useState<FrameRecord[]>([]);
-  const [tab, setTab] = useState<'responses' | 'keys'>('responses');
+  const [tab, setTab] = useState<"responses" | "keys">("responses");
   const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyAlias, setNewKeyAlias] = useState('default');
-  const [availableAliases, setAvailableAliases] = useState<string[]>(['default']);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyAlias, setNewKeyAlias] = useState("default");
+  const [availableAliases, setAvailableAliases] = useState<string[]>([
+    "default",
+  ]);
   const [creatingKey, setCreatingKey] = useState(false);
   const [mintedToken, setMintedToken] = useState<string | null>(null);
   const [liveConnected, setLiveConnected] = useState(true);
@@ -145,9 +160,11 @@ const App = () => {
       try {
         setLoading(true);
         const offset = (pageArg - 1) * RESPONSE_LIMIT;
-        const res = await fetch(`/api/responses?limit=${RESPONSE_LIMIT}&offset=${offset}`);
+        const res = await fetch(
+          `/api/responses?limit=${RESPONSE_LIMIT}&offset=${offset}`,
+        );
         if (!res.ok) {
-          throw new Error('Failed to fetch responses');
+          throw new Error("Failed to fetch responses");
         }
         const data: ResponseList = await res.json();
         setResponses(data.items ?? []);
@@ -155,7 +172,7 @@ const App = () => {
         setError(null);
         setPage(pageArg);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setLoading(false);
       }
@@ -172,7 +189,7 @@ const App = () => {
       const detail: ResponseRecord = await res.json();
       setSelectedDetail(detail);
     } catch (err) {
-      console.warn('Failed to fetch response detail', err);
+      console.warn("Failed to fetch response detail", err);
     }
   }, []);
 
@@ -180,12 +197,12 @@ const App = () => {
     try {
       const res = await fetch(`/api/responses/${identifier}/frames?limit=200`);
       if (!res.ok) {
-        throw new Error('Failed to fetch frames');
+        throw new Error("Failed to fetch frames");
       }
       const data: FrameList = await res.json();
       setFrames(data.items ?? []);
     } catch (err) {
-      console.warn('Failed to fetch frames', err);
+      console.warn("Failed to fetch frames", err);
     }
   }, []);
 
@@ -200,29 +217,29 @@ const App = () => {
 
   const refreshKeys = useCallback(async () => {
     try {
-      const res = await fetch('/api/keys');
+      const res = await fetch("/api/keys");
       if (!res.ok) {
-        throw new Error('Failed to fetch API keys');
+        throw new Error("Failed to fetch API keys");
       }
       const data: ApiKeyList = await res.json();
       setKeys(data.items ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     }
   }, []);
 
   const fetchUpstreamAliases = useCallback(async () => {
     try {
-      const res = await fetch('/api/upstream-keys');
+      const res = await fetch("/api/upstream-keys");
       if (!res.ok) {
-        throw new Error('Failed to fetch upstream aliases');
+        throw new Error("Failed to fetch upstream aliases");
       }
       const data: UpstreamKeyList = await res.json();
       const items = data.items ?? [];
-      setAvailableAliases(items.length ? items : ['default']);
+      setAvailableAliases(items.length ? items : ["default"]);
     } catch (err) {
-      console.warn('Failed to fetch upstream aliases', err);
-      setAvailableAliases(['default']);
+      console.warn("Failed to fetch upstream aliases", err);
+      setAvailableAliases(["default"]);
     }
   }, []);
 
@@ -241,19 +258,19 @@ const App = () => {
   }, [fetchResponses, page, liveConnected]);
 
   useEffect(() => {
-    if (tab === 'keys') {
+    if (tab === "keys") {
       refreshKeys();
     }
   }, [tab, refreshKeys]);
 
   useEffect(() => {
-    const source = new EventSource('/api/responses/live');
+    const source = new EventSource("/api/responses/live");
     source.onmessage = (event) => {
       try {
         const payload: LiveEvent = JSON.parse(event.data);
         setLiveConnected(true);
         switch (payload.type) {
-          case 'response_status': {
+          case "response_status": {
             fetchResponses(page);
             const identifier = payload.response_id ?? payload.key;
             if (identifier && selectedIdentifier === identifier) {
@@ -262,7 +279,7 @@ const App = () => {
             }
             break;
           }
-          case 'frame': {
+          case "frame": {
             const identifier = payload.response_id ?? payload.key;
             if (identifier && selectedIdentifier === identifier) {
               fetchFrames(identifier);
@@ -270,9 +287,9 @@ const App = () => {
             }
             break;
           }
-          case 'api_key_created':
-          case 'api_key_revoked': {
-            if (tab === 'keys') {
+          case "api_key_created":
+          case "api_key_revoked": {
+            if (tab === "keys") {
               refreshKeys();
             }
             break;
@@ -281,7 +298,7 @@ const App = () => {
             break;
         }
       } catch (err) {
-        console.warn('Failed to process SSE event', err);
+        console.warn("Failed to process SSE event", err);
       }
     };
     source.onerror = () => {
@@ -291,7 +308,15 @@ const App = () => {
     return () => {
       source.close();
     };
-  }, [fetchResponses, fetchDetail, fetchFrames, page, selectedIdentifier, tab, refreshKeys]);
+  }, [
+    fetchResponses,
+    fetchDetail,
+    fetchFrames,
+    page,
+    selectedIdentifier,
+    tab,
+    refreshKeys,
+  ]);
 
   const handleCreateKey = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -299,22 +324,22 @@ const App = () => {
       setCreatingKey(true);
       setMintedToken(null);
       try {
-        const res = await fetch('/api/keys', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res = await fetch("/api/keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: newKeyName, alias: newKeyAlias }),
         });
         if (!res.ok) {
           const payload = await res.json().catch(() => ({}));
-          throw new Error(payload.detail || 'Failed to create API key');
+          throw new Error(payload.detail || "Failed to create API key");
         }
         const data: CreateKeyResponse = await res.json();
         setMintedToken(data.token);
-        setNewKeyName('');
+        setNewKeyName("");
         fetchUpstreamAliases();
         refreshKeys();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setCreatingKey(false);
       }
@@ -331,16 +356,20 @@ const App = () => {
           <Table.Tr
             key={record.cache_key}
             onClick={() => handleSelectResponse(record)}
-            style={{ cursor: 'pointer' }}
-            bg={isActive ? 'blue.0' : undefined}
+            style={{ cursor: "pointer" }}
+            bg={isActive ? "blue.0" : undefined}
           >
             <Table.Td>{formatDate(record.created_at)}</Table.Td>
             <Table.Td>
-              <Badge color={statusBadgeColor(record.status)}>{record.status}</Badge>
+              <Badge color={statusBadgeColor(record.status)}>
+                {record.status}
+              </Badge>
             </Table.Td>
             <Table.Td>{record.model}</Table.Td>
-            <Table.Td>{record.latency_ms != null ? `${record.latency_ms} ms` : '—'}</Table.Td>
-            <Table.Td>{record.api_key?.name || '—'}</Table.Td>
+            <Table.Td>
+              {record.latency_ms != null ? `${record.latency_ms} ms` : "—"}
+            </Table.Td>
+            <Table.Td>{record.api_key?.name || "—"}</Table.Td>
           </Table.Tr>
         );
       }),
@@ -354,7 +383,11 @@ const App = () => {
           <Title order={3}>Requests</Title>
           <Group gap="sm">
             {!liveConnected && <Badge color="red">Live feed offline</Badge>}
-            <Button variant="default" onClick={() => fetchResponses(page)} disabled={loading}>
+            <Button
+              variant="default"
+              onClick={() => fetchResponses(page)}
+              disabled={loading}
+            >
               Refresh
             </Button>
           </Group>
@@ -363,7 +396,7 @@ const App = () => {
           <Group justify="center" py="lg">
             <Loader />
           </Group>
-        ) : error && tab === 'responses' ? (
+        ) : error && tab === "responses" ? (
           <Text c="red">{error}</Text>
         ) : (
           <>
@@ -394,7 +427,11 @@ const App = () => {
               </Table>
             </ScrollArea>
             <Group justify="center" mt="md">
-              <Pagination value={page} onChange={(p) => fetchResponses(p)} total={totalPages} />
+              <Pagination
+                value={page}
+                onChange={(p) => fetchResponses(p)}
+                total={totalPages}
+              />
             </Group>
           </>
         )}
@@ -409,69 +446,94 @@ const App = () => {
             <Text>
               <Text fw={600} span>
                 Key:
-              </Text>{' '}
+              </Text>{" "}
               {selectedDetail.cache_key}
             </Text>
             {selectedDetail.response_id && (
               <Text>
                 <Text fw={600} span>
                   Response ID:
-                </Text>{' '}
+                </Text>{" "}
                 {selectedDetail.response_id}
               </Text>
             )}
             <Text>
               <Text fw={600} span>
                 Status:
-              </Text>{' '}
-              <Badge color={statusBadgeColor(selectedDetail.status)}>{selectedDetail.status}</Badge>
+              </Text>{" "}
+              <Badge color={statusBadgeColor(selectedDetail.status)}>
+                {selectedDetail.status}
+              </Badge>
             </Text>
             {selectedDetail.error && (
               <Text>
                 <Text fw={600} span>
                   Status reason:
-                </Text>{' '}
+                </Text>{" "}
                 {selectedDetail.error}
               </Text>
             )}
             <Text>
               <Text fw={600} span>
                 Model:
-              </Text>{' '}
+              </Text>{" "}
               {selectedDetail.model}
             </Text>
             <Text>
               <Text fw={600} span>
                 API Key:
-              </Text>{' '}
-              {selectedDetail.api_key?.name || '—'}
+              </Text>{" "}
+              {selectedDetail.api_key?.name || "—"}
             </Text>
             <Text>
               <Text fw={600} span>
                 Latency:
-              </Text>{' '}
-              {selectedDetail.latency_ms != null ? `${selectedDetail.latency_ms} ms` : '—'}
+              </Text>{" "}
+              {selectedDetail.latency_ms != null
+                ? `${selectedDetail.latency_ms} ms`
+                : "—"}
             </Text>
             <Text>
               <Text fw={600} span>
                 Last updated:
-              </Text>{' '}
+              </Text>{" "}
               {formatDate(selectedDetail.updated_at)}
             </Text>
-            <JsonBlock label="Request" value={selectedDetail.request_body ?? {}} />
-            {selectedDetail.final_response && <JsonBlock label="Response" value={selectedDetail.final_response} />}
-            {selectedDetail.response_error && <JsonBlock label="Error" value={selectedDetail.response_error} />}
+            <JsonBlock
+              label="Request"
+              value={selectedDetail.request_body ?? {}}
+            />
+            {selectedDetail.final_response && (
+              <JsonBlock
+                label="Response"
+                value={selectedDetail.final_response}
+              />
+            )}
+            {selectedDetail.response_error && (
+              <JsonBlock label="Error" value={selectedDetail.response_error} />
+            )}
             {frames.length > 0 && (
               <Stack gap="sm">
                 <Text fw={600}>Streaming frames ({frames.length})</Text>
                 <ScrollArea h={220} offsetScrollbars>
                   <Stack gap="sm">
                     {frames.map((frame) => (
-                      <Card key={frame.ordinal} withBorder radius="md" padding="sm">
+                      <Card
+                        key={frame.ordinal}
+                        withBorder
+                        radius="md"
+                        padding="sm"
+                      >
                         <Text fw={600} size="sm" mb="xs">
-                          #{frame.ordinal} · {frame.frame_type ?? 'frame'} · {formatDate(frame.created_at)}
+                          #{frame.ordinal} · {frame.frame_type ?? "frame"} ·{" "}
+                          {formatDate(frame.created_at)}
                         </Text>
-                        <JsonView value={frame.frame ?? {}} displayDataTypes={false} enableClipboard collapsed={2} />
+                        <JsonView
+                          value={frame.frame ?? {}}
+                          displayDataTypes={false}
+                          enableClipboard
+                          collapsed={2}
+                        />
                       </Card>
                     ))}
                   </Stack>
@@ -510,7 +572,11 @@ const App = () => {
               withinPortal={false}
             />
             <Group justify="flex-end" mt="sm">
-              <Button type="submit" loading={creatingKey} disabled={!newKeyName}>
+              <Button
+                type="submit"
+                loading={creatingKey}
+                disabled={!newKeyName}
+              >
                 Create key
               </Button>
             </Group>
@@ -556,7 +622,7 @@ const App = () => {
                     <Table.Td>{key.name}</Table.Td>
                     <Table.Td>{key.upstream_alias}</Table.Td>
                     <Table.Td>{key.token_prefix}</Table.Td>
-                    <Table.Td>{key.revoked_ts ? 'revoked' : 'active'}</Table.Td>
+                    <Table.Td>{key.revoked_ts ? "revoked" : "active"}</Table.Td>
                     <Table.Td>{formatDate(key.created_at)}</Table.Td>
                   </Table.Tr>
                 ))
@@ -583,7 +649,10 @@ const App = () => {
           <Group justify="space-between" align="center" h="100%">
             <Title order={2}>rspcache Admin</Title>
             <Group gap="sm" align="center">
-              <Tabs value={tab} onChange={(value) => setTab(value as 'responses' | 'keys')}>
+              <Tabs
+                value={tab}
+                onChange={(value) => setTab(value as "responses" | "keys")}
+              >
                 <Tabs.List>
                   <Tabs.Tab value="responses">Responses</Tabs.Tab>
                   <Tabs.Tab value="keys">API Keys</Tabs.Tab>
@@ -596,7 +665,7 @@ const App = () => {
       </AppShell.Header>
       <AppShell.Main>
         <Container size="xl" py="md">
-          {tab === 'responses' ? responsesTab : keysTab}
+          {tab === "responses" ? responsesTab : keysTab}
         </Container>
       </AppShell.Main>
     </AppShell>
