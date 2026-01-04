@@ -38,6 +38,25 @@ class LanguageConfig:
             self.bazel_attrs = ["srcs", "data"]
 
 
+@dataclass
+class CategorizedFiles:
+    """Files categorized by coverage status."""
+
+    covered: list[Path]
+    uncovered: dict[str, list[Path]]
+    intentional: dict[str, list[Path]]
+
+
+@dataclass
+class LanguageResult:
+    """Results of analyzing a single language."""
+
+    config: LanguageConfig
+    git_files: set[Path]
+    bazel_files: set[Path]
+    categorized: CategorizedFiles
+
+
 # Languages to track
 LANGUAGES = [
     LanguageConfig(name="Python", extensions=[".py"], bazel_kinds=["py_library", "py_test", "py_binary"]),
@@ -141,7 +160,7 @@ def categorize_files(
     git_files: set[Path],
     bazel_files: set[Path],
     is_intentionally_excluded: Callable[[Path], bool]
-) -> dict[str, dict[str, list[Path]]]:
+) -> CategorizedFiles:
     """Categorize files into covered, uncovered, and intentionally excluded by top-level directory."""
     covered = []
     uncovered: dict[str, list[Path]] = defaultdict(list)
@@ -157,11 +176,11 @@ def categorize_files(
         else:
             uncovered[top_dir].append(path)
 
-    return {
-        "covered": {"": covered},
-        "uncovered": uncovered,
-        "intentional": intentional,
-    }
+    return CategorizedFiles(
+        covered=covered,
+        uncovered=uncovered,
+        intentional=intentional,
+    )
 
 
 def analyze() -> None:
@@ -171,7 +190,7 @@ def analyze() -> None:
     print()
 
     # Track per-language coverage
-    language_results = {}
+    language_results: dict[str, LanguageResult] = {}
 
     for lang_config in LANGUAGES:
         print(f"Scanning {lang_config.name} files...")
@@ -184,12 +203,12 @@ def analyze() -> None:
             lambda p: p.parts[0] in INTENTIONALLY_EXCLUDED if p.parts else False
         )
 
-        language_results[lang_config.name] = {
-            "config": lang_config,
-            "git_files": git_files,
-            "bazel_files": bazel_files,
-            **categorized,
-        }
+        language_results[lang_config.name] = LanguageResult(
+            config=lang_config,
+            git_files=git_files,
+            bazel_files=bazel_files,
+            categorized=categorized,
+        )
 
     # Find files in git but not in any Bazel target at all
     print("Scanning all Bazel inputs...")
@@ -197,7 +216,7 @@ def analyze() -> None:
     all_bazel_inputs = find_all_bazel_inputs()
 
     # Files tracked by language-specific scans
-    all_language_tracked = set().union(*(r["git_files"] for r in language_results.values()))
+    all_language_tracked = set().union(*(r.git_files for r in language_results.values()))
 
     # Files in git but not in any Bazel target and not tracked by language scans
     git_not_in_bazel = all_git_files - all_bazel_inputs
@@ -226,13 +245,13 @@ def analyze() -> None:
     print()
 
     for lang_name, result in language_results.items():
-        total_git = len(result["git_files"])
+        total_git = len(result.git_files)
         if total_git == 0:
             continue
 
-        total_intentional = sum(len(v) for v in result["intentional"].values())
-        total_uncovered = sum(len(v) for v in result["uncovered"].values())
-        total_covered = len(result["covered"][""])
+        total_intentional = sum(len(v) for v in result.categorized.intentional.values())
+        total_uncovered = sum(len(v) for v in result.categorized.uncovered.values())
+        total_covered = len(result.categorized.covered)
 
         print(f"{lang_name}:")
         print(f"  Git-tracked files:      {total_git}")
@@ -261,11 +280,11 @@ def analyze() -> None:
 
     # Print per-language uncovered files
     for lang_name, result in language_results.items():
-        if result["uncovered"]:
+        if result.categorized.uncovered:
             print("=" * 80)
             print(f"{lang_name.upper()} FILES NOT IN BAZEL TARGETS")
             print("=" * 80)
-            for dir_name, files in sorted(result["uncovered"].items()):
+            for dir_name, files in sorted(result.categorized.uncovered.items()):
                 print(f"\n{dir_name}/ ({len(files)} files)")
                 for f in sorted(files)[:10]:
                     print(f"  - {f}")
@@ -274,16 +293,16 @@ def analyze() -> None:
             print()
 
     # Print general untracked files
-    if untracked_categorized["uncovered"]:
+    if untracked_categorized.uncovered:
         print("=" * 80)
         print("OTHER FILES IN GIT BUT NOT IN ANY BAZEL TARGET")
         print("=" * 80)
         print("(Files not tracked by language-specific scans)")
         print()
-        total_untracked = sum(len(v) for v in untracked_categorized["uncovered"].values())
+        total_untracked = sum(len(v) for v in untracked_categorized.uncovered.values())
         print(f"Total: {total_untracked} files")
         print()
-        for dir_name, files in sorted(untracked_categorized["uncovered"].items()):
+        for dir_name, files in sorted(untracked_categorized.uncovered.items()):
             print(f"\n{dir_name}/ ({len(files)} files)")
             for f in sorted(files)[:5]:
                 print(f"  - {f}")
@@ -297,9 +316,9 @@ def analyze() -> None:
     # Combine intentional exclusions from all sources
     all_intentional: dict[str, int] = defaultdict(int)
     for result in language_results.values():
-        for dir_name, files in result["intentional"].items():
+        for dir_name, files in result.categorized.intentional.items():
             all_intentional[dir_name] += len(files)
-    for dir_name, files in untracked_categorized["intentional"].items():
+    for dir_name, files in untracked_categorized.intentional.items():
         all_intentional[dir_name] += len(files)
 
     for dir_name, count in sorted(all_intentional.items()):
