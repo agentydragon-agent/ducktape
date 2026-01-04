@@ -26,16 +26,16 @@ Comprehensive list of all valid input combinations for Claude tools.
 - [ ] pattern + path + type
 - [ ] pattern + glob + type
 - [ ] pattern + path + glob + type
-- [ ] - output_mode: "content"
-- [ ] - output_mode: "files_with_matches"
-- [ ] - output_mode: "count"
-- [ ] - multiline: true
-- [ ] - -i: true
-- [ ] - -n: true (content mode)
-- [ ] - -A: number (content mode)
-- [ ] - -B: number (content mode)
-- [ ] - -C: number (content mode)
-- [ ] - head_limit: number
+- [ ] + output_mode: "content"
+- [ ] + output_mode: "files_with_matches"
+- [ ] + output_mode: "count"
+- [ ] + multiline: true
+- [ ] + -i: true
+- [ ] + -n: true (content mode)
+- [ ] + -A: number (content mode)
+- [ ] + -B: number (content mode)
+- [ ] + -C: number (content mode)
+- [ ] + head_limit: number
 
 ## Edit Tool
 
@@ -73,12 +73,12 @@ Comprehensive list of all valid input combinations for Claude tools.
 ## NotebookEdit Tool
 
 - [ ] notebook_path + new_source
-- [ ] - cell_id
-- [ ] - cell_type: "code"
-- [ ] - cell_type: "markdown"
-- [ ] - edit_mode: "replace"
-- [ ] - edit_mode: "insert"
-- [ ] - edit_mode: "delete"
+- [ ] + cell_id
+- [ ] + cell_type: "code"
+- [ ] + cell_type: "markdown"
+- [ ] + edit_mode: "replace"
+- [ ] + edit_mode: "insert"
+- [ ] + edit_mode: "delete"
 - [ ] notebook_path + new_source + cell_id + cell_type
 - [ ] notebook_path + new_source + cell_id + edit_mode
 - [ ] notebook_path + new_source + cell_type + edit_mode

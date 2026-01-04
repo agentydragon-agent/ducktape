@@ -8,3 +8,6 @@ nix/home/flake.lock
 
 # Symbolic links
 llm/html/llm_html/coding.md
+
+# Claude Code testdata - extracted from Claude Code binary, should not be modified
+claude/claude_hooks/claude_hooks/testdata/claude_tools/**

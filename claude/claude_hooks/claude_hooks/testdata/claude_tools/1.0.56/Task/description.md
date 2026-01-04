@@ -5,7 +5,7 @@ provenance: Claude Code 1.0.56 LLM self-description
 
 # Task Tool
 
-Launch a new agent that has access to the following tools: Bash, Glob, Grep, LS, exit_plan_mode, Read, Edit, MultiEdit, Write, NotebookRead, NotebookEdit, WebFetch, TodoWrite, mcp\_\_<.. omitted ..>.
+Launch a new agent that has access to the following tools: Bash, Glob, Grep, LS, exit_plan_mode, Read, Edit, MultiEdit, Write, NotebookRead, NotebookEdit, WebFetch, TodoWrite, mcp__<.. omitted ..>.
 
 ## When to use the Agent tool
 
