@@ -75,9 +75,11 @@ data "talos_machine_configuration" "vps" {
           }
         }
         kubelet = {
-          # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale
-          # Required to handle MTU mismatch (Tailscale 1280 vs pod 1500)
-          allowedUnsafeSysctls = ["net.ipv4.tcp_mtu_probing"]
+          # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
+          # Required to handle MTU mismatch (WireGuard 1280 vs pod 1500)
+          extraArgs = {
+            allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+          }
         }
       }
       cluster = {

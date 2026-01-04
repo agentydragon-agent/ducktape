@@ -26,6 +26,12 @@ Migrated from Proxmox-only 5-node cluster to **hybrid Hetzner VPS + Proxmox** ar
 - KubeSpan: Active mesh with ~15s handshake intervals
 - No services deployed yet (Flux, Vault, etc. pending)
 
+**Pending Investigation**:
+
+- [ ] Re-evaluate TCP MTU probing requirement now that we're on KubeSpan instead of Tailscale
+  - PowerDNS currently requires `net.ipv4.tcp_mtu_probing` sysctl for AXFR over WireGuard
+  - KubeSpan may handle MTU differently than Tailscale - test if still needed
+
 ---
 
 ## 🔀 Possible Directions

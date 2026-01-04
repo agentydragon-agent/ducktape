@@ -197,10 +197,10 @@ data "talos_machine_configuration" "proxmox" {
         kubelet = {
           extraArgs = {
             provider-id = "proxmox://cluster/${each.value.vm_id}"
+            # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
+            # Required to handle MTU mismatch (WireGuard 1280 vs pod 1500)
+            allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
           }
-          # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale
-          # Required to handle MTU mismatch (Tailscale 1280 vs pod 1500)
-          allowedUnsafeSysctls = ["net.ipv4.tcp_mtu_probing"]
           # No nodeIP.validSubnets - let kubelet auto-detect
           # KubeSpan IPv6 IPs (fd05::/64) are globally routable via WireGuard mesh
         }
