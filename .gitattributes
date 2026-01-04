@@ -1,2 +1,3 @@
 # Exclude zsh files from formatting (shfmt doesn't support zsh syntax)
+# TODO: Install a zsh-specific formatter to handle .zsh files properly
 *.zsh rules-lint-ignored=true
