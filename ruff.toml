@@ -1,5 +1,8 @@
-# TODO(mpokorny): Once nested pyprojects are gone, move this Ruff config into
-# the single pyproject.toml at repo root and delete ruff.toml.
+# Ruff configuration for the entire repository
+# Centralized here (not in pyproject.toml) for clean separation:
+# - Root pyproject.toml: uv overrides and tool config only
+# - ruff.toml: All ruff formatting and linting rules
+# - Bazel's aspect_rules_lint reads this file via Label("//:ruff.toml")
 
 # Prefer one-line formatting when code fits
 line-length = 120
