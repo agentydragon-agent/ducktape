@@ -295,7 +295,7 @@ Choose action:"""
 
     def reset(self):
         """Reset conversation history for new episode."""
-        self.conversation_history: list[Message] = []
+        self.conversation_history = []
 
 
 async def run_episode(
@@ -508,7 +508,7 @@ async def main():
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Filter out errors and collect successful runs
-    all_runs = []
+    all_runs: list[Run] = []
     for i, result in enumerate(results):
         if isinstance(result, Exception):
             model_idx = i // (len(ENVIRONMENTS) * RUNS_PER_EXPERIMENT)
@@ -516,6 +516,7 @@ async def main():
             run_idx = i % RUNS_PER_EXPERIMENT
             print(f"Error in {MODELS[model_idx]} on {ENVIRONMENTS[env_idx]} run {run_idx}: {result}")
         else:
+            assert isinstance(result, Run)
             all_runs.append(result)
 
     # Save raw results with full trajectories
@@ -528,12 +529,16 @@ async def main():
     all_trajectories = []
 
     for run in all_runs:
-        run_data = {"model": run.model, "environment": run.environment, "episodes": []}
+        run_data: dict[str, Any] = {"model": run.model, "environment": run.environment, "episodes": []}
         for episode_idx, episode in enumerate(run.episodes):
-            ep_data = {"total_reward": episode.total_reward, "num_steps": len(episode.steps), "steps": []}
+            ep_data: dict[str, Any] = {
+                "total_reward": episode.total_reward,
+                "num_steps": len(episode.steps),
+                "steps": [],
+            }
 
             # Create trajectory record for detailed analysis
-            trajectory = {
+            trajectory: dict[str, Any] = {
                 "model": run.model,
                 "environment": run.environment,
                 "episode_idx": episode_idx,

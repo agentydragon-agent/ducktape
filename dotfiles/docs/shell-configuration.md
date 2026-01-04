@@ -33,15 +33,15 @@ This document explains the shell startup file organization for this system.
 
 ## Quick Reference (Legacy)
 
-| File | Purpose | Status | What Goes Here |
-|------|---------|--------|----------------|
-| `~/.profile` | POSIX environment setup | **Active** | PATH, pyenv, CUDA, lesspipe, machine-specific config, sources ~/.secret_env |
-| `~/.bashrc` | Bash interactive config | **Nix-managed** | Managed by programs.bash in home.nix |
-| `~/.zshenv` | Zsh environment (minimal) | **Nix-managed** | Managed by programs.zsh.envExtra (skip_global_compinit) |
-| `~/.zprofile` | Zsh login config | **Deprecated** | Empty (not needed) |
-| `~/.zshrc` | Zsh interactive config | **Nix-managed** | Managed by programs.zsh in home.nix |
-| `~/.shellrc` | Interactive settings | **Nix-managed** | Migrated to home.shellAliases and shell init scripts |
-| `~/.secret_env` | Secret environment vars | **Active** | API keys, tokens (not in git) |
+| File            | Purpose                   | Status          | What Goes Here                                                              |
+| --------------- | ------------------------- | --------------- | --------------------------------------------------------------------------- |
+| `~/.profile`    | POSIX environment setup   | **Active**      | PATH, pyenv, CUDA, lesspipe, machine-specific config, sources ~/.secret_env |
+| `~/.bashrc`     | Bash interactive config   | **Nix-managed** | Managed by programs.bash in home.nix                                        |
+| `~/.zshenv`     | Zsh environment (minimal) | **Nix-managed** | Managed by programs.zsh.envExtra (skip_global_compinit)                     |
+| `~/.zprofile`   | Zsh login config          | **Deprecated**  | Empty (not needed)                                                          |
+| `~/.zshrc`      | Zsh interactive config    | **Nix-managed** | Managed by programs.zsh in home.nix                                         |
+| `~/.shellrc`    | Interactive settings      | **Nix-managed** | Migrated to home.shellAliases and shell init scripts                        |
+| `~/.secret_env` | Secret environment vars   | **Active**      | API keys, tokens (not in git)                                               |
 
 ## Loading Order
 

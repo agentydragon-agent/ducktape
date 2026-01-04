@@ -29,9 +29,9 @@ def scrape_lcsc_image_url(lcsc_id: str) -> str:
     soup = BeautifulSoup(r.text, "html.parser")
     # Look for <meta name="og:image" content="..."> or property="og:image"
     for query in ({"name": "og:image"}, {"property": "og:image"}):
-        meta_og_image = soup.find("meta", attrs=query)
-        if meta_og_image and meta_og_image.get("content"):
-            return meta_og_image["content"]
+        if (meta_og_image := soup.find("meta", attrs=query)) and (content := meta_og_image.get("content")):  # type: ignore[arg-type]
+            assert isinstance(content, str), f"Expected str, got {type(content)}"
+            return content
 
     raise ValueError(f"No og:image found on LCSC page for {lcsc_id}")
 

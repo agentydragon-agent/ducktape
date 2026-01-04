@@ -38,12 +38,12 @@ ansible-playbook --syntax-check wyrm.yaml  # 1-2 seconds
 
 ### Performance Comparison
 
-| Scenario | Time | What It Validates |
-|----------|------|-------------------|
-| **Pre-commit syntax-check** | 1-3s | Syntax errors, undefined vars, invalid modules |
-| **Full ansible-lint (single)** | ~15s | Everything (style, best practices, security) |
-| **Full ansible-lint (all)** | ~42s | Everything on all playbooks |
-| **CI ansible-lint** | ~42s | Same as local, but only runs on changes |
+| Scenario                       | Time | What It Validates                              |
+| ------------------------------ | ---- | ---------------------------------------------- |
+| **Pre-commit syntax-check**    | 1-3s | Syntax errors, undefined vars, invalid modules |
+| **Full ansible-lint (single)** | ~15s | Everything (style, best practices, security)   |
+| **Full ansible-lint (all)**    | ~42s | Everything on all playbooks                    |
+| **CI ansible-lint**            | ~42s | Same as local, but only runs on changes        |
 
 **Speedup**: ~15x faster pre-commit feedback!
 
@@ -134,11 +134,11 @@ The ansible-lint maintainer confirmed the root causes:
 
 ### Performance Comparison (Other Repositories)
 
-| Repository | Files | Time | Time/File | Notes |
-|------------|-------|------|-----------|-------|
-| **ducktape** | 191 | 42s | **0.22s** | **Better than average** |
-| Small repo (GH #1256) | ~50 | 45s | 0.9s | Much worse |
-| zuul-roles (large) | 330+ | 80s | 0.24s | Similar to ours |
+| Repository            | Files | Time | Time/File | Notes                   |
+| --------------------- | ----- | ---- | --------- | ----------------------- |
+| **ducktape**          | 191   | 42s  | **0.22s** | **Better than average** |
+| Small repo (GH #1256) | ~50   | 45s  | 0.9s      | Much worse              |
+| zuul-roles (large)    | 330+  | 80s  | 0.24s     | Similar to ours         |
 
 **Conclusion**: Our 42s runtime is normal and actually performs well per-file.
 
@@ -270,12 +270,12 @@ def _sanitize_task(task: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
 
 ### Summary of Potential Upstream Improvements
 
-| Issue | Fix | Complexity | Savings | Risk |
-|-------|-----|------------|---------|------|
-| #1: Package versions | `@cache` | Trivial | 5-6s | None |
-| #2: File stats | `@lru_cache` | Trivial | 2-3s | Low |
-| #3: Deep copying | Selective copy | Medium | 1.5-2s | Medium |
-| #4: Subprocess overhead | Multiple fixes | Medium | 2-4s | Low |
+| Issue                   | Fix            | Complexity | Savings | Risk   |
+| ----------------------- | -------------- | ---------- | ------- | ------ |
+| #1: Package versions    | `@cache`       | Trivial    | 5-6s    | None   |
+| #2: File stats          | `@lru_cache`   | Trivial    | 2-3s    | Low    |
+| #3: Deep copying        | Selective copy | Medium     | 1.5-2s  | Medium |
+| #4: Subprocess overhead | Multiple fixes | Medium     | 2-4s    | Low    |
 
 **Total potential improvement: 11-15 seconds (42s → 27-31s)**
 

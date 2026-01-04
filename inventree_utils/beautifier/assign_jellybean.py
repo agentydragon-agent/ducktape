@@ -7,8 +7,9 @@ from pathlib import Path
 from textwrap import dedent
 
 from inventree.api import InvenTreeAPI
-from inventree.part import Parameter, ParameterTemplate, Part
-from tqdm.auto import tqdm
+from inventree.base import Parameter, ParameterTemplate
+from inventree.part import Part
+from tqdm import tqdm
 
 from .cli_util import build_table, choose
 from .inventree_util import part_url
@@ -167,8 +168,9 @@ def assign_jellybean(api: InvenTreeAPI):
     print("Committing.")
 
     # commit changes
-    for part, jellybean_pn in (t := tqdm(assignments)):
+    progress = tqdm(assignments)
+    for part, jellybean_pn in progress:
         Parameter.create(api, data={"part": part.pk, "template": param_template.pk, "data": jellybean_pn})
-        t.set_description(f"{part.name} ← {jellybean_pn}")
+        progress.set_description(f"{part.name} ← {jellybean_pn}")
 
     print("Done.")

@@ -18,7 +18,7 @@ terraform {
     # Proxmox for home nodes (Phase 2)
     proxmox = {
       source  = "bpg/proxmox"
-      version = "~> 0.86.0"
+      version = "~> 0.91.0"
     }
     # Talos Linux for all nodes
     talos = {

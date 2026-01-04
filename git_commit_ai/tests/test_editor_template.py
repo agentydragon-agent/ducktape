@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 from git_commit_ai.cli import build_editor_content
 from git_commit_ai.editor_template import SCISSORS_MARK
 
@@ -153,21 +151,20 @@ def test_editor_content_includes_both_user_context_and_previous_message(temp_rep
 
 
 def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo, snapshot):
-    """Staged-only files must NOT appear in 'Changes not staged for commit'."""
-    # Init
-    temp_repo.write("existing.txt", "v1\n")
-    temp_repo.stage("existing.txt")
+    """Staged-only files must NOT appear in 'Changes not staged for commit'.
+
+    Bug: When modifying an existing tracked file and staging it, the file
+    incorrectly appeared in both "Changes to be committed" AND "Changes not
+    staged for commit" because unstaged used HEAD→worktree instead of index→worktree.
+    """
+    # Init with a file
+    temp_repo.write("tracked.txt", "v1\n")
+    temp_repo.stage("tracked.txt")
     temp_repo.commit("init")
 
-    # Stage a NEW file (bug case: should NOT appear in unstaged)
-    temp_repo.write("new_staged.txt", "staged content\n")
-    temp_repo.stage("new_staged.txt")
-
-    # Modify existing file but DON'T stage (should appear in unstaged only)
-    temp_repo.write("existing.txt", "v2\n")
-
-    # Create untracked file
-    temp_repo.write("untracked.txt", "x\n")
+    # Modify and STAGE the file (bug case: should NOT appear in unstaged)
+    temp_repo.write("tracked.txt", "v2\n")
+    temp_repo.stage("tracked.txt")
 
     content = build_editor_content(
         git_repo, msg="test", previous_message=None, user_context=None, stats_line="", passthru=[]
@@ -176,9 +173,7 @@ def test_staged_files_not_duplicated_in_unstaged_section(temp_repo, git_repo, sn
     # Snapshot the full content
     assert content == snapshot
 
-    # Explicit assertion: new_staged.txt must NOT appear in unstaged section
-    unstaged_section = re.search(r"# Changes not staged for commit:.*?(?=# Untracked files:|# -+)", content, re.DOTALL)
-    assert unstaged_section is not None, "Unstaged section should exist"
-    assert "new_staged.txt" not in unstaged_section.group(0), (
-        "Staged-only file 'new_staged.txt' incorrectly appears in unstaged section"
+    # Explicit assertion: tracked.txt must NOT appear in unstaged section
+    assert "# Changes not staged for commit:" not in content, (
+        "Unstaged section should not exist when all changes are staged"
     )
