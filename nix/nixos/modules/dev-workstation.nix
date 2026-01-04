@@ -33,8 +33,9 @@
     wants = ["network-online.target"];
     requires = ["nix-daemon.service"];
     wantedBy = ["multi-user.target"];
+    path = [pkgs.nix pkgs.git];
     unitConfig = {
-      ConditionPathExists = "!/var/lib/home-manager-init-done";
+      ConditionPathExists = "!/home/${username}/.home-manager-init-done";
     };
     serviceConfig = {
       Type = "oneshot";
@@ -45,6 +46,7 @@
         set -e
         export HOME=/home/${username}
         export USER=${username}
+        export NIX_PATH=nixpkgs=${pkgs.path}
         # Ensure nix profile directories exist
         mkdir -p ~/.local/state/nix/profiles
         mkdir -p ~/.nix-profile
@@ -52,7 +54,7 @@
           --flake "github:agentydragon/ducktape?dir=nix/home&ref=devel#${homeManagerHost}" \
           2>&1 | tee ~/home-manager-init.log
       ''}";
-      ExecStartPost = "${pkgs.coreutils}/bin/touch /var/lib/home-manager-init-done";
+      ExecStartPost = "${pkgs.coreutils}/bin/touch /home/${username}/.home-manager-init-done";
       RemainAfterExit = true;
     };
   };
