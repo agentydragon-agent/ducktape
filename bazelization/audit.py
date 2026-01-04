@@ -195,11 +195,29 @@ def analyze() -> None:
         git_not_tracked, set(), lambda p: p.parts[0] in INTENTIONALLY_EXCLUDED if p.parts else False
     )
 
-    # Query Bazel for target counts
+    # Query Bazel for target counts and manual targets
     print("Querying Bazel targets...")
-    target_counts = {
-        kind: len(batch_bazel_query(f'kind("{kind}", //...)')) for kind in ["py_library", "py_test", "ruff_test"]
-    }
+    # Single query to get all targets with their kinds (much faster than multiple kind() queries)
+    all_targets_output = subprocess.run(
+        ["bazel", "query", "//...", "--output=label_kind"],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT
+    )
+
+    # Parse output: each line is "rule_type rule //package:target"
+    target_counts = {"py_library": 0, "py_test": 0, "ruff_test": 0}
+    for line in all_targets_output.stdout.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 3:
+            rule_type = parts[0]
+            if rule_type in target_counts:
+                target_counts[rule_type] += 1
+
+    # Query for manual targets (still need this separate query for the attribute filter)
     manual_targets = batch_bazel_query('attr(tags, "manual", //...)')
 
     # Print results
