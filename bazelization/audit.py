@@ -42,9 +42,9 @@ class LanguageConfig:
 class CategorizedFiles:
     """Files categorized by coverage status."""
 
-    covered: list[Path]
-    uncovered: dict[str, list[Path]]
-    intentional: dict[str, list[Path]]
+    covered: set[Path]
+    uncovered: dict[str, set[Path]]
+    intentional: dict[str, set[Path]]
 
 
 @dataclass
@@ -162,19 +162,19 @@ def categorize_files(
     is_intentionally_excluded: Callable[[Path], bool]
 ) -> CategorizedFiles:
     """Categorize files into covered, uncovered, and intentionally excluded by top-level directory."""
-    covered = []
-    uncovered: dict[str, list[Path]] = defaultdict(list)
-    intentional: dict[str, list[Path]] = defaultdict(list)
+    covered = set()
+    uncovered: dict[str, set[Path]] = defaultdict(set)
+    intentional: dict[str, set[Path]] = defaultdict(set)
 
-    for path in sorted(git_files):
+    for path in git_files:
         top_dir = path.parts[0] if path.parts else ""
 
         if is_intentionally_excluded(path):
-            intentional[top_dir].append(path)
+            intentional[top_dir].add(path)
         elif path in bazel_files:
-            covered.append(path)
+            covered.add(path)
         else:
-            uncovered[top_dir].append(path)
+            uncovered[top_dir].add(path)
 
     return CategorizedFiles(
         covered=covered,
