@@ -6,21 +6,21 @@ set -Eeuo pipefail
 REPO_DIR=${1:-$PWD}
 # Load direnv environment for target dir so VIRTUAL_ENV/etc are present
 if command -v direnv >/dev/null 2>&1; then
-	DENV=$(cd "$REPO_DIR" && direnv export bash 2>/dev/null || true)
-	eval "$DENV"
+  DENV=$(cd "$REPO_DIR" && direnv export bash 2>/dev/null || true)
+  eval "$DENV"
 fi
 
 esc2hex() { perl -pe 's/\e/\\x1b/g'; }
 
 section() { printf "\n==== %s ====\n" "$1"; }
 show() {
-	local title="$1"
-	shift
-	local s="$*"
-	section "$title (raw)"
-	printf '%s\n' "$s"
-	section "$title (escaped)"
-	printf '%s\n' "$(printf '%s' "$s" | esc2hex)"
+  local title="$1"
+  shift
+  local s="$*"
+  section "$title (raw)"
+  printf '%s\n' "$s"
+  section "$title (escaped)"
+  printf '%s\n' "$(printf '%s' "$s" | esc2hex)"
 }
 
 # --- Starship ---
@@ -56,6 +56,6 @@ printf 'p10k y\n%s\n' "$P10K_R_ESC"
 
 # Exit nonzero if theme missing so callers can detect
 if [[ "$P10K_L" == P10K_THEME_NOT_FOUND* ]]; then
-	echo "(p10k theme not found; edit script to point to your powerlevel10k.zsh)" >&2
-	exit 2
+  echo "(p10k theme not found; edit script to point to your powerlevel10k.zsh)" >&2
+  exit 2
 fi

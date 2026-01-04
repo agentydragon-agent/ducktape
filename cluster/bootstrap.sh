@@ -18,7 +18,7 @@ TERRAFORM_DIR="${SCRIPT_DIR}/terraform"
 
 # Timestamp function for all output
 log() {
-	echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
 
 # Parse command line arguments
@@ -26,48 +26,48 @@ START_FROM_LAYER=""
 HELP=false
 
 while [[ $# -gt 0 ]]; do
-	case $1 in
-	--start-from)
-		START_FROM_LAYER="$2"
-		shift 2
-		;;
-	--help | -h)
-		HELP=true
-		shift
-		;;
-	*)
-		echo "❌ Unknown option: $1"
-		echo "Usage: $0 [--start-from infrastructure|services] [--help]"
-		exit 1
-		;;
-	esac
+  case $1 in
+    --start-from)
+      START_FROM_LAYER="$2"
+      shift 2
+      ;;
+    --help | -h)
+      HELP=true
+      shift
+      ;;
+    *)
+      echo "❌ Unknown option: $1"
+      echo "Usage: $0 [--start-from infrastructure|services] [--help]"
+      exit 1
+      ;;
+  esac
 done
 
 if [ "$HELP" = true ]; then
-	echo "🚀 Layered Talos Cluster Bootstrap"
-	echo ""
-	echo "Usage: $0 [OPTIONS]"
-	echo ""
-	echo "Options:"
-	echo "  --start-from LAYER    Skip earlier layers, start from: infrastructure|services"
-	echo "  --help, -h           Show this help message"
-	echo ""
-	echo "Layers:"
-	echo "  0. persistent-auth    CSI tokens, sealed secrets (persistent across VM lifecycle)"
-	echo "  1. infrastructure     VMs, Talos, CNI, networking (ephemeral)"
-	echo "  2. services          GitOps applications (Flux handles DNS/SSO automatically)"
-	echo ""
-	echo "Examples:"
-	echo "  $0                                    # Full bootstrap"
-	echo "  $0 --start-from infrastructure       # Skip persistent auth, rebuild VMs"
-	echo "  $0 --start-from services             # Skip infra, redeploy services"
-	exit 0
+  echo "🚀 Layered Talos Cluster Bootstrap"
+  echo ""
+  echo "Usage: $0 [OPTIONS]"
+  echo ""
+  echo "Options:"
+  echo "  --start-from LAYER    Skip earlier layers, start from: infrastructure|services"
+  echo "  --help, -h           Show this help message"
+  echo ""
+  echo "Layers:"
+  echo "  0. persistent-auth    CSI tokens, sealed secrets (persistent across VM lifecycle)"
+  echo "  1. infrastructure     VMs, Talos, CNI, networking (ephemeral)"
+  echo "  2. services          GitOps applications (Flux handles DNS/SSO automatically)"
+  echo ""
+  echo "Examples:"
+  echo "  $0                                    # Full bootstrap"
+  echo "  $0 --start-from infrastructure       # Skip persistent auth, rebuild VMs"
+  echo "  $0 --start-from services             # Skip infra, redeploy services"
+  exit 0
 fi
 
 log "🚀 Starting layered Talos cluster bootstrap..."
 log "📂 Terraform directory: ${TERRAFORM_DIR}"
 if [ -n "$START_FROM_LAYER" ]; then
-	log "⏩ Starting from layer: $START_FROM_LAYER"
+  log "⏩ Starting from layer: $START_FROM_LAYER"
 fi
 
 # Phase 0: Preflight Validation
@@ -77,9 +77,9 @@ echo "=================================="
 
 # Check git working tree is clean (only cluster subtree - monorepo may have other changes)
 if ! git diff-index --quiet HEAD -- cluster/; then
-	echo "❌ FATAL: Git working tree is not clean in cluster/"
-	echo "Please commit or stash your cluster changes before running bootstrap"
-	exit 1
+  echo "❌ FATAL: Git working tree is not clean in cluster/"
+  echo "Please commit or stash your cluster changes before running bootstrap"
+  exit 1
 fi
 
 # Run pre-commit validation from repo root (unified config)
@@ -87,72 +87,72 @@ fi
 log "🔍 Running pre-commit validation on cluster files..."
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 if ! (cd "$REPO_ROOT" && git ls-files -- cluster/ | xargs pre-commit run --files); then
-	log "❌ FATAL: Pre-commit validation failed"
-	exit 1
+  log "❌ FATAL: Pre-commit validation failed"
+  exit 1
 fi
 
 # Validate each layer's terraform configuration
 for layer in "00-persistent-auth" "01-infrastructure" "02-services"; do
-	log "🔍 Validating terraform layer: ${layer}..."
-	cd "${TERRAFORM_DIR}/${layer}"
-	if ! terraform validate; then
-		log "❌ FATAL: Terraform configuration is invalid in layer ${layer}"
-		exit 1
-	fi
+  log "🔍 Validating terraform layer: ${layer}..."
+  cd "${TERRAFORM_DIR}/${layer}"
+  if ! terraform validate; then
+    log "❌ FATAL: Terraform configuration is invalid in layer ${layer}"
+    exit 1
+  fi
 done
 
 # Phase 0.5: Persistent Auth Layer (if needed)
 if [ "$START_FROM_LAYER" != "infrastructure" ] && [ "$START_FROM_LAYER" != "services" ] && [ "$START_FROM_LAYER" != "configuration" ]; then
-	echo ""
-	log "⚡ Layer 0: Persistent Auth Setup"
-	echo "================================"
+  echo ""
+  log "⚡ Layer 0: Persistent Auth Setup"
+  echo "================================"
 
-	cd "${TERRAFORM_DIR}/00-persistent-auth"
+  cd "${TERRAFORM_DIR}/00-persistent-auth"
 
-	# Check if persistent auth already exists
-	if [ -f "terraform.tfstate" ] && terraform show -json | jq -e '.values.root_module.resources | length > 0' >/dev/null 2>&1; then
-		log "ℹ️  Persistent auth layer already exists - skipping deployment"
-		echo "    Use 'cd terraform/00-persistent-auth && terraform destroy' to reset auth"
-	else
-		log "🚀 Deploying persistent auth layer..."
-		echo "     📋 CSI-TOKENS → SEALED-SECRETS-KEYPAIR → GIT-COMMIT"
+  # Check if persistent auth already exists
+  if [ -f "terraform.tfstate" ] && terraform show -json | jq -e '.values.root_module.resources | length > 0' >/dev/null 2>&1; then
+    log "ℹ️  Persistent auth layer already exists - skipping deployment"
+    echo "    Use 'cd terraform/00-persistent-auth && terraform destroy' to reset auth"
+  else
+    log "🚀 Deploying persistent auth layer..."
+    echo "     📋 CSI-TOKENS → SEALED-SECRETS-KEYPAIR → GIT-COMMIT"
 
-		if ! terraform apply -auto-approve; then
-			log "❌ FATAL: Persistent auth deployment failed"
-			exit 1
-		fi
+    if ! terraform apply -auto-approve; then
+      log "❌ FATAL: Persistent auth deployment failed"
+      exit 1
+    fi
 
-		log "✅ Persistent auth layer ready"
-	fi
+    log "✅ Persistent auth layer ready"
+  fi
 fi
 
 # Phase 1: Infrastructure Layer
 if [ "$START_FROM_LAYER" != "services" ]; then
-	echo ""
-	log "⚡ Layer 1: Infrastructure Deployment"
-	echo "===================================="
+  echo ""
+  log "⚡ Layer 1: Infrastructure Deployment"
+  echo "===================================="
 
-	cd "${TERRAFORM_DIR}/01-infrastructure"
-	log "🚀 Deploying infrastructure layer..."
-	echo "     📋 PVE-AUTH → VMs → TALOS → CILIUM → SEALED-SECRETS"
+  cd "${TERRAFORM_DIR}/01-infrastructure"
+  log "🚀 Deploying infrastructure layer..."
+  echo "     📋 PVE-AUTH → VMs → TALOS → CILIUM → SEALED-SECRETS"
 
-	if ! terraform apply -auto-approve; then
-		log "❌ FATAL: Infrastructure deployment failed"
-		exit 1
-	fi
+  if ! terraform apply -auto-approve; then
+    log "❌ FATAL: Infrastructure deployment failed"
+    exit 1
+  fi
 
-	# Verify infrastructure readiness
-	log "🔍 Verifying infrastructure readiness..."
-	KUBECONFIG_PATH="${TERRAFORM_DIR}/01-infrastructure/kubeconfig"
-	export KUBECONFIG="$KUBECONFIG_PATH"
+  # Verify infrastructure readiness
+  log "🔍 Verifying infrastructure readiness..."
+  KUBECONFIG_PATH="${TERRAFORM_DIR}/01-infrastructure/kubeconfig"
+  export KUBECONFIG="$KUBECONFIG_PATH"
 
-	# Terraform waits for nodes to be Ready via kubernetes_nodes data source
-	# Just verify cluster is accessible
-	log "⏳ Verifying cluster access..."
-	kubectl cluster-info
-	kubectl get nodes
+  # Terraform waits for nodes to be Ready via kubernetes_nodes data source
+  # Just verify cluster is accessible
+  log "⏳ Verifying cluster access..."
+  kubectl cluster-info
+  kubectl get nodes
 
-	echo "✅ Infrastructure layer ready"
+  echo "✅ Infrastructure layer ready"
 fi
 
 # Phase 2: Services Layer
@@ -162,8 +162,8 @@ echo "=============================="
 
 # Ensure kubeconfig is available for services layer
 if [ -z "$KUBECONFIG" ]; then
-	KUBECONFIG_PATH="${TERRAFORM_DIR}/01-infrastructure/kubeconfig"
-	export KUBECONFIG="$KUBECONFIG_PATH"
+  KUBECONFIG_PATH="${TERRAFORM_DIR}/01-infrastructure/kubeconfig"
+  export KUBECONFIG="$KUBECONFIG_PATH"
 fi
 
 cd "${TERRAFORM_DIR}/02-services"
@@ -171,8 +171,8 @@ log "🚀 Deploying services layer..."
 echo "     📋 GITOPS → AUTHENTIK → POWERDNS → HARBOR → GITEA → MATRIX"
 
 if ! terraform apply -auto-approve; then
-	log "❌ FATAL: Services deployment failed"
-	exit 1
+  log "❌ FATAL: Services deployment failed"
+  exit 1
 fi
 
 # Wait for critical services to be ready

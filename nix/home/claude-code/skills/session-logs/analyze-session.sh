@@ -7,14 +7,14 @@ set -euo pipefail
 
 # Get session file (argument or auto-detect)
 if [ $# -eq 1 ]; then
-	SESSION_FILE="$1"
+  SESSION_FILE="$1"
 else
-	SESSION_FILE=$(~/.claude/skills/session-logs/find-current-session.sh)
+  SESSION_FILE=$(~/.claude/skills/session-logs/find-current-session.sh)
 fi
 
 if [ ! -f "$SESSION_FILE" ]; then
-	echo "Error: Session file not found: $SESSION_FILE" >&2
-	exit 1
+  echo "Error: Session file not found: $SESSION_FILE" >&2
+  exit 1
 fi
 
 echo "=== Session Analysis: $(basename "$SESSION_FILE") ==="
@@ -48,29 +48,29 @@ echo ""
 
 # Tool usage breakdown
 echo "=== Tool Usage ==="
-grep '"type":"tool_use"' "$SESSION_FILE" |
-	jq -r '.message.content[0].name // "unknown"' |
-	sort | uniq -c | sort -rn | head -10
+grep '"type":"tool_use"' "$SESSION_FILE" \
+  | jq -r '.message.content[0].name // "unknown"' \
+  | sort | uniq -c | sort -rn | head -10
 echo ""
 
 # Recent tool calls (last 10)
 echo "=== Recent Tool Calls (last 10) ==="
-grep '"type":"tool_use"' "$SESSION_FILE" | tail -10 |
-	jq -r '"\(.timestamp | split("T")[1] | split(".")[0]): \(.message.content[0].name)"'
+grep '"type":"tool_use"' "$SESSION_FILE" | tail -10 \
+  | jq -r '"\(.timestamp | split("T")[1] | split(".")[0]): \(.message.content[0].name)"'
 echo ""
 
 # Files modified
 echo "=== Files Modified ==="
-grep '"type":"tool_use"' "$SESSION_FILE" |
-	jq -r 'select(.message.content[0].name == "Edit" or .message.content[0].name == "Write") |
-    .message.content[0].input.file_path' |
-	sort -u | head -20
+grep '"type":"tool_use"' "$SESSION_FILE" \
+  | jq -r 'select(.message.content[0].name == "Edit" or .message.content[0].name == "Write") |
+    .message.content[0].input.file_path' \
+  | sort -u | head -20
 echo ""
 
 # Recent user messages (last 5)
 echo "=== Recent User Messages (last 5) ==="
-grep '"type":"user"' "$SESSION_FILE" | tail -5 |
-	jq -r '"\(.timestamp | split("T")[1] | split(".")[0]): \(.message.content[0].text[0:80])"'
+grep '"type":"user"' "$SESSION_FILE" | tail -5 \
+  | jq -r '"\(.timestamp | split("T")[1] | split(".")[0]): \(.message.content[0].text[0:80])"'
 echo ""
 
 echo "=== Session file: $SESSION_FILE ==="

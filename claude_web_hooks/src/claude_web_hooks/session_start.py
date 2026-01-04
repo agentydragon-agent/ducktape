@@ -72,10 +72,7 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
         log.info("Installing pre-commit==4.0.1 via pip")
         try:
             result = subprocess.run(
-                ["pip", "install", "--user", "pre-commit==4.0.1"],
-                capture_output=True,
-                text=True,
-                timeout=60,
+                ["pip", "install", "--user", "pre-commit==4.0.1"], capture_output=True, text=True, timeout=60
             )
             if result.returncode != 0:
                 log.warning("Failed to install pre-commit: %s", result.stderr)

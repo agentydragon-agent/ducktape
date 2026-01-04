@@ -16,9 +16,9 @@ echo "🚀 Starting deployment of current working tree to production..."
 # Run unit tests first
 echo "🧪 Running unit tests..."
 if ! python -m pytest test_*.py -v; then
-	echo "❌ Unit tests failed! Aborting deployment."
-	echo "Fix the failing tests before deploying."
-	exit 1
+  echo "❌ Unit tests failed! Aborting deployment."
+  echo "Fix the failing tests before deploying."
+  exit 1
 fi
 echo "✅ All tests passed!"
 
@@ -26,8 +26,8 @@ echo "⚠️  WARNING: This will replace the production container at llm.agentyd
 read -p "Continue? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-	echo "Aborted."
-	exit 1
+  echo "Aborted."
+  exit 1
 fi
 
 # Copy coding instructions to current directory for Docker build
@@ -38,11 +38,11 @@ cp ../../dotfiles/codex/instructions.md coding.md
 echo "📦 Creating archive of current working tree..."
 # Include all necessary files (tracked, staged, and untracked)
 tar -czf /tmp/llm-html-dev.tar.gz \
-	--exclude=__pycache__ \
-	--exclude=.pytest_cache \
-	--exclude=*.pyc \
-	--exclude=.git \
-	*.py *.md *.html *.css *.txt *.sh Dockerfile requirements.txt
+  --exclude=__pycache__ \
+  --exclude=.pytest_cache \
+  --exclude=*.pyc \
+  --exclude=.git \
+  *.py *.md *.html *.css *.txt *.sh Dockerfile requirements.txt
 
 # Clean up temporary file
 rm -f coding.md

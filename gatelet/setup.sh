@@ -12,8 +12,8 @@ export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
 apt-get install -y --no-install-recommends \
-	postgresql postgresql-contrib libpq-dev \
-	wget curl gnupg
+  postgresql postgresql-contrib libpq-dev \
+  wget curl gnupg
 
 # Expose Postgres binaries system-wide
 ##############################################################################
@@ -28,15 +28,15 @@ echo "export IS_CODEX_ENV=1" >>/root/.bashrc
 # Set up virtualenv
 ##############################################################################
 python_env_setup() {
-	pip install --upgrade pip wheel
+  pip install --upgrade pip wheel
 
-	# When this script is executed we are still in the repository root even
-	# though the file itself lives in the *gatelet/* sub-folder.  Tell pip
-	# explicitly that we want to install the local *directory* rather than a
-	# package from PyPI by prefixing the path with "./".
+  # When this script is executed we are still in the repository root even
+  # though the file itself lives in the *gatelet/* sub-folder.  Tell pip
+  # explicitly that we want to install the local *directory* rather than a
+  # package from PyPI by prefixing the path with "./".
 
-	echo "++ pip install -e ./gatelet[dev]"
-	pip install -e "./gatelet[dev]"
+  echo "++ pip install -e ./gatelet[dev]"
+  pip install -e "./gatelet[dev]"
 }
 
 pip install --upgrade pip setuptools wheel

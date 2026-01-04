@@ -6,11 +6,11 @@ REGISTRY="${REGISTRY:-local}"
 PUSH="${PUSH:-false}"
 
 if [ "$REGISTRY" = "local" ]; then
-	DESKTOP_TAG="devbot-desktop:latest"
-	MCP_TAG="computer-control-mcp:latest"
+  DESKTOP_TAG="devbot-desktop:latest"
+  MCP_TAG="computer-control-mcp:latest"
 else
-	DESKTOP_TAG="${REGISTRY}/devbot-desktop:latest"
-	MCP_TAG="${REGISTRY}/computer-control-mcp:latest"
+  DESKTOP_TAG="${REGISTRY}/devbot-desktop:latest"
+  MCP_TAG="${REGISTRY}/computer-control-mcp:latest"
 fi
 
 # Build desktop image
@@ -22,13 +22,13 @@ echo "Building MCP server image..."
 docker build -t ${MCP_TAG} ./mcp-server/
 
 if [ "$PUSH" = "true" ]; then
-	echo "Pushing images to ${REGISTRY}..."
-	docker push ${DESKTOP_TAG}
-	docker push ${MCP_TAG}
-	echo "Done! Images pushed to ${REGISTRY}."
+  echo "Pushing images to ${REGISTRY}..."
+  docker push ${DESKTOP_TAG}
+  docker push ${MCP_TAG}
+  echo "Done! Images pushed to ${REGISTRY}."
 else
-	echo "Done! Images built locally."
-	echo ""
-	echo "To push to Harbor, run:"
-	echo "  REGISTRY=harbor.test-cluster.agentydragon.com/agents PUSH=true ./build.sh"
+  echo "Done! Images built locally."
+  echo ""
+  echo "To push to Harbor, run:"
+  echo "  REGISTRY=harbor.test-cluster.agentydragon.com/agents PUSH=true ./build.sh"
 fi

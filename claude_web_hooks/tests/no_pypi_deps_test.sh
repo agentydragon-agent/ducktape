@@ -10,13 +10,13 @@ deps=$(bazel query 'deps(//claude_web_hooks:claude_web_hooks)' 2>/dev/null)
 pypi_deps=$(echo "$deps" | grep -E '^@pypi//' || true)
 
 if [[ -n "$pypi_deps" ]]; then
-	echo "ERROR: claude_web_hooks has external @pypi// dependencies!"
-	echo "This package must be self-contained (no pip dependencies) because it runs"
-	echo "before package installation in Claude Code session hooks."
-	echo ""
-	echo "Found dependencies:"
-	echo "$pypi_deps"
-	exit 1
+  echo "ERROR: claude_web_hooks has external @pypi// dependencies!"
+  echo "This package must be self-contained (no pip dependencies) because it runs"
+  echo "before package installation in Claude Code session hooks."
+  echo ""
+  echo "Found dependencies:"
+  echo "$pypi_deps"
+  exit 1
 fi
 
 echo "OK: claude_web_hooks has no @pypi// dependencies"

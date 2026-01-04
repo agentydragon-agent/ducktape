@@ -17,7 +17,7 @@ printf 'post_restart=%s\n' "$POST_RESTART"
 
 echo "::demo::heredoc"
 HEREDOC_OUTPUT=$(
-	ember-python <<'PY'
+  ember-python <<'PY'
 print("strings with 'quotes' and $variables stay literal")
 PY
 )

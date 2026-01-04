@@ -15,7 +15,7 @@ set -e
 #   'Cannot initiate the connection to archive.ubuntu.com:80 (185.125.190.81). - connect (101: Network is unreachable)'
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-	build-essential python3-venv python3-dev curl ca-certificates
+  build-essential python3-venv python3-dev curl ca-certificates
 
 # Dev hygiene
 ##############################################################################
