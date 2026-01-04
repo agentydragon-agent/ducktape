@@ -30,19 +30,24 @@ When invoked, capture important discoveries, patterns, or insights that would he
 **Context**: [What you were trying to do]
 
 ## Key Learning
+
 [Concise statement of what was learned]
 
 ## Details
+
 [Explanation that would help another AI agent]
 
 ## Examples
+
 [Code examples if applicable]
 
 ## Gotchas
+
 [What to watch out for]
 
 ---
-*Documented by [agent-name]*
+
+_Documented by [agent-name]_
 ```
 
 ## Example Usage

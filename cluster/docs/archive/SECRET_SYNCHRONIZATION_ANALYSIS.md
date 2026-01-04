@@ -166,7 +166,7 @@ spec:
   dataFrom:
     - sourceRef:
         generatorRef:
-          kind: Password  # Regenerates every refresh!
+          kind: Password # Regenerates every refresh!
 ```
 
 Change to:
@@ -176,7 +176,7 @@ spec:
   data:
     - secretKey: password
       remoteRef:
-        key: secret/powerdns-api-key  # Stable value in Vault
+        key: secret/powerdns-api-key # Stable value in Vault
 ```
 
 With initial generation via Terraform:
@@ -250,9 +250,9 @@ Usage - add annotation to deployments:
 ```yaml
 metadata:
   annotations:
-    reloader.stakater.com/auto: "true"  # Watch all referenced secrets
+    reloader.stakater.com/auto: "true" # Watch all referenced secrets
     # OR
-    secret.reloader.stakater.com/reload: "powerdns-api-key"  # Watch specific secret
+    secret.reloader.stakater.com/reload: "powerdns-api-key" # Watch specific secret
 ```
 
 **What This Solves:**
@@ -437,7 +437,7 @@ namespace (e.g., `monitoring`) instead of where secret exists (`cert-manager`).
 apiKeySecretRef:
   name: powerdns-api-key
   key: PDNS_API_KEY
-  namespace: cert-manager  # Explicit namespace required!
+  namespace: cert-manager # Explicit namespace required!
 ```
 
 **Why**: Secrets are created in `dns-system` and reflected to `cert-manager`. If namespace not specified,

@@ -99,7 +99,7 @@ Internet → VPS (2x Talos controller+worker)
   - Use VPS public IP (hostNetwork or cloud LB)
   - Configure for public traffic
 - [ ] **DNS Cutover**
-  - Point *.agentydragon.com to VPS public IP
+  - Point \*.agentydragon.com to VPS public IP
   - Keep old nginx running as fallback initially
 - [ ] **Certificate Management**
   - cert-manager on VPS node
@@ -175,7 +175,7 @@ machine:
       allowDownPeerBypass: false
 cluster:
   discovery:
-    enabled: true  # Required for KubeSpan
+    enabled: true # Required for KubeSpan
 ```
 
 **How it works**:
@@ -324,7 +324,7 @@ affinity:
 - **Services**:
   - Authentik + PostgreSQL (SSO for internal services)
   - Harbor registry cache (100GB+)
-  - Media services (Jellyfin, *arr stack)
+  - Media services (Jellyfin, \*arr stack)
   - Vault storage
   - Backups
   - Nix cache

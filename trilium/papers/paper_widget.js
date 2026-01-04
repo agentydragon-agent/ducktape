@@ -1,4 +1,3 @@
-
 /**
  * Paper widget. Allows adding, managing topics.
  *
@@ -20,23 +19,26 @@ class PaperWidget extends api.CollapsibleWidget {
     return 100;
   }
   get parentWidget() {
-    return 'right-pane';
+    return "right-pane";
   }
   get widgetTitle() {
-    return 'Paper';
+    return "Paper";
   }
 
   isEnabled() {
-    return super.isEnabled() && this.note.type === 'text' &&
-        this.note.hasLabel('paper');
+    return (
+      super.isEnabled() &&
+      this.note.type === "text" &&
+      this.note.hasLabel("paper")
+    );
   }
 
   async doRenderBody() {
     this.$body.empty().append($(TPL));
-    this.$paperTopicsList = this.$body.find('#paper-topics');
-    this.$promptOutput = this.$body.find('#prompt-output');
-    this.$suggestTopicsButton = this.$body.find('#suggest-topics-button');
-    this.$suggestedTopics = this.$body.find('#suggested-topics');
+    this.$paperTopicsList = this.$body.find("#paper-topics");
+    this.$promptOutput = this.$body.find("#prompt-output");
+    this.$suggestTopicsButton = this.$body.find("#suggest-topics-button");
+    this.$suggestedTopics = this.$body.find("#suggested-topics");
 
     this.$suggestTopicsButton.click(() => {
       this.suggestTopics();
@@ -62,40 +64,44 @@ Existing topics:
       openaiPrompt += `${i}: ${topicNote.title}\n`;
       // TODO: also fetch parent topics, for OpenAI
     }
-    openaiPrompt += '\n';
+    openaiPrompt += "\n";
     openaiPrompt += `Paper title: ${this.note.title}\n`;
-    const topicRelations = this.note.getRelations('topic');
+    const topicRelations = this.note.getRelations("topic");
     if (topicRelations.length > 0) {
       openaiPrompt +=
-          'The paper is already assigned to the following topics - do not suggest them: ';
+        "The paper is already assigned to the following topics - do not suggest them: ";
       const titles = [];
       for (const topicRelation of topicRelations) {
         const topicNote = await api.getNote(topicRelation.value);
         titles.push(topicNote.title);
       }
-      openaiPrompt += titles.join(', ');
+      openaiPrompt += titles.join(", ");
     }
-    openaiPrompt += '\n';
+    openaiPrompt += "\n";
     openaiPrompt +=
-        '\nSuggest topics for this paper. Prefer suggesting topics that I already have, but if it makes sense, you may also suggest a new topic.\n';
+      "\nSuggest topics for this paper. Prefer suggesting topics that I already have, but if it makes sense, you may also suggest a new topic.\n";
     openaiPrompt +=
-        ('Format the suggestion as a JSON array like this: ' +
-         '["Topic name 1","Topic name 2",...].\n' +
-         '-----\n');
+      "Format the suggestion as a JSON array like this: " +
+      '["Topic name 1","Topic name 2",...].\n' +
+      "-----\n";
     return openaiPrompt;
   }
 
   async refreshWithNote(note) {
     this.$paperTopicsList.empty();
-    const topicRelations = note.getRelations('topic');
+    const topicRelations = note.getRelations("topic");
     for (const topicRelation of topicRelations) {
       const topicNote = await api.getNote(topicRelation.value);
       if (!topicNote) {
         continue;
       }
-      const listItem = $('<li>');
-      listItem.append(await api.createNoteLink(
-          topicNote.noteId, {showTooltip: true, showNoteIcon: true}));
+      const listItem = $("<li>");
+      listItem.append(
+        await api.createNoteLink(topicNote.noteId, {
+          showTooltip: true,
+          showNoteIcon: true,
+        }),
+      );
       this.$paperTopicsList.append(listItem);
     }
 
@@ -107,34 +113,35 @@ Existing topics:
 
   async suggestTopics() {
     const OPENAI_API_KEY = await api.runOnBackend(() => {
-      return api.searchForNote('#openaiApiKey').getContent();
+      return api.searchForNote("#openaiApiKey").getContent();
     }, []);
-    console.log('OPENAI API KEY:', OPENAI_API_KEY);
+    console.log("OPENAI API KEY:", OPENAI_API_KEY);
     const prefix = '["';
     const openaiPrompt = (await this.makePrompt()) + prefix;
 
     this.$promptOutput.text(openaiPrompt);
 
     $.ajax({
-      url: 'https://api.openai.com/v1/completions',
-      type: 'POST',
+      url: "https://api.openai.com/v1/completions",
+      type: "POST",
       data: JSON.stringify({
         prompt: openaiPrompt,
         max_tokens: 2048,
         temperature: 0.5,
-        model: 'text-davinci-003',
+        model: "text-davinci-003",
       }),
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ` + OPENAI_API_KEY,
+        "Content-Type": "application/json",
+        Authorization: `Bearer ` + OPENAI_API_KEY,
       },
       success: async (response) => {
         // console.log(response.choices[0].text);
         await this.showSuggestions(
-            JSON.parse(prefix + response.choices[0].text));
+          JSON.parse(prefix + response.choices[0].text),
+        );
       },
       error: (error) => {
-        alert('error, see console');
+        alert("error, see console");
         console.log(error);
       },
     });
@@ -142,7 +149,7 @@ Existing topics:
   }
 
   async getTopicNotes() {
-    return await api.searchForNotes('#topic');
+    return await api.searchForNotes("#topic");
   }
 
   async showSuggestions(jsonObject) {
@@ -166,23 +173,26 @@ Existing topics:
       }
       const topicId = topicTitleToIdMap.get(normalizedTitle);
       alreadyDisplayed.add(topicId);
-      const bullet = $('<li>');
-      const button = $('<button>');
-      button.text('+ ');
+      const bullet = $("<li>");
+      const button = $("<button>");
+      button.text("+ ");
       const topicNote = await api.getNote(topicId);
-      if (topicNote.hasLabel('iconClass')) {
-        const icon = $('<i></i>');
-        icon.addClass(topicNote.getLabel('iconClass').value);
+      if (topicNote.hasLabel("iconClass")) {
+        const icon = $("<i></i>");
+        icon.addClass(topicNote.getLabel("iconClass").value);
         button.append(icon);
       }
       button.append(topicTitle);
       button.click(async () => {
         // add the relation; TODO: should also re-render...
-        console.log('adding...');
-        await api.runOnBackend((paperId, topicId) => {
-          api.getNote(paperId).addAttribute('relation', 'topic', topicId);
-        }, [this.noteId, topicId]);
-        console.log('added...');
+        console.log("adding...");
+        await api.runOnBackend(
+          (paperId, topicId) => {
+            api.getNote(paperId).addAttribute("relation", "topic", topicId);
+          },
+          [this.noteId, topicId],
+        );
+        console.log("added...");
       });
 
       bullet.append(button);
@@ -193,7 +203,7 @@ Existing topics:
       if (topicTitleToIdMap.has(normalizedTitle)) {
         continue;
       }
-      const bullet = $('<li>');
+      const bullet = $("<li>");
       bullet.text(` Suggested: ${topicTitle}`);
       this.$suggestedTopics.append(bullet);
     }
@@ -201,11 +211,17 @@ Existing topics:
 
   // TODO: show other topics, allow for adding
 
-  async entitiesReloadedEvent({loadResults}) {
-    if (loadResults.isNoteContentReloaded(this.noteId) ||
-        loadResults.getAttributes().find(
-            attr => attr.type === 'relation' &&
-                (attr.name === 'state' || attr.name == 'topic'))) {
+  async entitiesReloadedEvent({ loadResults }) {
+    if (
+      loadResults.isNoteContentReloaded(this.noteId) ||
+      loadResults
+        .getAttributes()
+        .find(
+          (attr) =>
+            attr.type === "relation" &&
+            (attr.name === "state" || attr.name == "topic"),
+        )
+    ) {
       this.refresh();
     }
   }

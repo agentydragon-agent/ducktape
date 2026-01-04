@@ -2,29 +2,29 @@
 // Workspace-level ESLint configuration for all JS/TS projects
 // Uses flat config with per-project file patterns
 
-import js from '@eslint/js';
-import tseslint from '@typescript-eslint/eslint-plugin';
-import tsparser from '@typescript-eslint/parser';
-import sveltePlugin from 'eslint-plugin-svelte';
-import svelteParser from 'svelte-eslint-parser';
-import importPlugin from 'eslint-plugin-import';
-import react from 'eslint-plugin-react';
-import globals from 'globals';
+import js from "@eslint/js";
+import tseslint from "@typescript-eslint/eslint-plugin";
+import tsparser from "@typescript-eslint/parser";
+import sveltePlugin from "eslint-plugin-svelte";
+import svelteParser from "svelte-eslint-parser";
+import importPlugin from "eslint-plugin-import";
+import react from "eslint-plugin-react";
+import globals from "globals";
 
 export default [
   js.configs.recommended,
 
   // Props frontend (SvelteKit) - comprehensive setup
   {
-    files: ['props/frontend/**/*.{ts,svelte}'],
+    files: ["props/frontend/**/*.{ts,svelte}"],
     ignores: [
-      'props/frontend/.svelte-kit/**',
-      'props/frontend/build/**',
-      'props/frontend/dist/**',
-      'props/frontend/node_modules/**',
-      'props/frontend/storybook-static/**',
-      'props/frontend/playwright-report/**',
-      'props/frontend/test-results/**',
+      "props/frontend/.svelte-kit/**",
+      "props/frontend/build/**",
+      "props/frontend/dist/**",
+      "props/frontend/node_modules/**",
+      "props/frontend/storybook-static/**",
+      "props/frontend/playwright-report/**",
+      "props/frontend/test-results/**",
     ],
     languageOptions: {
       parser: svelteParser,
@@ -36,77 +36,80 @@ export default [
     },
     plugins: {
       svelte: sveltePlugin,
-      '@typescript-eslint': tseslint,
+      "@typescript-eslint": tseslint,
     },
     rules: {
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
 
   // Agent server web (Svelte+Vite) - with import plugin
   {
-    files: ['agent_server/src/agent_server/web/**/*.ts'],
+    files: ["agent_server/src/agent_server/web/**/*.ts"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
+        ecmaVersion: "latest",
+        sourceType: "module",
       },
       globals: {
         ...globals.browser,
       },
     },
     plugins: {
-      '@typescript-eslint': tseslint,
+      "@typescript-eslint": tseslint,
       import: importPlugin,
     },
     rules: {
       // Import ordering and placement
-      'import/first': 'error',
-      'import/order': [
-        'error',
+      "import/first": "error",
+      "import/order": [
+        "error",
         {
           groups: [
-            'builtin',
-            'external',
-            'internal',
-            ['parent', 'sibling'],
-            'index',
-            'type',
+            "builtin",
+            "external",
+            "internal",
+            ["parent", "sibling"],
+            "index",
+            "type",
           ],
-          'newlines-between': 'always',
-          alphabetize: { order: 'asc', caseInsensitive: true },
+          "newlines-between": "always",
+          alphabetize: { order: "asc", caseInsensitive: true },
         },
       ],
-      'import/newline-after-import': 'error',
-      'import/no-duplicates': 'error',
+      "import/newline-after-import": "error",
+      "import/no-duplicates": "error",
 
       // TypeScript
-      '@typescript-eslint/no-unused-vars': [
-        'warn',
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
         {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
         },
       ],
-      'no-unused-vars': 'off', // Use @typescript-eslint version instead
+      "no-unused-vars": "off", // Use @typescript-eslint version instead
 
       // General code quality
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
-      'no-multiple-empty-lines': ['error', { max: 1 }],
+      "no-console": ["warn", { allow: ["warn", "error"] }],
+      "no-multiple-empty-lines": ["error", { max: 1 }],
     },
   },
 
   // Agent server web (Svelte files)
-  ...sveltePlugin.configs['flat/recommended'],
+  ...sveltePlugin.configs["flat/recommended"],
   {
-    files: ['agent_server/src/agent_server/web/**/*.svelte'],
+    files: ["agent_server/src/agent_server/web/**/*.svelte"],
     languageOptions: {
       parser: svelteParser,
       parserOptions: {
         parser: tsparser,
-        ecmaVersion: 'latest',
-        sourceType: 'module',
+        ecmaVersion: "latest",
+        sourceType: "module",
       },
       globals: {
         ...globals.browser,
@@ -117,54 +120,54 @@ export default [
     },
     rules: {
       // Import ordering and placement
-      'import/first': 'error',
-      'import/order': [
-        'error',
+      "import/first": "error",
+      "import/order": [
+        "error",
         {
           groups: [
-            'builtin',
-            'external',
-            'internal',
-            ['parent', 'sibling'],
-            'index',
-            'type',
+            "builtin",
+            "external",
+            "internal",
+            ["parent", "sibling"],
+            "index",
+            "type",
           ],
-          'newlines-between': 'always',
-          alphabetize: { order: 'asc', caseInsensitive: true },
+          "newlines-between": "always",
+          alphabetize: { order: "asc", caseInsensitive: true },
         },
       ],
-      'import/newline-after-import': 'error',
-      'import/no-duplicates': 'error',
+      "import/newline-after-import": "error",
+      "import/no-duplicates": "error",
 
       // Svelte-specific
-      'svelte/no-unused-svelte-ignore': 'warn',
+      "svelte/no-unused-svelte-ignore": "warn",
 
       // General code quality
-      'no-unused-vars': [
-        'error',
+      "no-unused-vars": [
+        "error",
         {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
         },
       ],
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
-      'no-multiple-empty-lines': ['error', { max: 1 }],
+      "no-console": ["warn", { allow: ["warn", "error"] }],
+      "no-multiple-empty-lines": ["error", { max: 1 }],
     },
   },
 
   // RSPCache admin UI (React)
   {
-    files: ['rspcache/admin_ui/**/*.{ts,tsx}'],
+    files: ["rspcache/admin_ui/**/*.{ts,tsx}"],
     ignores: [
-      'rspcache/admin_ui/node_modules/**',
-      'rspcache/admin_ui/dist/**',
-      'rspcache/admin_ui/src/generated/**', // Generated types
+      "rspcache/admin_ui/node_modules/**",
+      "rspcache/admin_ui/dist/**",
+      "rspcache/admin_ui/src/generated/**", // Generated types
     ],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
+        ecmaVersion: "latest",
+        sourceType: "module",
         ecmaFeatures: {
           jsx: true,
         },
@@ -175,18 +178,21 @@ export default [
     },
     plugins: {
       react,
-      '@typescript-eslint': tseslint,
+      "@typescript-eslint": tseslint,
     },
     settings: {
       react: {
-        version: '18.3',
+        version: "18.3",
       },
     },
     rules: {
-      'react/react-in-jsx-scope': 'off', // Not needed in React 17+
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-      'no-unused-vars': 'off',
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      "react/react-in-jsx-scope": "off", // Not needed in React 17+
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      "no-unused-vars": "off",
+      "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
 ];

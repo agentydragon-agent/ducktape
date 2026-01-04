@@ -180,7 +180,7 @@ GET https://api.habitify.me/status/{habit_id}?target_date=2025-05-04T00:00:00+00
 {
   "message": "Success",
   "data": {
-    "status": "completed"  // Possible values: "completed", "failed", "skipped", "none", "in_progress"
+    "status": "completed" // Possible values: "completed", "failed", "skipped", "none", "in_progress"
   },
   "version": "v1.2",
   "status": true,
@@ -190,13 +190,13 @@ GET https://api.habitify.me/status/{habit_id}?target_date=2025-05-04T00:00:00+00
 
 **Status Values:**
 
-| Status | Description |
-|--------|-------------|
-| completed | The habit was successfully completed for the date |
-| failed | The habit was attempted but not completed successfully |
-| skipped | The habit was intentionally skipped for the date |
-| none | No action has been taken on the habit for the date (default) |
-| in_progress | The habit is partially completed (for habits with goals) |
+| Status      | Description                                                  |
+| ----------- | ------------------------------------------------------------ |
+| completed   | The habit was successfully completed for the date            |
+| failed      | The habit was attempted but not completed successfully       |
+| skipped     | The habit was intentionally skipped for the date             |
+| none        | No action has been taken on the habit for the date (default) |
+| in_progress | The habit is partially completed (for habits with goals)     |
 
 **Error Response (500):**
 Invalid date format:
@@ -221,10 +221,10 @@ Invalid date format:
 
 ```json
 {
-  "status": "completed",  // Possible values: "completed", "failed", "skipped"
-  "target_date": "2025-05-04T00:00:00+00:00",  // Required ISO format with timezone
-  "note": "Optional note",  // Optional
-  "value": 1.0  // Optional, for habits with goals
+  "status": "completed", // Possible values: "completed", "failed", "skipped"
+  "target_date": "2025-05-04T00:00:00+00:00", // Required ISO format with timezone
+  "note": "Optional note", // Optional
+  "value": 1.0 // Optional, for habits with goals
 }
 ```
 
@@ -294,21 +294,21 @@ This suggests that the current API is primarily read-only, with limited write fu
 
 A habit object typically includes:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| id | string | Unique habit identifier |
-| name | string | Habit name |
-| is_archived | boolean | Whether the habit is archived |
-| start_date | string | Start date of the habit (ISO-8601) |
-| time_of_day | array | When the habit should be performed (morning, afternoon, evening, any_time) |
-| goal | object | Goal configuration (null for habits without goals) |
-| goal_history_items | array | History of goal changes |
-| log_method | string | How the habit is logged (e.g., "manual") |
-| recurrence | string | Recurrence pattern in iCalendar format |
-| remind | array | Reminder times |
-| area | object | Category/area the habit belongs to (null if none) |
-| created_date | string | Creation date (ISO-8601) |
-| priority | number | Priority value used for sorting |
+| Field              | Type    | Description                                                                |
+| ------------------ | ------- | -------------------------------------------------------------------------- |
+| id                 | string  | Unique habit identifier                                                    |
+| name               | string  | Habit name                                                                 |
+| is_archived        | boolean | Whether the habit is archived                                              |
+| start_date         | string  | Start date of the habit (ISO-8601)                                         |
+| time_of_day        | array   | When the habit should be performed (morning, afternoon, evening, any_time) |
+| goal               | object  | Goal configuration (null for habits without goals)                         |
+| goal_history_items | array   | History of goal changes                                                    |
+| log_method         | string  | How the habit is logged (e.g., "manual")                                   |
+| recurrence         | string  | Recurrence pattern in iCalendar format                                     |
+| remind             | array   | Reminder times                                                             |
+| area               | object  | Category/area the habit belongs to (null if none)                          |
+| created_date       | string  | Creation date (ISO-8601)                                                   |
+| priority           | number  | Priority value used for sorting                                            |
 
 When retrieved via `/journal`, habits also include:
 
@@ -320,10 +320,10 @@ When retrieved via `/journal`, habits also include:
 
 A goal object typically includes:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| unit_type | string | Unit of measurement (e.g., "rep", "min") |
-| value | number | Target value |
+| Field       | Type   | Description                                   |
+| ----------- | ------ | --------------------------------------------- |
+| unit_type   | string | Unit of measurement (e.g., "rep", "min")      |
+| value       | number | Target value                                  |
 | periodicity | string | Goal frequency ("daily", "weekly", "monthly") |
 
 ### Goal Types and Units
@@ -363,11 +363,11 @@ When updating a habit status with goals:
 
 An area (category) object includes:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| id | string | Unique area identifier |
-| name | string | Area/category name |
-| priority | string | Priority level |
+| Field    | Type   | Description            |
+| -------- | ------ | ---------------------- |
+| id       | string | Unique area identifier |
+| name     | string | Area/category name     |
+| priority | string | Priority level         |
 
 ## Error Handling
 

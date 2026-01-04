@@ -20,7 +20,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))" | \
 
 ## Caveats
 
-* The `rcup` command asks for confirmation before overwriting existing dotfiles.
+- The `rcup` command asks for confirmation before overwriting existing dotfiles.
   Which we can't give from an Ansible playbook. Which sucks.
 
 ## To update requirements
@@ -59,8 +59,8 @@ ansible-playbook gpd.yaml --ask-become-pass
 
 Make worthy work, actually.
 
-* zoom (for meetings)
-* ubuntu-desktop
+- zoom (for meetings)
+- ubuntu-desktop
 
 TODO: minimize texlive, etc.
 
@@ -70,22 +70,22 @@ TODO: store htpasswd into Ansible Vault
 
 These parts aren't yet done by Ansible:
 
-* `htpasswd` for `bazel-remote-cache` is not stored in the repo - but that
+- `htpasswd` for `bazel-remote-cache` is not stored in the repo - but that
   should be fine, those creds are cheap to rotate.
   It's expected to be in `$(repo root)/ansible/bazel_remote_cache.htpasswd`.
-* Setup steps for Inventree - see <https://docs.inventree.org/en/latest/start/docker_install/#initial-database-setup>
+- Setup steps for Inventree - see <https://docs.inventree.org/en/latest/start/docker_install/#initial-database-setup>
   (making databases etc)
 
 ## Manual laptop installation steps
 
 These parts can't be done by Ansible:
 
-* `ssh-keygen`
-* Add key to GitHub (see GitHub SSH Key Setup section below)
-* `apt install git ansible`
-* `git clone git@github.com:agentydragon/ducktape`
-* `ansible-playbook agentydragon.yaml --ask-become-pass`
-* Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. Global `bazelrc` imports this file, it's supposed to contain the path (and
+- `ssh-keygen`
+- Add key to GitHub (see GitHub SSH Key Setup section below)
+- `apt install git ansible`
+- `git clone git@github.com:agentydragon/ducktape`
+- `ansible-playbook agentydragon.yaml --ask-become-pass`
+- Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. Global `bazelrc` imports this file, it's supposed to contain the path (and
   password) to the Bazel cache on the VPS.
 
 ## Manual VM/Remote Machine Setup
@@ -128,6 +128,7 @@ When provisioning a new VM or remote machine:
    ```
 
    When prompted for the BECOME password, enter the sudo password for the agentydragon user on the VM.
+
 5. If the playbook fails on dotfiles installation, SSH to the machine and run:
 
    ```bash
@@ -136,13 +137,13 @@ When provisioning a new VM or remote machine:
 
    You'll need to confirm overwriting default files like .bashrc with 'y'.
 
-* TODO: Set hostname on the VM (currently using IP address)
-* TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
-* TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
-* TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
-* TODO: XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
-* TODO: Handle Anki installation on Ubuntu 22.04 - newer Anki requires glibc 2.36+ but Ubuntu 22.04 has glibc 2.35. Need to either skip on older systems or find alternative installation method
-* TODO: (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
+- TODO: Set hostname on the VM (currently using IP address)
+- TODO: Document how to set up `gh` authentication on the new machine (for CLI operations beyond SSH)
+- TODO: Document how to set up `glab` authentication on the new machine (for CLI operations beyond SSH)
+- TODO: Handle cronomix config - unclear how it should be managed (rcm symlinks individual files in ~/.config/cronomix, not the directory itself)
+- TODO: XDG associations (mimeapps.list) shouldn't be an rcm-managed dotfile - it's already being asserted/managed in ansible
+- TODO: Handle Anki installation on Ubuntu 22.04 - newer Anki requires glibc 2.36+ but Ubuntu 22.04 has glibc 2.35. Need to either skip on older systems or find alternative installation method
+- TODO: (low priority): Consider adding repository setup + package install as an option to the shared Python install implementation, since "add repo & install package" is a common pattern and deb822_repository doesn't reliably trigger apt cache update
 
 ## Headscale (Tailscale Alternative)
 
@@ -154,39 +155,39 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 
 #### Core Infrastructure - 100.64.1.x/24
 
-| Host | IP | Description | Notes |
-|------|------------|-------------|-------|
-| `vps` | 100.64.1.1 | Headscale Server | Control plane at <https://vps-hostname:8080> |
-| `atlas` | 100.64.1.30 | Proxmox host | k3s cluster host |
-| `homeassistant` | 100.64.1.100 | Home Assistant | |
+| Host            | IP           | Description      | Notes                                        |
+| --------------- | ------------ | ---------------- | -------------------------------------------- |
+| `vps`           | 100.64.1.1   | Headscale Server | Control plane at <https://vps-hostname:8080> |
+| `atlas`         | 100.64.1.30  | Proxmox host     | k3s cluster host                             |
+| `homeassistant` | 100.64.1.100 | Home Assistant   |                                              |
 
 #### Personal Machines - 100.64.10.x/24
 
-| Host | IP | Description | Notes |
-|------|------------|-------------|-------|
-| `agentydragon` | 100.64.10.11 | ThinkPad X1 Extreme | |
-| `gpd` | 100.64.10.12 | GPD Win Max 2 | |
-| `new-vm` | 100.64.10.31 | New Pop!_OS VM | |
+| Host           | IP           | Description         | Notes |
+| -------------- | ------------ | ------------------- | ----- |
+| `agentydragon` | 100.64.10.11 | ThinkPad X1 Extreme |       |
+| `gpd`          | 100.64.10.12 | GPD Win Max 2       |       |
+| `new-vm`       | 100.64.10.31 | New Pop!\_OS VM     |       |
 
 #### Mobile Devices - 100.64.20.x/24
 
-| Host | IP | Description | Notes |
-|------|------------|-------------|-------|
-| `pixel6` | 100.64.20.50 | Pixel 6 phone | |
+| Host     | IP           | Description   | Notes |
+| -------- | ------------ | ------------- | ----- |
+| `pixel6` | 100.64.20.50 | Pixel 6 phone |       |
 
 #### Kubernetes Services - 100.64.100.x/24
 
-| Host | IP | Description | Notes |
-|------|------------|-------------|-------|
-| `k3s-master` | 100.64.100.200 | k3s master node | VM on atlas |
-| `k3s-worker` | 100.64.100.201 | k3s worker node | VM on atlas |
-| | 100.64.100.210-250 | Reserved for additional k3s nodes | |
+| Host         | IP                 | Description                       | Notes       |
+| ------------ | ------------------ | --------------------------------- | ----------- |
+| `k3s-master` | 100.64.100.200     | k3s master node                   | VM on atlas |
+| `k3s-worker` | 100.64.100.201     | k3s worker node                   | VM on atlas |
+|              | 100.64.100.210-250 | Reserved for additional k3s nodes |             |
 
 #### Future Expansion
 
-* `100.64.50.x/24` - IoT devices
-* `100.64.60.x/24` - Guest devices
-* `100.64.200.x/24` - Lab/experimental
+- `100.64.50.x/24` - IoT devices
+- `100.64.60.x/24` - Guest devices
+- `100.64.200.x/24` - Lab/experimental
 
 ### Initial Setup
 
@@ -260,8 +261,8 @@ sudo tailscale up --login-server=https://your-vps:8080
 
 Headscale provides automatic hostname resolution:
 
-* `atlas.your-vps-domain` resolves to `10.13.13.30`
-* `agentydragon.your-vps-domain` resolves to `10.13.13.11`
-* etc.
+- `atlas.your-vps-domain` resolves to `10.13.13.30`
+- `agentydragon.your-vps-domain` resolves to `10.13.13.11`
+- etc.
 
 This enables direct hostname usage in configurations without maintaining `/etc/hosts` files.

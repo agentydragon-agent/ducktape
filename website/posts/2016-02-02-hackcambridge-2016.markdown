@@ -8,8 +8,8 @@ a bit better (like the WiFi at the main venue being hilariously broken), but we
 ended up having a lot of fun. Luckily, a bunch of my homies from Dropbox
 also happen to study in Cambridge and it was great to catch up with them.
 
-We built a cool game. It's called [*The Deadlock Empire*](https://deadlockempire.github.io)
-and it lets you *slay dragons and learn concurrency* - what could me more
+We built a cool game. It's called [_The Deadlock Empire_](https://deadlockempire.github.io)
+and it lets you _slay dragons and learn concurrency_ - what could me more
 awesome?!?!
 
 Just look at this presentation!
@@ -23,7 +23,7 @@ You can laugh at our poor coding practices on GitHub ([deadlockempire/deadlockem
 
 The Deadlock Empire has a sequence of challenges for practicing concurrent
 thinking. Each challenge gives you several threads, each running their own
-source code in C#, and your objective is to play *the mischievous Scheduler*:
+source code in C#, and your objective is to play _the mischievous Scheduler_:
 take seemingly-innocent parallel code and run it so that it breaks.
 
 You can step each thread line-by-line (and undo your steps), and some
@@ -33,10 +33,10 @@ properly crack the challenges, like in
 [Tutorial 2: Non-Atomic Instructions](http://deadlockempire.github.io/#T2-Expansion).
 
 If you feel bored by how simple the first challenges are, scroll down
-a bit. The *Deadlock Empire* quest at the bottom should keep you busy for a
+a bit. The _Deadlock Empire_ quest at the bottom should keep you busy for a
 while :)
 
-I think it took us around 18 hours of actual work to write *The Deadlock Empire*:
+I think it took us around 18 hours of actual work to write _The Deadlock Empire_:
 both of us had a bit of shut-eye early morning and we didn't have enough time
 by the end to start working on the really ambitious features, so the last few
 hours were just a commit here and there, fixing up a font or an obscure bug.
@@ -65,5 +65,5 @@ Also:
 WE WON THE HACKATHON!!! HOOORAY!!!!1111
 </div>
 
-We also won the *Best Hack in Gaming/VR* award (judged by Improbable) and
-*Bloomberg's Favorite Hack*.
+We also won the _Best Hack in Gaming/VR_ award (judged by Improbable) and
+_Bloomberg's Favorite Hack_.

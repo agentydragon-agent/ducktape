@@ -437,7 +437,7 @@ class EchoCall:
 Read the current approval policy from: {{ TRUSTED_POLICY_URL }}
 
 Input JSON (stdin):
-{"name": "<server>_<tool>", "arguments": {...}}
+{"name": "<server>\_<tool>", "arguments": {...}}
 
 Minimal example:
 from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
@@ -445,7 +445,7 @@ from mcp_infra.naming import tool_matches
 
 req = PolicyRequest.model_validate_json(sys.stdin.read())
 if tool_matches(req.name, server="resources", tool="read"):
-    decision = ApprovalDecision.ALLOW
+decision = ApprovalDecision.ALLOW
 ```
 
 **Policy programs use string matching:**
@@ -582,13 +582,13 @@ While the default policy DOES use some server class constants (UI server tool na
 
 ## Summary Table
 
-| Context | Server Instances Available? | Need Constants? | Refactoring Difficulty | Value |
-|---------|---------------------------|-----------------|----------------------|-------|
-| **Test Fixtures** | ✅ Yes (can reorder code!) | ❌ **No!** | Medium | High |
-| **Bootstrap Handlers** | ✅ Yes (servers mounted first!) | ❌ **No!** | Easy | High |
-| **Prompt Templates** | ✅ Yes (rendered in async!) | ❌ **No!** | Easy | High |
-| **Step Classes** | ✅ Yes (can reorder code!) | ❌ **No!** | Medium | High |
-| **Policy Evaluation** | ❌ No (Docker isolation) | ✅ **Yes** | Impossible | N/A |
+| Context                | Server Instances Available?     | Need Constants? | Refactoring Difficulty | Value |
+| ---------------------- | ------------------------------- | --------------- | ---------------------- | ----- |
+| **Test Fixtures**      | ✅ Yes (can reorder code!)      | ❌ **No!**      | Medium                 | High  |
+| **Bootstrap Handlers** | ✅ Yes (servers mounted first!) | ❌ **No!**      | Easy                   | High  |
+| **Prompt Templates**   | ✅ Yes (rendered in async!)     | ❌ **No!**      | Easy                   | High  |
+| **Step Classes**       | ✅ Yes (can reorder code!)      | ❌ **No!**      | Medium                 | High  |
+| **Policy Evaluation**  | ❌ No (Docker isolation)        | ✅ **Yes**      | Impossible             | N/A   |
 
 ---
 

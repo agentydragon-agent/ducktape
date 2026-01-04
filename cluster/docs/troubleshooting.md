@@ -314,6 +314,7 @@ spec:
           kind: Password
           name: app-oauth-client-secret-generator
 
+
 # AFTER (CORRECT - reads from Vault):
 ---
 apiVersion: external-secrets.io/v1beta1
@@ -387,11 +388,11 @@ talosctl -n <node-ip> get affiliates -o yaml
 
 **KubeSpan State Meanings:**
 
-| State | Meaning |
-|-------|---------|
+| State     | Meaning                                                    |
+| --------- | ---------------------------------------------------------- |
 | `unknown` | No endpoint set yet, or endpoint just changed (within 15s) |
-| `up` | WireGuard handshake within last ~275s |
-| `down` | No handshake for >275s |
+| `up`      | WireGuard handshake within last ~275s                      |
+| `down`    | No handshake for >275s                                     |
 
 **Key Constants:**
 
@@ -602,7 +603,7 @@ kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager --tail=50
    - **Check**: PowerDNS webhook pod running: `kubectl get pods -n cert-manager -l app.kubernetes.io/name=cert-manager-webhook-powerdns`
    - **Check**: PowerDNS API accessible:
      `kubectl exec -n cert-manager deployment/cert-manager-webhook-powerdns -- wget -O-
-     http://powerdns-api.dns-system:8081/api/v1/servers`
+http://powerdns-api.dns-system:8081/api/v1/servers`
 
 3. **Challenge TXT record not created**
    - **Check**: PowerDNS logs: `kubectl logs -n dns-system deployment/powerdns`

@@ -6,11 +6,7 @@
   "tool_name": "LS",
   "tool_input": {
     "path": "/Users/user/test",
-    "ignore": [
-      "*.md",
-      "node_modules",
-      "target"
-    ]
+    "ignore": ["*.md", "node_modules", "target"]
   },
   "tool_response": "There are more than 40000 characters in the repository (ie. either there are lots of files, or there..."
 }

@@ -131,21 +131,25 @@ For each potential action, estimate probability user wants it:
 
 ## Output Format
 
-```markdown
+````markdown
 # Followups - Session [timestamp]
 
 ## ⚠️ Verification
+
 ✅ All work from this session verified on disk
-   - src/feature/ (3 files modified)
-   - config/settings.yaml (new validation added)
-   - tests/test_feature.py (new)
+
+- src/feature/ (3 files modified)
+- config/settings.yaml (new validation added)
+- tests/test_feature.py (new)
 
 ## 🔴 DO NOW
+
 1. **Commit feature implementation**
    ```bash
    git add src/feature/
    git commit -m "feat: implement user authentication with JWT tokens"
    ```
+````
 
 2. **Commit test coverage**
 
@@ -160,9 +164,9 @@ a. **Run test suite**
 
 - Verify new tests pass and no regressions
 
-   ```bash
-   pytest tests/test_feature.py -v
-   ```
+  ```bash
+  pytest tests/test_feature.py -v
+  ```
 
 b. **Remove unused helper functions**
 
@@ -199,6 +203,7 @@ y. Consider adding retry logic for network calls
 z. Update CONTRIBUTING.md with new testing patterns
 
 ---
+
 **Quick actions:**
 
 - Type `1` or `2` to execute DO NOW items
@@ -208,7 +213,7 @@ z. Update CONTRIBUTING.md with new testing patterns
 - Type `all-likely` to queue a+b+c
 - Type `skip` to continue with new work
 
-```
+````
 
 ## Implementation Requirements
 
@@ -227,7 +232,7 @@ Task 1: "Verify these files still contain changes: [list]"
 Task 2: "Search codebase for pattern X usage sites"
 Task 3: "Check git status and suggest commit messages"
 # Wait for all, combine results
-```
+````
 
 ### 3. Concrete Commands
 

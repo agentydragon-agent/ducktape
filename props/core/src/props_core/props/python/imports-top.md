@@ -48,7 +48,7 @@ Verified presence of certain listed unusual cases may justify a local import, bu
 - Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to remove the cycle when feasible.
 - Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce startup cost.
 - Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import.
-Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
+  Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
 
 ### Import cycle
 

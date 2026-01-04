@@ -19,17 +19,17 @@ Expects some configuration in `~/.config/ducktape/config.yaml`.
 
 1. Accounts & Cards → Account transactions
 
-  ![](ubs1.png)
+![](ubs1.png)
 
 1. Download CSV, PDF, SWIFT
 
-  ![](ubs2.png)
+![](ubs2.png)
 
 1. Check that "Time period" is appropriate.
    Click "Excel" icon.
 
-  ![](ubs3.png)
+![](ubs3.png)
 
 1. Export (in CSV format)
 
-  ![](ubs4.png)
+![](ubs4.png)

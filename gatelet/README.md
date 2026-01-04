@@ -11,7 +11,7 @@ Service that lets LLMs access real-time and historical information relevant to t
    - Offers multiple authentication methods
    - Includes admin interface for humans
 
-2. **Reporter** - Single Python program ``gatelet-reporter`` that:
+2. **Reporter** - Single Python program `gatelet-reporter` that:
    - Sends events to the server
    - Can run as a long-running daemon for tasks like battery reporting
    - Intended to be installed on laptops and other devices
@@ -132,17 +132,20 @@ Gatelet supports multiple authentication methods:
 ## Features
 
 ### Webhooks
+
 - Receive and store webhooks from various sources
 - View webhook history with pagination
 - Optional encryption for sensitive data
 
 ### Home Assistant Integration
+
 - Current state of configured entities with friendly names
 - Historical state changes for discrete entities
 - Trend data for continuous sensors (temperature, humidity, etc.)
 - Direct links back to Home Assistant when viewed by a human admin
 
 ### Session Management
+
 - Challenge-based authentication for LLMs (LLM sessions)
 - Time-limited tokens with automatic extension
 - Human admin interface for viewing **admin sessions**
@@ -152,20 +155,20 @@ Gatelet supports multiple authentication methods:
 
 The project is implemented in phases:
 
-1. **Phase 1** – Webhooks with Key‑in‑Path Authentication *(completed)*
+1. **Phase 1** – Webhooks with Key‑in‑Path Authentication _(completed)_
    - Basic FastAPI server and PostgreSQL schema
    - Webhook receiving and storage
    - Key‑in‑path authentication
 
-2. **Phase 2** – Challenge‑Response Authentication *(completed)*
+2. **Phase 2** – Challenge‑Response Authentication _(completed)_
    - Nonce‑based login flow for LLMs
    - Session management with automatic extension
 
-3. **Phase 3** – Home Assistant Integration *(in progress)*
+3. **Phase 3** – Home Assistant Integration _(in progress)_
    - Basic entity state listing implemented
    - Historical and trend views pending
 
-4. **Phase 4** – Human Admin Interface *(in progress)*
+4. **Phase 4** – Human Admin Interface _(in progress)_
    - Password‑based admin login implemented
    - Key management pages available
    - Session management implemented

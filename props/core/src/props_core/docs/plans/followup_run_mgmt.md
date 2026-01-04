@@ -13,7 +13,7 @@
 
 ### Eval Harness
 
-2. **Implement _load_samples() in eval_harness.py**
+2. **Implement \_load_samples() in eval_harness.py**
    - Current: Returns empty list with TODO comment - no evaluation cases defined
    - Should: Populate with actual IssueEvalSpec instances from git-tracked spec files
    - Specs/test cases stay in git (not database)
@@ -52,20 +52,20 @@ All places that construct paths in the props codebase, classified by action need
    - Action: ✅ Keep as-is (cluster output structure is defined by RunsContext)
 
 4. **specimens/registry.py** (multiple lines)
-    - Specimen manifest and source path resolution
-    - Action: ✅ Keep as-is (specimen registry, not runs management)
+   - Specimen manifest and source path resolution
+   - Action: ✅ Keep as-is (specimen registry, not runs management)
 
 5. **~~bundles/build_bundle.py~~** (DELETED in bundle→plain files migration)
-    - Bundle creation paths
-    - Action: ~~Keep as-is~~ → Removed (migrated to plain files workflow)
+   - Bundle creation paths
+   - Action: ~~Keep as-is~~ → Removed (migrated to plain files workflow)
 
 6. **cli_app/main.py lines 229, 670**
-    - `Path(tempfile.gettempdir()) / "adgn_codex_prompts"`
-    - Action: ✅ Keep as-is (temporary prompt storage for debugging)
+   - `Path(tempfile.gettempdir()) / "adgn_codex_prompts"`
+   - Action: ✅ Keep as-is (temporary prompt storage for debugging)
 
 7. **cli_app/main.py lines 294, 354, 360, 375, 379, 534, 551**
-    - Various output files within run directories (results.json, prompt.txt, etc.)
-    - Action: ✅ Keep as-is (writing artifacts within RunsContext-derived directories)
+   - Various output files within run directories (results.json, prompt.txt, etc.)
+   - Action: ✅ Keep as-is (writing artifacts within RunsContext-derived directories)
 
 ## Directory Structure
 

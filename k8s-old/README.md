@@ -30,9 +30,9 @@ metadata:
     cert-manager.io/cluster-issuer: "homelab-ca-issuer"
 spec:
   tls:
-  - hosts:
-    - your-service.k3s.local
-    secretName: your-service-tls
+    - hosts:
+        - your-service.k3s.local
+      secretName: your-service-tls
 ```
 
 #### Trust the CA on Docker Hosts
@@ -68,7 +68,7 @@ image: registry.k3s.agentydragon.com/myapp:latest
 
 The registry ingress sits behind Authentik forward-auth and now accepts HTTP Basic credentials. Every Docker host must log in using an Authentik application password (per-user PAT):
 
-1. In the Authentik UI (`https://auth.k3s.agentydragon.com`), create an *Application password* under **Account → Security → Application passwords**.
+1. In the Authentik UI (`https://auth.k3s.agentydragon.com`), create an _Application password_ under **Account → Security → Application passwords**.
 2. On the build host, run:
 
    ```bash
@@ -78,6 +78,7 @@ The registry ingress sits behind Authentik forward-auth and now accepts HTTP Bas
    ```
 
    This writes the base64 credential into `~/.docker/config.json`. If you use a custom `DOCKER_CONFIG`, run the login again with that path so scripts (e.g., `ember/scripts/ember-deploy`) can read the credential.
+
 3. Remove or rotate access by deleting the application password in Authentik; future `docker push` calls will fail until a new password is issued and `docker login` is repeated.
 
 For CI pipelines, keep the Authentik password in your secrets manager and feed it to `docker login --password-stdin`.
@@ -112,4 +113,5 @@ All `*.k3s.agentydragon.com` domains resolve to the Traefik LoadBalancer at 10.0
    ```
 
    Docker writes the credential to `~/.docker/config.json`; if you run scripts with `DOCKER_CONFIG`, repeat the login for that directory.
+
 4. Rotate by deleting the old application password in Authentik and issuing a new one; subsequent `docker push` calls will fail until you log in again.

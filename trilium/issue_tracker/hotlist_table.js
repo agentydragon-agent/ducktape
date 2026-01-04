@@ -27,77 +27,86 @@ class IssueTable {
 
   getHotlists() {
     return api.runOnBackend(() => {
-      return api.searchForNotes('#hotlist').map(note => {
-        return {'noteId': note.noteId, 'title': note.title};
+      return api.searchForNotes("#hotlist").map((note) => {
+        return { noteId: note.noteId, title: note.title };
       });
     });
   }
 
   getStates() {
     return api.runOnBackend(() => {
-      const statesRoot = api.searchForNotes('#issueStatesRoot')[0];
+      const statesRoot = api.searchForNotes("#issueStatesRoot")[0];
       const stateNotes = statesRoot.getChildNotes();
-      return stateNotes.map(note => {
-        return {'noteId': note.noteId, 'title': note.title};
+      return stateNotes.map((note) => {
+        return { noteId: note.noteId, title: note.title };
       });
     });
   }
 
   getHotlistsForIssue(issueId) {
-    return api.runOnBackend((issueId) => {
-      const issue = api.getNote(issueId);
-      const hotlists = issue.getRelations('hotlist');
-      return hotlists.map(hotlist => {
-        return hotlist.value;
-      });
-    }, [issueId]);
+    return api.runOnBackend(
+      (issueId) => {
+        const issue = api.getNote(issueId);
+        const hotlists = issue.getRelations("hotlist");
+        return hotlists.map((hotlist) => {
+          return hotlist.value;
+        });
+      },
+      [issueId],
+    );
   }
 
   getIssues() {
-    let searchString = '#issue';
+    let searchString = "#issue";
     if (this.stateIds && this.stateIds.length > 0) {
-      searchString += ' AND ';
+      searchString += " AND ";
       if (this.stateIds.length > 1) {
-        searchString += '(';
+        searchString += "(";
       }
-      searchString +=
-          this.stateIds.map(stateId => '~state.noteId=' + stateId).join(' OR ');
+      searchString += this.stateIds
+        .map((stateId) => "~state.noteId=" + stateId)
+        .join(" OR ");
       if (this.stateIds.length > 1) {
-        searchString += ')';
+        searchString += ")";
       }
     }
     if (this.hotlistIncludeIds.length > 0) {
-      searchString += ' AND ';
+      searchString += " AND ";
       if (this.hotlistIncludeIds.length > 1) {
-        searchString += '(';
+        searchString += "(";
       }
       searchString += this.hotlistIncludeIds
-                          .map(hotlistId => '~hotlist.noteId=' + hotlistId)
-                          .join(' OR ');
+        .map((hotlistId) => "~hotlist.noteId=" + hotlistId)
+        .join(" OR ");
       if (this.hotlistIncludeIds.length > 1) {
-        searchString += ')';
+        searchString += ")";
       }
     }
     if (this.hotlistExcludeIds.length > 0) {
-      searchString += ' AND NOT (';
+      searchString += " AND NOT (";
       searchString += this.hotlistExcludeIds
-                          .map(hotlistId => '~hotlist.noteId=' + hotlistId)
-                          .join(' OR ');
-      searchString += ')';
+        .map((hotlistId) => "~hotlist.noteId=" + hotlistId)
+        .join(" OR ");
+      searchString += ")";
     }
-    console.log('search string', searchString);
+    console.log("search string", searchString);
 
-    return api.runOnBackend((searchString) => {
-      const notes = api.searchForNotes(searchString);
-      return notes.map(note => {
-        return {'noteId': note.noteId, 'title': note.title};
-      });
-    }, [searchString]);
+    return api.runOnBackend(
+      (searchString) => {
+        const notes = api.searchForNotes(searchString);
+        return notes.map((note) => {
+          return { noteId: note.noteId, title: note.title };
+        });
+      },
+      [searchString],
+    );
   }
 
   async createIssueLink(note) {
-    return await api.createNoteLink(
-        note.noteId, {showTooltip: true, showNoteIcon: true});
+    return await api.createNoteLink(note.noteId, {
+      showTooltip: true,
+      showNoteIcon: true,
+    });
   }
 
   async fillHotlistTable() {
@@ -105,12 +114,12 @@ class IssueTable {
     const hotlists = await this.getHotlists();
     hotlists.sort((a, b) => a.title.localeCompare(b.title));
     for (const note of hotlists) {
-      const item = $('<li>');
-      item.attr('data-hotlist-id', note.noteId);
+      const item = $("<li>");
+      item.attr("data-hotlist-id", note.noteId);
 
       const link = $('<a href="#">')
-                       .text(note.title)
-                       .click(() => this.toggleHotlist(note.noteId));
+        .text(note.title)
+        .click(() => this.toggleHotlist(note.noteId));
       item.append(link);
       this.$hotlistList.append(item);
     }
@@ -119,69 +128,83 @@ class IssueTable {
   async fillStateTable() {
     this.$stateList.empty();
     for (const state of await this.getStates()) {
-      const item = $('<li>');
-      item.attr('data-state-id', state.noteId);
+      const item = $("<li>");
+      item.attr("data-state-id", state.noteId);
 
       const link = $('<a href="#">')
-                       .text(state.title)
-                       .click(() => this.selectState(state.noteId));
+        .text(state.title)
+        .click(() => this.selectState(state.noteId));
       item.append(link);
       this.$stateList.append(item);
     }
   }
-
 
   async fillIssueTable() {
     this.$issueList.empty();
     const promises = [];
     const issues = await this.getIssues();
     for (const note of issues) {
-      const issueCell = $('<td>');
-      const hotlistsCell = $('<td>');
+      const issueCell = $("<td>");
+      const hotlistsCell = $("<td>");
 
-      promises.push(this.createIssueLink(note).then(issueLink => {
-        issueCell.append(issueLink);
-      }));
+      promises.push(
+        this.createIssueLink(note).then((issueLink) => {
+          issueCell.append(issueLink);
+        }),
+      );
 
-      promises.push(this.getHotlistsForIssue(note.noteId).then(hotlistIds => {
-        return Promise.all(hotlistIds.map(
-            hotlistId =>
-                api.createNoteLink(
-                       hotlistId, {showTooltip: true, showNoteIcon: true})
-                    .then(hotlistLink => hotlistsCell.append(hotlistLink))));
-      }));
+      promises.push(
+        this.getHotlistsForIssue(note.noteId).then((hotlistIds) => {
+          return Promise.all(
+            hotlistIds.map((hotlistId) =>
+              api
+                .createNoteLink(hotlistId, {
+                  showTooltip: true,
+                  showNoteIcon: true,
+                })
+                .then((hotlistLink) => hotlistsCell.append(hotlistLink)),
+            ),
+          );
+        }),
+      );
 
-      const row = $('<tr>').append(issueCell).append(hotlistsCell);
+      const row = $("<tr>").append(issueCell).append(hotlistsCell);
       this.$issueList.append(row);
     }
   }
 
   async toggleHotlist(hotlistId) {
-    this.$hotlistList.find('[data-hotlist-id]').removeClass('active');
+    this.$hotlistList.find("[data-hotlist-id]").removeClass("active");
     if (this.hotlistIncludeIds.includes(hotlistId)) {
-      this.hotlistIncludeIds =
-          this.hotlistIncludeIds.filter(id => id !== hotlistId);
+      this.hotlistIncludeIds = this.hotlistIncludeIds.filter(
+        (id) => id !== hotlistId,
+      );
       this.hotlistExcludeIds.push(hotlistId);
-      this.$hotlistList.find('[data-hotlist-id=' + hotlistId + ']')
-          .addClass('excluded');
+      this.$hotlistList
+        .find("[data-hotlist-id=" + hotlistId + "]")
+        .addClass("excluded");
     } else if (this.hotlistExcludeIds.includes(hotlistId)) {
-      this.hotlistExcludeIds =
-          this.hotlistExcludeIds.filter(id => id !== hotlistId);
-      this.$hotlistList.find('[data-hotlist-id=' + hotlistId + ']')
-          .removeClass('excluded');
+      this.hotlistExcludeIds = this.hotlistExcludeIds.filter(
+        (id) => id !== hotlistId,
+      );
+      this.$hotlistList
+        .find("[data-hotlist-id=" + hotlistId + "]")
+        .removeClass("excluded");
     } else {
       this.hotlistIncludeIds.push(hotlistId);
-      this.$hotlistList.find('[data-hotlist-id=' + hotlistId + ']')
-          .addClass('active');
+      this.$hotlistList
+        .find("[data-hotlist-id=" + hotlistId + "]")
+        .addClass("active");
     }
     await this.fillIssueTable();
   }
 
   async selectState(stateId) {
-    this.$stateList.find('[data-state-id=' + stateId + ']')
-        .toggleClass('active');
+    this.$stateList
+      .find("[data-state-id=" + stateId + "]")
+      .toggleClass("active");
     if (this.stateIds.includes(stateId)) {
-      this.stateIds = this.stateIds.filter(id => id !== stateId);
+      this.stateIds = this.stateIds.filter((id) => id !== stateId);
     } else {
       this.stateIds.push(stateId);
     }
@@ -191,9 +214,9 @@ class IssueTable {
   async render(root) {
     this.$root = root;
     this.$root.empty().append($(TPL));
-    this.$issueList = this.$root.find('.issue-list');
-    this.$hotlistList = this.$root.find('.hotlist-list');
-    this.$stateList = this.$root.find('.state-list');
+    this.$issueList = this.$root.find(".issue-list");
+    this.$hotlistList = this.$root.find(".hotlist-list");
+    this.$stateList = this.$root.find(".state-list");
 
     await this.fillHotlistTable();
     await this.fillStateTable();
@@ -202,4 +225,4 @@ class IssueTable {
 }
 
 const issueTable = new IssueTable();
-await issueTable.render($('#issue-table-root'));
+await issueTable.render($("#issue-table-root"));

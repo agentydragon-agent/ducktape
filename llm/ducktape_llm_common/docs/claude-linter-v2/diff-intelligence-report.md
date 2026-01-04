@@ -30,10 +30,7 @@ The Edit tool provides a `tool_response` with a `structuredPatch` field containi
         "oldLines": 1,
         "newStart": 1,
         "newLines": 1,
-        "lines": [
-          "-old line",
-          "+new line"
-        ]
+        "lines": ["-old line", "+new line"]
       }
     ],
     "userModified": false,

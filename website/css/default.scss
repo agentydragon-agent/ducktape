@@ -1,22 +1,31 @@
 // Solarized colors, from https://ethanschoonover.com/solarized/
 
-$base03:    #002b36;
-$base02:    #073642;
-$base01:    #586e75;
-$base00:    #657b83;
-$base0:     #839496;
-$base1:     #93a1a1;
-$base2:     #eee8d5;
-$base3:     #fdf6e3;
-$yellow:    #b58900;
-$orange:    #cb4b16;
-$red:       #dc322f;
-$magenta:   #d33682;
-$violet:    #6c71c4;
-$blue:      #268bd2;
-$cyan:      #2aa198;
-$green:     #859900;
-@mixin rebase($rebase03,$rebase02,$rebase01,$rebase00,$rebase0,$rebase1,$rebase2,$rebase3) {
+$base03: #002b36;
+$base02: #073642;
+$base01: #586e75;
+$base00: #657b83;
+$base0: #839496;
+$base1: #93a1a1;
+$base2: #eee8d5;
+$base3: #fdf6e3;
+$yellow: #b58900;
+$orange: #cb4b16;
+$red: #dc322f;
+$magenta: #d33682;
+$violet: #6c71c4;
+$blue: #268bd2;
+$cyan: #2aa198;
+$green: #859900;
+@mixin rebase(
+  $rebase03,
+  $rebase02,
+  $rebase01,
+  $rebase00,
+  $rebase0,
+  $rebase1,
+  $rebase2,
+  $rebase3
+) {
   body {
     background-color: $rebase3;
     color: $rebase00;
@@ -65,17 +74,42 @@ $green:     #859900;
     border-bottom-color: $red;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     color: $rebase01;
   }
 }
 
 html {
-  @include rebase($base3,$base2,$base1,$base0,$base00,$base01,$base02,$base03);
+  @include rebase(
+    $base3,
+    $base2,
+    $base1,
+    $base0,
+    $base00,
+    $base01,
+    $base02,
+    $base03
+  );
 }
 
 @media (prefers-color-scheme: dark) {
-  html { @include rebase($base03,$base02,$base01,$base00,$base0,$base1,$base2,$base3)}
+  html {
+    @include rebase(
+      $base03,
+      $base02,
+      $base01,
+      $base00,
+      $base0,
+      $base1,
+      $base2,
+      $base3
+    );
+  }
 }
 
 html * {
@@ -84,7 +118,7 @@ html * {
 }
 
 body {
-  font-family: 'PT Serif', serif;
+  font-family: "PT Serif", serif;
   margin: 0 auto;
   padding: 0;
   max-width: 800px;
@@ -99,8 +133,8 @@ header {
   padding: 0.5em;
   text-align: center;
   font-size: 1.2em;
-  font-family: 'PT Mono', monospace;
-  border-bottom: .2em solid;
+  font-family: "PT Mono", monospace;
+  border-bottom: 0.2em solid;
 }
 
 header a.logo {
@@ -108,9 +142,9 @@ header a.logo {
 }
 
 footer {
-  border-top: .2em solid;
-  border-bottom: .1em solid;
-  font-family: 'PT Mono', monospace;
+  border-top: 0.2em solid;
+  border-bottom: 0.1em solid;
+  font-family: "PT Mono", monospace;
   text-align: center;
   padding: 1em;
 }
@@ -119,8 +153,13 @@ div#content {
   padding: 2em 1.2em;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: 'PT Mono', monospace;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "PT Mono", monospace;
 }
 
 figure {
@@ -143,7 +182,7 @@ pre {
 
 pre code {
   display: block;
-  padding: .5em;
+  padding: 0.5em;
 }
 
 blockquote {

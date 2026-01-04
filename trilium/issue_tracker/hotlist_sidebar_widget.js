@@ -16,27 +16,30 @@ class HotlistSidebarWidget extends api.CollapsibleWidget {
     return 10;
   }
   get parentWidget() {
-    return 'right-pane';
+    return "right-pane";
   }
   get widgetTitle() {
-    return 'Issue';
+    return "Issue";
   }
 
   async doRenderBody() {
     this.$body.empty().append($(TPL));
-    this.$issueList = this.$body.find('.hotlist-issue-list');
+    this.$issueList = this.$body.find(".hotlist-issue-list");
     return this.$body;
   }
 
   isEnabled() {
-    return super.isEnabled() && this.note.type === 'text' &&
-        this.note.hasLabel('hotlist');
+    return (
+      super.isEnabled() &&
+      this.note.type === "text" &&
+      this.note.hasLabel("hotlist")
+    );
   }
 
   async refreshWithNote(note) {
-    let searchString = '#issue';
-    searchString += ' ~state.title=Open';
-    searchString += ' ~hotlist.noteId=' + note.noteId;
+    let searchString = "#issue";
+    searchString += " ~state.title=Open";
+    searchString += " ~hotlist.noteId=" + note.noteId;
 
     let issueNotes = await api.searchForNotes(searchString);
     this.$issueList.empty();
@@ -44,14 +47,15 @@ class HotlistSidebarWidget extends api.CollapsibleWidget {
     // TODO: some more info - also show done issues etc.; generally group by
     // state
     for (const issueNote of issueNotes) {
-      const bullet = $('<li>');
+      const bullet = $("<li>");
       bullet.append(
-          await api.createNoteLink(issueNote.noteId, {showTooltip: true}));
+        await api.createNoteLink(issueNote.noteId, { showTooltip: true }),
+      );
       this.$issueList.append(bullet);
     }
   }
 
-  async entitiesReloadedEvent({loadResults}) {
+  async entitiesReloadedEvent({ loadResults }) {
     // TODO: how about changes elsewhere...? is that included?
     if (loadResults.isNoteContentReloaded(this.noteId)) {
       this.refresh();

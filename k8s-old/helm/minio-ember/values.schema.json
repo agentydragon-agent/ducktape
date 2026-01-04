@@ -34,7 +34,10 @@
       "properties": {
         "type": { "type": "string" },
         "port": { "type": "integer" },
-        "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       },
       "required": ["type", "port"]
     },
@@ -43,7 +46,10 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "className": { "type": "string" },
-        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
         "host": { "type": "string" },
         "tlsSecret": { "type": "string" }
       },
@@ -120,7 +126,10 @@
         }
       }
     },
-    "nodeSelector": { "type": "object", "additionalProperties": { "type": "string" } },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
     "affinity": { "type": "object" },
     "tolerations": {
       "type": "array",

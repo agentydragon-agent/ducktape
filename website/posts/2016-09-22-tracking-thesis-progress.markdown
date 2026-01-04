@@ -19,17 +19,18 @@ ex post by checking out every historic revision and running a data collection
 script over it.
 
 My use of this technique lets me produce a pretty graph that looks like this:
+
 <figure>
 <img src="/static/2016-09-22-thesis-tracking-graph.png" alt="Thesis progress tracking graph">
 </figure>
 
 Other really nice uses of this technique include asking:
 
-* How many tests were failing in each revision?
-* Which authors commited how many lines of code, over time?
-* How has the speed of a POST request to `/clients/create` evolved over time?
+- How many tests were failing in each revision?
+- Which authors commited how many lines of code, over time?
+- How has the speed of a POST request to `/clients/create` evolved over time?
   Which changes affected it positively and negatively?
-* How has the speed of my website's rendering evolved over time?
+- How has the speed of my website's rendering evolved over time?
 
 My crontab line looks like this:
 

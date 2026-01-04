@@ -2,8 +2,7 @@
 title: "Review heuristic: Call out bad code"
 ---
 
-Code health tradeoffs in larger codebases
-===
+# Code health tradeoffs in larger codebases
 
 When people program, they often need to make tradeoffs between what will fix
 the current problem quickly, and what will make for a healthy codebase. Examples
@@ -19,8 +18,7 @@ It's often a question of "do I pay the bigger upfront cost now, or do I make
 future-me front it". These days I often work in a really big codebase, where
 there ends up being a bunch of those.
 
-My review tip for copy-pasted code
-===
+# My review tip for copy-pasted code
 
 When you review someone's code that adds similar technical debt, you might not
 want to force the author to go and dig in 4 files just to extract out a
@@ -30,7 +28,7 @@ and it's not often changed and not tricky, it might really be less costly to
 copy it than to agressively share such code.
 
 So the request I often give in code reviews is: "if you duplicate code, add
-a TODO that the code is duplicated" (preferably to *both copies*).
+a TODO that the code is duplicated" (preferably to _both copies_).
 
 This way, you allow the reviewer to quickly go along their day. But also you
 leave a "hey, this is a known bit of technical debt" affordance in the code.
@@ -39,14 +37,13 @@ When someone ends up copy-pasting the same code a third time, you will be much
 more likely to look and say "hey time to extract a function, there is this TODO
 which says it's not the first time we're doing this".
 
-General heuristic: "feel the pain"
-===
+# General heuristic: "feel the pain"
 
 There is a more general heuristic, which I use, that I call "feel the pain".
-The heuristic is that bad things should be *obviously painfully bad*.
+The heuristic is that bad things should be _obviously painfully bad_.
 Other instances of "feel the pain" are:
 
-* Let's say someone breaks the contract of your `Frobnicate` RPC and sometimes
+- Let's say someone breaks the contract of your `Frobnicate` RPC and sometimes
   doesn't pass a required parameter `foo`, and you need to fix your service to
   accept that. Fine. But don't do it like this:
 
@@ -78,7 +75,8 @@ Other instances of "feel the pain" are:
 
   Why? Because that way, people are less likely to build more hacks on top of
   this hack, because there is a long paragraph full of scary words.
-* Let's say that you inherited 1 million LOC from someone in a hurry, and at
+
+- Let's say that you inherited 1 million LOC from someone in a hurry, and at
   some point, they made a misguided architectural decision that makes your code
   clunky and hard to understand.
   Create a central bug for this in your bug tracking system, and whenever you
@@ -97,7 +95,8 @@ Other instances of "feel the pain" are:
   this TODO, they might go "hmmm, that bug number looks quite low. aha, it's
   been filed 2 years back, and it's fixed now. yay! that means that I can fix
   this now and the diff for my new feature will be about 20% less horrible!"
-* Let's say your code processes two different *kinds of things*, which both
+
+- Let's say your code processes two different _kinds of things_, which both
   happen to be sort-of-strings (indulge me for a second and assume your code
   does not use strong types for such things). Think "URLs and street addresses".
   For some hacky reason, which you hope to get rid of at some point, you are
@@ -125,13 +124,12 @@ Other instances of "feel the pain" are:
   }
   ```
 
-Even generaler heuristic: "Call out problems"
-===
+# Even generaler heuristic: "Call out problems"
 
 There is actually an even more general heuristic than this, which is "call out
 problems". I also use it in other contexts.
 
-* Let's say I am writing a design document, and I notice that I did not actually
+- Let's say I am writing a design document, and I notice that I did not actually
   verify some assumption that I'm making, let's say, "when a customer
   frobnicates a Foo without also having a Bar, Frobnicator service will not
   give them cake".
@@ -150,14 +148,14 @@ problems". I also use it in other contexts.
   service does not give cake in this case. I guess they changed it or I don't
   remember it correctly.".
 
-* Let's say that I'm talking with someone and they raise a counterpoint to my
+- Let's say that I'm talking with someone and they raise a counterpoint to my
   preferred opinion that I never considered yet. Instead of immediately rushing
   to defend myself, I sometimes try to instead take in the new thing, and sit
   there for a bit with the dissonance ("but but but I want to be right so this
   thing must be wroooong aaaaaaaah", or maybe "but but but I don't want to have
   to redo this 3k line change that I love aaaaaarrrhh").
-  And instead of "Hmm, but your proposal would not address the ...*insert
-  ad-lib*...", say, "Huh. I didn't think of that yet. I'll need to think about
+  And instead of "Hmm, but your proposal would not address the ..._insert
+  ad-lib_...", say, "Huh. I didn't think of that yet. I'll need to think about
   that."
 
 "Call out problems" feels sort of close to [non-violent

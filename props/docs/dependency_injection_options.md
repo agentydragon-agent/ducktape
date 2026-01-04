@@ -510,16 +510,16 @@ def test_snapshot_exec(mock_resources):
 
 ## Comparison Matrix
 
-| Feature | typer-di | dependency-injector | Protocol-based | Hybrid |
-|---------|----------|-------------------|----------------|--------|
-| **Boilerplate** | Minimal | Medium-High | Medium | Variable |
-| **mypy Support** | ✅ Excellent | ✅ Excellent | ✅ Perfect | ✅ Good |
-| **Learning Curve** | Gentle | Steep | Moderate | Variable |
-| **Testing** | Patch functions | Override providers | Pass mocks | Mixed |
-| **CLI Integration** | ✅ Native | ⚠️ Manual | ⚠️ Wrappers | Variable |
-| **Type Safety** | ✅ Full | ✅ Full | ✅ Full | ✅ Good |
-| **External Deps** | 1 (typer-di) | 1 (dep-injector) | 0 | 0-1 |
-| **Maintenance** | Low | Medium | Low | Medium |
+| Feature             | typer-di        | dependency-injector | Protocol-based | Hybrid   |
+| ------------------- | --------------- | ------------------- | -------------- | -------- |
+| **Boilerplate**     | Minimal         | Medium-High         | Medium         | Variable |
+| **mypy Support**    | ✅ Excellent    | ✅ Excellent        | ✅ Perfect     | ✅ Good  |
+| **Learning Curve**  | Gentle          | Steep               | Moderate       | Variable |
+| **Testing**         | Patch functions | Override providers  | Pass mocks     | Mixed    |
+| **CLI Integration** | ✅ Native       | ⚠️ Manual           | ⚠️ Wrappers    | Variable |
+| **Type Safety**     | ✅ Full         | ✅ Full             | ✅ Full        | ✅ Good  |
+| **External Deps**   | 1 (typer-di)    | 1 (dep-injector)    | 0              | 0-1      |
+| **Maintenance**     | Low             | Medium              | Low            | Medium   |
 
 ---
 

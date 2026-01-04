@@ -48,7 +48,7 @@ These commands produce the `linux-desktop-01` virtual machine on `atlas` (Proxmo
          ansible_ssh_private_key_file: ~/.ssh/id_ed25519
    ```
 
-5. **Install the RAC SSH public key**
+6. **Install the RAC SSH public key**
 
    Helm now renders the Guacamole SSH key into a ConfigMap. Pull it once the cluster has applied the chart and drop it into `authorized_keys` for the login user:
 

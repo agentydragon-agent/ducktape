@@ -25,16 +25,16 @@ to date and clone them inside sandboxed containers.
 
 1. `gitea_mirror` MCP is run on the host with access to the Gitea API.
 2. `docker_exec` MCP runs sandboxed containers with a read-only bind mount of
-the mirror store (e.g. `/Users/<user>/.combo_mcp/gitea/git/repositories`).
+   the mirror store (e.g. `/Users/<user>/.combo_mcp/gitea/git/repositories`).
 3. Agents call `get_repo_info` to get the initial repository state (GET `/repos/{owner}/{repo}`).
 4. Agents call `trigger_mirror_sync` with an HTTPS repository URL. The tool creates
-a pull mirror (POST `/repos/migrate`), triggers an async sync (POST
-`/repos/{owner}/{repo}/mirror-sync`), and returns immediately (empty response,
-matching Gitea API).
+   a pull mirror (POST `/repos/migrate`), triggers an async sync (POST
+   `/repos/{owner}/{repo}/mirror-sync`), and returns immediately (empty response,
+   matching Gitea API).
 5. Agents poll `get_repo_info` until the `mirror_updated` timestamp changes,
-indicating the sync is complete.
+   indicating the sync is complete.
 6. Once synced, agents construct the mirror path as `{owner}/{repo}.git` and clone
-from the read-only bind mount using `git clone --reference` for fast object reuse.
+   from the read-only bind mount using `git clone --reference` for fast object reuse.
 
 ## Running Gitea locally
 

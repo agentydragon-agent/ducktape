@@ -153,10 +153,10 @@ kubectl delete certificates --all -A
 
 **Environment differences**:
 
-| Environment | ACME Server | Rate Limits | Certificate Trust |
-|-------------|-------------|-------------|-------------------|
-| **Staging** | acme-staging-v02.api.letsencrypt.org | 30,000 certs/week | Untrusted (test only) |
-| **Production** | acme-v02.api.letsencrypt.org | 50 certs/week | Browser-trusted |
+| Environment    | ACME Server                          | Rate Limits       | Certificate Trust     |
+| -------------- | ------------------------------------ | ----------------- | --------------------- |
+| **Staging**    | acme-staging-v02.api.letsencrypt.org | 30,000 certs/week | Untrusted (test only) |
+| **Production** | acme-v02.api.letsencrypt.org         | 50 certs/week     | Browser-trusted       |
 
 **When to use each**:
 
@@ -169,7 +169,7 @@ kubectl delete certificates --all -A
 **Root Causes & Solutions**:
 
 1. **Missing DNS Delegation** (Most Common):
-   - **Symptom**: "No TXT record found at _acme-challenge.domain.com"
+   - **Symptom**: "No TXT record found at \_acme-challenge.domain.com"
    - **Solution**: Add NS delegation record in parent domain DNS (AWS Route 53)
    - **Fix**: `domain.com` → NS → `ns1.agentydragon.com`
 
@@ -324,7 +324,7 @@ authentication failures. Consider filing upstream issue if this becomes frequent
    - **Solution**: Fix NS records in zone
    - **Fix**:
      `kubectl exec -n dns-system deployment/powerdns -- pdnsutil replace-rrset
-     test-cluster.agentydragon.com @ NS 3600 "ns1.agentydragon.com."`
+test-cluster.agentydragon.com @ NS 3600 "ns1.agentydragon.com."`
    - **Note**: Public DNS will cache old NS records (check TTL with `dig`)
 
 4. **PowerDNS API Not Accessible**:
@@ -356,22 +356,22 @@ authentication failures. Consider filing upstream issue if this becomes frequent
 
 ### Node IP Assignments
 
-| Node | VM ID | IP Address | Role |
-| ---- | ----- | ---------- | ---- |
-| controlplane0 | 1500 | 10.2.1.1 | Controller |
-| controlplane1 | 1501 | 10.2.1.2 | Controller |
-| controlplane2 | 1502 | 10.2.1.3 | Controller |
-| worker0 | 2000 | 10.2.2.1 | Worker |
-| worker1 | 2001 | 10.2.2.2 | Worker |
+| Node          | VM ID | IP Address | Role       |
+| ------------- | ----- | ---------- | ---------- |
+| controlplane0 | 1500  | 10.2.1.1   | Controller |
+| controlplane1 | 1501  | 10.2.1.2   | Controller |
+| controlplane2 | 1502  | 10.2.1.3   | Controller |
+| worker0       | 2000  | 10.2.2.1   | Worker     |
+| worker1       | 2001  | 10.2.2.2   | Worker     |
 
 ### VIP Assignments
 
-| Service | IP Address | Pool | Purpose |
-| ------- | ---------- | ---- | ------- |
-| **Cluster API** | 10.2.3.1 | - | Kubernetes API HA VIP |
-| **Ingress** | 10.2.3.2 | ingress-pool | NGINX Ingress LoadBalancer |
-| **PowerDNS** | 10.2.3.3 | dns-pool | DNS server LoadBalancer |
-| **Services** | 10.2.3.4-20 | services-pool | Harbor, Gitea, etc. |
+| Service         | IP Address  | Pool          | Purpose                    |
+| --------------- | ----------- | ------------- | -------------------------- |
+| **Cluster API** | 10.2.3.1    | -             | Kubernetes API HA VIP      |
+| **Ingress**     | 10.2.3.2    | ingress-pool  | NGINX Ingress LoadBalancer |
+| **PowerDNS**    | 10.2.3.3    | dns-pool      | DNS server LoadBalancer    |
+| **Services**    | 10.2.3.4-20 | services-pool | Harbor, Gitea, etc.        |
 
 ## Security Configuration
 
@@ -389,7 +389,7 @@ securityContext:
   runAsGroup: 953
   allowPrivilegeEscalation: false
   capabilities:
-    add: ["NET_BIND_SERVICE"]  # Required for ports < 1024
+    add: ["NET_BIND_SERVICE"] # Required for ports < 1024
     drop: ["ALL"]
   seccompProfile:
     type: RuntimeDefault

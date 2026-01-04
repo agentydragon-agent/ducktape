@@ -34,19 +34,19 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 - [ ] pattern + path + type
 - [ ] pattern + glob + type
 - [ ] pattern + path + glob + type
-- [ ] + output_mode: "content"
-- [ ] + output_mode: "files_with_matches"
-- [ ] + output_mode: "count"
-- [ ] + multiline: true
-- [ ] + multiline: false
-- [ ] + -i: true
-- [ ] + -i: false
-- [ ] + -n: true (content mode)
-- [ ] + -n: false (content mode)
-- [ ] + -A: number (content mode)
-- [ ] + -B: number (content mode)
-- [ ] + -C: number (content mode)
-- [ ] + head_limit: number
+- [ ] - output_mode: "content"
+- [ ] - output_mode: "files_with_matches"
+- [ ] - output_mode: "count"
+- [ ] - multiline: true
+- [ ] - multiline: false
+- [ ] - -i: true
+- [ ] - -i: false
+- [ ] - -n: true (content mode)
+- [ ] - -n: false (content mode)
+- [ ] - -A: number (content mode)
+- [ ] - -B: number (content mode)
+- [ ] - -C: number (content mode)
+- [ ] - head_limit: number
 
 ## Edit Tool
 
@@ -86,12 +86,12 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 ## NotebookEdit Tool
 
 - [ ] notebook_path + new_source
-- [ ] + cell_id
-- [ ] + cell_type: "code"
-- [ ] + cell_type: "markdown"
-- [ ] + edit_mode: "replace"
-- [ ] + edit_mode: "insert"
-- [ ] + edit_mode: "delete"
+- [ ] - cell_id
+- [ ] - cell_type: "code"
+- [ ] - cell_type: "markdown"
+- [ ] - edit_mode: "replace"
+- [ ] - edit_mode: "insert"
+- [ ] - edit_mode: "delete"
 - [ ] notebook_path + new_source + cell_id + cell_type
 - [ ] notebook_path + new_source + cell_id + edit_mode
 - [ ] notebook_path + new_source + cell_type + edit_mode
@@ -117,7 +117,7 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 
 ## MCP Tools (Unknown Tools - Fallback to dict)
 
-- [x] Various MCP tools ✅ (existing test for mcp__...)
+- [x] Various MCP tools ✅ (existing test for mcp\_\_...)
 
 ---
 

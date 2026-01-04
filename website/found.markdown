@@ -12,10 +12,10 @@ To do a good deed, please poke me on one of those:
 
 <!-- TODO: unify with about.markdown? -->
 
-* email: `agentydragon@gmail.com`
-* Telegram: [@agentydragon][telegram]
-* Matrix: [@agentydragon:matrix.org][matrix]
-* Mastodon: [@agentydragon@mastodon.social][mastodon]
+- email: `agentydragon@gmail.com`
+- Telegram: [@agentydragon][telegram]
+- Matrix: [@agentydragon:matrix.org][matrix]
+- Mastodon: [@agentydragon@mastodon.social][mastodon]
 
 Otherwise, at least do something cool with the thing :)
 

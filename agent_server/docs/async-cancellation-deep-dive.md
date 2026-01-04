@@ -147,7 +147,7 @@ async def __aexit__(self, exc_type, exc_val, exc_tb):
 
 This calls `_disconnect()`, which signals the background `_session_runner` task to stop.
 
-### Stack Frame 4: Client._disconnect (client.py:532-568)
+### Stack Frame 4: Client.\_disconnect (client.py:532-568)
 
 ```python
 async def _disconnect(self, force: bool = False):
@@ -162,7 +162,7 @@ async def _disconnect(self, force: bool = False):
 
 This sets the `stop_event`, which wakes up the `_session_runner` task.
 
-### Stack Frame 5: Client._session_runner (client.py:570-593)
+### Stack Frame 5: Client.\_session_runner (client.py:570-593)
 
 ```python
 async def _session_runner(self):
@@ -178,7 +178,7 @@ async def _session_runner(self):
 
 The `AsyncExitStack` exits, which triggers `_context_manager().__aexit__`.
 
-### Stack Frame 6: Client._context_manager (client.py:393-409)
+### Stack Frame 6: Client.\_context_manager (client.py:393-409)
 
 ```python
 @asynccontextmanager
@@ -226,7 +226,7 @@ async def connect_session(self, **session_kwargs):
 2. **Line 888**: When the `connect_session` context exits, it **ALWAYS** calls `tg.cancel_scope.cancel()`
 3. This cancellation affects **everything** in the task group's scope, including the lifespan context manager's `__aexit__`
 
-### Stack Frame 8: _enter_server_lifespan (transports.py:894-903)
+### Stack Frame 8: \_enter_server_lifespan (transports.py:894-903)
 
 ```python
 @asynccontextmanager
@@ -469,6 +469,7 @@ finally:
 **Let me check if this actually works...**
 
 From anyio docs:
+
 > A shielded cancel scope allows you to perform cleanup operations in response to cancellation requests, while still protecting a critical section from being cancelled.
 
 **This might actually work!** The `shield=True` parameter tells anyio to **ignore** cancellation from parent scopes.

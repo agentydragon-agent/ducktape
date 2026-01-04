@@ -25,40 +25,42 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 ### Active Development
 
-| Directory | Purpose | Details |
-|-----------|---------|---------|
-| `adgn/` | LLM agent framework | See `adgn/AGENTS.md` |
+| Directory       | Purpose                          | Details                      |
+| --------------- | -------------------------------- | ---------------------------- |
+| `adgn/`         | LLM agent framework              | See `adgn/AGENTS.md`         |
 | `agent_server/` | FastAPI backend, runtime, policy | See `agent_server/AGENTS.md` |
-| `mcp_infra/` | MCP compositor and utilities | See `mcp_infra/AGENTS.md` |
-| `agent_pkg/` | Agent package infrastructure | See `agent_pkg/AGENTS.md` |
-| `tana/` | Tana export toolkit | See `tana/AGENTS.md` |
-| `wt/` | Worktree management | See `wt/AGENTS.md` |
-| `gatelet/` | Gateway/tunneling | See `gatelet/AGENTS.md` |
-| `ansible/` | System configuration | See `ansible/AGENTS.md` |
-| `docker/` | Container images | See `docker/AGENTS.md` |
-| `dotfiles/` | Shell configs, scripts | See `dotfiles/AGENTS.md` |
-| `props/` | Properties/specimens | See `props/AGENTS.md` |
+| `mcp_infra/`    | MCP compositor and utilities     | See `mcp_infra/AGENTS.md`    |
+| `agent_pkg/`    | Agent package infrastructure     | See `agent_pkg/AGENTS.md`    |
+| `tana/`         | Tana export toolkit              | See `tana/AGENTS.md`         |
+| `wt/`           | Worktree management              | See `wt/AGENTS.md`           |
+| `gatelet/`      | Gateway/tunneling                | See `gatelet/AGENTS.md`      |
+| `ansible/`      | System configuration             | See `ansible/AGENTS.md`      |
+| `docker/`       | Container images                 | See `docker/AGENTS.md`       |
+| `dotfiles/`     | Shell configs, scripts           | See `dotfiles/AGENTS.md`     |
+| `props/`        | Properties/specimens             | See `props/AGENTS.md`        |
 
 ### Less Active
 
-| Directory | Purpose |
-|-----------|---------|
-| `finance/` | Portfolio tracking (Rust) |
-| `trilium/` | Trilium Notes extensions |
-| `inventree_utils/` | InventTree plugins |
-| `website/` | Personal website (Hakyll) |
-| `k8s/` | k3s cluster configs |
+| Directory          | Purpose                   |
+| ------------------ | ------------------------- |
+| `finance/`         | Portfolio tracking (Rust) |
+| `trilium/`         | Trilium Notes extensions  |
+| `inventree_utils/` | InventTree plugins        |
+| `website/`         | Personal website (Hakyll) |
+| `k8s/`             | k3s cluster configs       |
 
 ## Dotfiles
 
 Dotfiles are centrally managed via rcm with symlinks from home directory:
 
 ### Structure
+
 - **Source**: `dotfiles/` directory in repository
 - **Deployment**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
 - **Configuration**: `dotfiles/rcrc` controls symlink behavior
 
 ### Key Symlinked Components
+
 ```
 ~/.bashrc -> ducktape/dotfiles/bashrc
 ~/.zshrc -> ducktape/dotfiles/zshrc
@@ -67,14 +69,17 @@ Dotfiles are centrally managed via rcm with symlinks from home directory:
 ```
 
 ### User Scripts (.local/bin)
+
 The repository provides numerous utility scripts symlinked to `~/.local/bin/`:
+
 - Git AI commit tools (`git_commit_ai.py`, `git_prepare_commit_msg_ai.py`)
 - Theme switchers (`set_dark_theme`, `set_light_theme`, `switch_gnome_terminal_profile`)
 - Development utilities (`generate-agent-name`, `login_event_webhook_reporter.py`)
 - Various helper scripts
 
 ### Important Notes
-- **DO NOT modify dotfiles directly in ~/...  or in Ansible steps** - edit source files in `dotfiles/`
+
+- **DO NOT modify dotfiles directly in ~/... or in Ansible steps** - edit source files in `dotfiles/`
 - Some dotfiles are host-specific (e.g., `host-agentydragon/rcrc`, `host-gpd/rcrc`)
 
 ### Shell configuration
@@ -86,22 +91,26 @@ Shell configuration follows a specific loading hierarchy:
 ## Infrastructure Components
 
 ### Ansible Automation
+
 The `ansible/` directory contains system configuration.
 See: @ansible/README.md
 
 #### Playbooks
+
 - `agentydragon.yaml` - Main laptop configuration
 - `vps.yaml` - VPS server deployment
 - `gpd.yaml` - GPD laptop setup
 - `wyrm.yaml` - Wyrm desktop provisioning
 
 #### Key Roles
+
 - **System Base**: `cli/`, `gui/`, `system/`, `user/`
 - **Development**: `golang/`, `dev-env/`, `dev-clojure/`, `dev-ml/`
 - **Services**: `webhook_inbox/`, `trilium_server/`, `headscale-server/`, `syncthing-server/`
 - **Networking**: `tailscale-client/`
 
 ### Network Infrastructure
+
 - **Headscale**: Self-hosted Tailscale controller (100.64.0.0/10)
 - **Syncthing**: Cross-device file synchronization
 
@@ -110,14 +119,17 @@ See: @ansible/README.md
 These components exist but see minimal recent changes:
 
 ### Finance Tools (`finance/`)
+
 - Worthy: Rust-based portfolio tracker (uses Cargo/Bazel)
 - Reconciliation utilities for various financial systems
 
 ### Knowledge Management
+
 - **Trilium Notes** (`trilium/`): Extensions and widgets
 - **Tana Export** (`tana/`): Export utilities
 
 ### Other Tools
+
 - **InventTree** (`inventree_utils/`): Inventory management plugins
 - **Website** (`website/`): Personal website (Hakyll/Haskell)
 - **Kubernetes** (`k8s/`): k3s cluster configurations
@@ -139,12 +151,14 @@ ducktape/
 ```
 
 **Key points:**
+
 - `requirements_bazel.txt` is the single source of truth for Python dependencies
 - All Python packages have `BUILD.bazel` files defining targets
 - Linting via `ruff_test` targets (aspect_rules_lint)
 - Python 3.12+ is the target runtime version
 
 **Development workflow:**
+
 ```bash
 # Build all targets
 bazel build //...
@@ -160,11 +174,13 @@ bazel build //adgn:adgn
 ```
 
 **Adding dependencies:**
+
 1. Add to `requirements_bazel.txt`
 2. Run `bazel run //:requirements.update` to regenerate lockfile
 3. Use `@pypi//package_name` in BUILD.bazel deps
 
 ### Rust (Finance tools)
+
 ```bash
 bazel build //finance/worthy:rust_main
 bazel test //finance/worthy/...
@@ -172,6 +188,7 @@ bazel test --config=clippy //finance/...  # Rust linting
 ```
 
 **Adding dependencies:**
+
 1. Add to root `Cargo.toml`
 2. Run `CARGO_BAZEL_REPIN=1 bazel sync --only=crates` to update lockfile
 3. Use `@crates//crate_name` in BUILD.bazel deps
@@ -179,11 +196,13 @@ bazel test --config=clippy //finance/...  # Rust linting
 ## Development Practices
 
 ### Testing
+
 - Test files: `test_*.py` in same directory as code
 - Framework: pytest with pytest-asyncio
 - Fixtures for shared setup
 
 ### Deployment
+
 ```bash
 cd ansible
 ansible-playbook <hostname>.yaml --ask-become-pass

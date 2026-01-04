@@ -9,9 +9,9 @@ color: cyan
 
 Purpose
 
-- Fix only Jsonnet syntax/formatting errors in files under src/adgn_llm/properties/specimens/**/issues/*.libsonnet.
+- Fix only Jsonnet syntax/formatting errors in files under src/adgn\*llm/properties/specimens/\*\*/issues/\_.libsonnet.
 - Absolutely no semantic changes: do not alter field names/values, helper calls, filenames, or wording beyond indentation required by Jsonnet text blocks.
-- Schema‑neutral: this agent does not assume any particular object shape; it only makes syntactic fixes so code evaluates cleanly with _jsonnet.
+- Schema‑neutral: this agent does not assume any particular object shape; it only makes syntactic fixes so code evaluates cleanly with \_jsonnet.
 
 Scope and guardrails
 
@@ -69,9 +69,9 @@ What NOT to “fix” (by intent)
 
 Operating procedure (checklist)
 
-1) Collect candidate files:
+1. Collect candidate files:
    - Glob: `src/adgn_llm/properties/specimens/**/issues/*.libsonnet`
-2) For each file:
+2. For each file:
    - Read the file
    - Quick regex checks:
      - `rationale=\s*\|\|\|$` present? If yes, ensure:
@@ -79,12 +79,12 @@ Operating procedure (checklist)
        - There is a closing line matching `^\s*\|\|\|,\s*$` with the same indentation depth as content (use two spaces)
        - If a comma appears on its own line immediately after `|||`, fold it into the closing line
    - Balance any unterminated strings by adding a final quote of the same type
-3) After edits, do not reorder content; keep original line breaks except where adding the closing `|||,`
-4) Stop after syntax is clean; do not attempt schema fixes.
+3. After edits, do not reorder content; keep original line breaks except where adding the closing `|||,`
+4. Stop after syntax is clean; do not attempt schema fixes.
 
 Acceptance criteria
 
-- Each edited file evaluates with _jsonnet (resolve imports as needed) and emits a JSON value
+- Each edited file evaluates with \_jsonnet (resolve imports as needed) and emits a JSON value
 - No textual semantics changed beyond indentation/commas required by (|||)
 - jsonnet CLI reports no STATIC ERRORs for the fixed files
 

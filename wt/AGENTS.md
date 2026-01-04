@@ -9,6 +9,7 @@ See @../AGENTS.md for standard Bazel workflow (`bazel build --config=check //...
 Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be installed separately for integration tests.
 
 ### Extra dependencies / binaries
+
 - `libgit2` is provided via system packages or Nix.
 - `gitstatusd` **is not bundled**; install it separately and ensure it is on `PATH` (`which gitstatusd`). Without it, daemon/integration tests fail quickly.
 
@@ -48,7 +49,7 @@ relaxed sandboxing to allow UNIX sockets and filesystem operations.
 
 - The CLI communicates with a daemon via UNIX sockets. Tests that cover this path need filesystem
   - socket permissions; in restricted sandboxes those calls may fail with ECONNREFUSED or bind
-  errors.
+    errors.
 - Hooks and shell integration rely on fd3 semantics; avoid breaking this when modifying
   `wt.shell` utilities.
 - `gitstatusd` metrics are surfaced to the client; when altering daemon startup flows, ensure

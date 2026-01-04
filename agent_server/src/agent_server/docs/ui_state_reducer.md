@@ -28,7 +28,7 @@ Design overview (implemented)
 - Display items (normalized)
   - UserMessage {id, ts, text}
   - AssistantMarkdown {id, ts, md}
-  - ToolGroup {id, ts, tool: name, call_id, cmd?, approvals: [approve/deny_*], stdout, stderr, exit_code}
+  - ToolGroup {id, ts, tool: name, call*id, cmd?, approvals: [approve/deny*\*], stdout, stderr, exit_code}
 - Event inputs for reducer
   - UserText (on_user_text_event)
   - ToolCall (on_tool_call_event)
@@ -42,7 +42,7 @@ Design overview (implemented)
   - Server drains UiBus items after tool outputs and before snapshot to generate UiMessage events into UiState
 - Protocol
   - UiStateSnapshot { type: "ui_state_snapshot", v: "ui_state_v1", seq, state }
-  - UiStateUpdated  { type: "ui_state_updated",  v: "ui_state_v1", seq, state } (initially whole state; optional future deltas)
+  - UiStateUpdated { type: "ui_state_updated", v: "ui_state_v1", seq, state } (initially whole state; optional future deltas)
   - Deprecate snapshot.transcript over time (keep for migration)
 
 Ordering & snapshot
@@ -59,8 +59,8 @@ Handler & loop control
 
 Open items only (migration largely complete)
 
-1) Cleanup: remove any remaining legacy transcript references in comments and protocol helpers; keep WS‑only path.
-2) Persistence: consider durable UiState snapshots (optional) to speed very large histories.
+1. Cleanup: remove any remaining legacy transcript references in comments and protocol helpers; keep WS‑only path.
+2. Persistence: consider durable UiState snapshots (optional) to speed very large histories.
 
 Testing (remaining)
 
@@ -93,8 +93,22 @@ Appendix: example UiState (v1)
   "seq": 5,
   "items": [
     { "kind": "UserMessage", "ts": "...", "text": "run ls -la" },
-    { "kind": "ToolGroup", "ts": "...", "tool": "seatbelt_sandbox_exec", "call_id": "abc", "cmd": "ls -la", "approvals": ["approve"], "stdout": "...", "stderr": "", "exit_code": 0 },
-    { "kind": "AssistantMarkdown", "ts": "...", "md": "Here are the results..." }
+    {
+      "kind": "ToolGroup",
+      "ts": "...",
+      "tool": "seatbelt_sandbox_exec",
+      "call_id": "abc",
+      "cmd": "ls -la",
+      "approvals": ["approve"],
+      "stdout": "...",
+      "stderr": "",
+      "exit_code": 0
+    },
+    {
+      "kind": "AssistantMarkdown",
+      "ts": "...",
+      "md": "Here are the results..."
+    }
   ]
 }
 ```

@@ -169,6 +169,7 @@
         - Show at destination path (src/new.py) with indicator showing external source
         - Example: `src/new.py ← ../lib/old.py`
       - May need to track which paths are in scope and handle cross-boundary renames specially
+
 - [ ] Colored diff pass-through mode (like delta)
   - Show tree summary at top
   - Then pass through syntax-highlighted diff below

@@ -107,12 +107,14 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 
 ```markdown
 **Manual review workflow**:
+
 1. Review dict_literals - check context
 2. You analyze pydantic_models for overlapping fields
 3. Filter models where len(fields) == 1
 4. You compare field sets across models
 
 **Tool characteristics**:
+
 - Tool surfaces raw data; you do the analysis
 - You filter candidates based on context
 - Requires your judgment to determine if problematic
@@ -122,12 +124,14 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 
 ```markdown
 **Manual review workflow**:
+
 1. LLM reviews dict_literals
 2. LLM does this analysis
 3. LLM filters models
 4. LLM compares field sets
 
 **Tool characteristics**:
+
 - Tool surfaces raw data; LLM analyzes it
 - LLM filters candidates
 - Requires human judgment
@@ -225,16 +229,19 @@ Automated scans should be **mentioned as hints only** when:
 ## Detection Strategy
 
 **MANDATORY first step**: Run `scan_error_handling.py` to find ALL exception handlers.
+
 - Surfaces concrete candidates - forces you to review each exception handler
 - Prevents claiming "looks fine" without examining actual code
 - Output gives specific line numbers for every try-except block
 
 **Recommended (but not required)**: Use grep patterns to narrow candidates.
+
 - Helpful for finding common cases faster
 - Not essential - you'd likely search for these anyway
 - Supplement with manual reading for variations
 
 **Optional hints**: AST tool can flag short variable names.
+
 - Provides hints about where to look but doesn't force comprehensive review
 - Manual reading required to understand context
 - Use only to help prioritize which files to read first
@@ -268,11 +275,13 @@ Clear examples of BAD and GOOD code with explanations of why.
 **Goal**: Find ALL instances (100% recall).
 
 **Recall/Precision**: [Characterize the automated tools]
+
 - Tool X has ~100% recall, ~Y% precision
 - Tool Z has ~A% recall, ~B% precision
 
 **[MANDATORY/RECOMMENDED/OPTIONAL] approach**:
-1. [MANDATORY first step IF high recall]: Run scan_*.py to find ALL instances
+
+1. [MANDATORY first step IF high recall]: Run scan\_\*.py to find ALL instances
 2. [Verification strategy based on precision]:
    - High precision: Light verification
    - Low precision: Manual review or LLM filtering
@@ -315,6 +324,7 @@ rg "get_user_id|fetch_data|load_config|..."
 
 ```markdown
 Find functions where:
+
 - Name is nearly identical to what it returns
 - Single statement that just calls another function
 - No validation, transformation, or error handling
@@ -387,6 +397,7 @@ Instead of providing full implementations, give high-level descriptions:
 **AST-Based Discovery** (optional):
 
 Build a tool that:
+
 - Walks FunctionDef nodes
 - Extracts signatures, types, docstrings
 - Flags where docstring just repeats parameter names
@@ -410,6 +421,7 @@ Strong coding LLM can reconstruct from this description.
 
 ```markdown
 Create helper that strips function bodies, preserving signatures and docs:
+
 1. Parse file with AST
 2. For each function, extract signature + docstring
 3. Output minimal skeleton (sig + docstring + ...)

@@ -148,7 +148,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 
 **Template structure:**
 
-```markdown
+````markdown
 # <Title Describing Session Work>
 
 **Session ID:** <uuid>
@@ -162,14 +162,17 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 <Concrete list of what was done, with file:line references>
 
 ### Key Changes
+
 - File: `path/to/file.py`
   - Function `foo()` at line 123: <brief description>
   - Pattern at lines 200-210: <brief description>
 
 ### Commands Run
+
 <Notable commands with their outcomes>
 
 ### References
+
 - <URL with description>
 - <Commit SHA with context>
 - <Function name with file:line>
@@ -179,6 +182,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 **CRITICAL - What's NOT Done Yet:**
 
 ### Actual Discussed Items (High Priority)
+
 <Things explicitly mentioned in conversation that weren't completed>
 
 1. **<Clear description>**
@@ -187,6 +191,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
    - Next step: <concrete action>
 
 ### Potential Next Actions (Lower Priority)
+
 <Logical extensions or speculative improvements>
 
 - <Item 1>
@@ -195,13 +200,16 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 ## Context for Successor Agents
 
 ### Project Conventions
+
 - See: `@AGENTS.md` / `@CLAUDE.md`
 - Style: <brief pointer to style guide if relevant>
 
 ### Build/Test
+
 ```bash
 <Commands to verify work>
 ```
+````
 
 ### Key Decisions/Constraints
 
@@ -218,7 +226,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 **Tool Calls:** <count from session log>
 **Modified Files:** <list from session log>
 
-```
+````
 
 **Content guidelines:**
 - Be concise but complete
@@ -279,4 +287,4 @@ grep '"type":"tool_use"' "$SESSION_FILE" | \
 echo "Total entries: $(wc -l < "$SESSION_FILE")"
 echo "Tool uses: $(grep -c '"type":"tool_use"' "$SESSION_FILE")"
 echo "User messages: $(grep -c '"type":"user"' "$SESSION_FILE")"
-```
+````

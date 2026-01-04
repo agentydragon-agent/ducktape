@@ -63,13 +63,13 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate  # ← CRITICAL for RWO volumes
+    type: Recreate # ← CRITICAL for RWO volumes
   template:
     spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: my-app-data  # RWO volume
+            claimName: my-app-data # RWO volume
 ```
 
 ### Recreate Strategy Behavior

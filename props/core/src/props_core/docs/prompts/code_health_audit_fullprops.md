@@ -1,4 +1,3 @@
-
 # Repository Code Health Audit — Full Properties (This Codebase)
 
 Goal
@@ -19,8 +18,8 @@ Broader Smells and Structural Anti‑Patterns
 
 Deliverables (print exactly these sections)
 
-1) Findings (grouped by property, structural smells, other smells) with anchors.
-2) Plan (prioritized phases; map to properties/smells; call out risky steps).
+1. Findings (grouped by property, structural smells, other smells) with anchors.
+2. Plan (prioritized phases; map to properties/smells; call out risky steps).
 
 ---
 
@@ -28,7 +27,7 @@ Deliverables (print exactly these sections)
 
 ### Property: consistent-naming-and-notation.md
 
-```md
+````md
 ---
 title: Consistent naming and notation
 kind: outcome
@@ -37,11 +36,12 @@ kind: outcome
 Adopt one clear naming/notation convention per project (or per package) and apply it uniformly. Avoid mixing file/identifier patterns that describe the same concept with different names or layouts.
 
 ## Acceptance criteria (checklist)
+
 - Test files follow a single, consistent convention across the project (or per top-level package), e.g., `pkg/test_foo.py` (preferred) or `pkg/foo_test.py`; do not mix patterns within the same scope.
 - Choose one test location strategy and stick to it for a given project/package:
   - Co-located: `src/<pkg>/tests/test_*.py`
   - Central: `tests/<pkg>/test_*.py`
-  Mixing both within the same project/package is a violation.
+    Mixing both within the same project/package is a violation.
 - Directory placement is consistent: keep related tests together under their package/module (e.g., `my_service/test_*.py`, `other_service/test_*.py`), not scattered across differently named paths.
 - File names use one tokenization scheme consistently (e.g., underscores, no intermix of custom affixes/orderings like `test_pkg_run_bar.py` vs `test_pkg_baz.py`).
 - Avoid parallel synonyms for the same concept in names (e.g., `interface` vs `protocol` vs `facade`) unless distinctions are intentional and documented; prefer one obvious name. See also: [Renames must pay rent](./no-random-renames.md).
@@ -59,6 +59,7 @@ my_service/
 other_service/
   test_xyzzy.py
 ```
+````
 
 Or, suffix style (keep it consistent):
 
@@ -111,7 +112,7 @@ tests/foo/test_baz.py   # ❌ mixed conventions
 - Consistency reduces cognitive load and speeds navigation/grep.
 - Related properties: [Renames must pay rent](./no-random-renames.md), [Self‑describing names](./self-describing-names.md).
 
-```
+````
 
 
 ### Property: domain-types-and-units/bytes.md
@@ -132,7 +133,7 @@ Prefer typed wrappers or clear suffixes when primitives are used.
 
 ```go
 const MaxUploadBytes int64 = 25 * 1024 * 1024 // 25 MiB
-```
+````
 
 ```python
 MAX_DOWNLOAD_MBPS = 5
@@ -151,7 +152,7 @@ const FileUploadMax int64 = 25000
 MAX_DOWNLOAD_SPEED = 5
 ```
 
-```
+````
 
 
 ### Property: domain-types-and-units/index.md
@@ -187,7 +188,7 @@ qs = urlencode({"q": query, "limit": 100})
 api_url = urlunparse(("https", "api.example.com", "/items", "", qs, ""))
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MiB
-```
+````
 
 Bad (ambiguous primitives and string assembly):
 
@@ -207,7 +208,7 @@ MAX_UPLOAD = 25                     # units unclear
 - [Paths (PathLike, Python)](../python/pathlike.md)
 - [Pathlib usage (Python)](../python/pathlib.md)
 
-```
+````
 
 
 ### Property: domain-types-and-units/physical-quantities.md
@@ -247,7 +248,7 @@ class ThermostatReading:
 def adjust(target_celsius: float, current_celsius: float) -> float:
     error_celsius = target_celsius - current_celsius
     return error_celsius
-```
+````
 
 Once writing unit-heavier code (e.g., physics), use a unit library:
 
@@ -311,7 +312,7 @@ position = position + step  # *boom* - nothing prevents unit logic error
 - Centralize conversions behind helpers to avoid copy/paste and drift
 - If dealing with many physical quantities, adopt a unit library (for example, Pint) to make unit errors unrepresentable
 
-```
+````
 
 
 ### Property: domain-types-and-units/time.md
@@ -347,7 +348,7 @@ now = datetime.now(timezone.utc)
 if (now - last_print) >= PROGRESS_INTERVAL:
     log_progress()
     last_print = now
-```
+````
 
 ```python
 # Python — convert boundary epoch to aware datetime immediately
@@ -398,7 +399,7 @@ if elapsedSec > timeoutSec { /* ... */ }
 - Interfacing with protocols/DBs that represent time numerically is allowed at boundaries; convert immediately to internal rich types
 - Performance‑critical tight loops may use numerics when justified and documented; conversions must stay localized and lossless for the use case
 
-```
+````
 
 
 ### Property: domain-types-and-units/urls.md
@@ -424,7 +425,7 @@ Encode query parameters with library helpers and validate/normalize URLs at boun
 from urllib.parse import urlencode, urlunparse
 qs = urlencode({"q": query, "page": 2})
 url = urlunparse(("https", "api.example.com", "/search", "", qs, ""))
-```
+````
 
 ```go
 u, _ := url.Parse("https://api.example.com/search")
@@ -442,7 +443,7 @@ Manual concatenation (missing encoding, brittle):
 url = f"https://api.example.com/search?q={query}&page={page}"
 ```
 
-```
+````
 
 
 ### Property: early-bailout.md
@@ -472,7 +473,7 @@ def load_user(uid: str) -> User:
     if not uid.startswith("u_"):
         raise ValueError("invalid uid")
     return repo.get(uid)
-```
+````
 
 ```python
 # Loop guard: continue instead of wrapping entire body
@@ -572,7 +573,7 @@ if not ok:
     raise ValueError("invalid part")
 ```
 
-```
+````
 
 
 ### Property: least-power.md
@@ -610,7 +611,7 @@ from mypkg.models import User
 
 u = User(id="u_123", email="u@example.com")
 print(u.email)
-```
+````
 
 Async concurrency with gather:
 
@@ -670,7 +671,7 @@ fd = os.open("out.txt", os.O_WRONLY | os.O_CREAT)  # ❌ prefer Path("out.txt").
 - These are heuristics; exceptions exist, but require a short inline rationale.
 - Related properties: see cross‑links above for exact rules and exceptions.
 
-```
+````
 
 
 ### Property: markdown/inline-formatting.md
@@ -700,7 +701,7 @@ Run `some-script.sh` with `--dry-run=true`.
 The `FooClass` exposes `foo_method(...)` in `src/svc/main.py`.
 Logs are archived to `gs://my-bucket/logs/2025-08-27/`.
 See <https://example.com/docs/tooling> for details.
-```
+````
 
 ### Positive examples (multiline code blocks)
 
@@ -718,8 +719,10 @@ grep -R "pattern" src/ | wc -l
 ```markdown
 - Parent item
   - Nested item
+
 * Alternate marker
-+ Another valid marker
+
+- Another valid marker
 ```
 
 ## Negative examples (plaintext tokens, missing links)
@@ -738,7 +741,7 @@ Using bare dunders causes emphasis; protect with code spans.
 #### Negative examples (one line each)
 
 ```markdown
-my favorite variable is __init__ and constant is __ALL__, edit src/some_module/my__file__.py
+my favorite variable is **init** and constant is **ALL**, edit src/some_module/my**file**.py
 ```
 
 #### Positive examples (one line each)
@@ -747,7 +750,7 @@ my favorite variable is __init__ and constant is __ALL__, edit src/some_module/m
 my favorite variable is `__init__` and constant is `__ALL__`, edit `src/some_module/my__file__.py`
 ```
 
-```
+````
 
 
 ### Property: minimize-nesting.md
@@ -771,7 +774,7 @@ Trivial nested guards without else blocks are combined into a single condition; 
 # Two-level flatten
 if is_running and (code := proc.returncode) is not None:
     warn_failed(proc_id, code)
-```
+````
 
 ```python
 # Three-level flatten with walrus
@@ -825,7 +828,7 @@ if user:
                 grant_access(user, user.team)
 ```
 
-```
+````
 
 
 ### Property: no-dead-code.md
@@ -858,7 +861,7 @@ def get_user(uid: uuid.UUID) -> User:
     if not uid:
         return None  # impossible given function contract - delete
     return db.load_user(uid)
-```
+````
 
 No checks that will always evaluate to `true` / `false` given execution state:
 
@@ -956,7 +959,7 @@ def handle(x: Bar | Baz | Quux) -> str:
   ```yaml
   # ~/.config/program/config.yaml
   active_plugins:
-  - module_name:plugin_has_no_references_in_python
+    - module_name:plugin_has_no_references_in_python
   ```
 
 - Temporary compatibility shims may remain while a migration is in progress, with an owner and removal date
@@ -967,7 +970,7 @@ def handle(x: Bar | Baz | Quux) -> str:
   When unsure, search references, check feature flags/config, and document the invariant you rely on.
 - Prefer strengthening invariants and validations over keeping speculative fallback branches
 
-```
+````
 
 
 ### Property: no-extra-linebreaks.md
@@ -1007,7 +1010,7 @@ headers = (
     "X-Env: prod\n"
     "X-Request-Id: 123\n"
 )
-```
+````
 
 ## Negative examples
 
@@ -1059,7 +1062,7 @@ from fastapi import APIRouter, Depends
 router = APIRouter(prefix="/v1", tags=["tracks"], dependencies=[Depends(auth)])
 ```
 
-```
+````
 
 
 ### Property: no-oneoff-vars-and-trivial-wrappers.md
@@ -1085,7 +1088,7 @@ One-off iterator used only to feed collection:
 ```python
 frames_iter = video.iter_frames()
 frames = await collect_frames(frames_iter)
-```
+````
 
 One-off error object immediately returned:
 
@@ -1149,7 +1152,7 @@ def probe_cache(namespace=None) -> bool:
     return build_engine_spec(snapshot_path).as_runner().ready()
 ```
 
-```
+````
 
 
 ### Property: no-random-renames.md
@@ -1184,7 +1187,7 @@ unsanitized_input = url_query.get("i")
 if our_command_mode == Command.BUY:
     phone_number = unsanitized_input  # domain meaning becomes clear here
     # ... use phone_number from here on; do not keep using unsanitized_input
-```
+````
 
 Disambiguate two Response types:
 
@@ -1235,7 +1238,7 @@ processor = server       # ❌ misleading name; not a processor
 - When you must rename for semantics, migrate fully to the new name in that scope; do not keep both alive.
 - Cross‑refs: [No one‑off vars](./no-oneoff-vars-and-trivial-wrappers.md), [Self‑describing names](./self-describing-names.md), and [Truthfulness](./truthfulness.md).
 
-```
+````
 
 
 ### Property: no-useless-docs.md
@@ -1269,7 +1272,7 @@ class Track(BaseModel):
 @app.post("/tracks")
 def create_track(t: Track) -> Track:
     return t
-```
+````
 
 ## Negative examples (boilerplate restating immediate context)
 
@@ -1297,7 +1300,7 @@ def create_track(t: Track) -> Track:
     return Track(title=t.title.strip(), bpm=min(max(t.bpm, 40), 220))
 ```
 
-```
+````
 
 
 ### Property: no-useless-tests.md
@@ -1340,7 +1343,7 @@ import pytest
 
 def test_add_representative(a, b, expected):
     assert add(a, b) == expected
-```
+````
 
 Non‑redundant focused assertions:
 
@@ -1389,7 +1392,7 @@ def test_model_dump_json_type_is_string():
 #     assert isinstance(user.model_dump_json(), str)  # useless
 ```
 
-```
+````
 
 
 ### Property: python/barrel-imports-and-public-api.md
@@ -1426,7 +1429,7 @@ def foo(): ...
 # bbb/y.py
 from aaa.x import foo
 foo()
-```
+````
 
 Deliberate public API in a serious, versioned library:
 
@@ -1444,7 +1447,7 @@ __all__ = ["Client", "Error"]
 
 ## Negative examples
 
-Internal convenience barrel in __init__.py:
+Internal convenience barrel in **init**.py:
 
 ```python
 # internal_pkg/__init__.py   # ❌ internal package; do not re‑export
@@ -1459,7 +1462,7 @@ from shared import foo   # ❌ where does this come from?
 foo()                    # prefer: from real_module.submod import foo
 ```
 
-Overuse of __all__ in a normal module:
+Overuse of **all** in a normal module:
 
 ```python
 # module.py  # ❌ not a curated public entrypoint
@@ -1468,11 +1471,11 @@ __all__ = [name for name in globals() if not name.startswith("_")]
 
 ## Notes
 
-- Public API curation belongs at the package root __init__.py of a real library/SDK with versioning; everywhere else, keep imports explicit to preserve clear dependencies and call sites.
+- Public API curation belongs at the package root **init**.py of a real library/SDK with versioning; everywhere else, keep imports explicit to preserve clear dependencies and call sites.
 - Re‑exports should be rare, selective, and documented; wildcard exports and convenience barrels hinder traceability and refactoring.
 - Related properties: [Imports at the top](./imports-top.md), [Truthfulness](../truthfulness.md) (comments must reflect real intent), [Consistent naming and notation](../consistent-naming-and-notation.md).
 
-```
+````
 
 
 ### Property: python/forbid-dynamic-attrs.md
@@ -1505,7 +1508,7 @@ class User:  # could be a dataclass/attrs/TypedDict as well
 
 u = User("Rai", "rai@example.com")
 send(u.email)
-```
+````
 
 ## Exceptions (rare, deliberate)
 
@@ -1548,7 +1551,7 @@ if hasattr(item, "id") or hasattr(item, "identifier") or hasattr(item, "ID"):
     use(ident)
 ```
 
-```
+````
 
 
 ### Property: python/imports-top.md
@@ -1579,7 +1582,7 @@ from pathlib import Path
 def load_config(p: Path) -> dict:
     text = p.read_text()
     return json.loads(text)
-```
+````
 
 ## Negative examples
 
@@ -1602,7 +1605,7 @@ Verified presence of certain listed unusual cases may justify a local import, bu
 - Import cycle: comment must specifically describe the cycle a module-level import would create; prefer refactoring to remove the cycle when feasible.
 - Heavy import: the module must be measurably expensive at import time and the localized import must materially reduce startup cost.
 - Dynamic plugin/entrypoint or hot-reload: the behavior truly requires runtime import.
-Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
+  Do not apply an exception if the module is already imported at the top elsewhere, the cost is negligible, or the cycle can be eliminated with a small refactor.
 
 ### Import cycle
 
@@ -1704,7 +1707,7 @@ def compute_now():
 
 - [Truthfulness](../truthfulness.md): misleading "avoid cycle"/"heavy import" comments are untruthful when no cycle/heaviness exists; moving imports into functions can also misrepresent real dependency structure. Keep comments and structure honest about why an exception is taken.
 
-```
+````
 
 
 ### Property: python/modern-python-idioms.md
@@ -1740,7 +1743,7 @@ Dict merge/update (right wins):
 ```python
 cfg = base_cfg | override_cfg
 cfg |= env_cfg
-```
+````
 
 Set algebra with operators:
 
@@ -1805,7 +1808,7 @@ def f(x: Union[int, str]) -> int:  # ❌ prefer int | str
 - Readability first: prefer these idioms when they clarify intent and reduce noise; if an operator would obscure meaning in a complex expression, a named helper or method call can be acceptable.
 - Related properties: [Walrus operator](./walrus.md), [String affixes](./str-affixes.md), [Type hints](./type-hints.md), [Pathlib usage](./pathlib.md).
 
-```
+````
 
 
 ### Property: python/no-mocking-plain-data.md
@@ -1839,7 +1842,7 @@ class User(BaseModel):
     email: str
 
 u = User(id="u_123", email="u@example.com")  # ✅ real, validated instance
-```
+````
 
 Real filesystem with tmp_path:
 
@@ -1899,7 +1902,7 @@ process(payload)
 - [Structured data types over untyped mappings](../structured-data-over-untyped-mappings.md)
 - [No useless tests](../no-useless-tests.md)
 
-```
+````
 
 
 ### Property: python/no-swallowing-errors.md
@@ -1928,7 +1931,7 @@ Let exceptions propagate (no swallowing):
 def load_config(path: Path) -> dict:
     text = path.read_text()            # may raise; OK to bubble up here
     return json.loads(text)            # may raise; OK to bubble up here
-```
+````
 
 Catch specific error, log, then re‑raise (or return a safe default when explicitly acceptable):
 
@@ -2018,7 +2021,7 @@ except Exception:  # ❌ should catch FileNotFoundError if ignoring that case on
 
 - [Try/except is scoped around the operation it guards](./scoped-try-except.md)
 
-```
+````
 
 
 ### Property: python/pathlib.md
@@ -2069,7 +2072,7 @@ parser.add_argument("--config", type=Path, required=True)
 args = parser.parse_args([])  # example only
 
 args.config.write_text("ok", encoding="utf-8")
-```
+````
 
 ## Negative examples
 
@@ -2085,7 +2088,7 @@ with open(config, encoding="utf-8") as f:
 logfile = env_root + "/logs/" + name + ".txt"
 ```
 
-```
+````
 
 
 ### Property: python/pathlike.md
@@ -2121,7 +2124,7 @@ cfg = Path("/etc/tool/config.ini")
 log = Path("/var/log/tool.log")
 subprocess.run([Path("/usr/bin/tool"), cfg], check=True, env={"FOO": Path("/tmp/x")})
 fh = logging.FileHandler(log)
-```
+````
 
 ```python
 from pathlib import Path
@@ -2174,7 +2177,7 @@ pattern = Path("data") / "*.csv"
 files = glob.glob(str(pattern))
 ```
 
-```
+````
 
 
 ### Property: python/pydantic-2.md
@@ -2221,7 +2224,7 @@ class User(BaseModel):
 u = User(name="A", email="a@example.com")
 payload: dict = u.model_dump()
 json_payload: str = u.model_dump_json()
-```
+````
 
 ```python
 # Settings in v2 using pydantic-settings
@@ -2294,7 +2297,7 @@ _ = u.dict()      # prefer model_dump()
 from pydantic import v1 as pydantic  # Do not use v1 compat layer
 ```
 
-```
+````
 
 
 ### Property: python/pytest-standard-fixtures.md
@@ -2355,7 +2358,7 @@ def test_disables_network(monkeypatch):
     monkeypatch.setattr("mymodule.http_request", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("blocked")))
     with pytest.raises(RuntimeError):
         mymodule.fetch()
-```
+````
 
 ## Negative examples
 
@@ -2407,7 +2410,7 @@ def test_writes_file():
 - [PathLike (Python)](./pathlike.md)
 - [Pathlib usage (Python)](./pathlib.md)
 
-```
+````
 
 
 ### Property: python/pytest-yield-fixtures.md
@@ -2441,7 +2444,7 @@ def temp_db(tmp_path):
         yield db
     finally:
         db.stop()
-```
+````
 
 Parametrized fixture with per-case cleanup:
 
@@ -2494,7 +2497,7 @@ def srv(tmp_path):
 
 - [Use pytest's standard fixtures for temp dirs and monkeypatching](./pytest-standard-fixtures.md)
 
-```
+````
 
 
 ### Property: python/scoped-try-except.md
@@ -2545,7 +2548,7 @@ async def _process_buffer_lines(self, buffer: str) -> None:
                 "Received event",
                 kind=payload.get("type"),
             )
-```
+````
 
 Distinct `try`/`except` blocks for separate risky operations:
 
@@ -2645,7 +2648,7 @@ else:
     return build_result()
 ```
 
-```
+````
 
 
 ### Property: python/str-affixes.md
@@ -2670,7 +2673,7 @@ assert name.removeprefix("prod_") == "db"
 
 path = "file.tmp"
 assert path.removesuffix(".tmp") == "file"
-```
+````
 
 ```python
 # Conditional removal without extra checks
@@ -2692,7 +2695,7 @@ if branch.startswith("feature/"):
     branch = branch[len("feature/"):]
 ```
 
-```
+````
 
 
 ### Property: python/strenum.md
@@ -2725,7 +2728,7 @@ class ErrorCode(StrEnum):
     STARTUP_FAILURE = "startup_failure"
     TOOL_EXECUTION_ERROR = "tool_execution_error"
     UNKNOWN = "unknown"
-```
+````
 
 ## Negative examples
 
@@ -2747,7 +2750,7 @@ class ErrorCode(Enum):
     COMMUNICATION_FAILURE = "communication_failure"
 ```
 
-```
+````
 
 
 ### Property: python/type-hints.md
@@ -2774,7 +2777,7 @@ from collections.abc import Iterable
 
 def names(items: Iterable[str] | None) -> list[str]:
     return [x for x in (items or [])]
-```
+````
 
 ```python
 UserRecord = dict[str, str | int]
@@ -2798,7 +2801,7 @@ class Node:
         ...
 ```
 
-```
+````
 
 
 ### Property: python/walrus.md
@@ -2831,7 +2834,7 @@ detail = DetailResponse(
     groups=[g.name for g in user.groups],
 )
 return detail.to_text_content()
-```
+````
 
 ```python
 # Synchronous
@@ -2915,7 +2918,7 @@ while line:
     line = await stream.readline()
 ```
 
-```
+````
 
 
 ### Property: self-describing-names.md
@@ -2954,7 +2957,7 @@ licensed: bool = True
 is_admin: bool = False
 has_license: bool = True
 user_id: str = "u_123"
-```
+````
 
 ```ts
 // TypeScript
@@ -2992,21 +2995,21 @@ id: str = "123"                        # bad: which entity?
 
 ```ts
 // TypeScript
-let timeout: number = 250;             // bad
-let size: number = 1024;               // bad
-let license: boolean = true;           // bad (bare noun)
-let admin: boolean = true;             // bad (bare noun)
-let feature: boolean = true;           // bad (bare noun)
+let timeout: number = 250; // bad
+let size: number = 1024; // bad
+let license: boolean = true; // bad (bare noun)
+let admin: boolean = true; // bad (bare noun)
+let feature: boolean = true; // bad (bare noun)
 ```
 
 ## Notes
 
 - Prefer domain types where available (timedelta/Duration/Instant/etc.). When primitives are unavoidable, encode units in the name.
-- Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified). Use is_/has_ when a noun would otherwise be ambiguous (is_admin, has_license).
+- Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified). Use is*/has* when a noun would otherwise be ambiguous (is_admin, has_license).
 - Pragmatic exception in legacy codebases: if a code path is uniformly using weak types (e.g., string paths or epoch integers) and your small change would only introduce noise by converting in/out without internal benefit, it’s acceptable to stick to the prevailing type for that narrow change. Favor module/function boundaries that convert once at input and once at output when you can extract real benefits internally.
 - This property focuses on unambiguous naming for primitives. Additional properties may separately enforce: use of time/money types; currency units; angle units (deg/rad); and rate units (per_second, per_minute).
 
-```
+````
 
 
 ### Property: structured-data-over-untyped-mappings.md
@@ -3061,7 +3064,7 @@ def parse_user(raw: dict) -> User:
 
 # Serialize for transport
 payload: dict = User(id="u1", email="u@example.com", role=Role.ADMIN).model_dump()
-```
+````
 
 Python (TypedDict for small, static shapes):
 
@@ -3081,7 +3084,7 @@ TypeScript (interface + literal union + runtime check):
 ```ts
 import { z } from "zod";
 
-type Role = "admin" | "user";  // closed set
+type Role = "admin" | "user"; // closed set
 export interface User {
   id: string;
   email: string;
@@ -3150,7 +3153,8 @@ role: str = "admin"  # should be Role (StrEnum)
 TypeScript domain shape as Record (no schema):
 
 ```ts
-function makeUser(): Record<string, unknown> {  // too loose
+function makeUser(): Record<string, unknown> {
+  // too loose
   return { id: "u1", email: "u@example.com", role: "admin" };
 }
 ```
@@ -3169,7 +3173,7 @@ Notes
 - Use map‑like types only for inherently key/value domains (headers, labels), short‑lived and close to their origin
 - When introducing a model on an existing loose interface, convert once at the boundary; avoid churn by bouncing between loose and strict forms inside the same flow
 
-```
+````
 
 
 ### Property: truthfulness.md
@@ -3204,7 +3208,7 @@ func getFileExtension(format string) string {
         return "fetch.py"
     ...
 }
-```
+````
 
 Typo:
 
@@ -3263,7 +3267,7 @@ text = text.rstrip()
 - [Self‑describing names](./self-describing-names.md)
 - [No useless docs](./no-useless-docs.md)
 
-```
+````
 
 
 ### Property: type-correctness-and-specificity.md
@@ -3317,7 +3321,7 @@ def load(kind: str) -> bytes | str:
     if kind == "bin":
         return b"\x00\x01"
     return "text"
-```
+````
 
 Type alias removes repetition and clarifies meaning:
 
@@ -3369,3 +3373,4 @@ def g(h: Callable[[int, str], bytes] | Generator[int, None, str]) -> str:
 
 ```
 
+```

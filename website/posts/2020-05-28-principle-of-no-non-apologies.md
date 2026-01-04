@@ -18,7 +18,7 @@ when under threat by someone stronger making demands I don't agree with.
 Another way is to say "this was accidental, I didn't intend to hurt you", like
 when you bump into someone when boarding your tram.
 
-But when you use the words that way, you are not making an _Apology_.  And it's
+But when you use the words that way, you are not making an _Apology_. And it's
 useful to distinguish between these uses of "I'm sorry" andactual Apologies.
 
 # Apologies and non-Apologies
@@ -76,7 +76,7 @@ dissonance.
 
 But in relationships with mutual care and respect and compassion, it should make
 sense that you shouldn't be obliged to Apologize if you don't agree that you did
-anything wrong.  When you feel pressed to apologize, your first instinct should
+anything wrong. When you feel pressed to apologize, your first instinct should
 be to ask what you did wrong, and if there are different viewpoints, have a
 conversation.
 

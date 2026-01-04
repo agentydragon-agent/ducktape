@@ -70,13 +70,13 @@ This is acceptable for direct execution but becomes pathological in pytest's con
 
 ### Environment-Specific Behavior
 
-| Context | FastMCP Import Time | EnhancedFastMCP Creation | Total Time |
-|---------|---------------------|--------------------------|------------|
-| Non-Nix venv | Fast | 0.003s | 0.003s |
-| Direct Python (Nix) | 1.1s | Fast | ~1.1s |
-| pytest single test (Nix) | 2.2s | 0.002s | 2.65s |
-| pytest -n4 single test (Nix) | ~2-3s | Fast | 3.25s |
-| pytest full suite (Nix) | ??? | **30s+ timeout** | **FAILS** |
+| Context                      | FastMCP Import Time | EnhancedFastMCP Creation | Total Time |
+| ---------------------------- | ------------------- | ------------------------ | ---------- |
+| Non-Nix venv                 | Fast                | 0.003s                   | 0.003s     |
+| Direct Python (Nix)          | 1.1s                | Fast                     | ~1.1s      |
+| pytest single test (Nix)     | 2.2s                | 0.002s                   | 2.65s      |
+| pytest -n4 single test (Nix) | ~2-3s               | Fast                     | 3.25s      |
+| pytest full suite (Nix)      | ???                 | **30s+ timeout**         | **FAILS**  |
 
 ### sys.path Differences
 

@@ -131,7 +131,7 @@ Complete the original hybrid vision with all services.
 ### Future Services (Lower Priority)
 
 - [ ] Jellyfin (media streaming)
-- [ ] *arr stack (media automation)
+- [ ] \*arr stack (media automation)
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache
@@ -182,11 +182,13 @@ Complete the original hybrid vision with all services.
 **Decision**: Use DNS name instead of single VPS IP for kubeconfig
 
 **Target**:
+
 ```yaml
 server: https://api.test-cluster.agentydragon.com:6443
 ```
 
 **Implementation**:
+
 - `api.test-cluster.agentydragon.com` → both VPS IPs (5.78.43.147, 5.78.106.249)
 - DNS round-robin provides client-side failover
 - Created by external-dns from Ingress annotation or manual DNS record
@@ -198,6 +200,7 @@ server: https://api.test-cluster.agentydragon.com:6443
 **Decision**: Run HA PowerDNS on both VPS nodes with MariaDB Galera using local storage
 
 **Architecture**:
+
 ```
 VPS0                         VPS1
 ├── local-path PVC           ├── local-path PVC
@@ -207,6 +210,7 @@ VPS0                         VPS1
 ```
 
 **Benefits**:
+
 - ❌ No AXFR complexity (same database = same data)
 - ❌ No VPS standalone PowerDNS container needed
 - ✅ True active-active DNS
@@ -214,10 +218,12 @@ VPS0                         VPS1
 - ✅ No Hetzner Volume cost (uses VPS NVMe)
 
 **DNS records**:
+
 - `ns1.agentydragon.com` → VPS0 IP
 - `ns2.agentydragon.com` → VPS1 IP
 
 **Node placement**:
+
 - `local-path-provisioner` on VPS nodes
 - MariaDB Galera StatefulSet with `podAntiAffinity` (one pod per VPS)
 - PowerDNS DaemonSet or Deployment with VPS node affinity
@@ -229,6 +235,7 @@ VPS0                         VPS1
 **Decision**: Add VPS controllers to Headscale mesh for additional connectivity options
 
 **Benefits**:
+
 - Backup path to API if public IP is blocked
 - Tailscale MagicDNS as alternative to public DNS
 - Unified management with other Headscale nodes
@@ -258,16 +265,16 @@ VPS0                         VPS1
 - Harbor registry + PostgreSQL (100GB+)
 - Gitea + PostgreSQL (50GB+)
 - Loki log storage (100GB+)
-- Media services (Jellyfin, *arr stack)
+- Media services (Jellyfin, \*arr stack)
 - Nix cache (100GB+)
 - Be generous with allocations - storage is "free" from ZFS pool
 
 **Service Placement**:
 
-| Location | Services | Rationale |
-|----------|----------|-----------|
-| VPS | Vault, Authentik, Ingress, DNS, cert-manager | Always-on, critical path |
-| Home | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
+| Location | Services                                       | Rationale                            |
+| -------- | ---------------------------------------------- | ------------------------------------ |
+| VPS      | Vault, Authentik, Ingress, DNS, cert-manager   | Always-on, critical path             |
+| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
 
 **Shared PostgreSQL Pattern**:
 

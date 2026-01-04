@@ -10,6 +10,7 @@ Session hooks and Bazel proxy for Claude Code web environments.
 ## Session Start Hook
 
 The hook runs at the start of each Claude Code web session and:
+
 1. Starts a local auth proxy for Bazel BCR access
 2. Extracts TLS inspection CA certificates
 3. Creates Java truststores
@@ -38,6 +39,7 @@ A local proxy that adds authentication headers for upstream TLS-inspecting proxi
 ### The Solution
 
 This local proxy acts as an authentication intermediary:
+
 - Accepts unauthenticated CONNECT requests from Bazel on `localhost:18081`
 - Forwards them to the upstream proxy with proper `Proxy-Authorization: Basic` headers
 - Handles credential refresh when JWTs are rotated (reads from file on each connection)
@@ -121,10 +123,12 @@ cat ~/.cache/bazel-proxy/proxy.log
 ## Files
 
 Runtime files (in `~/.cache/bazel-proxy/`):
+
 - `proxy.pid` - Process ID file
 - `proxy.log` - Proxy output log (when daemonized)
 
 Setup files (created by `bazel_proxy_setup.py`):
+
 - `anthropic_ca.pem` - Extracted TLS inspection CA
 - `cacerts.jks` - Java truststore with CA
 - `bazelrc` - Proxy startup options
@@ -152,6 +156,7 @@ lock(
 ```
 
 **Root cause**: In `python/uv/private/lock.bzl`:
+
 ```starlark
 ctx.actions.run_shell(
     ...

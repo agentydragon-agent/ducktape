@@ -83,8 +83,8 @@ services:
   powerdns:
     image: powerdns/pdns-auth-master:latest
     container_name: powerdns
-    network_mode: host  # Use host networking for Tailscale AXFR zone transfers
-    user: root  # Required to bind to privileged port 53 with host networking
+    network_mode: host # Use host networking for Tailscale AXFR zone transfers
+    user: root # Required to bind to privileged port 53 with host networking
     volumes:
       - ./sqlite-data:/var/lib/powerdns
       - ./config/pdns.conf:/etc/powerdns/pdns.conf:ro
@@ -201,9 +201,9 @@ podAnnotations:
 
 powerdns:
   config:
-    allow-axfr-ips: "10.0.0.0/8,100.64.0.3"  # Allow cluster + VPS Tailscale IP
+    allow-axfr-ips: "10.0.0.0/8,100.64.0.3" # Allow cluster + VPS Tailscale IP
     disable-axfr: "no"
-    also-notify: "100.64.0.3"  # VPS Tailscale IP
+    also-notify: "100.64.0.3" # VPS Tailscale IP
 ```
 
 **LoadBalancer VIP:** 10.0.3.3:53 (MetalLB)

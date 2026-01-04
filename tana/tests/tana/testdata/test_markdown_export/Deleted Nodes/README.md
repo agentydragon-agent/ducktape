@@ -9,7 +9,7 @@ Deleted Nodes _(When a node is deleted, it is moved here)_
 - **Attribute**
 - **Attri**
 - #recipe
-- ****:
+- \*\*\*\*:
 - @#recipe
 - @#recipe
 - @perfect

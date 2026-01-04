@@ -124,7 +124,7 @@ def handle(x: Bar | Baz | Quux) -> str:
   ```yaml
   # ~/.config/program/config.yaml
   active_plugins:
-  - module_name:plugin_has_no_references_in_python
+    - module_name:plugin_has_no_references_in_python
   ```
 
 - Temporary compatibility shims may remain while a migration is in progress, with an owner and removal date

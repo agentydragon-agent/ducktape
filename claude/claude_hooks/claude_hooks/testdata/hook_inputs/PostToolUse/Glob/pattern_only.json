@@ -8,10 +8,7 @@
     "pattern": "*.md"
   },
   "tool_response": {
-    "filenames": [
-      "/Users/user/test/README.md",
-      "/Users/user/test/CLAUDE.md"
-    ],
+    "filenames": ["/Users/user/test/README.md", "/Users/user/test/CLAUDE.md"],
     "durationMs": 7,
     "numFiles": 2,
     "truncated": false

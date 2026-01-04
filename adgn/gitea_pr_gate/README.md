@@ -8,7 +8,7 @@ Purpose
 What this includes
 
 - nginx/gitea_pr_gate.conf: Nginx server config that allows only specific state-changing endpoints and blocks PR creation endpoints.
-- hooks/pre-receive-deny-refs-for: Pre-receive hook to reject pushes to refs/for/* (AGit PR flow).
+- hooks/pre-receive-deny-refs-for: Pre-receive hook to reject pushes to refs/for/\* (AGit PR flow).
 - policy_server_fastapi.py: FastAPI-based policy server (recommended) for per-user PR quota.
 
 Requirements

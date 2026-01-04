@@ -207,15 +207,15 @@ class BootstrapStub:
 
 ## Comparison Matrix
 
-| Feature | Current | Plan A (Generic) | Plan B (Typed) |
-|---------|---------|------------------|----------------|
-| **Server name literals** | ❌ Yes | ⚠️ Yes (stub creation) | ⚠️ Yes (stub creation) |
-| **Tool name literals** | ❌ Yes | ✅ No | ✅ No |
-| **IDE autocomplete (tools)** | ❌ No | ❌ No | ✅ Yes |
-| **Type safety (payloads)** | ✅ Yes | ✅ Yes | ✅ Yes |
-| **Implementation complexity** | Simple | Simple | Moderate |
-| **Maintenance burden** | Low | Low | High |
-| **Refactor safety** | Low | Moderate | High |
+| Feature                       | Current | Plan A (Generic)       | Plan B (Typed)         |
+| ----------------------------- | ------- | ---------------------- | ---------------------- |
+| **Server name literals**      | ❌ Yes  | ⚠️ Yes (stub creation) | ⚠️ Yes (stub creation) |
+| **Tool name literals**        | ❌ Yes  | ✅ No                  | ✅ No                  |
+| **IDE autocomplete (tools)**  | ❌ No   | ❌ No                  | ✅ Yes                 |
+| **Type safety (payloads)**    | ✅ Yes  | ✅ Yes                 | ✅ Yes                 |
+| **Implementation complexity** | Simple  | Simple                 | Moderate               |
+| **Maintenance burden**        | Low     | Low                    | High                   |
+| **Refactor safety**           | Low     | Moderate               | High                   |
 
 ## Recommendation
 

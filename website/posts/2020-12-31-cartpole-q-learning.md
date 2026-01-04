@@ -62,7 +62,7 @@ for the Q network to learn would have a high variance. But I forgot that the
 environment had only like ~500 steps, so setting $\gamma=1$ would be alright
 in this case.
 
-*Lesson learned*: I need to keep in mind the environment's characteristics, in
+_Lesson learned_: I need to keep in mind the environment's characteristics, in
 particular how long are the episodes and how high total rewards can I expect.
 
 ## Rai's ML mistake #2: Too little exploration
@@ -75,7 +75,7 @@ random moves.
 Looking at some solutions of the environment that I found, they had much higher
 exploration rates. Some that I saw had 100% random actions initially, and had
 it then decay. And the particular solution I was looking at set the minimal
-exploration rate, after all the decay, to *10%* - 5x more than I had.
+exploration rate, after all the decay, to _10%_ - 5x more than I had.
 
 I think my code found a policy that "solves" the environment faster when I put
 in 10% exploration.
@@ -106,7 +106,7 @@ update per evaluation episode.
 **Lesson learned**: Double check my code? Maybe even test my code? Not sure
 how to learn from this :/
 
-## *Forgetting when learned too much‽‽*
+## _Forgetting when learned too much‽‽_
 
 <figure>
 <img src="/static/2020-12-31-total_reward.svg" style="height: 400px;"

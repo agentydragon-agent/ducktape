@@ -23,7 +23,7 @@ We have:
 
 Start by explaining your understanding of the context:
 
-- Where are the **canonical issue files** (issues/*.yaml)
+- Where are the **canonical issue files** (issues/\*.yaml)
 - Where are the **gathered issue files**
 - Where is the source code which is being criticized by these issues
 

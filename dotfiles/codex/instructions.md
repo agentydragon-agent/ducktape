@@ -50,6 +50,7 @@
         <ref href="~/.claude/commands/backtrace.md"/>
       </context-dumping>
     </note-taking-style>
+
   </persona>
 
   <section id="work-patterns" title="Work Patterns in Action">
@@ -284,9 +285,9 @@ Use allowDangerous: true in the MCP params
 
 ```javascript
 await mcp__puppeteer__puppeteer_navigate({
-  url: 'https://example.com',
-  allowDangerous: true  // THIS IS REQUIRED!
-})
+  url: "https://example.com",
+  allowDangerous: true, // THIS IS REQUIRED!
+});
 ```
 
 ## Why It Works
@@ -298,9 +299,9 @@ The MCP server needs special Chrome flags
 - Tested 5 times in a row
 - Works on: Ubuntu 22.04, Node 18.x
 - Chrome version: 120.0.6099.109
-          </content>
-        </write>
-      </example>
+  </content>
+  </write>
+  </example>
     </section>
 
     <section id="rabbit-hole-escape" title="The Rabbit Hole Escape Hatch">
@@ -356,10 +357,11 @@ The MCP server needs special Chrome flags
 
 U: todo fix the unicode handling
 A: Added "fix the unicode handling" to todo list.
-   <todo-write todo="fix the unicode handling" />
-   Continuing with fixing the unicode handling...
+<todo-write todo="fix the unicode handling" />
+Continuing with fixing the unicode handling...
 ]]></example>
-    <note>Use U:/A:/T: prefixes or <![CDATA[<u>/<a>/<t>]]> tags for user/assistant/tool messages</note>
+<note>Use U:/A:/T: prefixes or <![CDATA[<u>/<a>/<t>]]> tags for user/assistant/tool messages</note>
+
   </section>
 
   <section id="tool-format" title="Tool Format Conventions">
@@ -466,6 +468,7 @@ A: Added "fix the unicode handling" to todo list.
         - Success patterns → Amplification
       </application>
     </rule>
+
   </rules>
 
   <section id="triggers" title="Behavioral Triggers">
@@ -594,6 +597,7 @@ A: Added "fix the unicode handling" to todo list.
       - **Not in**: Individual project repositories
       - This ensures tools are reusable across all projects and properly maintained in one location
     </section>
+
   </ducktape>
 
   <core-principles>
@@ -621,6 +625,7 @@ A: Added "fix the unicode handling" to todo list.
         <li>Timestamp everything</li>
       </ul>
     </principle>
+
   </core-principles>
 
   <patterns>
@@ -684,6 +689,7 @@ A: Added "fix the unicode handling" to todo list.
       </section>
 
       <template title="Action Template">
+
 I've detected workspace chaos:
 
 - [Pattern 1]: [2-3 concrete examples]
@@ -693,7 +699,7 @@ This will impede our work. Should I:
 A) Analyze and propose reorganization?
 B) Work within current structure?
 C) Create isolated clean workspace?
-      </template>
+</template>
 
       <principle>Order enables velocity. Chaos ensures failure.</principle>
     </pattern>
@@ -1124,8 +1130,9 @@ C) Create isolated clean workspace?
       <example title="Organization Example">
         <found>temp1.py, temp2.py, test_auth.py, debug_webhook.js</found>
         <action>
+
 mkdir experiments/2024-01-15-auth-debugging/
-mv temp*.py test_auth.py experiments/2024-01-15-auth-debugging/
+mv temp\*.py test_auth.py experiments/2024-01-15-auth-debugging/
 echo "# Auth Debugging Session 2024-01-15
 
 Created while debugging Firebase auth issues.
@@ -1136,8 +1143,8 @@ Created while debugging Firebase auth issues.
 
 Context: Working on issue #123, branch: fix-auth
 Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth-debugging/README.md
-        </action>
-      </example>
+</action>
+</example>
 
       <section title="Cleanup Triggers">
         <ul>
@@ -1212,6 +1219,7 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
         <example>"Clients are marked as failed in the `connectToServer` function in src/services/process.ts:712."</example>
       </section>
     </pattern>
+
   </patterns>
 
   <section id="/task-tool" title="Task Tool Critical Behavior and Best Practices">
@@ -1498,6 +1506,7 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
         </tool-call>
       </example>
     </example-parallelization>
+
   </section>
 
   <critical-rules>
@@ -1591,6 +1600,7 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
     <rule id="/code/ast-only-manipulation" priority="12" critical="true">
       <ref href="#/code-style" />
     </rule>
+
   </critical-rules>
 
   <special-modes>
@@ -1665,6 +1675,7 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
       <clear-action>Create self-validating class</clear-action>
       <clear-benefit>Type safety, no validation functions</clear-benefit>
     </example>
+
   </section>
 
   <learning-persistence>
@@ -1676,6 +1687,7 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
 
     <when-stuck>claude-search-learnings "problem description" 5</when-stuck>
     <when-helped>claude-learning-vote &lt;filename&gt; +1</when-helped>
+
   </learning-persistence>
 
   <session-protocol>
@@ -1699,6 +1711,7 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
       <action>Propose CLAUDE.md improvements</action>
       <action>Graduate patterns: project→global</action>
     </end>
+
   </session-protocol>
 
   <section id="compression-examples" title="Compression Examples">
@@ -1757,6 +1770,7 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
         <a>Checking repo-root/src/main.py...</a>
       </example>
     </pattern>
+
   </git-patterns>
 
   <architecture-sanity>
@@ -1802,11 +1816,11 @@ Outcome: Discovered tokens expire in 1hr not 24hr" > experiments/2024-01-15-auth
 - Fix any type errors
 
 Starting with the build...</a>
-      <a>Found 10 type errors. Adding each to todo list...</a>
-      <a>Marking first error as in_progress...</a>
-      <a>Fixed! Marking completed, moving to next...</a>
-    </example>
-  </task-management>
+<a>Found 10 type errors. Adding each to todo list...</a>
+<a>Marking first error as in_progress...</a>
+<a>Fixed! Marking completed, moving to next...</a>
+</example>
+</task-management>
 
   <doing-tasks>
     <steps>
@@ -1847,6 +1861,7 @@ Starting with the build...</a>
     <when-done>
       <ref href="#/file-organization" />
     </when-done>
+
   </quick-reference>
 
   <why-this-works>
@@ -1915,17 +1930,18 @@ Starting with the build...</a>
       <user-global>`~/.claude/settings.json` under `mcpServers` section</user-global>
       <example>
         <code language="json">
+
 {
-  "mcpServers": {
-    "filesystem": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/allowed-dir"]
-    }
-  }
+"mcpServers": {
+"filesystem": {
+"type": "stdio",
+"command": "npx",
+"args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/allowed-dir"]
 }
-        </code>
-      </example>
+}
+}
+</code>
+</example>
 
       <practical-examples>
         <example>
@@ -1947,7 +1963,7 @@ brave-search        user     npx -y @mcp-use/brave-search</t>
 </tool-call>
 
 The puppeteer MCP server has been removed from the project configuration.</a>
-        </example>
+</example>
 
         <example>
           <u>add filesystem MCP with access to /data directory only</u>
@@ -1958,7 +1974,7 @@ The puppeteer MCP server has been removed from the project configuration.</a>
 </tool-call>
 
 Added filesystem-data MCP server with access limited to /data directory. This is saved in the project's .mcp.json file.</a>
-        </example>
+</example>
 
         <example>
           <u>make brave-search MCP available only in this project</u>
@@ -1976,9 +1992,9 @@ Added filesystem-data MCP server with access limited to /data directory. This is
 </tool-call>
 
 The brave-search MCP is now project-specific and stored in .mcp.json.</a>
-        </example>
-      </practical-examples>
-    </mcp-servers>
+</example>
+</practical-examples>
+</mcp-servers>
 
     <tool-permissions>
       <title>Tool Permissions (Allow/Deny Patterns)</title>
@@ -1991,24 +2007,25 @@ The brave-search MCP is now project-specific and stored in .mcp.json.</a>
       </syntax>
       <example>
         <code language="json">
+
 {
-  "permissions": {
-    "allow": [
-      "Read",                    // All read operations
-      "Write(src/*)",           // Write only in src/
-      "Bash(pytest)",           // Only pytest command
-      "Bash(git commit:*)",     // Git commit with any message
-      "Edit"                    // File editing
-    ],
-    "deny": [
-      "Bash(rm:*)",            // Block rm commands
-      "WebFetch",              // Block web fetching
-      "Bash(curl:*)"           // Block curl
-    ]
-  }
+"permissions": {
+"allow": [
+"Read", // All read operations
+"Write(src/*)", // Write only in src/
+"Bash(pytest)", // Only pytest command
+"Bash(git commit:*)", // Git commit with any message
+"Edit" // File editing
+],
+"deny": [
+"Bash(rm:*)", // Block rm commands
+"WebFetch", // Block web fetching
+"Bash(curl:*)" // Block curl
+]
 }
-        </code>
-      </example>
+}
+</code>
+</example>
 
       <practical-examples>
         <title>How Claude Uses This Knowledge</title>
@@ -2149,10 +2166,11 @@ The brave-search MCP is now project-specific and stored in .mcp.json.</a>
     - Settings: https://docs.anthropic.com/en/docs/claude-code/settings
     - MCP: https://docs.anthropic.com/en/docs/claude-code/mcp
     - SDK: https://docs.anthropic.com/en/docs/claude-code/sdk
+
   </claude-code-configuration>
 
-  Remember: Fewer tokens, more impact. Compress learned patterns into symbols.
-  This file should shrink over time as patterns become more efficient.
+Remember: Fewer tokens, more impact. Compress learned patterns into symbols.
+This file should shrink over time as patterns become more efficient.
 
-  The core loop: Check memory → Try simple solutions → Document everything → Clean up after.
+The core loop: Check memory → Try simple solutions → Document everything → Clean up after.
 </claude-instructions>

@@ -23,7 +23,7 @@ Standard PostgreSQL environment variables are set:
 - `PGUSER` — Your temporary username (pattern: `agent_{run_id}`)
 - `PGPASSWORD` — Your temporary password
 
-Connect with psql (uses PG* vars automatically):
+Connect with psql (uses PG\* vars automatically):
 
 ```bash
 psql -c "SELECT current_agent_run_id()"
@@ -67,43 +67,43 @@ Run `\d+ table_name` before writing queries to understand the schema.
 
 ### Critic
 
-| Table | SELECT | INSERT | UPDATE |
-|-------|--------|--------|--------|
-| reported_issues | Own run | Own run | Own run |
-| reported_issue_occurrences | Own run | Own run | Own run |
-| examples | Current example | - | - |
-| true_positives | - | - | - |
-| false_positives | - | - | - |
+| Table                      | SELECT          | INSERT  | UPDATE  |
+| -------------------------- | --------------- | ------- | ------- |
+| reported_issues            | Own run         | Own run | Own run |
+| reported_issue_occurrences | Own run         | Own run | Own run |
+| examples                   | Current example | -       | -       |
+| true_positives             | -               | -       | -       |
+| false_positives            | -               | -       | -       |
 
 **Note:** Critics have NO access to ground truth (TPs/FPs) — blind review.
 
 ### Grader
 
-| Table | SELECT | INSERT | UPDATE |
-|-------|--------|--------|--------|
-| grading_edges | Own run | Own run | Own run |
-| reported_issues | Graded critic run | - | - |
-| reported_issue_occurrences | Graded critic run | - | - |
-| true_positives | Graded snapshot | - | - |
-| true_positive_occurrences | Graded snapshot | - | - |
-| false_positives | Graded snapshot | - | - |
-| false_positive_occurrences | Graded snapshot | - | - |
-| critic_scopes_expected_to_recall | Graded snapshot | - | - |
+| Table                            | SELECT            | INSERT  | UPDATE  |
+| -------------------------------- | ----------------- | ------- | ------- |
+| grading_edges                    | Own run           | Own run | Own run |
+| reported_issues                  | Graded critic run | -       | -       |
+| reported_issue_occurrences       | Graded critic run | -       | -       |
+| true_positives                   | Graded snapshot   | -       | -       |
+| true_positive_occurrences        | Graded snapshot   | -       | -       |
+| false_positives                  | Graded snapshot   | -       | -       |
+| false_positive_occurrences       | Graded snapshot   | -       | -       |
+| critic_scopes_expected_to_recall | Graded snapshot   | -       | -       |
 
 **Note:** Graders see ground truth for the snapshot being graded only.
 
 ### Prompt Optimizer / Improvement
 
-| Table | SELECT | INSERT | UPDATE |
-|-------|--------|--------|--------|
-| examples | TRAIN split only* | - | - |
-| true_positives | TRAIN split | - | - |
-| true_positive_occurrences | TRAIN split | - | - |
-| false_positives | TRAIN split | - | - |
-| false_positive_occurrences | TRAIN split | - | - |
-| critic_scopes_expected_to_recall | TRAIN split | - | - |
-| critic_runs | TRAIN split | - | - |
-| grader_runs | TRAIN split | - | - |
-| recall_by_definition_split_kind | All splits (view) | - | - |
+| Table                            | SELECT             | INSERT | UPDATE |
+| -------------------------------- | ------------------ | ------ | ------ |
+| examples                         | TRAIN split only\* | -      | -      |
+| true_positives                   | TRAIN split        | -      | -      |
+| true_positive_occurrences        | TRAIN split        | -      | -      |
+| false_positives                  | TRAIN split        | -      | -      |
+| false_positive_occurrences       | TRAIN split        | -      | -      |
+| critic_scopes_expected_to_recall | TRAIN split        | -      | -      |
+| critic_runs                      | TRAIN split        | -      | -      |
+| grader_runs                      | TRAIN split        | -      | -      |
+| recall_by_definition_split_kind  | All splits (view)  | -      | -      |
 
-*VALID/TEST access restricted to prevent overfitting. See `db/evaluation_flow.md.j2` for details.
+\*VALID/TEST access restricted to prevent overfitting. See `db/evaluation_flow.md.j2` for details.

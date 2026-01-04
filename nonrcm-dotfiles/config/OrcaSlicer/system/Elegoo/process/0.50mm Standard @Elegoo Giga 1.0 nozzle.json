@@ -20,7 +20,5 @@
   "outer_wall_speed": "80",
   "sparse_infill_speed": "150",
   "print_flow_ratio": "1.0",
-  "compatible_printers": [
-    "Elegoo OrangeStorm Giga 1.0 nozzle"
-  ]
+  "compatible_printers": ["Elegoo OrangeStorm Giga 1.0 nozzle"]
 }

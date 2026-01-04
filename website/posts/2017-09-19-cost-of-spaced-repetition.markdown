@@ -46,21 +46,21 @@ Read on for how I came up with that.
 
 I will simplify Anki's algorithm to make the estimate. Let's assume:
 
-* A single review takes r = 6 seconds.
+- A single review takes r = 6 seconds.
   As of today, I have done on average 542.1 reviews per day and studied
   on average 54.7 minutes per day, so it works out to about 6 seconds
   per review.
-* It takes l = 4 reviews to get a card from "learning" to "young" (i.e.,
+- It takes l = 4 reviews to get a card from "learning" to "young" (i.e.,
   from "I have not seen this card or I forgot it" to "I am reviewing it,
   starting with an interval of 1 day"). I have pulled the number 4 out
   of my hat.
-* If a card is "young" (i.e., its interval is less than 21 days), I have
+- If a card is "young" (i.e., its interval is less than 21 days), I have
   a 16% chance of getting it wrong and resetting its interval to 1 day
   (p<sub>1</sub> = 0.16). 16% is from my Anki statistics.
-* If a card is "mature" (i.e., its interval is more than 21 days),
+- If a card is "mature" (i.e., its interval is more than 21 days),
   I have only a 10% chance of getting it wrong
   (p<sub>2</sub> = 0.1).
-* Card intervals multiply by 2 if I get the card right, or drop back to
+- Card intervals multiply by 2 if I get the card right, or drop back to
   1 day.
 
 I want to know how much review time will a card cost me over the next
@@ -294,10 +294,10 @@ reviewing the card. I trust this result more than I trust my previous hacky math
 At this point, I was thinking about to declare "victory, it's about 0.43 seconds
 per day, and let me now also say why exactly the number is bullshit":
 
-* Anki actually doesn't use a constant interval multiplier of 2; it uses 2.5
+- Anki actually doesn't use a constant interval multiplier of 2; it uses 2.5
   by default, and it also adjusts the interval as it goes.
-* You can also answer cards as "Easy", which makes the interval even bigger.
-* The estimate of "it takes 4 tries to learn a new card" was totally made up.
+- You can also answer cards as "Easy", which makes the interval even bigger.
+- The estimate of "it takes 4 tries to learn a new card" was totally made up.
 
 And then I realized I can actually fix the last point, and that it's probably also
 the most significant problem - most of the time spend on a given card will be
@@ -337,8 +337,8 @@ This means **0.69 seconds per day** in the first year, and a total of
 
 <h2>Corollaries</h2>
 
-* Learning a new keyboard shortcut is worth it if it will save me
+- Learning a new keyboard shortcut is worth it if it will save me
   0.7 seconds per day over the following year. (Or 250 seconds in total).
-* My German deck, which has 26 241 cards, would take roughly a whooping
+- My German deck, which has 26 241 cards, would take roughly a whooping
   **1822 hours** over the next year. That's a full **227 workdays**.
-* Rai has an Anki problem.
+- Rai has an Anki problem.

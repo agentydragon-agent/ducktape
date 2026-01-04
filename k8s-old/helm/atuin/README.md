@@ -11,15 +11,15 @@ Helm packaging for the Atuin shell history sync server plus its PostgreSQL backi
 
 ## Values Overview
 
-| Key | Description |
-| --- | --- |
-| `image.*` | Container image details for the Atuin server |
-| `service.port` | Port the HTTP service exposes |
-| `nodePortService.*` | Controls creation of the NodePort service |
-| `ingress.*` | Standard ingress configuration |
-| `postgres.*` | PostgreSQL image, storage, and resource settings |
-| `secrets.postgres.*` | Secret naming and optional SealedSecret payload |
-| `config.serverToml` | Override for the default `server.toml` |
+| Key                  | Description                                      |
+| -------------------- | ------------------------------------------------ |
+| `image.*`            | Container image details for the Atuin server     |
+| `service.port`       | Port the HTTP service exposes                    |
+| `nodePortService.*`  | Controls creation of the NodePort service        |
+| `ingress.*`          | Standard ingress configuration                   |
+| `postgres.*`         | PostgreSQL image, storage, and resource settings |
+| `secrets.postgres.*` | Secret naming and optional SealedSecret payload  |
+| `config.serverToml`  | Override for the default `server.toml`           |
 
 See `values.yaml` for full details.
 

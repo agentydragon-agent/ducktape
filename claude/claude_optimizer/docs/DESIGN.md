@@ -34,7 +34,7 @@ The Claude Instruction Optimizer uses a **per-task Docker image** approach with 
 
 ```yaml
 - id: my_task
-  dependencies: ["python-data"]  # Determines base Docker layer
+  dependencies: ["python-data"] # Determines base Docker layer
   internet_needed: false
   allowed_tools: ["Read", "Write", "Bash"]
 ```

@@ -129,10 +129,12 @@ Based on the findings, create an actionable plan for addressing the most importa
 # Code Review Findings
 
 ## Executive Summary
+
 Overall summary of codebase health, recommended important issues to address if any,
 recommendations for addressing them.
 
 ## Critical Issues (Must Fix)
+
 1. **[Component] Issue Title**
    - Description: What's wrong
    - Impact: Why it matters
@@ -141,15 +143,19 @@ recommendations for addressing them.
    - Example: Before/after code if applicable
 
 ## High Priority Improvements
+
 [Similar structure]
 
 ## Medium Priority Suggestions
+
 [Similar structure]
 
 ## Low Priority / Style Issues
+
 [Similar structure]
 
 ## Architectural Concerns & Open Questions
+
 Issues that are clearly problematic but lack obvious solutions:
 
 1. **[Component] Ambiguous Design Issue**
@@ -162,6 +168,7 @@ Issues that are clearly problematic but lack obvious solutions:
    - Needs input on: What decisions/clarifications are needed
 
 ## Legacy & Technical Debt Notes
+
 Document constraints that explain seemingly poor design choices:
 
 - **[Component] Legacy Constraint**: "This API design is convoluted but must be maintained for backward compatibility with X system"
@@ -169,9 +176,9 @@ Document constraints that explain seemingly poor design choices:
 - **[Architecture] Migration in Progress**: "Old and new patterns coexist because migration from A to B is 60% complete"
 
 ## Positive Findings
+
 - Well-implemented patterns worth highlighting
 - Good practices to propagate elsewhere
-
 ```
 
 ### Actionable Recommendations

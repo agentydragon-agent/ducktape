@@ -4,8 +4,8 @@ title: My Anki patterns
 
 I’ve used Anki for ~3 years, have 37k cards and did 0.5M reviews. I have learned
 some useful heuristics for using it effectively. I’ll borrow software
-engineering terminology and call heuristics for “what’s good” *patterns*
-and heuristics for “what’s bad” *antipatterns*. Cards with antipatterns are
+engineering terminology and call heuristics for “what’s good” _patterns_
+and heuristics for “what’s bad” _antipatterns_. Cards with antipatterns are
 unnecessarily difficult to learn. I will first go over antipatterns I have
 noticed, and then share patterns I use, mostly to counteract the antipatterns.
 I will then throw in a grab-bag of things I’ve found useful to learn with Anki,
@@ -21,7 +21,7 @@ likely reinventing other wheels from it.
 ## Interference
 
 Interference occurs when trying to learn two cards together is harder than
-learning just one of them - one card *interferes*&nbsp;with learning another
+learning just one of them - one card _interferes_&nbsp;with learning another
 one. For example, when learning languages, I often confuse words which rhyme
 together or have a similar meaning (e.g., “vergeblich” and “erheblich” in
 German).
@@ -92,25 +92,25 @@ task.
 
 The way I do this is:
 
-* I have a **big document** titled “Anki” with a structure mirroring my Anki
+- I have a **big document** titled “Anki” with a structure mirroring my Anki
   deck hierarchy, with a list of problems for each deck.
   Unfortunately, adding things to a Google Doc on Android takes annoyingly many
   taps.
-* So I also use **Google Keep**, which is more ergonomic, to store short notes
+- So I also use **Google Keep**, which is more ergonomic, to store short notes
   marking a problem I notice. For example: “great can be großartig/gewaltig”.
   I move these to the doc later.
-* I also use Anki’s note marking feature to note minor issues such as bad
+- I also use Anki’s note marking feature to note minor issues such as bad
   formatting of a card. I use Anki’s card browser later (with a “tag:marked”
   search) to fix those.
 
 I use the same system also for tracking what information I’d like to put into
 Anki at some point. (This mirrors the idea from the Getting Things Done theory
-that *your TODO list belong outside your mind*.)
+that _your TODO list belong outside your mind_.)
 
 ## Disambiguators
 
-*2020-06-01 update: In an earlier version, I used to call those "distinguishers".
-I now call them "disambiguators", because I think it's a more appropriate name.*
+_2020-06-01 update: In an earlier version, I used to call those "distinguishers".
+I now call them "disambiguators", because I think it's a more appropriate name._
 
 Disambiguators are one way I fight interference. They are **cards that teach
 disambiguating interfering facts**.
@@ -130,7 +130,7 @@ For example, like this:
 
 This creates two cards: one that asks me to assign the right English meaning to
 the German words, and another one that shows me two English words and the common
-parts of the German words (“\_r\_eblich”) and asks me to correctly fill in the
+parts of the German words (“\_r_eblich”) and asks me to correctly fill in the
 blanks.
 
 This sometimes fixes interference. When I learn the disambiguator note and later
@@ -179,26 +179,26 @@ Most of my early notes were just front-back and back-front cards. Clozes are
 often a much better choice, because they make entering the context and expected
 response more natural, in situations such as:
 
-* Fill in the missing step in this algorithm
-* Complete the missing term in this equation
-* Correctly conjugate this verb in this sentence
-* In a line of code such as `matplotlib.pyplot.bar(x, y, color='r')`, you
+- Fill in the missing step in this algorithm
+- Complete the missing term in this equation
+- Correctly conjugate this verb in this sentence
+- In a line of code such as `matplotlib.pyplot.bar(x, y, color='r')`, you
   can cloze out the name of the function, its parameters, and the effect it
   has.
 
 ## Datasets I found useful
 
-* Shortcut keys for every program I use frequently.
-  * G Suite (Docs, Sheets, Keep, etc.)
-  * Google Colab
-  * Vim, Vimdiff
-  * Command-line programs (Git, Bash, etc.)
-* Programming languages and libraries
-  * Google's technologies that have an open-source counterpart
-  * What’s the name of a useful function
-  * What are its parameters
-* Unicode symbols (how to write 🐉, ←, ...)
-* People: first and last name ↔ photo (I am not good with names)
-* English terms (spelling of “curriculum”, what is “cupidity”)
-* NATO phonetic alphabet, for spelling things over the phone
-* Mathematics (learned for fun), computer science
+- Shortcut keys for every program I use frequently.
+  - G Suite (Docs, Sheets, Keep, etc.)
+  - Google Colab
+  - Vim, Vimdiff
+  - Command-line programs (Git, Bash, etc.)
+- Programming languages and libraries
+  - Google's technologies that have an open-source counterpart
+  - What’s the name of a useful function
+  - What are its parameters
+- Unicode symbols (how to write 🐉, ←, ...)
+- People: first and last name ↔ photo (I am not good with names)
+- English terms (spelling of “curriculum”, what is “cupidity”)
+- NATO phonetic alphabet, for spelling things over the phone
+- Mathematics (learned for fun), computer science

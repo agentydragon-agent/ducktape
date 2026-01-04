@@ -1,7 +1,11 @@
-{# Shared table of entity history #}
-{% if history %}
+{# Shared table of entity history #} {% if history %}
 <table>
-  <thead><tr><th>Time</th><th>State</th></tr></thead>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>State</th>
+    </tr>
+  </thead>
   <tbody>
     {% for h in history %}
     <tr>

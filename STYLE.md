@@ -6,12 +6,12 @@ Style and convention rules for this repository. Package-specific elaborations be
 
 ### File Purposes
 
-| File | Purpose | Audience |
-|------|---------|----------|
-| README.md | Descriptions (what is this, how to run) | Humans and agents |
-| AGENTS.md | Transcludes README + agent-only prescriptions | LLM agents |
-| CLAUDE.md | Always just `@AGENTS.md` | Claude Code |
-| STYLE.md | Repository-wide style and convention rules | Everyone |
+| File      | Purpose                                       | Audience          |
+| --------- | --------------------------------------------- | ----------------- |
+| README.md | Descriptions (what is this, how to run)       | Humans and agents |
+| AGENTS.md | Transcludes README + agent-only prescriptions | LLM agents        |
+| CLAUDE.md | Always just `@AGENTS.md`                      | Claude Code       |
+| STYLE.md  | Repository-wide style and convention rules    | Everyone          |
 
 ### Rules
 
@@ -61,6 +61,7 @@ Style and convention rules for this repository. Package-specific elaborations be
   The fix is usually to let the exception propagate, or at minimum log a warning so the user knows something is wrong.
 
   **Exception**: Broad `except Exception:` is acceptable for cleanup-before-reraise patterns (like a context manager's `__exit__`). If you catch broadly, perform cleanup (rollback, close resource), then immediately `raise`, that's fine—no information is lost.
+
 - **Prefer exceptions over error lists**: Functions that validate or check preconditions should raise exceptions on failure, not return lists of errors. Exceptions provide immediate control flow, clear error types, and standard patterns for callers.
 - **Let exceptions propagate**: Self-explanatory exceptions with actionable messages should propagate to the existing error boundary (CLI wrapper, request handler, FastMCP tool handler) rather than being caught and reformatted at each call site. Define error boundaries once (e.g., in a CLI entry point or request middleware), not repeatedly throughout the code. FastMCP already converts unhandled exceptions to MCP errors with the exception message - use this pattern. Only catch exceptions when you need to transform them, add context, or handle them differently than the default boundary.
 - **Strict data mapping**: When parsing enums/typed values from persistence or inputs, do not ignore invalid values. Validate early or raise; do not `continue` on exceptions.
@@ -128,10 +129,12 @@ For references to local files in documentation:
 
 ```markdown
 # Good
+
 @docs/architecture.md
 See <docs/schema.md> for details.
 See the [architecture guide](docs/architecture.md) for details.
 
 # Bad - duplicates path
+
 See [docs/schema.md](docs/schema.md) for details.
 ```

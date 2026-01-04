@@ -53,8 +53,8 @@ location /hooks/ {
 
 All options are environment variables; sensible defaults are compiled in.
 
-| Variable            | Purpose                                        |
-|---------------------|------------------------------------------------|
+| Variable            | Purpose                                         |
+| ------------------- | ----------------------------------------------- |
 | `WEBHOOK_INBOX_KEY` | 44-char Fernet key for exporting encrypted logs |
 | `DB_PATH`           | Path to SQLite file (default: `events.db`)      |
 | `MAX_PAYLOAD`       | Bytes stored per request (default: 16384)       |
@@ -68,7 +68,7 @@ Each request is:
 
 1. Persisted in the `access_log` SQLite table (payload truncated to
    `MAX_PAYLOAD`).
-2. Emitted as a single **stdout line** *without* the request body so sensitive
+2. Emitted as a single **stdout line** _without_ the request body so sensitive
    data does not leave the container. Example:
 
 ```
@@ -78,5 +78,5 @@ Each request is:
 ## Health-check
 
 The Docker image defines a `HEALTHCHECK` that performs a simple GET on `/`.
-If it fails, Docker marks the container as *unhealthy* so your supervisor can
+If it fails, Docker marks the container as _unhealthy_ so your supervisor can
 restart it.

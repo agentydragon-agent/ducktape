@@ -16,11 +16,11 @@ Running
 
 1. Install dependencies and set credentials:
    - export OPENAI_API_KEY=...
-   - pip install -r requirements.txt   # if you use a local venv; the project already pins the OpenAI SDK in dev
+   - pip install -r requirements.txt # if you use a local venv; the project already pins the OpenAI SDK in dev
 2. Run the demo:
-   - python examples/stateless_two_step_demo.py text   # text-only demo
-   - python examples/stateless_two_step_demo.py tools  # tools demo (function_call + replayed tool outputs)
-   - python examples/stateless_two_step_demo.py both   # runs both demos
+   - python examples/stateless_two_step_demo.py text # text-only demo
+   - python examples/stateless_two_step_demo.py tools # tools demo (function_call + replayed tool outputs)
+   - python examples/stateless_two_step_demo.py both # runs both demos
 
 Design notes (brief)
 

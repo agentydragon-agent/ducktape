@@ -229,16 +229,16 @@ Stored in `agent_runs.type_config`. RLS uses `current_grader_snapshot_slug()` to
 
 #### G.8: Files Created/Modified
 
-| File | Purpose |
-|------|---------|
-| `grader/daemon.py` | `GraderDaemonScaffold` class |
-| `grader/daemon_manager.py` | `DaemonManager` for lifecycle + restart |
-| `grader/drift_handler.py` | `GraderDriftHandler` |
-| `grader/snapshot_grader_env.py` | `SnapshotGraderAgentEnvironment` |
-| `agent_registry.py` | `run_snapshot_grader()` method |
-| `cli/cmd_grader_agent.py` | Unified CLI with `--run` option |
-| `backend/app.py` | Lifespan auto-start via `DaemonManager` |
-| `db/models.py` | `GradingPending` ORM model for view |
+| File                            | Purpose                                 |
+| ------------------------------- | --------------------------------------- |
+| `grader/daemon.py`              | `GraderDaemonScaffold` class            |
+| `grader/daemon_manager.py`      | `DaemonManager` for lifecycle + restart |
+| `grader/drift_handler.py`       | `GraderDriftHandler`                    |
+| `grader/snapshot_grader_env.py` | `SnapshotGraderAgentEnvironment`        |
+| `agent_registry.py`             | `run_snapshot_grader()` method          |
+| `cli/cmd_grader_agent.py`       | Unified CLI with `--run` option         |
+| `backend/app.py`                | Lifespan auto-start via `DaemonManager` |
+| `db/models.py`                  | `GradingPending` ORM model for view     |
 
 #### G.9: Integration with AgentRegistry
 
@@ -261,18 +261,18 @@ The daemon lives in the registry's `_active` dict while running.
 
 ## Critical Files
 
-| File | Purpose | Status |
-|------|---------|--------|
-| `cli/cmd_grader_agent.py` | Grader CLI commands | ✅ Complete |
-| `grader/edge_helpers.py` | Grader writes to grading_edges (ORM) | ✅ Complete |
-| `db/models.py` | Added `GradingPending` ORM model for view | ✅ Complete |
-| `docs/agents/grader.md.j2` | Grader agent docs | ✅ Complete |
-| `docs/agents/grader_daemon_mode.md.j2` | Daemon-mode prompt template | ✅ Complete |
-| `docs/db/grading.md.j2` | Grading schema docs | ✅ Complete |
-| `db/migrations/versions/20251228000001_*.py` | Recall views + edges | ✅ Complete |
-| `grader/daemon.py` | Daemon scaffold | ✅ Complete |
-| `grader/daemon_manager.py` | Daemon lifecycle + restart on context exhaustion | ✅ Complete |
-| `grader/drift_handler.py` | Drift detection handler | ✅ Complete |
-| `grader/snapshot_grader_env.py` | Daemon agent environment | ✅ Complete |
-| `agent_registry.py` | `run_snapshot_grader()` method | ✅ Complete |
-| `backend/app.py` | Lifespan auto-start daemons | ✅ Complete |
+| File                                         | Purpose                                          | Status      |
+| -------------------------------------------- | ------------------------------------------------ | ----------- |
+| `cli/cmd_grader_agent.py`                    | Grader CLI commands                              | ✅ Complete |
+| `grader/edge_helpers.py`                     | Grader writes to grading_edges (ORM)             | ✅ Complete |
+| `db/models.py`                               | Added `GradingPending` ORM model for view        | ✅ Complete |
+| `docs/agents/grader.md.j2`                   | Grader agent docs                                | ✅ Complete |
+| `docs/agents/grader_daemon_mode.md.j2`       | Daemon-mode prompt template                      | ✅ Complete |
+| `docs/db/grading.md.j2`                      | Grading schema docs                              | ✅ Complete |
+| `db/migrations/versions/20251228000001_*.py` | Recall views + edges                             | ✅ Complete |
+| `grader/daemon.py`                           | Daemon scaffold                                  | ✅ Complete |
+| `grader/daemon_manager.py`                   | Daemon lifecycle + restart on context exhaustion | ✅ Complete |
+| `grader/drift_handler.py`                    | Drift detection handler                          | ✅ Complete |
+| `grader/snapshot_grader_env.py`              | Daemon agent environment                         | ✅ Complete |
+| `agent_registry.py`                          | `run_snapshot_grader()` method                   | ✅ Complete |
+| `backend/app.py`                             | Lifespan auto-start daemons                      | ✅ Complete |

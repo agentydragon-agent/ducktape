@@ -143,11 +143,11 @@ def add(a: int, b: int) -> int:
 
 ## Hook Behavior Summary
 
-| Hook | Purpose | Exit Code | Blocks Write |
-|------|---------|-----------|--------------|
-| claude-linter-pre-hook | Check non-fixable violations | 2 with continue:true | Yes, but allows retry |
-| claude-linter-post-hook | Auto-fix violations | 0 | No |
-| claude-linter-hook (original) | Block ALL violations | 2 | Yes |
+| Hook                          | Purpose                      | Exit Code            | Blocks Write          |
+| ----------------------------- | ---------------------------- | -------------------- | --------------------- |
+| claude-linter-pre-hook        | Check non-fixable violations | 2 with continue:true | Yes, but allows retry |
+| claude-linter-post-hook       | Auto-fix violations          | 0                    | No                    |
+| claude-linter-hook (original) | Block ALL violations         | 2                    | Yes                   |
 
 ## Known Limitations
 

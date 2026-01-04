@@ -165,6 +165,7 @@ furry as a comfort-zone-expansion subgoal :)
 
 Also, since you highlighted this paragraph by your own choice, you aren't
 allowed to shout "TMI" :)
+
 </div>
 
 You may be wondering: Why do I feel the need to put so many personal details
@@ -200,7 +201,7 @@ later?
 We were in a relationship for about 3-4 months starting late June. I spent most
 of the relationship feeling bad for still wanting to have Martin as well as
 her, and I thought I could make it go away by ignoring it long enough and
-pretending everything was all right. That didn't work.  My relationship with
+pretending everything was all right. That didn't work. My relationship with
 her ended when I told her I would no longer ignore my feelings toward Martin
 and that I'd start seeing him and that she could to whatever she wanted about
 it. I admit I was very harsh and didn't allow any compromise on that point,
@@ -245,8 +246,8 @@ your broader social circle, not just your closest friends. Second, polyamorous
 relationships work, even if they may be harder than monoamorous relationships
 in some aspects. And IMO, they are worth the work for me. Third, it's okay
 to think EA is a worthy project to work on and to actually devote your time to
-it. *It's not a law of nature that you shall spend a third of your life
-exchanging your time for currency.*
+it. _It's not a law of nature that you shall spend a third of your life
+exchanging your time for currency._
 
 I ran two 10k races this year. Unfortunately, at the end of September, I mostly
 stopped running. I'll have to get back to it some day.
@@ -276,7 +277,7 @@ beating myself up over how much of a bad person I am for that.
 
 So, [a year ago, I said](/posts/2015-12-14-the-near-future.html):
 
-*I used to tell myself I'd do all kinds of things if only I had time.
+_I used to tell myself I'd do all kinds of things if only I had time.
 I will contribute to projects and causes that actually matter.
 I will develop deeper relationships and fight my social awkwardness.
 I will get back in touch with old friends.
@@ -288,40 +289,40 @@ I will learn about things I want to learn about.
 I will think things over and figure out how do I imagine my twenties and maybe
 thirties.
 And I hope this will not only make me happier, but that it will also help
-me become a better person.*
+me become a better person._
 
 How'd it go?
 
-* I co-founded the Czech Association for Effective Altruism and led the
+- I co-founded the Czech Association for Effective Altruism and led the
   organization of EAGxPrague. "Contribute to projects and causes that actually
   matter": Check.
-* I developed deeper relationships and fought my social awkwardness, and while
+- I developed deeper relationships and fought my social awkwardness, and while
   it's still an uphill crawl, I'm winning.
-* I got back in touch with old friends, especially my friends from high school.
+- I got back in touch with old friends, especially my friends from high school.
   Thanks to dropping all the stupid fears of not being liked, I am now much
   more proactive.
-* I didn't do urban exploration or geocaching. I did not jump out of any more
+- I didn't do urban exploration or geocaching. I did not jump out of any more
   airplanes, because nowadays I'd want to calculate the risk much more
   explicitly since I started valuing my own life. I learned mindfulness
   meditation and meditate a few times each week. I don't think I'll be touching
   illegal drugs anytime soon.<br>
   I do, on the other hand, feel much happier nowadays, without necessarily
   doing anything extreme.
-* I was pretty healthy the first half of 2016, but somehow, my weight crept
+- I was pretty healthy the first half of 2016, but somehow, my weight crept
   back up and the habit of running didn't stick. That's something for me to
   keep working on.
-* I did learn lots about things I wanted to learn about. I read 45 books in
+- I did learn lots about things I wanted to learn about. I read 45 books in
   2016, coming short of the goal of 50. I'm toning that down to 40 in 2017.
   I started building a stack of Anki cards (currently at 1549) from books and
   articles I read, English terms I don't understand, constants and concepts
   I want to learn and so on, and I think it's very useful for me. I also
   revamped my personal note-taking system -- see
   <http://github.com/MichalPokorny/public-notes> for the public part.
-* Did I think *things over and figure out how do I imagine my twenties and
-  thirties*? The answer to this question is "just stop worrying and enjoy
+- Did I think _things over and figure out how do I imagine my twenties and
+  thirties_? The answer to this question is "just stop worrying and enjoy
   life". Through my long-term plan is still uncertain, I now spend too much
   time being happy to worry about it so much.
-* Am I happier? Quite. Am I a better person? That is in the eye of
+- Am I happier? Quite. Am I a better person? That is in the eye of
   the beholder. In my view, yes.
 
 <h2>Best books I read in 2016</h2>
@@ -424,9 +425,9 @@ had, to yield even a single second to the dragon.
 
 As they say in [CFAR](http://www.rationality.org/):
 
-***Victory!***
+**_Victory!_**
 
-*Addendum*: I redid the chart [from last year](/posts/2015-12-14-the-near-future.html) when
+_Addendum_: I redid the chart [from last year](/posts/2015-12-14-the-near-future.html) when
 I visualized how much of my life has passed and how much do I have left. Each
 box is a single day.
 

@@ -1,9 +1,9 @@
 Probably should have:
 
-* Teasers
-* MathJax
+- Teasers
+- MathJax
 
 Maybe one day:
 
-* Public resume
-* Disqus
+- Public resume
+- Disqus

@@ -244,7 +244,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
    **Special case - Internal/Extended formats**:
-   - If parsing data that's *based on* external API but with extensions (e.g., Claude Code history logs)
+   - If parsing data that's _based on_ external API but with extensions (e.g., Claude Code history logs)
    - Check if structure matches SDK types closely
    - If mostly matches: Consider using SDK types as base, extend if needed
    - If significantly different: Custom types OK, but use Literal discriminators
@@ -301,7 +301,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
        COMPLETE = "complete"
    ```
 
-3. **Replace string fields**:
+4. **Replace string fields**:
 
    ```python
    # Before
@@ -311,7 +311,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    status: MyStatus
    ```
 
-4. **Update comparisons**:
+5. **Update comparisons**:
 
    ```python
    # Before
@@ -321,7 +321,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    if status == MyStatus.COMPLETE:
    ```
 
-5. **Serialization handled automatically**:
+6. **Serialization handled automatically**:
    - Pydantic serializes `StrEnum` to string in JSON
    - Deserializes string back to `StrEnum`
    - Use `@field_serializer` if you need `.value`

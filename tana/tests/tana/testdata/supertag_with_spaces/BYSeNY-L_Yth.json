@@ -21,10 +21,7 @@
         "_ownerId": "SYS_T19",
         "_metaNodeId": "SYS_A13_META"
       },
-      "children": [
-        "SYS_TA05_02",
-        "SYS_TA05_03"
-      ]
+      "children": ["SYS_TA05_02", "SYS_TA05_03"]
     },
     {
       "id": "SYS_T01_META",
@@ -33,9 +30,7 @@
         "_ownerId": "SYS_T01",
         "_docType": "metanode"
       },
-      "children": [
-        "SYS_T01_META_SYS_A13"
-      ]
+      "children": ["SYS_T01_META_SYS_A13"]
     },
     {
       "id": "SYS_T01_META_SYS_A13",
@@ -44,10 +39,7 @@
         "_docType": "tuple",
         "_ownerId": "SYS_T01_META"
       },
-      "children": [
-        "SYS_A13",
-        "SYS_T01"
-      ]
+      "children": ["SYS_A13", "SYS_T01"]
     },
     {
       "id": "BYSeNY-L_Yth",
@@ -56,17 +48,9 @@
         "name": "Node with supertags with space in name: (test reference BYSeNY-L_Yth)",
         "_ownerId": "MFjacEHVlv36"
       },
-      "touchCounts": [
-        59,
-        0
-      ],
-      "modifiedTs": [
-        1749780511603,
-        0
-      ],
-      "children": [
-        "YXr3zkjO5wEa"
-      ]
+      "touchCounts": [59, 0],
+      "modifiedTs": [1749780511603, 0],
+      "children": ["YXr3zkjO5wEa"]
     },
     {
       "id": "YXr3zkjO5wEa",
@@ -76,14 +60,8 @@
         "_ownerId": "BYSeNY-L_Yth",
         "_metaNodeId": "0HG3IgXOZ4iN"
       },
-      "touchCounts": [
-        86,
-        0
-      ],
-      "modifiedTs": [
-        1749776015627,
-        0
-      ]
+      "touchCounts": [86, 0],
+      "modifiedTs": [1749776015627, 0]
     },
     {
       "id": "rQQE21hWgQgv",
@@ -94,14 +72,8 @@
         "_docType": "tagDef",
         "_metaNodeId": "m2zbPGKj8FgF"
       },
-      "touchCounts": [
-        5,
-        0
-      ],
-      "modifiedTs": [
-        1749776015164,
-        0
-      ]
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749776015164, 0]
     },
     {
       "id": "m2zbPGKj8FgF",
@@ -110,19 +82,9 @@
         "_ownerId": "rQQE21hWgQgv",
         "_docType": "metanode"
       },
-      "touchCounts": [
-        7,
-        0
-      ],
-      "modifiedTs": [
-        1749776015164,
-        0
-      ],
-      "children": [
-        "_zwKdmZFROPH",
-        "lPwEmWn20v8K",
-        "JMF6bsdsGC8I"
-      ]
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749776015164, 0],
+      "children": ["_zwKdmZFROPH", "lPwEmWn20v8K", "JMF6bsdsGC8I"]
     },
     {
       "id": "_zwKdmZFROPH",
@@ -131,18 +93,9 @@
         "_docType": "tuple",
         "_ownerId": "m2zbPGKj8FgF"
       },
-      "touchCounts": [
-        7,
-        0
-      ],
-      "modifiedTs": [
-        1749776015164,
-        0
-      ],
-      "children": [
-        "SYS_A13",
-        "SYS_T01"
-      ]
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749776015164, 0],
+      "children": ["SYS_A13", "SYS_T01"]
     },
     {
       "id": "0HG3IgXOZ4iN",
@@ -151,17 +104,9 @@
         "_ownerId": "YXr3zkjO5wEa",
         "_docType": "metanode"
       },
-      "touchCounts": [
-        5,
-        0
-      ],
-      "modifiedTs": [
-        1749776015627,
-        0
-      ],
-      "children": [
-        "tuQu2g9Ns0L4"
-      ]
+      "touchCounts": [5, 0],
+      "modifiedTs": [1749776015627, 0],
+      "children": ["tuQu2g9Ns0L4"]
     },
     {
       "id": "tuQu2g9Ns0L4",
@@ -170,18 +115,9 @@
         "_docType": "tuple",
         "_ownerId": "0HG3IgXOZ4iN"
       },
-      "touchCounts": [
-        7,
-        0
-      ],
-      "modifiedTs": [
-        1749776015627,
-        0
-      ],
-      "children": [
-        "SYS_A13",
-        "rQQE21hWgQgv"
-      ]
+      "touchCounts": [7, 0],
+      "modifiedTs": [1749776015627, 0],
+      "children": ["SYS_A13", "rQQE21hWgQgv"]
     }
   ]
 }

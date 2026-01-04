@@ -515,14 +515,14 @@ for iteration in range(budget // cost_per_eval):
 
 ## Decision Matrix
 
-| Framework | Cheap Eval? | Simple Examples? | Compositional? | Fits Our Case? | Consider If... |
-|-----------|-------------|------------------|----------------|----------------|----------------|
-| **GEPA** | Required | Any | Required | ❌ No | You decompose prompt into independent components |
-| **DSPy MIPROv2** | Required | Any | Required | ❌ No | Building multi-stage LLM pipeline |
-| **PromptWizard** | Required | Required | No | ❌ No | Have cheap eval + simple Q&A examples |
-| **TextGrad** | Helpful | Any | No | 🤔 Maybe | Simple approach plateaus |
-| **Current Agent** | No | No | No | ✅ Yes | This is your baseline (good fit) |
-| **Agent + Population** | No | No | No | ✅✅ Best | Easy enhancement with clear benefits |
+| Framework              | Cheap Eval? | Simple Examples? | Compositional? | Fits Our Case? | Consider If...                                   |
+| ---------------------- | ----------- | ---------------- | -------------- | -------------- | ------------------------------------------------ |
+| **GEPA**               | Required    | Any              | Required       | ❌ No          | You decompose prompt into independent components |
+| **DSPy MIPROv2**       | Required    | Any              | Required       | ❌ No          | Building multi-stage LLM pipeline                |
+| **PromptWizard**       | Required    | Required         | No             | ❌ No          | Have cheap eval + simple Q&A examples            |
+| **TextGrad**           | Helpful     | Any              | No             | 🤔 Maybe       | Simple approach plateaus                         |
+| **Current Agent**      | No          | No               | No             | ✅ Yes         | This is your baseline (good fit)                 |
+| **Agent + Population** | No          | No               | No             | ✅✅ Best      | Easy enhancement with clear benefits             |
 
 ---
 

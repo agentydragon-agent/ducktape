@@ -171,20 +171,20 @@ These are merged with Proxmox credentials and set machine-wide in NixOS.
 
 ## Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `username` | Username (Proxmox user and VM user) | **required** |
-| `pool_name` | Resource pool name | `pool-{username}` |
-| `vm_name` | VM name | `{username}-nixos` |
-| `vm_id` | VM ID (0 for auto) | `0` |
-| `vcpus` | Number of vCPUs | `4` |
-| `memory_mb` | Memory in MB | `8192` |
-| `disk_size_gb` | Disk size in GB | `50` |
-| `nixos_channel` | NixOS channel (unstable/24.11/24.05) | `unstable` |
-| `enable_gui` | Enable GNOME desktop with auto-login | `true` |
-| `ssh_public_key` | SSH public key | `~/.ssh/id_rsa.pub` |
-| `ducktape_repo` | Ducktape repository URL | `github:agentydragon/ducktape/main` |
-| `custom_env_vars` | Additional environment variables | `{}` |
+| Variable          | Description                          | Default                             |
+| ----------------- | ------------------------------------ | ----------------------------------- |
+| `username`        | Username (Proxmox user and VM user)  | **required**                        |
+| `pool_name`       | Resource pool name                   | `pool-{username}`                   |
+| `vm_name`         | VM name                              | `{username}-nixos`                  |
+| `vm_id`           | VM ID (0 for auto)                   | `0`                                 |
+| `vcpus`           | Number of vCPUs                      | `4`                                 |
+| `memory_mb`       | Memory in MB                         | `8192`                              |
+| `disk_size_gb`    | Disk size in GB                      | `50`                                |
+| `nixos_channel`   | NixOS channel (unstable/24.11/24.05) | `unstable`                          |
+| `enable_gui`      | Enable GNOME desktop with auto-login | `true`                              |
+| `ssh_public_key`  | SSH public key                       | `~/.ssh/id_rsa.pub`                 |
+| `ducktape_repo`   | Ducktape repository URL              | `github:agentydragon/ducktape/main` |
+| `custom_env_vars` | Additional environment variables     | `{}`                                |
 
 ## Usage Examples
 

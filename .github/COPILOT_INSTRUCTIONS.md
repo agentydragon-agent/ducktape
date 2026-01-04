@@ -32,6 +32,7 @@ bazel lint //...
 Target: Python 3.12+
 
 ### Rust
+
 ```bash
 bazel build //finance/worthy:rust_main
 bazel test //finance/worthy/...
@@ -43,6 +44,7 @@ bazel lint --config=rust-check //finance/...
 ## Code Style
 
 Follow conventions in [STYLE.md](../STYLE.md):
+
 - **No exception swallowing**: Catch specific exceptions, let real errors surface
 - **Prefer exceptions over error lists**: Raise exceptions on validation failure
 - **Use Pydantic as typed objects**: Access fields directly (`model.field`), not `dict.get(...)`

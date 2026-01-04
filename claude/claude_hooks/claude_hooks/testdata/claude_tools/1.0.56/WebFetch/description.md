@@ -14,7 +14,7 @@ provenance: Claude Code 1.0.56 LLM self-description
 
 ## Usage notes
 
-- **IMPORTANT:** If an MCP-provided web fetch tool is available, prefer using that tool instead of this one, as it may have fewer restrictions. All MCP-provided tools start with "mcp__".
+- **IMPORTANT:** If an MCP-provided web fetch tool is available, prefer using that tool instead of this one, as it may have fewer restrictions. All MCP-provided tools start with "mcp\_\_".
 - The URL must be a fully-formed valid URL
 - HTTP URLs will be automatically upgraded to HTTPS
 - The prompt should describe what information you want to extract from the page

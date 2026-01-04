@@ -5,7 +5,7 @@ Makes switching between git worktrees feel like `git switch` while adding copy-o
 ## Features
 
 - **Quick switching** between worktrees with relative path preservation
-- **Copy-on-write operations** for duplicating worktrees with uncommitted changes  
+- **Copy-on-write operations** for duplicating worktrees with uncommitted changes
 - **Path resolution** with absolute (`/foo`) and relative (`./foo`) path support
 - **Process detection** for safe worktree cleanup
 - **Operation logging**
@@ -41,8 +41,8 @@ This loads `.envrc`, bootstraps devenv, and installs `wt` in editable mode with 
 
 See `@AGENTS.md` in the repository root for Bazel build, test, and lint workflows.
 
-* Add the wt shell function in your shell init (e.g. `.bashrc` / `.zshrc`): `eval "$(python -m wt.shell.install)"`
-* Reload your shell / source the same dotfile.
+- Add the wt shell function in your shell init (e.g. `.bashrc` / `.zshrc`): `eval "$(python -m wt.shell.install)"`
+- Reload your shell / source the same dotfile.
 
 ## Usage
 
@@ -114,12 +114,14 @@ wt path ./relative/file.py
 `wt` uses a **daemon-first architecture** to separate concerns and improve performance:
 
 #### **CLI Client** (`cli.py`)
-- Pure argument parsing and coordination  
+
+- Pure argument parsing and coordination
 - **Never calls GitHub APIs** - delegates to daemon
 - Creates individual services (daemon_client, formatter, config)
 - Passes explicit dependencies to handlers
 
 #### **Background Daemon** (`daemon.py`)
+
 - Handles **all GitHub API operations**
 - Performs git repository status queries
 - JSON-RPC server over Unix socket
@@ -128,8 +130,9 @@ wt path ./relative/file.py
 - Renamed from GitStatusdDaemon → WtDaemon for clarity
 
 #### **Handler Functions** (`handlers.py`)
+
 - Pure functions with explicit dependencies
-- Status operations → daemon client  
+- Status operations → daemon client
 - Worktree operations → direct git commands (see Future Plans)
 - No service containers or hidden dependencies
 
@@ -143,13 +146,14 @@ The `wt` function uses IPC via file descriptor 3:
 
 1. **Pipe Creation**: Creates anonymous pipes for bidirectional communication
 2. **Command Execution**: Python script writes shell commands to fd 3
-3. **Exit Code Handling**: 
+3. **Exit Code Handling**:
    - `0`: Success - execute commands
-   - `1`: Uncontrolled error - don't execute anything  
+   - `1`: Uncontrolled error - don't execute anything
    - `2`: Controlled error - execute commands (safe recovery)
 4. **Atomic Execution**: Commands only run if the tool completed successfully
 
 This design allows:
+
 - **Interactive prompts** that work normally
 - **Clean error handling** with proper exit codes
 - **Safe navigation** away from problematic locations
@@ -158,8 +162,9 @@ This design allows:
 ### Copy-on-Write
 
 Uses platform-optimized COW operations:
+
 - **macOS**: `cp -c -R` (clonefile)
-- **Linux**: `cp --reflink=auto` 
+- **Linux**: `cp --reflink=auto`
 - **Fallback**: `rsync`
 
 This enables instant duplication of entire worktrees including uncommitted changes.
@@ -167,6 +172,7 @@ This enables instant duplication of entire worktrees including uncommitted chang
 ### Path Preservation
 
 When switching between worktrees, the tool:
+
 1. Detects your current relative position
 2. Tries to maintain the same path in the target worktree
 3. Walks up the directory tree until it finds an existing path
@@ -194,13 +200,15 @@ export WT_DIR=/path/to/.wt
 ```
 
 Configuration file at `$WT_DIR/config.yaml` specifies:
+
 - `main_repo`: Path to main git repository (required)
-- `worktrees_dir`: Directory for worktrees (required) 
+- `worktrees_dir`: Directory for worktrees (required)
 - `branch_prefix`: Prefix for worktree branches (required)
 - `upstream_branch`: Default upstream branch (required)
 - `github_repo`: GitHub repository identifier (required)
 
 Optional settings:
+
 - `log_operations`: Enable operation logging (default: false)
 - `cow_method`: auto | reflink | copy | rsync (default: auto)
 - `hydrate_worktrees`: If false, newly created or copied worktrees are left unpopulated (default: true)
@@ -210,6 +218,7 @@ Optional settings:
 - `post_creation_timeout`: Seconds to wait for post-creation script before killing it (default: 60)
 
 FD behavior of post-creation hooks
+
 - stdin (fd 0): /dev/null. The daemon launches the hook with stdin=DEVNULL to guarantee a valid descriptor even when the parent process had no stdin; this avoids CPython init_sys_streams crashes. Do not rely on reading from stdin in post-create scripts.
 - stdout (fd 1): Captured pipe. Hook stdout is streamed to the client as hook_output events; on failures, the CLI echoes captured output to the user.
 - stderr (fd 2): Captured pipe. Same streaming/echo behavior as stdout.
@@ -217,6 +226,7 @@ FD behavior of post-creation hooks
 - Other fds: closed on exec. Only 0/1/2 are set as above.
 
 Daemon stdio summary (for context)
+
 - Daemon stdout is redirected to `$WT_DIR/daemon.log`; stderr is `/dev/null`. This does not affect hook I/O, which is independently piped and streamed.
 
 Sample config.yaml:
@@ -231,11 +241,12 @@ upstream_branch: main
 github_enabled: false
 github_repo: owner/repo
 log_operations: true
-cow_method: auto       # macOS: clonefile; Linux: reflink; fallback: rsync
-hydrate_worktrees: true  # set false to leave new worktrees empty
+cow_method: auto # macOS: clonefile; Linux: reflink; fallback: rsync
+hydrate_worktrees: true # set false to leave new worktrees empty
 ```
 
 cow_method behavior:
+
 - auto: clonefile on macOS; reflink if supported; else rsync
 - reflink: force reflink, error if unsupported
 - copy: clonefile on macOS, else reflink if available, else rsync
@@ -259,7 +270,7 @@ cow_method behavior:
 
 ## Logs and Data
 
-- **Configuration**: `$WT_DIR/config.yaml` 
+- **Configuration**: `$WT_DIR/config.yaml`
 - **Daemon state**: `$WT_DIR/daemon.sock`, `$WT_DIR/daemon.pid`
 - **Logs**: Daemon logs to configured location
 
@@ -303,7 +314,7 @@ From `~/code/worktrees/feature/src/components`:
 
 ```bash
 wt path                  # ~/code/worktrees/feature
-wt path /tests           # ~/code/worktrees/feature/tests  
+wt path /tests           # ~/code/worktrees/feature/tests
 wt path ./test.py        # ~/code/worktrees/feature/src/components/test.py
 wt path main ./test.py   # ~/code/repo/src/components/test.py
 ```

@@ -5,11 +5,13 @@
 The end-state is a **fully Bazel-managed repository** where:
 
 ### All Builds and Tests via Bazel
+
 - `bazel build //...` builds everything (Python, Rust, JS/TS frontends, Docker images)
 - `bazel test //...` runs all tests (unit, integration, e2e)
 - No direct `pytest`, `npm test`, `cargo test` invocations outside Bazel
 
 ### All Linting via Bazel Aspects
+
 - `bazel lint //...` covers all languages in one command:
   - Python: ruff (done), mypy (done)
   - Rust: clippy, rustfmt (done)
@@ -20,22 +22,26 @@ The end-state is a **fully Bazel-managed repository** where:
 - No separate pre-commit framework; git hook calls `bazel lint` directly
 
 ### Docker Images via rules_oci
+
 - All container images built with `bazel build //docker/...:image`
 - Deterministic, cacheable, layer-optimized builds
 - No `docker build` commands in development or CI
 
 ### Single Dependency Source
+
 - Python: `requirements_bazel.txt` → pip.parse lockfile
 - JS/TS: `pnpm-lock.yaml` → npm_translate_lock
 - Rust: `Cargo.lock` → crate_universe
 - No per-package requirements.txt or pyproject.toml dependencies
 
 ### Simplified Package Structure
+
 - Flat layout (no `src/` nesting) since Bazel handles packaging
 - Tests colocated with production code (`module.py` + `module_test.py`)
 - Fewer packages, Bazel visibility for layering instead of pyproject boundaries
 
 ### What Stays Outside Bazel
+
 - Ansible (managed by Ansible Galaxy)
 - Nix configuration (inherently non-Bazel)
 - Website (Haskell/stack, very slow cold builds)
@@ -43,6 +49,7 @@ The end-state is a **fully Bazel-managed repository** where:
 ## Target State
 
 Unified Bazel build system for all Python packages:
+
 - Single `bazel build //...` and `bazel test //...` commands
 - `rules_python` for Python 3.12+
 - Session start hooks set up Bazel proxy for Claude Code web
@@ -51,15 +58,15 @@ Unified Bazel build system for all Python packages:
 
 ### Coverage Summary
 
-| Metric | Count | Notes |
-|--------|-------|-------|
-| Python files total | 1139 | Git-tracked only |
-| In Bazel py_* srcs/data | 1081 | 96.3% coverage |
-| Not in any target | 42 | See list below |
-| Intentionally excluded | 16 | ansible (12), nix (4) |
-| py_library targets | 54 | |
-| py_test targets | 32 | 3 manual |
-| ruff_test targets | 40 | Linting coverage |
+| Metric                    | Count | Notes                 |
+| ------------------------- | ----- | --------------------- |
+| Python files total        | 1139  | Git-tracked only      |
+| In Bazel py\_\* srcs/data | 1081  | 96.3% coverage        |
+| Not in any target         | 42    | See list below        |
+| Intentionally excluded    | 16    | ansible (12), nix (4) |
+| py_library targets        | 54    |                       |
+| py_test targets           | 32    | 3 manual              |
+| ruff_test targets         | 40    | Linting coverage      |
 
 Run `uv run bazelization/audit.py` to get updated counts.
 
@@ -101,22 +108,23 @@ Audit script updated 2026-01-04 to count test data files.
 
 ### Docker Images Inventory
 
-| Image | Location | Status | Notes |
-|-------|----------|--------|-------|
-| `editor_agent` | `editor_agent/runtime/` | ✅ Migrated | `bazel build //editor_agent/runtime:image` |
-| `runtime` | `docker/runtime/` | ✅ Migrated | `bazel build //docker/runtime:image` |
-| `rspcache` | `rspcache/` | ✅ Migrated | `bazel build //rspcache:image` |
-| `gatelet` | `gatelet/` | ✅ Migrated | `bazel build //gatelet:image` |
-| `webhook_inbox` | `experimental/webhook_inbox/` | ✅ Migrated | `bazel build //experimental/webhook_inbox:image` |
-| `ember` | `ember/` | ✅ Migrated | `bazel build //ember:image` |
-| `html` | `llm/html/` | ✅ Migrated | `bazel build //llm/html:image` |
-| `properties-critic` | `docker/llm/properties-critic/` | ❌ Deleted | Orphaned, never used |
-| `openai_utils` | `openai_utils/docker/` | ❌ Deleted | Probe module never implemented |
-| `claude_optimizer` | `claude/claude_optimizer/docker/` | Pending | 8 variant images |
-| `props agents` | `props/core/src/props_core/agent_defs/` | Pending | 9 agent images |
-| `molecule` | `ansible/molecule/github_release_plugins/` | Skip | Ansible testing |
+| Image               | Location                                   | Status      | Notes                                            |
+| ------------------- | ------------------------------------------ | ----------- | ------------------------------------------------ |
+| `editor_agent`      | `editor_agent/runtime/`                    | ✅ Migrated | `bazel build //editor_agent/runtime:image`       |
+| `runtime`           | `docker/runtime/`                          | ✅ Migrated | `bazel build //docker/runtime:image`             |
+| `rspcache`          | `rspcache/`                                | ✅ Migrated | `bazel build //rspcache:image`                   |
+| `gatelet`           | `gatelet/`                                 | ✅ Migrated | `bazel build //gatelet:image`                    |
+| `webhook_inbox`     | `experimental/webhook_inbox/`              | ✅ Migrated | `bazel build //experimental/webhook_inbox:image` |
+| `ember`             | `ember/`                                   | ✅ Migrated | `bazel build //ember:image`                      |
+| `html`              | `llm/html/`                                | ✅ Migrated | `bazel build //llm/html:image`                   |
+| `properties-critic` | `docker/llm/properties-critic/`            | ❌ Deleted  | Orphaned, never used                             |
+| `openai_utils`      | `openai_utils/docker/`                     | ❌ Deleted  | Probe module never implemented                   |
+| `claude_optimizer`  | `claude/claude_optimizer/docker/`          | Pending     | 8 variant images                                 |
+| `props agents`      | `props/core/src/props_core/agent_defs/`    | Pending     | 9 agent images                                   |
+| `molecule`          | `ansible/molecule/github_release_plugins/` | Skip        | Ansible testing                                  |
 
 **Migration notes:**
+
 - rules_oci added to MODULE.bazel with `oci.pull` for `python:3.12-slim`
 - Each `pkg_tar` becomes a separate OCI layer
 - Use `bazel run //<pkg>:load` to load into Docker daemon
@@ -124,72 +132,86 @@ Audit script updated 2026-01-04 to count test data files.
 
 ### Intentionally Not Bazelized
 
-| Directory | Reason |
-|-----------|--------|
-| `ansible/` | Ansible modules managed by Ansible Galaxy |
-| `nix/` | Nix configuration files, not Python packages |
-| `finance/gnucash_util.py` | Requires system gnucash library |
+| Directory                 | Reason                                       |
+| ------------------------- | -------------------------------------------- |
+| `ansible/`                | Ansible modules managed by Ansible Galaxy    |
+| `nix/`                    | Nix configuration files, not Python packages |
+| `finance/gnucash_util.py` | Requires system gnucash library              |
 
 ### Manual Targets (require special environment)
 
-| Target | Reason |
-|--------|--------|
+| Target                                       | Reason                             |
+| -------------------------------------------- | ---------------------------------- |
 | `//claude/claude_optimizer:test_integration` | Requires docker/external resources |
-| `//experimental/cotrl:test_llm_rl_minimal` | Requires OPENAI_API_KEY |
-| `//gnome-terminal-profile-switcher:*` | Requires DBUS/GNOME session |
-| `//homeassistant/iaqi:requirements*` | Separate requirements lock |
-| `//mcp_starter:test_integration` | Requires running MCP server |
-| `//website:*` | Haskell/stack build system |
+| `//experimental/cotrl:test_llm_rl_minimal`   | Requires OPENAI_API_KEY            |
+| `//gnome-terminal-profile-switcher:*`        | Requires DBUS/GNOME session        |
+| `//homeassistant/iaqi:requirements*`         | Separate requirements lock         |
+| `//mcp_starter:test_integration`             | Requires running MCP server        |
+| `//website:*`                                | Haskell/stack build system         |
 
 ### Files Not in Any Bazel Target (42 files)
 
 **adgn/ (4 files)**
+
 - `adgn/examples/openai_api/stateless_two_step_demo.py` - Example script
 - `adgn/gitea_pr_gate/*.py` - Gitea PR gate policy (3 files)
 
 **bazelization/ (1 file)**
+
 - `bazelization/audit.py` - This audit script itself
 
 **cleanup_stale_headscale_nodes.py (1 file)**
+
 - Top-level utility script
 
 **cluster/ (4 files)**
+
 - `cluster/scripts/validate-*.py` - Validation scripts (3 files)
 - `cluster/terraform/01-infrastructure/scripts/cleanup-proxmox-volumes.py`
 
 **conftest.py (1 file)**
+
 - Root test configuration file
 
 **dotfiles/ (1 file)**
+
 - `dotfiles/config/pythonstartup.py` - Python REPL startup
 
 **experimental/ (6 files)**
+
 - `experimental/ember_evals/*.py` - Ember evaluation framework (5 files)
 - `experimental/flake8-early-bailout/setup.py` - Old flake8 plugin
 
 **finance/ (1 file)**
+
 - `finance/reconcile/external_expense.py` - Reconciliation utility
 
 **gatelet/ (1 file)**
+
 - `gatelet/tasks.py` - Invoke tasks file
 
 **inventree_utils/ (9 files)**
+
 - `inventree_utils/*.py` - InventTree plugin and utilities
 - `inventree_utils/rai_plugin/**/*.py` - RAI plugin with template tags
 
 **k8s-old/ (4 files)**
+
 - `k8s-old/helm/*/files/*.py` - Helm chart Python scripts (archived)
 
 **llm/ (4 files)**
+
 - `llm/ducktape_llm_common/examples/complex_predicate.py`
 - `llm/ducktape_llm_common/scripts/notification_test_manual.py`
 - `llm/mcp/habitify/examples/install_to_claude.py`
 - `llm/mcp/habitify/habitify_api_reference/collect_references.py`
 
 **sandboxed_jupyter/ (2 files)**
+
 - `sandboxed_jupyter/examples/*.py` - Example workflows
 
 **trilium/ (3 files)**
+
 - `trilium/papers/*.py` - Trilium/Remarkable integration (2 files)
 - `trilium/search_hack.py` - Search utility
 
@@ -198,23 +220,26 @@ Run `uv run bazelization/audit.py` for current list.
 ### Pending Migration Tasks
 
 #### Shell Scripts Inventory
+
 Non-Bazelized shell scripts that are intentionally outside the build system:
 
-| Category | Examples | Reason |
-|----------|----------|--------|
-| CI/Ansible | `.github/scripts/*.sh`, `ansible/scripts/*.sh` | Ansible Galaxy integration |
-| Docker entrypoints | `*/entrypoint.sh` | Part of container images (rules_oci) |
-| Deployment | `llm/deploy.sh`, `homeassistant/iaqi/deploy_iaqi.sh` | Manual deployment utilities |
-| Nix-managed | `nix/home/**/*.sh` | Nix home-manager |
-| Tool wrappers | `tools/lint/run_*.sh` | Helpers for Bazel tests |
+| Category           | Examples                                             | Reason                               |
+| ------------------ | ---------------------------------------------------- | ------------------------------------ |
+| CI/Ansible         | `.github/scripts/*.sh`, `ansible/scripts/*.sh`       | Ansible Galaxy integration           |
+| Docker entrypoints | `*/entrypoint.sh`                                    | Part of container images (rules_oci) |
+| Deployment         | `llm/deploy.sh`, `homeassistant/iaqi/deploy_iaqi.sh` | Manual deployment utilities          |
+| Nix-managed        | `nix/home/**/*.sh`                                   | Nix home-manager                     |
+| Tool wrappers      | `tools/lint/run_*.sh`                                | Helpers for Bazel tests              |
 
 #### Docker Images Pending (from inventory above)
+
 - `claude_optimizer` (8 variant images)
 - `props agents` (9 agent images)
 
 ## Package Structure
 
 Most Python packages use `src/` layout:
+
 ```
 package_name/
 ├── BUILD.bazel
@@ -226,6 +251,7 @@ package_name/
 ```
 
 Experimental packages use flat layout:
+
 ```
 experimental/package_name/
 ├── BUILD.bazel
@@ -236,17 +262,20 @@ experimental/package_name/
 ## Hook Lifecycle
 
 This repository uses two types of hooks:
+
 1. **Git hooks** - Run on git operations (pre-commit)
 2. **Claude Code session hooks** - Run when Claude Code web sessions start
 
 ### Git Pre-commit Hook
 
 **Installation:**
+
 ```bash
 pre-commit install
 ```
 
 **What it does** (via `.pre-commit-config.yaml`):
+
 1. Safety checks: `no-commit-to-branch`, `check-merge-conflict`
 2. Syntax validation: `check-ast`, `check-yaml`, `check-toml`
 3. Ansible syntax check (for `ansible/*.yml` files)
@@ -256,11 +285,13 @@ pre-commit install
    - Runs `bazel lint` on affected packages
 
 **Requirements:**
+
 - pre-commit package (`pip install pre-commit` or system package)
 - Aspect CLI (provides `bazel lint` command, installed via Bazelisk)
 - Ruff binary from `tools/multitool/lockfile.json`
 
 **Flow:**
+
 ```
 git commit → pre-commit framework → hooks from .pre-commit-config.yaml → pass/fail
 ```
@@ -268,20 +299,26 @@ git commit → pre-commit framework → hooks from .pre-commit-config.yaml → p
 ### Claude Code Session Start Hook
 
 **Configuration:** `.claude/settings.json`
+
 ```json
 {
   "hooks": {
-    "SessionStart": [{
-      "hooks": [{
-        "type": "command",
-        "command": "PYTHONPATH=claude_web_hooks/src python3 -m claude_web_hooks.session_start"
-      }]
-    }]
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONPATH=claude_web_hooks/src python3 -m claude_web_hooks.session_start"
+          }
+        ]
+      }
+    ]
   }
 }
 ```
 
 **What it does:**
+
 1. Installs Bazelisk to `~/.cache/bazel-proxy/bazelisk`
 2. Writes proxy credentials to `~/.cache/bazel-proxy/upstream_proxy`
 3. Starts local proxy at `localhost:18081` (handles auth to upstream)
@@ -294,6 +331,7 @@ git commit → pre-commit framework → hooks from .pre-commit-config.yaml → p
 10. Exports PATH to wrapper via `CLAUDE_ENV_FILE`
 
 **Package structure:**
+
 ```
 claude_web_hooks/
 ├── src/claude_web_hooks/
@@ -316,6 +354,7 @@ claude_web_hooks/
 | `~/.bazelrc` | try-import for proxy bazelrc |
 
 **Flow:**
+
 ```
 Claude Code web start
   → SessionStart hook
@@ -345,10 +384,10 @@ This allows BUILD files to use proxy env vars without hardcoding.
 
 The proxy config is set in two places:
 
-| Location | Purpose | Set By |
-|----------|---------|--------|
-| `~/.cache/bazel-proxy/bin/bazel` wrapper | For Bazelisk downloading Bazel | `bazelisk_setup.install_wrapper()` |
-| `~/.cache/bazel-proxy/bazelrc` | For build actions (pip, uv) | `bazel_proxy_setup._write_bazel_config()` |
+| Location                                 | Purpose                        | Set By                                    |
+| ---------------------------------------- | ------------------------------ | ----------------------------------------- |
+| `~/.cache/bazel-proxy/bin/bazel` wrapper | For Bazelisk downloading Bazel | `bazelisk_setup.install_wrapper()`        |
+| `~/.cache/bazel-proxy/bazelrc`           | For build actions (pip, uv)    | `bazel_proxy_setup._write_bazel_config()` |
 
 The module extension detects proxy config by checking if `~/.cache/bazel-proxy/combined_ca.pem` exists
 (created by session hook), rather than reading environment variables.
@@ -364,6 +403,7 @@ Ruff is managed via `rules_multitool` with a custom lockfile:
 **Current version:** 0.14.0 (aspect_rules_lint bundles 0.8.3, we override for newer features)
 
 **Lockfile format:**
+
 ```json
 {
   "ruff": {
@@ -382,11 +422,13 @@ Ruff is managed via `rules_multitool` with a custom lockfile:
 ```
 
 **To update ruff:**
+
 1. Check latest release at https://github.com/astral-sh/ruff/releases
 2. Update URLs and sha256 hashes in `tools/multitool/lockfile.json`
 3. Test with `bazel lint //...`
 
 **How it integrates:**
+
 ```
 MODULE.bazel
   → bazel_dep(name = "aspect_rules_lint")
@@ -404,11 +446,13 @@ BUILD.bazel files
 **Location:** `ruff.toml` (root)
 
 **Key settings:**
+
 - `target-version = "py312"` - Python 3.12+ modern syntax
 - `line-length = 120` - Wider lines than PEP 8 default
 - Enabled rule categories: E, F, PLC/PLE/PLR/PLW, UP, FA, FURB, I, B, COM, C4, PT, SIM, N, RUF
 
 **Per-file ignores** are in `ruff.toml` (not scattered in pyproject.toml files):
+
 - `**/conftest.py` - Late imports allowed
 - `**_det_*.py` - AST visitor naming allowed
 - FastAPI patterns - `B008` for dependency injection
@@ -416,6 +460,7 @@ BUILD.bazel files
 ### Why Custom Lockfile?
 
 `aspect_rules_lint` bundles ruff but uses an older version. The custom lockfile:
+
 - Allows using latest ruff with new rules
 - Provides explicit version pinning
 - Works across all platforms (linux/macos, x64/arm64)
@@ -426,6 +471,7 @@ BUILD.bazel files
 **Config:** `mypy.ini` (root)
 
 **Running mypy via Bazel:**
+
 ```bash
 # Type check specific target
 bazel build --config=typecheck //adgn:adgn
@@ -438,6 +484,7 @@ bazel build --config=check //...
 ```
 
 **Key settings in mypy.ini:**
+
 - `follow_imports = silent` - Only report errors in explicitly passed files
 - `ignore_missing_imports = True` - Packages without stubs get lenient treatment
 - Packages with `py.typed` (rich, structlog, aiohttp, aiodocker) ARE type-checked
@@ -446,11 +493,13 @@ bazel build --config=check //...
   - We still use their type info, just don't report internal stub errors
 
 **Type checking behavior:**
+
 - OUR code using typed packages → errors caught
 - OUR code using untyped packages → no type info (ignore_missing_imports)
 - Errors WITHIN external packages → suppressed
 
 **Integration with rules_mypy:**
+
 - Uses `rules_mypy` v0.40.0 for the mypy aspect
 - Mypy runs on each py_library target with its transitive deps available
 - Caches are propagated between targets for faster incremental checks
@@ -523,6 +572,7 @@ package_name/
 ```
 
 Benefits:
+
 - Tests visible next to code they test
 - Easier to see coverage gaps
 - Simpler BUILD files (single glob)
@@ -549,6 +599,7 @@ package_name/
 ```
 
 Benefits:
+
 - Simpler paths in BUILD.bazel (no `src/` prefix)
 - Clearer what's in the package
 - Bazel visibility rules replace package boundaries
@@ -559,16 +610,19 @@ Current: Many separate pyproject.toml packages with workspace references
 Target: Fewer packages, Bazel visibility for layering
 
 Rationale:
+
 - Bazel `visibility` attribute enforces layering without pyproject boundaries
 - Fewer packages = simpler dependency management
 - No need for uv workspace for internal deps
 
 Candidates for consolidation:
+
 - `mcp_infra/` could merge into `adgn/`
 - `agent_core/` could merge into `adgn/`
 - Small experimental packages into `experimental/` monolith
 
 Keep separate:
+
 - Packages with different deployment targets (container vs host)
 - Packages with genuinely different dependency sets
 
@@ -581,6 +635,7 @@ Target: Bazel aspects like ruff, integrated into `bazel lint //...`
 
 When creating a `js_binary` for eslint in the same package as `npm_link_all_packages`,
 Bazel errors with "artifact prefix conflict" because:
+
 - `npm_link_all_packages` creates `:node_modules/eslint` directory target
 - `js_binary` entry_point creates `:node_modules/eslint/bin/eslint.js` file target
 - These paths conflict (one is prefix of the other)
@@ -597,6 +652,7 @@ eslint_bin.eslint_binary(name = "eslint")
 ```
 
 Then reference it in the linter aspect:
+
 ```starlark
 # tools/lint/linters.bzl
 eslint = lint_eslint_aspect(
@@ -606,11 +662,13 @@ eslint = lint_eslint_aspect(
 ```
 
 This pattern works because:
+
 1. The eslint binary lives in `tools/lint/`, not in the frontend package
 2. `npm_translate_lock` with `bins = {"eslint": {"eslint": "./bin/eslint.js"}}`
    creates the `package_json.bzl` with the `bin` helper
 
 **Required MODULE.bazel changes:**
+
 ```starlark
 npm.npm_translate_lock(
     name = "npm",
@@ -627,17 +685,20 @@ npm.npm_translate_lock(
 ```
 
 **Current state:** ✅ Complete
+
 - `lint_eslint_aspect` defined in `tools/lint/linters.bzl`
 - `.bazelrc` has `--config=eslint` for standalone use
 - `.aspect/cli/config.yaml` includes eslint aspect (runs with `bazel lint //...`)
 - ESLint binary in `tools/lint/BUILD.bazel`
 
 **References:**
+
 - [rules_lint ESLint docs](https://docs.aspect.build/rulesets/aspect_rules_lint/docs/linting/)
 - [rules_lint example linters.bzl](https://github.com/aspect-build/rules_lint/blob/main/example/tools/lint/linters.bzl)
 - [rules_js troubleshooting](https://docs.aspect.build/rulesets/aspect_rules_js/docs/troubleshooting/)
 
 Benefits (once working):
+
 - Single `bazel lint //...` command for all languages
 - Consistent caching/incrementality
 - Same infrastructure for CI and local dev
@@ -648,70 +709,72 @@ Benefits (once working):
 
 Each package has a pyproject.toml with varying content:
 
-| Content Type | Purpose | Target State |
-|--------------|---------|--------------|
-| `[tool.pytest]` | pytest configuration | Keep (not Bazel-managed) |
-| `[tool.mypy]` | mypy configuration | Keep (used by pre-commit) |
-| `[tool.ruff]` | ruff overrides | Migrate to root ruff.toml |
-| `[project]` deps | Package dependencies | Remove (use requirements_bazel.txt) |
-| `[tool.uv.workspace]` | uv workspace | Keep until fully on Bazel |
+| Content Type          | Purpose              | Target State                        |
+| --------------------- | -------------------- | ----------------------------------- |
+| `[tool.pytest]`       | pytest configuration | Keep (not Bazel-managed)            |
+| `[tool.mypy]`         | mypy configuration   | Keep (used by pre-commit)           |
+| `[tool.ruff]`         | ruff overrides       | Migrate to root ruff.toml           |
+| `[project]` deps      | Package dependencies | Remove (use requirements_bazel.txt) |
+| `[tool.uv.workspace]` | uv workspace         | Keep until fully on Bazel           |
 
 Root `pyproject.toml` contains:
+
 - `[tool.uv]` override-dependencies and sources
 - `[tool.ruff]` (duplicate of ruff.toml - should consolidate)
 - `[tool.uv.workspace]` members list
 
 ### Linting Configuration
 
-| Tool | Config Location | Bazel Integration |
-|------|-----------------|-------------------|
-| Ruff | `ruff.toml` (root) | `bazel lint //...` via aspect_rules_lint |
-| mypy | `mypy.ini` (root) | `bazel build --config=typecheck //...` via rules_mypy |
-| buildifier | `tools/lint/BUILD.bazel` | `bazel run //tools/lint:buildifier` |
-| yamllint | `.yamllint.yaml` | `bazel test //ansible:yamllint_test` |
-| alejandra | Nix files | `bazel test //:alejandra_test` |
-| ESLint | `props/frontend/eslint.config.js` | `bazel lint //...` via aspect_rules_lint |
-| Prettier | `props/frontend/.prettierrc` | `bazel test //props/frontend:prettier_test` |
-| svelte-check | `props/frontend/tsconfig.json` | `bazel test //props/frontend:svelte_check_test` |
+| Tool         | Config Location                   | Bazel Integration                                     |
+| ------------ | --------------------------------- | ----------------------------------------------------- |
+| Ruff         | `ruff.toml` (root)                | `bazel lint //...` via aspect_rules_lint              |
+| mypy         | `mypy.ini` (root)                 | `bazel build --config=typecheck //...` via rules_mypy |
+| buildifier   | `tools/lint/BUILD.bazel`          | `bazel run //tools/lint:buildifier`                   |
+| yamllint     | `.yamllint.yaml`                  | `bazel test //ansible:yamllint_test`                  |
+| alejandra    | Nix files                         | `bazel test //:alejandra_test`                        |
+| ESLint       | `props/frontend/eslint.config.js` | `bazel lint //...` via aspect_rules_lint              |
+| Prettier     | `props/frontend/.prettierrc`      | `bazel test //props/frontend:prettier_test`           |
+| svelte-check | `props/frontend/tsconfig.json`    | `bazel test //props/frontend:svelte_check_test`       |
 
 ### Pre-commit Framework (`.pre-commit-config.yaml`)
 
 The pre-commit framework manages all git hooks. Install with `pre-commit install`.
 
 **What it provides:**
+
 - Safety checks (no-commit-to-branch, check-merge-conflict, syntax validation)
 - Ansible syntax checking (ansible-syntax-check)
 - Bazel lint via `tools/hooks/lint-staged.sh` (runs `bazel lint` on staged files)
 
 **Migration status for pre-commit hooks:**
 
-| Hook | Purpose | Bazel Equivalent | Status |
-|------|---------|------------------|--------|
-| `no-commit-to-branch` | Block commits to main | N/A (git hook) | Keep in pre-commit |
-| `check-ast` | Valid Python syntax | `bazel build` catches | Redundant |
-| `check-yaml` | Valid YAML | N/A | Keep in pre-commit |
-| `check-toml` | Valid TOML | N/A | Keep in pre-commit |
-| `yamllint` | YAML style | `bazel test //ansible:yamllint_test` | ✅ Migrated |
-| `ansible-syntax-check` | Ansible validation | N/A | Keep in pre-commit |
-| `ruff-check` | Linting | `bazel lint //...` | ✅ Migrated |
-| `ruff-format` | Formatting | `bazel lint //...` | ✅ Migrated |
-| `mypy` (12 configs) | Type checking | `bazel build --config=typecheck` | ✅ Migrated |
-| `buildifier` | BUILD formatting | `bazel run //tools/lint:buildifier` | ✅ Migrated |
-| `alejandra` | Nix formatting | `bazel test //:alejandra_test` | ✅ Migrated |
-| `eslint` | JS/TS linting | `bazel lint //...` | ✅ Migrated |
-| `prettier` | JS/TS formatting | `bazel test //props/frontend:prettier_test` | ✅ Migrated |
-| `svelte-check` | Svelte types | `bazel test //props/frontend:svelte_check_test` | ✅ Migrated |
+| Hook                   | Purpose               | Bazel Equivalent                                | Status             |
+| ---------------------- | --------------------- | ----------------------------------------------- | ------------------ |
+| `no-commit-to-branch`  | Block commits to main | N/A (git hook)                                  | Keep in pre-commit |
+| `check-ast`            | Valid Python syntax   | `bazel build` catches                           | Redundant          |
+| `check-yaml`           | Valid YAML            | N/A                                             | Keep in pre-commit |
+| `check-toml`           | Valid TOML            | N/A                                             | Keep in pre-commit |
+| `yamllint`             | YAML style            | `bazel test //ansible:yamllint_test`            | ✅ Migrated        |
+| `ansible-syntax-check` | Ansible validation    | N/A                                             | Keep in pre-commit |
+| `ruff-check`           | Linting               | `bazel lint //...`                              | ✅ Migrated        |
+| `ruff-format`          | Formatting            | `bazel lint //...`                              | ✅ Migrated        |
+| `mypy` (12 configs)    | Type checking         | `bazel build --config=typecheck`                | ✅ Migrated        |
+| `buildifier`           | BUILD formatting      | `bazel run //tools/lint:buildifier`             | ✅ Migrated        |
+| `alejandra`            | Nix formatting        | `bazel test //:alejandra_test`                  | ✅ Migrated        |
+| `eslint`               | JS/TS linting         | `bazel lint //...`                              | ✅ Migrated        |
+| `prettier`             | JS/TS formatting      | `bazel test //props/frontend:prettier_test`     | ✅ Migrated        |
+| `svelte-check`         | Svelte types          | `bazel test //props/frontend:svelte_check_test` | ✅ Migrated        |
 
 ### Other Configuration Files
 
-| File | Purpose | Notes |
-|------|---------|-------|
-| `.yamllint.yaml` | yamllint config | Used by `bazel test //ansible:yamllint_test` |
-| `mypy.ini` | Root mypy config | Used by adgn, critic_util |
-| `mypy-homeassistant.ini` | HA-specific mypy | Used by homeassistant/iaqi |
-| `Cargo.toml` | Rust dependencies | Used by crate_universe for `@crates//` deps |
-| `.bazelrc` | Bazel config | Generated by session hook |
-| `.bazelignore` | Bazel ignore patterns | Static |
+| File                     | Purpose               | Notes                                        |
+| ------------------------ | --------------------- | -------------------------------------------- |
+| `.yamllint.yaml`         | yamllint config       | Used by `bazel test //ansible:yamllint_test` |
+| `mypy.ini`               | Root mypy config      | Used by adgn, critic_util                    |
+| `mypy-homeassistant.ini` | HA-specific mypy      | Used by homeassistant/iaqi                   |
+| `Cargo.toml`             | Rust dependencies     | Used by crate_universe for `@crates//` deps  |
+| `.bazelrc`               | Bazel config          | Generated by session hook                    |
+| `.bazelignore`           | Bazel ignore patterns | Static                                       |
 
 ### Known Duplication
 
@@ -764,6 +827,7 @@ For Claude Code web sessions, the session start hook runs this automatically.
 ### CI Configuration
 
 Recommended CI steps:
+
 1. `bazel build //...` - Verify everything builds
 2. `bazel test //...` - Run all tests
 3. `bazel lint //...` - Run ruff linting (aspect_rules_lint)
@@ -790,5 +854,6 @@ The `lock()` rule sets explicit `env` on `ctx.actions.run_shell()`, bypassing `-
 ### Python 3.13 Compatibility
 
 Some packages require updates for Python 3.13:
+
 - `homeassistant/iaqi`: Fixed `datetime.UTC` usage
 - Watch for `datetime.datetime.utcnow()` deprecation warnings

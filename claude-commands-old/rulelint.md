@@ -10,8 +10,9 @@
     <purpose>Validate rules, prompts, and instructions against LLM best practices and ensure they follow established patterns for maximum effectiveness. Also validates the semi-formal XML markup structure used in Claude prompts (not strict XML validation, but checks for well-formed pseudo-XML with matching tags, proper nesting, and correct reference formats).</purpose>
 
     <command-syntax><![CDATA[
+
 /rulelint [file|text] [path/content]
-    ]]></command-syntax>
+]]></command-syntax>
 
     <schema-reference>
       This linter validates against the <a href="~/.claude/schemas/prompt-xml-schema.md">Claude Prompt XML Schema</a> which defines:
@@ -24,6 +25,7 @@
         <li><![CDATA[Hierarchical rule organization (id="/code/python/types")]]></li>
       </ul>
     </schema-reference>
+
   </context>
 
   <rules>
@@ -67,18 +69,21 @@
         </example>
         <example positive>
           <![CDATA[
-Tool: mcp__brave-search__brave_web_search
+
+Tool: mcp**brave-search**brave_web_search
 Parameters:
-  query: "query text"
-  count: 10
-          ]]>
-        </example>
-      </section>
+query: "query text"
+count: 10
+]]>
+</example>
+
+</section>
 
       <section id="xml-format">
         <title>New XML Schema Format</title>
         <example positive>
           <![CDATA[
+
 <tool-call>
   <mcp server="brave-search" tool="brave_web_search">
     <params>
@@ -110,13 +115,15 @@ Parameters:
 
         <example positive>
           <![CDATA[
+
 U: What's 2+2?
 A: 4
-          ]]>
-        </example>
+]]>
+</example>
 
         <example positive>
           <![CDATA[
+
 <conversation>
   <message from="user">What's 2+2?</message>
   <message from="assistant">4</message>
@@ -126,13 +133,14 @@ A: 4
 
         <example positive>
           <![CDATA[
+
 <u>What's 2+2?</u>
 <a>4</a>
 <t>Tool output here</t>
-          ]]>
-        </example>
-      </examples>
-    </rule>
+]]>
+</example>
+</examples>
+</rule>
 
     <rule id="/validation/situation-action">
       <title>✅ Situation → Action Pattern</title>
@@ -151,6 +159,7 @@ A: 4
       <title>✅ Positive and Negative Examples</title>
       <content>
         <![CDATA[
+
 <examples>
   <example negative>
     <code language="python">
@@ -194,6 +203,7 @@ A: 4
       <title>✅ Rule Interlinking</title>
       <content>
         <![CDATA[
+
 <!-- Define rules with hierarchical IDs -->
 <rule id="/code/python/types/new-style-optional">
   <title>Use New Style Optional</title>
@@ -201,12 +211,13 @@ A: 4
 </rule>
 
 <!-- Reference them -->
+
 Follow <ref href="#/code/python/types/new-style-optional" />
 See <a href="#/code/quality">code quality rules</a>
 When needed, <call href="#validate-inputs" />
-        ]]>
-      </content>
-    </rule>
+]]>
+</content>
+</rule>
 
     <rule id="/validation/anthropic-practices">
       <title>✅ Anthropic Best Practices</title>
@@ -229,6 +240,7 @@ When needed, <call href="#validate-inputs" />
         <quote>Use structured XML tags to delineate different prompt components</quote>
         <example positive>
           <![CDATA[
+
 <situation>
 When user requests file creation
 </situation>
@@ -301,12 +313,13 @@ When user requests file creation
       <content>Show smart decision-making:</content>
       <example positive>
         <![CDATA[
+
 If search returns >100 results → narrow with more specific pattern
 If search returns 0 results → broaden pattern or check file extensions
 If pattern has special chars → escape for regex
-        ]]>
-      </example>
-    </rule>
+]]>
+</example>
+</rule>
 
     <rule id="/validation/compatibility">
       <title>✅ Compatibility Check</title>
@@ -328,6 +341,7 @@ If pattern has special chars → escape for regex
         <content>The user can use this command when cleanup is needed</content>
       </example>
     </rule>
+
   </rules>
 
   <process id="linting-process">
@@ -454,6 +468,7 @@ If pattern has special chars → escape for regex
         </ol>
       </fix-protocol>
     </step>
+
   </process>
 
   <output>
@@ -480,9 +495,10 @@ If pattern has special chars → escape for regex
 None
 
 SCORE: 95/100 - Excellent rule quality
-      ]]>
-    </section>
-  </output>
+]]>
+
+</section>
+</output>
 
   <common-issues>
     <issue id="vague-instructions">
@@ -522,6 +538,7 @@ SCORE: 95/100 - Excellent rule quality
       <example negative>Always use pandas</example>
       <example positive>For CSV files >100MB, use pandas for memory-efficient processing. For smaller files, csv.reader is sufficient.</example>
     </issue>
+
   </common-issues>
 
   <integration>
@@ -563,6 +580,7 @@ SCORE: 95/100 - Excellent rule quality
 
       Target: 80+ points for acceptance
     </content>
+
   </quality-metrics>
 
   <footer>
@@ -571,5 +589,6 @@ SCORE: 95/100 - Excellent rule quality
     <references>
       <ref id="anthropic-guide">Anthropic. (2024). <cite>Prompt Engineering Guide</cite>. https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview</ref>
     </references>
+
   </footer>
 </prompt>

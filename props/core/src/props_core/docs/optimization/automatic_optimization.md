@@ -79,7 +79,7 @@ Don't just look at accuracy numbers. Analyze:
 
 - Easier to debug (1-5 occurrences vs hundreds)
 - Full debugging access: TPs, execution traces, everything
-- Improvements here *hopefully* transfer to terminal metric
+- Improvements here _hopefully_ transfer to terminal metric
 
 **Workflow:**
 

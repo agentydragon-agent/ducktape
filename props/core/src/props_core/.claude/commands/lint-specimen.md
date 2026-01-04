@@ -36,11 +36,11 @@ A textual report of all violations with:
 
 ## Procedure
 
-1) Read authoring guide and extract checklist
-2) Identify target specimen directory
-3) Validate structure and files
-4) **Use `props snapshot exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
-5) **Check EVERY issue file in `issues/*.yaml`** (not just a sample):
+1. Read authoring guide and extract checklist
+2. Identify target specimen directory
+3. Validate structure and files
+4. **Use `props snapshot exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
+5. **Check EVERY issue file in `issues/*.yaml`** (not just a sample):
    - Parse YAML
    - **Verify ONE logical problem per file** (Authoring Guide §3):
      - Each file should describe ONE logical problem type (e.g., "missing type annotations", "dead code")
@@ -57,9 +57,9 @@ A textual report of all violations with:
      - **Don't need URLs**: Well-known frameworks/standards (e.g., React, Tailwind CSS, PostgreSQL, Python, pytest)
    - Verify rationale only references snapshot state (no historical context)
    - Ensure issue is standalone (no dependencies on other issues or non-captured files)
-6) Check README (if present) for minimal content
-7) Emit violations with references and suggested fixes
-8) Ask user to confirm which fixes to apply
+6. Check README (if present) for minimal content
+7. Emit violations with references and suggested fixes
+8. Ask user to confirm which fixes to apply
 
 **Note:** Unless the user explicitly asks to examine only specific issues (e.g., "lint issues 001-005"), you must check all issue files in the specimen.
 

@@ -46,6 +46,7 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
   - Supervisor boots `loop_worker`, exposes the control API, and watches for restart/shutdown signals.
   - `loop_worker` pulls pending inputs (chat events, hook effects), runs `agent.run_turn(...)`, and streams tool calls through `mcp_clients` (policy gateway enforces approvals).
   - `hooks.py` executes hook code in-process, producing “Effects” (`wake`, `messages`, `invoke`) that the worker consumes on the next turn.
+
 - **Hook Manager**
 - **Hook Manager**
   - Provides `loop.enable_hook` / `loop.disable_hook` / per-hook resources (`loop://hooks/{id}`).
@@ -69,13 +70,13 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
 
 ## Data & Access Model
 
-| Surface | Location | Mutability | Access Path |
-|---------|----------|------------|-------------|
-| Approvals, audit, global config | Control-plane DB | Read/write by control plane only | Agent reads via MCP resources; writes only through approved tools |
-| Agent scratch state (hooks, caches) | Agent container DB | Read/write by agent | Optional replication to control plane via approved tools |
-| Chat transcript | External chat backend (Matrix, Slack, etc.) | Managed by that service | Agent posts via native tooling inside the container (e.g., matrixctl/python client with scoped token); humans use the existing frontend; UI reads directly from the backend (no control-plane DB) |
-| Audit log (tool calls, policy decisions) | Control-plane DB | Append-only by control plane | Populated by policy gateway; UI can surface notable events |
-| Chat inbox (human/assistant) | Separate MCP chat servers | Read/write by owning principal; notifications suppressed for self-authored posts | Agent uses `chat.assistant.post`; human client uses `chat.human.post` |
+| Surface                                  | Location                                    | Mutability                                                                       | Access Path                                                                                                                                                                                       |
+| ---------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Approvals, audit, global config          | Control-plane DB                            | Read/write by control plane only                                                 | Agent reads via MCP resources; writes only through approved tools                                                                                                                                 |
+| Agent scratch state (hooks, caches)      | Agent container DB                          | Read/write by agent                                                              | Optional replication to control plane via approved tools                                                                                                                                          |
+| Chat transcript                          | External chat backend (Matrix, Slack, etc.) | Managed by that service                                                          | Agent posts via native tooling inside the container (e.g., matrixctl/python client with scoped token); humans use the existing frontend; UI reads directly from the backend (no control-plane DB) |
+| Audit log (tool calls, policy decisions) | Control-plane DB                            | Append-only by control plane                                                     | Populated by policy gateway; UI can surface notable events                                                                                                                                        |
+| Chat inbox (human/assistant)             | Separate MCP chat servers                   | Read/write by owning principal; notifications suppressed for self-authored posts | Agent uses `chat.assistant.post`; human client uses `chat.human.post`                                                                                                                             |
 
 ## Execution Flow
 
@@ -104,11 +105,11 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
 
 The agent container exposes a minimal HTTP interface to the host. No timeline or audit data flows over it; those are derived from external systems (Matrix, policy gateway).
 
-| Endpoint | Method | Purpose | Notes |
-|----------|--------|---------|-------|
-| `/healthz` | `GET` | Liveness/readiness check | Returns 200 with `{ "status": "ok" }`. Optional `/readyz` split if desired. |
-| `/control/restart` | `POST` | Hot-swap loop worker | Body `{ "reason": "upgrade" }`. Supervisor drains the current turn (or aborts if forced), reloads code/config from agent DB, and restarts. |
-| `/control/shutdown` | `POST` | Graceful stop (optional) | Used when tearing down the container. |
+| Endpoint            | Method | Purpose                  | Notes                                                                                                                                      |
+| ------------------- | ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/healthz`          | `GET`  | Liveness/readiness check | Returns 200 with `{ "status": "ok" }`. Optional `/readyz` split if desired.                                                                |
+| `/control/restart`  | `POST` | Hot-swap loop worker     | Body `{ "reason": "upgrade" }`. Supervisor drains the current turn (or aborts if forced), reloads code/config from agent DB, and restarts. |
+| `/control/shutdown` | `POST` | Graceful stop (optional) | Used when tearing down the container.                                                                                                      |
 
 - Authentication: expose the interface on `localhost`/Unix socket or protect with a simple bearer token injected via Docker secrets.
 - No other RPCs are required; agent-initiated work (hooks, tool calls, chat) continues to use outbound MCP clients.

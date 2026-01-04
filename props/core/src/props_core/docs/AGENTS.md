@@ -49,13 +49,13 @@ docs/
 
 Templates use these helpers (defined in `agent_helpers.py`):
 
-| Pattern | Purpose |
-|---------|---------|
-| `{{ describe_relation("name") }}` | Outputs `psql \d+ name` |
+| Pattern                             | Purpose                                                 |
+| ----------------------------------- | ------------------------------------------------------- |
+| `{{ describe_relation("name") }}`   | Outputs `psql \d+ name`                                 |
 | `{{ include_doc("package/path") }}` | Includes another template from Python package resources |
-| `{{ include_file("/path") }}` | Includes file from filesystem |
-| `{{ run_command("cmd") }}` | Executes shell command, outputs result |
-| `{{ get_grading_context() }}` | Grader-specific context injection |
+| `{{ include_file("/path") }}`       | Includes file from filesystem                           |
+| `{{ run_command("cmd") }}`          | Executes shell command, outputs result                  |
+| `{{ get_grading_context() }}`       | Grader-specific context injection                       |
 
 ## Write for Agents
 
@@ -65,9 +65,11 @@ Templates use these helpers (defined in `agent_helpers.py`):
 templates. Output goes to the agent's transcript.
 
 **Example - wrong:**
+
 > BootstrapHandler checks for TruncatedStream in the BaseExecResult and raises InitFailedError.
 
 **Example - right:**
+
 > Init output must stay under `mcp_infra.exec.models.MAX_BYTES_CAP`. If exceeded, the agent run fails.
 
 ## What Goes Here

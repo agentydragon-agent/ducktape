@@ -69,7 +69,7 @@ TypeScript (interface + literal union + runtime check):
 ```ts
 import { z } from "zod";
 
-type Role = "admin" | "user";  // closed set
+type Role = "admin" | "user"; // closed set
 export interface User {
   id: string;
   email: string;
@@ -138,7 +138,8 @@ role: str = "admin"  # should be Role (StrEnum)
 TypeScript domain shape as Record (no schema):
 
 ```ts
-function makeUser(): Record<string, unknown> {  // too loose
+function makeUser(): Record<string, unknown> {
+  // too loose
   return { id: "u1", email: "u@example.com", role: "admin" };
 }
 ```

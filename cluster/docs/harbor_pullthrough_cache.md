@@ -54,19 +54,19 @@ machine:
       docker.io:
         endpoints:
           - https://registry.test-cluster.agentydragon.com/docker-hub-proxy
-          - https://registry-1.docker.io  # Fallback
+          - https://registry-1.docker.io # Fallback
       ghcr.io:
         endpoints:
           - https://registry.test-cluster.agentydragon.com/ghcr-proxy
-          - https://ghcr.io  # Fallback
+          - https://ghcr.io # Fallback
       quay.io:
         endpoints:
           - https://registry.test-cluster.agentydragon.com/quay-proxy
-          - https://quay.io  # Fallback
+          - https://quay.io # Fallback
       registry.k8s.io:
         endpoints:
           - https://registry.test-cluster.agentydragon.com/registry-k8s-proxy
-          - https://registry.k8s.io  # Fallback
+          - https://registry.k8s.io # Fallback
 ```
 
 **Behavior**:
@@ -112,8 +112,8 @@ production Kubernetes deployments.
 mirrors:
   docker.io:
     endpoints:
-      - https://registry.test-cluster.agentydragon.com/docker-hub-proxy  # Primary (Harbor)
-      - https://registry-1.docker.io  # Fallback (upstream)
+      - https://registry.test-cluster.agentydragon.com/docker-hub-proxy # Primary (Harbor)
+      - https://registry-1.docker.io # Fallback (upstream)
 ```
 
 **Bootstrap Flow** (completely automatic, no manual intervention):
@@ -180,22 +180,22 @@ spec:
     - name: rewrite-dockerhub
       match:
         any:
-        - resources:
-            kinds:
-            - Pod
+          - resources:
+              kinds:
+                - Pod
       mutate:
         patchStrategicMerge:
           spec:
             containers:
-            - (name): "*"
-              image: |-
-                {{ regex_replace_all('^docker.io/(.*)$', '{{ image }}',
-                   'registry.test-cluster.agentydragon.com/docker-hub-proxy/$1') }}
+              - (name): "*"
+                image: |-
+                  {{ regex_replace_all('^docker.io/(.*)$', '{{ image }}',
+                     'registry.test-cluster.agentydragon.com/docker-hub-proxy/$1') }}
             initContainers:
-            - (name): "*"
-              image: |-
-                {{ regex_replace_all('^docker.io/(.*)$', '{{ image }}',
-                   'registry.test-cluster.agentydragon.com/docker-hub-proxy/$1') }}
+              - (name): "*"
+                image: |-
+                  {{ regex_replace_all('^docker.io/(.*)$', '{{ image }}',
+                     'registry.test-cluster.agentydragon.com/docker-hub-proxy/$1') }}
 ```
 
 **Behavior**:
@@ -611,27 +611,27 @@ spec:
   template:
     spec:
       containers:
-      - name: setup
-        image: curlimages/curl:latest
-        command:
-        - /bin/sh
-        - -c
-        - |
-          # Create Docker Hub registry endpoint
-          curl -X POST "https://registry.test-cluster.agentydragon.com/api/v2.0/registries" \
-            -H "Authorization: Basic $(echo -n admin:$HARBOR_PASSWORD | base64)" \
-            -d '{"name":"dockerhub","type":"docker-hub","url":"https://hub.docker.com"}'
+        - name: setup
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Create Docker Hub registry endpoint
+              curl -X POST "https://registry.test-cluster.agentydragon.com/api/v2.0/registries" \
+                -H "Authorization: Basic $(echo -n admin:$HARBOR_PASSWORD | base64)" \
+                -d '{"name":"dockerhub","type":"docker-hub","url":"https://hub.docker.com"}'
 
-          # Create proxy cache project
-          curl -X POST "https://registry.test-cluster.agentydragon.com/api/v2.0/projects" \
-            -H "Authorization: Basic $(echo -n admin:$HARBOR_PASSWORD | base64)" \
-            -d '{"project_name":"docker-hub-proxy","public":true,"registry_id":1}'
-        env:
-        - name: HARBOR_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: harbor-admin-password
-              key: password
+              # Create proxy cache project
+              curl -X POST "https://registry.test-cluster.agentydragon.com/api/v2.0/projects" \
+                -H "Authorization: Basic $(echo -n admin:$HARBOR_PASSWORD | base64)" \
+                -d '{"project_name":"docker-hub-proxy","public":true,"registry_id":1}'
+          env:
+            - name: HARBOR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: harbor-admin-password
+                  key: password
       restartPolicy: OnFailure
 ```
 
@@ -663,7 +663,7 @@ spec:
 
 ```yaml
 spec:
-  statsdDisabled: true  # Disable statsD exporter sidecar
+  statsdDisabled: true # Disable statsD exporter sidecar
 ```
 
 **Status**: Identified, not yet applied (waiting for user approval)
@@ -983,7 +983,7 @@ clusters handle private registries at scale.
 
    ```yaml
    spec:
-     statsdDisabled: true  # Disable Docker Hub rate-limited statsD exporter
+     statsdDisabled: true # Disable Docker Hub rate-limited statsD exporter
    ```
 
 2. **Commit and push**:

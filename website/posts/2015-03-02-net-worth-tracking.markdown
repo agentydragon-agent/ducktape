@@ -18,8 +18,8 @@ In this post, I give a high-level overview of how it works at the moment.
 The system needs to keep track of various assets which aren't straightforward
 to appraise:
 
-* I own a few Bitcoins (which were a large portion of my wealth back
-   in the last bubble at the end of 2014).
+- I own a few Bitcoins (which were a large portion of my wealth back
+  in the last bubble at the end of 2014).
 
 <figure>
 ![Bitcoin price 06/2014-06/2015 - the largest Bitcoin bubble yet](/images/bitcoin-06-2013-06-2014.png)
@@ -30,17 +30,17 @@ Image from [bitcoincharts.com](http://bitcoincharts.com/charts/bitstampUSD#rg146
 </div>
 </figure>
 
-* I have some money in conservative investment funds backed mostly
-   by government bonds.
+- I have some money in conservative investment funds backed mostly
+  by government bonds.
 
-* As I am writing this, I have a separate French bank account in euros.
-   At the time when I needed to track it, HomeBank did have a limited form of
-   multicurrency support, but if I remember correctly, I had a good reason
-   for not using that (the feature may not have been usable in my particular
-   case).
+- As I am writing this, I have a separate French bank account in euros.
+  At the time when I needed to track it, HomeBank did have a limited form of
+  multicurrency support, but if I remember correctly, I had a good reason
+  for not using that (the feature may not have been usable in my particular
+  case).
 
-* In 2014, I started dabbling in stocks.
-* And I also have some cash.
+- In 2014, I started dabbling in stocks.
+- And I also have some cash.
 
 The original problem was keeping track of my fiat money and of my Bitcoins.
 I wanted to have something stupidly hacky and working.
@@ -71,11 +71,11 @@ The beginning of the CSV file looks like this (data obviously scrambled):
     2013-09-28 21:16:15,1380395775,11015200.366,125000.7,890200.666,9999999,0.0,0.0
     ...
 
-* The first column (`2013-09-28 21:00:05`) is the date and time the data was
+- The first column (`2013-09-28 21:00:05`) is the date and time the data was
   collected, in a human-readable format.
-* The second column (`1380394805`) is also the date and time, but in machine-readable
+- The second column (`1380394805`) is also the date and time, but in machine-readable
   format (Unix time = number of seconds since the Epoch).
-* Every remaining field contains the value of an asset in CZK (Czech koruna).
+- Every remaining field contains the value of an asset in CZK (Czech koruna).
 
 Note the zeroes at the end - for example, I didn't have any stocks at first.
 When I needed to start tracking them, I just wrote the tracking code
@@ -106,18 +106,18 @@ number (of CZK) or crashes and burns.
 
 I have the following data sources:
 
-* `Prvak::Finance::Homebank::Accounting` loads a static HomeBank .xhb file,
-    which has a simple XML format. It uses the wonderful `nokogiri` gem to parse
-    it and crudely adds up all transactions. There are a few small gotchas
-    regarding "hidden accounts", internal transfers, and so on.
+- `Prvak::Finance::Homebank::Accounting` loads a static HomeBank .xhb file,
+  which has a simple XML format. It uses the wonderful `nokogiri` gem to parse
+  it and crudely adds up all transactions. There are a few small gotchas
+  regarding "hidden accounts", internal transfers, and so on.
 
-* `Prvak::Finance::IKSPortfolio` understands investment funds provided
-    by the company I invest through ([IKS](http://www.iks-kb.cz/web/index.html)).
-    Basically, you buy a number of "investment certificates" for price X and hope
-    price eventually befomes >X. I have "investment certificates" for several
-    funds (they differ in their asset allocation).
+- `Prvak::Finance::IKSPortfolio` understands investment funds provided
+  by the company I invest through ([IKS](http://www.iks-kb.cz/web/index.html)).
+  Basically, you buy a number of "investment certificates" for price X and hope
+  price eventually befomes >X. I have "investment certificates" for several
+  funds (they differ in their asset allocation).
 
-    I store the relevant data in `~prvak/.iks-portfolio.yml`:
+  I store the relevant data in `~prvak/.iks-portfolio.yml`:
 
         ---
         invested: 9900000
@@ -126,52 +126,52 @@ I have the following data sources:
             Amundi Funds Equity Global Resources (CZK): 23144
             ...
 
-    `invested` stores the amount of CZK invested into investment funds.
-    The `assets` hash is keyed by the name of a fund and values are numbers
-    of investment certificates you hold.
-    I then use a small gem of mine ([iks-scrape](https://github.com/MichalPokorny/iks_scrape))
-    to get the value of those.
+  `invested` stores the amount of CZK invested into investment funds.
+  The `assets` hash is keyed by the name of a fund and values are numbers
+  of investment certificates you hold.
+  I then use a small gem of mine ([iks-scrape](https://github.com/MichalPokorny/iks_scrape))
+  to get the value of those.
 
-    `iks_scrape` can't use any API to get the price, but luckily there is a constant URL
-    ([http://www.iks-kb.cz/web/fondy_denni_hodnoty.html](http://www.iks-kb.cz/web/fondy_denni_hodnoty.html))
-    where you can find the data. The incredibly useful `mechanize` gem
-    parses the HTML like a piece of cake.
+  `iks_scrape` can't use any API to get the price, but luckily there is a constant URL
+  ([http://www.iks-kb.cz/web/fondy_denni_hodnoty.html](http://www.iks-kb.cz/web/fondy_denni_hodnoty.html))
+  where you can find the data. The incredibly useful `mechanize` gem
+  parses the HTML like a piece of cake.
 
-* I use `BtcKit::BtcPrice` to get the pitiful state of my Bitcoin hoard.
-    There's again a file in my home which stores how many BTC do I have.
-    I simply pull some recent CZK trades from
-    the [LocalBitcoins](https://localbitcoins.com) JSON API and compute an average.
-    I tried various other providers for the data with varying success. LocalBitcoins
-    is good enough for now.
+- I use `BtcKit::BtcPrice` to get the pitiful state of my Bitcoin hoard.
+  There's again a file in my home which stores how many BTC do I have.
+  I simply pull some recent CZK trades from
+  the [LocalBitcoins](https://localbitcoins.com) JSON API and compute an average.
+  I tried various other providers for the data with varying success. LocalBitcoins
+  is good enough for now.
 
-* Stocks used to be handled by `Prvak::Finance::Stocks`. This is now a thin
-    wrapper around [worthy](https://github.com/MichalPokorny/worthy)
-    (the Ruby implementation broke one day and I decided I want to learn a bit
-    of Go instead :).
+- Stocks used to be handled by `Prvak::Finance::Stocks`. This is now a thin
+  wrapper around [worthy](https://github.com/MichalPokorny/worthy)
+  (the Ruby implementation broke one day and I decided I want to learn a bit
+  of Go instead :).
 
-    Worthy loads a JSON file from my `~` that describes what stocks and foreign
-    currencies do I own on my broker account:
+  Worthy loads a JSON file from my `~` that describes what stocks and foreign
+  currencies do I own on my broker account:
 
         {"stocks": {"MSFT": 123, "AAPL": 456, ...}, "currencies": {"USD": 666, ...}}
 
-    The [yahoo_stock_api](https://github.com/MichalPokorny/worthy/blob/master/src/github.com/MichalPokorny/worthy/yahoo_stock_api/yahoo_stock_api.go)
-    module sends one batch request to the Yahoo finance API. The request
-    format could use some readability improvements and it would be cool if
-    the API decided on one error value instead of randomly using `N/A`, `1.0`
-    or `0.0`, but if you use just the basic stuff, it's solid.
+  The [yahoo_stock_api](https://github.com/MichalPokorny/worthy/blob/master/src/github.com/MichalPokorny/worthy/yahoo_stock_api/yahoo_stock_api.go)
+  module sends one batch request to the Yahoo finance API. The request
+  format could use some readability improvements and it would be cool if
+  the API decided on one error value instead of randomly using `N/A`, `1.0`
+  or `0.0`, but if you use just the basic stuff, it's solid.
 
-    I only ask for the last closing price and for the tickers (to ensure
-    the order of stocks is in sync).
+  I only ask for the last closing price and for the tickers (to ensure
+  the order of stocks is in sync).
 
-    After we know how much money is the broker account worth, we just need
-    to convert the various currencies to CZK and we are done. I use
-    the very useful
-    [freecurrencyconverterapi.com](http://www.freecurrencyconverterapi.com) -
-    the API is dead simple and does everything I need.
-    [This Go module](https://github.com/MichalPokorny/worthy/blob/master/src/github.com/MichalPokorny/worthy/free_currency_converter/free_currency_converter.go) calls what I need.
+  After we know how much money is the broker account worth, we just need
+  to convert the various currencies to CZK and we are done. I use
+  the very useful
+  [freecurrencyconverterapi.com](http://www.freecurrencyconverterapi.com) -
+  the API is dead simple and does everything I need.
+  [This Go module](https://github.com/MichalPokorny/worthy/blob/master/src/github.com/MichalPokorny/worthy/free_currency_converter/free_currency_converter.go) calls what I need.
 
-* Finally, there's the euro account. It's again stored in a file,
-    and I convert to CZK again using [freecurrencyconverterapi.com](http://www.freecurrencyconverterapi.com).
+- Finally, there's the euro account. It's again stored in a file,
+  and I convert to CZK again using [freecurrencyconverterapi.com](http://www.freecurrencyconverterapi.com).
 
 <h2>Using the data</h2>
 The `net-worth-keeper` binary by default runs in an "interactive mode",

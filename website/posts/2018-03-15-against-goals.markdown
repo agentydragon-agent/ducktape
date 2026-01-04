@@ -39,7 +39,7 @@ If you tell yourself "today I will run a mile" and then you don't, you get an
 is feeling bad about yourself for a while. If you can stay on a streak of
 successfully doing all the things you commit to doing, you will ride a nice
 wave of "yay I'm doing all the things and I'm doing well". But miss once, and
-now you're a bad bad person (*ow*) and if you're like me, on a deep level, you
+now you're a bad bad person (_ow_) and if you're like me, on a deep level, you
 just want to curl up and cry.
 
 Also, my goals are sometimes about "forcing myself to do things good for the
@@ -47,15 +47,15 @@ long-term, even if they are aversive in the short-term". That can feel like the
 part of me which set the goal is grabbing control of everything and dragging
 along all parts which might be protesting, which is painful.
 
-An alternative is looking at self-development as a *process*. In that process,
-you do not set goals which you *have* to achieve *or it's bad*. You don't try to
+An alternative is looking at self-development as a _process_. In that process,
+you do not set goals which you _have_ to achieve _or it's bad_. You don't try to
 create a master plan with 34 steps that will perfectly fix everything if you
-follow them perfectly. Instead, you do small things in the now which *are
-available to you*, things which *you want to do* (or might enjoy doing but
+follow them perfectly. Instead, you do small things in the now which _are
+available to you_, things which _you want to do_ (or might enjoy doing but
 aren't sure yet) that will bring you a very short distance in the general
-direction of *where you want to be*. "Where you want to be" might also best be
-thought of as kind of an emotional "this is who I *really* am, this is what is
-*really* important to me" - not a S2-type explicit list of
+direction of _where you want to be_. "Where you want to be" might also best be
+thought of as kind of an emotional "this is who I _really_ am, this is what is
+_really_ important to me" - not a S2-type explicit list of
 [SMART](https://en.wikipedia.org/wiki/SMART_criteria) goals like "I want to
 weight <= 90 kg by 2019-01-01".
 
@@ -67,16 +67,16 @@ you can change what you are "aiming for" (though "aiming for" in a very weak
 sense, more like "what kind of thing would feel right") without feeling you're
 betraying an earlier commitment.
 
-On the other thing, parts of me seems to *want* some enforcement device - like
-the pain you get from missing a goal. Like for some reason I *don't want to
-stop feeling bad if I e.g. overeat*.
+On the other thing, parts of me seems to _want_ some enforcement device - like
+the pain you get from missing a goal. Like for some reason I _don't want to
+stop feeling bad if I e.g. overeat_.
 Maybe a way to make this part feel better about it would be building some
 self-trust, or what [the internal family systems
 model](http://en.wikipedia.org/wiki/Internal_Family_Systems_Model) calls
 "Self-leadership". Having some Self which makes sure that parts get along
 without being violent at each other, and which makes sure that everyone's needs
 are met and that parts don't enter prolonged conflicts.
-Like, part of me *wants* to make sure I *do* get fit, and it's afraid that if it
+Like, part of me _wants_ to make sure I _do_ get fit, and it's afraid that if it
 lets punishing me for not getting fit, I will not get fit.
 
 So, as for today. I'm staying home to nurse my ankle and having a MRI and a chat
@@ -89,8 +89,8 @@ fitter".
 
 Well, actually I'm doing really good so far. I feel good about the new
 system/the new process I'm putting into place. Writing about how yesterday went
-and thinking about the things I will do today felt *nice*, and *I am now not
-in traps in which I used to be* (e.g., the "feel bad &rarr; overeat" trap).
+and thinking about the things I will do today felt _nice_, and _I am now not
+in traps in which I used to be_ (e.g., the "feel bad &rarr; overeat" trap).
 
 I just realized there's one trap which I haven't mentioned here yet, and maybe
 it's one for which I don't yet know how would I avoid it long-term. It's the
@@ -101,14 +101,14 @@ Say that I am feeling stressed because there's too much noise in my office and
 it hurts and I stayed up all night because I was playing Civilization 5.
 And what I really want at this point is to go get some sleep.
 
-But it's *work*, and if you *are not at your post without explanation*, your
+But it's _work_, and if you _are not at your post without explanation_, your
 boss will reproach you for that.
 
 But if you tell your boss "hey, sorry, I stayed up all night playing
 Civilization 5 and I feel really bad about it and I just want to sleep please",
-that costs you social points. Because you're *socially-supposed to be a strong
-independent adult*, and *strong independent adults are not fragile*. And also,
-you *don't want to show how fragile you are*, because you have already had your
+that costs you social points. Because you're _socially-supposed to be a strong
+independent adult_, and _strong independent adults are not fragile_. And also,
+you _don't want to show how fragile you are_, because you have already had your
 fragility abused by others plenty of times.
 
 So (barring the opportunity to actually get some sleep), you stay at your post,
@@ -118,14 +118,14 @@ so aaaaaaaa :'(
 
 Google's research into effective teams identified this attribute called
 "psychological safety", which seems to predict lots of good things, and it seems
-to me like the belief that it's *okay* to make mistakes, that you *will not be
-personally-judged for what you do*, that *you are not on thin ice*, that *you
-are free to be yourself here*.
-I'm not sure if it's supposed to be mostly work-related - i.e., "it's *okay* to
+to me like the belief that it's _okay_ to make mistakes, that you _will not be
+personally-judged for what you do_, that _you are not on thin ice_, that _you
+are free to be yourself here_.
+I'm not sure if it's supposed to be mostly work-related - i.e., "it's _okay_ to
 break the build for a few days and we won't be mad at you". What I think would
 make me feel better at work and more free to be authentic (and also like it
-more, because I would *not feel forced into putting up a performance of a solid
-worker drone that I actually am not*) would be a kind of "psychological safety"
+more, because I would _not feel forced into putting up a performance of a solid
+worker drone that I actually am not_) would be a kind of "psychological safety"
 less about the content of my work and more about "it's okay to be fragile, it's
 okay to be disturbed by people talking a lot, it's okay to cry if you're
 overwhelmed".
@@ -135,7 +135,7 @@ feel safe to e.g. express an overwhelming sadness when you feel you've done
 something wrong, and hence you don't do it, you will use it later as more
 evidence that you are not psychologically safe here.
 
-Maybe *if* my current work environment is actually supportive of everything like
+Maybe _if_ my current work environment is actually supportive of everything like
 that and most of my fears/expectations-of-judgement are from this kind of
 self-driven feedback loop, some CoZE-type experiments could help. Like, maybe
 when I tell my boss I'm feeling bad, don't say it while wearing the mask of
@@ -144,9 +144,9 @@ and shed a few tears or let my voice break. Meh. Probably actually something
 weaker than that. This would already feel unsafe.
 
 There's a thought lingering in my head about the "think of it as a process"
-thesis. Maybe *things which you have to force yourself into doing* (by way of
-e.g., Complice or calendar reminders or willpower or what not) *are not really
-worth it*. Because being forced into something hurts. And maybe the thing to do
+thesis. Maybe _things which you have to force yourself into doing_ (by way of
+e.g., Complice or calendar reminders or willpower or what not) _are not really
+worth it_. Because being forced into something hurts. And maybe the thing to do
 instead is to start with where I am, and making progress through a sequence of
-comfortable expansions at the margins, *all of which feel good and not forced*
+comfortable expansions at the margins, _all of which feel good and not forced_
 and don't make me feel bad if I don't end up doing them.

@@ -47,20 +47,20 @@ need doing.
 
 Things on my mind are:
 
-* Work on my master's thesis.
-* Check that my mass transit card in ZRH still works (been here a year, it might
+- Work on my master's thesis.
+- Check that my mass transit card in ZRH still works (been here a year, it might
   run out).
-* Buy batteries for my bank's card reader 2FA machine.
+- Buy batteries for my bank's card reader 2FA machine.
 
-*Feeling of having to come up with more stuff.*
+_Feeling of having to come up with more stuff._
 
-* Errrr...
+- Errrr...
 
-* I guess, I'm still fat, what do I do about it? Well, that feels kind of
+- I guess, I'm still fat, what do I do about it? Well, that feels kind of
   forced...
-* I don't really want to do anything exercise-typey tomorrow. I even have a
+- I don't really want to do anything exercise-typey tomorrow. I even have a
   semi-good excuse for why not to, my ankle is still swollen.
-* But I feel that makes me bad.
+- But I feel that makes me bad.
 
 Huh. Does it? It feels like it makes me bad, though S2 would publicly say it
 doesn't. I also feel tired so probably not gonna IDC on that... Bookmark I
@@ -84,7 +84,7 @@ sounds good.
 My room is again slowly becoming a mess. That felt good fixing last time, let's
 add that.
 
-*Feeling of having to do more.*
+_Feeling of having to do more._
 
 Okay, when I'm home, I'm going to try to write some Python code that will run in
 Kubernetes on Google's cloud to download a dump of Wikipedia for my master's
@@ -102,7 +102,7 @@ intensely on my master's thesis. (That sounds good in some way.)
 Triage done? Argh doesn't feel entirely like it. I should also make some better
 plans for one of my partners visiting Zurich.
 
-*Itch*. But well, I guess this triage will do. The parts which are most
+_Itch_. But well, I guess this triage will do. The parts which are most
 important on it are keeping on track with not overeating or snacking, and
 making some progress on the thesis.
 
@@ -115,5 +115,5 @@ learn TensorFlow and get the confidence to say "I can write AI". That might
 actually have higher priority than the master's thesis, if I were to only care
 about getting a job in AI.
 
-*Sigh.* 3, 2, 1, chaaaaaaaarge, and let's go to sleep. And if we can't, maybe we
+_Sigh._ 3, 2, 1, chaaaaaaaarge, and let's go to sleep. And if we can't, maybe we
 can try to probe this "nothing is enough" thing.

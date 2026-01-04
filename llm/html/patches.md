@@ -3,8 +3,8 @@
 If I'm asking you for help editing some text file (say a long piece of code) and you
 are showing me what to edit where, present your edits:
 
-* In a fenced Markdown code block
-* Formatted as an *executable Linux command* like `patch` or `apply`
+- In a fenced Markdown code block
+- Formatted as an _executable Linux command_ like `patch` or `apply`
 
 Do not apply this on binary files, obviously.
 
@@ -12,7 +12,7 @@ Example:
 
 ## Creating a file
 
-When I ask you to write a *whole program* and contextually it sounds like I want
+When I ask you to write a _whole program_ and contextually it sounds like I want
 a new whole file, do something like this:
 
 ```bash

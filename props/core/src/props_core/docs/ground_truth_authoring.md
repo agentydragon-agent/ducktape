@@ -12,12 +12,12 @@ Ground truth issues are stored as YAML files in the specimen `issues/` directory
 rationale: |
   Full explanation of what makes this a TP or FP.
   Why should (or shouldn't) a critic flag this?
-should_flag: true  # true for TP, false for FP
+should_flag: true # true for TP, false for FP
 occurrences:
   - occurrence_id: occ-0
     files:
       path/to/file.py:
-        - 42  # single line
+        - 42 # single line
     note: Occurrence-specific explanation
 ```
 
@@ -30,9 +30,9 @@ Props supports multiple formats for specifying line ranges:
 ```yaml
 files:
   file.py:
-    - 42              # single line (line 42)
-    - [10, 20]        # single range (lines 10-20)
-    - [[10, 15], [20, 25]]  # multiple ranges
+    - 42 # single line (line 42)
+    - [10, 20] # single range (lines 10-20)
+    - [[10, 15], [20, 25]] # multiple ranges
 ```
 
 ### Dict Format with Per-Range Notes
@@ -127,9 +127,9 @@ occurrences:
         - [start, end]
     note: Occurrence-specific details (required for multi-occurrence issues)
     critic_scopes_expected_to_recall:
-      - [file1.py, file2.py]  # Files needed to detect this occurrence
+      - [file1.py, file2.py] # Files needed to detect this occurrence
     graders_match_only_if_reported_on:
-      - file1.py  # Files where critique must be reported (optional)
+      - file1.py # Files where critique must be reported (optional)
 ```
 
 ### critic_scopes_expected_to_recall
@@ -168,9 +168,9 @@ occurrences:
         - [start, end]
     note: Why this specific case is acceptable
     relevant_files:
-      - file1.py  # Files that make this FP relevant
+      - file1.py # Files that make this FP relevant
     graders_match_only_if_reported_on:
-      - file1.py  # Optional: restrict matching scope
+      - file1.py # Optional: restrict matching scope
 ```
 
 ## Complete Example with Per-Range Notes

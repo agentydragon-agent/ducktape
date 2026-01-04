@@ -14,7 +14,7 @@ On the other hand, Google employs heroes and the basic infrastructure
 is full of masterpieces of engineering. Today, I want to talk about
 [Protocol Buffers](https://developers.google.com/protocol-buffers/).
 
-Protocol Buffers (also *protobufs* or just *protos*) are a storage format
+Protocol Buffers (also _protobufs_ or just _protos_) are a storage format
 conceptually similar to JSON, YAML or XML.
 Every protocol buffer has a type called a "message". Message definitions
 live in `.proto` files:
@@ -160,8 +160,8 @@ HTTP, Unix stdin, etc.), you can define the details of your API
 in a single `.proto` file.
 
 Your users are in no way bound to your choice of language -- they just
-use generated code for their language. You can also *change your entire
-implementation*, including the language, while keeping the same `.proto`
+use generated code for their language. You can also _change your entire
+implementation_, including the language, while keeping the same `.proto`
 API definition. This is especially useful in large systems --
 machine-readable API definitions let your computer help you maintain services
 and clients compatible.

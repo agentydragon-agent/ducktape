@@ -26,7 +26,7 @@ Use these to triage sandbox issues, MCP stdio protocol, kernel behavior, and Jup
 
 - Logs
   - Tail "$WS/logs/jupyter.out" and "$WS/logs/jupyter.err"
-  - In wrapper mode: <RUN_ROOT>/runtime/jupyter_server.* under RUN_ROOT
+  - In wrapper mode: <RUN_ROOT>/runtime/jupyter_server.\* under RUN_ROOT
 - API reachability (token-protected)
   - curl -s "<http://127.0.0.1:${PORT}/api>" -H "Authorization: token ${TOKEN}" | head -c 200
 - Startup readiness
@@ -62,14 +62,14 @@ Use these to triage sandbox issues, MCP stdio protocol, kernel behavior, and Jup
   - Try file writes/reads to confirm policy effects
 - Direct kernel smoke under sandbox
   - sandbox-exec -f "$RUN_ROOT/policy.sb" "$KERNEL_PY" - <<'PY'
-import pathlib, sys
-print("pwd ok")
-try:
+    import pathlib, sys
+    print("pwd ok")
+    try:
     (pathlib.Path("/etc/deny_me")).write_text("x")
     print("wrote /etc — SHOULD NOT HAPPEN")
-except Exception as e:
-    print(type(e).__name__, e)
-PY
+    except Exception as e:
+    print(type(e).**name**, e)
+    PY
 
 ## macOS logs (seatbelt denials)
 
@@ -100,8 +100,8 @@ PY
 
 - Loopback only (intended once tightened)
   - python - <<'PY'
-import socket; s=socket.socket(); s.connect(("127.0.0.1", PORT)); print("ok")
-PY
+    import socket; s=socket.socket(); s.connect(("127.0.0.1", PORT)); print("ok")
+    PY
 - External egress (if allowed): curl <https://example.com> (should fail when tightened)
 
 ## Verbosity & tracing
@@ -116,7 +116,7 @@ PY
 - Wrapper tee logs
   - <RUN_ROOT>/mcp_stdout.log and mcp_stderr.log (latest)
 - Jupyter logs
-  - $WS/logs/*or RUN_ROOT/runtime/jupyter_server.*
+  - $WS/logs/_or RUN_ROOT/runtime/jupyter_server._
 - Save useful tails on failure to tmp_path for inspection
 
 ## Common failure patterns
@@ -129,12 +129,12 @@ PY
 
 - Pick a free port
   - python - <<'PY'
-import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()
-PY
+    import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()
+    PY
 - Generate token
   - python - <<'PY'
-import secrets; print(secrets.token_urlsafe(16))
-PY
+    import secrets; print(secrets.token_urlsafe(16))
+    PY
 
 ## When to tighten policy
 

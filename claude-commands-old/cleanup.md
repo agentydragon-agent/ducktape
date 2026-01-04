@@ -2,6 +2,7 @@
 description: Clean up temporary files, side outputs, and oneoff scripts
 name: cleanup
 ---
+
 <prompt version="1.0">
   <meta>
     <title>/cleanup - Intelligent Workspace Cleanup</title>
@@ -14,6 +15,7 @@ name: cleanup
     Your goal is to make '$ ls' output look clean, organized, and immediately understandable. Focus on visible clutter first - files and directories that show up in a basic ls command. Hidden files (.whatever) are lower priority unless they're unusually large or problematic.
 
     The aim is a reasonable hierarchy where someone new to the project can understand what they're looking at.
+
   </goal>
 
   <context>
@@ -33,6 +35,7 @@ name: cleanup
       - No version confusion (file_v2, file_final, file_FINAL_FINAL)
       - No scattered temporary outputs
     </principle>
+
   </context>
 
   <triggers>
@@ -80,6 +83,7 @@ name: cleanup
         <a>Starting cleanup scan for temporary artifacts.</a>
       </example>
     </natural-language>
+
   </usage>
 
   <workflow>
@@ -127,6 +131,7 @@ name: cleanup
         <multiEdit file_path="./COMPLETED_WORK_2024-06-30.md" edits="[...]" />
       </tool-call>
     </step>
+
   </workflow>
 
   <cleanup-targets>
@@ -305,6 +310,7 @@ name: cleanup
       </patterns>
       <note>Hidden files don't clutter `ls` output - focus on visible organization first</note>
     </target>
+
   </cleanup-targets>
 
   <safety-features>
@@ -346,36 +352,36 @@ name: cleanup
 CLEANUP PLAN:
 
 1. FILES TO DELETE:
-Obvious Junk:
-  🗑️ execute_with_async_orchestration.py.backup - Backup file (2 days old)
-  🗑️ debug_jupyter_output.py - Temporary debug script
-  🗑️ test_launch.sh - Simple test launcher
-  🗑️ old_files/ - Contains obsolete implementations (7 files)
-  🗑️ __pycache__/ - Python bytecode cache
+   Obvious Junk:
+   🗑️ execute_with_async_orchestration.py.backup - Backup file (2 days old)
+   🗑️ debug_jupyter_output.py - Temporary debug script
+   🗑️ test_launch.sh - Simple test launcher
+   🗑️ old_files/ - Contains obsolete implementations (7 files)
+   🗑️ **pycache**/ - Python bytecode cache
 
 Oneoff Scripts (5 files, 12KB):
-  🗑️ oneoff__test_webhook_integration.py - "Can delete after: Integration tests added" (3 days old)
-  🗑️ oneoff__bulk_rename_vars.sh - "Can delete after: Rename complete" (1 week old)
+🗑️ oneoff**test_webhook_integration.py - "Can delete after: Integration tests added" (3 days old)
+🗑️ oneoff**bulk_rename_vars.sh - "Can delete after: Rename complete" (1 week old)
 
 2. MARKDOWN CONSOLIDATION:
-Task Outputs (will merge → COMPLETED_WORK_2024-06-30.md):
-  📝 CHANGES_SUMMARY.md - Directory fixes and output formatting
-  📝 CRITICAL_FIXES.md - 6 critical bug fixes
-  📝 AUTHENTICATION_FIX.md - OAuth implementation notes
-  📝 orchestrator_failure_analysis.md - Old debugging notes
+   Task Outputs (will merge → COMPLETED_WORK_2024-06-30.md):
+   📝 CHANGES_SUMMARY.md - Directory fixes and output formatting
+   📝 CRITICAL_FIXES.md - 6 critical bug fixes
+   📝 AUTHENTICATION_FIX.md - OAuth implementation notes
+   📝 orchestrator_failure_analysis.md - Old debugging notes
 
 Status Files (will update):
-  📋 TEST_SUMMARY.md - Update to current test status
-  📋 TODO.md - Remove completed items, organize remaining
+📋 TEST_SUMMARY.md - Update to current test status
+📋 TODO.md - Remove completed items, organize remaining
 
 Documentation (will organize):
-  📚 Move DOCKER_ISOLATION.md → docs/
-  📚 Move SIGNAL_HANDLING.md → docs/
-  📚 Keep README.md in root
+📚 Move DOCKER_ISOLATION.md → docs/
+📚 Move SIGNAL_HANDLING.md → docs/
+📚 Keep README.md in root
 
 3. POTENTIALLY USEFUL (suggest archiving):
-  📁 mcp_archive/ - Old MCP experiments
-  📁 visualize_run.py - Run visualization tool
+   📁 mcp_archive/ - Old MCP experiments
+   📁 visualize_run.py - Run visualization tool
 
 Ready to proceed? This will:
 
@@ -383,8 +389,8 @@ Ready to proceed? This will:
 - Consolidate 4 task outputs → 1 archive file
 - Update 2 status files
 - Organize 2 docs into docs/ folder</a>
-      </example>
-    </smart-detection>
+  </example>
+  </smart-detection>
 
     <natural-language-interaction>
       <description>The cleanup command presents a plan and waits for the user's specific instructions. The user might say things like:</description>
@@ -413,12 +419,13 @@ Ready to proceed? This will:
     <example negative>
       <u>cleanup</u>
       <a>Cleanup complete! Removed:
-- oneoff__test_api.py
+
+- oneoff\_\_test_api.py
 - debug.log
 
 All clean!</a>
-      <reasoning>❌ Bad: Didn't run ls -la first! Missed .ruff_cache/, .claude/, __pycache__/, *.pyc, test-output-*.json, hidden directories</reasoning>
-    </example>
+<reasoning>❌ Bad: Didn't run ls -la first! Missed .ruff*cache/, .claude/, **pycache**/, *.pyc, test-output-\_.json, hidden directories</reasoning>
+</example>
 
     <example negative>
       <u>cleanup my experiments</u>
@@ -429,8 +436,8 @@ All clean!</a>
 - experiment3.py
 
 Done!</a>
-      <reasoning>❌ Bad: Didn't find oneoff__ scripts, missed experiment-data.json, left behind experiment.log</reasoning>
-    </example>
+<reasoning>❌ Bad: Didn't find oneoff\_\_ scripts, missed experiment-data.json, left behind experiment.log</reasoning>
+</example>
 
     <example negative>
       <u>cleanup the old markdown docs</u>
@@ -440,9 +447,9 @@ Done!</a>
 - Deleted DEPRECATED_GUIDE.md
 
 Workspace is cleaner now!</a>
-      <reasoning>❌ Bad: Ignored CHANGES_SUMMARY.md, CRITICAL_FIXES_DONE.md, TODO_COMPLETED.md - should consolidate not just delete some</reasoning>
-    </example>
-  </common-mistakes>
+<reasoning>❌ Bad: Ignored CHANGES_SUMMARY.md, CRITICAL_FIXES_DONE.md, TODO_COMPLETED.md - should consolidate not just delete some</reasoning>
+</example>
+</common-mistakes>
 
   <examples>
     <example positive>
@@ -462,7 +469,7 @@ VERSION CONSOLIDATION PLAN:
 2. Recommendation:
    - Archive v1 as generate_python_bundle_v1.js
    - Make v2 the primary generate_python_bundle.js
-   - Remove the _v2 suffix
+   - Remove the \_v2 suffix
 
 This consolidates functionality and removes version confusion.
 Proceed?</a>
@@ -480,7 +487,7 @@ Proceed?</a>
 ✅ Removed version suffix confusion
 
 The enhanced version is now the default generate_python_bundle.js</a>
-    </example>
+</example>
 
     <example positive>
       <u>cleanup</u>
@@ -513,7 +520,7 @@ Hmm, test_id_generator.py looks like a quick experiment, not a proper test. Let 
 </tool-call>
 
 Based on my inspection, here's what I found to clean up...</a>
-    </example>
+</example>
 
     <example positive>
       <u>I've been experimenting a lot, cleanup</u>
@@ -522,31 +529,31 @@ Based on my inspection, here's what I found to clean up...</a>
 CLEANUP PLAN:
 
 1. FILES TO DELETE:
-Oneoff Scripts (8 files, 45KB):
-  🗑️ oneoff__test_api.py (3 days old)
-  🗑️ oneoff__bulk_rename.py (1 week old)
-  ... and 6 more
+   Oneoff Scripts (8 files, 45KB):
+   🗑️ oneoff**test_api.py (3 days old)
+   🗑️ oneoff**bulk_rename.py (1 week old)
+   ... and 6 more
 
 Temporary Files (45 files, 234MB):
-  🗑️ debug-*.log (23 files)
-  🗑️ test-output-*.json (15 files)
-  🗑️ workspace snapshots (3 files, 189MB)
+🗑️ debug-_.log (23 files)
+🗑️ test-output-_.json (15 files)
+🗑️ workspace snapshots (3 files, 189MB)
 
 2. MARKDOWN CONSOLIDATION:
-Task Outputs (6 files → COMPLETED_WORK_2024-06-30.md):
-  📝 API_INTEGRATION.md
-  📝 REFACTOR_COMPLETE.md
-  📝 BUG_FIXES_JAN.md
-  ... and 3 more
+   Task Outputs (6 files → COMPLETED_WORK_2024-06-30.md):
+   📝 API_INTEGRATION.md
+   📝 REFACTOR_COMPLETE.md
+   📝 BUG_FIXES_JAN.md
+   ... and 3 more
 
 Status Files (will update):
-  📋 TODO.md - 45 items (28 completed will be removed)
-  📋 PROJECT_STATUS.md - Last updated 1 week ago
+📋 TODO.md - 45 items (28 completed will be removed)
+📋 PROJECT_STATUS.md - Last updated 1 week ago
 
 3. DOCUMENTATION (organize):
-  📚 API_GUIDE.md → docs/
-  📚 DEPLOYMENT.md → docs/
-  📚 ARCHITECTURE.md → docs/
+   📚 API_GUIDE.md → docs/
+   📚 DEPLOYMENT.md → docs/
+   📚 ARCHITECTURE.md → docs/
 
 Total: 289MB to clean, 6 files to consolidate, 3 docs to organize
 
@@ -555,12 +562,12 @@ Proceed?</a>
       <u>just cleanup the oneoffs from last week</u>
       <a>Found 3 oneoff scripts older than 7 days:
 
-- oneoff__migrate_data.py (10 days)
-- oneoff__test_old_api.py (8 days)
-- oneoff__benchmark_v1.py (14 days)
+- oneoff\_\_migrate_data.py (10 days)
+- oneoff\_\_test_old_api.py (8 days)
+- oneoff\_\_benchmark_v1.py (14 days)
 
-   I'll delete these 3 files.</a>
-    </example>
+  I'll delete these 3 files.</a>
+  </example>
 
     <example positive>
       <u>cleanup but focus on the markdown files</u>
@@ -596,6 +603,7 @@ Proceed?</a>
 
         Proceed?
       </a>
+
     </example>
   </examples>
 
@@ -664,6 +672,7 @@ Proceed?</a>
 
         2 files archived. Nothing else found to clean up.
       </a>
+
     </example>
   </archive-detection>
 
@@ -725,6 +734,7 @@ Proceed?</a>
 
         Ready to clean up?
       </a>
+
     </example>
 
     <example positive>

@@ -23,8 +23,20 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
     {
       "last_id": "1700000012345",
       "messages": [
-        {"id": "1700000012344", "ts": "2025-10-09T12:34:50Z", "author": "user", "mime": "text/markdown", "content": "CI is green on main"},
-        {"id": "1700000012345", "ts": "2025-10-09T12:34:56Z", "author": "user", "mime": "text/markdown", "content": "Deploy now?"}
+        {
+          "id": "1700000012344",
+          "ts": "2025-10-09T12:34:50Z",
+          "author": "user",
+          "mime": "text/markdown",
+          "content": "CI is green on main"
+        },
+        {
+          "id": "1700000012345",
+          "ts": "2025-10-09T12:34:56Z",
+          "author": "user",
+          "mime": "text/markdown",
+          "content": "Deploy now?"
+        }
       ]
     }
     ```
@@ -46,26 +58,26 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
 
 Startup/hydration
 
-1) Orchestrator enables chat‑via‑MCP mode and pins a subscription to `ui://chat/inbox`. Human UI also subscribes (or hydrates on view mount).
-2) Orchestrator has a persisted `last_id` → call `chat.read_since({after_id})`; otherwise `resources/read`. Human UI calls `resources/read` to render the current inbox (does not rely on extras).
-3) Orchestrator injects each message (no skipping) in order; persists the new `last_id`. Human UI renders them as they arrive or after read.
+1. Orchestrator enables chat‑via‑MCP mode and pins a subscription to `ui://chat/inbox`. Human UI also subscribes (or hydrates on view mount).
+2. Orchestrator has a persisted `last_id` → call `chat.read_since({after_id})`; otherwise `resources/read`. Human UI calls `resources/read` to render the current inbox (does not rely on extras).
+3. Orchestrator injects each message (no skipping) in order; persists the new `last_id`. Human UI renders them as they arrive or after read.
 
 New user message
 
-1) Human chat server appends to inbox; emits `notifications/resources/updated uri=ui://chat/inbox`.
-2) Orchestrator (via its sidecar client) receives notify → call `resources/read`/`chat.read_since`, raises a `UserText` event, and reduces it into `UiState`. Human UI receives the same notify and calls `resources/read` to render the inbox (or renders from params.messages[] if provided).
-3) Orchestrator persists new `last_id`.
+1. Human chat server appends to inbox; emits `notifications/resources/updated uri=ui://chat/inbox`.
+2. Orchestrator (via its sidecar client) receives notify → call `resources/read`/`chat.read_since`, raises a `UserText` event, and reduces it into `UiState`. Human UI receives the same notify and calls `resources/read` to render the inbox (or renders from params.messages[] if provided).
+3. Orchestrator persists new `last_id`.
 
 Agent sends message
 
-1) Runtime calls `chat.assistant.post(...)`; the assistant chat server persists the message but suppresses notifications (no self‑echo). Human clients see it via their own local echo or periodic reads; the human chat server will emit notifications only for messages authored by the human side.
-2) Runtime emits an assistant timeline item (`AssistantMarkdownItem`) so the frontend updates immediately. Optionally mirror the message into the human inbox if you want all parties to rely on the same resource.
+1. Runtime calls `chat.assistant.post(...)`; the assistant chat server persists the message but suppresses notifications (no self‑echo). Human clients see it via their own local echo or periodic reads; the human chat server will emit notifications only for messages authored by the human side.
+2. Runtime emits an assistant timeline item (`AssistantMarkdownItem`) so the frontend updates immediately. Optionally mirror the message into the human inbox if you want all parties to rely on the same resource.
 
 Crash/reconnect
 
-1) Orchestrator restarts with persisted `last_id`.
-2) Orchestrator (through the sidecar client) calls `ui.chat_read_since({after_id})` (or windowed `resources/read`) to fetch missed user messages.
-3) Orchestrator injects messages by emitting `UserText` events; persists new `last_id`.
+1. Orchestrator restarts with persisted `last_id`.
+2. Orchestrator (through the sidecar client) calls `ui.chat_read_since({after_id})` (or windowed `resources/read`) to fetch missed user messages.
+3. Orchestrator injects messages by emitting `UserText` events; persists new `last_id`.
 
 ## Notes
 
@@ -81,35 +93,33 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
 
 ### Human → Agent (V1 bus‑only)
 
-1) Human writes: "Deploy now?" in the UI.
-2) UI backend forwards the message to the orchestrator (out of band) and displays it.
-3) The orchestrator injects the message into the next sampling turn for the model:
+1. Human writes: "Deploy now?" in the UI.
+2. UI backend forwards the message to the orchestrator (out of band) and displays it.
+3. The orchestrator injects the message into the next sampling turn for the model:
 
    ```jsonc
    {
-     "messages": [
-       { "role": "user", "content": "Deploy now?" }
-     ]
+     "messages": [{ "role": "user", "content": "Deploy now?" }],
    }
    ```
 
-4) Model responds with tool calls (no plain text). Example:
+4. Model responds with tool calls (no plain text). Example:
    - Call `ui_send_message({ mime: "text/markdown", content: "Acknowledged. Running deployment…" })`
    - Then call `loop_yield_turn({})` (or, for legacy flows, `ui_end_turn({})`)
-5) The Compositor (with policy middleware) gates/forwards the tool calls; UI renders the assistant message and ends the turn.
+5. The Compositor (with policy middleware) gates/forwards the tool calls; UI renders the assistant message and ends the turn.
 
 ### Human → Agent (MCP‑native resource mode)
 
-1) Human writes in UI → UI server appends to `ui://chat/inbox` and emits `notifications/resources/updated uri=ui://chat/inbox`.
-2) The orchestrator (subscribed) either consumes `params.messages[]` or calls `resources/read`/`ui_chat_read_since`.
-3) The orchestrator injects each new user message (no skipping) into the next sampling turn (same JSON as above).
-4) Model calls `ui_send_message` followed by `loop_yield_turn`; the Compositor forwards; UI renders.
+1. Human writes in UI → UI server appends to `ui://chat/inbox` and emits `notifications/resources/updated uri=ui://chat/inbox`.
+2. The orchestrator (subscribed) either consumes `params.messages[]` or calls `resources/read`/`ui_chat_read_since`.
+3. The orchestrator injects each new user message (no skipping) into the next sampling turn (same JSON as above).
+4. Model calls `ui_send_message` followed by `loop_yield_turn`; the Compositor forwards; UI renders.
 
 ### Agent → Human (both modes)
 
-1) Model submits `chat.assistant.post({mime, content})` (no plain text outside tools).
-2) Runtime emits `UiMessageEvt` and optionally mirrors the message to human clients that rely on the chat resource.
-3) Model calls `loop.yield_turn({})` to finish the turn.
+1. Model submits `chat.assistant.post({mime, content})` (no plain text outside tools).
+2. Runtime emits `UiMessageEvt` and optionally mirrors the message to human clients that rely on the chat resource.
+3. Model calls `loop.yield_turn({})` to finish the turn.
 
 ---
 
@@ -151,7 +161,7 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
 
 ### Tool call with approval (illustrative)
 
-1) After seeing the user’s request, the model calls a privileged tool (e.g., `runtime.exec`).
-2) The policy decision is `ask` → the policy middleware blocks and surfaces an approval item to the human.
-3) Human approves; the policy middleware executes the tool, captures the result, and injects a concise summary to the model in the next turn (alongside any pending chat messages).
-4) Model follows up by calling `ui.send_message` to present the outcome to the user, then `ui.end_turn`.
+1. After seeing the user’s request, the model calls a privileged tool (e.g., `runtime.exec`).
+2. The policy decision is `ask` → the policy middleware blocks and surfaces an approval item to the human.
+3. Human approves; the policy middleware executes the tool, captures the result, and injects a concise summary to the model in the next turn (alongside any pending chat messages).
+4. Model follows up by calling `ui.send_message` to present the outcome to the user, then `ui.end_turn`.

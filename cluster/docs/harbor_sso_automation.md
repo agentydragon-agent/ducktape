@@ -260,19 +260,19 @@ curl -X PUT "https://harbor.example.com/api/v2.0/configurations" \
 
 ### Configuration Parameters
 
-| Parameter | Value | Source |
-| --------- | ----- | ------ |
-| `auth_mode` | `"oidc_auth"` | Hardcoded |
-| `oidc_name` | `"authentik"` | Hardcoded |
-| `oidc_endpoint` | `"https://auth.test-cluster.agentydragon.com/application/o/harbor/"` | Variable |
-| `oidc_client_id` | `"harbor"` | Hardcoded (matches Authentik app slug) |
-| `oidc_client_secret` | Generated | ESO Password generator |
-| `oidc_scope` | `"openid,email,profile"` | Hardcoded |
-| `oidc_verify_cert` | `true` | Hardcoded |
-| `oidc_auto_onboard` | `true` | Hardcoded (create users on first login) |
-| `oidc_user_claim` | `"preferred_username"` | Hardcoded |
-| `oidc_groups_claim` | `"groups"` | Hardcoded |
-| `oidc_admin_group` | `"harbor-admins"` | Hardcoded |
+| Parameter            | Value                                                                | Source                                  |
+| -------------------- | -------------------------------------------------------------------- | --------------------------------------- |
+| `auth_mode`          | `"oidc_auth"`                                                        | Hardcoded                               |
+| `oidc_name`          | `"authentik"`                                                        | Hardcoded                               |
+| `oidc_endpoint`      | `"https://auth.test-cluster.agentydragon.com/application/o/harbor/"` | Variable                                |
+| `oidc_client_id`     | `"harbor"`                                                           | Hardcoded (matches Authentik app slug)  |
+| `oidc_client_secret` | Generated                                                            | ESO Password generator                  |
+| `oidc_scope`         | `"openid,email,profile"`                                             | Hardcoded                               |
+| `oidc_verify_cert`   | `true`                                                               | Hardcoded                               |
+| `oidc_auto_onboard`  | `true`                                                               | Hardcoded (create users on first login) |
+| `oidc_user_claim`    | `"preferred_username"`                                               | Hardcoded                               |
+| `oidc_groups_claim`  | `"groups"`                                                           | Hardcoded                               |
+| `oidc_admin_group`   | `"harbor-admins"`                                                    | Hardcoded                               |
 
 ## Alternative Approaches Considered and Rejected
 

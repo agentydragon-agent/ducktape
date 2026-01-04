@@ -3,7 +3,7 @@ title: Stock correlation calculator
 ---
 
 I have some stocks and I try to keep my portfolio reasonably balanced.
-One thing you may want to know about is how much do your assets *correlate*.
+One thing you may want to know about is how much do your assets _correlate_.
 The correlation of stocks A and B is just the correlation of the daily returns
 of A with the daily returns of B, or, in other words, how much do the two
 stocks tend to move in the same daily direction.
@@ -19,7 +19,7 @@ manufacturers of chemicals might remain more or less unaffected.
 
 There are some online tools that can calculate the correlation of stocks, but
 I didn't like any of these enough. Some of them only let you compare two
-stocks at a time, but I actually want to see the whole correlation *matrix*
+stocks at a time, but I actually want to see the whole correlation _matrix_
 of everything I have. Some only let you make N queries and then they tell you
 to go give them your money. So, I wrote my own. It's at
 [https://stockton-prvak.rhcloud.com](https://stockton-prvak.rhcloud.com).

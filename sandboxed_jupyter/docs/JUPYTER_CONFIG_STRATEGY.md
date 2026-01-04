@@ -6,7 +6,7 @@ We force Jupyter to only see and use our kernelspecs by constraining config and 
   - JUPYTER_RUNTIME_DIR = <run_root>/runtime
   - JUPYTER_DATA_DIR = <run_root>/data
   - JUPYTER_CONFIG_DIR = <run_root>/config
-  - JUPYTER_PATH = <run_root>/data  (limits data search path)
+  - JUPYTER_PATH = <run_root>/data (limits data search path)
 - Config file: <RUN_ROOT>/config/jupyter_server_config.py
   - KernelSpecManager.kernel_dirs = ["<run_root>/data/kernels"]
   - KernelSpecManager.ensure_native_kernel = False
@@ -20,7 +20,7 @@ We force Jupyter to only see and use our kernelspecs by constraining config and 
 
 If sources/venv are mounted read-only, configure Python bytecode handling to avoid writes next to .py files:
 
-- Prefer setting PYTHONPYCACHEPREFIX=<RUN_ROOT>/pycache (redirects __pycache__ writes)
+- Prefer setting PYTHONPYCACHEPREFIX=<RUN_ROOT>/pycache (redirects **pycache** writes)
 - Or set PYTHONDONTWRITEBYTECODE=1 to disable .pyc writes entirely (slightly slower imports)
 
 This locks kernel selection to our provided spec, avoiding global/user kernels.

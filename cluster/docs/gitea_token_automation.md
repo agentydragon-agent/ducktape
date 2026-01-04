@@ -42,43 +42,43 @@ spec:
     spec:
       restartPolicy: OnFailure
       containers:
-      - name: token-generator
-        image: curlimages/curl:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          # Generate token via Gitea API
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"name":"terraform-admin-token","scopes":["write:admin","write:repository","write:user"]}' \
-            -u "admin:${GITEA_ADMIN_PASSWORD}" \
-            "http://gitea-http:3000/api/v1/users/admin/tokens")
+        - name: token-generator
+          image: curlimages/curl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Generate token via Gitea API
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                -H "Content-Type: application/json" \
+                -d '{"name":"terraform-admin-token","scopes":["write:admin","write:repository","write:user"]}' \
+                -u "admin:${GITEA_ADMIN_PASSWORD}" \
+                "http://gitea-http:3000/api/v1/users/admin/tokens")
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n-1)
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              BODY=$(echo "$RESPONSE" | head -n-1)
 
-          # Check if successful (201) or already exists (500)
-          if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "500" ]; then
-            if [ "$HTTP_CODE" = "201" ]; then
-              TOKEN=$(echo "$BODY" | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)
-              echo "Token created: $TOKEN"
-              # Store in Kubernetes secret
-              kubectl create secret generic gitea-admin-token \
-                --from-literal=token="$TOKEN" \
-                --dry-run=client -o yaml | kubectl apply -f -
-            else
-              echo "Token already exists, skipping"
-            fi
-          else
-            echo "Failed to create token. HTTP $HTTP_CODE: $BODY"
-            exit 1
-          fi
-        env:
-        - name: GITEA_ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: gitea-admin-password
-              key: password
+              # Check if successful (201) or already exists (500)
+              if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "500" ]; then
+                if [ "$HTTP_CODE" = "201" ]; then
+                  TOKEN=$(echo "$BODY" | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)
+                  echo "Token created: $TOKEN"
+                  # Store in Kubernetes secret
+                  kubectl create secret generic gitea-admin-token \
+                    --from-literal=token="$TOKEN" \
+                    --dry-run=client -o yaml | kubectl apply -f -
+                else
+                  echo "Token already exists, skipping"
+                fi
+              else
+                echo "Failed to create token. HTTP $HTTP_CODE: $BODY"
+                exit 1
+              fi
+          env:
+            - name: GITEA_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin-password
+                  key: password
 ```
 
 <!-- markdownlint-enable MD040 -->

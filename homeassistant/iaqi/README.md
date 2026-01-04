@@ -19,7 +19,7 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
    indoor_aqi:
      monitors:
        - name: "Living Room AQI"
-         unique_id: "living_room_aqi"  # Optional but recommended
+         unique_id: "living_room_aqi" # Optional but recommended
          sensors:
            co2: sensor.living_room_co2
            pm25: sensor.living_room_pm25
@@ -32,7 +32,7 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
            pm25: sensor.bedroom_pm25
 
      # Optional: set how long before a sensor reading is considered "stale"
-     stale_time: "1:00:00"  # Format: HH:MM:SS or seconds (default: 3600)
+     stale_time: "1:00:00" # Format: HH:MM:SS or seconds (default: 3600)
    ```
 
 3. Restart Home Assistant.
@@ -41,13 +41,13 @@ Calculates an Indoor Air Quality Index (IAQI) from multiple air quality sensors.
 
 ### Configuration
 
-| Option | Description |
-|--------|-------------|
-| `monitors` | List of monitor configurations - each "monitor" is 1 set of sensors aggregated into an IAQI |
-| `name` | Display name for the aggregated IAQI sensor |
-| `unique_id` | Unique identifier for the aggregated IAQI sensor (optional but recommended) |
-| `sensors` | Map of pollutant type to entity_id of sensors that are aggregated into IAQI |
-| `stale_time` | How long before sensor readings are considered stale (optional, default: 3600s) |
+| Option       | Description                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------- |
+| `monitors`   | List of monitor configurations - each "monitor" is 1 set of sensors aggregated into an IAQI |
+| `name`       | Display name for the aggregated IAQI sensor                                                 |
+| `unique_id`  | Unique identifier for the aggregated IAQI sensor (optional but recommended)                 |
+| `sensors`    | Map of pollutant type to entity_id of sensors that are aggregated into IAQI                 |
+| `stale_time` | How long before sensor readings are considered stale (optional, default: 3600s)             |
 
 ### Supported Pollutant Types
 
@@ -74,16 +74,16 @@ Highlighted "bottleneck" pollutants are those with IAQI component values close t
 
 The sensor exposes the following attributes:
 
-| Attribute | Description |
-|-----------|-------------|
-| `level` | Text description of air quality level |
-| `color` | Color representing the quality level (green, yellow, orange, red, purple) |
-| `bottlenecks` | List of pollutants causing poor air quality (worst first) |
-| `bottleneck_string` | Human-readable description of bottlenecks with values and units |
-| `iaqi_[pollutant]` | Individual IAQI value for each pollutant |
-| `raw_[pollutant]` | Raw sensor value for each pollutant |
-| `subindex_count` | Number of valid pollutant readings |
-| `sensor_errors` | List of any sensor errors encountered |
+| Attribute           | Description                                                               |
+| ------------------- | ------------------------------------------------------------------------- |
+| `level`             | Text description of air quality level                                     |
+| `color`             | Color representing the quality level (green, yellow, orange, red, purple) |
+| `bottlenecks`       | List of pollutants causing poor air quality (worst first)                 |
+| `bottleneck_string` | Human-readable description of bottlenecks with values and units           |
+| `iaqi_[pollutant]`  | Individual IAQI value for each pollutant                                  |
+| `raw_[pollutant]`   | Raw sensor value for each pollutant                                       |
+| `subindex_count`    | Number of valid pollutant readings                                        |
+| `sensor_errors`     | List of any sensor errors encountered                                     |
 
 ## Development & Testing
 

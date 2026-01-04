@@ -544,12 +544,12 @@ Generate a review document with all comments:
 
 <full_comment_text>
 
-```
+````
 
 **Context Before:**
 ```python
 <3_lines_before>
-```
+````
 
 **Context After:**
 
@@ -565,7 +565,7 @@ Generate a review document with all comments:
 
 ---
 
-```
+````
 
 ---
 
@@ -606,7 +606,7 @@ async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
 async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
     """Run a shell command inside the per-session Docker container."""
     ...
-```
+````
 
 ### Obvious Statements
 

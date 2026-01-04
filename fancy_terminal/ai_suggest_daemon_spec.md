@@ -12,7 +12,7 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 
 ## Components
 
-1) zsh client integration (boundary-only, not a tutorial)
+1. zsh client integration (boundary-only, not a tutorial)
 
 - Implement `_zsh_autosuggest_strategy_ai` per zsh-autosuggestions’ strategy contract:
   - Input: called with `$1=$BUFFER` (current line/prefix).
@@ -20,7 +20,7 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 - Guardrails: check `AI_AUTOSUGGEST` and deps; skip if `${#BUFFER} < $AI_SUGGEST_MIN_PREFIX_LEN` or `$NO_AI_SUGGEST`.
 - Daemon use: ensure daemon is healthy once per shell; send `suggest` (cwd, buffer, recent) over the UNIX socket; enforce client min-interval; return immediately (non-blocking).
 
-2) Daemon process (Python 3.11+, `asyncio`)
+2. Daemon process (Python 3.11+, `asyncio`)
 
 - Single-process UNIX domain socket server at `$AI_SUGGEST_SOCK` (default: `~/.cache/ai_suggest/daemon.sock`).
 - Protocol: NDJSON (one JSON object per line), `v:1` on all messages.
@@ -45,14 +45,14 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
     - On success, return `{ok:true, suggestion, suffix, latency_ms, cache_hit, ttl_ms}` with `suffix = suggestion[len(buffer):]`.
     - On error, return `{ok:false, code, message}`.
 
-3) OpenAI adapter
+3. OpenAI adapter
 
 - Simple class `OpenAIAdapter` with `complete(buffer, context) -> str|None`.
 - Use `openai` Python SDK or shell out to `openai api chat.completions.create`.
 - Model configurable via `AI_SUGGEST_MODEL` (default: `gpt-4o-mini`).
 - Cap tokens (64), temperature low (0.2–0.3), and include a strict system prompt to enforce prefix completion.
 
-4) Spawn/health management (client-side)
+4. Spawn/health management (client-side)
 
 - Function `ensure_ai_daemon_running` in zsh:
   - Socket dir `~/.cache/ai_suggest` 0700; PID/log files there.
@@ -61,7 +61,7 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
   - Start daemon: `(setsid nohup python3 -m ai_suggest.daemon >"$LOG" 2>&1 & echo $! >"$PID") </dev/null`
   - Poll ping up to ~10x50 ms; on success, done; else kill PID, remove socket, release lock, return (no-suggest this time).
 
-5) CLI helpers (optional)
+5. CLI helpers (optional)
 
 - `ai-suggest status|stop|restart` shell functions for manual control.
 
@@ -94,25 +94,58 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 - Request example:
 
 ```json
-{"v":1,"id":"42","type":"suggest","model":"gpt-4o-mini","cwd":"/Users/rai/code/openai","buffer":"pytest -k ","recent":["rg TODO","git status"],"require_prefix_match":true,"timeout_ms":900}
+{
+  "v": 1,
+  "id": "42",
+  "type": "suggest",
+  "model": "gpt-4o-mini",
+  "cwd": "/Users/rai/code/openai",
+  "buffer": "pytest -k ",
+  "recent": ["rg TODO", "git status"],
+  "require_prefix_match": true,
+  "timeout_ms": 900
+}
 ```
 
 - Success response:
 
 ```json
-{"v":1,"id":"42","ok":true,"suggestion":"pytest -k my_test -q","suffix":"my_test -q","latency_ms":180,"cache_hit":false,"ttl_ms":300000}
+{
+  "v": 1,
+  "id": "42",
+  "ok": true,
+  "suggestion": "pytest -k my_test -q",
+  "suffix": "my_test -q",
+  "latency_ms": 180,
+  "cache_hit": false,
+  "ttl_ms": 300000
+}
 ```
 
 - No suggestion:
 
 ```json
-{"v":1,"id":"42","ok":true,"suggestion":"","suffix":"","reason":"no_suggestion","latency_ms":120}
+{
+  "v": 1,
+  "id": "42",
+  "ok": true,
+  "suggestion": "",
+  "suffix": "",
+  "reason": "no_suggestion",
+  "latency_ms": 120
+}
 ```
 
 - Error:
 
 ```json
-{"v":1,"id":"42","ok":false,"code":"timeout","message":"backend timed out"}
+{
+  "v": 1,
+  "id": "42",
+  "ok": false,
+  "code": "timeout",
+  "message": "backend timed out"
+}
 ```
 
 ## Prompting Guidance
