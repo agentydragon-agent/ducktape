@@ -21,24 +21,24 @@ JOBS="${ANSIBLE_LINT_JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null 
 
 # If no arguments, find all top-level playbooks
 if [ $# -eq 0 ]; then
-    playbooks=$(find . -maxdepth 1 -name "*.yaml" -type f ! -name "galaxy.yaml")
+	playbooks=$(find . -maxdepth 1 -name "*.yaml" -type f ! -name "galaxy.yaml")
 else
-    playbooks="$@"
+	playbooks="$@"
 fi
 
 # Check if GNU parallel is installed
-if ! command -v parallel &> /dev/null; then
-    echo "Error: GNU parallel is not installed"
-    echo "Install with: apt-get install parallel  (or)  brew install parallel"
-    echo ""
-    echo "Falling back to sequential execution..."
-    echo ""
+if ! command -v parallel &>/dev/null; then
+	echo "Error: GNU parallel is not installed"
+	echo "Install with: apt-get install parallel  (or)  brew install parallel"
+	echo ""
+	echo "Falling back to sequential execution..."
+	echo ""
 
-    for playbook in $playbooks; do
-        echo "Linting $playbook..."
-        ansible-lint --offline --config-file ../.ansible-lint.yaml "$playbook"
-    done
-    exit $?
+	for playbook in $playbooks; do
+		echo "Linting $playbook..."
+		ansible-lint --offline --config-file ../.ansible-lint.yaml "$playbook"
+	done
+	exit $?
 fi
 
 echo "Running ansible-lint on playbooks in parallel (jobs=$JOBS):"
@@ -51,22 +51,22 @@ echo ""
 # --halt now,fail=1: Stop all jobs on first failure
 # --line-buffer: Print output line by line (better for CI)
 # --tagstring: Add playbook name to output lines
-echo "$playbooks" | tr ' ' '\n' | \
-  parallel --will-cite \
-           -j "$JOBS" \
-           --halt now,fail=1 \
-           --line-buffer \
-           --tagstring '[{/.}]' \
-           "ansible-lint --offline --config-file ../.ansible-lint.yaml {}"
+echo "$playbooks" | tr ' ' '\n' |
+	parallel --will-cite \
+		-j "$JOBS" \
+		--halt now,fail=1 \
+		--line-buffer \
+		--tagstring '[{/.}]' \
+		"ansible-lint --offline --config-file ../.ansible-lint.yaml {}"
 
 exit_code=$?
 
 if [ $exit_code -eq 0 ]; then
-    echo ""
-    echo "✓ All playbooks passed ansible-lint"
+	echo ""
+	echo "✓ All playbooks passed ansible-lint"
 else
-    echo ""
-    echo "✗ Some playbooks failed ansible-lint"
+	echo ""
+	echo "✗ Some playbooks failed ansible-lint"
 fi
 
 exit $exit_code

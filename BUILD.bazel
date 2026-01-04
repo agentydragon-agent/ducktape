@@ -39,7 +39,7 @@ js_library(
 )
 
 # All pyproject.toml files that contribute to requirements_bazel.txt
-# NOTE: homeassistant/iaqi excluded - its deps (pydantic 1.x, old pytest) conflict with repo
+# NOTE: homeassistant/iaqi excluded - it has no pyproject.toml and uses separate @pypi_homeassistant lock
 _PYPROJECT_SRCS = [
     "//adgn:pyproject.toml",
     "//agent_core:pyproject.toml",

@@ -531,7 +531,11 @@ async def main():
     for run in all_runs:
         run_data: dict[str, Any] = {"model": run.model, "environment": run.environment, "episodes": []}
         for episode_idx, episode in enumerate(run.episodes):
-            ep_data: dict[str, Any] = {"total_reward": episode.total_reward, "num_steps": len(episode.steps), "steps": []}
+            ep_data: dict[str, Any] = {
+                "total_reward": episode.total_reward,
+                "num_steps": len(episode.steps),
+                "steps": [],
+            }
 
             # Create trajectory record for detailed analysis
             trajectory: dict[str, Any] = {

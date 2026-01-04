@@ -8,19 +8,19 @@ LOG_FILE=$(mktemp)
 trap 'rm -f "$LOG_FILE"' EXIT
 
 if ! bash "$DEMO" | tee "$LOG_FILE"; then
-  echo "Python session demo failed" >&2
-  exit 1
+	echo "Python session demo failed" >&2
+	exit 1
 fi
 
 expect() {
-  local pattern=$1
-  if ! grep -F "$pattern" "$LOG_FILE" >/dev/null; then
-    echo "Expected output containing '$pattern'" >&2
-    echo "--- demo output ---" >&2
-    cat "$LOG_FILE" >&2
-    echo "-------------------" >&2
-    exit 1
-  fi
+	local pattern=$1
+	if ! grep -F "$pattern" "$LOG_FILE" >/dev/null; then
+		echo "Expected output containing '$pattern'" >&2
+		echo "--- demo output ---" >&2
+		cat "$LOG_FILE" >&2
+		echo "-------------------" >&2
+		exit 1
+	fi
 }
 
 expect "persisted_value=42"

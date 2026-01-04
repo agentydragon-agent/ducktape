@@ -279,7 +279,9 @@ def eyeball_check():
             if has_tolerance:
                 row_data.append(part.tolerance or "-")
             if has_voltage:
-                row_data.append(str(part.voltage_rating) + "V" if isinstance(part, Capacitor) and part.voltage_rating else "-")
+                row_data.append(
+                    str(part.voltage_rating) + "V" if isinstance(part, Capacitor) and part.voltage_rating else "-"
+                )
             if has_dielectric:
                 row_data.append(part.dielectric if isinstance(part, Capacitor) and part.dielectric else "-")
             row_data.append(" | ".join(changes) if changes else "")

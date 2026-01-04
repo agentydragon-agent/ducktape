@@ -12,13 +12,7 @@ from urllib.parse import urlparse
 import pytest
 
 import claude_web_hooks.proxy as proxy_module
-from claude_web_hooks.proxy import (
-    kill_existing,
-    load_credentials,
-    make_auth_header,
-    parse_proxy_url,
-    write_credentials,
-)
+from claude_web_hooks.proxy import kill_existing, load_credentials, make_auth_header, parse_proxy_url, write_credentials
 
 
 class TestParseProxyUrl:

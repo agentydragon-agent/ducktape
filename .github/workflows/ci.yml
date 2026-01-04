@@ -239,6 +239,16 @@ jobs:
       PGPASSWORD: postgres
       PGDATABASE: postgres
     steps:
+      - name: Free up disk space
+        run: |
+          # Remove unnecessary software to free ~15GB
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
       - name: Check out code
         uses: actions/checkout@v4
 
@@ -270,15 +280,20 @@ jobs:
 
       - name: Build, lint, and test
         run: |
-          bazel build //...
+          # Limit resource usage to reduce disk space consumption
+          # --jobs=2: Limit parallel builds to reduce peak memory/disk usage
+          # --repository_cache: Cap external repository cache at 2GB
+          export BAZEL_OPTS="--jobs=2 --experimental_repository_cache_hardlinks"
+
+          bazel build //... $BAZEL_OPTS
           # Comprehensive linting via aspects:
           # - Python: ruff (lint) + mypy (types)
           # - JS/TS: ESLint (lint)
           # - Rust: clippy (lint) + rustfmt (format check)
-          bazel build --config=check //...        # Python: ruff + mypy
-          bazel build --config=lint //...         # Python + JS/TS: ruff + ESLint
-          bazel build --config=rust-check //...   # Rust: clippy + rustfmt
-          bazel test //... --test_output=errors
+          bazel build --config=check //... $BAZEL_OPTS        # Python: ruff + mypy
+          bazel build --config=lint //... $BAZEL_OPTS         # Python + JS/TS: ruff + ESLint
+          bazel build --config=rust-check //... $BAZEL_OPTS   # Rust: clippy + rustfmt
+          bazel test //... --test_output=errors $BAZEL_OPTS
 
       - name: Generate test summary
         if: always()

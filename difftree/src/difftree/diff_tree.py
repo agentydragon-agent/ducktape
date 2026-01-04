@@ -118,7 +118,11 @@ class DiffTree:
         - Node has no children
         - We've exceeded max_depth
         """
-        return (self.config.max_depth is None or depth < self.config.max_depth) and not node.is_file and bool(node.children)
+        return (
+            (self.config.max_depth is None or depth < self.config.max_depth)
+            and not node.is_file
+            and bool(node.children)
+        )
 
     def _get_collapsed_path_and_node(self, node: TreeNode, depth: int) -> tuple[str, TreeNode, int]:
         """

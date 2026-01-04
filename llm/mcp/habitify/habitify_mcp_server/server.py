@@ -7,14 +7,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from . import tools
 from .context import make_lifespan
 from .habitify_client import HabitifyClient
-from .types import (
-    DateRangeStatusResult,
-    HabitResult,
-    HabitsResult,
-    LogResult,
-    Status,
-    StatusResult,
-)
+from .types import DateRangeStatusResult, HabitResult, HabitsResult, LogResult, Status, StatusResult
 
 
 def create_habitify_mcp_server(

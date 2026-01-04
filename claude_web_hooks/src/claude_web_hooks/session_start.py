@@ -64,13 +64,7 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
         return
 
     try:
-        result = subprocess.run(
-            ["pre-commit", "install"],
-            cwd=project_dir,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = subprocess.run(["pre-commit", "install"], cwd=project_dir, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             log.info("Installed git pre-commit hook via pre-commit install")
         else:
@@ -260,7 +254,9 @@ def main() -> int:
                     log.info("Bazel symlink already points to our wrapper: %s -> %s", bazel_symlink, existing_target)
                     # Already configured correctly, continue to summary
                 else:
-                    log.warning("Existing bazel symlink points to different target: %s -> %s", bazel_symlink, existing_target)
+                    log.warning(
+                        "Existing bazel symlink points to different target: %s -> %s", bazel_symlink, existing_target
+                    )
                     log.warning("Replacing with our wrapper")
                     bazel_symlink.unlink()
                     log.info("Removed existing bazel symlink at %s", bazel_symlink)

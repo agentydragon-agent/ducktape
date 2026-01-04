@@ -35,7 +35,9 @@ class PreToolDeny(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(**{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message})  # type: ignore[arg-type]
+        return PreToolResponse(
+            **{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message}
+        )  # type: ignore[arg-type]
 
 
 @dataclass
@@ -68,7 +70,9 @@ class PostToolNotifyLLM(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse(**{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message})  # type: ignore[arg-type]
+        return PostToolResponse(
+            **{"continue": True, "stop_reason": None, "decision": "block", "reason": self.llm_message}
+        )  # type: ignore[arg-type]
 
 
 @dataclass

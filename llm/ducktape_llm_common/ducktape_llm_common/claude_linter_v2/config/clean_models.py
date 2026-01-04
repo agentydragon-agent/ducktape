@@ -44,7 +44,9 @@ def _default_hooks() -> dict[str, HookConfig]:
     """Default hook configurations."""
     return {
         "pre": PreToolHookConfig(enabled=True),
-        "post": PostToolHookConfig(enabled=True, auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING], inject_permissions=True),
+        "post": PostToolHookConfig(
+            enabled=True, auto_fix=True, autofix_categories=[AutofixCategory.FORMATTING], inject_permissions=True
+        ),
         "stop": StopHookConfig(enabled=True, quality_gate=True, max_files_to_show=5, max_violations_per_file=3),
         "notification": NotificationHookConfig(enabled=True, send_to_dbus=True, urgency="normal"),
         "subagent_stop": SubagentStopHookConfig(enabled=True),
@@ -103,7 +105,10 @@ class ModularConfig(BaseModel):
 
     # LLM analysis
     llm_analysis: LLMAnalysisConfig = Field(
-        default_factory=lambda: LLMAnalysisConfig(enabled=False, model="gpt-4o-mini", daily_cost_limit=5.0, cache_results=True), description="LLM analysis configuration"
+        default_factory=lambda: LLMAnalysisConfig(
+            enabled=False, model="gpt-4o-mini", daily_cost_limit=5.0, cache_results=True
+        ),
+        description="LLM analysis configuration",
     )
 
     # Task profiles

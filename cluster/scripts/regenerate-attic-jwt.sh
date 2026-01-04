@@ -14,10 +14,10 @@ JWT_TOKEN_BASE64=$(echo -n "$RAW_TOKEN" | base64)
 # Get sealed-secrets public key from terraform state
 cd "$PERSISTENT_AUTH_DIR"
 CERT=$(terraform output -raw sealed_secrets_public_key)
-cd - > /dev/null
+cd - >/dev/null
 
 # Create and seal the secret
-cat <<EOF | kubeseal --cert <(echo "$CERT") --format=yaml > "$OUTPUT_FILE"
+cat <<EOF | kubeseal --cert <(echo "$CERT") --format=yaml >"$OUTPUT_FILE"
 apiVersion: v1
 kind: Secret
 metadata:

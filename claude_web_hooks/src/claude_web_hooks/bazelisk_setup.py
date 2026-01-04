@@ -62,9 +62,7 @@ def install_bazelisk() -> Path:
 
     # Check if already installed
     if BAZELISK_PATH.exists():
-        result = subprocess.run(
-            [str(BAZELISK_PATH), "--version"], capture_output=True, text=True, check=False
-        )
+        result = subprocess.run([str(BAZELISK_PATH), "--version"], capture_output=True, text=True, check=False)
         if result.returncode == 0:
             log.info("Bazelisk already installed: %s", BAZELISK_PATH)
             return BAZELISK_PATH
@@ -134,9 +132,7 @@ def get_status() -> str:
     """Get status string for logging."""
     if WRAPPER_PATH.exists():
         # Get version from the actual bazelisk
-        result = subprocess.run(
-            [str(BAZELISK_PATH), "version"], capture_output=True, text=True, check=False
-        )
+        result = subprocess.run([str(BAZELISK_PATH), "version"], capture_output=True, text=True, check=False)
         if result.returncode == 0:
             # Extract first line (aspect or bazel version)
             version = result.stdout.split("\n")[0].strip()

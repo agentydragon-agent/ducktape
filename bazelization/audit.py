@@ -46,7 +46,8 @@ def find_bazel_python_sources() -> set[Path]:
     for kind in ["py_library", "py_test", "py_binary"]:
         result = subprocess.run(
             ["bazel", "query", f'labels(srcs, kind("{kind}", //...))'],
-            check=False, capture_output=True,
+            check=False,
+            capture_output=True,
             text=True,
             cwd=REPO_ROOT,
         )
@@ -73,10 +74,7 @@ def find_bazel_python_sources() -> set[Path]:
 def query_bazel_targets(kind: str) -> list[str]:
     """Query Bazel for targets of a specific kind."""
     result = subprocess.run(
-        ["bazel", "query", f'kind("{kind}", //...)'],
-        check=False, capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
+        ["bazel", "query", f'kind("{kind}", //...)'], check=False, capture_output=True, text=True, cwd=REPO_ROOT
     )
     if result.returncode != 0:
         return []
@@ -86,10 +84,7 @@ def query_bazel_targets(kind: str) -> list[str]:
 def query_manual_targets() -> list[str]:
     """Query Bazel for targets tagged as manual."""
     result = subprocess.run(
-        ["bazel", "query", 'attr(tags, "manual", //...)'],
-        check=False, capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
+        ["bazel", "query", 'attr(tags, "manual", //...)'], check=False, capture_output=True, text=True, cwd=REPO_ROOT
     )
     if result.returncode != 0:
         return []

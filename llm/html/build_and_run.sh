@@ -6,8 +6,8 @@ docker build -t llm-html:latest -f Dockerfile ../..
 
 # Function to cleanup on exit
 cleanup() {
-    echo -e "\nStopping and removing container..."
-    docker rm -f llm-html 2>/dev/null || true
+	echo -e "\nStopping and removing container..."
+	docker rm -f llm-html 2>/dev/null || true
 }
 
 # Set trap to cleanup on script exit

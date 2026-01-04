@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 import pygit2
 from reaktiv import Signal
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from ..shared.protocol import BranchAheadBehind
 
@@ -49,7 +50,7 @@ class GitRefsWatcher:
         # Branches that fail to compute are omitted from the dict (consumer handles missing keys)
         self.ahead_behind_cache: Signal[dict[str, BranchAheadBehind]] = Signal({})
 
-        self._observer: Any = None  # watchdog.observers.Observer
+        self._observer: Any = None  # watchdog.observers.Observer - no type stubs available
         self._pending: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._running = False
@@ -66,8 +67,6 @@ class GitRefsWatcher:
         if not git_dir.exists():
             logger.warning("Main repo .git not found: %s", git_dir)
             return
-
-        from watchdog.observers import Observer  # Deferred import to avoid TYPE_CHECKING circular issue  # noqa: PLC0415, I001
 
         self._observer = Observer()
         handler = _GitRefsHandler(self)

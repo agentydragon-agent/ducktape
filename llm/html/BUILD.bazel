@@ -26,6 +26,7 @@ py_library(
         "@pypi//markdownify",
         "@pypi//tabulate",
         "@pypi//tiktoken",
+        "@pypi//types_markdown",
         "@pypi//uvicorn",
     ],
 )

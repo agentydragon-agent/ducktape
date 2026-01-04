@@ -34,9 +34,9 @@ curl -L https://raw.githubusercontent.com/charliermarsh/ruff/main/pyproject.toml
 # FastAPI reference (common web framework)
 echo "Cloning FastAPI examples..."
 if [ ! -d "fastapi-examples" ]; then
-    git clone --depth 1 --filter=blob:none --sparse https://github.com/tiangolo/fastapi.git fastapi-examples 2>/dev/null || echo "Failed to clone FastAPI"
-    cd fastapi-examples && git sparse-checkout set docs_src/first_steps docs_src/tutorial 2>/dev/null || true
-    cd ..
+	git clone --depth 1 --filter=blob:none --sparse https://github.com/tiangolo/fastapi.git fastapi-examples 2>/dev/null || echo "Failed to clone FastAPI"
+	cd fastapi-examples && git sparse-checkout set docs_src/first_steps docs_src/tutorial 2>/dev/null || true
+	cd ..
 fi
 
 # Pytest examples

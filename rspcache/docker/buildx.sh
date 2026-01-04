@@ -15,21 +15,21 @@ BUILDER_NAME="${BUILDER_NAME:-rspcache-buildx}"
 PLATFORMS="${PLATFORMS:-linux/amd64}"
 
 if ! docker buildx inspect "${BUILDER_NAME}" >/dev/null 2>&1; then
-    docker buildx create \
-        --name "${BUILDER_NAME}" \
-        --driver docker-container \
-        --use \
-        --bootstrap
+	docker buildx create \
+		--name "${BUILDER_NAME}" \
+		--driver docker-container \
+		--use \
+		--bootstrap
 fi
 
 docker buildx use "${BUILDER_NAME}"
 
 docker buildx build \
-    --platform "${PLATFORMS}" \
-    --cache-from "type=registry,ref=${CACHE_REF}" \
-    --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
-    --ulimit nofile=16384:16384 \
-    --tag "${REGISTRY}/rspcache:${TAG}" \
-    -f "${repo_root}/docker/rspcache/Dockerfile" \
-    "${repo_root}" \
-    --push
+	--platform "${PLATFORMS}" \
+	--cache-from "type=registry,ref=${CACHE_REF}" \
+	--cache-to "type=registry,ref=${CACHE_REF},mode=max" \
+	--ulimit nofile=16384:16384 \
+	--tag "${REGISTRY}/rspcache:${TAG}" \
+	-f "${repo_root}/docker/rspcache/Dockerfile" \
+	"${repo_root}" \
+	--push
