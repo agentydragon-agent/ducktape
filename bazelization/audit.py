@@ -120,15 +120,6 @@ def find_bazel_files_by_language(lang_config: LanguageConfig, all_bazel_srcs: se
     return {p for p in all_bazel_srcs if any(str(p).endswith(ext) for ext in lang_config.extensions)}
 
 
-def find_all_bazel_inputs() -> set[Path]:
-    """Find all files that are inputs to any Bazel target (srcs + data)."""
-    query_expr = "labels(srcs, //...) + labels(data, //...)"
-    labels = batch_bazel_query(query_expr)
-
-    paths = {label_to_path(label) for label in labels}
-    return {p for p in paths if p is not None}
-
-
 def categorize_files(
     git_files: set[Path], bazel_files: set[Path], is_intentionally_excluded: Callable[[Path], bool]
 ) -> CategorizedFiles:
@@ -156,11 +147,19 @@ def analyze() -> None:
     print("=" * 80)
     print()
 
-    # Query all Bazel source files ONCE (fast) instead of per-language with kind() filters (slow)
-    print("Querying Bazel source files...")
+    # Query Bazel source and data files separately (to avoid duplicate queries)
+    print("Querying Bazel source and data files...")
     all_bazel_srcs_labels = batch_bazel_query("labels(srcs, //...)")
+    all_bazel_data_labels = batch_bazel_query("labels(data, //...)")
+
     all_bazel_srcs = {label_to_path(label) for label in all_bazel_srcs_labels}
     all_bazel_srcs = {p for p in all_bazel_srcs if p is not None}
+
+    all_bazel_data = {label_to_path(label) for label in all_bazel_data_labels}
+    all_bazel_data = {p for p in all_bazel_data if p is not None}
+
+    # Combine srcs + data for general input coverage
+    all_bazel_inputs = all_bazel_srcs | all_bazel_data
 
     # Track per-language coverage
     language_results: dict[str, LanguageResult] = {}
@@ -181,7 +180,6 @@ def analyze() -> None:
     # Find files in git but not in any Bazel target at all
     print("Scanning all Bazel inputs...")
     all_git_files = find_git_files()
-    all_bazel_inputs = find_all_bazel_inputs()
 
     # Files tracked by language-specific scans
     all_language_tracked = set().union(*(r.git_files for r in language_results.values()))
