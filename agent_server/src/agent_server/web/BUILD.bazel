@@ -1,6 +1,7 @@
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@npm_ducktape//agent_server/src/agent_server/web:vite/package_json.bzl", vite_bin = "bin")
 load("@npm_ducktape//agent_server/src/agent_server/web:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_ducktape//agent_server/src/agent_server/web:vitest/package_json.bzl", vitest_bin = "bin")
 load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
 
 # Link npm packages from workspace pnpm-lock.yaml
@@ -51,6 +52,26 @@ svelte_check_bin.svelte_check_test(
     tags = ["lint"],
 )
 
+# Vitest unit tests
+# Run: bazel test //agent_server/src/agent_server/web:vitest_test
+# Tests: src/features/mcp/schema.test.ts, src/shared/prefs.test.ts, src/shared/router.test.ts
+vitest_bin.vitest_test(
+    name = "vitest_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        ":node_modules",
+        "vitest.config.ts",
+        "tsconfig.json",
+        "tsconfig.app.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+    ] + glob([
+        "src/**/*.ts",
+        "src/**/*.test.ts",
+    ]),
+)
+
 # Vite build (production bundle)
 # Run: bazel build //agent_server/src/agent_server/web:bundle
 # Output: bazel-bin/agent_server/src/agent_server/web/dist/
@@ -72,7 +93,6 @@ js_run_devserver(
     tool = "//tools/frontend:vite",
 )
 
-# TODO: Add vitest test target
-# TODO: Add visual regression tests
-# For now, ESLint linting is handled via workspace-level aspect
+# TODO: Add visual regression tests (if needed)
+# ESLint linting is handled via workspace-level aspect
 # Run: bazel build --config=eslint //agent_server/...
