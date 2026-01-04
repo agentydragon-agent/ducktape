@@ -1,11 +1,14 @@
-{# Audience: human admin (via session) #} {% extends "base.html" %} {% block
-title %}Admin - Logs{% endblock %} {% block nav %}
+{# Audience: human admin (via session) #}
+{% extends "base.html" %}
+{% block title %}Admin - Logs{% endblock %}
+{% block nav %}
 <nav>
-  <a href="/admin/">Admin Home</a>
+    <a href="/admin/">Admin Home</a>
 </nav>
-{% endblock %} {% block content %}
+{% endblock %}
+{% block content %}
 <section>
-  <h2>Server Logs (last {{ lines }} lines)</h2>
-  <pre>{{ log_text }}</pre>
+    <h2>Server Logs (last {{ lines }} lines)</h2>
+    <pre>{{ log_text }}</pre>
 </section>
 {% endblock %}

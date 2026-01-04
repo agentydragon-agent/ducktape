@@ -14,3 +14,6 @@ claude/claude_hooks/claude_hooks/testdata/claude_tools/**
 
 # OrcaSlicer config - machine-generated, should not be formatted
 nonrcm-dotfiles/config/OrcaSlicer/**
+
+# Jinja2 templates - prettier mangles block tag formatting
+gatelet/gatelet/server/templates/**
