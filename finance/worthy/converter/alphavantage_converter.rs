@@ -1,4 +1,4 @@
-use alphavantage::{time_series::IntradayInterval, Client};
+use alphavantage::{Client, time_series::IntradayInterval};
 use async_trait::async_trait;
 use converter::Converter;
 use denomination::Denomination;

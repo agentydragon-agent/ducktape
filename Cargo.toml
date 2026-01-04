@@ -31,8 +31,6 @@ rand = "*"
 base64 = "*"
 openssl = "*"
 jwt = {version="*", features=["openssl"]}
-sophia = "*"
-sophia_term = "*"
 rusty-money = "*"
 serde_yaml = "*"
 structopt = "*"
