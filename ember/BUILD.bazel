@@ -89,21 +89,11 @@ pkg_tar(
     strip_prefix = ".",
 )
 
-pkg_tar(
-    name = "entrypoint_tar",
-    srcs = ["entrypoint.sh"],
-    package_dir = "/usr/local/bin",
-    mode = "0755",
-)
-
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    tars = [
-        ":emberd_tar",
-        ":entrypoint_tar",
-    ],
-    entrypoint = ["/usr/local/bin/entrypoint.sh"],
+    tars = [":emberd_tar"],
+    entrypoint = ["/app/emberd"],
     workdir = "/opt/emberd",
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",

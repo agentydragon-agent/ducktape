@@ -80,23 +80,14 @@ pkg_tar(
     package_dir = "/app",
 )
 
-pkg_tar(
-    name = "entrypoint_tar",
-    srcs = ["entrypoint.sh"],
-    package_dir = "/usr/local/bin",
-    mode = "0755",
-)
-
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
     tars = [
         ":server_tar",
         ":alembic_tar",
-        ":entrypoint_tar",
     ],
-    entrypoint = ["/usr/local/bin/entrypoint.sh"],
-    cmd = ["uvicorn", "gatelet.server.app:app", "--host", "0.0.0.0", "--port", "8000"],
+    entrypoint = ["/app/server"],
     workdir = "/app",
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",

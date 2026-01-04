@@ -28,21 +28,11 @@ pkg_tar(
     strip_prefix = ".",
 )
 
-pkg_tar(
-    name = "entrypoint_tar",
-    srcs = ["entrypoint.sh"],
-    package_dir = "/usr/local/bin",
-    mode = "0755",
-)
-
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    tars = [
-        ":runtime_tar",
-        ":entrypoint_tar",
-    ],
-    entrypoint = ["/usr/local/bin/entrypoint.sh"],
+    tars = [":runtime_tar"],
+    entrypoint = ["/opt/adgn/runtime"],
     workdir = "/opt/adgn",
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
