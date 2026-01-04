@@ -20,6 +20,7 @@ _SRCS = glob([
     "static/**",
 ]) + [
     "package.json",
+    "svelte.config.js",
     "vite.config.ts",
     "vitest.config.ts",
     "tsconfig.json",

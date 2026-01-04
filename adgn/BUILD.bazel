@@ -15,6 +15,7 @@ py_library(
         "src/adgn/**/*.md",
         "src/adgn/**/*.j2",
         "src/adgn/**/*.json",
+        "src/adgn/**/*.js",
     ]),
     imports = ["src"],
     visibility = ["//visibility:public"],
