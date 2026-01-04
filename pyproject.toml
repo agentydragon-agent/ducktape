@@ -8,31 +8,3 @@ override-dependencies = ["rfc3987-syntax"]
 rfc3987-syntax = { git = "https://github.com/agentydragon/rfc3987-syntax", branch = "adgn/one-parser" }
 
 # Ruff config is in ruff.toml (used by Bazel's aspect_rules_lint)
-
-[tool.uv.workspace]
-members = [
-    "agent_pkg/host",
-    "agent_pkg/runtime",
-    "adgn",
-    "agent_core",
-    "agent_server",
-    "cli_util",
-    "difftree",
-    "editor_agent/host",
-    "editor_agent/runtime",
-    "ember",
-    "gatelet",
-    "git_commit_ai",
-    "gmail-archiver",
-    "mcp_infra",
-    "mcp_utils",
-    "net_util",
-    "openai_utils",
-    "props/backend",
-    "props/core",
-    "py_detectors",
-    "rspcache",
-    "sandboxed_jupyter",
-    "tana",
-    "wt",
-]
