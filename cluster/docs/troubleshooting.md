@@ -481,6 +481,42 @@ kubectl logs deployment/helm-controller -n flux-system --tail=50
 
 ## 🔧 Stable SealedSecret Keypair Issues
 
+### Offline Validation (Pre-commit / Bootstrap)
+
+**Validate all SealedSecrets offline before deployment:**
+
+```bash
+./scripts/validate-sealed-secrets.sh
+```
+
+This uses `kubeseal --recovery-unseal` to verify each SealedSecret in the repo can be decrypted
+with the terraform keypair. No cluster access needed.
+
+**When to run:**
+
+- Automatically by pre-commit hook and bootstrap.sh
+- Manually after `terraform apply` in `00-persistent-auth`
+- When debugging SealedSecret decryption failures
+
+### Keypair Mismatch (Common Failure Mode)
+
+**Symptoms:**
+
+- Controller logs: `no key could decrypt secret`
+- SealedSecrets status shows decryption error
+- Pods pending due to missing secrets
+
+**Cause:** SealedSecrets in git were sealed with a different keypair than what's currently
+in terraform state (e.g., after terraform state was recreated).
+
+**Quick Fix:**
+
+```bash
+cd terraform/00-persistent-auth && terraform apply
+# This re-seals all SealedSecrets with current keypair
+git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
+```
+
 ### Keypair Verification
 
 ```bash
@@ -488,11 +524,10 @@ kubectl logs deployment/helm-controller -n flux-system --tail=50
 cd terraform/00-persistent-auth
 terraform output sealed_secrets_public_key >/dev/null && echo "✅ Keypair exists in terraform state"
 
-# Check if cluster is using stable keypair
+# Check if cluster is using stable keypair (serial numbers should match)
 kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
   base64 -d | openssl x509 -text -noout | grep -A2 "Serial Number"
 terraform output -raw sealed_secrets_public_key | openssl x509 -text -noout | grep -A2 "Serial Number"
-# Serial numbers should match
 cd -
 ```
 
@@ -502,9 +537,19 @@ cd -
 # Test if a SealedSecret can be decrypted with stable keypair
 cd terraform/00-persistent-auth
 kubectl get sealedsecret <name> -n <namespace> -o yaml | \
-kubeseal --recovery-unseal --recovery-private-key <(terraform output -raw sealed_secrets_private_key)
+kubeseal --recovery-unseal --recovery-private-key <(terraform output -raw sealed_secrets_private_key_pem)
 # Should output the original secret YAML if working
 cd -
+```
+
+### Creating New SealedSecrets
+
+Always use the helper script to ensure correct keypair:
+
+```bash
+kubectl create secret generic my-secret --from-literal=key=value \
+  --dry-run=client -o yaml | ./scripts/seal-secret.sh /dev/stdin k8s/path/my-sealed.yaml
+git add k8s/path/my-sealed.yaml && git commit
 ```
 
 ## 🔄 Common Recovery Actions

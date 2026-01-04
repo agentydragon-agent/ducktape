@@ -564,3 +564,7 @@ This ensures the documentation serves both as operational procedures (docs/boots
 2. **Known tricky components** - Proxmox CSI storage issues, SealedSecret decryption problems
 3. **Common recovery actions** - Controller restarts, forced reconciliation
 4. **Only then** proceed to deeper investigation if fast-path doesn't resolve the issue
+
+## Secrets Management
+
+@docs/secrets-strategy.md

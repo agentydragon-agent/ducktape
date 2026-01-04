@@ -534,3 +534,12 @@ repos:
         language: system
         files: ^cluster/terraform/modules/.*\.tf$
         pass_filenames: false
+
+      # Validate SealedSecrets can be decrypted with terraform keypair
+      # Uses kubeseal --recovery-unseal (works offline, no cluster needed)
+      - id: validate-sealed-secrets
+        name: Validate SealedSecrets with terraform keypair (cluster)
+        entry: bash -c 'cd cluster && ./scripts/validate-sealed-secrets.sh'
+        language: system
+        files: ^cluster/(k8s/.*sealed.*\.yaml|terraform/00-persistent-auth/)
+        pass_filenames: false

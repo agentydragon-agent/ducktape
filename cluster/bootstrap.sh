@@ -124,6 +124,14 @@ if [ "$START_FROM_LAYER" != "infrastructure" ] && [ "$START_FROM_LAYER" != "serv
 
         log "✅ Persistent auth layer ready"
     fi
+
+    # Validate SealedSecrets can be decrypted with current keypair
+    log "🔍 Validating SealedSecrets with terraform keypair..."
+    if ! "${SCRIPT_DIR}/scripts/validate-sealed-secrets.sh"; then
+        log "❌ FATAL: SealedSecret validation failed"
+        log "   Re-run 'cd terraform/00-persistent-auth && terraform apply' to re-seal"
+        exit 1
+    fi
 fi
 
 # Phase 1: Infrastructure Layer
