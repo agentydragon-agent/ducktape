@@ -56,22 +56,27 @@ Unified Bazel build system for all Python packages:
 
 ## Current Status (January 2026)
 
-### Coverage Summary
+### Multi-Language Coverage Summary
 
-| Metric                    | Count | Notes                 |
-| ------------------------- | ----- | --------------------- |
-| Python files total        | 1139  | Git-tracked only      |
-| In Bazel py\_\* srcs/data | 1081  | 96.3% coverage        |
-| Not in any target         | 42    | See list below        |
-| Intentionally excluded    | 16    | ansible (12), nix (4) |
-| py_library targets        | 54    |                       |
-| py_test targets           | 32    | 3 manual              |
-| ruff_test targets         | 40    | Linting coverage      |
+| Language   | Total Files | In Bazel | Not in Targets | Excluded | Coverage |
+| ---------- | ----------- | -------- | -------------- | -------- | -------- |
+| Python     | 1139        | 1048     | 75             | 16       | 93.3%    |
+| TypeScript | 52          | 29       | 23             | 0        | 55.8%    |
+| JavaScript | 13          | 2        | 11             | 0        | 15.4%    |
+| Rust       | 24          | 24       | 0              | 0        | 100.0%   |
+| Shell      | 39          | 1        | 26             | 12       | 3.7%     |
 
-Run `uv run bazelization/audit.py` to get updated counts.
+**Bazel Targets:**
+- py_library: 54
+- py_test: 32
+- ruff_test: 40
 
-**Note**: Coverage includes files in both `srcs` (source code) and `data` (test fixtures, examples).
-Audit script updated 2026-01-04 to count test data files.
+Run `bazel run //bazelization:audit` to get updated counts.
+
+**Notes:**
+- Coverage includes files in both `srcs` (source code) and `data` (test fixtures, examples)
+- Audit script extended 2026-01-04 to track TypeScript, JavaScript, Rust, and Shell files
+- Audit performance optimized: eliminated duplicate queries, now ~15min (was 34min)
 
 ### Completed
 
