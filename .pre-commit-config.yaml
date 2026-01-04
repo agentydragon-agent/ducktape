@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*|.*flake\\.lock$|nonrcm-dotfiles/config/OrcaSlicer/.*|finance/worthy/worthy/index_(head|tail)\\.html$"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -91,8 +91,8 @@ repos:
     hooks:
       - id: bazel-format
         name: bazel run //tools/format
-        entry: bazel
-        args: ['run', '//tools/format']
+        entry: bash
+        args: ['-c', 'BAZEL_BINDIR=. bazel run //tools/format']
         language: system
         files: \.(py|ts|js|svelte|tsx|css|ya?ml|rs|sh|bzl)$
         exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
