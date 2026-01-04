@@ -43,7 +43,8 @@ def emit_session_context(log: logging.Logger, had_warnings: bool, had_errors: bo
 def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
     """Install git pre-commit hook using pre-commit framework.
 
-    Runs `pre-commit install` which installs the hook defined in .pre-commit-config.yaml.
+    First ensures pre-commit is installed via pip, then runs `pre-commit install`
+    which installs the hook defined in .pre-commit-config.yaml.
     This includes conflict marker detection, syntax checks, and bazel lint.
     """
     import subprocess
@@ -63,6 +64,28 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
         log.info("Git pre-commit hook already installed")
         return
 
+    # Ensure pre-commit is installed (version from .pre-commit-config.yaml comment)
+    try:
+        subprocess.run(["pre-commit", "--version"], capture_output=True, check=True, timeout=5)
+        log.info("pre-commit already available")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        log.info("Installing pre-commit==4.0.1 via pip")
+        try:
+            result = subprocess.run(
+                ["pip", "install", "--user", "pre-commit==4.0.1"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode != 0:
+                log.warning("Failed to install pre-commit: %s", result.stderr)
+                return
+            log.info("pre-commit installed successfully")
+        except subprocess.TimeoutExpired:
+            log.warning("pre-commit installation timed out")
+            return
+
+    # Install the git hook
     try:
         result = subprocess.run(["pre-commit", "install"], cwd=project_dir, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
@@ -70,7 +93,7 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
         else:
             log.warning("pre-commit install failed: %s", result.stderr)
     except FileNotFoundError:
-        log.warning("pre-commit not found, skipping git hook install")
+        log.warning("pre-commit not found after installation attempt")
     except subprocess.TimeoutExpired:
         log.warning("pre-commit install timed out")
 
