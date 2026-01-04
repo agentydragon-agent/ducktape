@@ -198,9 +198,8 @@ data "talos_machine_configuration" "proxmox" {
           extraArgs = {
             provider-id = "proxmox://cluster/${each.value.vm_id}"
           }
-          nodeIP = {
-            validSubnets = ["10.2.0.0/16"]
-          }
+          # No nodeIP.validSubnets - let kubelet auto-detect
+          # KubeSpan IPv6 IPs (fd05::/64) are globally routable via WireGuard mesh
         }
       }
       cluster = {

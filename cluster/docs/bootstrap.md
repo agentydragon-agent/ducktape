@@ -1,264 +1,199 @@
 # Talos Cluster Bootstrap Playbook
 
-Step-by-step instructions for cold-starting the Talos cluster from layered terraform architecture.
+Step-by-step instructions for cold-starting the hybrid Talos cluster (2x Hetzner VPS + 2x Proxmox home).
 
-## Cold-Start Cluster Deployment
+## Architecture Overview
 
-### Prerequisites
-
-- SSH access to `root@atlas.agentydragon.com` (Proxmox) and `root@agentydragon.com` (Headscale) for auto-provisioning
-- `direnv` configured in cluster directory
-- VPS with nginx and PowerDNS configured via Ansible
-- Access to AWS Route 53 for `agentydragon.com`
-- **Persistent auth layer** initialized (`terraform/00-persistent-auth/` - run once per environment)
-
-### Step 1: Layered Terraform Deployment
-
-**NEW**: 3-layer terraform architecture with proper API dependency management.
-
-```bash
-./bootstrap.sh
-
-# Layered bootstrap handles all components in proper dependency order
+```text
+Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
+              ├── talos-vps-cp-0 (controlplane, schedulable)
+              ├── talos-vps-cp-1 (controlplane, schedulable)
+              └── KubeSpan mesh (WireGuard) → Home Proxmox (atlas)
+                                                   ├── talos-pve-cp-0 (controlplane)
+                                                   └── talos-pve-worker-0 (worker)
 ```
 
-**Prerequisites:**
+**Node Topology** (4 nodes total):
 
-- `gh auth login` completed for GitHub access
-- Persistent auth layer initialized (`terraform/00-persistent-auth/`)
+| Node | Location | Role | IP/Access |
+|------|----------|------|-----------|
+| talos-vps-cp-0 | Hetzner (hil) | controlplane | Dynamic (Hetzner assigns) |
+| talos-vps-cp-1 | Hetzner (hil) | controlplane | Dynamic (Hetzner assigns) |
+| talos-pve-cp-0 | Proxmox (atlas) | controlplane | 10.2.1.1 |
+| talos-pve-worker-0 | Proxmox (atlas) | worker | 10.2.2.1 |
 
-#### Bootstrap Layer Architecture
+**etcd Quorum**: 3 controllers (2 VPS + 1 Proxmox) - cluster survives home outage.
 
-The bootstrap process is organized into distinct layers, each providing essential infrastructure for subsequent layers:
+## Prerequisites
 
-**Layer 0: Persistent Authentication** (`terraform/00-persistent-auth/`)
+### Required Credentials
 
-- Proxmox API credentials for VM provisioning
-- Proxmox CSI tokens for persistent storage
-- Sealed secrets cluster keypair (persists across cluster rebuilds)
-- Exists independently of cluster lifecycle - survives `terraform destroy` of VMs
+1. **Hetzner Cloud API Token** (`HCLOUD_TOKEN` env var)
+   - Create at: Hetzner Cloud Console → Security → API Tokens
+   - Permissions: Read/Write
 
-**Layer 1: Infrastructure** (`terraform/01-infrastructure/`)
+2. **Proxmox API Token** (managed in 00-persistent-auth layer)
+   - User: `terraform@pve`
+   - Created automatically by persistent auth terraform
 
-- VM provisioning via Proxmox (5 nodes: 3 controllers, 2 workers)
-- Disk images with baked Talos configuration
-- Tailscale machine keys and VPN registration
-- Cilium CNI deployment with kube-proxy replacement
-- Kubernetes cluster bootstrap and kubeconfig generation
+3. **GitHub CLI** (`gh auth login`)
+   - Required for Flux GitOps bootstrap
 
-**Layer 2: Services** (`terraform/02-services/`)
+### Required Access
 
-- Flux GitOps engine initialization
-- Core Kubernetes services (MetalLB, cert-manager, ingress-nginx)
-- Storage providers (Proxmox CSI)
-- Secret management (Vault, External Secrets Operator)
-- Identity provider (Authentik)
-- Platform services (Harbor, Gitea, Matrix, PowerDNS)
+- SSH to `root@atlas.agentydragon.com` (Proxmox host)
+- `direnv` configured in cluster directory
 
-**Layer 3: Configuration** (`terraform/03-configuration/`)
+### Persistent Auth Layer
 
-- DNS zone and record provisioning (PowerDNS API)
-- SSO provider configuration (Authentik, Harbor, Gitea)
-- Application integration and service wiring
+Run once per environment (survives cluster destroy/recreate):
 
-This **single command** executes a **3-phase layered deployment**:
+```bash
+cd terraform/00-persistent-auth
+terraform init && terraform apply
+```
+
+This creates:
+
+- Talos machine secrets (shared across all nodes)
+- Proxmox API tokens (terraform + CSI)
+- Sealed secrets keypair
+
+## Cold-Start Deployment
+
+### Single Command Bootstrap
+
+```bash
+export HCLOUD_TOKEN="your-hetzner-api-token"
+./bootstrap.sh
+```
+
+The bootstrap script executes a 3-phase layered deployment:
 
 #### Phase 0: Preflight Validation
 
-- ✅ Git working tree clean check (Flux requirement)
-- ✅ Pre-commit validation (security, linting, format)
-- ✅ Terraform configuration validation for all 3 layers
+- Git working tree clean (Flux requirement)
+- Pre-commit validation (security, linting)
+- Terraform configuration validation
 
 #### Phase 1: Infrastructure (`terraform/01-infrastructure`)
 
-- **Proxmox API** → Creates VMs with Talos images
-- **Talos API** → Bootstraps cluster, generates kubeconfig
-- **Kubernetes API** → Installs Cilium CNI, applies sealed secrets key
-- **Storage** → Generates Proxmox CSI sealed secrets
+- **Hetzner API** → Creates 2x VPS with Talos ISO
+- **Proxmox API** → Creates 2x VMs with baked Talos images
+- **Talos API** → Bootstraps cluster from first VPS, generates kubeconfig
+- **Kubernetes API** → Installs Cilium CNI, deploys sealed secrets keypair
 
 #### Phase 2: Services (`terraform/02-services`)
 
 - **Flux Bootstrap** → Initializes GitOps engine with GitHub
-- **GitOps Module** → Deploys service manifests via Flux
+- **Core Services** → MetalLB, cert-manager, ingress-nginx
+- **Storage** → Hetzner CSI (VPS), Proxmox CSI (home)
+- **Platform** → Vault, ESO, Authentik
 
 #### Phase 3: Configuration (`terraform/03-configuration`)
 
-- **PowerDNS API** → Creates DNS zones and records
-- **Service APIs** → Configures SSO providers (Authentik, Harbor, Gitea)
+- **PowerDNS API** → DNS zones and records
+- **Service APIs** → SSO providers (Authentik, Harbor, Gitea)
 
-**Architecture Benefits**:
-
-- **Proper API dependency chain**: Each layer depends on APIs from previous layers
-- **No circular dependencies**: PowerDNS provider only used after PowerDNS service is deployed
-- **Provider separation**: Infrastructure providers (Proxmox, Talos) separate from service APIs
-- **Fail-fast validation**: All layers validated before any deployment begins
-
-#### Key Features
-
-- **🔍 Comprehensive validation** before any infrastructure changes
-- **⚡ Proper dependency management** - respects actual API availability
-- **🛡️ Stable sealed secrets** - Keypairs persist across destroy/apply cycles
-- **📊 Clear progress reporting** - Phase-by-phase status updates
-- **❌ Fail-fast behavior** - Stops immediately on validation failures
-
-#### Test
+### Verification
 
 ```bash
-kubectl get nodes -o wide  # Nodes should be Ready with Cilium CNI
-flux get all               # Check GitOps status - should show healthy reconciliations
-kubectl get pods -A        # All system pods should be running
-# Note: kubectl automatically uses VIP (10.2.3.1) for HA - no manual --server needed
+# Check nodes (all 4 should be Ready)
+kubectl get nodes -o wide
+
+# Check Flux status
+flux get all
+
+# Check pods
+kubectl get pods -A | grep -v Running
+
+# Check storage classes
+kubectl get storageclass
+# Should show: hcloud-volumes (VPS), proxmox-csi (home)
 ```
 
-### Step 2: Verification
+## Bootstrap Layer Architecture
 
-**NEW**: All components deploy automatically via layered terraform. No manual steps needed.
+**Layer 0: Persistent Auth** (`terraform/00-persistent-auth/`)
 
-```bash
-# Verify cluster health
-kubectl get nodes -o wide                    # All nodes Ready with Talos/Cilium
-kubectl get pods -A | grep -v Running        # Should be empty (all pods running)
+- Talos machine secrets
+- Proxmox API tokens
+- Sealed secrets keypair
+- Survives cluster destroy/recreate
 
-# Verify GitOps
-flux get all                                 # All Flux resources should be healthy
+**Layer 1: Infrastructure** (`terraform/01-infrastructure/`)
 
-# Verify storage
-kubectl get storageclass                     # Should show proxmox-csi-retain
-kubectl get pods -n csi-proxmox              # CSI controller/node pods running
+- Hetzner VPS nodes (2x CPX31)
+- Proxmox VMs (1x controlplane, 1x worker)
+- Cilium CNI with VXLAN tunnel mode
+- KubeSpan mesh (WireGuard between all nodes)
 
-# Verify Vault (Stage 1)
-kubectl get pods -n vault                    # Bank-Vaults instance running
-kubectl get secret -n vault instance-unseal-keys  # Root token available
+**Layer 2: Services** (`terraform/02-services/`)
 
-# Verify ESO
-kubectl get pods -n external-secrets-system  # ESO controller running
-kubectl get clustersecretstore vault-backend # Should be valid/ready
+- Flux GitOps
+- Core services (MetalLB, cert-manager, ingress)
+- Storage (Hetzner CSI, Proxmox CSI)
+- Platform (Vault, Authentik, Harbor)
 
-# Verify Authentik bootstrap
-kubectl get secret -n authentik authentik-bootstrap  # ESO-generated token
-flux reconcile ks infrastructure-storage --wait
-```
+**Layer 3: Configuration** (`terraform/03-configuration/`)
 
-#### Storage Verification
+- DNS provisioning
+- SSO configuration
 
-```bash
-kubectl get storageclass                    # Should show proxmox-csi (default)
-kubectl get pods -n csi-proxmox            # CSI controller and node pods running
-kubectl get csinode                        # Verify CSI driver registered
-```
+## Networking
 
-### Sealed-Secrets Keypair Persistence
+### KubeSpan (Node-to-Node)
 
-The cluster automatically manages sealed-secrets keypair persistence for turnkey GitOps workflows:
+WireGuard mesh connecting VPS ↔ home nodes.
 
-- **Layer 00 (persistent-auth)**: Terraform generates sealed secrets keypair once, stores in terraform state
-- **Subsequent deployments**: Keypair restored from terraform state, all existing sealed secrets work immediately
-- **Without persistence**: Each deployment generates new keypair, requiring manual sealed secret regeneration
+- Port: UDP 51820
+- Automatic peer discovery via Talos cluster discovery
+- Handles NAT traversal for home nodes
 
-**No action needed** - this happens automatically during `terraform apply` in `00-persistent-auth`.
+### Cilium CNI (Pod Networking)
 
-### Step 3: Platform Services Automatic Deployment
+- Mode: VXLAN tunnel (required for cross-VPS connectivity)
+- Port: UDP 8472
+- kube-proxy replacement enabled
 
-**NEW**: All platform services deploy automatically via layered terraform with ESO secret generation.
+### Cluster Endpoint
 
-Platform services (Vault, Authentik, Harbor, Gitea, Matrix) deploy automatically through the layered bootstrap process:
+Uses KubePrism (`localhost:7445`) during bootstrap to avoid circular dependency.
+Kubeconfig is patched post-bootstrap with real VPS IP for external access.
 
-- **Vault**: Bank-Vaults operator deploys with initial root token
-- **ESO**: Connects to Vault and provides password generation
-- **Authentik**: Bootstrap token auto-generated by ESO Password generator
-- **SSO Services**: OAuth2 providers configured automatically in terraform
+## Storage
 
-#### Verification
+| Location | CSI Driver | StorageClass | Use Cases |
+|----------|------------|--------------|-----------|
+| VPS | hcloud-csi | hcloud-volumes | Vault, Authentik, DNS |
+| Home | proxmox-csi | proxmox-csi | Harbor, Gitea, Loki, media |
 
-```bash
-# Check all platform services
-flux get ks infrastructure-platform         # Platform services status
-kubectl get pods -n vault -n authentik     # Core platform pods
-kubectl get externalsecret -n authentik    # ESO-generated secrets
-kubectl get secret -n authentik authentik-bootstrap  # Auto-generated token
-```
+## Sealed Secrets Keypair
 
-### Step 4: External Connectivity via DNS Delegation
+The keypair persists in terraform state (`00-persistent-auth`):
 
-#### Step 4.1: DNS Delegation Setup
+- Generated once, reused across cluster rebuilds
+- All SealedSecrets in git decrypt correctly after recreate
+- No manual re-sealing needed
 
-Create NS delegation in Route 53 for `test-cluster.agentydragon.com` to VPS PowerDNS, then delegate to cluster.
+## External Connectivity
 
-#### Step 4.2: VPS Configuration Updates
+### DNS Delegation
 
-Update `~/code/ducktape` repository configurations:
+1. Route 53 delegates `test-cluster.agentydragon.com` → VPS PowerDNS
+2. PowerDNS runs on VPS nodes (public IPs)
+3. cert-manager uses DNS-01 challenges
 
-- **PowerDNS**: Add delegation in `ansible/host_vars/vps/powerdns.yml` to cluster PowerDNS VIP (10.2.3.3)
-- **NGINX**: Update `ansible/nginx-sites/test-cluster.agentydragon.com.j2` for SNI passthrough to cluster ingress VIP (10.2.3.2:443)
+### Ingress
 
-#### Step 4.3: Deploy VPS Configuration
+- ingress-nginx on VPS nodes (hostNetwork or NodePort)
+- VPS public IPs receive HTTPS traffic directly
+- No nginx proxy layer needed (VPS nodes are in the cluster)
 
-```bash
-cd ~/code/ducktape/ansible
-ansible-playbook vps.yaml -t powerdns,nginx-sites
-```
+## Troubleshooting
 
-#### Step 4.4: Wait for In-Cluster PowerDNS
+See `docs/troubleshooting.md` for:
 
-Monitor Flux deployment of platform services:
-
-```bash
-flux get ks infrastructure-platform  # Wait for platform services
-kubectl get pods -n dns-system       # Verify PowerDNS pod running
-kubectl get svc powerdns-external    # Should show LoadBalancer IP 10.2.3.3
-```
-
-#### Step 4.5: Test DNS Delegation Chain
-
-```bash
-# Test VPS → cluster DNS delegation
-dig @ns1.agentydragon.com test-cluster.agentydragon.com NS
-# Test cluster PowerDNS directly
-dig @10.2.3.3 test.test-cluster.agentydragon.com
-# Test SNI passthrough via VPS to cluster ingress (standard HTTPS port 443)
-curl -I https://auth.test-cluster.agentydragon.com/
-```
-
-Cluster should now be operational with GitOps and external HTTPS connectivity.
-
-## Architecture Overview
-
-### Layered Terraform Structure
-
-The cluster uses a **3-layer terraform architecture** that properly models API dependencies:
-
-```text
-Layer 1: Infrastructure (terraform/01-infrastructure/)
-├── Proxmox API → VMs created
-├── Talos API → Cluster bootstrapped, kubeconfig generated
-├── Kubernetes API → CNI installed, nodes Ready, sealed secrets applied
-└── Storage → CSI secrets sealed and ready
-
-Layer 2: Services (terraform/02-services/)
-├── Flux Bootstrap → GitOps engine initialized
-└── Service Manifests → Deployed via GitOps
-
-Layer 3: Configuration (terraform/03-configuration/)
-├── PowerDNS API → DNS zones and records created
-└── Service APIs → SSO providers configured
-```
-
-### VIP Bootstrap Solution
-
-The cluster solves the VIP chicken-and-egg problem (can't bootstrap with VIP that doesn't exist yet) through terraform:
-
-1. Bootstrap uses direct controller IP (`10.2.1.1:6443`)
-2. Generated kubeconfig uses VIP (`10.2.3.1:6443`) for operations
-
-Users only see the final VIP-based kubeconfig - the bootstrap complexity is internal to terraform.
-
-### Provider Configuration
-
-Each layer uses providers appropriate to its API dependencies:
-
-- **Layer 1**: Proxmox, Talos, Kubernetes, Helm, Vault
-- **Layer 2**: Kubernetes, Helm, Flux, Vault
-- **Layer 3**: PowerDNS, Authentik, Harbor, Gitea
-
-The Kubernetes and Helm providers in Layer 1 use kubeconfig data directly from Talos outputs, avoiding file-based
-configuration issues.
+- KubeSpan connectivity issues
+- Storage (Hetzner CSI, Proxmox CSI)
+- Sealed secrets keypair mismatches

@@ -248,7 +248,7 @@ Complete the original hybrid vision with all services.
 
 ## 🔗 Related Documentation
 
-- **VPS Integration Design**: `docs/vps-cluster-integration.md`
+- **VPS Integration Design**: `docs/vps_cluster_integration.md`
 - **Bootstrap Procedures**: `docs/bootstrap.md`
 - **Troubleshooting**: `docs/troubleshooting.md`
 - **Secret Sync Analysis**: `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md`

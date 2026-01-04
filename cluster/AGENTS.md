@@ -567,4 +567,4 @@ This ensures the documentation serves both as operational procedures (docs/boots
 
 ## Secrets Management
 
-@docs/secrets-strategy.md
+@docs/secrets.md

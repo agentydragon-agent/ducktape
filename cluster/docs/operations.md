@@ -354,24 +354,31 @@ authentication failures. Consider filing upstream issue if this becomes frequent
 
 ## Reference Information
 
-### Node IP Assignments
+### Node Assignments (4-node Hybrid Cluster)
+
+**Hetzner VPS Nodes** (dynamic IPs assigned by Hetzner):
+
+| Node | Server Type | Location | Role |
+|------|-------------|----------|------|
+| talos-vps-cp-0 | CPX31 | Hillsboro, OR | Controlplane (schedulable) |
+| talos-vps-cp-1 | CPX31 | Hillsboro, OR | Controlplane (schedulable) |
+
+**Proxmox Home Nodes** (static IPs):
 
 | Node | VM ID | IP Address | Role |
-| ---- | ----- | ---------- | ---- |
-| controlplane0 | 1500 | 10.2.1.1 | Controller |
-| controlplane1 | 1501 | 10.2.1.2 | Controller |
-| controlplane2 | 1502 | 10.2.1.3 | Controller |
-| worker0 | 2000 | 10.2.2.1 | Worker |
-| worker1 | 2001 | 10.2.2.2 | Worker |
+|------|-------|------------|------|
+| talos-pve-cp-0 | 10000 | 10.2.1.1 | Controlplane |
+| talos-pve-worker-0 | 10100 | 10.2.2.1 | Worker |
 
-### VIP Assignments
+### MetalLB VIP Assignments (Proxmox Network)
 
 | Service | IP Address | Pool | Purpose |
-| ------- | ---------- | ---- | ------- |
-| **Cluster API** | 10.2.3.1 | - | Kubernetes API HA VIP |
-| **Ingress** | 10.2.3.2 | ingress-pool | NGINX Ingress LoadBalancer |
-| **PowerDNS** | 10.2.3.3 | dns-pool | DNS server LoadBalancer |
+|---------|------------|------|---------|
+| **Ingress** | 10.2.3.2 | ingress-pool | NGINX Ingress (home access) |
+| **PowerDNS** | 10.2.3.3 | dns-pool | DNS server (home access) |
 | **Services** | 10.2.3.4-20 | services-pool | Harbor, Gitea, etc. |
+
+**Note**: VPS nodes use Hetzner public IPs directly for ingress. MetalLB VIPs are for home network access only.
 
 ## Security Configuration
 
