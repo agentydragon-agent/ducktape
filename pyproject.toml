@@ -7,4 +7,9 @@ override-dependencies = ["rfc3987-syntax"]
 [tool.uv.sources]
 rfc3987-syntax = { git = "https://github.com/agentydragon/rfc3987-syntax", branch = "adgn/one-parser" }
 
+# Tell setuptools this is not a package (just uv config)
+# Without this, setuptools discovers all 40+ top-level dirs as packages
+[tool.setuptools]
+packages = []
+
 # Ruff config is in ruff.toml (used by Bazel's aspect_rules_lint)
