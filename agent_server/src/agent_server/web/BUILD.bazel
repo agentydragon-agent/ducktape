@@ -1,4 +1,7 @@
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//agent_server/src/agent_server/web:vite/package_json.bzl", vite_bin = "bin")
+load("@npm_ducktape//agent_server/src/agent_server/web:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
 
 # Link npm packages from workspace pnpm-lock.yaml
 npm_link_all_packages(name = "node_modules")
@@ -28,8 +31,48 @@ _SRCS = glob([
     "tsconfig.node.json",
 ]
 
-# TODO: Add Vite build and dev server targets (following props/frontend pattern)
-# TODO: Add svelte-check test target
+# Svelte-check (type checking)
+# Run: bazel test //agent_server/src/agent_server/web:svelte_check_test
+svelte_check_bin.svelte_check_test(
+    name = "svelte_check_test",
+    args = [
+        "--tsconfig",
+        "tsconfig.app.json",
+    ],
+    chdir = package_name(),
+    data = [
+        ":node_modules",
+        "tsconfig.json",
+        "tsconfig.app.json",
+        "tsconfig.node.json",
+        "svelte.config.js",
+        "vite.config.ts",
+    ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
+    tags = ["lint"],
+)
+
+# Vite build (production bundle)
+# Run: bazel build //agent_server/src/agent_server/web:bundle
+# Output: bazel-bin/agent_server/src/agent_server/web/dist/
+vite_bin.vite(
+    name = "bundle",
+    srcs = _SRCS + [":node_modules"],
+    args = ["build"],
+    chdir = package_name(),
+    out_dirs = ["dist"],
+)
+
+# Vite dev server
+# Run: bazel run //agent_server/src/agent_server/web:dev
+js_run_devserver(
+    name = "dev",
+    args = ["dev"],
+    chdir = package_name(),
+    data = _SRCS + [":node_modules"],
+    tool = "//tools/frontend:vite",
+)
+
+# TODO: Add vitest test target
 # TODO: Add visual regression tests
 # For now, ESLint linting is handled via workspace-level aspect
 # Run: bazel build --config=eslint //agent_server/...
