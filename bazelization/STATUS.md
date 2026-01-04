@@ -53,10 +53,10 @@ Unified Bazel build system for all Python packages:
 
 | Metric | Count | Notes |
 |--------|-------|-------|
-| Python files total | 1135 | Git-tracked only |
-| In Bazel py_* srcs | 1082 | 96.6% coverage |
-| Not in any target | 38 | See list below |
-| Intentionally excluded | 15 | ansible (12), nix (3) |
+| Python files total | 1139 | Git-tracked only |
+| In Bazel py_* srcs | 1047 | 93.2% coverage |
+| Not in any target | 76 | See list below |
+| Intentionally excluded | 16 | ansible (12), nix (4) |
 | py_library targets | 54 | |
 | py_test targets | 32 | 3 manual |
 | ruff_test targets | 40 | Linting coverage |
@@ -138,7 +138,60 @@ Run `uv run bazelization/audit.py` to get updated counts.
 | `//mcp_starter:test_integration` | Requires running MCP server |
 | `//website:*` | Haskell/stack build system |
 
-### Files Not in Any Bazel Target (38 files)
+### Files Not in Any Bazel Target (76 files)
+
+**adgn/ (4 files)**
+- `adgn/examples/openai_api/stateless_two_step_demo.py` - Example script
+- `adgn/gitea_pr_gate/*.py` - Gitea PR gate policy (3 files)
+
+**bazelization/ (1 file)**
+- `bazelization/audit.py` - This audit script itself
+
+**cleanup_stale_headscale_nodes.py (1 file)**
+- Top-level utility script
+
+**cluster/ (4 files)**
+- `cluster/scripts/validate-*.py` - Validation scripts (3 files)
+- `cluster/terraform/01-infrastructure/scripts/cleanup-proxmox-volumes.py`
+
+**conftest.py (1 file)**
+- Root test configuration file
+
+**dotfiles/ (1 file)**
+- `dotfiles/config/pythonstartup.py` - Python REPL startup
+
+**experimental/ (6 files)**
+- `experimental/ember_evals/*.py` - Ember evaluation framework (5 files)
+- `experimental/flake8-early-bailout/setup.py` - Old flake8 plugin
+
+**finance/ (1 file)**
+- `finance/reconcile/external_expense.py` - Reconciliation utility
+
+**gatelet/ (1 file)**
+- `gatelet/tasks.py` - Invoke tasks file
+
+**inventree_utils/ (9 files)**
+- `inventree_utils/*.py` - InventTree plugin and utilities
+- `inventree_utils/rai_plugin/**/*.py` - RAI plugin with template tags
+
+**k8s-old/ (4 files)**
+- `k8s-old/helm/*/files/*.py` - Helm chart Python scripts (archived)
+
+**llm/ (4 files)**
+- `llm/ducktape_llm_common/examples/complex_predicate.py`
+- `llm/ducktape_llm_common/scripts/notification_test_manual.py`
+- `llm/mcp/habitify/examples/install_to_claude.py`
+- `llm/mcp/habitify/habitify_api_reference/collect_references.py`
+
+**py_detectors/ (34 files)**
+- `py_detectors/tests/fixtures/**/*.py` - Test fixtures (intentionally bad code for detector testing)
+
+**sandboxed_jupyter/ (2 files)**
+- `sandboxed_jupyter/examples/*.py` - Example workflows
+
+**trilium/ (3 files)**
+- `trilium/papers/*.py` - Trilium/Remarkable integration (2 files)
+- `trilium/search_hack.py` - Search utility
 
 Run `uv run bazelization/audit.py` for current list.
 
