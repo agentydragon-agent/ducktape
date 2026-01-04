@@ -61,13 +61,4 @@ variable "proxmox_node_name" {
   default     = "atlas"
 }
 
-variable "proxmox_network_config_method" {
-  description = "How to configure static IPs on Proxmox nodes: 'meta' (Image Factory schematic) or 'cloudinit' (snippets)"
-  type        = string
-  default     = "meta"
-  validation {
-    condition     = contains(["meta", "cloudinit"], var.proxmox_network_config_method)
-    error_message = "Must be 'meta' (Image Factory) or 'cloudinit' (snippets)"
-  }
-}
 
