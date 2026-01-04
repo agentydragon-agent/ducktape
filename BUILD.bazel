@@ -41,6 +41,7 @@ js_library(
 # All pyproject.toml files that contribute to requirements_bazel.txt
 # NOTE: homeassistant/iaqi excluded - it has no pyproject.toml and uses separate @pypi_homeassistant lock
 _PYPROJECT_SRCS = [
+    "//:pyproject.toml",  # Root config with uv overrides (git dependencies like rfc3987-syntax fork)
     "//adgn:pyproject.toml",
     "//agent_core:pyproject.toml",
     "//agent_pkg/host:pyproject.toml",
@@ -73,8 +74,6 @@ _PYPROJECT_SRCS = [
     "//props/backend:pyproject.toml",
     "//props/core:pyproject.toml",
     "//py_detectors:pyproject.toml",
-    # NOTE: Root pyproject.toml excluded - contains only uv overrides (rfc3987-syntax fork),
-    # no Python package deps. Bazel manages dependencies, not uv workspace.
     "//rspcache:pyproject.toml",
     "//sandboxed_jupyter:pyproject.toml",
     "//tana:pyproject.toml",
@@ -140,29 +139,6 @@ _PKG_NIX_FILES = [
     "//wt:devenv.nix",
 ]
 
-# Alejandra check (for CI/tests)
-sh_test(
-    name = "alejandra_test",
-    srcs = ["//tools/nix:run_alejandra.sh"],
-    args = [
-        "$(rootpath //tools/nix:alejandra)",
-        "--check",
-    ] + ["$(rootpath %s)" % f for f in _ROOT_NIX_FILES + _PKG_NIX_FILES] + [
-        "$(locations //nix:nix_files)",
-    ],
-    data = [
-        "//tools/nix:alejandra",
-        "//nix:nix_files",
-    ] + _ROOT_NIX_FILES + _PKG_NIX_FILES,
-    tags = ["lint"],
-)
-
-# Alejandra fix (for pre-commit)
-sh_binary(
-    name = "alejandra_fix",
-    srcs = ["//tools/nix:run_alejandra.sh"],
-    args = [
-        "$(rootpath //tools/nix:alejandra)",
-    ],
-    data = ["//tools/nix:alejandra"],
-)
+# NOTE: Alejandra (Nix formatter) handled via pre-commit, not Bazel
+# Nix formatters don't integrate well with aspect_rules_lint's unified format workflow
+# See .pre-commit-config.yaml for alejandra configuration

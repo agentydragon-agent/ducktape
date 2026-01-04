@@ -98,8 +98,13 @@ repos:
         exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
         pass_filenames: false
 
+  # Alejandra Nix formatter (not integrated with Bazel - Nix formatters handled separately)
+  - repo: https://github.com/kamadorueda/alejandra
+    rev: 3.1.0
+    hooks:
+      - id: alejandra
+
   # NOTE: Other linters are handled by Bazel test targets
-  # - alejandra: `bazel test //:alejandra_test`
   # - svelte-check: `bazel test //props/frontend:svelte_check_test`
   # ============================================================================
   # CLUSTER-SPECIFIC HOOKS (scoped to cluster/ directory)
