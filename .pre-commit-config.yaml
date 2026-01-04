@@ -107,10 +107,15 @@ repos:
         pass_filenames: false
 
   # Alejandra Nix formatter (not integrated with Bazel - Nix formatters handled separately)
-  - repo: https://github.com/kamadorueda/alejandra
-    rev: 3.1.0
+  # Using local hook with nix run instead of upstream repo (cargo build fails)
+  - repo: local
     hooks:
       - id: alejandra
+        name: alejandra (nix formatter)
+        entry: nix run nixpkgs#alejandra --
+        language: system
+        files: \.nix$
+        exclude: node_modules/
 
   # NOTE: Other linters are handled by Bazel test targets
   # - svelte-check: `bazel test //props/frontend:svelte_check_test`

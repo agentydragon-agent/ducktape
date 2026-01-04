@@ -119,9 +119,9 @@ js_run_devserver(
 
 # Storybook source files (stories + config)
 # Note: _SRCS already includes src/**/*.ts (which includes *.stories.ts)
+# Note: _SRCS already includes .storybook/**/*.ts
 _STORYBOOK_SRCS = _SRCS + glob([
     "src/**/*.mdx",
-    ".storybook/**/*.ts",
 ])
 
 # Storybook static build
