@@ -5,20 +5,20 @@
 set -euo pipefail
 
 # Configuration
-VPS_HOST="root@agentydragon.com"  # Assumes SSH config has this host configured
+VPS_HOST="root@agentydragon.com" # Assumes SSH config has this host configured
 REMOTE_BUILD_DIR="/tmp/llm-html-build"
-CONTAINER_NAME="llm_html"  # Same as production container
+CONTAINER_NAME="llm_html" # Same as production container
 IMAGE_NAME="llm-html:dev"
-HOST_PORT="9000"  # Same port as production
+HOST_PORT="9000" # Same port as production
 
 echo "🚀 Starting deployment of current working tree to production..."
 
 # Run unit tests first
 echo "🧪 Running unit tests..."
 if ! python -m pytest test_*.py -v; then
-    echo "❌ Unit tests failed! Aborting deployment."
-    echo "Fix the failing tests before deploying."
-    exit 1
+  echo "❌ Unit tests failed! Aborting deployment."
+  echo "Fix the failing tests before deploying."
+  exit 1
 fi
 echo "✅ All tests passed!"
 
@@ -26,8 +26,8 @@ echo "⚠️  WARNING: This will replace the production container at llm.agentyd
 read -p "Continue? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 1
+  echo "Aborted."
+  exit 1
 fi
 
 # Copy coding instructions to current directory for Docker build
@@ -38,11 +38,11 @@ cp ../../dotfiles/codex/instructions.md coding.md
 echo "📦 Creating archive of current working tree..."
 # Include all necessary files (tracked, staged, and untracked)
 tar -czf /tmp/llm-html-dev.tar.gz \
-    --exclude=__pycache__ \
-    --exclude=.pytest_cache \
-    --exclude=*.pyc \
-    --exclude=.git \
-    *.py *.md *.html *.css *.txt *.sh Dockerfile requirements.txt
+  --exclude=__pycache__ \
+  --exclude=.pytest_cache \
+  --exclude=*.pyc \
+  --exclude=.git \
+  *.py *.md *.html *.css *.txt *.sh Dockerfile requirements.txt
 
 # Clean up temporary file
 rm -f coding.md
@@ -56,7 +56,7 @@ rm -f /tmp/llm-html-dev.tar.gz
 
 # Build and deploy on VPS
 echo "🔨 Building and deploying on VPS..."
-ssh $VPS_HOST << 'EOF'
+ssh $VPS_HOST <<'EOF'
 set -euo pipefail
 
 # Try to get existing TOKEN_SECRET from running container

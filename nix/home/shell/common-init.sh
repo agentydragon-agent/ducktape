@@ -3,12 +3,12 @@
 
 # Load secret environment variables if the file exists
 if [ -f "$HOME/.secret_env" ]; then
-    . "$HOME/.secret_env"
+  . "$HOME/.secret_env"
 fi
 
 # Set Aider OpenAI API key to OPENAI_API_KEY by default, if set
 if [ -z "$AIDER_OPENAI_API_KEY" ] && [ -n "$OPENAI_API_KEY" ]; then
-    export AIDER_OPENAI_API_KEY="$OPENAI_API_KEY"
+  export AIDER_OPENAI_API_KEY="$OPENAI_API_KEY"
 fi
 
 # Shell functions

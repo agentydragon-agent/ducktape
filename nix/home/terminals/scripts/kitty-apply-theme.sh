@@ -10,8 +10,14 @@ detect_preference() {
     local value
     value=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null || true)
     case "$value" in
-      *"prefer-dark"*) echo "solarized-dark"; return ;;
-      *"prefer-light"*) echo "solarized-light"; return ;;
+      *"prefer-dark"*)
+        echo "solarized-dark"
+        return
+        ;;
+      *"prefer-light"*)
+        echo "solarized-light"
+        return
+        ;;
     esac
   fi
   echo "solarized-light"

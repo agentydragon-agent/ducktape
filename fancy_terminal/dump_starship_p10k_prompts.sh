@@ -10,14 +10,17 @@ if command -v direnv >/dev/null 2>&1; then
   eval "$DENV"
 fi
 
-esc2hex() { perl -pe 's/\e/\\x1b/g' ; }
+esc2hex() { perl -pe 's/\e/\\x1b/g'; }
 
 section() { printf "\n==== %s ====\n" "$1"; }
 show() {
-  local title="$1"; shift
+  local title="$1"
+  shift
   local s="$*"
-  section "$title (raw)"; printf '%s\n' "$s"
-  section "$title (escaped)"; printf '%s\n' "$(printf '%s' "$s" | esc2hex)"
+  section "$title (raw)"
+  printf '%s\n' "$s"
+  section "$title (escaped)"
+  printf '%s\n' "$(printf '%s' "$s" | esc2hex)"
 }
 
 # --- Starship ---

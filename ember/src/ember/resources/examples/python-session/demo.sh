@@ -16,7 +16,8 @@ POST_RESTART=$(ember-python -c "print(globals().get('x'))")
 printf 'post_restart=%s\n' "$POST_RESTART"
 
 echo "::demo::heredoc"
-HEREDOC_OUTPUT=$(ember-python <<'PY'
+HEREDOC_OUTPUT=$(
+  ember-python <<'PY'
 print("strings with 'quotes' and $variables stay literal")
 PY
 )
@@ -25,7 +26,7 @@ printf 'heredoc_output=%s\n' "$HEREDOC_OUTPUT"
 WORKSPACE="${EMBER_WORKSPACE_DIR:-/var/lib/ember/workspace}"
 mkdir -p "$WORKSPACE"
 
-cat <<'PY' > "$WORKSPACE/helper.py"
+cat <<'PY' >"$WORKSPACE/helper.py"
 def hello() -> str:
     return "Hello World"
 
@@ -36,7 +37,7 @@ PY
 MODULE_VALUE=$(ember-python -c "import helper; print(helper.hello()); print(helper.changeable())")
 printf 'module_value=%s\n' "$MODULE_VALUE"
 
-cat <<'PY' > "$WORKSPACE/helper.py"
+cat <<'PY' >"$WORKSPACE/helper.py"
 def hello() -> str:
     return "Hello World"
 
