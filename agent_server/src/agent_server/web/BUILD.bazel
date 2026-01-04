@@ -6,8 +6,29 @@ npm_link_all_packages(name = "node_modules")
 # Export files needed by npm_translate_lock
 exports_files([
     "package.json",
+    "tsconfig.json",
+    "tsconfig.app.json",
+    "tsconfig.node.json",
 ])
 
-# TODO: Add Vite build and dev server targets
+# Source files for the agent_server web frontend
+_SRCS = glob([
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "src/**/*.css",
+    "src/**/*.html",
+    "static/**",
+]) + [
+    "package.json",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "tsconfig.json",
+    "tsconfig.app.json",
+    "tsconfig.node.json",
+]
+
+# TODO: Add Vite build and dev server targets (following props/frontend pattern)
+# TODO: Add svelte-check test target
+# TODO: Add visual regression tests
 # For now, ESLint linting is handled via workspace-level aspect
 # Run: bazel build --config=eslint //agent_server/...

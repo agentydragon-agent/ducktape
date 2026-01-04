@@ -23,11 +23,13 @@ _SRCS = glob([
     "src/**/*.css",
     "src/**/*.html",
     "static/**",
+    ".storybook/**/*.ts",
 ]) + [
     "package.json",
     "svelte.config.js",
     "vite.config.ts",
     "tsconfig.json",
+    "playwright.config.ts",
 ]
 
 # ESLint check - now handled by workspace-level aspect
