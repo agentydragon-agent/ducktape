@@ -197,11 +197,7 @@ def analyze() -> None:
     print("Querying Bazel targets...")
     # Single query to get all targets with their kinds (much faster than multiple kind() queries)
     all_targets_output = subprocess.run(
-        ["bazel", "query", "//...", "--output=label_kind"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT
+        ["bazel", "query", "//...", "--output=label_kind"], check=False, capture_output=True, text=True, cwd=REPO_ROOT
     )
 
     # Parse output: each line is "rule_type rule //package:target"

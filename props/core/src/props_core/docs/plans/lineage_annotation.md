@@ -106,8 +106,8 @@ occurrences:
         - start_line: 78
           end_line: 92
           note: "API response handling"
-        - 120  # Single line without note
-        - [200, 210]  # Range without note
+        - 120 # Single line without note
+        - [200, 210] # Range without note
 ```
 
 With occurrence-level note:

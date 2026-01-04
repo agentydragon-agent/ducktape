@@ -15,12 +15,12 @@ Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
 
 **Node Topology** (4 nodes total):
 
-| Node | Location | Role | IP/Access |
-|------|----------|------|-----------|
-| talos-vps-cp-0 | Hetzner (hil) | controlplane | Dynamic (Hetzner assigns) |
-| talos-vps-cp-1 | Hetzner (hil) | controlplane | Dynamic (Hetzner assigns) |
-| talos-pve-cp-0 | Proxmox (atlas) | controlplane | 10.2.1.1 |
-| talos-pve-worker-0 | Proxmox (atlas) | worker | 10.2.2.1 |
+| Node               | Location        | Role         | IP/Access                 |
+| ------------------ | --------------- | ------------ | ------------------------- |
+| talos-vps-cp-0     | Hetzner (hil)   | controlplane | Dynamic (Hetzner assigns) |
+| talos-vps-cp-1     | Hetzner (hil)   | controlplane | Dynamic (Hetzner assigns) |
+| talos-pve-cp-0     | Proxmox (atlas) | controlplane | 10.2.1.1                  |
+| talos-pve-worker-0 | Proxmox (atlas) | worker       | 10.2.2.1                  |
 
 **etcd Quorum**: 3 controllers (2 VPS + 1 Proxmox) - cluster survives home outage.
 
@@ -163,10 +163,10 @@ Kubeconfig is patched post-bootstrap with real VPS IP for external access.
 
 ## Storage
 
-| Location | CSI Driver | StorageClass | Use Cases |
-|----------|------------|--------------|-----------|
-| VPS | hcloud-csi | hcloud-volumes | Vault, Authentik, DNS |
-| Home | proxmox-csi | proxmox-csi | Harbor, Gitea, Loki, media |
+| Location | CSI Driver  | StorageClass   | Use Cases                  |
+| -------- | ----------- | -------------- | -------------------------- |
+| VPS      | hcloud-csi  | hcloud-volumes | Vault, Authentik, DNS      |
+| Home     | proxmox-csi | proxmox-csi    | Harbor, Gitea, Loki, media |
 
 ## Sealed Secrets Keypair
 

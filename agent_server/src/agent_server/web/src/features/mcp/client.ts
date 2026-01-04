@@ -164,7 +164,6 @@ export class AgentMcpClient {
 
     const client = new Client(
       { name: 'adgn-web', version: '1.0.0' },
-      // @ts-expect-error - SDK types don't expose resources capability but it's needed
       { capabilities: { resources: { subscribe: true } } }
     )
 

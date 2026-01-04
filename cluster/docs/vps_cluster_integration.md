@@ -50,20 +50,20 @@ cluster:
 
 ## Storage Strategy
 
-| Location | Provisioner | Services |
-|----------|-------------|----------|
-| VPS | Hetzner Cloud CSI | Vault, Authentik, DNS, cert-manager |
-| Home | Proxmox CSI (ZFS) | Harbor, Gitea, Loki, media, Nix cache |
+| Location | Provisioner       | Services                              |
+| -------- | ----------------- | ------------------------------------- |
+| VPS      | Hetzner Cloud CSI | Vault, Authentik, DNS, cert-manager   |
+| Home     | Proxmox CSI (ZFS) | Harbor, Gitea, Loki, media, Nix cache |
 
 **Rationale**: VPS for always-on critical path, home for storage-heavy workloads.
 
 ## Failure Modes
 
-| Scenario | Cluster | Ingress | Notes |
-|----------|---------|---------|-------|
-| Single VPS down | ✅ 2/3 quorum | ✅ | Pod anti-affinity recommended |
-| Both VPS down | ❌ 1/3 only | ❌ | Home pods continue but unmanaged |
-| Home down | ✅ 2/3 quorum | ✅ | SSO/internal services unavailable |
+| Scenario        | Cluster       | Ingress | Notes                             |
+| --------------- | ------------- | ------- | --------------------------------- |
+| Single VPS down | ✅ 2/3 quorum | ✅      | Pod anti-affinity recommended     |
+| Both VPS down   | ❌ 1/3 only   | ❌      | Home pods continue but unmanaged  |
+| Home down       | ✅ 2/3 quorum | ✅      | SSO/internal services unavailable |
 
 ## Remaining Work
 

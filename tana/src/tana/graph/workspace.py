@@ -38,9 +38,9 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
     def get(self, node_id: NodeId, /, default: BaseNode) -> BaseNode: ...
 
     @overload
-    def get[_T](self, node_id: NodeId, /, default: _T) -> BaseNode | _T: ...
+    def get[T](self, node_id: NodeId, /, default: T) -> BaseNode | T: ...
 
-    def get[_T](self, node_id: NodeId, /, default: BaseNode | _T | None = None) -> BaseNode | _T | None:
+    def get[T](self, node_id: NodeId, /, default: BaseNode | T | None = None) -> BaseNode | T | None:
         return self._nodes.get(node_id, default)
 
     def values(self) -> ValuesView[BaseNode]:

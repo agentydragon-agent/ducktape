@@ -36,11 +36,6 @@ packages = ["src/agent_core"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/agent_core/compaction_prompt.md" = "agent_core/compaction_prompt.md"
 
-[tool.uv.sources]
-openai-utils = { workspace = true }
-agent-pkg-host = { workspace = true }
-mcp-infra = { workspace = true }
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

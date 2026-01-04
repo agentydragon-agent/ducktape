@@ -9,13 +9,12 @@ Handles:
 
 import logging
 import os
-from pathlib import Path
 import re
 import shutil
 import socket
 import subprocess
 import time
-from urllib.parse import urlparse
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 

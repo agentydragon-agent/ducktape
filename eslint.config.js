@@ -248,5 +248,4 @@ export default [
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },
-
 ];

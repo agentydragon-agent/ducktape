@@ -18,7 +18,7 @@ machine:
       docker.io:
         endpoints:
           - https://registry.test-cluster.agentydragon.com/docker-hub-proxy
-          - https://registry-1.docker.io  # Fallback
+          - https://registry-1.docker.io # Fallback
       ghcr.io:
         endpoints:
           - https://registry.test-cluster.agentydragon.com/ghcr-proxy
@@ -30,12 +30,12 @@ uses upstream, Harbor deploys, subsequent pulls use cache automatically.
 
 ## Alternatives Considered
 
-| Option | Verdict | Reason |
-|--------|---------|--------|
-| Talos Registry Mirrors | ✅ **Selected** | Transparent, native containerd, built-in fallback |
-| Kyverno Image Mutation | ⚠️ Viable | Adds dependency, no fallback, observability gap |
-| Custom Admission Webhook | ❌ Rejected | Over-engineered, reinvents wheel |
-| ImagePolicyWebhook | ❌ Rejected | Complex kube-apiserver config, Talos limitation |
+| Option                   | Verdict         | Reason                                            |
+| ------------------------ | --------------- | ------------------------------------------------- |
+| Talos Registry Mirrors   | ✅ **Selected** | Transparent, native containerd, built-in fallback |
+| Kyverno Image Mutation   | ⚠️ Viable       | Adds dependency, no fallback, observability gap   |
+| Custom Admission Webhook | ❌ Rejected     | Over-engineered, reinvents wheel                  |
+| ImagePolicyWebhook       | ❌ Rejected     | Complex kube-apiserver config, Talos limitation   |
 
 ## Harbor Configuration
 

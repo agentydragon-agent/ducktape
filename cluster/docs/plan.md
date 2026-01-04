@@ -1,6 +1,6 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-01-03
+**Last Updated**: 2026-01-04
 
 ## 🎯 Current Status
 
@@ -18,19 +18,37 @@ Migrated from Proxmox-only 5-node cluster to **hybrid Hetzner VPS + Proxmox** ar
 - ✅ **Hetzner Cloud CSI** for block storage
 - ⏳ Home Proxmox node(s) not yet added
 
-**Current Cluster State**:
+**Current Cluster State** (2026-01-04):
 
-- Nodes: `talos-vps-0` (5.78.106.249), `talos-vps-1` (5.78.43.147)
-- All core pods running: CoreDNS, Cilium, Hubble, hcloud-csi
-- Node labels: `topology.kubernetes.io/region=hetzner`, `zone=hil`
-- KubeSpan: Active mesh with ~15s handshake intervals
-- No services deployed yet (Flux, Vault, etc. pending)
+- **Nodes**: 4 total (2 VPS + 2 Proxmox)
+  - `talos-vps-cp-0` (5.78.43.147) - Ready, control-plane
+  - `talos-vps-cp-1` (5.78.106.249) - **NotReady** (kubelet stopped posting status)
+  - `talos-pve-cp-0` (10.2.1.1) - Ready, control-plane
+  - `talos-pve-worker-0` (10.2.2.1) - Ready, worker
+- **Core infrastructure**: Running (CoreDNS, Cilium, hcloud-csi, Proxmox CSI, MetalLB, Flux)
+- **Services deployed but blocked**:
+  - Vault: 2/3 pods running, ingress exists but TLS cert not issued
+  - PowerDNS: CrashLoopBackOff (ACL issue - see Pending Investigation)
+  - Loki: Failed (blocked by PowerDNS)
+  - cert-manager: Running but can't issue certs (DNS-01 needs PowerDNS)
 
 **Pending Investigation**:
 
 - [ ] Re-evaluate TCP MTU probing requirement now that we're on KubeSpan instead of Tailscale
   - PowerDNS currently requires `net.ipv4.tcp_mtu_probing` sysctl for AXFR over WireGuard
   - KubeSpan may handle MTU differently than Tailscale - test if still needed
+
+- [ ] **PowerDNS webserver ACL vs VPS public IPs** (BLOCKER for TLS certs)
+  - **Problem**: PowerDNS webserver ACL allows only RFC1918 ranges
+  - **Impact**: Kubelet probes come from node's INTERNAL-IP. VPS nodes have public IPs (5.78.x.x),
+    so probes rejected → CrashLoop → cert-manager DNS-01 fails → no TLS
+  - **Why**: KubeSpan is inter-node only. Kubelet→pod probes are intra-node, use node IP as source
+  - **Options**:
+    1. **Update ACL to 0.0.0.0/0** - Simple, webserver is only for health/metrics
+    2. **Add VPS public IPs to ACL** - More restrictive, requires update when IPs change
+    3. **Run PowerDNS only on Proxmox nodes** - Avoids issue but reduces HA
+    4. **Use Cilium local redirect** - Force probes through pod network (complex)
+  - **Recommended**: Option 1 - webserver (8081) is only for health/API, not DNS queries
 
 ---
 
@@ -137,7 +155,7 @@ Complete the original hybrid vision with all services.
 ### Future Services (Lower Priority)
 
 - [ ] Jellyfin (media streaming)
-- [ ] *arr stack (media automation)
+- [ ] \*arr stack (media automation)
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache
@@ -211,13 +229,13 @@ Complete the original hybrid vision with all services.
 
 - Gitea + PostgreSQL (50GB+)
 - Loki log storage (100GB+)
-- Media services (Jellyfin, *arr stack)
+- Media services (Jellyfin, \*arr stack)
 - Nix cache (100GB+)
 
-| Location | Services | Rationale |
-|----------|----------|-----------|
-| VPS | Vault, Authentik, Ingress, DNS, cert-manager | Always-on, critical path |
-| Home | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
+| Location | Services                                       | Rationale                            |
+| -------- | ---------------------------------------------- | ------------------------------------ |
+| VPS      | Vault, Authentik, Ingress, DNS, cert-manager   | Always-on, critical path             |
+| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
 
 #### Shared PostgreSQL Option
 

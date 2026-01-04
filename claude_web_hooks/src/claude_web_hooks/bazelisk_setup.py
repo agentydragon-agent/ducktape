@@ -12,11 +12,11 @@ IMPORTANT: This module must not import any non-stdlib packages.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import platform
 import stat
 import subprocess
 import urllib.request
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 

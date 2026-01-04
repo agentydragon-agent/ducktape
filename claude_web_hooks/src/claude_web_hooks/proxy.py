@@ -15,14 +15,14 @@ import argparse
 import asyncio
 import atexit
 import base64
-from dataclasses import dataclass, field
 import fcntl
 import logging
 import os
-from pathlib import Path
 import signal
 import sys
 import time
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import IO
 from urllib.parse import ParseResult, urlparse
 

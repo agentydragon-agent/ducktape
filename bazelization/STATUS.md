@@ -67,6 +67,7 @@ Unified Bazel build system for all Python packages:
 | Shell      | 39          | 1        | 26             | 12       | 3.7%     |
 
 **Bazel Targets:**
+
 - py_library: 54
 - py_test: 32
 - ruff_test: 40
@@ -74,6 +75,7 @@ Unified Bazel build system for all Python packages:
 Run `bazel run //bazelization:audit` to get updated counts.
 
 **Notes:**
+
 - Coverage includes files in both `srcs` (source code) and `data` (test fixtures, examples)
 - Audit script extended 2026-01-04 to track TypeScript, JavaScript, Rust, and Shell files
 - Audit performance optimized: eliminated duplicate queries, now ~15min (was 34min)

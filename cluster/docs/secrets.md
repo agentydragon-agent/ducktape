@@ -48,7 +48,7 @@
 
 1. `00-persistent-auth` generates/uses keypair from terraform state
 2. `00-persistent-auth` SSHs to Proxmox, creates API tokens
-3. `00-persistent-auth` runs `kubeseal` to create SealedSecrets (writes to k8s/*.yaml)
+3. `00-persistent-auth` runs `kubeseal` to create SealedSecrets (writes to k8s/\*.yaml)
 4. User commits SealedSecrets to git manually
 5. `01-infrastructure` reads keypair via `terraform_remote_state`
 6. `01-infrastructure` deploys keypair as `kubernetes_secret` to cluster
@@ -57,19 +57,19 @@
 
 ### Keypair Locations
 
-| Location | Purpose |
-|----------|---------|
-| `terraform/00-persistent-auth/terraform.tfstate` | SSOT (gitignored) |
-| `kube-system/sealed-secrets-key` | Deployed to cluster |
-| Git SealedSecrets | Encrypted with keypair |
+| Location                                         | Purpose                |
+| ------------------------------------------------ | ---------------------- |
+| `terraform/00-persistent-auth/terraform.tfstate` | SSOT (gitignored)      |
+| `kube-system/sealed-secrets-key`                 | Deployed to cluster    |
+| Git SealedSecrets                                | Encrypted with keypair |
 
 ## SealedSecrets in Repository
 
-| File | Purpose | Namespace |
-|------|---------|-----------|
-| `k8s/storage/proxmox-csi-sealed.yaml` | CSI driver credentials | csi-proxmox |
-| `k8s/applications/nix-cache/signing-key-sealed.yaml` | Nix cache signing | nix-cache |
-| `k8s/applications/nix-cache/jwt-token-sealed.yaml` | Attic JWT token | nix-cache |
+| File                                                 | Purpose                | Namespace   |
+| ---------------------------------------------------- | ---------------------- | ----------- |
+| `k8s/storage/proxmox-csi-sealed.yaml`                | CSI driver credentials | csi-proxmox |
+| `k8s/applications/nix-cache/signing-key-sealed.yaml` | Nix cache signing      | nix-cache   |
+| `k8s/applications/nix-cache/jwt-token-sealed.yaml`   | Attic JWT token        | nix-cache   |
 
 ## Common Failure Modes
 

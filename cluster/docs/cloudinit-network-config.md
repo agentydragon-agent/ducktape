@@ -14,11 +14,11 @@ per-node image downloads.
 
 **Expected Improvement:**
 
-| Phase | META (current) | Cloud-Init (new) |
-|-------|----------------|------------------|
-| Image download | 7-9 min × 2 nodes = 14-18 min | 30-60s (once) |
-| Snippet creation | N/A | <1s per node |
-| **Total** | 14-18 min | ~1 min |
+| Phase            | META (current)                | Cloud-Init (new) |
+| ---------------- | ----------------------------- | ---------------- |
+| Image download   | 7-9 min × 2 nodes = 14-18 min | 30-60s (once)    |
+| Snippet creation | N/A                           | <1s per node     |
+| **Total**        | 14-18 min                     | ~1 min           |
 
 ### Key Changes
 
@@ -131,11 +131,11 @@ Set `proxmox_network_config_method = "meta"` to revert to current behavior.
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
-| `terraform/01-infrastructure/proxmox-nodes.tf` | All Proxmox node definitions (schematics, images, VMs) |
-| `terraform/01-infrastructure/variables.tf:64-72` | The `proxmox_network_config_method` switch |
-| `terraform/00-persistent-auth/main.tf` | SSH target derivation pattern |
+| File                                             | Purpose                                                |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| `terraform/01-infrastructure/proxmox-nodes.tf`   | All Proxmox node definitions (schematics, images, VMs) |
+| `terraform/01-infrastructure/variables.tf:64-72` | The `proxmox_network_config_method` switch             |
+| `terraform/00-persistent-auth/main.tf`           | SSH target derivation pattern                          |
 
 ### Build/Test
 

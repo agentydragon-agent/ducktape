@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import logging
 import os
-from pathlib import Path
+import subprocess
 import sys
 import traceback
+from datetime import datetime
+from pathlib import Path
 
 from claude_web_hooks import bazel_proxy_setup, bazelisk_setup
 
@@ -47,8 +48,6 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
     which installs the hook defined in .pre-commit-config.yaml.
     This includes conflict marker detection, syntax checks, and bazel lint.
     """
-    import subprocess
-
     git_dir = project_dir / ".git"
     if not git_dir.exists():
         log.info("Not a git repository (no .git), skipping git hook install")
@@ -72,7 +71,7 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
         log.info("Installing pre-commit==4.0.1 via pip")
         try:
             result = subprocess.run(
-                ["pip", "install", "--user", "pre-commit==4.0.1"], capture_output=True, text=True, timeout=60
+                ["pip", "install", "--user", "pre-commit==4.0.1"], check=False, capture_output=True, text=True, timeout=60
             )
             if result.returncode != 0:
                 log.warning("Failed to install pre-commit: %s", result.stderr)
@@ -84,7 +83,7 @@ def install_git_precommit_hook(project_dir: Path, log: logging.Logger) -> None:
 
     # Install the git hook
     try:
-        result = subprocess.run(["pre-commit", "install"], cwd=project_dir, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(["pre-commit", "install"], check=False, cwd=project_dir, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             log.info("Installed git pre-commit hook via pre-commit install")
         else:
@@ -124,13 +123,12 @@ def setup_logging() -> tuple[logging.Logger, LogLevelCounter]:
             if record.levelno == logging.INFO:
                 # INFO logs don't need a prefix - they're expected
                 return record.getMessage()
-            elif record.levelno == logging.WARNING:
+            if record.levelno == logging.WARNING:
                 return f"[WARNING] {record.getMessage()}"
-            elif record.levelno == logging.ERROR:
+            if record.levelno == logging.ERROR:
                 return f"[ERROR] {record.getMessage()}"
-            else:
-                # Any other level is unexpected - highlight it
-                return f"[{record.levelname}] {record.getMessage()}"
+            # Any other level is unexpected - highlight it
+            return f"[{record.levelname}] {record.getMessage()}"
 
     formatter = LogLevelFormatter()
 

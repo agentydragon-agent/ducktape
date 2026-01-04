@@ -1,6 +1,6 @@
 import { fetchSnapshotDetail, fetchSnapshotTree } from '$lib/api/client';
 
-export async function load({ params, url }) {
+export async function load({ params, url }: { params: { slug: string }; url: URL }) {
   // Parse the slug: either "snapshot-name" or "snapshot-name/issueId/occurrenceId"
   const parts = params.slug.split('/');
   const slug = parts[0];

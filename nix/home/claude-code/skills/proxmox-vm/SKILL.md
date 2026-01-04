@@ -15,15 +15,15 @@ Interact with VMs on Proxmox via QEMU monitor. Actions execute sequentially in c
 
 ## Actions
 
-| Action | Description |
-|--------|-------------|
-| `--screenshot`, `-s` | Take screenshot, save to `~/.cache/proxmox-vm/vm<id>/<timestamp>.png` |
-| `--type "text"`, `-t "text"` | Type text (converts chars to QEMU keys) |
-| `--enter`, `-e` | Press Enter |
-| `--sendkey <key>`, `-k <key>` | Send QEMU key code (e.g., `ctrl-c`, `ret`, `shift-a`) |
-| `--info`, `-i` | Show VM network interfaces via guest agent |
-| `--sleep <secs>` | Sleep between actions |
-| `--stdin` | Read commands from stdin (one per line) |
+| Action                        | Description                                                           |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `--screenshot`, `-s`          | Take screenshot, save to `~/.cache/proxmox-vm/vm<id>/<timestamp>.png` |
+| `--type "text"`, `-t "text"`  | Type text (converts chars to QEMU keys)                               |
+| `--enter`, `-e`               | Press Enter                                                           |
+| `--sendkey <key>`, `-k <key>` | Send QEMU key code (e.g., `ctrl-c`, `ret`, `shift-a`)                 |
+| `--info`, `-i`                | Show VM network interfaces via guest agent                            |
+| `--sleep <secs>`              | Sleep between actions                                                 |
+| `--stdin`                     | Read commands from stdin (one per line)                               |
 
 ## Examples
 
@@ -56,6 +56,7 @@ Modifiers: `shift-X`, `ctrl-X`, `alt-X` (e.g., `shift-a` for 'A', `ctrl-c` for C
 ## stdin Format
 
 One command per line:
+
 ```
 screenshot
 type ip addr

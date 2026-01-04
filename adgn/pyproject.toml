@@ -175,12 +175,3 @@ adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 
 # Mypy configuration moved to central /mypy.ini at repo root
 
-[tool.uv.sources]
-agent-core = { workspace = true }
-agent-pkg-host = { workspace = true }
-agent-pkg-runtime = { workspace = true }
-cli-util = { workspace = true }
-editor-agent-runtime = { workspace = true }
-mcp-infra = { workspace = true }
-net-util = { workspace = true }
-openai-utils = { workspace = true }

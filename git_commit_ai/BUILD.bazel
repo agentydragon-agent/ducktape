@@ -15,6 +15,7 @@ py_library(
         "//mcp_infra",
         "//openai_utils",
         "@pypi//fastmcp",
+        "@pypi//mako",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],

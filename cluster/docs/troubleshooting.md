@@ -593,7 +593,7 @@ become Ready without volume.
 spec:
   replicas: 1
   strategy:
-    type: Recreate  # Terminates old pod before creating new one
+    type: Recreate # Terminates old pod before creating new one
 ```
 
 **When to use Recreate**: Single replica + RWO volume + stateful app (databases, git servers, registries).

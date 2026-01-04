@@ -1,8 +1,8 @@
-import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import type { UserConfig } from 'vite'
 
 // https://vite.dev/config/
-export default defineConfig({
+const config: UserConfig = {
   plugins: [svelte()],
   server: {
     host: '127.0.0.1',
@@ -33,4 +33,6 @@ export default defineConfig({
   },
   // Emit built assets into the server's static directory for tests/runtime
   build: { outDir: '../server/static', emptyOutDir: true },
-})
+}
+
+export default config
