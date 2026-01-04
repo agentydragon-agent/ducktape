@@ -52,6 +52,7 @@
         mkdir -p ~/.nix-profile
         ${pkgs.home-manager}/bin/home-manager switch \
           --flake "github:agentydragon/ducktape?dir=nix/home&ref=devel#${homeManagerHost}" \
+          --impure \
           2>&1 | tee ~/home-manager-init.log
       ''}";
       ExecStartPost = "${pkgs.coreutils}/bin/touch /home/${username}/.home-manager-init-done";
