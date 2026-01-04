@@ -27,7 +27,9 @@ terraform {
 
 # DRY configuration for persistent auth
 locals {
-  proxmox_ssh_target = "root@${var.proxmox_api_host}"
+  # NOTE: SSH uses proxmox_ssh_host (atlas) not proxmox_api_host (FQDN)
+  # because the FQDN routes through VPS nginx, but SSH needs direct Tailscale access
+  proxmox_ssh_target = "root@${var.proxmox_ssh_host}"
 
   # Persistent Proxmox users - survive VM lifecycle
   pve_persistent_users = {

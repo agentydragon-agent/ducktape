@@ -1,7 +1,13 @@
 variable "proxmox_api_host" {
-  description = "Proxmox host FQDN (used for HTTPS API and SSH access)"
+  description = "Proxmox host FQDN (used for HTTPS API access via nginx reverse proxy)"
   type        = string
   default     = "atlas.agentydragon.com"
+}
+
+variable "proxmox_ssh_host" {
+  description = "Proxmox SSH hostname (Tailscale name, NOT the FQDN which routes to VPS)"
+  type        = string
+  default     = "atlas"
 }
 
 variable "talos_version" {
