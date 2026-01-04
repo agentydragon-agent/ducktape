@@ -41,7 +41,6 @@ js_library(
 # All pyproject.toml files that contribute to requirements_bazel.txt
 # NOTE: homeassistant/iaqi excluded - it has no pyproject.toml and uses separate @pypi_homeassistant lock
 _PYPROJECT_SRCS = [
-    "//:pyproject.toml",  # Root config with uv overrides (git dependencies like rfc3987-syntax fork)
     "//adgn:pyproject.toml",
     "//agent_core:pyproject.toml",
     "//agent_pkg/host:pyproject.toml",

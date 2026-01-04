@@ -32,16 +32,6 @@ BAZEL_USER_BAZELRC = Path.home() / ".bazelrc"
 ANTHROPIC_CA_PREINSTALLED = Path("/usr/local/share/ca-certificates/swp-ca-production.crt")
 
 
-def _parse_proxy_url(proxy_url: str) -> tuple[str, int, str | None, str | None]:
-    """Parse proxy URL into (host, port, user, password)."""
-    parsed = urlparse(proxy_url)
-    host = parsed.hostname or ""
-    port = parsed.port or 80
-    user = parsed.username
-    password = parsed.password
-    return host, port, user, password
-
-
 def _extract_proxy_ca() -> bool:
     """Extract the TLS inspection CA certificate from the proxy.
 

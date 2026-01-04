@@ -72,7 +72,8 @@ class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):
         """Load configuration from XDG config directory."""
         config_file = Path(user_config_dir("adgn-claude-hooks")) / "settings.yaml"
         if config_file.exists() and (config_data := yaml.safe_load(config_file.read_text())):
-            return config_data.get(self.hook_name, {})
+            result: dict[str, Any] = config_data.get(self.hook_name, {})
+            return result
         return {}
 
     def run_hook(self) -> None:

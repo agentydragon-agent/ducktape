@@ -13,6 +13,7 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
         "@pypi//typing_extensions",
     ],
 )

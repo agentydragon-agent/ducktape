@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pygit2
 import pytest
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput

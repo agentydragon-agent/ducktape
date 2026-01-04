@@ -3950,6 +3950,10 @@ pyyaml==6.0.3 \
     #   kubernetes-asyncio
     #   pre-commit
     #   uvicorn
+types-pyyaml==6.0.12.20250915 \
+    --hash=sha256:e7d4d9e064e89a3b3cae120b4990cd370874d2bf12fa5f46c97018dd5d3c9ab6 \
+    --hash=sha256:0f8b54a528c303f0e6f7165687dd33fafa81c807fcac23f632b63aa624ced1d3
+    # via claude-hooks (claude/claude_hooks/pyproject.toml)
 pyzmq==27.1.0 \
     --hash=sha256:01c0e07d558b06a60773744ea6251f769cd79a41a97d11b8bf4ab8f034b0424d \
     --hash=sha256:01f9437501886d3a1dd4b02ef59fb8cc384fa718ce066d52f175ee49dd5b7ed8 \

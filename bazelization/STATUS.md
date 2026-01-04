@@ -54,14 +54,17 @@ Unified Bazel build system for all Python packages:
 | Metric | Count | Notes |
 |--------|-------|-------|
 | Python files total | 1139 | Git-tracked only |
-| In Bazel py_* srcs | 1047 | 93.2% coverage |
-| Not in any target | 76 | See list below |
+| In Bazel py_* srcs/data | 1081 | 96.3% coverage |
+| Not in any target | 42 | See list below |
 | Intentionally excluded | 16 | ansible (12), nix (4) |
 | py_library targets | 54 | |
 | py_test targets | 32 | 3 manual |
 | ruff_test targets | 40 | Linting coverage |
 
 Run `uv run bazelization/audit.py` to get updated counts.
+
+**Note**: Coverage includes files in both `srcs` (source code) and `data` (test fixtures, examples).
+Audit script updated 2026-01-04 to count test data files.
 
 ### Completed
 
@@ -138,7 +141,7 @@ Run `uv run bazelization/audit.py` to get updated counts.
 | `//mcp_starter:test_integration` | Requires running MCP server |
 | `//website:*` | Haskell/stack build system |
 
-### Files Not in Any Bazel Target (76 files)
+### Files Not in Any Bazel Target (42 files)
 
 **adgn/ (4 files)**
 - `adgn/examples/openai_api/stateless_two_step_demo.py` - Example script
@@ -182,9 +185,6 @@ Run `uv run bazelization/audit.py` to get updated counts.
 - `llm/ducktape_llm_common/scripts/notification_test_manual.py`
 - `llm/mcp/habitify/examples/install_to_claude.py`
 - `llm/mcp/habitify/habitify_api_reference/collect_references.py`
-
-**py_detectors/ (34 files)**
-- `py_detectors/tests/fixtures/**/*.py` - Test fixtures (intentionally bad code for detector testing)
 
 **sandboxed_jupyter/ (2 files)**
 - `sandboxed_jupyter/examples/*.py` - Example workflows

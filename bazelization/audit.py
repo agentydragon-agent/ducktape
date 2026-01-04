@@ -40,33 +40,35 @@ def find_git_python_files() -> set[Path]:
 
 
 def find_bazel_python_sources() -> set[Path]:
-    """Query Bazel for all Python files in srcs of py_* targets."""
+    """Query Bazel for all Python files in srcs and data of py_* targets."""
     sources = set()
 
     for kind in ["py_library", "py_test", "py_binary"]:
-        result = subprocess.run(
-            ["bazel", "query", f'labels(srcs, kind("{kind}", //...))'],
-            check=False,
-            capture_output=True,
-            text=True,
-            cwd=REPO_ROOT,
-        )
-        if result.returncode != 0:
-            continue
-
-        for line in result.stdout.strip().split("\n"):
-            if not line or not line.endswith(".py"):
+        # Query for srcs
+        for attr in ["srcs", "data"]:
+            result = subprocess.run(
+                ["bazel", "query", f'labels({attr}, kind("{kind}", //...))'],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=REPO_ROOT,
+            )
+            if result.returncode != 0:
                 continue
-            # Convert //pkg:path/to/file.py to pkg/path/to/file.py
-            label = line.removeprefix("//")
-            if ":" in label:
-                pkg, file = label.split(":", 1)
-                if pkg:
-                    sources.add(Path(pkg) / file)
+
+            for line in result.stdout.strip().split("\n"):
+                if not line or not line.endswith(".py"):
+                    continue
+                # Convert //pkg:path/to/file.py to pkg/path/to/file.py
+                label = line.removeprefix("//")
+                if ":" in label:
+                    pkg, file = label.split(":", 1)
+                    if pkg:
+                        sources.add(Path(pkg) / file)
+                    else:
+                        sources.add(Path(file))
                 else:
-                    sources.add(Path(file))
-            else:
-                sources.add(Path(label))
+                    sources.add(Path(label))
 
     return sources
 

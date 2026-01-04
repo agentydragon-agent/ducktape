@@ -4328,7 +4328,7 @@
         "usagesDigest": "4at1gKGAayjxiaH+vzsqHfnNXp5d+FknRZN19jEquzA=",
         "recordedFileInputs": {
           "@@//Cargo.toml": "9325f7f4169890e6186de2a33b63df719f218eb37f0982f1cb67afec5c26ad23",
-          "@@//Cargo.lock": "116eda43b27aba1c18d2b0760e82c3a22252026d009b56f7ab78e76329df5030",
+          "@@//Cargo.lock": "b90f965c1307997bde2444cada685ad178a7e10636ae2273b5967b823add3ec5",
           "@@//MODULE.bazel": "19809b72678cae9115d1bfa42081bd6a5428898c7f33bcf0eb18c40defbb64a5",
           "@@rules_rust~~rust_host_tools~rust_host_tools//rust_host_tools": "ENOENT"
         },
