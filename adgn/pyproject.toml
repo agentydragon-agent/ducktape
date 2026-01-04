@@ -95,6 +95,7 @@ typing = [
 matrix = [
   "mautrix>=0.20.0",
 ]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/adgn"]
 
