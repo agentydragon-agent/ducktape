@@ -19,16 +19,9 @@ class LineRange(BaseModel):
 - No annotation field on LineRange
 - Notes can only be attached at the Occurrence level via `Occurrence.note`
 
-### Jsonnet Helpers (specimens/lib.libsonnet)
+### YAML Format
 
-Current shorthand support in `occFromEntry()`:
-
-- `123` → single line (no note)
-- `[123, 155]` → range (no note)
-- `[123, "note"]` → single line with **occurrence-level** note
-- `[123, 155, "note"]` → range with **occurrence-level** note
-
-The notes are attached to the Occurrence, not to individual LineRange objects.
+Current specimens use YAML format. Line ranges are specified as integers or `[start, end]` arrays.
 
 ## Proposed Design
 
@@ -58,42 +51,25 @@ class LineRange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 ```
 
-### 2. Jsonnet Helper Changes
+### 2. YAML Format Support
 
-Update `toRange()` to handle annotated line specs:
+Support multiple formats for line ranges in YAML:
 
-```jsonnet
-// Normalize a line spec into a LineRange object.
-// Accepts:
-//   - int (single line)
-//   - [start, end] (range)
-//   - [line, "note"] (single line with annotation)
-//   - [start, end, "note"] (range with annotation)
-//   - object with start_line/end_line/note fields
-local toRange(x) =
-  if std.type(x) == 'number' then
-    { start_line: x }
-  else if std.type(x) == 'array' && std.length(x) == 2 then (
-    if std.type(x[1]) == 'number' then
-      // [start, end] - range without note
-      { start_line: x[0], end_line: x[1] }
-    else if std.type(x[1]) == 'string' then
-      // [line, "note"] - single line with note
-      { start_line: x[0], note: x[1] }
-    else
-      error 'Invalid 2-element array spec: ' + std.manifestJson(x)
-  )
-  else if std.type(x) == 'array' && std.length(x) == 3 then (
-    if std.type(x[0]) == 'number' && std.type(x[1]) == 'number' && std.type(x[2]) == 'string' then
-      // [start, end, "note"] - range with note
-      { start_line: x[0], end_line: x[1], note: x[2] }
-    else
-      error 'Invalid 3-element array spec: ' + std.manifestJson(x)
-  )
-  else if std.type(x) == 'object' && std.objectHas(x, 'start_line') then
-    x
-  else
-    error 'Invalid line spec: ' + std.manifestJson(x);
+```yaml
+# Single line (integer)
+- 123
+
+# Range (2-element array)
+- [123, 155]
+
+# Single line with note (object)
+- start_line: 123
+  note: "validation logic"
+
+# Range with note (object)
+- start_line: 78
+  end_line: 92
+  note: "API response handling"
 ```
 
 ### 3. Semantic Distinction
@@ -118,44 +94,36 @@ local toRange(x) =
 
 ### 4. Example Usage
 
-```jsonnet
-local I = import '../../specimens/lib.libsonnet';
-
-I.issueOneOccurrence(
-  rationale=|||
-    Manual JSON parsing without schema validation.
-    Should use Pydantic TypeAdapter for automatic validation.
-  |||,
-  filesToRanges={
-    'src/app.py': [
-      [45, "user config parsing"],           // Single line with note
-      [78, 92, "API response handling"],     // Range with note
-      [120],                                  // Single line without note
-      [200, 210],                             // Range without note
-    ],
-  },
-)
+```yaml
+rationale: |
+  Manual JSON parsing without schema validation.
+  Should use Pydantic TypeAdapter for automatic validation.
+occurrences:
+  - files:
+      src/app.py:
+        - start_line: 45
+          note: "user config parsing"
+        - start_line: 78
+          end_line: 92
+          note: "API response handling"
+        - 120  # Single line without note
+        - [200, 210]  # Range without note
 ```
 
 With occurrence-level note:
 
-```jsonnet
-I.issueWithOccurrences(
-  rationale=|||
-    Dead code that should be removed.
-  |||,
-  occurrences=[
-    {
-      files: {
-        'src/utils.py': [
-          [45, "unused helper function"],
-          [78, 92, "dead import section"],
-        ],
-      },
-      note: "These were part of the old caching system before refactor"
-    },
-  ],
-)
+```yaml
+rationale: |
+  Dead code that should be removed.
+occurrences:
+  - files:
+      src/utils.py:
+        - start_line: 45
+          note: "unused helper function"
+        - start_line: 78
+          end_line: 92
+          note: "dead import section"
+    note: "These were part of the old caching system before refactor"
 ```
 
 ### 5. Migration Path
@@ -178,32 +146,28 @@ I.issueWithOccurrences(
    - Add `note: str | None` field to `LineRange`
    - Update tests to cover annotated line ranges
 
-2. **Jsonnet helpers** (specimens/lib.libsonnet):
-   - Update `toRange()` to parse `[line, "note"]` and `[start, end, "note"]`
-   - Update documentation/examples
-   - Add tests for annotated line specs
+2. **YAML parsing**:
+   - Ensure object-form line ranges parse correctly
+   - Test mixed formats (integers, arrays, objects)
 
 3. **Validation**:
    - Ensure line notes are preserved through load/dump cycles
-   - Test Jsonnet evaluation with annotated ranges
    - Verify backward compatibility with existing specimens
 
 4. **Documentation**:
-   - Update specimens/CLAUDE.md with line annotation examples
-   - Update ~/code/specimens/docs/authoring-guide.md guidelines
+   - Update specimens authoring guide with line annotation examples
    - Add usage examples to key documentation
 
 ## Alternatives Considered
 
-### Alternative 1: Dict-based line specs
+### Alternative 1: Dict-based line specs only
 
-Use dict form in Jsonnet: `{start: 123, end: 155, note: "text"}`
+Require dict form for all annotated ranges: `{start_line: 123, end_line: 155, note: "text"}`
 
 **Rejected because:**
 
-- More verbose than array shorthand
-- Loses conciseness of current `[start, end]` notation
-- Inconsistent with existing array-based pattern
+- More verbose for simple cases
+- Loses conciseness of integer/array notation for unannotated ranges
 
 ### Alternative 2: Separate annotations dict
 
@@ -211,7 +175,7 @@ Keep LineRange simple, add `annotations: dict[tuple[int, int | None], str]` to O
 
 **Rejected because:**
 
-- Awkward tuple keys in JSON/Jsonnet
+- Awkward tuple keys in YAML
 - Complicates lookup and validation
 - Less ergonomic for authoring
 
@@ -242,6 +206,5 @@ Continue using only occurrence-level notes with inline text
 
 ## References
 
-- Current LineRange: src/adgn/props/models/issue.py:8-22
-- Jsonnet helpers: src/adgn/props/specimens/lib.libsonnet:18-27
-- Occurrence schema: src/adgn/props/models/issue.py:25-58
+- Current LineRange: props/core/src/props_core/models/issue.py
+- Occurrence schema: props/core/src/props_core/models/issue.py
