@@ -29,8 +29,9 @@
   # Creates flag file after success so it only runs once
   systemd.services.home-manager-init = {
     description = "Initial home-manager setup";
-    after = ["network-online.target"];
+    after = ["network-online.target" "nix-daemon.service"];
     wants = ["network-online.target"];
+    requires = ["nix-daemon.service"];
     wantedBy = ["multi-user.target"];
     unitConfig = {
       ConditionPathExists = "!/var/lib/home-manager-init-done";
@@ -38,11 +39,18 @@
     serviceConfig = {
       Type = "oneshot";
       User = username;
+      # Create profile directory if it doesn't exist
+      ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p /home/${username}/.local/state/nix/profiles";
       ExecStart = "${pkgs.writeShellScript "home-manager-init" ''
         set -e
+        export HOME=/home/${username}
+        export USER=${username}
+        # Ensure nix profile directories exist
+        mkdir -p ~/.local/state/nix/profiles
+        mkdir -p ~/.nix-profile
         ${pkgs.home-manager}/bin/home-manager switch \
           --flake "github:agentydragon/ducktape?dir=nix/home&ref=devel#${homeManagerHost}" \
-          2>&1 | tee /var/log/home-manager.log
+          2>&1 | tee ~/home-manager-init.log
       ''}";
       ExecStartPost = "${pkgs.coreutils}/bin/touch /var/lib/home-manager-init-done";
       RemainAfterExit = true;
