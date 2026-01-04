@@ -82,7 +82,7 @@ class DiffTree:
                 table.add_column(justify="right")
 
         for tree_line, node in zip(tree_lines, nodes_in_order, strict=True):
-            row = []
+            row: list[Text | ProgressBar] = []
             for column in self.config.columns:
                 if column == Column.TREE:
                     # Add space after tree column
@@ -118,7 +118,11 @@ class DiffTree:
         - Node has no children
         - We've exceeded max_depth
         """
-        return (self.config.max_depth is None or depth < self.config.max_depth) and not node.is_file and node.children
+        return (
+            (self.config.max_depth is None or depth < self.config.max_depth)
+            and not node.is_file
+            and bool(node.children)
+        )
 
     def _get_collapsed_path_and_node(self, node: TreeNode, depth: int) -> tuple[str, TreeNode, int]:
         """
@@ -153,7 +157,7 @@ class DiffTree:
         collapsed_path, final_node, final_depth = self._get_collapsed_path_and_node(node, depth)
 
         # Directories in bold blue, files in default color
-        name_color = "bold blue" if not final_node.is_file else None
+        name_color = "bold blue" if not final_node.is_file else ""
         label = Text(collapsed_path, style=name_color, overflow="ellipsis")
         tree = Tree(label, guide_style="dim")
 

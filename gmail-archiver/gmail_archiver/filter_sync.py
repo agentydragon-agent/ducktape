@@ -77,7 +77,6 @@ def normalize_gmail_filter(gmail_filter: GmailFilter, labels_by_id: dict[str, st
 
 def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
     """Convert FilterRule from YAML to normalized form."""
-    # Build add_labels
     add_labels = frozenset(
         label
         for label, condition in [
@@ -86,7 +85,7 @@ def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
             (SystemLabel.STARRED, rule.star),
             (SystemLabel.TRASH, rule.trash or rule.delete),
         ]
-        if condition
+        if condition and label is not None
     )
 
     # Build remove_labels
