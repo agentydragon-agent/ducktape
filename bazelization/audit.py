@@ -111,23 +111,13 @@ def find_git_files(extensions: list[str] | None = None) -> set[Path]:
     return {Path(entry.path) for entry in index if any(entry.path.endswith(ext) for ext in extensions)}
 
 
-def find_bazel_files_by_language(lang_config: LanguageConfig) -> set[Path]:
-    """Query Bazel for files of a specific language in specified target kinds and attributes.
+def find_bazel_files_by_language(lang_config: LanguageConfig, all_bazel_srcs: set[Path]) -> set[Path]:
+    """Filter pre-queried Bazel source files by language extensions.
 
-    Batches queries by kind to minimize Bazel invocations.
+    Much faster than querying with kind() filters since filtering by extension in Python is O(n)
+    while Bazel kind() queries must evaluate all targets first (very slow for large repos).
     """
-    # Build batched query: union of all (kind, attr) combinations
-    queries = [
-        f'labels({attr}, kind("{kind}", //...))' for kind in lang_config.bazel_kinds for attr in lang_config.bazel_attrs
-    ]
-
-    # Batch all queries into one union expression
-    query_expr = " + ".join(queries) if queries else '""'
-    labels = batch_bazel_query(query_expr)
-
-    # Convert labels to paths and filter by extension
-    paths = {label_to_path(label) for label in labels}
-    return {p for p in paths if p is not None and any(str(p).endswith(ext) for ext in lang_config.extensions)}
+    return {p for p in all_bazel_srcs if any(str(p).endswith(ext) for ext in lang_config.extensions)}
 
 
 def find_all_bazel_inputs() -> set[Path]:
@@ -166,13 +156,19 @@ def analyze() -> None:
     print("=" * 80)
     print()
 
+    # Query all Bazel source files ONCE (fast) instead of per-language with kind() filters (slow)
+    print("Querying Bazel source files...")
+    all_bazel_srcs_labels = batch_bazel_query("labels(srcs, //...)")
+    all_bazel_srcs = {label_to_path(label) for label in all_bazel_srcs_labels}
+    all_bazel_srcs = {p for p in all_bazel_srcs if p is not None}
+
     # Track per-language coverage
     language_results: dict[str, LanguageResult] = {}
 
     for lang_config in LANGUAGES:
         print(f"Scanning {lang_config.name} files...")
         git_files = find_git_files(lang_config.extensions)
-        bazel_files = find_bazel_files_by_language(lang_config)
+        bazel_files = find_bazel_files_by_language(lang_config, all_bazel_srcs)
 
         categorized = categorize_files(
             git_files, bazel_files, lambda p: p.parts[0] in INTENTIONALLY_EXCLUDED if p.parts else False
