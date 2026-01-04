@@ -14,7 +14,7 @@ def _huge_prompt(length: int = 700_000) -> str:
     return "x" * length
 
 
-@pytest.mark.live_llm
+@pytest.mark.live_openai_api
 async def test_responses_context_length_exceeded_live(require_openai_api_key, live_openai_model) -> None:
     """Responses API: oversized prompt should raise our adapter exception."""
 
@@ -26,7 +26,7 @@ async def test_responses_context_length_exceeded_live(require_openai_api_key, li
         await client.responses_create(req)
 
 
-@pytest.mark.live_llm
+@pytest.mark.live_openai_api
 async def test_chat_context_length_exceeded_live(require_openai_api_key, live_openai_model, live_async_openai) -> None:
     """Chat Completions API: oversized prompt should raise our adapter exception."""
 

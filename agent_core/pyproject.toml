@@ -46,9 +46,10 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 timeout = 30
-addopts = "-m 'not live_llm'"
+addopts = "-m 'not live_openai_api and not live_anthropic_api'"
 markers = [
-    "live_llm: tests that require a live LLM (API key and network access)",
+    "live_openai_api: tests requiring OPENAI_API_KEY",
+    "live_anthropic_api: tests requiring ANTHROPIC_API_KEY",
 ]
 
 [tool.mypy]

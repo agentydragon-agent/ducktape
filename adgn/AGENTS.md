@@ -14,9 +14,9 @@ This file provides agent-specific conventions and prescriptions for working on t
 
 ### Testing LLM Code
 
-- Typical: `direnv exec adgn pytest -q -m "not live_llm"`
+- Typical: `direnv exec adgn pytest -q -m "not live_openai_api"`
 - Excluding a suite: `-k "not sandboxed_jupyter"`
-- `live_llm` tests require API keys and network access
+- `live_openai_api` / `live_anthropic_api` tests require API keys and network access
 
 ## Bootstrap Handlers (Agent Initialization)
 
@@ -95,7 +95,7 @@ See `mcp_infra/AGENTS.md` for compositor, resources, and subscriptions conventio
 
 ## Notes and Caveats
 
-- Tests marked `real_github` or `live_llm` talk to network/services; run explicitly
+- Tests marked `real_github` or `live_openai_api` talk to network/services; run explicitly
 
 ## References and Further Reading
 

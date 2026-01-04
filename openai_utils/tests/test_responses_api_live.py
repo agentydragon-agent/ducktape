@@ -8,13 +8,12 @@ import pytest
 from openai.types.responses import EasyInputMessageParam, ResponseInputParam
 
 
-@pytest.mark.live_llm
+@pytest.mark.live_openai_api
 async def test_responses_nonstreaming_live(tmp_path):
     """Live test: call OpenAI Responses.create (non-streaming).
 
     Requires OPENAI_API_KEY in the environment. Uses OPENAI_MODEL if set or
-    falls back to 'o4-mini'. This test is explicitly marked `live_llm` and is
-    excluded by default in CI runs.
+    falls back to 'o4-mini'.
     """
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set; skipping live test")
@@ -36,7 +35,7 @@ async def test_responses_nonstreaming_live(tmp_path):
     assert ("id" in data) or (data.get("object") is not None)
 
 
-@pytest.mark.live_llm
+@pytest.mark.live_openai_api
 async def test_responses_streaming_live(tmp_path):
     """Live test: call OpenAI Responses.create with stream=True and iterate.
 
