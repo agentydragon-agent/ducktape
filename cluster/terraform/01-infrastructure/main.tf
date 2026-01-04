@@ -76,12 +76,14 @@ provider "proxmox" {
   insecure  = true # Self-signed cert
 
   # SSH config for file uploads (cloud-init snippets)
+  # NOTE: SSH address uses proxmox_node_name (atlas) not proxmox_api_host (FQDN)
+  # because the FQDN routes through VPS nginx, but SSH needs direct Tailscale access
   ssh {
     agent    = true
     username = "root"
     node {
       name    = var.proxmox_node_name
-      address = var.proxmox_api_host
+      address = var.proxmox_node_name # Direct Tailscale access, not FQDN
     }
   }
 }

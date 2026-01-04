@@ -106,7 +106,7 @@ data "talos_image_factory_urls" "proxmox_shared" {
 
   schematic_id  = talos_image_factory_schematic.proxmox_shared[0].id
   talos_version = var.talos_version
-  platform      = "metal"
+  platform      = "nocloud" # nocloud platform reads cloud-init from cidata ISO
   architecture  = "amd64"
 }
 
@@ -133,9 +133,10 @@ resource "proxmox_virtual_environment_download_file" "talos_disk_shared" {
   content_type = "import"
   datastore_id = "local"
   node_name    = var.proxmox_node_name
-  url          = replace(data.talos_image_factory_urls.proxmox_shared[0].urls.disk_image, "metal-amd64.raw.zst", "metal-amd64.qcow2")
-  file_name    = "talos-shared-${talos_image_factory_schematic.proxmox_shared[0].id}-amd64.qcow2"
-  overwrite    = true
+  # Replace any .raw.xz or .raw.zst extension with .qcow2 for Proxmox import
+  url       = replace(replace(data.talos_image_factory_urls.proxmox_shared[0].urls.disk_image, ".raw.xz", ".qcow2"), ".raw.zst", ".qcow2")
+  file_name = "talos-shared-${talos_image_factory_schematic.proxmox_shared[0].id}-amd64.qcow2"
+  overwrite = true
 }
 
 # ============================================================================
