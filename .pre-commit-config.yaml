@@ -101,7 +101,7 @@ repos:
       # Enforce: All ruff config in ruff.toml, not in package pyproject.toml files
       - id: no-ruff-in-pyproject
         name: Check no ruff config in package pyproject.toml
-        entry: bash -c 'files=$(find . -name "pyproject.toml" -type f ! -path "./pyproject.toml" ! -path "*/repo-template/*" -exec grep -l "^\[tool\.ruff" {} \; 2>/dev/null); if [ -n "$files" ]; then echo "❌ Found ruff config in package pyproject.toml files (should be in ruff.toml):"; echo "$files"; exit 1; fi'
+        entry: tools/lint/check-no-ruff-in-pyproject.sh
         language: system
         files: pyproject\.toml$
         pass_filenames: false
