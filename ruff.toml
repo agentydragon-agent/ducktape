@@ -90,6 +90,7 @@ known-first-party = [
     "adgn",
     "adgn_mcp_starter",
     "agent_core",
+    "agent_core_testing",
     "agent_pkg_host",
     "agent_pkg_runtime",
     "agent_server",

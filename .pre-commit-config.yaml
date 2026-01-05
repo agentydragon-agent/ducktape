@@ -1,6 +1,4 @@
-# Global exclusions: vendored code, fixtures, generated files
-# Specific testdata exclusions (not blanket) to allow JSON linting
-exclude: ".*/fixtures/.*|.*/third_party/.*|.*/vendor/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*|.*flake\\.lock$|nonrcm-dotfiles/config/OrcaSlicer/.*|finance/worthy/worthy/index_(head|tail)\\.html$|^tana/src/tana/export/references/.*|^k8s-old/|^cluster/flux-system/flux-system/|^claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\\.md$|^tana/tests/tana/testdata/.*\\.(md|tanapaste|txt)$"
+exclude: ".*/fixtures/.*|.*/third_party/.*|.*/vendor/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|^k8s-old/|^cluster/flux-system/flux-system/|.*/node_modules/.*|^claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\\.md$|^tana/tests/tana/testdata/.*\\.(md|tanapaste|txt)$"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -32,8 +30,6 @@ repos:
       # --pytest-test-first
       # - check-shebang-scripts-are-executable
 
-  # NOTE: yamllint is now handled by Bazel: `bazel test //ansible:yamllint_test`
-
   # Ansible syntax check: Fast validation for pre-commit
   #
   # Pre-commit: Just runs ansible-playbook --syntax-check (fast, catches essential errors)
@@ -52,81 +48,364 @@ repos:
         exclude: "^ansible/k8s/.*" # Exclude k8s files
         pass_filenames: true
 
-  # Linting (ruff + ESLint via Bazel aspects)
-  # Runs on all Python and JS/TS/Svelte files
-  - repo: local
+  # Ruff = linter + import sorter + formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.6
     hooks:
-      - id: bazel-lint
-        name: bazel build --config=lint
-        entry: bazel
-        args: ['build', '--config=lint', '--keep_going', '//...']
-        language: system
-        files: \.(py|ts|js|svelte|tsx)$
-        pass_filenames: false
+      - id: ruff-check
+        args: [--fix, --config, ruff.toml]
+        files: "\\.py$"
+      - id: ruff-format
+        args: [--config, ruff.toml]
+        files: "\\.py$"
 
-  # Type checking (mypy via Bazel aspect)
-  # Runs on all Python files
-  - repo: local
+  # Static type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
     hooks:
-      - id: bazel-typecheck
-        name: bazel build --config=typecheck
-        entry: bazel
-        args: ['build', '--config=typecheck', '--keep_going', '//...']
-        language: system
-        files: \.py$
-        pass_filenames: false
+      # agent_pkg/runtime: Per-package config, minimal deps
+      - id: mypy
+        alias: mypy-agent-pkg-runtime
+        name: mypy (agent_pkg_runtime)
+        files: "^agent_pkg/runtime/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=agent_pkg/runtime/pyproject.toml"]
+        additional_dependencies:
+          - "fastmcp>=2.13"
+          - "jinja2>=3.0"
+          - types-Jinja2
 
-  # Rust linting and format check (clippy + rustfmt via Bazel aspects)
-  # Runs on all Rust files
-  - repo: local
-    hooks:
-      - id: bazel-rust-check
-        name: bazel build --config=rust-check
-        entry: bazel
-        args: ['build', '--config=rust-check', '--keep_going', '//...']
-        language: system
-        files: \.rs$
-        pass_filenames: false
+      # agent_pkg/host: Host-side agent package infrastructure
+      # Uses agent_pkg/host/mypy.ini for mypy_path to access workspace packages
+      - id: mypy
+        alias: mypy-agent-pkg
+        name: mypy (agent_pkg)
+        files: "^agent_pkg/host/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=agent_pkg/host/mypy.ini"]
+        additional_dependencies:
+          - "fastmcp>=2.13"
+          - "mcp>=1.0"
+          - aiodocker
+          - openai>=1.0
+          - pydantic>=2
+          - anyio>=4.0
+          - typer>=0.12
 
-  # Auto-format all code (ruff, prettier, rustfmt, shfmt, buildifier)
-  - repo: local
-    hooks:
-      - id: bazel-format
-        name: bazel run //tools/format
-        entry: bazel
-        args: ['run', '//tools/format']
-        language: system
-        files: \.(py|ts|js|svelte|tsx|css|ya?ml|rs|sh|bzl)$
-        exclude: ^(pnpm-lock\.yaml|.*\.min\.(js|css))$
-        pass_filenames: false
+      # critic_util: Uses mypy.ini (has mypy_path for workspace packages)
+      # Needs same deps as adgn since it imports from adgn
+      - id: mypy
+        alias: mypy-critic-util
+        name: mypy (critic_util)
+        files: "^agent_runtimes/critic_util/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=mypy.ini"]
+        additional_dependencies:
+          # Same as adgn (imports from adgn.props.db, adgn.props.agent_helpers)
+          - pydantic>=2
+          - fastapi>=0.115.0
+          - "docker>=7.0.0"
+          - "sqlalchemy[mypy]>=2.0"
+          - "fastmcp>=2.13"
+          - "openai>=1.40.0"
+          - "pygit2>=1.18"
+          - "tenacity>=8.2.0"
+          - structlog
+          - "jinja2>=3.1"
+          - alembic
+          - aiodocker
+          - types-psycopg2
+          - types-PyYAML
 
-      # Enforce: All ruff config in ruff.toml, not in package pyproject.toml files
-      - id: no-ruff-in-pyproject
-        name: Check no ruff config in package pyproject.toml
-        entry: tools/lint/check-no-ruff-in-pyproject.sh
-        language: system
-        files: pyproject\.toml$
+      # editor_util: Per-package config with mypy_path to workspace deps
+      - id: mypy
+        alias: mypy-editor-util
+        name: mypy (editor_util)
+        files: "^agent_runtimes/editor_util/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=agent_runtimes/editor_util/pyproject.toml"]
+        additional_dependencies:
+          - "fastmcp>=2.13"
+          - "mcp>=1.0"
+          - typer>=0.9
+          - "jinja2>=3.0"
+          - types-Jinja2
 
-  # Buildifier for Bazel files (uses upstream repo for consistency)
+      # py_detectors: Standalone AST-based detectors package
+      - id: mypy
+        alias: mypy-py-detectors
+        name: mypy (py_detectors)
+        files: "^py_detectors/.*\\.py$"
+        exclude: "/fixtures/"
+        language_version: python3.13
+        args: ["--config-file=py_detectors/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - pytest
+
+      # rspcache: OpenAI Responses API caching proxy
+      - id: mypy
+        alias: mypy-rspcache
+        name: mypy (rspcache)
+        files: "^rspcache/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=rspcache/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - fastapi>=0.115.0
+          - "sqlalchemy[mypy]>=2.0"
+          - "openai>=1.40.0"
+          - "asyncpg>=0.29.0"
+          - asyncpg-stubs
+          - typer>=0.12
+          - httpx>=0.27.0
+          - canonicaljson>=1.6.0
+          - uvicorn>=0.30.0
+          - types-PyYAML
+
+      # mcp_infra: MCP infrastructure (compositor, exec, enhanced)
+      - id: mypy
+        alias: mypy-mcp-infra
+        name: mypy (mcp_infra)
+        files: "^mcp_infra/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=mcp_infra/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - "fastmcp>=2.13"
+          - "mcp>=1.13"
+          - aiodocker
+          - jinja2>=3.1
+          - anyio>=4.0
+          - typer>=0.12
+          - typer-di
+          - pyhamcrest>=2.1
+          - "openai>=1.40.0"
+          - "syrupy>=4.0"
+          - "compact-json>=1.4.0"
+          - structlog
+          - pytest
+          - "rich>=13.0"
+
+      # sandboxed_jupyter: Sandboxed Jupyter execution with seatbelt and Docker
+      - id: mypy
+        alias: mypy-sandboxed-jupyter
+        name: mypy (sandboxed_jupyter)
+        files: "^sandboxed_jupyter/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=sandboxed_jupyter/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - PyYAML
+          - ipykernel
+          - jupyter-server
+          - "docker>=7.0.0"
+          - "fastmcp>=2.13"
+          - "mcp>=1.13"
+          - "tenacity>=8.2.0"
+          - types-docker
+          - types-PyYAML
+          - aiodocker
+          - pytest
+
+      # agent_server: FastAPI backend, runtime, MCP infrastructure
+      - id: mypy
+        alias: mypy-agent-server
+        name: mypy (agent_server)
+        files: "^agent_server/src/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=agent_server/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - fastapi>=0.115.0
+          - "fastmcp>=2.13"
+          - "mcp>=1.0"
+          - aiodocker
+          - aiosqlite
+          - aiohttp>=3.9.0
+          - jinja2>=3.1
+          - "rich>=13.0"
+          - "textual>=0.78.0"
+          - "docker>=7.0.0"
+          - typer>=0.12
+          - structlog
+          - anyio>=4.0
+          - "openai>=1.40.0"
+          - "tenacity>=8.2.0"
+          - "compact-json>=1.4.0"
+          - pyhamcrest>=2.1
+          - platformdirs>=3.0
+          - types-docker
+          - types-PyYAML
+          - mautrix
+          - pytest
+
+      # adgn: Full monolith with all dependencies
+      - id: mypy
+        alias: mypy-adgn
+        name: mypy (adgn)
+        files: "^adgn/.*\\.py$"
+        exclude: "(/testdata/|/migrations/)"
+        language_version: python3.13
+        args: ["--config-file=mypy.ini"]
+        additional_dependencies:
+          # Core dependencies
+          - pydantic>=2
+          - fastapi>=0.115.0
+          - mautrix>=0.20.0
+          - textual>=0.78.0
+          - "docker>=7.0.0"
+          - "sqlalchemy[mypy]>=2.0"
+          - gepa
+          - "fastmcp>=2.13"
+          - "mcp[cli]>=1.13.1"
+          - "openai>=1.40.0"
+          - "pygit2>=1.18"
+          - "tenacity>=8.2.0"
+          - "tiktoken>=0.7.0"
+          - structlog
+          - anthropic
+          - "canonicaljson>=1.6.0"
+          - "asyncpg>=0.29.0"
+          - "jinja2>=3.1"
+          - litellm
+          - alembic
+          - "pytest>=8.3"
+          - "pytest-asyncio>=0.23"
+          - "syrupy>=4.0"
+          - PyHamcrest
+          - "compact-json>=1.4.0"
+          - aiosqlite
+          - aiodocker
+          - aiolimiter
+          - prometheus-client
+          - matplotlib
+          - plotnine
+          - "plotext>=5.2.0"
+          - "claude-code-sdk>=0.0.21,<0.1"
+          - playwright
+          - typer-di
+          # Type stubs
+          - asyncpg-stubs
+          - types-unidiff
+          - types-psycopg2
+          - types-python-dateutil
+          - types-Markdown
+          - types-PyYAML
+          - types-requests
+          - types-tabulate
+          - types-docker
+          - types-filelock
+          - types-toml
+          - types-aiofiles
+          - types-colorama
+          - types-psutil
+          - types-jsonschema
+          - types-Pygments
+          - types-Jinja2
+          - pandas-stubs
+
+      # homeassistant: Home Assistant custom component
+      - id: mypy
+        alias: mypy-homeassistant
+        name: mypy (homeassistant iaqi)
+        files: "^homeassistant/iaqi/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=mypy-homeassistant.ini"]
+        additional_dependencies:
+          # Needed because PyYAML 6.0 (pulled via homeassistant) must be cythonized on Python 3.12
+          - "Cython<3"
+          # Full HA typing surface
+          - homeassistant-stubs
+          - pytest-homeassistant-custom-component
+          - PyHamcrest
+
+      # ducktape_llm_common: Shared LLM utilities, linters, prompts
+      - id: mypy
+        alias: mypy-ducktape-llm-common
+        name: mypy (ducktape_llm_common)
+        files: "^llm/ducktape_llm_common/ducktape_llm_common/.*\\.py$"
+        language_version: python3.13
+        args: ["--config-file=llm/ducktape_llm_common/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2.0
+          - pygit2>=1.18.0
+          - platformdirs>=3.0
+          - types-PyYAML
+          - types-click
+          - pytimeparse
+          - tomli
+          - tomli-w
+          - humanize
+
   - repo: https://github.com/keith/pre-commit-buildifier
     rev: 6.4.0
     hooks:
       - id: buildifier
       - id: buildifier-lint
 
-  # Alejandra Nix formatter (not integrated with Bazel - Nix formatters handled separately)
-  # Using local hook with nix run instead of upstream repo (cargo build fails)
   - repo: local
     hooks:
       - id: alejandra
         name: alejandra (nix formatter)
-        entry: nix run nixpkgs#alejandra --
+        entry: direnv exec . alejandra --quiet
         language: system
         files: \.nix$
-        exclude: node_modules/
 
-  # NOTE: Other linters are handled by Bazel test targets
-  # - svelte-check: `bazel test //props/frontend:svelte_check_test`
+  # Prettier: Workspace-level code formatting
+  # Uses .gitignore and .prettierignore for exclusions
+  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        language: system
+        entry: pnpm exec prettier --write --ignore-unknown
+        types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json]
+
+  # Markdownlint: Structural markdown linting (heading hierarchy, duplicate headings, etc.)
+  # Formatting rules disabled via "extends": "markdownlint/style/prettier" in config
+  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
+  # TODO: Expand markdownlint coverage to rest of repo (currently cluster/ only)
+  #       Update .markdownlint-cli2.jsonc globs and remove files: filter here
+  - repo: local
+    hooks:
+      - id: markdownlint-cli2
+        name: markdownlint-cli2
+        language: system
+        entry: markdownlint-cli2
+        types: [markdown]
+        files: ^cluster/
+
+  # Svelte/TypeScript checks for MiniCodex UI
+  - repo: local
+    hooks:
+      # ESLint: Import ordering, code quality
+      - id: eslint
+        name: eslint (MiniCodex UI)
+        language: system
+        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run lint -- --fix'
+        files: ^adgn/src/adgn/agent/web/src/.*\.(ts|svelte)$
+        pass_filenames: false
+
+      # Svelte-check: Type checking
+      - id: svelte-check
+        name: svelte-check (MiniCodex UI)
+        language: system
+        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run check'
+        files: ^adgn/src/adgn/agent/web/
+        pass_filenames: false
+
+  # Svelte/TypeScript checks for Props Frontend
+  - repo: local
+    hooks:
+      # ESLint: Import ordering, code quality
+      - id: eslint-props
+        name: eslint (Props Frontend)
+        language: system
+        entry: bash -c 'cd props/frontend && pnpm run lint:fix'
+        files: ^props/frontend/src/.*\.(ts|svelte)$
+        pass_filenames: false
 
   # ============================================================================
   # CLUSTER-SPECIFIC HOOKS (scoped to cluster/ directory)
@@ -171,27 +450,6 @@ repos:
   # Cluster-specific local hooks
   - repo: local
     hooks:
-      # YAML formatting for cluster (excludes Helm templates)
-      - id: prettier-cluster-yaml
-        name: prettier (cluster YAML)
-        entry: prettier
-        language: system
-        types: [yaml]
-        files: ^cluster/
-        exclude: (cluster/k8s/flux-system/|\.ya?ml\.j2$|cluster/charts/.*/templates/|cluster/k8s/.*-chart/templates/)
-        args: ["--write", "--print-width", "120"]
-
-      # Markdown linting (cluster/ only for now - see .markdownlint-cli2.jsonc)
-      # TODO: Extend markdownlint coverage to more directories, or migrate to
-      # remark-lint via eslint-plugin-mdx for glob-based rule overrides
-      - id: markdownlint
-        name: markdownlint
-        entry: markdownlint-cli2
-        language: system
-        files: ^cluster/.*\.md$
-        exclude: \.terraform/
-        args: ["--fix"]
-
       # Checkov security analysis
       - id: checkov-cluster
         name: Checkov security analysis (cluster)

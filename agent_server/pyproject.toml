@@ -31,6 +31,7 @@ agent-server-generate-frontend-code = "agent_server.scripts.generate_frontend_co
 
 [project.optional-dependencies]
 dev = [
+    "agent-core-testing",
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
     "pytest-timeout>=2.3.0",
@@ -47,6 +48,22 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_server"]
 
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+check_untyped_defs = true
+# Paths relative to repo root (where pre-commit runs mypy from)
+mypy_path = "adgn/src:agent_core_testing/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src:mcp_utils/src"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -56,3 +73,11 @@ markers = [
     "live_openai_api: tests requiring OPENAI_API_KEY",
     "live_anthropic_api: tests requiring ANTHROPIC_API_KEY",
 ]
+
+[tool.uv.sources]
+cli-util = { workspace = true }
+net-util = { workspace = true }
+mcp-infra = { workspace = true }
+agent-core = { workspace = true }
+agent-core-testing = { workspace = true }
+openai-utils = { workspace = true }

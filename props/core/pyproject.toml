@@ -44,6 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "agent-core-testing",
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
   "pytest-timeout>=2.3",

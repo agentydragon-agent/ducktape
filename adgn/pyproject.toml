@@ -50,6 +50,7 @@ dependencies = [
 [project.optional-dependencies]
 # Developer tools and test dependencies
 dev = [
+  "agent-core-testing",
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
   "pytest-timeout>=2.3",
@@ -174,4 +175,3 @@ adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 # Frontend code generation moved to agent_server package
 
 # Mypy configuration moved to central /mypy.ini at repo root
-

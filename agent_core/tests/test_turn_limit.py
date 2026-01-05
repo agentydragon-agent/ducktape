@@ -7,8 +7,8 @@ import pytest
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core_testing.steps import AssistantMessage, EchoCall, Step
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
+from agent_core_testing.steps import AssistantMessage, EchoCall, Step
 from openai_utils.model import UserMessage
 
 

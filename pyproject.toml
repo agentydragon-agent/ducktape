@@ -11,5 +11,3 @@ rfc3987-syntax = { git = "https://github.com/agentydragon/rfc3987-syntax", branc
 # Without this, setuptools discovers all 40+ top-level dirs as packages
 [tool.setuptools]
 packages = []
-
-# Ruff config is in ruff.toml (used by Bazel's aspect_rules_lint)

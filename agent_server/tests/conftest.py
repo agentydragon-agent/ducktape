@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import Any
@@ -20,12 +20,9 @@ from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 
 import docker
-from agent_core.agent import Agent
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
-from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
-from agent_core.loop_control import RequireAnyTool
+from agent_core.handler import FinishOnTextMessageHandler
 from agent_core_testing.fixtures import RecordingHandler
-from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.persist import AgentMetadata
@@ -47,7 +44,7 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.testing.simple_servers import SendMessageInput
 from mcp_infra.types import McpServerSpecs
-from openai_utils.model import OpenAIModelProto, ResponsesResult
+from openai_utils.model import OpenAIModelProto
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from tests.testdata.approval_policy import fetch_policy, make_policy
 
@@ -57,7 +54,8 @@ TEST_BACKEND_SERVER_NAME = "backend"
 # Load external fixture modules so they're available in xdist workers
 pytest_plugins = (
     "mcp_infra.testing.fixtures",  # Shared mcp_infra fixtures
-    "agent_core_testing.fixtures",  # Core agent fixtures (make_step_runner, etc.)
+    "agent_core_testing.fixtures",  # Core agent fixtures (make_test_agent, etc.)
+    "agent_core_testing.responses",  # make_step_runner, responses_factory, etc.
     "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
 
@@ -276,85 +274,8 @@ def make_policy_request(server: MCPMountPrefix, tool: str, arguments: dict[str, 
     )
 
 
-# reasoning_model and responses_factory fixtures come from agent_core_testing.fixtures
-# (registered via pytest_plugins above)
-
-
-# Local factory: construct our Pydantic-only fake client from a sequence of ResponsesResult
-@pytest.fixture
-def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]:
-    """Factory to create FakeOpenAIModel instances from response sequences.
-
-    Usage:
-        client = make_fake_openai([responses_factory.make_assistant_message("ok")])
-    """
-
-    def _make(outputs: Iterable[ResponsesResult]) -> FakeOpenAIModel:
-        return FakeOpenAIModel(list(outputs))
-
-    return _make
-
-
-@pytest.fixture
-def make_capturing_client():
-    """Factory to create a CapturingOpenAIModel wrapping FakeOpenAIModel.
-
-    Usage:
-        client = make_capturing_client([responses_factory.make_assistant_message("done")])
-        # Use client with agent...
-        assert client.calls == 1
-    """
-
-    def _make(responses):
-        fake_client = FakeOpenAIModel(responses)
-        return CapturingOpenAIModel(fake_client)
-
-    return _make
-
-
-@pytest.fixture
-def make_test_agent(responses_factory):
-    """Factory to create Agent backed by FakeOpenAIModel with canned responses.
-
-    Returns (agent, fake_client) tuple so tests can inspect the client after run.
-
-    Usage:
-        agent, client = await make_test_agent(
-            mcp_client,
-            [responses_factory.make_assistant_message("done")],
-        )
-        result = await agent.run("hi")
-        assert client.calls == 1
-    """
-
-    async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
-        fake_model = FakeOpenAIModel(list(responses))
-        client = CapturingOpenAIModel(fake_model)  # Wrap to enable .captured
-        # Minimal defaults - tests should be explicit about their needs
-        if not handlers:
-            handlers = [BaseHandler()]  # Minimal no-op handler (Agent requires at least one)
-        if tool_policy is None:
-            tool_policy = RequireAnyTool()
-        agent = await Agent.create(
-            mcp_client=mcp_client, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
-        )
-        return agent, client
-
-    return _make
-
-
-# No extra param fixtures here; reuse existing LIVE sentinel infra from tests/llm.
-
-
 # ---- Shared ContainerOptions fixtures and in-proc docker exec specs ----
 # Kept here so all tests can reuse the same settings consistently.
-
-
-# Provide a shared typed MCP session helper for tests that need a TypedClient
-# make_typed_mcp now provided globally in tests/conftest.py
-
-
-# echo_spec fixture is provided at tests/conftest.py for all suites.
 
 
 # Helper: create a live agent via HTTP on a TestClient and return its id

@@ -51,7 +51,8 @@ from props_core.rationale import Rationale
 
 # Register shared fixtures from other packages
 pytest_plugins = [
-    "agent_core_testing.fixtures",  # make_step_runner, responses_factory, etc.
+    "agent_core_testing.fixtures",  # Recording handler, make_test_agent, etc.
+    "agent_core_testing.responses",  # make_step_runner, responses_factory, etc.
     "mcp_infra.testing.fixtures",  # async_docker_client, make_compositor, etc.
 ]
 
