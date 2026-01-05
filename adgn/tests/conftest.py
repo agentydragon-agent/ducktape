@@ -21,7 +21,7 @@ from mcp_infra.types import McpServerSpecs
 pytest_plugins = (
     "tests.support.responses",  # openai_client_param fixture
     "mcp_infra.testing.fixtures",  # Shared mcp_infra fixtures
-    "agent_core.testing.fixtures",  # Core agent fixtures (make_step_runner, reasoning_model, responses_factory, etc.)
+    "agent_core_testing.fixtures",  # Core agent fixtures (make_step_runner, reasoning_model, responses_factory, etc.)
     "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
 
@@ -67,12 +67,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
             client.close()
 
 
-@pytest.fixture(autouse=True)
-def _per_test_agent_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    """Ensure each test gets an isolated agent SQLite DB path."""
-    monkeypatch.setenv("ADGN_AGENT_DB_PATH", str(tmp_path / "agent.sqlite"))
-
-
 async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
     """Mount all servers from McpServerSpecs dict onto a compositor."""
     for name, srv in servers.items():
@@ -113,8 +107,7 @@ def make_buffered_client():
 @pytest.fixture
 async def docker_exec_server_py312slim(async_docker_client):
     """Canonical Docker exec server using python:3.12-slim image."""
-    opts = make_container_opts("python:3.12-slim")
-    return ContainerExecServer(async_docker_client, opts)
+    return ContainerExecServer(async_docker_client, make_container_opts("python:3.12-slim"))
 
 
 @pytest.fixture
