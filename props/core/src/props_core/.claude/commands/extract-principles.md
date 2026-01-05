@@ -104,7 +104,7 @@ unamiguous idea of what the named entity represents and how it is to be used.
 
 \`\`\`python
 def f(r):
-return math.pi _ r _ r
+    return math.pi * r * r
 
 id = get_current()
 
@@ -114,15 +114,15 @@ from foo_module.frontend import util
 ### Good example
 
 \`\`\`python
-def compute*circle_area(radius: float) -> float:
-return math.pi * radius \_ radius
+def compute_circle_area(radius: float) -> float:
+    return math.pi * radius * radius
 
 current_user_id = get_current_user_id()
 
-from foo_module.frontend import format_util # 'util' could be anything
+from foo_module.frontend import format_util  # 'util' could be anything
 
-for i in range(0, len(users), batch_size): # Traditional i/j/k/... index vars OK in short loops
-batch_update_promo_eligibility(users[i:i+batch_size])
+for i in range(0, len(users), batch_size):  # Traditional i/j/k/... index vars OK in short loops
+    batch_update_promo_eligibility(users[i:i+batch_size])
 \`\`\`
 
 ### Exceptions
@@ -151,7 +151,7 @@ do not point these out as problematic - so implicitly by omission I believe they
   - plus file `src/frontend/utils.py` itself noted as not named specifically and recommended to split into
     inidividual purposeful modules.
 - `specimens/2001-02-03-another-bad-code/README.md`: `p` noted as poor parameter name in 5 methods in `lib/processor.js`
-```
+````
 
 ## Deliverable
 

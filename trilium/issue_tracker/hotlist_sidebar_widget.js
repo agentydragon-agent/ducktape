@@ -29,11 +29,7 @@ class HotlistSidebarWidget extends api.CollapsibleWidget {
   }
 
   isEnabled() {
-    return (
-      super.isEnabled() &&
-      this.note.type === "text" &&
-      this.note.hasLabel("hotlist")
-    );
+    return super.isEnabled() && this.note.type === "text" && this.note.hasLabel("hotlist");
   }
 
   async refreshWithNote(note) {
@@ -48,9 +44,7 @@ class HotlistSidebarWidget extends api.CollapsibleWidget {
     // state
     for (const issueNote of issueNotes) {
       const bullet = $("<li>");
-      bullet.append(
-        await api.createNoteLink(issueNote.noteId, { showTooltip: true }),
-      );
+      bullet.append(await api.createNoteLink(issueNote.noteId, { showTooltip: true }));
       this.$issueList.append(bullet);
     }
   }

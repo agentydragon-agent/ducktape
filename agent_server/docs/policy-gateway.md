@@ -165,12 +165,7 @@ The policy middleware does not persist chat or resource subscription state. Pers
   "error": {
     "code": -32951,
     "message": "policy_denied_continue",
-    "data": {
-      "decision": "deny_continue",
-      "server": "runtime",
-      "tool": "exec",
-      "reason": "…"
-    }
+    "data": { "decision": "deny_continue", "server": "runtime", "tool": "exec", "reason": "…" }
   },
   "id": 17
 }
@@ -211,7 +206,7 @@ Note: resource subscribe/unsubscribe error mapping belongs to the resources/comp
 
 ## 12. Testing Plan
 
-- Unit: decision mapping (allow/deny\_\*/ask); error shapes; evaluator timeouts
+- Unit: decision mapping (`allow`/`deny_*`/`ask`); error shapes; evaluator timeouts
 - Integration: V1 sync flow — approvals at proxy; Loop Control yield; sleep_until_user; container calls routed through the Compositor (policy middleware enforces)
 - Resource server: list/read/subscribe basic smoke; synthetic state URIs (if used)
 - Security: container cannot reach Compositor; agent‑only Control not visible on human token

@@ -17,7 +17,7 @@ function handleLoad(e) {
           return moment(value).format("YYYY-MM");
         },
       },
-    },
+    }
   );
 }
 // Download http://localhost:8000/history.json, plot it.
@@ -28,10 +28,7 @@ xhr.send();
 
 const xhr2 = new XMLHttpRequest();
 function curfmt(n, sym) {
-  return new Intl.NumberFormat("cs-CZ", {
-    style: "currency",
-    currency: sym,
-  }).format(n);
+  return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: sym }).format(n);
 }
 function assetHtml(c) {
   return curfmt(c["Amount"], c["Symbol"]);

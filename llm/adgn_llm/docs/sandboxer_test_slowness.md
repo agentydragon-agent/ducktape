@@ -29,7 +29,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
 ## What’s slow (by component)
 
 1. Session‑scoped control venv bootstrap (tests/mcp/sandboxed_jupyter_mcp/conftest.py)
-   - Fixture: \_bootstrap_control_venv_and_require_tools(scope="session", autouse=True)
+   - Fixture: `_bootstrap_control_venv_and_require_tools(scope="session", autouse=True)`
    - Actions on cold start:
      - python3 -m venv <tmp>/control_venv
      - Upgrade pip/wheel in that venv
@@ -71,7 +71,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
      pytest -q tests/mcp/sandboxed_jupyter_mcp
      ```
 
-   - In conftest.py, \_bootstrap_control_venv_and_require_tools already respects PATH; add a fast path that uses SJ_TEST_CONTROL_BIN if set and valid to skip install.
+   - In conftest.py, `_bootstrap_control_venv_and_require_tools` already respects `PATH`; add a fast path that uses `SJ_TEST_CONTROL_BIN` if set and valid to skip install.
 
 2. Reduce Jupyter startup time where acceptable
    - If specific tests don’t need collaboration/ydoc, run a leaner server (fewer extensions) to shorten cold start.
@@ -87,7 +87,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
 ## Actionable TODOs (make it fast and explicit)
 
 - Control venv prewarm and reuse
-  - [ ] Teach tests/mcp/sandboxed_jupyter_mcp/conftest.py::\_bootstrap_control_venv_and_require_tools to honor SJ_TEST_CONTROL_BIN if set and points to a bin dir containing jupyter and jupyter-mcp-server; skip creation/install.
+  - [ ] Teach `tests/mcp/sandboxed_jupyter_mcp/conftest.py::_bootstrap_control_venv_and_require_tools` to honor `SJ_TEST_CONTROL_BIN` if set and points to a bin dir containing jupyter and jupyter-mcp-server; skip creation/install.
     - Acceptance: cold local run with SJ_TEST_CONTROL_BIN set does not run pip and suite setup < 2s.
   - [ ] Provide a simple helper (make target or script) to create .tmp/control_venv and export SJ_TEST_CONTROL_BIN; document the exact commands below.
     - Acceptance: helper finishes < 1 min on warm cache and is documented where devs look.
@@ -114,10 +114,10 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
     - Acceptance: main CI pipeline excludes sandboxer by default; dedicated job runs in parallel.
 
 - Fix functional failures (removes timeout inflation from retries)
-  - [ ] test*sandboxer_compose.py::test_fs_write_paths_expand_to_params_and_dirs — implement/fix param expansion for WP*\*; add targeted unit coverage for compose output.
-  - [ ] test*sandboxer_compose.py::test_fs_read_paths_expand_to_params_and_dirs — implement/fix param expansion for RP*\*.
-  - [ ] test_sandboxer_narrow.py::test_sandboxer_yes_hello_world_narrow — investigate policy deny (exit 250); ensure seatbelt.trace.log populated; fix policy or expectations so echo=0.
-  - [ ] test_wrapper_unsandbox_smoke.py::test_wrapper_unsandbox_initialize_and_hello — ensure SJ_TEST_CONTROL_BIN is honored; debug Jupyter + MCP stdio logs; make initialize succeed in < 3s.
+  - [ ] `test_sandboxer_compose.py::test_fs_write_paths_expand_to_params_and_dirs` — implement/fix param expansion for `WP_*`; add targeted unit coverage for compose output.
+  - [ ] `test_sandboxer_compose.py::test_fs_read_paths_expand_to_params_and_dirs` — implement/fix param expansion for `RP_*`.
+  - [ ] `test_sandboxer_narrow.py::test_sandboxer_yes_hello_world_narrow` — investigate policy deny (exit 250); ensure seatbelt.trace.log populated; fix policy or expectations so echo=0.
+  - [ ] `test_wrapper_unsandbox_smoke.py::test_wrapper_unsandbox_initialize_and_hello` — ensure `SJ_TEST_CONTROL_BIN` is honored; debug Jupyter + MCP stdio logs; make initialize succeed in < 3s.
 
 - Developer ergonomics
   - [ ] Add a short “How to run sandboxer” snippet here and in adgn_llm/CLAUDE.md: prewarm control venv, export SJ_TEST_CONTROL_BIN, and pass --run-sandboxer; recommend -rs to show skip reasons.

@@ -340,7 +340,7 @@ OLD_CONFIG = NEW_CONFIG  # Comment says "use NEW_CONFIG"
 **Heuristics for canonical name**:
 
 1. Comment explicitly says "use X instead" → X is canonical
-2. "new*\*" vs "old*\*" → new is canonical
+2. `new_*` vs `old_*` → new is canonical
 3. More descriptive name → canonical
 4. Name without "legacy"/"deprecated" prefix → canonical
 5. If unclear, pick one consistently and document in commit message

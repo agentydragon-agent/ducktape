@@ -10,7 +10,7 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 
 - **Purpose**: Real evaluation results, persistent storage
 - **DO NOT DROP/RECREATE**: Contains valuable data
-- **Connection**: Uses standard PG\* environment variables (set by devenv)
+- **Connection**: Uses standard `PG*` environment variables (set by devenv)
 
 ### Test Database: `eval_results_test`
 

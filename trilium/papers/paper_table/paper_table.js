@@ -75,22 +75,17 @@ class PaperTable {
           async (noteId, newPriorityInner) => {
             const note = await api.getNote(noteId);
             note.setLabel("readingPriority", newPriorityInner);
-            note.setLabel(
-              "readingPriorityDate",
-              new Date().toISOString().substring(0, 10),
-            );
+            note.setLabel("readingPriorityDate", new Date().toISOString().substring(0, 10));
           },
-          [row.noteId, newPriority],
+          [row.noteId, newPriority]
         );
       }
     });
 
     // TODO: this promise should be cancelled if rendering is interrupted
-    api
-      .createNoteLink(row.noteId, { showTooltip: true, showNoteIcon: true })
-      .then((paperLink) => {
-        paperCell.append(paperLink);
-      });
+    api.createNoteLink(row.noteId, { showTooltip: true, showNoteIcon: true }).then((paperLink) => {
+      paperCell.append(paperLink);
+    });
     priorityCell.append(priorityInput);
     const priorityDateCell = $("<td>").text(row.priorityDate);
     const topicsCell = $("<td>");
@@ -104,13 +99,7 @@ class PaperTable {
         });
       }
     });
-    const rowElement = $("<tr>").append(
-      paperCell,
-      arxivLinkageCell,
-      priorityCell,
-      priorityDateCell,
-      topicsCell,
-    );
+    const rowElement = $("<tr>").append(paperCell, arxivLinkageCell, priorityCell, priorityDateCell, topicsCell);
     return rowElement;
   }
 
@@ -199,7 +188,7 @@ class PaperTable {
       (sql) => {
         return api.sql.getRows(sql);
       },
-      [sql],
+      [sql]
     );
     for (const row of rows) {
       this.$paperList.append(this.buildPaperRow(row));
@@ -215,9 +204,7 @@ class PaperTable {
       const oldIndex = OPTIONS.indexOf(this.finishedReadingMode);
       const newIndex = (oldIndex + 1) % OPTIONS.length;
       this.finishedReadingMode = OPTIONS[newIndex];
-      finishedReadingButton.val(
-        "Finished reading: " + this.finishedReadingMode,
-      );
+      finishedReadingButton.val("Finished reading: " + this.finishedReadingMode);
       await this.fillPaperList();
     });
     this.$controls.append(finishedReadingButton);

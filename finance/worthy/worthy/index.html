@@ -24,7 +24,7 @@
             return moment(value).format("YYYY-MM");
           },
         },
-      },
+      }
     );
   }
   // Download http://localhost:8000/history.json, plot it.
@@ -35,10 +35,7 @@
 
   const xhr2 = new XMLHttpRequest();
   function curfmt(n, sym) {
-    return new Intl.NumberFormat("cs-CZ", {
-      style: "currency",
-      currency: sym,
-    }).format(n);
+    return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: sym }).format(n);
   }
   function assetHtml(c) {
     return curfmt(c["Amount"], c["Symbol"]);
@@ -83,10 +80,7 @@
           // 1F4B0 = bag with money
           html +=
             "💰 ≥" +
-            curfmt(
-              fiInfo["NeedToLastUntilDeadline"],
-              model["Total"]["Symbol"],
-            ) +
+            curfmt(fiInfo["NeedToLastUntilDeadline"], model["Total"]["Symbol"]) +
             "<br>" +
             moment(fiInfo["LastsUntil"]).format("YYYY-MM-DD") +
             "<br>" +

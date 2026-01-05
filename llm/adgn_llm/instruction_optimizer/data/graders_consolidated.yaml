@@ -1,4 +1,3 @@
-# yamllint disable rule:line-length
 graders:
   - name: type_safety_data_design
     description: |

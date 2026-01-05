@@ -8,8 +8,7 @@ occurrences:
   - occurrence_id: occ-1
     files:
       subtract.py:
-        - 10
-        - 15
+        - [10, 15]
     critic_scopes_expected_to_recall:
       - - subtract.py
     graders_match_only_if_reported_on:

@@ -84,16 +84,16 @@ If git‑backed isn’t the right fit, consider these standard patterns:
 The journal should let us answer “what happened and how did it affect state?” with chainable references. Typical lineage:
 
 1. An OpenAI request uses these input messages and yields output message `X`.
-   - Event: `model_request` { message_refs: [ids], model, params }
-   - Event: `model_response` { message_id: X, usage, reasoning? }
+   - Event: `model_request { message_refs: [ids], model, params }`
+   - Event: `model_response { message_id: X, usage, reasoning? }`
 2. Message `X` is appended to the agent history list.
-   - Event: `history_append` { message_id: X, list: "main" }
+   - Event: `history_append { message_id: X, list: "main" }`
 3. The agent creates a Docker exec command and sends it to the docker MCP server under this linear session.
-   - Event: `tool_call` { server: "runtime", tool: "exec", args_json, call_id }
+   - Event: `tool_call { server: "runtime", tool: "exec", args_json, call_id }`
 4. The docker server returns output `Y`.
-   - Event: `tool_result` { call_id, result_ref: Y }
+   - Event: `tool_result { call_id, result_ref: Y }`
 5. Output `Y` is appended as another message into context.
-   - Event: `history_append` { message_id: Y, list: "main" }
+   - Event: `history_append { message_id: Y, list: "main" }`
 
 Suggested common fields
 

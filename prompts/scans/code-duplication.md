@@ -395,31 +395,18 @@ export function createMockApproval(overrides?: Partial<PendingApproval>) {
   };
 }
 
-export function mockApprovalsResource(
-  approvals: ReturnType<typeof createMockApproval>[],
-) {
+export function mockApprovalsResource(approvals: ReturnType<typeof createMockApproval>[]) {
   mockReadResource.mockResolvedValue(approvals);
 }
 
 // GlobalApprovalsList.test.ts
-import {
-  createMockApproval,
-  mockApprovalsResource,
-} from "./fixtures/approvals";
+import { createMockApproval, mockApprovalsResource } from "./fixtures/approvals";
 
 it("should display approvals grouped by agent", async () => {
   mockApprovalsResource([
     createMockApproval({ agent_id: "agent-1", tool: "read_file" }),
-    createMockApproval({
-      agent_id: "agent-1",
-      tool: "write_file",
-      call_id: "call-2",
-    }),
-    createMockApproval({
-      agent_id: "agent-2",
-      tool: "exec",
-      call_id: "call-3",
-    }),
+    createMockApproval({ agent_id: "agent-1", tool: "write_file", call_id: "call-2" }),
+    createMockApproval({ agent_id: "agent-2", tool: "exec", call_id: "call-3" }),
   ]);
   // ... test logic
 });
@@ -505,9 +492,7 @@ export async function openRejectDialog(container: HTMLElement) {
   });
 }
 
-export async function renderWithApproval(
-  approvals: ReturnType<typeof createMockApproval>[] = [createMockApproval()],
-) {
+export async function renderWithApproval(approvals: ReturnType<typeof createMockApproval>[] = [createMockApproval()]) {
   mockApprovalsResource(approvals);
   const result = render(GlobalApprovalsList);
 

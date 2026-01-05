@@ -26,11 +26,7 @@ class PaperWidget extends api.CollapsibleWidget {
   }
 
   isEnabled() {
-    return (
-      super.isEnabled() &&
-      this.note.type === "text" &&
-      this.note.hasLabel("paper")
-    );
+    return super.isEnabled() && this.note.type === "text" && this.note.hasLabel("paper");
   }
 
   async doRenderBody() {
@@ -68,8 +64,7 @@ Existing topics:
     openaiPrompt += `Paper title: ${this.note.title}\n`;
     const topicRelations = this.note.getRelations("topic");
     if (topicRelations.length > 0) {
-      openaiPrompt +=
-        "The paper is already assigned to the following topics - do not suggest them: ";
+      openaiPrompt += "The paper is already assigned to the following topics - do not suggest them: ";
       const titles = [];
       for (const topicRelation of topicRelations) {
         const topicNote = await api.getNote(topicRelation.value);
@@ -81,9 +76,7 @@ Existing topics:
     openaiPrompt +=
       "\nSuggest topics for this paper. Prefer suggesting topics that I already have, but if it makes sense, you may also suggest a new topic.\n";
     openaiPrompt +=
-      "Format the suggestion as a JSON array like this: " +
-      '["Topic name 1","Topic name 2",...].\n' +
-      "-----\n";
+      "Format the suggestion as a JSON array like this: " + '["Topic name 1","Topic name 2",...].\n' + "-----\n";
     return openaiPrompt;
   }
 
@@ -96,12 +89,7 @@ Existing topics:
         continue;
       }
       const listItem = $("<li>");
-      listItem.append(
-        await api.createNoteLink(topicNote.noteId, {
-          showTooltip: true,
-          showNoteIcon: true,
-        }),
-      );
+      listItem.append(await api.createNoteLink(topicNote.noteId, { showTooltip: true, showNoteIcon: true }));
       this.$paperTopicsList.append(listItem);
     }
 
@@ -136,9 +124,7 @@ Existing topics:
       },
       success: async (response) => {
         // console.log(response.choices[0].text);
-        await this.showSuggestions(
-          JSON.parse(prefix + response.choices[0].text),
-        );
+        await this.showSuggestions(JSON.parse(prefix + response.choices[0].text));
       },
       error: (error) => {
         alert("error, see console");
@@ -190,7 +176,7 @@ Existing topics:
           (paperId, topicId) => {
             api.getNote(paperId).addAttribute("relation", "topic", topicId);
           },
-          [this.noteId, topicId],
+          [this.noteId, topicId]
         );
         console.log("added...");
       });
@@ -216,11 +202,7 @@ Existing topics:
       loadResults.isNoteContentReloaded(this.noteId) ||
       loadResults
         .getAttributes()
-        .find(
-          (attr) =>
-            attr.type === "relation" &&
-            (attr.name === "state" || attr.name == "topic"),
-        )
+        .find((attr) => attr.type === "relation" && (attr.name === "state" || attr.name == "topic"))
     ) {
       this.refresh();
     }

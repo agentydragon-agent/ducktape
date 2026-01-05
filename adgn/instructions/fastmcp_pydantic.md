@@ -140,7 +140,7 @@ asyncio.run(main())
 ## Our wiring (FastMCP → OpenAI/Claude)
 
 - We map MCP list_tools into OpenAI/Anthropic tool definitions:
-  - name: <server>\_<tool>
+  - name: `<server>_<tool>`
   - description: FastMCP tool description
   - parameters: inputSchema as returned by FastMCP (JSON Schema)
 - If your tool is correctly typed, the model sees the exact parameter schema and can call it without extra prompt instructions.

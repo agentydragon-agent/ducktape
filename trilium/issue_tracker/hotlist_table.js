@@ -52,7 +52,7 @@ class IssueTable {
           return hotlist.value;
         });
       },
-      [issueId],
+      [issueId]
     );
   }
 
@@ -63,9 +63,7 @@ class IssueTable {
       if (this.stateIds.length > 1) {
         searchString += "(";
       }
-      searchString += this.stateIds
-        .map((stateId) => "~state.noteId=" + stateId)
-        .join(" OR ");
+      searchString += this.stateIds.map((stateId) => "~state.noteId=" + stateId).join(" OR ");
       if (this.stateIds.length > 1) {
         searchString += ")";
       }
@@ -75,18 +73,14 @@ class IssueTable {
       if (this.hotlistIncludeIds.length > 1) {
         searchString += "(";
       }
-      searchString += this.hotlistIncludeIds
-        .map((hotlistId) => "~hotlist.noteId=" + hotlistId)
-        .join(" OR ");
+      searchString += this.hotlistIncludeIds.map((hotlistId) => "~hotlist.noteId=" + hotlistId).join(" OR ");
       if (this.hotlistIncludeIds.length > 1) {
         searchString += ")";
       }
     }
     if (this.hotlistExcludeIds.length > 0) {
       searchString += " AND NOT (";
-      searchString += this.hotlistExcludeIds
-        .map((hotlistId) => "~hotlist.noteId=" + hotlistId)
-        .join(" OR ");
+      searchString += this.hotlistExcludeIds.map((hotlistId) => "~hotlist.noteId=" + hotlistId).join(" OR ");
       searchString += ")";
     }
     console.log("search string", searchString);
@@ -98,15 +92,12 @@ class IssueTable {
           return { noteId: note.noteId, title: note.title };
         });
       },
-      [searchString],
+      [searchString]
     );
   }
 
   async createIssueLink(note) {
-    return await api.createNoteLink(note.noteId, {
-      showTooltip: true,
-      showNoteIcon: true,
-    });
+    return await api.createNoteLink(note.noteId, { showTooltip: true, showNoteIcon: true });
   }
 
   async fillHotlistTable() {
@@ -150,7 +141,7 @@ class IssueTable {
       promises.push(
         this.createIssueLink(note).then((issueLink) => {
           issueCell.append(issueLink);
-        }),
+        })
       );
 
       promises.push(
@@ -158,14 +149,11 @@ class IssueTable {
           return Promise.all(
             hotlistIds.map((hotlistId) =>
               api
-                .createNoteLink(hotlistId, {
-                  showTooltip: true,
-                  showNoteIcon: true,
-                })
-                .then((hotlistLink) => hotlistsCell.append(hotlistLink)),
-            ),
+                .createNoteLink(hotlistId, { showTooltip: true, showNoteIcon: true })
+                .then((hotlistLink) => hotlistsCell.append(hotlistLink))
+            )
           );
-        }),
+        })
       );
 
       const row = $("<tr>").append(issueCell).append(hotlistsCell);
@@ -176,33 +164,21 @@ class IssueTable {
   async toggleHotlist(hotlistId) {
     this.$hotlistList.find("[data-hotlist-id]").removeClass("active");
     if (this.hotlistIncludeIds.includes(hotlistId)) {
-      this.hotlistIncludeIds = this.hotlistIncludeIds.filter(
-        (id) => id !== hotlistId,
-      );
+      this.hotlistIncludeIds = this.hotlistIncludeIds.filter((id) => id !== hotlistId);
       this.hotlistExcludeIds.push(hotlistId);
-      this.$hotlistList
-        .find("[data-hotlist-id=" + hotlistId + "]")
-        .addClass("excluded");
+      this.$hotlistList.find("[data-hotlist-id=" + hotlistId + "]").addClass("excluded");
     } else if (this.hotlistExcludeIds.includes(hotlistId)) {
-      this.hotlistExcludeIds = this.hotlistExcludeIds.filter(
-        (id) => id !== hotlistId,
-      );
-      this.$hotlistList
-        .find("[data-hotlist-id=" + hotlistId + "]")
-        .removeClass("excluded");
+      this.hotlistExcludeIds = this.hotlistExcludeIds.filter((id) => id !== hotlistId);
+      this.$hotlistList.find("[data-hotlist-id=" + hotlistId + "]").removeClass("excluded");
     } else {
       this.hotlistIncludeIds.push(hotlistId);
-      this.$hotlistList
-        .find("[data-hotlist-id=" + hotlistId + "]")
-        .addClass("active");
+      this.$hotlistList.find("[data-hotlist-id=" + hotlistId + "]").addClass("active");
     }
     await this.fillIssueTable();
   }
 
   async selectState(stateId) {
-    this.$stateList
-      .find("[data-state-id=" + stateId + "]")
-      .toggleClass("active");
+    this.$stateList.find("[data-state-id=" + stateId + "]").toggleClass("active");
     if (this.stateIds.includes(stateId)) {
       this.stateIds = this.stateIds.filter((id) => id !== stateId);
     } else {

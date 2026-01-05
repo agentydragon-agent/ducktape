@@ -3,16 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const libA = path.join(__dirname, "lib", "system-utils");
-const libB = path.join(
-  os.homedir(),
-  ".claude-code-router",
-  "transformers",
-  "lib",
-  "system-utils",
-);
-const { extractSystemBlobs } = require(
-  fs.existsSync(libA + ".js") ? libA : libB,
-);
+const libB = path.join(os.homedir(), ".claude-code-router", "transformers", "lib", "system-utils");
+const { extractSystemBlobs } = require(fs.existsSync(libA + ".js") ? libA : libB);
 
 function esc(x) {
   return x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -31,16 +23,12 @@ async function readAllStdin() {
 (async () => {
   const templatePath = process.argv[2];
   if (!templatePath) {
-    console.error(
-      "usage: system_rewrite_apply.js <template-file> < input-system.txt > output-system.txt",
-    );
+    console.error("usage: system_rewrite_apply.js <template-file> < input-system.txt > output-system.txt");
     process.exit(2);
   }
   const template = fs.readFileSync(templatePath, "utf8");
   const sysIn = await readAllStdin();
-  const { toolsBlob, envGitBlobs, modelLine, mcpSection } = extractSystemBlobs(
-    String(sysIn),
-  );
+  const { toolsBlob, envGitBlobs, modelLine, mcpSection } = extractSystemBlobs(String(sysIn));
   const ctx = {
     toolsBlob,
     envGitBlobs: envGitBlobs.join(""),
@@ -54,9 +42,7 @@ async function readAllStdin() {
     const reVar = new RegExp(`\\{\\{${esc(name)}\\}\\}`, "g");
     const count = (template.match(reVar) || []).length;
     if (count > 1) {
-      console.error(
-        `template variable ${name} appears ${count} times (expected \u22641)`,
-      );
+      console.error(`template variable ${name} appears ${count} times (expected \u22641)`);
       process.exit(6);
     }
   }

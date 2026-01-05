@@ -303,7 +303,7 @@ in {
       gitstatus
 
       # Node/JS dev
-      nodejs_22 # LTS version (v22 is the current LTS as of Nov 2024)
+      nodejs_24
       nodePackages.pnpm
       bun
 

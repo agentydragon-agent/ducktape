@@ -88,9 +88,7 @@ class ArxivWidget extends api.CollapsibleWidget {
     if (/^\d{4}\.\d{4,5}$/.test(arxivUrl)) {
       return arxivUrl;
     } else {
-      const match = arxivUrl.match(
-        /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?/,
-      );
+      const match = arxivUrl.match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})(?:v\d+)?(?:\.pdf)?/);
       if (match) {
         return match[1];
       } else {
@@ -129,28 +127,22 @@ class ArxivWidget extends api.CollapsibleWidget {
                   const note = api.getNote(noteId);
                   note.addLabel("arxivId", paperId);
                 },
-                [result.noteId, paperId],
+                [result.noteId, paperId]
               );
               // show a message indicating that the note was linked
               this.$message.append(
                 $("<div>").append(
                   "Paper ID added to: ",
-                  await api.createNoteLink(result.noteId, {
-                    showTooltip: true,
-                    showNoteIcon: true,
-                  }),
-                ),
+                  await api.createNoteLink(result.noteId, { showTooltip: true, showNoteIcon: true })
+                )
               );
               // clear the input field
               this.$input.val("");
-            }),
-        ),
+            })
+        )
       );
     });
-    this.$message.append(
-      "<br>Confirm to create a new note anyway: " +
-        '<button id="arxiv-confirm">Confirm</button>',
-    );
+    this.$message.append("<br>Confirm to create a new note anyway: " + '<button id="arxiv-confirm">Confirm</button>');
     this.$body.find("#arxiv-confirm").on("click", async () => {
       // create the note as usual
       let newNote = await this.addNoteToBackend(title, paperId);
@@ -160,38 +152,19 @@ class ArxivWidget extends api.CollapsibleWidget {
 
   async showNewPaperMessage(newNote) {
     this.$message.text("Paper added as: ");
-    this.$message.append(
-      await api.createNoteLink(newNote.noteId, {
-        showTooltip: true,
-        showNoteIcon: true,
-      }),
-    );
+    this.$message.append(await api.createNoteLink(newNote.noteId, { showTooltip: true, showNoteIcon: true }));
   }
 
   async addNoteToBackend(title, paperId) {
     const papersRoot = await this.getPapersRootNoteId();
     // Will run on backend
-    const backendFn = (
-      papersRootNoteId,
-      title,
-      paperId,
-      paperTemplateNoteId,
-    ) => {
-      const newNote = api.createTextNote(
-        papersRootNoteId,
-        title,
-        "auto-created for paper ID " + paperId,
-      ).note;
+    const backendFn = (papersRootNoteId, title, paperId, paperTemplateNoteId) => {
+      const newNote = api.createTextNote(papersRootNoteId, title, "auto-created for paper ID " + paperId).note;
       newNote.addRelation("template", paperTemplateNoteId);
       newNote.addLabel("arxivId", paperId);
       return newNote;
     };
-    const newNote = await api.runOnBackend(backendFn, [
-      papersRoot.noteId,
-      title,
-      paperId,
-      PAPER_TEMPLATE_NOTE_ID,
-    ]);
+    const newNote = await api.runOnBackend(backendFn, [papersRoot.noteId, title, paperId, PAPER_TEMPLATE_NOTE_ID]);
     return newNote;
   }
 

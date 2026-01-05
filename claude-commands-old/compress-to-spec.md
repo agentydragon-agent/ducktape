@@ -166,7 +166,7 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
 ## Example invocations
 
 - "Compress :/project/foo into SPEC.md; exclude the legacy/ subtree; db must be Postgres; do not include caching; include admin UI for quotas; ensure UI is colorblind-friendly."
-- "Compress /abs/path/service and /abs/path/ui; also expose metrics counters for failures and timeouts; exclude generated files (_.gen._)."
+- "Compress /abs/path/service and /abs/path/ui; also expose metrics counters for failures and timeouts; exclude generated files (`*.gen.*`)."
 
 ## Success criteria
 

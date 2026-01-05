@@ -93,7 +93,7 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 - Ask flow observability
   - V1 blocks and hides pending approvals from the model. Consider a Stage 2 optional mode to surface a concise “pending approvals: N” status in system messages without leaking specifics.
 - Error codes
-  - Centralize a documented error code namespace for policy_denied(\_continue), subscribe_unsupported, unsubscribe_unsupported, forbidden (pinned unsubscribes).
+  - Centralize a documented error code namespace for `policy_denied(_continue)`, `subscribe_unsupported`, `unsubscribe_unsupported`, `forbidden` (pinned unsubscribes).
 - Tests
   - Add end‑to‑end tests for: policy allow/deny/ask, container path enforcement, subscriptions persistence/hydration, and loop yield semantics.
 - Glossary

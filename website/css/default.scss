@@ -16,16 +16,7 @@ $violet: #6c71c4;
 $blue: #268bd2;
 $cyan: #2aa198;
 $green: #859900;
-@mixin rebase(
-  $rebase03,
-  $rebase02,
-  $rebase01,
-  $rebase00,
-  $rebase0,
-  $rebase1,
-  $rebase2,
-  $rebase3
-) {
+@mixin rebase($rebase03, $rebase02, $rebase01, $rebase00, $rebase0, $rebase1, $rebase2, $rebase3) {
   body {
     background-color: $rebase3;
     color: $rebase00;
@@ -85,30 +76,12 @@ $green: #859900;
 }
 
 html {
-  @include rebase(
-    $base3,
-    $base2,
-    $base1,
-    $base0,
-    $base00,
-    $base01,
-    $base02,
-    $base03
-  );
+  @include rebase($base3, $base2, $base1, $base0, $base00, $base01, $base02, $base03);
 }
 
 @media (prefers-color-scheme: dark) {
   html {
-    @include rebase(
-      $base03,
-      $base02,
-      $base01,
-      $base00,
-      $base0,
-      $base1,
-      $base2,
-      $base3
-    );
+    @include rebase($base03, $base02, $base01, $base00, $base0, $base1, $base2, $base3);
   }
 }
 

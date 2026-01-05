@@ -271,30 +271,63 @@ Runs and snapshots
 
 ## Minimal JSON examples (illustrative)
 
-- Model request
-  {
-  "kind": "model_request", "event_id": "...", "ts": "...Z", "run_id": "...", "agent_id": "...",
-  "model": "o4-mini", "params": {"temperature": 0.2},
-  "input_refs": [{"event_id": "prev-msg-event-id"}],
+**Model request:**
+
+```json
+{
+  "kind": "model_request",
+  "event_id": "...",
+  "ts": "...Z",
+  "run_id": "...",
+  "agent_id": "...",
+  "model": "o4-mini",
+  "params": { "temperature": 0.2 },
+  "input_refs": [{ "event_id": "prev-msg-event-id" }],
   "correlation_id": "abc123"
-  }
-- Tool result (exec)
-  {
-  "kind": "tool_result", "event_id": "...", "ts": "...Z", "run_id": "...", "agent_id": "...",
-  "call_id": "exec-42", "status": "ok",
-  "result": {"rc": 0, "stdout": "...", "stderr": "", "duration_ms": 120}
-  }
-- Snapshot created
-  {
-  "kind": "snapshot_created", "event_id": "...", "ts": "...Z", "agent_id": "...",
-  "resource_ref": "res-vol-123", "snapshot_ref": "snap-abc",
+}
+```
+
+**Tool result (exec):**
+
+```json
+{
+  "kind": "tool_result",
+  "event_id": "...",
+  "ts": "...Z",
+  "run_id": "...",
+  "agent_id": "...",
+  "call_id": "exec-42",
+  "status": "ok",
+  "result": { "rc": 0, "stdout": "...", "stderr": "", "duration_ms": 120 }
+}
+```
+
+**Snapshot created:**
+
+```json
+{
+  "kind": "snapshot_created",
+  "event_id": "...",
+  "ts": "...Z",
+  "agent_id": "...",
+  "resource_ref": "res-vol-123",
+  "snapshot_ref": "snap-abc",
   "outcome": "ok"
-  }
-- Restore attempted (unsupported)
-  {
-  "kind": "restore_attempted", "event_id": "...", "ts": "...Z", "agent_id": "...",
-  "snapshot_ref": "snap-live-ram", "outcome": "unsupported"
-  }
+}
+```
+
+**Restore attempted (unsupported):**
+
+```json
+{
+  "kind": "restore_attempted",
+  "event_id": "...",
+  "ts": "...Z",
+  "agent_id": "...",
+  "snapshot_ref": "snap-live-ram",
+  "outcome": "unsupported"
+}
+```
 
 ## Mapping helpers (backend adapters)
 

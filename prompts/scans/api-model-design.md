@@ -151,8 +151,8 @@ Issues:
 **Why automation is insufficient**:
 
 - Determining if a flat field is "denormalized" requires understanding domain relationships
-- Some field name patterns (\_id +\_name) are legitimate (not references to other models)
-- "\_json" suffix might be intentional naming, not just DB leakage
+- Some field name patterns (`_id` + `_name`) are legitimate (not references to other models)
+- `_json` suffix might be intentional naming, not just DB leakage
 - `dict[str, Any]` is sometimes correct (truly dynamic data)
 
 **Manual analysis required**: For each pattern found, understand:

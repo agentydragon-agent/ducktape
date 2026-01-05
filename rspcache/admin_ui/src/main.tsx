@@ -9,5 +9,5 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <MantineProvider defaultColorScheme="auto">
       <App />
     </MantineProvider>
-  </React.StrictMode>,
+  </React.StrictMode>
 );

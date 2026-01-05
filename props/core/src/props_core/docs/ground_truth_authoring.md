@@ -17,7 +17,7 @@ occurrences:
   - occurrence_id: occ-0
     files:
       path/to/file.py:
-        - 42 # single line
+        - [42, 45] # lines 42-45
     note: Occurrence-specific explanation
 ```
 
@@ -25,14 +25,22 @@ occurrences:
 
 Props supports multiple formats for specifying line ranges:
 
-### Simple Formats (Backward Compatible)
+### Simple Formats
 
 ```yaml
 files:
   file.py:
-    - 42 # single line (line 42)
     - [10, 20] # single range (lines 10-20)
-    - [[10, 15], [20, 25]] # multiple ranges
+    - [25, 25] # single line (use same start and end)
+```
+
+For multiple ranges, use separate list entries:
+
+```yaml
+files:
+  file.py:
+    - [10, 15]
+    - [20, 25]
 ```
 
 ### Dict Format with Per-Range Notes

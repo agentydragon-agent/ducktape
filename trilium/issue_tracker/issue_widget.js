@@ -26,11 +26,7 @@ class IssueWidget extends api.CollapsibleWidget {
   }
 
   isEnabled() {
-    return (
-      super.isEnabled() &&
-      this.note.type === "text" &&
-      this.note.hasLabel("issue")
-    );
+    return super.isEnabled() && this.note.type === "text" && this.note.hasLabel("issue");
   }
 
   async doRenderBody() {
@@ -54,7 +50,7 @@ class IssueWidget extends api.CollapsibleWidget {
         const note = await api.getNote(noteId);
         note.setRelation("state", stateId);
       },
-      [this.note.noteId, stateId],
+      [this.note.noteId, stateId]
     );
   }
 
@@ -89,8 +85,7 @@ Existing hotlists:
     openaiPrompt += `Issue title: ${this.note.title}\n`;
     const hotlistRelations = this.note.getRelations("hotlist");
     if (hotlistRelations.length > 0) {
-      openaiPrompt +=
-        "The issue is already in the following hotlists - do not suggest them: ";
+      openaiPrompt += "The issue is already in the following hotlists - do not suggest them: ";
       const titles = [];
       for (const hotlistRelation of hotlistRelations) {
         const hotlistNote = await api.getNote(hotlistRelation.value);
@@ -102,9 +97,7 @@ Existing hotlists:
     openaiPrompt +=
       "\nSuggest hotlists for this issue. Prefer suggesting hotlists that I already have, but if it makes sense, you may also suggest a new hotlist.\n";
     openaiPrompt +=
-      "Format the suggestion as a JSON array like this: " +
-      '["Hotlist name 1","Hotlist name 2",...].\n' +
-      "-----\n";
+      "Format the suggestion as a JSON array like this: " + '["Hotlist name 1","Hotlist name 2",...].\n' + "-----\n";
     return openaiPrompt;
   }
 
@@ -139,12 +132,7 @@ Existing hotlists:
       const hotlistNote = await api.getNote(hotlistRelation.value);
       if (hotlistNote) {
         const listItem = $("<li></li>");
-        listItem.append(
-          await api.createNoteLink(hotlistNote.noteId, {
-            showTooltip: true,
-            showNoteIcon: true,
-          }),
-        );
+        listItem.append(await api.createNoteLink(hotlistNote.noteId, { showTooltip: true, showNoteIcon: true }));
         this.$hotlists.append(listItem);
       }
     }
@@ -181,9 +169,7 @@ Existing hotlists:
       },
       success: async (response) => {
         // console.log(response.choices[0].text);
-        await this.showSuggestions(
-          JSON.parse(prefix + response.choices[0].text),
-        );
+        await this.showSuggestions(JSON.parse(prefix + response.choices[0].text));
       },
       error: (error) => {
         alert("error, see console");
@@ -229,11 +215,9 @@ Existing hotlists:
           console.log("adding...");
           await api.runOnBackend(
             (issueId, hotlistId) => {
-              api
-                .getNote(issueId)
-                .addAttribute("relation", "hotlist", hotlistId);
+              api.getNote(issueId).addAttribute("relation", "hotlist", hotlistId);
             },
-            [this.noteId, hotlistId],
+            [this.noteId, hotlistId]
           );
           console.log("added...");
         });
@@ -258,11 +242,7 @@ Existing hotlists:
       loadResults.isNoteContentReloaded(this.noteId) ||
       loadResults
         .getAttributes()
-        .find(
-          (attr) =>
-            attr.type === "relation" &&
-            (attr.name === "state" || attr.name == "hotlist"),
-        )
+        .find((attr) => attr.type === "relation" && (attr.name === "state" || attr.name == "hotlist"))
     ) {
       this.refresh();
     }

@@ -139,13 +139,7 @@ Implement an AI-backed autosuggestion system for zsh that integrates cleanly wit
 - Error:
 
 ```json
-{
-  "v": 1,
-  "id": "42",
-  "ok": false,
-  "code": "timeout",
-  "message": "backend timed out"
-}
+{ "v": 1, "id": "42", "ok": false, "code": "timeout", "message": "backend timed out" }
 ```
 
 ## Prompting Guidance

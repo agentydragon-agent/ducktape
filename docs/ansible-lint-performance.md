@@ -55,7 +55,7 @@ cd ansible
 ansible-playbook --syntax-check wyrm.yaml
 # Should complete in 1-2 seconds
 
-# Test via pre-commit (will run yamllint + syntax-check)
+# Test via pre-commit (will run prettier + syntax-check)
 pre-commit run --files ansible/wyrm.yaml
 # Should complete in 2-3 seconds
 

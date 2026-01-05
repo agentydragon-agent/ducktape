@@ -281,7 +281,7 @@ Clear examples of BAD and GOOD code with explanations of why.
 
 **[MANDATORY/RECOMMENDED/OPTIONAL] approach**:
 
-1. [MANDATORY first step IF high recall]: Run scan\_\*.py to find ALL instances
+1. [MANDATORY first step IF high recall]: Run `scan_*.py` to find ALL instances
 2. [Verification strategy based on precision]:
    - High precision: Light verification
    - Low precision: Manual review or LLM filtering
