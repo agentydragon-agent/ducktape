@@ -2,22 +2,22 @@
 // #run=mobileStartup
 
 api.addButtonToToolbar({
-  title: 'Add repeating note for today',
-  icon: 'notepad',
-  shortcut: 'alt+n',
+  title: "Add repeating note for today",
+  icon: "notepad",
+  shortcut: "alt+n",
   action: async () => {
     // creating notes is backend (server) responsibility so we need to pass
     // the control there
     const newNoteId = await api.runOnBackend(() => {
       const today = api.getTodayNote();
       // TODO: set repeating note's title based on day & stuff
-      const resp = api.createTextNote(today.noteId, 'new repeating note', '');
+      const resp = api.createTextNote(today.noteId, "new repeating note", "");
       const newNote = resp.note;
 
-      const repeatingNoteTemplateNoteId = 'piDc86W245NG';
+      const repeatingNoteTemplateNoteId = "piDc86W245NG";
       // const openStateNoteId = api.getNoteWithLabel("issueStateOpen").noteId;
-      newNote.setRelation('template', repeatingNoteTemplateNoteId);
-      newNote.setRelation('date', today.noteId);
+      newNote.setRelation("template", repeatingNoteTemplateNoteId);
+      newNote.setRelation("date", today.noteId);
 
       return newNote.noteId;
     });
@@ -30,5 +30,5 @@ api.addButtonToToolbar({
     // TODO: activate it in the path under the active tab, not under tasks where
     // it's been created
     await api.activateNewNote(newNoteId);
-  }
+  },
 });

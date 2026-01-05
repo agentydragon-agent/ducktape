@@ -22,9 +22,9 @@ const TPL = `
   <tbody class="paper-list">
   </tbody>
   </table>`;
-const INCLUDE = 'include';
-const EXCLUDE = 'exclude';
-const ONLY = 'only';
+const INCLUDE = "include";
+const EXCLUDE = "exclude";
+const ONLY = "only";
 const OPTIONS = [INCLUDE, EXCLUDE, ONLY];
 
 class PaperTable {
@@ -41,7 +41,7 @@ class PaperTable {
   async fillTopicList() {
     this.$topicList.empty();
 
-    const topicNotes = await api.searchForNotes('#topic');
+    const topicNotes = await api.searchForNotes("#topic");
     for (const topic of topicNotes) {
       // noteId, title
       this.$topicList.append(topic.title);
@@ -50,57 +50,62 @@ class PaperTable {
   }
 
   buildPaperRow(row) {
-    const paperCell = $('<td>');
-    const arxivLinkageCell = $('<td>');
-    api.getNote(row.noteId).then(note => {
-      const arxivId = note.getAttribute('label', 'arxivId');
-      if (arxivId && arxivId !== '') {
-        arxivLinkageCell.text('✓');
+    const paperCell = $("<td>");
+    const arxivLinkageCell = $("<td>");
+    api.getNote(row.noteId).then((note) => {
+      const arxivId = note.getAttribute("label", "arxivId");
+      if (arxivId && arxivId !== "") {
+        arxivLinkageCell.text("✓");
       } else {
-        arxivLinkageCell.text('✗');
+        arxivLinkageCell.text("✗");
       }
     });
-    const priorityCell = $('<td>');
-    const priorityInput = $('<input type=number>').val(row.priority);
+    const priorityCell = $("<td>");
+    const priorityInput = $("<input type=number>").val(row.priority);
     priorityInput.change(async () => {
       const newPriority = priorityInput.val();
       // console.log(newPriority, typeof(newPriority));
 
-      if (newPriority === '') {
+      if (newPriority === "") {
         // TODO: deprioritize
-        console.log('TODO: not changing');
-      } else if (typeof (newPriority === 'string')) {
+        console.log("TODO: not changing");
+      } else if (typeof (newPriority === "string")) {
         // console.log(`setting priority of ${row.noteId} to ${newPriority}`);
-        await api.runOnBackend(async (noteId, newPriorityInner) => {
-          const note = await api.getNote(noteId);
-          note.setLabel('readingPriority', newPriorityInner);
-          note.setLabel(
-              'readingPriorityDate', new Date().toISOString().substring(0, 10));
-        }, [row.noteId, newPriority]);
+        await api.runOnBackend(
+          async (noteId, newPriorityInner) => {
+            const note = await api.getNote(noteId);
+            note.setLabel("readingPriority", newPriorityInner);
+            note.setLabel("readingPriorityDate", new Date().toISOString().substring(0, 10));
+          },
+          [row.noteId, newPriority]
+        );
       }
     });
 
     // TODO: this promise should be cancelled if rendering is interrupted
-    api.createNoteLink(row.noteId, {showTooltip: true, showNoteIcon: true})
-        .then(paperLink => {
-          paperCell.append(paperLink);
-        });
+    api.createNoteLink(row.noteId, { showTooltip: true, showNoteIcon: true }).then((paperLink) => {
+      paperCell.append(paperLink);
+    });
     priorityCell.append(priorityInput);
-    const priorityDateCell = $('<td>').text(row.priorityDate);
-    const topicsCell = $('<td>');
-    api.getNote(row.noteId).then(note => {
-      const topics = note.getAttributes('relation', 'topic');
+    const priorityDateCell = $("<td>").text(row.priorityDate);
+    const topicsCell = $("<td>");
+    api.getNote(row.noteId).then((note) => {
+      const topics = note.getAttributes("relation", "topic");
       for (const topic of topics) {
         // TODO: toggle-button for this topic; also suggest a couple
         // topics, have a combo box for search
-        api.createNoteLink(topic.value).then(topicLink => {
+        api.createNoteLink(topic.value).then((topicLink) => {
           topicsCell.append(topicLink);
         });
       }
     });
-    const rowElement = $('<tr>').append(
-        paperCell, arxivLinkageCell, priorityCell, priorityDateCell,
-        topicsCell);
+    const rowElement = $("<tr>").append(
+      paperCell,
+      arxivLinkageCell,
+      priorityCell,
+      priorityDateCell,
+      topicsCell
+    );
     return rowElement;
   }
 
@@ -166,8 +171,7 @@ class PaperTable {
     if (this.finishedReadingMode == INCLUDE) {
     } else if (this.finishedReadingMode == EXCLUDE) {
       // TODO: do this on the 0/1 level
-      sql +=
-          `AND NOT (Finished.finishedReading = 'true') OR Finished.finishedReading IS NULL `;
+      sql += `AND NOT (Finished.finishedReading = 'true') OR Finished.finishedReading IS NULL `;
     } else if (this.finishedReadingMode == ONLY) {
       sql += `AND (Finished.finishedReading = 'true') `;
     }
@@ -184,11 +188,14 @@ class PaperTable {
       ORDER BY priority ASC
     `;
     // TODO: variable limit
-    sql += 'LIMIT 100';
+    sql += "LIMIT 100";
 
-    const rows = await api.runOnBackend((sql) => {
-      return api.sql.getRows(sql);
-    }, [sql]);
+    const rows = await api.runOnBackend(
+      (sql) => {
+        return api.sql.getRows(sql);
+      },
+      [sql]
+    );
     for (const row of rows) {
       this.$paperList.append(this.buildPaperRow(row));
     }
@@ -197,25 +204,24 @@ class PaperTable {
   fillControls() {
     this.$controls.empty();
 
-    const finishedReadingButton = $('<input type=button>');
-    finishedReadingButton.val('Finished reading: ' + this.finishedReadingMode);
+    const finishedReadingButton = $("<input type=button>");
+    finishedReadingButton.val("Finished reading: " + this.finishedReadingMode);
     finishedReadingButton.click(async () => {
       const oldIndex = OPTIONS.indexOf(this.finishedReadingMode);
       const newIndex = (oldIndex + 1) % OPTIONS.length;
       this.finishedReadingMode = OPTIONS[newIndex];
-      finishedReadingButton.val(
-          'Finished reading: ' + this.finishedReadingMode);
+      finishedReadingButton.val("Finished reading: " + this.finishedReadingMode);
       await this.fillPaperList();
     });
     this.$controls.append(finishedReadingButton);
 
-    const unprioritizedButton = $('<input type=button>');
-    unprioritizedButton.val('Unprioritized: ' + this.unprioritizedMode);
+    const unprioritizedButton = $("<input type=button>");
+    unprioritizedButton.val("Unprioritized: " + this.unprioritizedMode);
     unprioritizedButton.click(async () => {
       const oldIndex = OPTIONS.indexOf(this.unprioritizedMode);
       const newIndex = (oldIndex + 1) % OPTIONS.length;
       this.unprioritizedMode = OPTIONS[newIndex];
-      unprioritizedButton.val('Unprioritized: ' + this.unprioritizedMode);
+      unprioritizedButton.val("Unprioritized: " + this.unprioritizedMode);
       await this.fillPaperList();
     });
     this.$controls.append(unprioritizedButton);
@@ -224,9 +230,9 @@ class PaperTable {
   async render(root) {
     this.$root = root;
     this.$root.empty().append($(TPL));
-    this.$paperList = this.$root.find('.paper-list');
-    this.$controls = this.$root.find('.controls');
-    this.$topicList = this.$root.find('.topics');
+    this.$paperList = this.$root.find(".paper-list");
+    this.$controls = this.$root.find(".controls");
+    this.$topicList = this.$root.find(".topics");
 
     this.fillControls();
     // TODO: cancel promises if rendering aborted / re-render triggered
@@ -235,4 +241,4 @@ class PaperTable {
 }
 
 const paperTable = new PaperTable();
-await paperTable.render($('#paper-table-root'));
+await paperTable.render($("#paper-table-root"));
