@@ -15,8 +15,8 @@ Policy is explicit-only and platform-agnostic at the schema level.
 macOS seatbelt specifics
 
 - We render a seatbelt profile using sandbox-exec named parameters (-D KEY=value) for all paths.
-- For each write_paths[i] = $WP_i: `(allow file* (subpath "$WP_i"))` and `(allow process-exec (subpath "$WP_i"))`
-- For each read_paths[i] = $RP_i: `(allow file-read* (subpath "$RP_i"))` and `(allow process-exec (subpath "$RP_i"|literal))`
+- For each write_paths[i] = $WP_i: `(allow file* (subpath "$WP_i"))`and`(allow process-exec (subpath "$WP_i"))`
+- For each read_paths[i] = $RP_i: `(allow file-read* (subpath "$RP_i"))`and`(allow process-exec (subpath "$RP_i"|literal))`
 - Base policy allows core process/IPC primitives; networking is not broadly opened; loopback inbound only in our launcher.
 
 Planned tightening (validate in tmux before encoding):

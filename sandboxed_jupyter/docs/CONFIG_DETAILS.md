@@ -18,13 +18,13 @@ Keys and constraints enforced by the wrapper (pydantic v2):
 
 ```yaml
 fs:
-  read_paths: []               # explicit read allowlist (absolute paths); include '/' for global
-  write_paths: []              # explicit write allowlist (absolute paths); include '/' for global
+  read_paths: [] # explicit read allowlist (absolute paths); include '/' for global
+  write_paths: [] # explicit write allowlist (absolute paths); include '/' for global
 
 # Environment for child processes (Jupyter server, jupyter-mcp-server, and anything they spawn)
 env:
   set: {}
-  passthrough: []              # names to import from the parent environment verbatim (e.g., OPENAI_API_KEY)
+  passthrough: [] # names to import from the parent environment verbatim (e.g., OPENAI_API_KEY)
 
 # Present for future use
 net: { mode: loopback }

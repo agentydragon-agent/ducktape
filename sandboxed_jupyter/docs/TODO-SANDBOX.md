@@ -73,7 +73,7 @@ Directory layout (example control bundle)
 Phase 2 — functionality hardening
 
 - [ ] Add sandboxer proxy-managed allowlist mode (net: proxy)
-  - [ ] Spawn local HTTP proxy on 127.0.0.1:0; set HTTP(S)_PROXY inside sandbox; filter by allow_domains
+  - [ ] Spawn local HTTP proxy on 127.0.0.1:0; set `HTTP(S)_PROXY` inside sandbox; filter by `allow_domains`
   - [ ] Teardown proxy cleanly on exit
 - [ ] Add Linux bwrap backend
   - [ ] Map fs.read_paths → ro binds; fs.write_paths → rw binds; tmpfs per policy

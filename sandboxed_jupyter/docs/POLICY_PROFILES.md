@@ -21,16 +21,16 @@ Legend
 - FS read: venv site-packages, git repo (read-only), .git (read-only), system libs (/System, /usr, /lib), workspace (read)
 - NET: allow loopback; egress allowed (TBD). Consider loopback-only by default
 - ENV: minimal allowlist (e.g., PATH, LANG, PYTHONPATH, PYTHONPYCACHEPREFIX). Avoid secrets; prefer explicit env_passthrough entries only when needed
-- Process/IPC: minimal (process*, signal self, basic ipc, sysctl-read)
+- Process/IPC: minimal (`process*`, signal self, basic ipc, sysctl-read)
 - Devices: /dev/null, /dev/urandom, /dev/random; no TTY writes
 - Tracing: On by default in dev; off in prod
 - Notes: Strictest default for code execution on local repos
 
 Checklist
 
-- [ ] file*(subpath WORKSPACE)
-- [ ] file*(subpath RUN_ROOT)
-- [ ] file-read* curated system roots + venv + repo + .git
+- [ ] `file*(subpath WORKSPACE)`
+- [ ] `file*(subpath RUN_ROOT)`
+- [ ] `file-read*` curated system roots + venv + repo + .git
 - [ ] network: loopback only (or off by default)
 - [ ] env: HOME=RUN_ROOT, strip tokens
 - [ ] Python .pyc → RUN_ROOT/pycache or disabled
@@ -90,7 +90,7 @@ Checklist
 
 Checklist
 
-- [ ] remove RUN_ROOT/file* writes except runtime
+- [ ] remove `RUN_ROOT/file*` writes except runtime
 - [ ] no /tmp writes (PYTHONPYCACHEPREFIX→RUN_ROOT/pycache)
 
 ---
@@ -100,7 +100,7 @@ Checklist
 - FS write: WORKSPACE, RUN_ROOT, /tmp (for speed/tools)
 - FS read: repo, venv, system libs
 - NET: loopback + optional egress
-- ENV: allow PYTHON*, PATH, LANG; still strip secrets by default
+- ENV: allow `PYTHON*`, PATH, LANG; still strip secrets by default
 
 Checklist
 
@@ -162,15 +162,15 @@ Checklist
 
 - File
   - (allow file-read*(subpath ...)) only for curated roots (no global file-read*)
-  - (allow file* (subpath "<workspace>")) generated from write_paths
-  - (allow file* (subpath "<run_root>")) generated from write_paths
-  - (allow file* (subpath "/tmp")) (optional)
+  - `(allow file* (subpath "<workspace>"))` generated from write_paths
+  - `(allow file* (subpath "<run_root>"))` generated from write_paths
+  - `(allow file* (subpath "/tmp"))` (optional)
 - Net
   - (allow network-inbound (local ip))
   - (allow network-outbound) → restrict/deny per profile (TODO: configurable in wrapper via `net`)
 - System
-  - (allow process*) (allow signal (target self))
-  - (allow ipc-posix-*) (allow ipc-sysv-shm) (allow mach-lookup) (allow system-socket) (allow sysctl-read)
+  - `(allow process*)` `(allow signal (target self))`
+  - `(allow ipc-posix-*)` `(allow ipc-sysv-shm)` `(allow mach-lookup)` `(allow system-socket)` `(allow sysctl-read)`
   - (allow file*(literal "/dev/null")) (allow file-read* (literal "/dev/urandom"))
 - Trace
   - (trace "<RUN_ROOT>/profile.sb") in dev
@@ -180,7 +180,7 @@ Checklist
 ## Environment policy (wrapper)
 
 - HOME=RUN_ROOT, CWD=WORKSPACE
-- Strip by default: **TOKEN, **SECRET, AWS**, GCP**, AZURE_*, SSH_*, etc.
+- Strip by default: `**TOKEN`, `**SECRET`, `AWS**`, `GCP**`, `AZURE**`, `SSH**`, etc.
 - Allow explicitly per profile: OPENAI_API_KEY, proxy vars
 - Set PYTHONPYCACHEPREFIX=<RUN_ROOT>/pycache or PYTHONDONTWRITEBYTECODE=1
 
