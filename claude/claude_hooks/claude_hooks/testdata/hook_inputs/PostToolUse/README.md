@@ -34,6 +34,7 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 - [ ] pattern + path + type
 - [ ] pattern + glob + type
 - [ ] pattern + path + glob + type
+<<<<<<< HEAD
 - [ ] - output_mode: "content"
 - [ ] - output_mode: "files_with_matches"
 - [ ] - output_mode: "count"
@@ -47,6 +48,21 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 - [ ] - -B: number (content mode)
 - [ ] - -C: number (content mode)
 - [ ] - head_limit: number
+=======
+- [ ] ... + output_mode: "content"
+- [ ] ... + output_mode: "files_with_matches"
+- [ ] ... + output_mode: "count"
+- [ ] ... + multiline: true
+- [ ] ... + multiline: false
+- [ ] ... + -i: true
+- [ ] ... + -i: false
+- [ ] ... + -n: true (content mode)
+- [ ] ... + -n: false (content mode)
+- [ ] ... + -A: number (content mode)
+- [ ] ... + -B: number (content mode)
+- [ ] ... + -C: number (content mode)
+- [ ] ... + head_limit: number
+>>>>>>> 14df46829 (Format some previously ignored testdata)
 
 ## Edit Tool
 
@@ -86,12 +102,21 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 ## NotebookEdit Tool
 
 - [ ] notebook_path + new_source
+<<<<<<< HEAD
 - [ ] - cell_id
 - [ ] - cell_type: "code"
 - [ ] - cell_type: "markdown"
 - [ ] - edit_mode: "replace"
 - [ ] - edit_mode: "insert"
 - [ ] - edit_mode: "delete"
+=======
+- [ ] ... + cell_id
+- [ ] ... + cell_type: "code"
+- [ ] ... + cell_type: "markdown"
+- [ ] ... + edit_mode: "replace"
+- [ ] ... + edit_mode: "insert"
+- [ ] ... + edit_mode: "delete"
+>>>>>>> 14df46829 (Format some previously ignored testdata)
 - [ ] notebook_path + new_source + cell_id + cell_type
 - [ ] notebook_path + new_source + cell_id + edit_mode
 - [ ] notebook_path + new_source + cell_type + edit_mode
@@ -119,21 +144,7 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 
 - [x] Various MCP tools ✅ (existing test for mcp\_\_...)
 
----
-
-## Summary
-
-**Collected:** 13/89 scenarios (~15%)
-
-**Priority gaps to fill:**
-
-- More Grep tool variations (most missing)
-- Edit tool variations
-- MultiEdit tool variations
-- NotebookRead/NotebookEdit tools
-- Individual TodoWrite status/priority scenarios
-
-**Notes:**
+## Notes:
 
 - Bash tool with timeout exceeded does not generate PostToolUse hook invocation
 - Interrupted Bash tool calls do not generate PostToolUse hook invocation

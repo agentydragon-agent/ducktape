@@ -1,4 +1,6 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*|.*flake\\.lock$|nonrcm-dotfiles/config/OrcaSlicer/.*|finance/worthy/worthy/index_(head|tail)\\.html$|^tana/src/tana/export/references/.*"
+# Global exclusions: vendored code, fixtures, generated files
+# Specific testdata exclusions (not blanket) to allow JSON linting
+exclude: ".*/fixtures/.*|.*/third_party/.*|.*/vendor/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*|.*flake\\.lock$|nonrcm-dotfiles/config/OrcaSlicer/.*|finance/worthy/worthy/index_(head|tail)\\.html$|^tana/src/tana/export/references/.*|^k8s-old/|^cluster/flux-system/flux-system/|^claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\\.md$|^tana/tests/tana/testdata/.*\\.(md|tanapaste|txt)$"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -105,6 +107,13 @@ repos:
         language: system
         files: pyproject\.toml$
 
+  # Buildifier for Bazel files (uses upstream repo for consistency)
+  - repo: https://github.com/keith/pre-commit-buildifier
+    rev: 6.4.0
+    hooks:
+      - id: buildifier
+      - id: buildifier-lint
+
   # Alejandra Nix formatter (not integrated with Bazel - Nix formatters handled separately)
   # Using local hook with nix run instead of upstream repo (cargo build fails)
   - repo: local
@@ -118,6 +127,7 @@ repos:
 
   # NOTE: Other linters are handled by Bazel test targets
   # - svelte-check: `bazel test //props/frontend:svelte_check_test`
+
   # ============================================================================
   # CLUSTER-SPECIFIC HOOKS (scoped to cluster/ directory)
   # ============================================================================

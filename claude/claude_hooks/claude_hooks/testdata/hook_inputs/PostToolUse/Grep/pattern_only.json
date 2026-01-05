@@ -9,11 +9,7 @@
   },
   "tool_response": {
     "mode": "files_with_matches",
-    "filenames": [
-      "/Users/user/test/file1.py",
-      "/Users/user/test/file2.py",
-      "/Users/user/test/file3.ipynb"
-    ],
+    "filenames": ["/Users/user/test/file1.py", "/Users/user/test/file2.py", "/Users/user/test/file3.ipynb"],
     "numFiles": 3
   }
 }
