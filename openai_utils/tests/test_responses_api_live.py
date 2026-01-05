@@ -15,8 +15,6 @@ async def test_responses_nonstreaming_live(tmp_path):
     Requires OPENAI_API_KEY in the environment. Uses OPENAI_MODEL if set or
     falls back to 'o4-mini'.
     """
-    if not os.getenv("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set; skipping live test")
 
     client = openai.AsyncOpenAI()
     model = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -39,11 +37,8 @@ async def test_responses_nonstreaming_live(tmp_path):
 async def test_responses_streaming_live(tmp_path):
     """Live test: call OpenAI Responses.create with stream=True and iterate.
 
-    Requires OPENAI_API_KEY in the environment. The test collects streamed
-    events and asserts that at least one event was received.
+    The test collects streamed events and asserts that at least one event was received.
     """
-    if not os.getenv("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set; skipping live test")
 
     client = openai.AsyncOpenAI()
     model = os.getenv("OPENAI_MODEL", "o4-mini")
