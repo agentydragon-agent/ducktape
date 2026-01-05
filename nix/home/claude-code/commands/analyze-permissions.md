@@ -68,17 +68,21 @@ Process remaining commands in batches of ~10-20 most frequent:
 
 ### Phase 4: Final Report
 
-```markdown
+````markdown
 # Claude Code Permission Analysis - Complete
 
 ## Coverage Summary
+
 Total commands analyzed: X,XXX
+
 - Already auto-allowed: X,XXX (XX%)
 - Proposed for auto-allow: XXX (XX%)
 - Keep manual approval: XXX (XX%)
 
 ## Already Auto-Allowed Breakdown
+
 Current patterns cover X,XXX commands:
+
 - git status/diff/stash/list: XXX commands
 - System inspection (lspci, lsusb, lscpu, etc.): XXX commands
 - ... (all current patterns with counts)
@@ -86,24 +90,27 @@ Current patterns cover X,XXX commands:
 ## Proposed Additions to Auto-Allow
 
 ### High Confidence - Read-Only Operations
+
 1. `Bash(cat:*)` - XXX uses
    - Justification: Read file contents, safe
-   - Examples: cat file.txt (N times), cat *.log (M times)
+   - Examples: `cat file.txt` (N times), `cat *.log` (M times)
 
 2. `Bash(rg:*)` - XXX uses
    - Justification: ripgrep search, read-only
-   - Examples: rg "pattern" (N times), rg -i term (M times)
+   - Examples: `rg "pattern"` (N times), `rg -i term` (M times)
 
 3. `Bash(find:*)` - XXX uses
    - Justification: File search, read-only
-   - Examples: find . -name "*.py" (N times)
+   - Examples: `find . -name "*.py"` (N times)
 
 ### Medium Confidence - Potentially Safe
+
 4. `Bash(python3:*)` - XXX uses
    - Concern: Scripts could be destructive
    - Recommendation: Review if your Python scripts are typically safe
 
 ### Keep Manual Approval
+
 - Write operations: rm, mv, cp, mkdir (XXX commands)
 - Git modifications: git commit, git push, git rebase (XXX commands)
 - System changes: sudo commands (XXX commands)
@@ -112,6 +119,7 @@ Current patterns cover X,XXX commands:
 ## Suggested Config Changes
 
 Add to `~/code/ducktape/nix/home/claude-code/default.nix` in the `allow` list:
+
 ```nix
 "Bash(cat:*)"
 "Bash(rg:*)"

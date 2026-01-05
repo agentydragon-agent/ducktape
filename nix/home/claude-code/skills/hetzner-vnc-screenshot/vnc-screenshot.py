@@ -16,6 +16,7 @@ References:
     - https://hcloud-python.readthedocs.io/
     - https://github.com/barneygale/asyncvnc
 """
+
 import asyncio
 import logging
 import os
@@ -51,9 +52,7 @@ class WebSocketStreamAdapter:
             try:
                 logger.debug("Waiting for websocket recv()...")
                 data = await self.ws.recv()
-                logger.debug(
-                    f"Received {len(data)} bytes: {data[:50] if isinstance(data, bytes) else data[:50]}..."
-                )
+                logger.debug(f"Received {len(data)} bytes: {data[:50]}...")
                 if isinstance(data, str):
                     data = data.encode()
                 self._buffer.extend(data)
@@ -92,7 +91,8 @@ class WebSocketStreamAdapter:
         """Queue data to be sent. Note: asyncvnc doesn't always call drain()."""
         self._pending_write += data
         # Schedule immediate send since asyncvnc often doesn't call drain()
-        asyncio.create_task(self._send_pending())
+        # Store task reference to prevent garbage collection (RUF006)
+        self._send_task = asyncio.create_task(self._send_pending())
 
     async def _send_pending(self):
         """Send any pending write data."""
@@ -104,20 +104,15 @@ class WebSocketStreamAdapter:
 
     async def drain(self):
         """Compatibility method - data is sent immediately via write()."""
-        pass
 
 
-def request_console_credentials(
-    server_name: str, token: str | None = None
-) -> tuple[str, str]:
+def request_console_credentials(server_name: str, token: str | None = None) -> tuple[str, str]:
     """Request VNC console credentials from Hetzner Cloud API."""
     logger.debug(f"Requesting console for server '{server_name}'")
     if token is None:
         token = os.environ.get("HCLOUD_TOKEN")
         if not token:
-            raise ValueError(
-                "HCLOUD_TOKEN environment variable not set and no --token provided"
-            )
+            raise ValueError("HCLOUD_TOKEN environment variable not set and no --token provided")
     logger.debug(f"Token length: {len(token)}")
 
     logger.debug("Creating hcloud Client...")
@@ -134,9 +129,7 @@ def request_console_credentials(
     return response.wss_url, response.password
 
 
-async def vnc_screenshot(
-    wss_url: str, password: str, output_path: str = "screenshot.png"
-):
+async def vnc_screenshot(wss_url: str, password: str, output_path: str = "screenshot.png"):
     """Connect to VNC over WebSocket and capture a screenshot."""
     logger.debug(f"Connecting to {wss_url[:60]}...")
 
@@ -145,9 +138,7 @@ async def vnc_screenshot(
         logger.debug("Websocket connected, creating adapter...")
         adapter = WebSocketStreamAdapter(ws)
         logger.debug("Creating asyncvnc Client...")
-        client = await asyncvnc.Client.create(
-            reader=adapter, writer=adapter, password=password
-        )
+        client = await asyncvnc.Client.create(reader=adapter, writer=adapter, password=password)
 
         logger.info(f"Connected. Screen: {client.video.width}x{client.video.height}")
         logger.debug("Taking screenshot...")
@@ -163,23 +154,12 @@ app = typer.Typer(help="Hetzner VNC console screenshot tool")
 
 @app.command()
 def main(
-    server: Annotated[
-        str | None, typer.Argument(help="Server name (requires HCLOUD_TOKEN env var)")
-    ] = None,
-    url: Annotated[
-        str | None,
-        typer.Option(help="WebSocket URL (from 'hcloud server request-console')"),
-    ] = None,
+    server: Annotated[str | None, typer.Argument(help="Server name (requires HCLOUD_TOKEN env var)")] = None,
+    url: Annotated[str | None, typer.Option(help="WebSocket URL (from 'hcloud server request-console')")] = None,
     password: Annotated[str | None, typer.Option(help="VNC password")] = None,
-    token: Annotated[
-        str | None, typer.Option(help="Hetzner API token (default: HCLOUD_TOKEN env)")
-    ] = None,
-    output: Annotated[Path, typer.Option(help="Output image path")] = Path(
-        "screenshot.png"
-    ),
-    verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Enable debug logging")
-    ] = False,
+    token: Annotated[str | None, typer.Option(help="Hetzner API token (default: HCLOUD_TOKEN env)")] = None,
+    output: Annotated[Path, typer.Option(help="Output image path")] = Path("screenshot.png"),
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable debug logging")] = False,
 ):
     """Capture a screenshot from Hetzner Cloud VNC console.
 
@@ -194,18 +174,14 @@ def main(
 
     if server:
         if url or password:
-            raise typer.BadParameter(
-                "Cannot use --url/--password with server name argument"
-            )
+            raise typer.BadParameter("Cannot use --url/--password with server name argument")
         logger.info(f"Fetching console credentials for server '{server}'...")
         wss_url, vnc_password = request_console_credentials(server, token)
         logger.info("Got console credentials")
     elif url and password:
         wss_url, vnc_password = url, password
     else:
-        raise typer.BadParameter(
-            "Provide either server name or both --url and --password"
-        )
+        raise typer.BadParameter("Provide either server name or both --url and --password")
 
     asyncio.run(vnc_screenshot(wss_url, vnc_password, str(output)))
 

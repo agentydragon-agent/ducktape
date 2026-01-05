@@ -162,14 +162,17 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 <Concrete list of what was done, with file:line references>
 
 ### Key Changes
+
 - File: `path/to/file.py`
   - Function `foo()` at line 123: <brief description>
   - Pattern at lines 200-210: <brief description>
 
 ### Commands Run
+
 <Notable commands with their outcomes>
 
 ### References
+
 - <URL with description>
 - <Commit SHA with context>
 - <Function name with file:line>
@@ -179,6 +182,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 **CRITICAL - What's NOT Done Yet:**
 
 ### Actual Discussed Items (High Priority)
+
 <Things explicitly mentioned in conversation that weren't completed>
 
 1. **<Clear description>**
@@ -187,6 +191,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
    - Next step: <concrete action>
 
 ### Potential Next Actions (Lower Priority)
+
 <Logical extensions or speculative improvements>
 
 - <Item 1>

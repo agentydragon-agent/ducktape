@@ -160,9 +160,9 @@ a. **Run test suite**
 
 - Verify new tests pass and no regressions
 
-   ```bash
-   pytest tests/test_feature.py -v
-   ```
+  ```bash
+  pytest tests/test_feature.py -v
+  ```
 
 b. **Remove unused helper functions**
 
@@ -199,6 +199,7 @@ y. Consider adding retry logic for network calls
 z. Update CONTRIBUTING.md with new testing patterns
 
 ---
+
 **Quick actions:**
 
 - Type `1` or `2` to execute DO NOW items

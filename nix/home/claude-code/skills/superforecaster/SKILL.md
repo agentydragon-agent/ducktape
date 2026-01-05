@@ -140,12 +140,12 @@ Questions have overlapping attributes. Mix and match these heuristics based on w
 
 Map questions to searchable topics:
 
-| Question | Related Searchable Topics |
-|----------|---------------------------|
-| "How much will groceries cost?" | "USA inflation 2026", "food price index forecast", "grocery CPI" |
-| "Will my visa get approved?" | "[visa type] approval rate [year]", "[country] visa processing statistics" |
-| "When will project finish?" | "software project delay statistics", "[similar project type] timeline" |
-| "Will startup X succeed?" | "startup success rate by stage", "YC company outcomes", "[sector] startup survival" |
+| Question                        | Related Searchable Topics                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| "How much will groceries cost?" | "USA inflation 2026", "food price index forecast", "grocery CPI"                    |
+| "Will my visa get approved?"    | "[visa type] approval rate [year]", "[country] visa processing statistics"          |
+| "When will project finish?"     | "software project delay statistics", "[similar project type] timeline"              |
+| "Will startup X succeed?"       | "startup success rate by stage", "YC company outcomes", "[sector] startup survival" |
 
 **Search expansion rules**:
 
@@ -158,13 +158,13 @@ Map questions to searchable topics:
 
 ### Major Markets
 
-| Market | URL | Best For | Notes |
-|--------|-----|----------|-------|
-| Polymarket | polymarket.com | Crypto, politics, current events | Largest volume, real money |
-| Metaculus | metaculus.com | Science, tech, long-term | High-quality forecasters, detailed rationales |
-| Manifold | manifold.markets | Wide variety, niche topics | Easy to find obscure questions |
-| PredictIt | predictit.org | US politics | Legal US market, capped stakes |
-| Kalshi | kalshi.com | Economics, events | CFTC-regulated |
+| Market     | URL              | Best For                         | Notes                                         |
+| ---------- | ---------------- | -------------------------------- | --------------------------------------------- |
+| Polymarket | polymarket.com   | Crypto, politics, current events | Largest volume, real money                    |
+| Metaculus  | metaculus.com    | Science, tech, long-term         | High-quality forecasters, detailed rationales |
+| Manifold   | manifold.markets | Wide variety, niche topics       | Easy to find obscure questions                |
+| PredictIt  | predictit.org    | US politics                      | Legal US market, capped stakes                |
+| Kalshi     | kalshi.com       | Economics, events                | CFTC-regulated                                |
 
 **Search patterns**:
 
@@ -369,15 +369,15 @@ Combined tail risk (some overlap): ~25-30%
 
 ## Calibration Reference
 
-| Probability | Verbal | Interpretation |
-|-------------|--------|----------------|
-| 1-5% | Almost certainly not | Would be very surprised |
-| 10-20% | Unlikely | Possible but not expected |
-| 30-40% | Probably not | Lean against |
-| 45-55% | Toss-up | Genuinely uncertain |
-| 60-70% | Probably | Lean toward |
-| 80-90% | Likely | Expected outcome |
-| 95-99% | Almost certain | Would be very surprised if not |
+| Probability | Verbal               | Interpretation                 |
+| ----------- | -------------------- | ------------------------------ |
+| 1-5%        | Almost certainly not | Would be very surprised        |
+| 10-20%      | Unlikely             | Possible but not expected      |
+| 30-40%      | Probably not         | Lean against                   |
+| 45-55%      | Toss-up              | Genuinely uncertain            |
+| 60-70%      | Probably             | Lean toward                    |
+| 80-90%      | Likely               | Expected outcome               |
+| 95-99%      | Almost certain       | Would be very surprised if not |
 
 **Common biases to counter**:
 
