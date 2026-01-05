@@ -99,13 +99,7 @@ class PaperTable {
         });
       }
     });
-    const rowElement = $("<tr>").append(
-      paperCell,
-      arxivLinkageCell,
-      priorityCell,
-      priorityDateCell,
-      topicsCell
-    );
+    const rowElement = $("<tr>").append(paperCell, arxivLinkageCell, priorityCell, priorityDateCell, topicsCell);
     return rowElement;
   }
 

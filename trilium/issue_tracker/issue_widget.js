@@ -97,9 +97,7 @@ Existing hotlists:
     openaiPrompt +=
       "\nSuggest hotlists for this issue. Prefer suggesting hotlists that I already have, but if it makes sense, you may also suggest a new hotlist.\n";
     openaiPrompt +=
-      "Format the suggestion as a JSON array like this: " +
-      '["Hotlist name 1","Hotlist name 2",...].\n' +
-      "-----\n";
+      "Format the suggestion as a JSON array like this: " + '["Hotlist name 1","Hotlist name 2",...].\n' + "-----\n";
     return openaiPrompt;
   }
 
@@ -134,9 +132,7 @@ Existing hotlists:
       const hotlistNote = await api.getNote(hotlistRelation.value);
       if (hotlistNote) {
         const listItem = $("<li></li>");
-        listItem.append(
-          await api.createNoteLink(hotlistNote.noteId, { showTooltip: true, showNoteIcon: true })
-        );
+        listItem.append(await api.createNoteLink(hotlistNote.noteId, { showTooltip: true, showNoteIcon: true }));
         this.$hotlists.append(listItem);
       }
     }
@@ -246,9 +242,7 @@ Existing hotlists:
       loadResults.isNoteContentReloaded(this.noteId) ||
       loadResults
         .getAttributes()
-        .find(
-          (attr) => attr.type === "relation" && (attr.name === "state" || attr.name == "hotlist")
-        )
+        .find((attr) => attr.type === "relation" && (attr.name === "state" || attr.name == "hotlist"))
     ) {
       this.refresh();
     }

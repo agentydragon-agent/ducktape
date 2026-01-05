@@ -73,18 +73,14 @@ class IssueTable {
       if (this.hotlistIncludeIds.length > 1) {
         searchString += "(";
       }
-      searchString += this.hotlistIncludeIds
-        .map((hotlistId) => "~hotlist.noteId=" + hotlistId)
-        .join(" OR ");
+      searchString += this.hotlistIncludeIds.map((hotlistId) => "~hotlist.noteId=" + hotlistId).join(" OR ");
       if (this.hotlistIncludeIds.length > 1) {
         searchString += ")";
       }
     }
     if (this.hotlistExcludeIds.length > 0) {
       searchString += " AND NOT (";
-      searchString += this.hotlistExcludeIds
-        .map((hotlistId) => "~hotlist.noteId=" + hotlistId)
-        .join(" OR ");
+      searchString += this.hotlistExcludeIds.map((hotlistId) => "~hotlist.noteId=" + hotlistId).join(" OR ");
       searchString += ")";
     }
     console.log("search string", searchString);

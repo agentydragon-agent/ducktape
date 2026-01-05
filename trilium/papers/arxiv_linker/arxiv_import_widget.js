@@ -142,9 +142,7 @@ class ArxivWidget extends api.CollapsibleWidget {
         )
       );
     });
-    this.$message.append(
-      "<br>Confirm to create a new note anyway: " + '<button id="arxiv-confirm">Confirm</button>'
-    );
+    this.$message.append("<br>Confirm to create a new note anyway: " + '<button id="arxiv-confirm">Confirm</button>');
     this.$body.find("#arxiv-confirm").on("click", async () => {
       // create the note as usual
       let newNote = await this.addNoteToBackend(title, paperId);
@@ -154,30 +152,19 @@ class ArxivWidget extends api.CollapsibleWidget {
 
   async showNewPaperMessage(newNote) {
     this.$message.text("Paper added as: ");
-    this.$message.append(
-      await api.createNoteLink(newNote.noteId, { showTooltip: true, showNoteIcon: true })
-    );
+    this.$message.append(await api.createNoteLink(newNote.noteId, { showTooltip: true, showNoteIcon: true }));
   }
 
   async addNoteToBackend(title, paperId) {
     const papersRoot = await this.getPapersRootNoteId();
     // Will run on backend
     const backendFn = (papersRootNoteId, title, paperId, paperTemplateNoteId) => {
-      const newNote = api.createTextNote(
-        papersRootNoteId,
-        title,
-        "auto-created for paper ID " + paperId
-      ).note;
+      const newNote = api.createTextNote(papersRootNoteId, title, "auto-created for paper ID " + paperId).note;
       newNote.addRelation("template", paperTemplateNoteId);
       newNote.addLabel("arxivId", paperId);
       return newNote;
     };
-    const newNote = await api.runOnBackend(backendFn, [
-      papersRoot.noteId,
-      title,
-      paperId,
-      PAPER_TEMPLATE_NOTE_ID,
-    ]);
+    const newNote = await api.runOnBackend(backendFn, [papersRoot.noteId, title, paperId, PAPER_TEMPLATE_NOTE_ID]);
     return newNote;
   }
 
