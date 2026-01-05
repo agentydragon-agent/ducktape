@@ -2,7 +2,7 @@
 
 - Policy tightening (when ready):
   - Restrict network-outbound to loopback or specific ports (Jupyter server)
-  - Make reads explicit-only (done: removed global file-read\*) and tighten test fixtures to allow_read_all: false with minimal read_paths
+  - Make reads explicit-only (done: removed global file-read*) and tighten test fixtures to allow_read_all: false with minimal read_paths
   - Reduce remaining allowances (mach-lookup/system-socket) if not required by kernel
   - Remove `/dev/tty` write if not needed
 - WORKSPACE and RUN_ROOT semantics:
@@ -17,7 +17,7 @@ Concept: run sandboxed Jupyter MCP servers as a per-worktree background service 
 
 Sketch:
 
-- `wt` allocates a JP*PORT and per-worktree JUPYTER*\* dirs under `.wt/state/jupyter/`
+- `wt` allocates a `JP_PORT` and per-worktree `JUPYTER_*` dirs under `.wt/state/jupyter/`
 - Starts `sandbox-jupyter --workspace <root> --mode seatbelt --jupyter-port $PORT` with inherited env
 - Exposes an mcpServers block or a small shim to register with clients
 - Lifecycle: `wt up` / `wt down` manage the server

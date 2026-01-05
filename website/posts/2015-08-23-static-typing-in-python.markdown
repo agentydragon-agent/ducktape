@@ -30,18 +30,19 @@ something like this:
 from typing import Any, List, NamedTuple
 
 Account = NamedTuple('Account', [('name', str), ('balance', int),
-('notes', List[Any]])
+     ('notes', List[Any]])
 
-def apply_promotion(amount, accounts, *notes): # type: (int, Iterable[Account],*Any) -> bool # Previous line declares function argument types and return type.
+def apply_promotion(amount, accounts, *notes):
+    # type: (int, Iterable[Account],*Any) -> bool
+    # Previous line declares function argument types and return type.
 
     for account in accounts:
         account.balance += amount
-
-account.notes.extend(notes)
+ account.notes.extend(notes)
 
     return len(accounts) > 0
 
-````
+```
 
 <div>Python 2 with type annotations (please excuse the contrived example)</div>
 </figure>
@@ -65,7 +66,7 @@ Account = NamedTuple('Account', [('name', str), ('balance', int),
 
 def apply_promotion(amount: int, accounts: Iterable[Account],
                     *notes: Any) -> bool: ...
-````
+```
 
 <div>The `.pyi` for the example above. Note the `...` replacing the method body.</div>
 </figure>
