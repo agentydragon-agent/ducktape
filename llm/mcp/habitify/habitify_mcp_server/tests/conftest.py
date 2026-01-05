@@ -51,8 +51,8 @@ def mock_async_response(load_reference_data):
         mock_resp.headers = ref_data.response.headers
 
         # Set response content
-        if ref_data.response.json is not None:
-            mock_resp.json.return_value = ref_data.response.json
+        if ref_data.response.json_data is not None:
+            mock_resp.json.return_value = ref_data.response.json_data
         elif ref_data.response.text is not None:
             mock_resp.text = ref_data.response.text
             mock_resp.json.side_effect = json.JSONDecodeError("", "", 0)

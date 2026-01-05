@@ -19,7 +19,7 @@ class ResponseData(BaseModel):
 
     status_code: int = 200
     headers: dict[str, str] = {}
-    json: dict[str, Any] | None = None
+    json_data: dict[str, Any] | None = None
     text: str | None = None
 
 

@@ -63,17 +63,17 @@ Make sure to include the `%%tana%%` at the top.
 
 ### Not supported
 
-* Inline code (either with backticks or with `<code>` tags).
+- Inline code (either with backticks or with `<code>` tags).
 
 ### Tables
 
 You may render a node as a table by appending `%%view:table%%` to the
-end of the text of the *root node* of the table.
-This "annotation" belongs *only* at the end of the node's own text - it does not
+end of the text of the _root node_ of the table.
+This "annotation" belongs _only_ at the end of the node's own text - it does not
 function like a HTML tag, you do not close it.
 
 Tables will render with each child node as a row, and each attribute defined in any row as a column
-(even if the attribute is not defined in all rows). Child nodes of rows that are *not* attributes
+(even if the attribute is not defined in all rows). Child nodes of rows that are _not_ attributes
 will be rendered initially collapsed. Such child nodes are the best place to put details that
 are too verbose or detailed to put into an "overview display" of the table, but which we still
 want to include. Tana has easy affordances for expanding and collapsing them.
@@ -98,8 +98,8 @@ For example:
 
 This will initially render approximately like this:
 
-|   Name           | Price   | Color | Year |
-|------------------|---------|-------|------|
+| Name             | Price   | Color | Year |
+| ---------------- | ------- | ----- | ---- |
 | + Toyota Corolla | $20,000 | Red   | 2022 |
 | + Honda Civic    | $22,000 | Blue  | 2021 |
 
@@ -140,14 +140,14 @@ Attributes may also contain nested content, like this:
 Such nested content also has easy collapse/expand affordances. One good use of that is to include optional detail.
 (Nested content is also allowed in attributes outside of tables.)
 
-To enable you to create appropriate columns, you *are* allowed to make up appropriate new attributes
+To enable you to create appropriate columns, you _are_ allowed to make up appropriate new attributes
 for tables. But this still does NOT involve using any new supertags.
 
 #### Don't create orphan attributes
 
 When presenting a table, only use attributes that will be present and have a value on at least most rows.
-DO NOT define one-off attributes that are only present on one row. Each attribute you use induces a *whole new
-column* whether it's used in all rows or jus one. If you create a table with a lot of one-off attributes, the
+DO NOT define one-off attributes that are only present on one row. Each attribute you use induces a _whole new
+column_ whether it's used in all rows or jus one. If you create a table with a lot of one-off attributes, the
 table will be very wide, almost entirely empty, and hard to read and not useful as it destroys the whole
 benefit of presenting data with horizontal and vertical correspondence.
 
@@ -182,20 +182,20 @@ For example, this is BAD:
 
 Because it would render roughly like this:
 
-|   Name            | Price     | Color | Miles/gallon | Autopilot | Steering wheel | Scenic | Calories burned  | Honk sound      | Bicycle day vibes | Legal status |
-|-------------------|-----------|-------|--------------|-----------|----------------|--------|------------------|-----------------|-------------------|--------------|
-| + Toyota Corolla  | $20,000   | Red   | 30           |           |                |        |                  |                 |                   |              |
-| + Tesla Model S   | $100,000  | Silver|              | Yes       | No             |        |                  |                 |                   |              |
-| + Walking         | Free      |       |              |           |                | Yes    | 200              |                 |                   |              |
-| + Bicycle         | $500      | Blue  |              |           |                |        | 100              | Cathartic       | Confirmed         |              |
-| + Teleportation   | Priceless |       |              |           |                |        |                  |                 |                   | Questionable |
+| Name             | Price     | Color  | Miles/gallon | Autopilot | Steering wheel | Scenic | Calories burned | Honk sound | Bicycle day vibes | Legal status |
+| ---------------- | --------- | ------ | ------------ | --------- | -------------- | ------ | --------------- | ---------- | ----------------- | ------------ |
+| + Toyota Corolla | $20,000   | Red    | 30           |           |                |        |                 |            |                   |              |
+| + Tesla Model S  | $100,000  | Silver |              | Yes       | No             |        |                 |            |                   |              |
+| + Walking        | Free      |        |              |           |                | Yes    | 200             |            |                   |              |
+| + Bicycle        | $500      | Blue   |              |           |                |        | 100             | Cathartic  | Confirmed         |              |
+| + Teleportation  | Priceless |        |              |           |                |        |                 |            |                   | Questionable |
 
-*Some* possible options to fix this include:
+_Some_ possible options to fix this include:
 
-* Placing content that is particular to only a couple rows/free-text *and* should be visible in the table
+- Placing content that is particular to only a couple rows/free-text _and_ should be visible in the table
   without opening disclosure widgets (e.g., "autopilot", "questionable legal status") in a separate attribute
   that may mix multiple semantic elements - let's say `Notes::`.
-* Or for context that's fine to put under a disclosure widget, just use non-attribute child nodes
+- Or for context that's fine to put under a disclosure widget, just use non-attribute child nodes
   of the row.
 
 For example, this is BETTER:

@@ -1,22 +1,25 @@
 """Habitify MCP Server implementation."""
 
-from typing import Any
+from typing import Literal
 
 from mcp.server.fastmcp import Context, FastMCP
 
 from . import tools
 from .context import make_lifespan
 from .habitify_client import HabitifyClient
-from .types import Status
+from .types import DateRangeStatusResult, HabitResult, HabitsResult, LogResult, Status, StatusResult
 
 
 def create_habitify_mcp_server(
-    debug: bool = False, log_level: str = "INFO", api_key: str | None = None, port: int = 3000
+    debug: bool = False,
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO",
+    api_key: str | None = None,
+    port: int = 3000,
 ) -> FastMCP:
     """Create and configure a Habitify MCP server."""
     server = FastMCP(
         "Habitify",
-        description="Habitify API for habit tracking through Model Context Protocol",
+        instructions="Habitify API for habit tracking through Model Context Protocol",
         dependencies=["httpx", "python-dotenv"],
         debug=debug,
         log_level=log_level,
@@ -29,11 +32,11 @@ def create_habitify_mcp_server(
         return ctx.request_context.lifespan_context
 
     @server.tool()
-    async def get_habits(ctx: Context, include_archived: bool = False) -> dict[str, Any]:
+    async def get_habits(ctx: Context, include_archived: bool = False) -> HabitsResult:
         return await tools.get_habits(get_client(ctx), include_archived=include_archived)
 
     @server.tool()
-    async def get_habit(ctx: Context, id: str | None = None, name: str | None = None) -> dict[str, Any]:
+    async def get_habit(ctx: Context, id: str | None = None, name: str | None = None) -> HabitResult:
         return await tools.get_habit(get_client(ctx), id=id, name=name)
 
     @server.tool()
@@ -45,7 +48,7 @@ def create_habitify_mcp_server(
         start_date: str | None = None,
         end_date: str | None = None,
         days: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> StatusResult | DateRangeStatusResult:
         """Get habit status for single date or date range.
 
         Single date: use 'date' (YYYY-MM-DD, defaults to today)
@@ -69,7 +72,7 @@ def create_habitify_mcp_server(
         date: str | None = None,
         note: str | None = None,
         value: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> LogResult:
         return await tools.set_habit_status(
             get_client(ctx), id=id, name=name, status=status, date=date, note=note, value=value
         )
