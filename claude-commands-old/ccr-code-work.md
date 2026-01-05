@@ -31,46 +31,58 @@ Use the GitHub MCP tools to inspect the underlying server implementation used by
 
 Suggested sequence (copy/paste these MCP calls):
 
-1) Locate the repo (optional)
+1. Locate the repo (optional)
 
-- mcp__github__search_code
-  - query: filename:package.json "name": "@musistudio/llms"
-  - perPage: 50
+```
+mcp__github__search_code
+  query: filename:package.json "name": "@musistudio/llms"
+  perPage: 50
+```
 
-2) Read package metadata (confirm entry points/exports)
+2. Read package metadata (confirm entry points/exports)
 
-- mcp__github__get_file_contents
-  - owner: musistudio
-  - repo: llms
-  - path: package.json
+```
+mcp__github__get_file_contents
+  owner: musistudio
+  repo: llms
+  path: package.json
+```
 
-3) List repository root (see src/, scripts/)
+3. List repository root (see src/, scripts/)
 
-- mcp__github__get_file_contents
-  - owner: musistudio
-  - repo: llms
-  - path: "/"
+```
+mcp__github__get_file_contents
+  owner: musistudio
+  repo: llms
+  path: "/"
+```
 
-4) List main sources directory
+4. List main sources directory
 
-- mcp__github__get_file_contents
-  - owner: musistudio
-  - repo: llms
-  - path: "/src/"
+```
+mcp__github__get_file_contents
+  owner: musistudio
+  repo: llms
+  path: "/src/"
+```
 
-5) Read the server bootstrap (primary entry for Fastify server)
+5. Read the server bootstrap (primary entry for Fastify server)
 
-- mcp__github__get_file_contents
-  - owner: musistudio
-  - repo: llms
-  - path: "src/server.ts"
+```
+mcp__github__get_file_contents
+  owner: musistudio
+  repo: llms
+  path: "src/server.ts"
+```
 
-6) (Optional) Drill into key subpaths
+6. (Optional) Drill into key subpaths
 
-- mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/api" }
-- mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/services" }
-- mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/transformer" }
-- mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/utils" }
+```
+mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/api" }
+mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/services" }
+mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/transformer" }
+mcp__github__get_file_contents { owner: musistudio, repo: llms, path: "src/utils" }
+```
 
 Main paths to review in @musistudio/llms:
 

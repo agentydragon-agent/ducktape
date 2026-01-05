@@ -144,23 +144,23 @@ pip install -e ".[dev]"
 Add these to `.pre-commit-config.yaml`:
 
 ```yaml
-  - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.5
-    hooks:
-      - id: docformatter
-        args: [--in-place]
+- repo: https://github.com/PyCQA/docformatter
+  rev: v1.7.5
+  hooks:
+    - id: docformatter
+      args: [--in-place]
 
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        args: ["--profile", "black"]
+- repo: https://github.com/pycqa/isort
+  rev: 5.13.2
+  hooks:
+    - id: isort
+      args: ["--profile", "black"]
 
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.15.0
-    hooks:
-      - id: pyupgrade
-        args: [--py311-plus]
+- repo: https://github.com/asottile/pyupgrade
+  rev: v3.15.0
+  hooks:
+    - id: pyupgrade
+      args: [--py311-plus]
 ```
 
 [END PYTHON SECTION - DELETE ABOVE IF NOT USING PYTHON]

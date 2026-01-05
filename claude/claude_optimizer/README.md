@@ -41,13 +41,13 @@ python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 3 --rollou
 
 ### Command Line Options
 
-| Flag | Description | Default | Example |
-|------|-------------|---------|---------|
-| `--iterations` | Number of optimization iterations | 10 | `--iterations 15` |
-| `--rollouts-per-task` | Agent rollouts per task | 1 | `--rollouts-per-task 4` |
-| `--tasks-per-iteration` | Random tasks per iteration (with replacement) | All tasks | `--tasks-per-iteration 10` |
-| `--max-parallel` | Maximum concurrent rollouts | 8 | `--max-parallel 16` |
-| `--mode` | Processing mode: `full_rollouts` or `summary` | `full_rollouts` | `--mode summary` |
+| Flag                    | Description                                   | Default         | Example                    |
+| ----------------------- | --------------------------------------------- | --------------- | -------------------------- |
+| `--iterations`          | Number of optimization iterations             | 10              | `--iterations 15`          |
+| `--rollouts-per-task`   | Agent rollouts per task                       | 1               | `--rollouts-per-task 4`    |
+| `--tasks-per-iteration` | Random tasks per iteration (with replacement) | All tasks       | `--tasks-per-iteration 10` |
+| `--max-parallel`        | Maximum concurrent rollouts                   | 8               | `--max-parallel 16`        |
+| `--mode`                | Processing mode: `full_rollouts` or `summary` | `full_rollouts` | `--mode summary`           |
 
 ## Architecture
 

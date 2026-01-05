@@ -582,13 +582,13 @@ While the default policy DOES use some server class constants (UI server tool na
 
 ## Summary Table
 
-| Context | Server Instances Available? | Need Constants? | Refactoring Difficulty | Value |
-|---------|---------------------------|-----------------|----------------------|-------|
-| **Test Fixtures** | ✅ Yes (can reorder code!) | ❌ **No!** | Medium | High |
-| **Bootstrap Handlers** | ✅ Yes (servers mounted first!) | ❌ **No!** | Easy | High |
-| **Prompt Templates** | ✅ Yes (rendered in async!) | ❌ **No!** | Easy | High |
-| **Step Classes** | ✅ Yes (can reorder code!) | ❌ **No!** | Medium | High |
-| **Policy Evaluation** | ❌ No (Docker isolation) | ✅ **Yes** | Impossible | N/A |
+| Context                | Server Instances Available?     | Need Constants? | Refactoring Difficulty | Value |
+| ---------------------- | ------------------------------- | --------------- | ---------------------- | ----- |
+| **Test Fixtures**      | ✅ Yes (can reorder code!)      | ❌ **No!**      | Medium                 | High  |
+| **Bootstrap Handlers** | ✅ Yes (servers mounted first!) | ❌ **No!**      | Easy                   | High  |
+| **Prompt Templates**   | ✅ Yes (rendered in async!)     | ❌ **No!**      | Easy                   | High  |
+| **Step Classes**       | ✅ Yes (can reorder code!)      | ❌ **No!**      | Medium                 | High  |
+| **Policy Evaluation**  | ❌ No (Docker isolation)        | ✅ **Yes**      | Impossible             | N/A   |
 
 ---
 

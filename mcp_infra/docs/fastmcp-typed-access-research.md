@@ -711,49 +711,49 @@ def test_greeter_tool():
 
 ### Pattern A: Server Subclasses
 
-| Aspect | Score | Notes |
-|--------|-------|-------|
-| **Mypy compatibility** | ⭐⭐⭐⭐⭐ | Perfect - no type: ignore needed |
-| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | Works seamlessly with existing patterns |
-| **Boilerplate** | ⭐⭐⭐ | Requires subclass per server |
-| **Refactoring support** | ⭐⭐⭐⭐⭐ | Excellent - rename propagates automatically |
-| **IDE support** | ⭐⭐⭐⭐⭐ | Perfect autocomplete and go-to-definition |
+| Aspect                    | Score      | Notes                                       |
+| ------------------------- | ---------- | ------------------------------------------- |
+| **Mypy compatibility**    | ⭐⭐⭐⭐⭐ | Perfect - no type: ignore needed            |
+| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | Works seamlessly with existing patterns     |
+| **Boilerplate**           | ⭐⭐⭐     | Requires subclass per server                |
+| **Refactoring support**   | ⭐⭐⭐⭐⭐ | Excellent - rename propagates automatically |
+| **IDE support**           | ⭐⭐⭐⭐⭐ | Perfect autocomplete and go-to-definition   |
 
 **Recommendation:** ✅ **Adopt** - Best pattern for typed tool access
 
 ### Pattern B: Tool Registry
 
-| Aspect | Score | Notes |
-|--------|-------|-------|
-| **Mypy compatibility** | ⭐⭐⭐⭐⭐ | Clean typed dataclasses |
-| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | Orthogonal to FastMCP internals |
-| **Boilerplate** | ⭐⭐⭐⭐ | Minimal - just dataclass + factory |
-| **Refactoring support** | ⭐⭐⭐⭐ | Good but requires tracking two objects |
-| **IDE support** | ⭐⭐⭐⭐ | Good for registry access |
+| Aspect                    | Score      | Notes                                  |
+| ------------------------- | ---------- | -------------------------------------- |
+| **Mypy compatibility**    | ⭐⭐⭐⭐⭐ | Clean typed dataclasses                |
+| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | Orthogonal to FastMCP internals        |
+| **Boilerplate**           | ⭐⭐⭐⭐   | Minimal - just dataclass + factory     |
+| **Refactoring support**   | ⭐⭐⭐⭐   | Good but requires tracking two objects |
+| **IDE support**           | ⭐⭐⭐⭐   | Good for registry access               |
 
 **Recommendation:** ⚠️ **Optional** - Use if subclassing is undesirable, but Pattern A is preferred
 
 ### Pattern C: Resource URI Constants
 
-| Aspect | Score | Notes |
-|--------|-------|-------|
-| **Mypy compatibility** | ⭐⭐⭐⭐⭐ | Simple class constants |
-| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | No conflicts |
-| **Boilerplate** | ⭐⭐⭐⭐⭐ | Minimal - just class variables |
-| **Refactoring support** | ⭐⭐⭐⭐ | Good - centralized URIs |
-| **IDE support** | ⭐⭐⭐⭐⭐ | Excellent |
+| Aspect                    | Score      | Notes                          |
+| ------------------------- | ---------- | ------------------------------ |
+| **Mypy compatibility**    | ⭐⭐⭐⭐⭐ | Simple class constants         |
+| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | No conflicts                   |
+| **Boilerplate**           | ⭐⭐⭐⭐⭐ | Minimal - just class variables |
+| **Refactoring support**   | ⭐⭐⭐⭐   | Good - centralized URIs        |
+| **IDE support**           | ⭐⭐⭐⭐⭐ | Excellent                      |
 
 **Recommendation:** ✅ **Adopt** - Simple and effective for resource URIs
 
 ### Pattern D: Compositor Recipes
 
-| Aspect | Score | Notes |
-|--------|-------|-------|
-| **Mypy compatibility** | ⭐⭐⭐⭐⭐ | Clean typed dataclasses |
-| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | Sits above FastMCP layer |
-| **Boilerplate** | ⭐⭐⭐ | Requires recipe classes |
-| **Refactoring support** | ⭐⭐⭐⭐⭐ | Excellent - single source of truth |
-| **IDE support** | ⭐⭐⭐⭐⭐ | Perfect |
+| Aspect                    | Score      | Notes                              |
+| ------------------------- | ---------- | ---------------------------------- |
+| **Mypy compatibility**    | ⭐⭐⭐⭐⭐ | Clean typed dataclasses            |
+| **FastMCP compatibility** | ⭐⭐⭐⭐⭐ | Sits above FastMCP layer           |
+| **Boilerplate**           | ⭐⭐⭐     | Requires recipe classes            |
+| **Refactoring support**   | ⭐⭐⭐⭐⭐ | Excellent - single source of truth |
+| **IDE support**           | ⭐⭐⭐⭐⭐ | Perfect                            |
 
 **Recommendation:** ✅ **Adopt** - Essential for eliminating constant grab-bags
 

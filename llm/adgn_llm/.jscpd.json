@@ -2,9 +2,7 @@
   "reporters": ["console"],
   "threshold": 2,
   "minLines": 10,
-  "path": [
-    "src"
-  ],
+  "path": ["src"],
   "ignore": [
     "**/tests/**",
     "**/logs/**",

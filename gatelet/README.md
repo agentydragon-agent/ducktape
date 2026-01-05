@@ -11,7 +11,7 @@ Service that lets LLMs access real-time and historical information relevant to t
    - Offers multiple authentication methods
    - Includes admin interface for humans
 
-2. **Reporter** - Single Python program ``gatelet-reporter`` that:
+2. **Reporter** - Single Python program `gatelet-reporter` that:
    - Sends events to the server
    - Can run as a long-running daemon for tasks like battery reporting
    - Intended to be installed on laptops and other devices
@@ -88,7 +88,7 @@ cp gatelet.example.toml gatelet.toml
 export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet
 ```
 
-Edit ``gatelet.toml`` and set ``home_assistant.api_url`` to your Home Assistant
+Edit `gatelet.toml` and set `home_assistant.api_url` to your Home Assistant
 instance. Admin pages will link back to this URL.
 
 4. Initialize the database and start the server:
@@ -214,20 +214,20 @@ Gatelet supports multiple authentication methods:
 
 The project is implemented in phases:
 
-1. **Phase 1** – Webhooks with Key‑in‑Path Authentication *(completed)*
+1. **Phase 1** – Webhooks with Key‑in‑Path Authentication _(completed)_
    - Basic FastAPI server and PostgreSQL schema
    - Webhook receiving and storage
    - Key‑in‑path authentication
 
-2. **Phase 2** – Challenge‑Response Authentication *(completed)*
+2. **Phase 2** – Challenge‑Response Authentication _(completed)_
    - Nonce‑based login flow for LLMs
    - Session management with automatic extension
 
-3. **Phase 3** – Home Assistant Integration *(in progress)*
+3. **Phase 3** – Home Assistant Integration _(in progress)_
    - Basic entity state listing implemented
    - Historical and trend views pending
 
-4. **Phase 4** – Human Admin Interface *(in progress)*
+4. **Phase 4** – Human Admin Interface _(in progress)_
    - Password‑based admin login implemented
    - Key management pages available
    - Session management implemented

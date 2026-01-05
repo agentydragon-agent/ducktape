@@ -22,8 +22,7 @@
     {% endif %} {% if decrypt_link %}
     <p><strong>Encrypted output.</strong></p>
 
-    Data is encrypted with a Fernet key (32 base64-encoded bytes) which you
-    should have:
+    Data is encrypted with a Fernet key (32 base64-encoded bytes) which you should have:
     <pre>
 KEY: str = ...
 assert len(KEY) == 44

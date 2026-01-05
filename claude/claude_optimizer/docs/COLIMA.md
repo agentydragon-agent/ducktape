@@ -1,6 +1,6 @@
 # Colima Filesystem Constraints for Docker Bind Mounts
 
-**⚠️  CRITICAL WARNING for macOS Users Running Docker via Colima**
+**⚠️ CRITICAL WARNING for macOS Users Running Docker via Colima**
 
 ## The Problem
 

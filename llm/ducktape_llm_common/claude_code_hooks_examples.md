@@ -1,13 +1,17 @@
+# Claude Code Hook Examples
+
+## Common Fields
+
+```json
 {
-  // Common fields
-  session_id: string
-  transcript_path: string  // Path to conversation JSON
-
-  // Event-specific fields
-  ...
+  "session_id": "string",
+  "transcript_path": "string"
 }
+```
 
-PreToolUse input
+## PreToolUse Input
+
+```json
 {
   "tool_name": "Write",
   "tool_input": {
@@ -15,10 +19,12 @@ PreToolUse input
     "content": "file content"
   }
 }
+```
 
-PostToolUse iput
+## PostToolUse Input
+
+```json
 {
-  ...
   "tool_name": "Write",
   "tool_input": {
     "file_path": "/path/to/file.txt",
@@ -29,24 +35,39 @@ PostToolUse iput
     "success": true
   }
 }
+```
 
-notificatn input:
+## Notification Input
+
+```json
 {
-  ...
   "message": "Task completed successfully",
   "title": "Claude Code"
 }
+```
 
-continuing from stop hook:
+## Continuing from Stop Hook
+
+```json
 {
   "stop_hook_active": true
 }
+```
 
-Stop --> Blocks stoppage, shows error to Claude
+## Stop Hook
 
-common JSON stdout:
+Blocks stoppage, shows error to Claude.
+
+## Common JSON Stdout
+
+```json
 {
-  "continue": true, // Whether Claude should continue after hook execution (default: true)
-  "stopReason": "string" // Message shown when continue is false
-  "suppressOutput": true, // Hide stdout from transcript mode (default: false)
+  "continue": true,
+  "stopReason": "string",
+  "suppressOutput": true
 }
+```
+
+- `continue`: Whether Claude should continue after hook execution (default: true)
+- `stopReason`: Message shown when continue is false
+- `suppressOutput`: Hide stdout from transcript mode (default: false)

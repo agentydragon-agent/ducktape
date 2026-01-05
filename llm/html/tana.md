@@ -229,13 +229,13 @@ For example, this is BETTER:
 
 This will render like this:
 
-|   Name            | Price     | Color  | Notes                        |
-|-------------------|-----------|--------|------------------------------|
-| + Toyota Corolla  | $20,000   | Red    | 30 miles/gallon              |
-| + Tesla Model S   | $100,000  | Silver | Autopilot; no steering wheel |
-| + Walking         | Free      |        | Burns 200 kcal               |
-| + Bicycle         | $500      | Blue   |                              |
-| + Teleportation   | Priceless |        | ⚠️ Legal status questionable |
+| Name             | Price     | Color  | Notes                        |
+| ---------------- | --------- | ------ | ---------------------------- |
+| + Toyota Corolla | $20,000   | Red    | 30 miles/gallon              |
+| + Tesla Model S  | $100,000  | Silver | Autopilot; no steering wheel |
+| + Walking        | Free      |        | Burns 200 kcal               |
+| + Bicycle        | $500      | Blue   |                              |
+| + Teleportation  | Priceless |        | ⚠️ Legal status questionable |
 
 ## Supertags in my Tana
 
@@ -248,13 +248,13 @@ Most of the time, try to wrap your content in 1 top level root node.
 
 Issues/bugs/TODO items have #issue supertag. `#issue`'s have:
 
-* `Status::` field which is `[[Open]]` / `[[Done]]` / `[[Waiting]]` / `[[Shelved]]` / `[[Cancelled]]`.
-* `Hotlists::` field, of which some important are:
-  * `[[Do next]]` -- for issues that are high priority, to be picked up next
-  * `[[Buy]]` -- involves buying something
-  * `[[Personal technical infrastructure]]` -- computer/phone setup, automation, etc.
-  * `[[Repair]]`, `[[Prevention]]`, `[[Health]]`, `[[Mental health]]`, `[[Home improvement]]`, `[[Socializing]]`
-* `Snapshot::` field: brief summary of current state/blockers/... - as opposed to historical evolution/logs
+- `Status::` field which is `[[Open]]` / `[[Done]]` / `[[Waiting]]` / `[[Shelved]]` / `[[Cancelled]]`.
+- `Hotlists::` field, of which some important are:
+  - `[[Do next]]` -- for issues that are high priority, to be picked up next
+  - `[[Buy]]` -- involves buying something
+  - `[[Personal technical infrastructure]]` -- computer/phone setup, automation, etc.
+  - `[[Repair]]`, `[[Prevention]]`, `[[Health]]`, `[[Mental health]]`, `[[Home improvement]]`, `[[Socializing]]`
+- `Snapshot::` field: brief summary of current state/blockers/... - as opposed to historical evolution/logs
 
 Example:
 
@@ -313,9 +313,9 @@ Feel free to suggest and use new `#3dmodeltag`s.
 ## DO NOT use `#supertags` I didn't explicitly tell you about
 
 In Tana, `#foo` does NOT mean just "a kind of loose semantic tag grouping related things". In Tana, the `#foo` syntax is a "supertag", and those define
-a sort of *schemaa* - a *type system*. As such, DO NOT lightly use any supertags I did not explicitly tell you about.
+a sort of _schemaa_ - a _type system_. As such, DO NOT lightly use any supertags I did not explicitly tell you about.
 
-Feel free to *suggest* supertags that might be useful but OUTSIDE any Tana Paste code blocks, because that make my KB get spammed with new supertags
+Feel free to _suggest_ supertags that might be useful but OUTSIDE any Tana Paste code blocks, because that make my KB get spammed with new supertags
 I don't want if I copy-paste that.
 
 For example, DO NOT do this:

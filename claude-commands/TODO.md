@@ -30,7 +30,7 @@ Example Ansible task structure:
   ansible.builtin.file:
     path: /code/.claude/commands
     state: directory
-    mode: '0755'
+    mode: "0755"
 
 - name: Symlink Claude commands from ducktape
   ansible.builtin.file:
@@ -85,7 +85,7 @@ Both create the same relative symlink in the shared filesystem, which resolves c
     state: directory
     owner: "{{ my_user }}"
     group: "{{ my_user }}"
-    mode: '0755'
+    mode: "0755"
   tags: [claude-code]
 
 - name: Symlink Claude commands using relative paths

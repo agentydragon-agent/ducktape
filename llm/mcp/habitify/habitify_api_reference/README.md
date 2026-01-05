@@ -29,26 +29,26 @@ This directory includes both successful API call examples and deliberately docum
 
 ### Successful Operations
 
-| File | Description |
-|------|-------------|
-| `get_habits.yaml` | List all habits |
-| `get_habit_by_id.yaml` | Get details for a specific habit |
-| `get_habit_status.yaml` | Get habit status with ISO-8601 date format and +00:00 timezone |
-| `get_journal.yaml` | Get all habits for a specific day (basic journal view) |
-| `get_journal_filtered.yaml` | Get filtered habits (by time_of_day and status) |
-| `get_areas.yaml` | Get all areas (categories) from the account |
-| `set_habit_status_(completed).yaml` | Set habit status to "completed" with value |
-| `set_habit_status_(skipped).yaml` | Set habit status to "skipped" |
-| `set_habit_status_(failed).yaml` | Set habit status to "failed" |
-| `set_habit_status_(no_value).yaml` | Set habit status to "completed" without value parameter |
+| File                                | Description                                                    |
+| ----------------------------------- | -------------------------------------------------------------- |
+| `get_habits.yaml`                   | List all habits                                                |
+| `get_habit_by_id.yaml`              | Get details for a specific habit                               |
+| `get_habit_status.yaml`             | Get habit status with ISO-8601 date format and +00:00 timezone |
+| `get_journal.yaml`                  | Get all habits for a specific day (basic journal view)         |
+| `get_journal_filtered.yaml`         | Get filtered habits (by time_of_day and status)                |
+| `get_areas.yaml`                    | Get all areas (categories) from the account                    |
+| `set_habit_status_(completed).yaml` | Set habit status to "completed" with value                     |
+| `set_habit_status_(skipped).yaml`   | Set habit status to "skipped"                                  |
+| `set_habit_status_(failed).yaml`    | Set habit status to "failed"                                   |
+| `set_habit_status_(no_value).yaml`  | Set habit status to "completed" without value parameter        |
 
 ### Error Cases
 
-| File | Description |
-|------|-------------|
-| `get_habit_invalid_id.yaml` | Example of requesting a non-existent habit ID (returns 500 with "The habit does not exist" message) |
-| `get_status_invalid_id.yaml` | Example of requesting status for a non-existent habit ID (returns 500 with "The habit does not exist" message) |
-| `get_habit_status_(invalid_date_format).yaml` | Example of invalid date format (returns 500 with format requirement message) |
+| File                                          | Description                                                                                                    |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `get_habit_invalid_id.yaml`                   | Example of requesting a non-existent habit ID (returns 500 with "The habit does not exist" message)            |
+| `get_status_invalid_id.yaml`                  | Example of requesting status for a non-existent habit ID (returns 500 with "The habit does not exist" message) |
+| `get_habit_status_(invalid_date_format).yaml` | Example of invalid date format (returns 500 with format requirement message)                                   |
 
 Additional write operations (create, update, delete) will be added in future updates.
 

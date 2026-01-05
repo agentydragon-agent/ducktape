@@ -761,6 +761,7 @@
         ]]></code>
       </content>
     </section>
+
   </instructions>
 
   <output>
@@ -787,5 +788,6 @@
         <li>Demonstrably self-consistent</li>
       </ul>
     </section>
+
   </output>
 </prompt>

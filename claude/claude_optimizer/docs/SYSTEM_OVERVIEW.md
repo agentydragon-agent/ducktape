@@ -95,18 +95,18 @@ ubuntu:22.04
 
 ```yaml
 rollouts:
-  max_parallel: 16           # Concurrent executions
-  max_turns: 100            # Claude conversation limit
+  max_parallel: 16 # Concurrent executions
+  max_turns: 100 # Claude conversation limit
 
 grader:
-  model: "o3"               # OpenAI model
+  model: "o3" # OpenAI model
   reasoning_effort: "medium" # o3 reasoning level
 
 tokens:
-  max_context_tokens: 150000  # Input limit
-  max_files_tokens: 100000   # File content limit
+  max_context_tokens: 150000 # Input limit
+  max_files_tokens: 100000 # File content limit
 
-exclude_patterns:           # Gitignore-style patterns
+exclude_patterns: # Gitignore-style patterns
   - "*.log"
   - "**/__pycache__/**"
   - "**/.git/**"

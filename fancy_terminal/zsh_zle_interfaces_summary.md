@@ -52,9 +52,9 @@ This file lists only the Zsh/ZLE facilities a plugin can rely on to implement in
 
 ## Typical inline‑suggest flow enabled by these APIs
 
-1) Read line state (`BUFFER`, `CURSOR`, recent history, `$PWD`).
-2) Compute suggestion (optionally async via `zle -F`); ensure it begins with `BUFFER`.
-3) Render suffix as ghost text using `POSTDISPLAY` and color using `region_highlight`.
-4) Provide accept/partial‑accept behavior by binding or wrapping widgets; refresh with `zle -R`.
+1. Read line state (`BUFFER`, `CURSOR`, recent history, `$PWD`).
+2. Compute suggestion (optionally async via `zle -F`); ensure it begins with `BUFFER`.
+3. Render suffix as ghost text using `POSTDISPLAY` and color using `region_highlight`.
+4. Provide accept/partial‑accept behavior by binding or wrapping widgets; refresh with `zle -R`.
 
 All of the above are core Zsh/ZLE facilities; no private or plugin‑specific hooks are required.

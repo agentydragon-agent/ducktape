@@ -29,31 +29,31 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
 
 ### Catalog
 
-1) What it enables (capabilities)
+1. What it enables (capabilities)
    - Externally visible surfaces:
      - UI features, user stories enabled.
      - APIs, operations, data exchanges, events, query/reporting.
    - Input/output semantics; specify exact schemas/methods only where they matter - otherwise spec high level semantics
    - User stories and features critical to enabling them
-2) Client-visible semantics and contracts
+2. Client-visible semantics and contracts
    - Stable identifiers; state models; idempotency; freshness/caching; ordering; concurrency
    - Authorization/roles if applicable.
-3) Observability
+3. Observability
    - Logs/metrics/traces and query surfaces required; wire log details; ...
-4) Error model
+4. Error model
    - Client-facing error behavior (invalid input, not found, timeout, ...)
    - Resilience behaviors (timeouts; malformed data; protocol errors; recovery; clean shutdown; ...)
-5) Acceptance criteria (functional)
+5. Acceptance criteria (functional)
    - Externally verifiable outcomes for each capability/user story and failure mode; assertable by tests.
-6) Acceptance criteria (non-functional)
+6. Acceptance criteria (non-functional)
    - As applicable: concurrency responsiveness; resource hygiene; robustness; observability sufficiency; security & accessibility; ...
-7) Validation strategy
+7. Validation strategy
    - Unit or integration tests that check requirements at behavior level, possibly using mocked/fake dependencies if needed
    - Define scenarios asserting externally observable behavior.
    - Prefer automated tests over demo scripts.
-8) Unspecified / left to implementer - list implementation details or unconstrained aspects as applicable:
+8. Unspecified / left to implementer - list implementation details or unconstrained aspects as applicable:
    - Method names; payload shapes; module layout; concurrency framework choices; UI choices; ...
-9) Definition of done
+9. Definition of done
    - All tests + acceptance criteria pass; any required behaviors on errors
 
 ### Examples
@@ -87,7 +87,7 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
       web app -> auth, load requriments, resilience etc. likely not important)
 - Single `app/models.py` file from the same app:
   - Specify:
-    - what would be needed to write a drop-in replacement - here, that *would* include implemenetation details as
+    - what would be needed to write a drop-in replacement - here, that _would_ include implemenetation details as
       a replacement `app/models.py` would have to fit within context of the rest of the app
     - e.g.: "write models for DB framework X on Postgres db. Tables: `parts` (`PartModel`) has fields `id` (UUID), ...,
       read provider configuration from `data/providers.yml`, schema: ..."
@@ -123,7 +123,9 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
   - Suggest to user a couple concrete areas they may want to make spec tighter / looser. Example:
 
   **Assistant**:
+
   > I wrote the spec to /abs/path/SPEC.md. I included:
+  >
   > - databases (4 options to support),
   > - rate limited external requests (GitHub, Coinbase) with retry+backoff,
   > - multi-user (admin/regular, OAuth2),
@@ -131,27 +133,30 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
   > - alerting (platform-specific, email).
   >
   > Aspects we could adjust:
+  >
   > 1. We require all 4 DB backends supported (SQLite, Postgres, MySQL, Firebase). Loosen: jany database (not explicitly listing each), or only one (say, SQLite)?
   > 2. Spec requires support for Windows, Linux, macOS, FreeBSD and OpenBSD. If OS compatibility is not important, loosen to drop list of required supported OSs?
   > 3. I specified requirement for currency conversion but left out our specific freshness algorithm. If freshness if important, I can tighten to "freshness 5 min or better"?
-  > ...
+  >    ...
 
 - Iterate to tighten / loosen the spec until it matches user intent. Example:
 
   **User**:
+
   > loosen 1 specific db does not matter; yes re 3 we need say better than 10 min freshness and resilience to any 1 curr conv provider going down
-  **Assistant**: *Edits spec*
+  > **Assistant**: _Edits spec_
   > I edited the spec to not list any specific database, just that data should be stored in a database.
   > Conversion specs also now say that the app must be resilient to any one currency provider going down, and that currency rates must be fresh within a 10 min window.
   > We now also require tests for this "provider goes down" resilience.
   >
   > More specs we could adjust to match the current implementation tighter/looser:
+  >
   > 1. The requirement to support Windows, Linux, macOS, FreeBSD and OpenBSD.
   > 2. The spec does not prescribe the exact protocol to use with the notification API, treating it as an internal implementation detail.
   >    If you want to specify it exactly (e.g., so that reimplementation would be compatible with our notification handlers), I could bake it in.
-  > ...
-  **User**:
-  > OK, this is about right, we're done.
+  >    ...
+  >    **User**:
+  >    OK, this is about right, we're done.
 
 ## Style & guardrails
 
@@ -161,7 +166,7 @@ Aim to make the reimplemented artifact a drop-in replacement for the original ar
 ## Example invocations
 
 - "Compress :/project/foo into SPEC.md; exclude the legacy/ subtree; db must be Postgres; do not include caching; include admin UI for quotas; ensure UI is colorblind-friendly."
-- "Compress /abs/path/service and /abs/path/ui; also expose metrics counters for failures and timeouts; exclude generated files (*.gen.*)."
+- "Compress /abs/path/service and /abs/path/ui; also expose metrics counters for failures and timeouts; exclude generated files (`*.gen.*`)."
 
 ## Success criteria
 

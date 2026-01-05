@@ -7,7 +7,7 @@ When given ANY problem, question, or area to explore (design, strategy, philosop
 - One agent exploring prior art while another generates wild ideas
 - Separate agents for different domains (nature-inspired, tech-based, historical)
 - Parallel exploration of opposite extremes (tiny vs huge, fast vs slow)
-This maximizes idea generation and cross-pollination.
+  This maximizes idea generation and cross-pollination.
 
 ## Phase 1: Divergent Exploration (NO EVALUATION)
 

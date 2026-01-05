@@ -130,7 +130,7 @@ For example, like this:
 
 This creates two cards: one that asks me to assign the right English meaning to
 the German words, and another one that shows me two English words and the common
-parts of the German words (“\_r\_eblich”) and asks me to correctly fill in the
+parts of the German words (“\_r_eblich”) and asks me to correctly fill in the
 blanks.
 
 This sometimes fixes interference. When I learn the disambiguator note and later

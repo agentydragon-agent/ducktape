@@ -60,7 +60,7 @@ When invoked, follow this process to turn a single bad example into systematic i
         entry: '(hasattr|getattr|setattr)\s*\('
         language: pygrep
         types: [python]
-        exclude: '^(tests/|test_)'  # May need in tests
+        exclude: "^(tests/|test_)" # May need in tests
   ```
 
 - **String concatenation for URLs/SQL/HTML**: Use pygrep/grep patterns
