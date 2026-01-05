@@ -22,20 +22,18 @@ Uses Docker for isolated execution and stores results in a database for analysis
 **Production Run (Recommended):**
 
 ```bash
-python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 10 --rollouts-per-task 3 --tasks-per-iteration 10 --max-parallel 8 --mode summary
+python3 -m adgn_llm.instruction_optimizer.core.optimizer \
+  --iterations 10 \
+  --rollouts-per-task 3 \
+  --tasks-per-iteration 10 \
+  --max-parallel 8 \
+  --mode summary
 ```
 
 - 10 iterations of prompt improvement
 - 3 rollouts per task for statistical reliability
 - 10 random tasks per iteration (faster than all 25)
 - 8 concurrent rollouts (30 total per iteration)
-
-````
-
-**Quick Development Testing:**
-```bash
-python3 -m adgn_llm.instruction_optimizer.core.optimizer --iterations 3 --rollouts-per-task 1 --tasks-per-iteration 5 --max-parallel 4 --mode summary
-````
 
 ## Usage
 

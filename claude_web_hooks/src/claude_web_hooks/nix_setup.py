@@ -36,9 +36,14 @@ def setup_nix_path(nix_store_bin: Path) -> None:
         logger.info("Added to PATH: %s", ", ".join(map(str, paths)))
 
 
+def get_nix_conf_path(project_dir: Path) -> Path:
+    """Get the path to project-specific nix.conf."""
+    return project_dir / ".claude" / "claude-code-web" / "nix.conf"
+
+
 def install_nix(project_dir: Path, run_streaming: Callable[..., int]) -> Path:
     """Install nix if not present. Returns the nix store bin path."""
-    nix_conf = project_dir / ".claude" / "claude-code-web" / "nix.conf"
+    nix_conf = get_nix_conf_path(project_dir)
     if nix_conf.exists():
         os.environ["NIX_USER_CONF_FILES"] = str(nix_conf)
         logger.info("Using nix.conf: %s", nix_conf)
@@ -110,7 +115,7 @@ def install_tools(nix_store_bin: Path, tools: list[str], run_streaming: Callable
     logger.info("Tools installed successfully")
 
 
-def persist_environment(env_file: str | None, nix_store_bin: Path, project_dir: Path) -> None:
+def persist_environment(env_file: str | None, nix_store_bin: Path, nix_conf: Path) -> None:
     """Write environment to CLAUDE_ENV_FILE for persistence.
 
     Persists BOTH the nix store bin (for running nix commands) AND the
@@ -120,7 +125,6 @@ def persist_environment(env_file: str | None, nix_store_bin: Path, project_dir: 
         logger.warning("CLAUDE_ENV_FILE is empty, PATH changes will not persist")
         return
 
-    nix_conf = project_dir / ".claude" / "claude-code-web" / "nix.conf"
     content = f'''# Nix environment (added by session-start-direnv.py)
 export NIX_USER_CONF_FILES="{nix_conf}"
 # Nix store bin for running nix commands (immutable, always available)

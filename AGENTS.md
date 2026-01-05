@@ -49,44 +49,38 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 | `website/`         | Personal website (Hakyll) |
 | `k8s/`             | k3s cluster configs       |
 
-## Dotfiles
+## Dotfiles and Shell Configuration
 
-Dotfiles are centrally managed via rcm with symlinks from home directory:
+**Most configuration has migrated to Nix home-manager** (see `nix/home/home.nix`).
 
-### Structure
+### What Nix Manages
 
-- **Source**: `dotfiles/` directory in repository
-- **Deployment**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
-- **Configuration**: `dotfiles/rcrc` controls symlink behavior
+- **Shell configs**: `programs.bash`, `programs.zsh`, `programs.atuin`, `programs.direnv`, `programs.zoxide`, `programs.eza`
+- **Shell init scripts**: `nix/home/shell/*.sh` (bash-init.sh, zsh-init.sh, common-init.sh)
+- **Aliases**: `home.shellAliases`
+- **Environment variables**: `home.sessionVariables`
+- **Powerlevel10k**: `nix/home/p10k.zsh` → `~/.p10k.zsh`
 
-### Key Symlinked Components
+### What Remains in `dotfiles/`
 
-```
-~/.bashrc -> ducktape/dotfiles/bashrc
-~/.zshrc -> ducktape/dotfiles/zshrc
-~/.config/* -> ducktape/dotfiles/config/*
-~/.local/bin/* -> ducktape/dotfiles/local/bin/*
-```
-
-### User Scripts (.local/bin)
-
-The repository provides numerous utility scripts symlinked to `~/.local/bin/`:
-
-- Git AI commit tools (`git_commit_ai.py`, `git_prepare_commit_msg_ai.py`)
-- Theme switchers (`set_dark_theme`, `set_light_theme`, `switch_gnome_terminal_profile`)
-- Development utilities (`generate-agent-name`, `login_event_webhook_reporter.py`)
-- Various helper scripts
+- **`~/.profile`** - Complex conditional PATH management and legacy integrations (CUDA, lesspipe, dotnet, pnpm, machine-specific config)
+- **`~/.secret_env`** - Secret environment variables (not tracked in git)
+- **`~/.config/*`** - Application configs not yet migrated
+- **`~/.local/bin/*`** - Utility scripts (theme switchers, backup utilities)
+- **rcm config** - `rcrc` controls symlink behavior for remaining dotfiles
 
 ### Important Notes
 
-- **DO NOT modify dotfiles directly in ~/... or in Ansible steps** - edit source files in `dotfiles/`
-- Some dotfiles are host-specific (e.g., `host-agentydragon/rcrc`, `host-gpd/rcrc`)
+- **DO NOT modify dotfiles directly in `~/`** - edit source files in `dotfiles/` or `nix/home/`
+- **Shell configs are Nix-managed** - do not edit `~/.bashrc`, `~/.zshrc`, `~/.shellrc` directly
+- Host-specific rcm configs: `host-agentydragon/rcrc`, `host-gpd/rcrc`
 
-### Shell configuration
+### Deployment
 
-Shell configuration follows a specific loading hierarchy:
+- **Nix config**: `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`
+- **Remaining dotfiles**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
 
-@dotfiles/docs/shell-configuration.md
+See `dotfiles/docs/shell-configuration.md` for detailed loading order and migration status.
 
 ## Infrastructure Components
 

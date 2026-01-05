@@ -4,7 +4,6 @@
 
 # Build tools and dependencies
 **/bazel-*
-**/.aspect/
 **/node_modules/
 
 # Packaging artifacts
