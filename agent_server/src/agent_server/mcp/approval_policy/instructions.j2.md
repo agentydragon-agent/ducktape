@@ -46,10 +46,7 @@ Input JSON (stdin):
 Output JSON (stdout):
 
 ```json
-{
-  "decision": "allow|deny_continue|deny_abort|ask",
-  "rationale": "optional explanation"
-}
+{ "decision": "allow|deny_continue|deny_abort|ask", "rationale": "optional explanation" }
 ```
 
 Notes:

@@ -14,7 +14,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
 ## Baseline dependencies
 
 - Compositor with policy middleware (enforcement gate).
-- Resources server (compositor/\* introspection, subscriptions).
+- Resources server (compositor/* introspection, subscriptions).
 - Runtime container image `adgn-runtime` (includes Python + rg; code installed in image).
 - Optional Compositor HTTP on loopback with a bearer token for the container (<mcp-runtime/overview.md>).
 - Split policy servers: policy_reader (resources + decide), policy_approver, policy_proposer.
