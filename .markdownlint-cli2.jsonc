@@ -9,9 +9,8 @@
   ],
   // Base rule configuration
   "config": {
-    "MD013": {
-      "line_length": 120
-    },
+    // Extend Prettier config to disable formatting-related rules (including MD013 line-length)
+    "extends": "markdownlint/style/prettier",
     // AGENTS.md and CLAUDE.md start with @-transclusion, not a heading
     "MD041": false
   }

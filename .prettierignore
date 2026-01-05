@@ -1,0 +1,79 @@
+# HTML fragments that are intentionally incomplete
+finance/worthy/worthy/index_head.html
+finance/worthy/worthy/index_tail.html
+
+# Symbolic links and Jinja2 templates
+llm/html/**
+
+# Claude Code testdata - test fixtures should not be reformatted
+claude/claude_hooks/claude_hooks/testdata/**
+
+# OrcaSlicer config - machine-generated, should not be formatted
+nonrcm-dotfiles/config/OrcaSlicer/**
+
+# Jinja2 templates - prettier mangles block tag formatting
+gatelet/gatelet/server/templates/**
+inventree_utils/labels/**
+
+# Tana export references - generated content, should not be formatted
+tana/src/tana/export/references/**
+
+# Tana testdata - test fixtures should not be reformatted
+tana/tests/tana/testdata/**
+
+# SvelteKit generated files
+**/.svelte-kit/**
+
+# Logseq export - generated content
+llm/instruct-logseq/**
+
+# Old k8s configs - archived, contains Helm templates that aren't valid YAML
+k8s-old/**
+
+# UV Python installations
+.uv-python/**
+
+# Flux-generated GitOps manifests
+cluster/flux-system/**
+
+# Helm chart templates - Go templating, not valid YAML
+cluster/charts/**/templates/**
+cluster/k8s/*-chart/templates/**
+
+# Jinja2 YAML templates
+**/*.yaml.j2
+**/*.yml.j2
+
+# Lock files - managed by package managers
+**/pnpm-lock.yaml
+**/package-lock.json
+**/uv.lock
+
+# TODO: Fix formatting and remove exclusions below
+agent_server/docs/scaffold_reflection.md
+claude-commands-old/ccr-code-work.md
+claude-commands-old/commit.md
+claude-commands-old/rulelint.md
+claude-commands/TODO.md
+claude/claude_optimizer/README.md
+cluster/docs/agents.md
+cluster/docs/operations.md
+cluster/docs/plan.md
+cluster/docs/secrets.md
+cluster/docs/troubleshooting.md
+finance/reconcile/README.md
+llm/claude-instructions/CLAUDE-2025-07-12.md
+llm/claude-instructions/history.md
+mcp_infra/docs/eliminating-class-constants-analysis.md
+nix/home/README.md
+nix/home/claude-code/commands/analyze-permissions.md
+nix/home/claude-code/commands/dump.md
+nix/home/claude-code/commands/followups.md
+prompts/scans/useless-comments-and-docs.md
+props/core/src/props_core/.claude/commands/extract-principles.md
+props/core/src/props_core/docs/prompts/code_health_audit_fullprops.md
+props/core/src/props_core/props/self-describing-names.md
+sandboxed_jupyter/docs/TODO-SANDBOX.md
+sandboxed_jupyter/docs/TODO.md
+tana/src/tana/export/headless_autoexport/README
+website/posts/2015-08-23-static-typing-in-python.markdown

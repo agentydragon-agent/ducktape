@@ -12,8 +12,6 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json",
     "lint": "eslint src --ext .ts,.svelte",
     "lint:fix": "eslint src --ext .ts,.svelte --fix",
-    "format": "prettier --write 'src/**/*.{ts,svelte,css}'",
-    "format:check": "prettier --check 'src/**/*.{ts,svelte,css}'",
     "codegen": "agent-server-generate-frontend-code",
     "prebuild": "npm run codegen"
   },

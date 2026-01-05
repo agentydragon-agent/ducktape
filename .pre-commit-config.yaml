@@ -18,8 +18,8 @@ repos:
         language_version: python3.13
       - id: check-yaml
         args: ["--allow-multiple-documents"]
-        # Skip Helm templates (Go templating, not valid YAML), ansible vault files, cluster charts
-        exclude: "ansible/host_vars/.*\\.yml$|claude/claude_optimizer/config\\.example\\.yaml$|cluster/k8s/|cluster/charts/"
+        # Skip Helm templates (Go templating, not valid YAML), ansible vault files, cluster charts, Flux-generated manifests
+        exclude: "ansible/host_vars/.*\\.yml$|claude/claude_optimizer/config\\.example\\.yaml$|cluster/k8s/|cluster/charts/|cluster/flux-system/"
       - id: check-toml
 
       # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer
@@ -29,14 +29,6 @@ repos:
       # https://github.com/pre-commit/pre-commit-hooks?tab=readme-ov-file#name-tests-test
       # --pytest-test-first
       # - check-shebang-scripts-are-executable
-
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.35.1
-    hooks:
-      - id: yamllint
-        args: ["-c", ".yamllint.yaml"]
-        files: "\\.ya?ml$"
-        exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/"
 
   # Ansible syntax check: Fast validation for pre-commit
   #
@@ -360,6 +352,31 @@ repos:
         language: system
         files: \.nix$
 
+  # Prettier: Workspace-level code formatting
+  # Uses .gitignore and .prettierignore for exclusions
+  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier
+        language: system
+        entry: pnpm exec prettier --write --ignore-unknown
+        types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml]
+
+  # Markdownlint: Structural markdown linting (heading hierarchy, duplicate headings, etc.)
+  # Formatting rules disabled via "extends": "markdownlint/style/prettier" in config
+  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
+  # TODO: Expand markdownlint coverage to rest of repo (currently cluster/ only)
+  #       Update .markdownlint-cli2.jsonc globs and remove files: filter here
+  - repo: local
+    hooks:
+      - id: markdownlint-cli2
+        name: markdownlint-cli2
+        language: system
+        entry: markdownlint-cli2
+        types: [markdown]
+        files: ^cluster/
+
   # Svelte/TypeScript checks for MiniCodex UI
   - repo: local
     hooks:
@@ -369,14 +386,6 @@ repos:
         language: system
         entry: bash -c 'cd adgn/src/adgn/agent/web && npm run lint -- --fix'
         files: ^adgn/src/adgn/agent/web/src/.*\.(ts|svelte)$
-        pass_filenames: false
-
-      # Prettier: Code formatting
-      - id: prettier
-        name: prettier (MiniCodex UI)
-        language: system
-        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run format'
-        files: ^adgn/src/adgn/agent/web/src/.*\.(ts|svelte|css)$
         pass_filenames: false
 
       # Svelte-check: Type checking
@@ -396,22 +405,6 @@ repos:
         language: system
         entry: bash -c 'cd props/frontend && pnpm run lint:fix'
         files: ^props/frontend/src/.*\.(ts|svelte)$
-        pass_filenames: false
-
-      # Prettier: Code formatting
-      - id: prettier-props
-        name: prettier (Props Frontend)
-        language: system
-        entry: bash -c 'cd props/frontend && pnpm run format'
-        files: ^props/frontend/src/.*\.(ts|svelte|css)$
-        pass_filenames: false
-
-      # Svelte-check: Type checking
-      - id: svelte-check-props
-        name: svelte-check (Props Frontend)
-        language: system
-        entry: bash -c 'cd props/frontend && pnpm run format'
-        files: ^props/frontend/
         pass_filenames: false
 
   # ============================================================================
@@ -457,27 +450,6 @@ repos:
   # Cluster-specific local hooks
   - repo: local
     hooks:
-      # YAML formatting for cluster (excludes Helm templates)
-      - id: prettier-cluster-yaml
-        name: prettier (cluster YAML)
-        entry: prettier
-        language: system
-        types: [yaml]
-        files: ^cluster/
-        exclude: (cluster/k8s/flux-system/|\.ya?ml\.j2$|cluster/charts/.*/templates/|cluster/k8s/.*-chart/templates/)
-        args: ["--write", "--print-width", "120"]
-
-      # Markdown linting (cluster/ only for now - see .markdownlint-cli2.jsonc)
-      # TODO: Extend markdownlint coverage to more directories, or migrate to
-      # remark-lint via eslint-plugin-mdx for glob-based rule overrides
-      - id: markdownlint
-        name: markdownlint
-        entry: markdownlint-cli2
-        language: system
-        files: ^cluster/.*\.md$
-        exclude: \.terraform/
-        args: ["--fix"]
-
       # Checkov security analysis
       - id: checkov-cluster
         name: Checkov security analysis (cluster)
