@@ -31,6 +31,7 @@ agent-server-generate-frontend-code = "agent_server.scripts.generate_frontend_co
 
 [project.optional-dependencies]
 dev = [
+    "agent-core-testing",
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
     "pytest-timeout>=2.3.0",
@@ -52,7 +53,7 @@ python_version = "3.13"
 warn_return_any = true
 check_untyped_defs = true
 # Paths relative to repo root (where pre-commit runs mypy from)
-mypy_path = "adgn/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src:mcp_utils/src"
+mypy_path = "adgn/src:agent_core_testing/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src:mcp_utils/src"
 
 [tool.ruff]
 target-version = "py312"
@@ -78,4 +79,5 @@ cli-util = { workspace = true }
 net-util = { workspace = true }
 mcp-infra = { workspace = true }
 agent-core = { workspace = true }
+agent-core-testing = { workspace = true }
 openai-utils = { workspace = true }

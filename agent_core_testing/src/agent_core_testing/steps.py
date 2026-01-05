@@ -22,13 +22,13 @@ from hamcrest import all_of, assert_that
 from hamcrest.core.matcher import Matcher
 from pydantic import BaseModel, ConfigDict
 
-from agent_core.testing.assertions import assert_and_extract, assert_last_call
-from agent_core.testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
+from agent_core_testing.assertions import assert_and_extract, assert_last_call
+from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
 from mcp_infra.prefix import MCPMountPrefix
 
 if TYPE_CHECKING:
-    from agent_core.testing.responses import ResponsesFactory
+    from agent_core_testing.responses import ResponsesFactory
     from openai_utils.model import ResponsesRequest, ResponsesResult
 
 logger = logging.getLogger(__name__)

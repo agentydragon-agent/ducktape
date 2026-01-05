@@ -1,7 +1,10 @@
 """Portable pytest fixtures for agent tests.
 
 Register in downstream packages via:
-    pytest_plugins = ["agent_core.testing.fixtures"]
+    pytest_plugins = [
+        "agent_core_testing.fixtures",
+        "agent_core_testing.responses",
+    ]
 
 For compositor fixtures, also register:
     pytest_plugins = ["mcp_infra.testing.fixtures"]
@@ -26,10 +29,9 @@ from agent_core.agent import Agent
 from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing.echo_server import make_echo_server
-from agent_core.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
-
-# Re-export fixtures from responses module for downstream use
+from agent_core_testing.echo_server import make_echo_server
+from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
+from agent_core_testing.responses import ResponsesFactory
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.testing.simple_servers import SendMessageInput
@@ -114,7 +116,7 @@ def make_capturing_client():
 
 
 @pytest.fixture
-def make_test_agent(responses_factory):
+def make_test_agent(responses_factory: ResponsesFactory):
     """Factory to create Agent backed by FakeOpenAIModel with canned responses.
 
     Returns (agent, fake_client) tuple so tests can inspect the client after run.

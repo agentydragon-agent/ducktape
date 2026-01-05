@@ -36,7 +36,7 @@ from openai_utils.model import (
 )
 
 if TYPE_CHECKING:
-    from agent_core.testing.steps import Step
+    from agent_core_testing.steps import Step
 
 logger = logging.getLogger(__name__)
 

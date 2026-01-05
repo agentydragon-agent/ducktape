@@ -14,8 +14,8 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from agent_core.testing.openai_mock import FakeOpenAIModel
-from agent_core.testing.steps import Step
+from agent_core_testing.openai_mock import FakeOpenAIModel
+from agent_core_testing.steps import Step
 from openai_utils.model import ResponsesResult
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
@@ -51,7 +51,8 @@ from props_core.rationale import Rationale
 
 # Register shared fixtures from other packages
 pytest_plugins = [
-    "agent_core.testing.fixtures",  # make_step_runner, responses_factory, etc.
+    "agent_core_testing.fixtures",  # Recording handler, make_test_agent, etc.
+    "agent_core_testing.responses",  # make_step_runner, responses_factory, etc.
     "mcp_infra.testing.fixtures",  # async_docker_client, make_compositor, etc.
 ]
 

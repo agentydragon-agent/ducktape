@@ -10,9 +10,9 @@ from agent_core.agent import Agent
 from agent_core.events import ToolCallOutput
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing.matchers import tool_call_with_error_text
-from agent_core.testing.openai_mock import make_mock
-from agent_core.testing.responses import ResponsesFactory
+from agent_core_testing.matchers import tool_call_with_error_text
+from agent_core_testing.openai_mock import make_mock
+from agent_core_testing.responses import ResponsesFactory
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 
 

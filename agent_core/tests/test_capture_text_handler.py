@@ -8,7 +8,7 @@ from agent_core.agent import Agent
 from agent_core.events import AssistantText
 from agent_core.handler import CaptureTextHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.steps import AssistantMessage, EchoCall, Step
+from agent_core_testing.steps import AssistantMessage, EchoCall, Step
 from openai_utils.model import UserMessage
 
 

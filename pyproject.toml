@@ -19,6 +19,7 @@ ignore = ["E501"]
 known-first-party = [
     "adgn",
     "agent_core",
+    "agent_core_testing",
     "agent_pkg_host",
     "agent_pkg_runtime",
     "agent_server",
@@ -50,6 +51,7 @@ members = [
     "agent_pkg/runtime",
     "adgn",
     "agent_core",
+    "agent_core_testing",
     "agent_server",
     "cli_util",
     "difftree",

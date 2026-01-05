@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agent_core.testing.steps import EchoCall
+from agent_core_testing.steps import EchoCall
 from agent_server.testing.steps import UiEndTurnCall
 
 # Skip if Playwright is not installed

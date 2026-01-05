@@ -15,10 +15,16 @@ dependencies = [
     "cli-util",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "agent-core-testing",
+]
+
 [tool.uv.sources]
 editor-agent-runtime = { workspace = true }
 agent-pkg-host = { workspace = true }
 agent-core = { workspace = true }
+agent-core-testing = { workspace = true }
 mcp-infra = { workspace = true }
 net-util = { workspace = true }
 openai-utils = { workspace = true }

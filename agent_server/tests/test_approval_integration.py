@@ -8,7 +8,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.steps import AssistantMessage, EchoCall
+from agent_core_testing.steps import AssistantMessage, EchoCall
 from agent_server.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
 from agent_server.policies.policy_types import ApprovalDecision
 from mcp_infra.resource_utils import read_text_json_typed

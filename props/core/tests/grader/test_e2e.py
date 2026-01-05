@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent_core.testing.openai_mock import CapturingOpenAIModel
-from agent_core.testing.steps import AssertDockerExecThenCall, DockerExecCall, Step
+from agent_core_testing.openai_mock import CapturingOpenAIModel
+from agent_core_testing.steps import AssertDockerExecThenCall, DockerExecCall, Step
 from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props_core.db.session import get_session
 

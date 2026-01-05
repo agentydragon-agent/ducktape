@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "adgn",
     "agent-core",
+    "agent-core-testing",
     "agent-pkg-host",
     "agent-pkg-runtime",
     "agent-server",
@@ -81,6 +82,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "agent-core-testing" },
     { name = "editor-agent-runtime" },
     { name = "mypy" },
     { name = "pandas-stubs" },
@@ -125,6 +127,7 @@ typing = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", editable = "agent_core" },
+    { name = "agent-core-testing", marker = "extra == 'dev'", editable = "agent_core_testing" },
     { name = "agent-pkg-host", editable = "agent_pkg/host" },
     { name = "agent-pkg-runtime", editable = "agent_pkg/runtime" },
     { name = "aiodocker", specifier = ">=0.22.0" },
@@ -218,11 +221,13 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "agent-core-testing" },
     { name = "mcp-infra" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
 testing = [
+    { name = "agent-core-testing" },
     { name = "mcp-infra" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -231,6 +236,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", extras = ["testing"], marker = "extra == 'dev'" },
+    { name = "agent-core-testing", marker = "extra == 'testing'", editable = "agent_core_testing" },
     { name = "agent-pkg-host", editable = "agent_pkg/host" },
     { name = "anyio", specifier = ">=4.0" },
     { name = "fastmcp", specifier = ">=2.0" },
@@ -246,6 +252,41 @@ requires-dist = [
     { name = "structlog" },
 ]
 provides-extras = ["testing", "dev"]
+
+[[package]]
+name = "agent-core-testing"
+version = "0.1.0"
+source = { editable = "agent_core_testing" }
+dependencies = [
+    { name = "agent-core" },
+    { name = "anyio" },
+    { name = "fastmcp" },
+    { name = "mcp" },
+    { name = "mcp-infra" },
+    { name = "openai" },
+    { name = "openai-utils" },
+    { name = "pydantic" },
+    { name = "pyhamcrest" },
+    { name = "pytest" },
+    { name = "rich" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-core", editable = "agent_core" },
+    { name = "anyio", specifier = ">=4.4" },
+    { name = "fastmcp", specifier = ">=0.4" },
+    { name = "mcp", specifier = ">=1.0" },
+    { name = "mcp-infra", editable = "mcp_infra" },
+    { name = "openai", specifier = ">=1.0" },
+    { name = "openai-utils", editable = "openai_utils" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyhamcrest", specifier = ">=2.1" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "rich", specifier = ">=13.0" },
+    { name = "structlog", specifier = ">=24.0" },
+]
 
 [[package]]
 name = "agent-pkg-host"
@@ -314,6 +355,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "agent-core-testing" },
     { name = "docker" },
     { name = "playwright" },
     { name = "pyhamcrest" },
@@ -326,6 +368,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", editable = "agent_core" },
+    { name = "agent-core-testing", marker = "extra == 'dev'", editable = "agent_core_testing" },
     { name = "aiodocker", specifier = ">=0.22.0" },
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "aiosqlite", specifier = ">=0.18.0" },
@@ -1406,9 +1449,15 @@ dependencies = [
     { name = "typer" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "agent-core-testing" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "agent-core", editable = "agent_core" },
+    { name = "agent-core-testing", marker = "extra == 'dev'", editable = "agent_core_testing" },
     { name = "agent-pkg-host", editable = "agent_pkg/host" },
     { name = "aiodocker" },
     { name = "cli-util", editable = "cli_util" },
@@ -1418,6 +1467,7 @@ requires-dist = [
     { name = "openai-utils", editable = "openai_utils" },
     { name = "typer", specifier = ">=0.9" },
 ]
+provides-extras = ["dev"]
 
 [[package]]
 name = "editor-agent-runtime"
@@ -4298,6 +4348,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "agent-core-testing" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -4320,6 +4371,7 @@ gepa = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", editable = "agent_core" },
+    { name = "agent-core-testing", marker = "extra == 'dev'", editable = "agent_core_testing" },
     { name = "agent-pkg-host", editable = "agent_pkg/host" },
     { name = "agent-pkg-runtime", editable = "agent_pkg/runtime" },
     { name = "aiodocker", specifier = ">=0.22.0" },

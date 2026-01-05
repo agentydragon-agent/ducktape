@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_core.agent import _openai_to_mcp_result
-from agent_core.testing.responses import ResponsesFactory
-from agent_core.testing.steps import DockerExecCall, MakeCall
+from agent_core_testing.responses import ResponsesFactory
+from agent_core_testing.steps import DockerExecCall, MakeCall
 from mcp_infra.calltool import extract_structured_content
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, Killed, TimedOut, TruncatedStream

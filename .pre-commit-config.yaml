@@ -234,11 +234,11 @@ repos:
           - "tenacity>=8.2.0"
           - "compact-json>=1.4.0"
           - pyhamcrest>=2.1
+          - platformdirs>=3.0
           - types-docker
           - types-PyYAML
           - mautrix
           - pytest
-          - platformdirs
 
       # adgn: Full monolith with all dependencies
       - id: mypy

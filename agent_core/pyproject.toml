@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 testing = [
+    "agent-core-testing",
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
     "mcp-infra",
@@ -39,6 +40,7 @@ packages = ["src/agent_core"]
 [tool.uv.sources]
 openai-utils = { workspace = true }
 agent-pkg-host = { workspace = true }
+agent-core-testing = { workspace = true }
 mcp-infra = { workspace = true }
 
 [tool.pytest.ini_options]
