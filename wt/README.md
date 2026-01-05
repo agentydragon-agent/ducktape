@@ -240,8 +240,8 @@ upstream_branch: main
 github_enabled: false
 github_repo: owner/repo
 log_operations: true
-cow_method: auto       # macOS: clonefile; Linux: reflink; fallback: rsync
-hydrate_worktrees: true  # set false to leave new worktrees empty
+cow_method: auto # macOS: clonefile; Linux: reflink; fallback: rsync
+hydrate_worktrees: true # set false to leave new worktrees empty
 ```
 
 cow_method behavior:

@@ -42,14 +42,14 @@
 
 4. **Comments and micro-docs**
    Files:
-     - `src/wt/client/view_formatter.py`: add note that `merged_at` drives merged-vs-closed label.
-     - `src/wt/server/pr_service.py`: brief docstring on `WT_TEST_MODE` fixture behavior.
-   Acceptance: Comments exist, are concise/accurate, and help future maintainers.
+   - `src/wt/client/view_formatter.py`: add note that `merged_at` drives merged-vs-closed label.
+   - `src/wt/server/pr_service.py`: brief docstring on `WT_TEST_MODE` fixture behavior.
+     Acceptance: Comments exist, are concise/accurate, and help future maintainers.
 
 5. **Test coverage tweaks**
    - Add unit test for `GitHubInterface.pr_list` asserting field names and `merged_at` serialization.
    - Add resilience test simulating `GitHubUnavailableError`; ensure `PRService.cached` stores `PRCacheError` without task crash.
-   Acceptance: New tests pass and fail appropriately on regressions.
+     Acceptance: New tests pass and fail appropriately on regressions.
 
 ### Tooling Guardrails (lint / Semgrep)
 

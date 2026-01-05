@@ -39,7 +39,7 @@ relaxed sandboxing to allow UNIX sockets and filesystem operations.
 
 - The CLI communicates with a daemon via UNIX sockets. Tests that cover this path need filesystem
   - socket permissions; in restricted sandboxes those calls may fail with ECONNREFUSED or bind
-  errors.
+    errors.
 - Hooks and shell integration rely on fd3 semantics; avoid breaking this when modifying
   `wt.shell` utilities.
 - `gitstatusd` metrics are surfaced to the client; when altering daemon startup flows, ensure
