@@ -14,13 +14,13 @@ rspcache --app admin --host 127.0.0.1 --port 8100
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `ADGN_RESP_DB_URL` | PostgreSQL DSN (required), e.g. `postgresql+asyncpg://user:pass@localhost/rspcache` |
-| `OPENAI_API_KEY` | Default upstream OpenAI key |
-| `ADGN_OPENAI_KEYS` | Additional keys as `alias=key,...` |
-| `ADGN_OPENAI_KEY_<ALIAS>` | Per-alias key environment variables |
-| `RSPCACHE_REQUIRE_API_KEY` | Set `true`/`1` to enforce client tokens |
+| Variable                   | Description                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------- |
+| `ADGN_RESP_DB_URL`         | PostgreSQL DSN (required), e.g. `postgresql+asyncpg://user:pass@localhost/rspcache` |
+| `OPENAI_API_KEY`           | Default upstream OpenAI key                                                         |
+| `ADGN_OPENAI_KEYS`         | Additional keys as `alias=key,...`                                                  |
+| `ADGN_OPENAI_KEY_<ALIAS>`  | Per-alias key environment variables                                                 |
+| `RSPCACHE_REQUIRE_API_KEY` | Set `true`/`1` to enforce client tokens                                             |
 
 ## Client API Keys
 
