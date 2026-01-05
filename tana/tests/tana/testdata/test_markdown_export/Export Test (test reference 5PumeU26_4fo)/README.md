@@ -9,15 +9,14 @@ Export Test (test reference 5PumeU26_4fo)
     - This is Underscored
     - This is Strikethrough
   - Datetime (test reference 2Ap-6LC3fVuq)
-    - Date: _2025-06-12_
-    - Datetime: _2025-06-12T12:38:03[America/Los_Angeles]_
-    - Datetime range: _2025-06-12T12:38:11[America/Los_Angeles]/2025-06-12T13:38:12[America/Los_Angeles]_
+    - Date: *2025-06-12*
+    - Datetime: *2025-06-12T12:38:03[America/Los_Angeles]*
+    - Datetime range: *2025-06-12T12:38:11[America/Los_Angeles]/2025-06-12T13:38:12[America/Los_Angeles]*
   - Code (test reference YbPcBamWZFGV)
     - Inline code: foo = "bar"
     - Code block, Python:
-      - ```Python
 
-        ```
+      - ```Python
 
 # !/usr/bin/python
 
@@ -71,4 +70,3 @@ print("hello world")
   - Perfect Eggs (test reference) #recipe
   - Steak #recipe
   - Scramble #recipe
-```

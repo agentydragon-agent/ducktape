@@ -21,7 +21,10 @@
         "_ownerId": "SYS_T19",
         "_metaNodeId": "SYS_A13_META"
       },
-      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+      "children": [
+        "SYS_TA05_02",
+        "SYS_TA05_03"
+      ]
     },
     {
       "id": "SYS_T01_META",
@@ -30,7 +33,9 @@
         "_ownerId": "SYS_T01",
         "_docType": "metanode"
       },
-      "children": ["SYS_T01_META_SYS_A13"]
+      "children": [
+        "SYS_T01_META_SYS_A13"
+      ]
     },
     {
       "id": "SYS_T01_META_SYS_A13",
@@ -39,7 +44,10 @@
         "_docType": "tuple",
         "_ownerId": "SYS_T01_META"
       },
-      "children": ["SYS_A13", "SYS_T01"]
+      "children": [
+        "SYS_A13",
+        "SYS_T01"
+      ]
     },
     {
       "id": "x2-AdByI7b-a",
@@ -48,9 +56,18 @@
         "name": "Node with multiple supertags: (test reference x2-AdByI7b-a)",
         "_ownerId": "MFjacEHVlv36"
       },
-      "touchCounts": [53, 0],
-      "modifiedTs": [1749780142970, 0],
-      "children": ["x_DxhU6IlETf", "N5M5-9TapzvZ"]
+      "touchCounts": [
+        53,
+        0
+      ],
+      "modifiedTs": [
+        1749780142970,
+        0
+      ],
+      "children": [
+        "x_DxhU6IlETf",
+        "N5M5-9TapzvZ"
+      ]
     },
     {
       "id": "x_DxhU6IlETf",
@@ -60,9 +77,17 @@
         "_ownerId": "x2-AdByI7b-a",
         "_metaNodeId": "rTUuD8gPafDI"
       },
-      "touchCounts": [45, 0],
-      "modifiedTs": [1749775803846, 0],
-      "children": ["kK2b7z-44F00"]
+      "touchCounts": [
+        45,
+        0
+      ],
+      "modifiedTs": [
+        1749775803846,
+        0
+      ],
+      "children": [
+        "kK2b7z-44F00"
+      ]
     },
     {
       "id": "nc2QfkloInZH",
@@ -73,8 +98,14 @@
         "_docType": "tagDef",
         "_metaNodeId": "v7uqLU6eYtiY"
       },
-      "touchCounts": [5, 0],
-      "modifiedTs": [1749775788506, 0]
+      "touchCounts": [
+        5,
+        0
+      ],
+      "modifiedTs": [
+        1749775788506,
+        0
+      ]
     },
     {
       "id": "v7uqLU6eYtiY",
@@ -83,9 +114,19 @@
         "_ownerId": "nc2QfkloInZH",
         "_docType": "metanode"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775788506, 0],
-      "children": ["FbRO9wIHhR5C", "OA2nWpCMZs7-", "hEPb4y-jjMLg"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775788506,
+        0
+      ],
+      "children": [
+        "FbRO9wIHhR5C",
+        "OA2nWpCMZs7-",
+        "hEPb4y-jjMLg"
+      ]
     },
     {
       "id": "FbRO9wIHhR5C",
@@ -94,9 +135,18 @@
         "_docType": "tuple",
         "_ownerId": "v7uqLU6eYtiY"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775788506, 0],
-      "children": ["SYS_A13", "SYS_T01"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775788506,
+        0
+      ],
+      "children": [
+        "SYS_A13",
+        "SYS_T01"
+      ]
     },
     {
       "id": "rTUuD8gPafDI",
@@ -105,9 +155,17 @@
         "_ownerId": "x_DxhU6IlETf",
         "_docType": "metanode"
       },
-      "touchCounts": [5, 0],
-      "modifiedTs": [1749775789014, 0],
-      "children": ["U920rxGTLl6c"]
+      "touchCounts": [
+        5,
+        0
+      ],
+      "modifiedTs": [
+        1749775789014,
+        0
+      ],
+      "children": [
+        "U920rxGTLl6c"
+      ]
     },
     {
       "id": "U920rxGTLl6c",
@@ -116,8 +174,14 @@
         "_docType": "tuple",
         "_ownerId": "rTUuD8gPafDI"
       },
-      "touchCounts": [10, 0],
-      "modifiedTs": [1749775796354, 0],
+      "touchCounts": [
+        10,
+        0
+      ],
+      "modifiedTs": [
+        1749775796354,
+        0
+      ],
       "children": [
         "SYS_A13",
         "nc2QfkloInZH",
@@ -135,8 +199,14 @@
         "_docType": "tagDef",
         "_metaNodeId": "zE5pJZRvnaWu"
       },
-      "touchCounts": [5, 0],
-      "modifiedTs": [1749775791521, 0]
+      "touchCounts": [
+        5,
+        0
+      ],
+      "modifiedTs": [
+        1749775791521,
+        0
+      ]
     },
     {
       "id": "zE5pJZRvnaWu",
@@ -145,9 +215,19 @@
         "_ownerId": "un7qL99zcRrd",
         "_docType": "metanode"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775791521, 0],
-      "children": ["kkAbCBYctuYN", "IKEisYhpmZBl", "8aNHIhFKbbQr"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775791521,
+        0
+      ],
+      "children": [
+        "kkAbCBYctuYN",
+        "IKEisYhpmZBl",
+        "8aNHIhFKbbQr"
+      ]
     },
     {
       "id": "kkAbCBYctuYN",
@@ -156,9 +236,18 @@
         "_docType": "tuple",
         "_ownerId": "zE5pJZRvnaWu"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775791521, 0],
-      "children": ["SYS_A13", "SYS_T01"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775791521,
+        0
+      ],
+      "children": [
+        "SYS_A13",
+        "SYS_T01"
+      ]
     },
     {
       "id": "_ORFMoPhGH_R",
@@ -169,8 +258,14 @@
         "_docType": "tagDef",
         "_metaNodeId": "1Nxji-vBriG6"
       },
-      "touchCounts": [5, 0],
-      "modifiedTs": [1749775794324, 0]
+      "touchCounts": [
+        5,
+        0
+      ],
+      "modifiedTs": [
+        1749775794324,
+        0
+      ]
     },
     {
       "id": "1Nxji-vBriG6",
@@ -179,9 +274,19 @@
         "_ownerId": "_ORFMoPhGH_R",
         "_docType": "metanode"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775794324, 0],
-      "children": ["LaREisAFEYI3", "e5nzCVwd9BdG", "yPVxvqOmlFcD"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775794324,
+        0
+      ],
+      "children": [
+        "LaREisAFEYI3",
+        "e5nzCVwd9BdG",
+        "yPVxvqOmlFcD"
+      ]
     },
     {
       "id": "LaREisAFEYI3",
@@ -190,9 +295,18 @@
         "_docType": "tuple",
         "_ownerId": "1Nxji-vBriG6"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775794324, 0],
-      "children": ["SYS_A13", "SYS_T01"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775794324,
+        0
+      ],
+      "children": [
+        "SYS_A13",
+        "SYS_T01"
+      ]
     },
     {
       "id": "AHC9CAhqpuG2",
@@ -203,8 +317,14 @@
         "_docType": "tagDef",
         "_metaNodeId": "p9q5VESL2qhl"
       },
-      "touchCounts": [5, 0],
-      "modifiedTs": [1749775795865, 0]
+      "touchCounts": [
+        5,
+        0
+      ],
+      "modifiedTs": [
+        1749775795865,
+        0
+      ]
     },
     {
       "id": "p9q5VESL2qhl",
@@ -213,9 +333,19 @@
         "_ownerId": "AHC9CAhqpuG2",
         "_docType": "metanode"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775795865, 0],
-      "children": ["MGT2LJaBy_Fm", "nJQIzWQ7EASb", "MK3kDnt1CIn7"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775795865,
+        0
+      ],
+      "children": [
+        "MGT2LJaBy_Fm",
+        "nJQIzWQ7EASb",
+        "MK3kDnt1CIn7"
+      ]
     },
     {
       "id": "MGT2LJaBy_Fm",
@@ -224,9 +354,18 @@
         "_docType": "tuple",
         "_ownerId": "p9q5VESL2qhl"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749775795865, 0],
-      "children": ["SYS_A13", "SYS_T01"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749775795865,
+        0
+      ],
+      "children": [
+        "SYS_A13",
+        "SYS_T01"
+      ]
     },
     {
       "id": "kK2b7z-44F00",
@@ -235,8 +374,14 @@
         "name": "testing",
         "_ownerId": "x_DxhU6IlETf"
       },
-      "touchCounts": [10, 0],
-      "modifiedTs": [1749775803179, 0]
+      "touchCounts": [
+        10,
+        0
+      ],
+      "modifiedTs": [
+        1749775803179,
+        0
+      ]
     },
     {
       "id": "N5M5-9TapzvZ",
@@ -245,9 +390,17 @@
         "name": "Reference (full-block) to node with multiple supertags:",
         "_ownerId": "x2-AdByI7b-a"
       },
-      "touchCounts": [92, 0],
-      "modifiedTs": [1749775991898, 0],
-      "children": ["x_DxhU6IlETf"]
+      "touchCounts": [
+        92,
+        0
+      ],
+      "modifiedTs": [
+        1749775991898,
+        0
+      ],
+      "children": [
+        "x_DxhU6IlETf"
+      ]
     }
   ]
 }

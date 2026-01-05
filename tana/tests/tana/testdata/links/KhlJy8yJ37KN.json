@@ -61,7 +61,10 @@
         "_ownerId": "SYS_T19",
         "_metaNodeId": "SYS_A13_META"
       },
-      "children": ["SYS_TA05_02", "SYS_TA05_03"]
+      "children": [
+        "SYS_TA05_02",
+        "SYS_TA05_03"
+      ]
     },
     {
       "id": "SYS_A78",
@@ -71,7 +74,9 @@
         "_ownerId": "SYS_0",
         "_metaNodeId": "SYS_A78_META"
       },
-      "children": ["SYS_T69"]
+      "children": [
+        "SYS_T69"
+      ]
     },
     {
       "id": "SYS_T01_META",
@@ -80,7 +85,9 @@
         "_ownerId": "SYS_T01",
         "_docType": "metanode"
       },
-      "children": ["SYS_T01_META_SYS_A13"]
+      "children": [
+        "SYS_T01_META_SYS_A13"
+      ]
     },
     {
       "id": "SYS_T01_META_SYS_A13",
@@ -89,7 +96,10 @@
         "_docType": "tuple",
         "_ownerId": "SYS_T01_META"
       },
-      "children": ["SYS_A13", "SYS_T01"]
+      "children": [
+        "SYS_A13",
+        "SYS_T01"
+      ]
     },
     {
       "id": "SYS_T02_META",
@@ -98,7 +108,9 @@
         "_ownerId": "SYS_T02",
         "_docType": "metanode"
       },
-      "children": ["SYS_T02_META_SYS_A13"]
+      "children": [
+        "SYS_T02_META_SYS_A13"
+      ]
     },
     {
       "id": "SYS_T02_META_SYS_A13",
@@ -107,7 +119,10 @@
         "_docType": "tuple",
         "_ownerId": "SYS_T02_META"
       },
-      "children": ["SYS_A13", "SYS_T01"]
+      "children": [
+        "SYS_A13",
+        "SYS_T01"
+      ]
     },
     {
       "id": "SYS_A78_META",
@@ -116,7 +131,10 @@
         "_ownerId": "SYS_A78",
         "_docType": "metanode"
       },
-      "children": ["SYS_A78_META_SYS_A12", "SYS_A78_META_SYS_A13"]
+      "children": [
+        "SYS_A78_META_SYS_A12",
+        "SYS_A78_META_SYS_A13"
+      ]
     },
     {
       "id": "SYS_A78_META_SYS_A13",
@@ -125,7 +143,10 @@
         "_docType": "tuple",
         "_ownerId": "SYS_A78_META"
       },
-      "children": ["SYS_A13", "SYS_T02"]
+      "children": [
+        "SYS_A13",
+        "SYS_T02"
+      ]
     },
     {
       "id": "KhlJy8yJ37KN",
@@ -134,8 +155,14 @@
         "name": "Links (test reference KhlJy8yJ37KN)",
         "_ownerId": "MFjacEHVlv36"
       },
-      "touchCounts": [77, 0],
-      "modifiedTs": [1749780112332, 0],
+      "touchCounts": [
+        77,
+        0
+      ],
+      "modifiedTs": [
+        1749780112332,
+        0
+      ],
       "children": [
         "Wp7HIrMoNrO4",
         "FFPXhyEfnayx",
@@ -150,9 +177,17 @@
         "name": "Basic link",
         "_ownerId": "KhlJy8yJ37KN"
       },
-      "touchCounts": [17, 0],
-      "modifiedTs": [1749768219581, 0],
-      "children": ["7v3kgWicVaRn"]
+      "touchCounts": [
+        17,
+        0
+      ],
+      "modifiedTs": [
+        1749768219581,
+        0
+      ],
+      "children": [
+        "7v3kgWicVaRn"
+      ]
     },
     {
       "id": "7v3kgWicVaRn",
@@ -162,9 +197,17 @@
         "_ownerId": "Wp7HIrMoNrO4",
         "_docType": "url"
       },
-      "touchCounts": [7, 0],
-      "modifiedTs": [1749768219256, 0],
-      "children": ["loQFvVTGhz1F"]
+      "touchCounts": [
+        7,
+        0
+      ],
+      "modifiedTs": [
+        1749768219256,
+        0
+      ],
+      "children": [
+        "loQFvVTGhz1F"
+      ]
     },
     {
       "id": "kzrpyezyQKyx",
@@ -173,8 +216,14 @@
         "name": "https://www.google.com/",
         "_ownerId": "loQFvVTGhz1F"
       },
-      "touchCounts": [3, 0],
-      "modifiedTs": [1749768219256, 0]
+      "touchCounts": [
+        3,
+        0
+      ],
+      "modifiedTs": [
+        1749768219256,
+        0
+      ]
     },
     {
       "id": "loQFvVTGhz1F",
@@ -183,9 +232,18 @@
         "_docType": "tuple",
         "_ownerId": "7v3kgWicVaRn"
       },
-      "touchCounts": [6, 0],
-      "modifiedTs": [1749768219256, 0],
-      "children": ["SYS_A78", "kzrpyezyQKyx"]
+      "touchCounts": [
+        6,
+        0
+      ],
+      "modifiedTs": [
+        1749768219256,
+        0
+      ],
+      "children": [
+        "SYS_A78",
+        "kzrpyezyQKyx"
+      ]
     },
     {
       "id": "FFPXhyEfnayx",
@@ -194,8 +252,14 @@
         "name": "Inline link: <span data-inlineref-node=\"_VJcNPQVghEd\"></span>",
         "_ownerId": "KhlJy8yJ37KN"
       },
-      "touchCounts": [61, 0],
-      "modifiedTs": [1749768239898, 0]
+      "touchCounts": [
+        61,
+        0
+      ],
+      "modifiedTs": [
+        1749768239898,
+        0
+      ]
     },
     {
       "id": "_VJcNPQVghEd",
@@ -205,9 +269,17 @@
         "_docType": "url",
         "_ownerId": "FFPXhyEfnayx"
       },
-      "touchCounts": [5, 0],
-      "modifiedTs": [1749768239898, 0],
-      "children": ["wwJEQGqbFyUk"]
+      "touchCounts": [
+        5,
+        0
+      ],
+      "modifiedTs": [
+        1749768239898,
+        0
+      ],
+      "children": [
+        "wwJEQGqbFyUk"
+      ]
     },
     {
       "id": "dba4M_Hn6Brc",
@@ -216,8 +288,14 @@
         "name": "Inline link with different text: <span data-inlineref-node=\"G3mhwksxY0VD\"></span>",
         "_ownerId": "KhlJy8yJ37KN"
       },
-      "touchCounts": [47, 0],
-      "modifiedTs": [1749768259367, 0]
+      "touchCounts": [
+        47,
+        0
+      ],
+      "modifiedTs": [
+        1749768259367,
+        0
+      ]
     },
     {
       "id": "G3mhwksxY0VD",
@@ -227,9 +305,17 @@
         "_docType": "url",
         "_ownerId": "dba4M_Hn6Brc"
       },
-      "touchCounts": [6, 0],
-      "modifiedTs": [1749768259367, 0],
-      "children": ["PKwdSGBZ1haq"]
+      "touchCounts": [
+        6,
+        0
+      ],
+      "modifiedTs": [
+        1749768259367,
+        0
+      ],
+      "children": [
+        "PKwdSGBZ1haq"
+      ]
     },
     {
       "id": "7umOnOsiI5ek",
@@ -238,9 +324,17 @@
         "name": "Link with embedded additional content:",
         "_ownerId": "KhlJy8yJ37KN"
       },
-      "touchCounts": [57, 0],
-      "modifiedTs": [1749768282989, 0],
-      "children": ["cU_TGBgRfNpj"]
+      "touchCounts": [
+        57,
+        0
+      ],
+      "modifiedTs": [
+        1749768282989,
+        0
+      ],
+      "children": [
+        "cU_TGBgRfNpj"
+      ]
     },
     {
       "id": "cU_TGBgRfNpj",
@@ -250,9 +344,19 @@
         "_ownerId": "7umOnOsiI5ek",
         "_docType": "url"
       },
-      "touchCounts": [9, 0],
-      "modifiedTs": [1749768284287, 0],
-      "children": ["OC7bAbhdtp1k", "k5VPGJjDvE8F", "jQT4raE2V6oA"]
+      "touchCounts": [
+        9,
+        0
+      ],
+      "modifiedTs": [
+        1749768284287,
+        0
+      ],
+      "children": [
+        "OC7bAbhdtp1k",
+        "k5VPGJjDvE8F",
+        "jQT4raE2V6oA"
+      ]
     },
     {
       "id": "diAINTCvVTJd",
@@ -261,8 +365,14 @@
         "name": "https://xkcd.com/",
         "_ownerId": "OC7bAbhdtp1k"
       },
-      "touchCounts": [3, 0],
-      "modifiedTs": [1749768282030, 0]
+      "touchCounts": [
+        3,
+        0
+      ],
+      "modifiedTs": [
+        1749768282030,
+        0
+      ]
     },
     {
       "id": "OC7bAbhdtp1k",
@@ -271,9 +381,18 @@
         "_docType": "tuple",
         "_ownerId": "cU_TGBgRfNpj"
       },
-      "touchCounts": [6, 0],
-      "modifiedTs": [1749768282030, 0],
-      "children": ["SYS_A78", "diAINTCvVTJd"]
+      "touchCounts": [
+        6,
+        0
+      ],
+      "modifiedTs": [
+        1749768282030,
+        0
+      ],
+      "children": [
+        "SYS_A78",
+        "diAINTCvVTJd"
+      ]
     },
     {
       "id": "k5VPGJjDvE8F",
@@ -282,8 +401,14 @@
         "name": "content 1",
         "_ownerId": "cU_TGBgRfNpj"
       },
-      "touchCounts": [19, 0],
-      "modifiedTs": [1749768288239, 0]
+      "touchCounts": [
+        19,
+        0
+      ],
+      "modifiedTs": [
+        1749768288239,
+        0
+      ]
     },
     {
       "id": "jQT4raE2V6oA",
@@ -292,8 +417,14 @@
         "name": "content 2",
         "_ownerId": "cU_TGBgRfNpj"
       },
-      "touchCounts": [16, 0],
-      "modifiedTs": [1749768291120, 0]
+      "touchCounts": [
+        16,
+        0
+      ],
+      "modifiedTs": [
+        1749768291120,
+        0
+      ]
     }
   ]
 }
