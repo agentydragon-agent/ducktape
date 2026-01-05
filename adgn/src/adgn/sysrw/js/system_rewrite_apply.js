@@ -23,9 +23,7 @@ async function readAllStdin() {
 (async () => {
   const templatePath = process.argv[2];
   if (!templatePath) {
-    console.error(
-      "usage: system_rewrite_apply.js <template-file> < input-system.txt > output-system.txt"
-    );
+    console.error("usage: system_rewrite_apply.js <template-file> < input-system.txt > output-system.txt");
     process.exit(2);
   }
   const template = fs.readFileSync(templatePath, "utf8");

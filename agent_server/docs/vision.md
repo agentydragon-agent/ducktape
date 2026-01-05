@@ -93,7 +93,7 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 - Ask flow observability
   - V1 blocks and hides pending approvals from the model. Consider a Stage 2 optional mode to surface a concise “pending approvals: N” status in system messages without leaking specifics.
 - Error codes
-  - Centralize a documented error code namespace for policy_denied(_continue), subscribe_unsupported, unsubscribe_unsupported, forbidden (pinned unsubscribes).
+  - Centralize a documented error code namespace for `policy_denied(_continue)`, `subscribe_unsupported`, `unsubscribe_unsupported`, `forbidden` (pinned unsubscribes).
 - Tests
   - Add end‑to‑end tests for: policy allow/deny/ask, container path enforcement, subscriptions persistence/hydration, and loop yield semantics.
 - Glossary
@@ -102,9 +102,9 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 ### Integration roadmap
 
 - Align with migration stages in <mcp-runtime/overview.md>:
-  1) Ensure FastMCP proxy mounts everywhere (done); transitional handler approvals allowed.
-  2) Install policy middleware in Compositor; add dedicated Resources server; remove approval enforcement from handlers.
-  3) Optional async inbox/tool‑state resources once sync path is rock‑solid.
+  1. Ensure FastMCP proxy mounts everywhere (done); transitional handler approvals allowed.
+  2. Install policy middleware in Compositor; add dedicated Resources server; remove approval enforcement from handlers.
+  3. Optional async inbox/tool‑state resources once sync path is rock‑solid.
 
 ## Container access to scaffold source
 

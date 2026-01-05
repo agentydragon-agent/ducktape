@@ -1,11 +1,11 @@
 // @ts-check
-import eslint from '@eslint/js';
-import tseslint from '@typescript-eslint/eslint-plugin';
-import tsparser from '@typescript-eslint/parser';
-import sveltePlugin from 'eslint-plugin-svelte';
-import svelteParser from 'svelte-eslint-parser';
-import importPlugin from 'eslint-plugin-import';
-import globals from 'globals';
+import eslint from '@eslint/js'
+import tseslint from '@typescript-eslint/eslint-plugin'
+import tsparser from '@typescript-eslint/parser'
+import sveltePlugin from 'eslint-plugin-svelte'
+import svelteParser from 'svelte-eslint-parser'
+import importPlugin from 'eslint-plugin-import'
+import globals from 'globals'
 
 export default [
   eslint.configs.recommended,
@@ -31,14 +31,7 @@ export default [
       'import/order': [
         'error',
         {
-          groups: [
-            'builtin',
-            'external',
-            'internal',
-            ['parent', 'sibling'],
-            'index',
-            'type',
-          ],
+          groups: ['builtin', 'external', 'internal', ['parent', 'sibling'], 'index', 'type'],
           'newlines-between': 'always',
           alphabetize: { order: 'asc', caseInsensitive: true },
         },
@@ -84,14 +77,7 @@ export default [
       'import/order': [
         'error',
         {
-          groups: [
-            'builtin',
-            'external',
-            'internal',
-            ['parent', 'sibling'],
-            'index',
-            'type',
-          ],
+          groups: ['builtin', 'external', 'internal', ['parent', 'sibling'], 'index', 'type'],
           'newlines-between': 'always',
           alphabetize: { order: 'asc', caseInsensitive: true },
         },
@@ -114,4 +100,4 @@ export default [
       'no-multiple-empty-lines': ['error', { max: 1 }],
     },
   },
-];
+]

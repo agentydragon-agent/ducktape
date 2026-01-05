@@ -123,13 +123,13 @@ def po_agent_steps():
 
 ### Current State (Correct)
 
-| Fixture Location | Fixtures | Usage Scope | Status |
-|------------------|----------|-------------|--------|
-| `tests/conftest.py` | `make_step_runner` | Global (all tests) | ✅ Correct |
-| `tests/support/responses.py` | `ResponsesFactory`, `_StepRunner` | Global | ✅ Correct |
-| `tests/support/steps.py` | Step classes (`MakeCall`, `CheckThenCall`, etc.) | Global | ✅ Correct |
-| `tests/props/prompt_eval/test_prompt_optimizer_integration.py` | `po_agent_steps`, `critic_agent_steps`, `grader_agent_steps` | Single test file | ✅ Correct |
-| `tests/agent/conftest.py` | `make_test_agent`, policy fixtures, etc. | Agent suite | ✅ Correct |
+| Fixture Location                                               | Fixtures                                                     | Usage Scope        | Status     |
+| -------------------------------------------------------------- | ------------------------------------------------------------ | ------------------ | ---------- |
+| `tests/conftest.py`                                            | `make_step_runner`                                           | Global (all tests) | ✅ Correct |
+| `tests/support/responses.py`                                   | `ResponsesFactory`, `_StepRunner`                            | Global             | ✅ Correct |
+| `tests/support/steps.py`                                       | Step classes (`MakeCall`, `CheckThenCall`, etc.)             | Global             | ✅ Correct |
+| `tests/props/prompt_eval/test_prompt_optimizer_integration.py` | `po_agent_steps`, `critic_agent_steps`, `grader_agent_steps` | Single test file   | ✅ Correct |
+| `tests/agent/conftest.py`                                      | `make_test_agent`, policy fixtures, etc.                     | Agent suite        | ✅ Correct |
 
 ### What's Missing? (Answer: Nothing)
 
@@ -231,11 +231,13 @@ Add to `docs/test_patterns_analysis.md`:
 ## When to Extract Step Fixtures
 
 ✅ **Extract when**:
+
 - Pattern appears in 3+ tests
 - Steps are identical or differ by 1-2 parameters
 - Pattern represents a stable domain concept
 
 ❌ **Don't extract when**:
+
 - Pattern appears in 1-2 tests
 - Pattern requires 3+ parameters
 - Pattern is trivial (1-2 steps)
@@ -264,15 +266,15 @@ But **don't create this preemptively** - wait for the 3rd use.
 
 ## Metrics
 
-| Metric | Count | Recommendation |
-|--------|-------|----------------|
-| Total files using `make_step_runner` | 14 | ✅ Good adoption |
-| Unique step sequences | 14 | ✅ Each test is unique |
-| Exact duplicates (3+ occurrences) | 0 | ✅ No extraction needed |
-| Similar patterns (variations) | 4 (echo+done) | ✅ Intentional variations |
-| Test-specific fixtures | 3 (PO, critic, grader) | ✅ Correctly scoped |
-| Suite-specific fixtures | Many in conftest.py | ✅ Appropriate |
-| Global fixtures | `make_step_runner`, step classes | ✅ Well-designed |
+| Metric                               | Count                            | Recommendation            |
+| ------------------------------------ | -------------------------------- | ------------------------- |
+| Total files using `make_step_runner` | 14                               | ✅ Good adoption          |
+| Unique step sequences                | 14                               | ✅ Each test is unique    |
+| Exact duplicates (3+ occurrences)    | 0                                | ✅ No extraction needed   |
+| Similar patterns (variations)        | 4 (echo+done)                    | ✅ Intentional variations |
+| Test-specific fixtures               | 3 (PO, critic, grader)           | ✅ Correctly scoped       |
+| Suite-specific fixtures              | Many in conftest.py              | ✅ Appropriate            |
+| Global fixtures                      | `make_step_runner`, step classes | ✅ Well-designed          |
 
 ## Conclusion
 
