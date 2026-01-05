@@ -6,10 +6,7 @@
   "tool_name": "LS",
   "tool_input": {
     "path": "/Users/user/test/docs",
-    "ignore": [
-      "*.tmp",
-      "*.cache"
-    ]
+    "ignore": ["*.tmp", "*.cache"]
   },
   "tool_response": "- /Users/user/test/\n  - docs/\n    - 001_setup.md\n    - 002_github.md\n    - 003_git.md\n   ..."
 }

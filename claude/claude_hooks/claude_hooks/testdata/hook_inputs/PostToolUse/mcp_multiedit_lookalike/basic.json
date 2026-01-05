@@ -6,9 +6,7 @@
   "tool_name": "mcp__github__push_files",
   "tool_input": {
     "file_path": "/path/to/file.txt",
-    "edits": [
-      {"old_string": "old", "new_string": "new"}
-    ]
+    "edits": [{ "old_string": "old", "new_string": "new" }]
   },
   "tool_response": {
     "commit_sha": "def456"

@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|^k8s-old/|^cluster/flux-system/flux-system/|.*/node_modules/.*"
+exclude: ".*/fixtures/.*|.*/third_party/.*|.*/vendor/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|^k8s-old/|^cluster/flux-system/flux-system/|.*/node_modules/.*|^claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\\.md$|^tana/tests/tana/testdata/.*\\.(md|tanapaste|txt)$"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -245,7 +245,7 @@ repos:
         alias: mypy-adgn
         name: mypy (adgn)
         files: "^adgn/.*\\.py$"
-        exclude: "(/third_party/|/testdata/|/fixtures/|/vendor/|/migrations/)"
+        exclude: "(/testdata/|/migrations/)"
         language_version: python3.13
         args: ["--config-file=mypy.ini"]
         additional_dependencies:
@@ -361,7 +361,7 @@ repos:
         name: prettier
         language: system
         entry: pnpm exec prettier --write --ignore-unknown
-        types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml]
+        types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json]
 
   # Markdownlint: Structural markdown linting (heading hierarchy, duplicate headings, etc.)
   # Formatting rules disabled via "extends": "markdownlint/style/prettier" in config

@@ -5,8 +5,8 @@ finance/worthy/worthy/index_tail.html
 # Symbolic links and Jinja2 templates
 llm/html/**
 
-# Claude Code testdata - test fixtures should not be reformatted
-claude/claude_hooks/claude_hooks/testdata/**
+# Claude Code testdata - description.md are extracted content from Claude Code
+claude/claude_hooks/claude_hooks/testdata/claude_tools/**/*.md
 
 # OrcaSlicer config - machine-generated, should not be formatted
 nonrcm-dotfiles/config/OrcaSlicer/**
@@ -18,8 +18,10 @@ inventree_utils/labels/**
 # Tana export references - generated content, should not be formatted
 tana/src/tana/export/references/**
 
-# Tana testdata - test fixtures should not be reformatted
-tana/tests/tana/testdata/**
+# Tana testdata - exclude non-JSON fixtures (JSON should be formatted)
+tana/tests/tana/testdata/**/*.md
+tana/tests/tana/testdata/**/*.tanapaste
+tana/tests/tana/testdata/**/*.txt
 
 # SvelteKit generated files
 **/.svelte-kit/**
