@@ -470,7 +470,7 @@ assert_that(status, any_of(
 # "Must be SUCCESS OR PENDING"
 ```
 
-### 3. not_() - Negation
+### 3. `not_()` - Negation
 
 ```python
 assert_that(message, not_(contains_string("error")))

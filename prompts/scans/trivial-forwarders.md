@@ -634,15 +634,18 @@ For each finding, apply the Decision Framework and categorize:
 ### True Positives (Should Inline)
 
 #### 1. SearchService Facade Methods
+
 **File:** `/path/to/search.py`
 **Lines:** 19-32
 
 **Evidence:** 5 methods that just forward to module functions
+
 - `get_node()` → forwards to `_graph[node_id]`
 - `materialize()` → forwards to `materialize_search()`
 - etc.
 
 **Decision Framework Analysis:**
+
 1. ✅ **Call count**: Only 2 of 5 methods used, both called from single caller (Workspace class)
 2. ✅ **Complexity test**: Inlining doesn't increase complexity (1 line → 1 line)
 3. ✅ **Architectural role**: Not implementing interface, not public API boundary
@@ -651,6 +654,7 @@ For each finding, apply the Decision Framework and categorize:
 **Decision**: **INLINE** - Remove SearchService, use direct imports in Workspace
 
 **Recommended fix:**
+
 - Replace `SearchService(graph)` with direct imports
 - Update Workspace methods to call functions directly
 - Delete SearchService class
@@ -660,12 +664,14 @@ For each finding, apply the Decision Framework and categorize:
 ### False Positives (Keep - Justified)
 
 #### 1. Django Template Tag Wrapper
+
 **File:** `/path/to/custom_tags.py`
 **Line:** 233-234
 
 **Why flagged:** Single-line function forwarding to constructor
 
 **Why it should be kept:** **Framework requirement**
+
 - Django's `@register.simple_tag` decorator requires function signature
 - Template engine calls functions, not constructors directly
 - Not a code smell - necessary for framework integration
@@ -675,12 +681,14 @@ For each finding, apply the Decision Framework and categorize:
 ---
 
 #### 2. GnuCash Utility Wrapper
+
 **File:** `/path/to/gnucash_util.py`
 **Line:** 35-36
 
 **Why flagged:** Single-line wrapper around conversion function
 
 **Why it should be kept:** **Semantic clarity**
+
 - Called 3 times in reconciliation code
 - `get_split_amount(split)` clearer than `gnc_numeric_to_python_Decimal(split.GetAmount())`
 - One usage as key function for sorting - shorter name improves readability

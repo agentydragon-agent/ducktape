@@ -336,42 +336,43 @@ def test_create_user():
 
 ```typescript
 // GlobalApprovalsList.test.ts - Pattern repeated 11+ times across tests
-it('should display approvals grouped by agent', async () => {
+it("should display approvals grouped by agent", async () => {
   const mockApprovals = [
     {
-      uri: 'resource://approvals/1',
-      mimeType: 'application/json',
+      uri: "resource://approvals/1",
+      mimeType: "application/json",
       text: JSON.stringify({
-        agent_id: 'agent-1',
-        call_id: 'call-1',
-        tool: 'read_file',
-        args: { path: '/test.txt' },
-        timestamp: '2025-01-01T00:00:00Z',
+        agent_id: "agent-1",
+        call_id: "call-1",
+        tool: "read_file",
+        args: { path: "/test.txt" },
+        timestamp: "2025-01-01T00:00:00Z",
       }),
     },
     // ... more approvals
-  ]
-  mockReadResource.mockResolvedValue(mockApprovals)
+  ];
+  mockReadResource.mockResolvedValue(mockApprovals);
   // ... test logic
-})
+});
 
-it('should call approve tool when approve button is clicked', async () => {
-  const mockApprovals = [  // ❌ Same structure, 10 more times
+it("should call approve tool when approve button is clicked", async () => {
+  const mockApprovals = [
+    // ❌ Same structure, 10 more times
     {
-      uri: 'resource://approvals/1',
-      mimeType: 'application/json',
+      uri: "resource://approvals/1",
+      mimeType: "application/json",
       text: JSON.stringify({
-        agent_id: 'agent-1',
-        call_id: 'call-1',
-        tool: 'test_tool',
+        agent_id: "agent-1",
+        call_id: "call-1",
+        tool: "test_tool",
         args: {},
-        timestamp: '2025-01-01T00:00:00Z',
+        timestamp: "2025-01-01T00:00:00Z",
       }),
     },
-  ]
-  mockReadResource.mockResolvedValue(mockApprovals)
+  ];
+  mockReadResource.mockResolvedValue(mockApprovals);
   // ... test logic
-})
+});
 
 // Pattern continues in 9 more tests...
 ```
@@ -382,38 +383,38 @@ it('should call approve tool when approve button is clicked', async () => {
 // tests/fixtures/approvals.ts
 export function createMockApproval(overrides?: Partial<PendingApproval>) {
   return {
-    uri: overrides?.uri ?? 'resource://approvals/1',
-    mimeType: 'application/json',
+    uri: overrides?.uri ?? "resource://approvals/1",
+    mimeType: "application/json",
     text: JSON.stringify({
-      agent_id: overrides?.agent_id ?? 'agent-1',
-      call_id: overrides?.call_id ?? 'call-1',
-      tool: overrides?.tool ?? 'test_tool',
+      agent_id: overrides?.agent_id ?? "agent-1",
+      call_id: overrides?.call_id ?? "call-1",
+      tool: overrides?.tool ?? "test_tool",
       args: overrides?.args ?? {},
-      timestamp: overrides?.timestamp ?? '2025-01-01T00:00:00Z',
+      timestamp: overrides?.timestamp ?? "2025-01-01T00:00:00Z",
     }),
-  }
+  };
 }
 
 export function mockApprovalsResource(approvals: ReturnType<typeof createMockApproval>[]) {
-  mockReadResource.mockResolvedValue(approvals)
+  mockReadResource.mockResolvedValue(approvals);
 }
 
 // GlobalApprovalsList.test.ts
-import { createMockApproval, mockApprovalsResource } from './fixtures/approvals'
+import { createMockApproval, mockApprovalsResource } from "./fixtures/approvals";
 
-it('should display approvals grouped by agent', async () => {
+it("should display approvals grouped by agent", async () => {
   mockApprovalsResource([
-    createMockApproval({ agent_id: 'agent-1', tool: 'read_file' }),
-    createMockApproval({ agent_id: 'agent-1', tool: 'write_file', call_id: 'call-2' }),
-    createMockApproval({ agent_id: 'agent-2', tool: 'exec', call_id: 'call-3' }),
-  ])
+    createMockApproval({ agent_id: "agent-1", tool: "read_file" }),
+    createMockApproval({ agent_id: "agent-1", tool: "write_file", call_id: "call-2" }),
+    createMockApproval({ agent_id: "agent-2", tool: "exec", call_id: "call-3" }),
+  ]);
   // ... test logic
-})
+});
 
-it('should call approve tool when approve button is clicked', async () => {
-  mockApprovalsResource([createMockApproval()])  // Defaults work for this test
+it("should call approve tool when approve button is clicked", async () => {
+  mockApprovalsResource([createMockApproval()]); // Defaults work for this test
   // ... test logic
-})
+});
 ```
 
 ## Pattern 8: Duplicated Test Workflows (TypeScript/Vitest Example)
@@ -422,50 +423,54 @@ it('should call approve tool when approve button is clicked', async () => {
 
 ```typescript
 // GlobalApprovalsList.test.ts - "Open reject dialog" pattern repeated 5+ times
-it('should open reject dialog when reject button is clicked', async () => {
-  const mockApprovals = [/* ... */]
-  mockReadResource.mockResolvedValue(mockApprovals)
+it("should open reject dialog when reject button is clicked", async () => {
+  const mockApprovals = [
+    /* ... */
+  ];
+  mockReadResource.mockResolvedValue(mockApprovals);
 
-  const { container } = render(GlobalApprovalsList)
+  const { container } = render(GlobalApprovalsList);
 
   await waitFor(() => {
-    expect(screen.getByText('test_tool')).toBeTruthy()
-  })
+    expect(screen.getByText("test_tool")).toBeTruthy();
+  });
 
   // Find and click reject button
-  const rejectButton = container.querySelector('.btn-reject')
-  expect(rejectButton).toBeTruthy()
+  const rejectButton = container.querySelector(".btn-reject");
+  expect(rejectButton).toBeTruthy();
   if (rejectButton) {
-    await fireEvent.click(rejectButton)
+    await fireEvent.click(rejectButton);
   }
 
   await waitFor(() => {
-    expect(screen.getByText('Reject Tool Call')).toBeTruthy()
-  })
-})
+    expect(screen.getByText("Reject Tool Call")).toBeTruthy();
+  });
+});
 
-it('should require rejection reason to be non-empty', async () => {
-  const mockApprovals = [/* ... */]
-  mockReadResource.mockResolvedValue(mockApprovals)
+it("should require rejection reason to be non-empty", async () => {
+  const mockApprovals = [
+    /* ... */
+  ];
+  mockReadResource.mockResolvedValue(mockApprovals);
 
-  const { container } = render(GlobalApprovalsList)
+  const { container } = render(GlobalApprovalsList);
 
   await waitFor(() => {
-    expect(screen.getByText('test_tool')).toBeTruthy()
-  })
+    expect(screen.getByText("test_tool")).toBeTruthy();
+  });
 
   // ❌ Exact same workflow - repeated 5 times
-  const rejectButton = container.querySelector('.btn-reject')
+  const rejectButton = container.querySelector(".btn-reject");
   if (rejectButton) {
-    await fireEvent.click(rejectButton)
+    await fireEvent.click(rejectButton);
   }
 
   await waitFor(() => {
-    expect(screen.getByText('Reject Tool Call')).toBeTruthy()
-  })
+    expect(screen.getByText("Reject Tool Call")).toBeTruthy();
+  });
 
   // Test-specific logic here
-})
+});
 
 // Pattern continues in 3 more tests...
 ```
@@ -475,48 +480,46 @@ it('should require rejection reason to be non-empty', async () => {
 ```typescript
 // tests/helpers/interactions.ts
 export async function openRejectDialog(container: HTMLElement) {
-  const rejectButton = container.querySelector('.btn-reject')
-  expect(rejectButton).toBeTruthy()
+  const rejectButton = container.querySelector(".btn-reject");
+  expect(rejectButton).toBeTruthy();
 
   if (rejectButton) {
-    await fireEvent.click(rejectButton)
+    await fireEvent.click(rejectButton);
   }
 
   await waitFor(() => {
-    expect(screen.getByText('Reject Tool Call')).toBeTruthy()
-  })
+    expect(screen.getByText("Reject Tool Call")).toBeTruthy();
+  });
 }
 
-export async function renderWithApproval(
-  approvals: ReturnType<typeof createMockApproval>[] = [createMockApproval()]
-) {
-  mockApprovalsResource(approvals)
-  const result = render(GlobalApprovalsList)
+export async function renderWithApproval(approvals: ReturnType<typeof createMockApproval>[] = [createMockApproval()]) {
+  mockApprovalsResource(approvals);
+  const result = render(GlobalApprovalsList);
 
   await waitFor(() => {
-    expect(screen.getByText(approvals[0].tool ?? 'test_tool')).toBeTruthy()
-  })
+    expect(screen.getByText(approvals[0].tool ?? "test_tool")).toBeTruthy();
+  });
 
-  return result
+  return result;
 }
 
 // GlobalApprovalsList.test.ts
-import { openRejectDialog, renderWithApproval } from './helpers/interactions'
+import { openRejectDialog, renderWithApproval } from "./helpers/interactions";
 
-it('should open reject dialog when reject button is clicked', async () => {
-  const { container } = await renderWithApproval()
-  await openRejectDialog(container)
+it("should open reject dialog when reject button is clicked", async () => {
+  const { container } = await renderWithApproval();
+  await openRejectDialog(container);
   // Dialog is now open, test-specific assertions
-})
+});
 
-it('should require rejection reason to be non-empty', async () => {
-  const { container } = await renderWithApproval()
-  await openRejectDialog(container)
+it("should require rejection reason to be non-empty", async () => {
+  const { container } = await renderWithApproval();
+  await openRejectDialog(container);
 
   // Test-specific logic
-  const confirmButton = container.querySelector('.btn-primary')
-  expect(confirmButton?.hasAttribute('disabled')).toBe(true)
-})
+  const confirmButton = container.querySelector(".btn-primary");
+  expect(confirmButton?.hasAttribute("disabled")).toBe(true);
+});
 ```
 
 **Benefits of workflow extraction**:

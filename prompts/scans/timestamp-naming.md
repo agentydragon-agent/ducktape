@@ -55,13 +55,13 @@ class Response(BaseModel):
 
 ## Common Timestamp Fields
 
-| Purpose | Recommended | Avoid |
-|---------|------------|-------|
-| Creation time | `created_at` | `created_ts`, `creation_time`, `create_date` |
-| Last update | `updated_at` | `last_update_ts`, `modified_ts`, `last_modified` |
-| Soft delete | `deleted_at` | `deleted_ts`, `deletion_time` |
-| Published | `published_at` | `publish_ts`, `publication_date` |
-| Scheduled | `scheduled_at` | `scheduled_ts`, `schedule_time` |
+| Purpose       | Recommended    | Avoid                                            |
+| ------------- | -------------- | ------------------------------------------------ |
+| Creation time | `created_at`   | `created_ts`, `creation_time`, `create_date`     |
+| Last update   | `updated_at`   | `last_update_ts`, `modified_ts`, `last_modified` |
+| Soft delete   | `deleted_at`   | `deleted_ts`, `deletion_time`                    |
+| Published     | `published_at` | `publish_ts`, `publication_date`                 |
+| Scheduled     | `scheduled_at` | `scheduled_ts`, `schedule_time`                  |
 
 ## Detection Strategy
 

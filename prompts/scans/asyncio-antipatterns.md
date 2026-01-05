@@ -69,15 +69,15 @@ async with asyncio.TaskGroup() as tg:
 
 #### Key Differences
 
-| Feature | gather() | TaskGroup |
-|---------|----------|-----------|
-| **Return values** | ✅ Returns list of results | ❌ Requires manual collection |
-| **Error handling** | `return_exceptions=True` for best-effort | Always fail-fast (first error cancels others) |
-| **Exception on failure** | Only if `return_exceptions=False` (default) | Always raises first exception |
-| **Task cancellation** | No automatic cancellation on error | Cancels all tasks on first error |
-| **Result order** | Preserves input order | No built-in ordering |
-| **Python version** | All versions | 3.11+ only |
-| **Use case** | Need results, best-effort execution | Fire-and-forget, fail-fast |
+| Feature                  | gather()                                    | TaskGroup                                     |
+| ------------------------ | ------------------------------------------- | --------------------------------------------- |
+| **Return values**        | ✅ Returns list of results                  | ❌ Requires manual collection                 |
+| **Error handling**       | `return_exceptions=True` for best-effort    | Always fail-fast (first error cancels others) |
+| **Exception on failure** | Only if `return_exceptions=False` (default) | Always raises first exception                 |
+| **Task cancellation**    | No automatic cancellation on error          | Cancels all tasks on first error              |
+| **Result order**         | Preserves input order                       | No built-in ordering                          |
+| **Python version**       | All versions                                | 3.11+ only                                    |
+| **Use case**             | Need results, best-effort execution         | Fire-and-forget, fail-fast                    |
 
 #### When gather is MISUSED
 

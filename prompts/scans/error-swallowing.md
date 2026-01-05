@@ -247,11 +247,14 @@ cat error_handling_scan.json | jq '.issues | to_entries[] |
 
 ```json
 {
-  "summary": {"bare_except": 5, "broad_except": 12, "non_raising_except": 34},
+  "summary": { "bare_except": 5, "broad_except": 12, "non_raising_except": 34 },
   "issues": {
     "src/client.py": {
-      "bare_except": [{"line": 45, "col": 4}],
-      "non_raising_except": [{"line": 45, "col": 4}, {"line": 67, "col": 4}]
+      "bare_except": [{ "line": 45, "col": 4 }],
+      "non_raising_except": [
+        { "line": 45, "col": 4 },
+        { "line": 67, "col": 4 }
+      ]
     }
   }
 }

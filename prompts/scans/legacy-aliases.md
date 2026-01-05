@@ -24,12 +24,12 @@ Backward compatibility aliases that create duplicate names for the same entities
 
 ```typescript
 // Backward compatibility: function name aliases
-export const connectAgentWs = connectAgentChannels
-export const disconnectAgentWs = disconnectAgentChannels
+export const connectAgentWs = connectAgentChannels;
+export const disconnectAgentWs = disconnectAgentChannels;
 
 // Old constant names kept for backward compat
-export const AGENT_WS_ENDPOINT = AGENT_CHANNELS_ENDPOINT
-export const WS_RECONNECT_DELAY = CHANNEL_RECONNECT_DELAY
+export const AGENT_WS_ENDPOINT = AGENT_CHANNELS_ENDPOINT;
+export const WS_RECONNECT_DELAY = CHANNEL_RECONNECT_DELAY;
 ```
 
 #### GOOD: Single canonical export
@@ -340,7 +340,7 @@ OLD_CONFIG = NEW_CONFIG  # Comment says "use NEW_CONFIG"
 **Heuristics for canonical name**:
 
 1. Comment explicitly says "use X instead" → X is canonical
-2. "new_*" vs "old_*" → new is canonical
+2. `new_*` vs `old_*` → new is canonical
 3. More descriptive name → canonical
 4. Name without "legacy"/"deprecated" prefix → canonical
 5. If unclear, pick one consistently and document in commit message
@@ -369,16 +369,16 @@ rg --type py '\bOLD_NAME\b' --count-matches
 
 ```typescript
 // Before:
-export const connectAgentWs = connectAgentChannels
-export const disconnectAgentWs = disconnectAgentChannels
+export const connectAgentWs = connectAgentChannels;
+export const disconnectAgentWs = disconnectAgentChannels;
 
 // All call sites using old names:
-connectAgentWs(agentId)
-disconnectAgentWs(agentId)
+connectAgentWs(agentId);
+disconnectAgentWs(agentId);
 
 // After (replace all usages):
-connectAgentChannels(agentId)
-disconnectAgentChannels(agentId)
+connectAgentChannels(agentId);
+disconnectAgentChannels(agentId);
 
 // Remove export aliases entirely
 ```
@@ -574,15 +574,18 @@ For each finding, apply the Decision Framework and categorize:
 
 ```markdown
 #### 1. TypeScript Function Name Aliases (stores_channels.ts)
+
 **File:** `adgn/src/adgn/agent/web/src/features/chat/stores_channels.ts`
 **Lines:** 45-46
 
 **Evidence:**
+
 - `export const connectAgentWs = connectAgentChannels`
 - `export const disconnectAgentWs = disconnectAgentChannels`
 - Comment: "Backward compatibility: function name aliases"
 
 **Decision Framework Analysis:**
+
 1. ✅ **External API**: Internal module, no external callers
 2. ✅ **Usage count**: `connectAgentWs` used 0 times, `disconnectAgentWs` used 0 times
 3. ✅ **Migration status**: No TODO, indefinite backward compat
@@ -591,6 +594,7 @@ For each finding, apply the Decision Framework and categorize:
 **Decision**: **REMOVE IMMEDIATELY** - Aliases are unused, no external dependencies
 
 **Recommended fix:**
+
 - Delete lines 45-46 (export aliases)
 - Verify no usages: `rg '\b(connectAgentWs|disconnectAgentWs)\b'` → should be 0 matches
 ```
@@ -599,14 +603,17 @@ For each finding, apply the Decision Framework and categorize:
 
 ```markdown
 #### 2. Python Constant Alias (config.py)
+
 **File:** `adgn/src/adgn/config.py`
 **Line:** 23
 
 **Evidence:**
+
 - `OLD_API_URL = NEW_API_URL  # Backward compatibility`
 - `OLD_API_URL` used 3 times in same file
 
 **Decision Framework Analysis:**
+
 1. ✅ **External API**: Internal config module
 2. ⚠️ **Usage count**: 3 usages in same file
 3. ✅ **Migration status**: No TODO, comment just says "backward compatibility"
@@ -615,6 +622,7 @@ For each finding, apply the Decision Framework and categorize:
 **Decision**: **REMOVE** - Replace 3 usages with canonical name
 
 **Recommended fix:**
+
 1. Find all usages: `rg '\bOLD_API_URL\b'`
 2. Replace with `NEW_API_URL` at all 3 call sites
 3. Delete line 23 (`OLD_API_URL = NEW_API_URL`)
@@ -625,14 +633,17 @@ For each finding, apply the Decision Framework and categorize:
 
 ```markdown
 #### 3. Public API Backward Compatibility (client.py)
+
 **File:** `adgn/src/adgn/client.py`
 **Line:** 156
 
 **Evidence:**
+
 - `OldClient = NewClient  # Backward compatibility for v1 API`
 - Used by external packages (found in public docs)
 
 **Why it should be kept:** **Public API stability**
+
 - This is a public library with external users
 - Breaking change would affect downstream packages
 - Documented in public API docs
@@ -640,6 +651,7 @@ For each finding, apply the Decision Framework and categorize:
 **Decision**: **KEEP** - Document deprecation, plan removal for next major version
 
 **Recommended action:**
+
 1. Add deprecation warning in docstring
 2. Update docs to recommend `NewClient`
 3. Plan removal for v3.0.0 (next major version)
@@ -650,15 +662,18 @@ For each finding, apply the Decision Framework and categorize:
 
 ```markdown
 #### 4. Migration in Progress (endpoints.py)
+
 **File:** `adgn/src/adgn/endpoints.py`
 **Line:** 12
 
 **Evidence:**
+
 - `LEGACY_ENDPOINT = NEW_ENDPOINT  # TODO(2025-12): Remove after service migration`
 - Used 15 times across codebase
 - TODO has specific timeline
 
 **Why it should be kept:** **Gradual migration with timeline**
+
 - Explicit TODO with deadline (2025-12)
 - Part of tracked migration effort
 - Will be cleaned up on schedule
@@ -666,6 +681,7 @@ For each finding, apply the Decision Framework and categorize:
 **Decision**: **KEEP TEMPORARILY** - Track in migration project
 
 **Recommended action:**
+
 1. Verify TODO is tracked in project management
 2. Continue migration to NEW_ENDPOINT
 3. Remove on schedule (2025-12)

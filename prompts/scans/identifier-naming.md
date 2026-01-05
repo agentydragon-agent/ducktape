@@ -8,12 +8,12 @@
 
 **Naming clarity should scale with identifier lifespan**: The longer an identifier lives and the broader its scope, the more readable and unambiguous its name must be.
 
-| Lifespan | Examples | Naming Requirements |
-|----------|----------|-------------------|
-| **Momentary** (1-3 lines) | Loop vars, comprehensions, lambdas | Brief names OK: `i`, `j`, `k`, `x`, `_` |
-| **Short** (< 10 lines) | Local variables in tight scopes | Context-dependent: `val` OK if clear, prefer `threshold_value` if not |
-| **Medium** (function scope) | Parameters, local variables | Clear descriptive names: `request` not `req`, `config` not `cfg` |
-| **Long** (class/module) | Class fields, module globals | Explicit and unambiguous: `_compositor` not `_o`, `cache_key` not `key` |
+| Lifespan                    | Examples                           | Naming Requirements                                                     |
+| --------------------------- | ---------------------------------- | ----------------------------------------------------------------------- |
+| **Momentary** (1-3 lines)   | Loop vars, comprehensions, lambdas | Brief names OK: `i`, `j`, `k`, `x`, `_`                                 |
+| **Short** (< 10 lines)      | Local variables in tight scopes    | Context-dependent: `val` OK if clear, prefer `threshold_value` if not   |
+| **Medium** (function scope) | Parameters, local variables        | Clear descriptive names: `request` not `req`, `config` not `cfg`        |
+| **Long** (class/module)     | Class fields, module globals       | Explicit and unambiguous: `_compositor` not `_o`, `cache_key` not `key` |
 
 ## Overview
 
@@ -103,21 +103,21 @@ cls, self              # Standard Python conventions
 
 ### Common Abbreviation Expansions
 
-| Abbrev | Expand To | Notes |
-|--------|-----------|-------|
-| `cfg` | `config` or specific like `optimizer_config` | Prefer specific if multiple configs |
-| `ctx` | `context` | Always expand for medium+ lifespans |
-| `req` | `request` | Always expand for medium+ lifespans |
-| `resp` | `response` | Always expand for medium+ lifespans |
-| `msg` | `message` | Always expand for medium+ lifespans |
-| `tmp` | Descriptive name | `temp_file`, `scratch_data`, etc. |
-| `obj` | Specific type | `user_object`, `cache_entry`, etc. |
-| `val` | `value` | Or more specific: `threshold_value`, `max_value` |
-| `idx` | `index` or `i` | Use `i` for momentary loop indices |
-| `param` | `parameter` | Or specific: `query_parameter` |
-| `exc` | `exception` or `error` | Prefer `error` in most cases |
-| `_o` | `_owner` or specific | E.g., `_compositor`, `_parent` |
-| `_r` | `_result` or specific | E.g., `_response`, `_record` |
+| Abbrev  | Expand To                                    | Notes                                            |
+| ------- | -------------------------------------------- | ------------------------------------------------ |
+| `cfg`   | `config` or specific like `optimizer_config` | Prefer specific if multiple configs              |
+| `ctx`   | `context`                                    | Always expand for medium+ lifespans              |
+| `req`   | `request`                                    | Always expand for medium+ lifespans              |
+| `resp`  | `response`                                   | Always expand for medium+ lifespans              |
+| `msg`   | `message`                                    | Always expand for medium+ lifespans              |
+| `tmp`   | Descriptive name                             | `temp_file`, `scratch_data`, etc.                |
+| `obj`   | Specific type                                | `user_object`, `cache_entry`, etc.               |
+| `val`   | `value`                                      | Or more specific: `threshold_value`, `max_value` |
+| `idx`   | `index` or `i`                               | Use `i` for momentary loop indices               |
+| `param` | `parameter`                                  | Or specific: `query_parameter`                   |
+| `exc`   | `exception` or `error`                       | Prefer `error` in most cases                     |
+| `_o`    | `_owner` or specific                         | E.g., `_compositor`, `_parent`                   |
+| `_r`    | `_result` or specific                        | E.g., `_response`, `_record`                     |
 
 ---
 
@@ -180,15 +180,15 @@ def process_rollout(
 
 ### Common Vague Names (Context-Dependent)
 
-| Name | Vague When | Clear When |
-|------|-----------|-----------|
-| `id` | Generic class like `Response`, `Data` | Specific model like `User.id`, `Product.id` |
-| `name` | Generic class, multiple name types nearby | Specific model like `Category.name` |
-| `key` | Generic class, unclear which type of key | `CacheEntry.key`, `EncryptionContext.key` |
-| `data` | Passed around, unclear what it contains | Single data field in focused class |
-| `cfg`, `config` | Multiple configs in same scope | Only config in scope |
-| `value` | Generic getter/setter | `ThresholdConfig.value`, `Setting.value` |
-| `type` | Without discriminated union context | `type: Literal["user", "admin"]` in union |
+| Name            | Vague When                                | Clear When                                  |
+| --------------- | ----------------------------------------- | ------------------------------------------- |
+| `id`            | Generic class like `Response`, `Data`     | Specific model like `User.id`, `Product.id` |
+| `name`          | Generic class, multiple name types nearby | Specific model like `Category.name`         |
+| `key`           | Generic class, unclear which type of key  | `CacheEntry.key`, `EncryptionContext.key`   |
+| `data`          | Passed around, unclear what it contains   | Single data field in focused class          |
+| `cfg`, `config` | Multiple configs in same scope            | Only config in scope                        |
+| `value`         | Generic getter/setter                     | `ThresholdConfig.value`, `Setting.value`    |
+| `type`          | Without discriminated union context       | `type: Literal["user", "admin"]` in union   |
 
 ---
 
