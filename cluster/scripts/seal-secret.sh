@@ -19,28 +19,28 @@ INPUT_FILE="${1:-}"
 OUTPUT_FILE="${2:-}"
 
 if [[ -z "$INPUT_FILE" || -z "$OUTPUT_FILE" ]]; then
-    echo "Usage: $0 <secret.yaml> <output-sealed.yaml>"
-    echo ""
-    echo "Example:"
-    echo "  kubectl create secret generic my-secret --from-literal=key=value \\"
-    echo "    --dry-run=client -o yaml | $0 /dev/stdin k8s/my-app/my-sealed.yaml"
-    exit 1
+  echo "Usage: $0 <secret.yaml> <output-sealed.yaml>"
+  echo ""
+  echo "Example:"
+  echo "  kubectl create secret generic my-secret --from-literal=key=value \\"
+  echo "    --dry-run=client -o yaml | $0 /dev/stdin k8s/my-app/my-sealed.yaml"
+  exit 1
 fi
 
 # Check if terraform state exists
 if [[ ! -f "$TF_DIR/terraform.tfstate" ]]; then
-    echo "❌ No terraform state found at $TF_DIR/terraform.tfstate"
-    echo "   Run 'cd terraform/00-persistent-auth && terraform apply' first"
-    exit 1
+  echo "❌ No terraform state found at $TF_DIR/terraform.tfstate"
+  echo "   Run 'cd terraform/00-persistent-auth && terraform apply' first"
+  exit 1
 fi
 
 # Get certificate from terraform state
 CERT=$(cd "$TF_DIR" && terraform output -raw sealed_secrets_public_key_pem 2>/dev/null) || {
-    echo "❌ Could not read sealed_secrets_public_key_pem from terraform state"
-    echo "   Run 'cd terraform/00-persistent-auth && terraform apply' first"
-    exit 1
+  echo "❌ Could not read sealed_secrets_public_key_pem from terraform state"
+  echo "   Run 'cd terraform/00-persistent-auth && terraform apply' first"
+  exit 1
 }
 
-kubeseal --cert <(echo "$CERT") --format=yaml < "$INPUT_FILE" > "$OUTPUT_FILE"
+kubeseal --cert <(echo "$CERT") --format=yaml <"$INPUT_FILE" >"$OUTPUT_FILE"
 echo "✅ Sealed: $OUTPUT_FILE"
 echo "📝 Commit: git add $OUTPUT_FILE && git commit"
