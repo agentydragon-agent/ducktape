@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_core.testing.steps import AssertDockerExecThenCall, DockerExecCall, Step
+from agent_core_testing.steps import AssertDockerExecThenCall, DockerExecCall, Step
 from editor_agent.agent_runner import run_editor_docker_agent
 from editor_agent.submit_server import SubmitStateSuccess
 

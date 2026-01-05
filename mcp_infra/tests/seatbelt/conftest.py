@@ -48,7 +48,7 @@ def restrictive_echo_policy() -> SBPLPolicy:
 
 @pytest.fixture
 def policy_deny_users(allow_all_policy: SBPLPolicy) -> SBPLPolicy:
-    p = allow_all_policy.model_copy(deep=True)
+    p: SBPLPolicy = allow_all_policy.model_copy(deep=True)
     p.files += [
         FileRule(op=FileOp.FILE_READ_STAR, action=Action.DENY, filters=[Subpath(subpath="/Users")]),
         FileRule(op=FileOp.FILE_READ_METADATA, action=Action.DENY, filters=[Subpath(subpath="/Users")]),

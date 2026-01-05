@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
+  import { resolve } from '$lib/router';
 
   // Link component for TP/FP issue IDs
   // Links to snapshot detail page with anchor to issue section

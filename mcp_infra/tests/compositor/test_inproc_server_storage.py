@@ -250,7 +250,7 @@ async def test_compositor_get_inproc_servers_excludes_external():
 
         # Simulate an external mount by creating a mount with spec
         # (Real external mounts would go through mount_server, but that requires actual servers)
-        external_mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec={"dummy": "spec"})  # type: ignore[arg-type]
+        external_mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec={"dummy": "spec"})
         async with comp._mount_lock:
             comp._mounts[MCPMountPrefix("external")] = external_mount
 

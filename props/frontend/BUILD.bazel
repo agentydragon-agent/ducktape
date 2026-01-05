@@ -1,12 +1,8 @@
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
-load("@npm_ducktape//:@sveltejs/kit/package_json.bzl", svelte_kit_bin = "bin")
-load("@npm_ducktape//:storybook/package_json.bzl", storybook_bin = "bin")
-load("@npm_ducktape//:@playwright/test/package_json.bzl", playwright_bin = "bin")
-load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
 
-# Link npm packages from root package.json
+# Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
 
 # Export config files
@@ -21,61 +17,31 @@ _SRCS = glob([
     "src/**/*.svelte",
     "src/**/*.css",
     "src/**/*.html",
-    "static/**",
-    ".storybook/**/*.ts",
 ]) + [
+    "index.html",
     "svelte.config.js",
-    "vite.config.ts",
     "tsconfig.json",
-    "playwright.config.ts",
 ]
 
-# ESLint check - now handled by workspace-level aspect
-# Run: bazel build --config=eslint //props/frontend:all
-# Or: bazel build --config=lint //...  (runs both ruff and eslint)
-# The aspect uses //:eslintrc (root eslint.config.js) with file patterns
-
-# Prettier check (formatting validation)
-# TODO: Replace with prettier aspect (see docs/BAZELIZATION.md Phase 2)
-# Currently disabled - wrapper script deleted, moving to aspect-based formatting
-# Run: bazel test //props/frontend:prettier_test
-# sh_test(
-#     name = "prettier_test",
-#     srcs = ["//tools/lint:run_prettier.sh"],  # DELETED
-#     args = [
-#         "$(rootpath //tools/lint:prettier)",
-#         "props/frontend",
-#         "--check",
-#         "--config",
-#         ".prettierrc",
-#         "src",
-#     ],
-#     data = [
-#         "//tools/lint:prettier",
-#         ":node_modules/prettier",
-#         ":node_modules/prettier-plugin-svelte",
-#         ".prettierrc",
-#     ] + glob(["src/**/*.ts", "src/**/*.svelte", "src/**/*.css"]),
-#     tags = ["lint"],
-# )
-
-# Generate .svelte-kit directory (required by svelte-check for tsconfig)
-# Run: bazel build //props/frontend:svelte_kit_sync
-# Note: srcs must include src files so svelte-kit detects $lib, routes, etc.
-svelte_kit_bin.svelte_kit(
-    name = "svelte_kit_sync",
-    srcs = [
+# esbuild binary for production bundle
+js_binary(
+    name = "build_bundle",
+    data = _SRCS + [
+        "esbuild.config.mjs",
         ":node_modules",
-        "svelte.config.js",
-        "vite.config.ts",
-        "tsconfig.json",
-    ] + glob([
-        "src/**/*.ts",
-        "src/**/*.svelte",
-    ]),
-    args = ["sync"],
+    ],
+    entry_point = "esbuild.config.mjs",
+)
+
+# Production bundle
+# Run: bazel build //props/frontend:bundle
+js_run_binary(
+    name = "bundle",
+    srcs = _SRCS + ["esbuild.config.mjs"],
+    outs = ["dist/main.js"],
+    args = ["dist"],
     chdir = package_name(),
-    out_dirs = [".svelte-kit"],
+    tool = ":build_bundle",
 )
 
 # Svelte-check (type checking)
@@ -89,97 +55,55 @@ svelte_check_bin.svelte_check_test(
     chdir = package_name(),
     data = [
         ":node_modules",
-        ":svelte_kit_sync",  # Depends on .svelte-kit directory
         "tsconfig.json",
         "svelte.config.js",
-        "vite.config.ts",
     ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
     tags = ["lint"],
 )
 
-# Vite build (production bundle)
-# Run: bazel build //props/frontend:bundle
-# Output: bazel-bin/props/frontend/dist/
-vite_bin.vite(
-    name = "bundle",
-    srcs = _SRCS + [":node_modules"],
-    args = ["build"],
-    chdir = package_name(),
-    out_dirs = ["dist"],
-)
-
-# Vite dev server
-# Run: bazel run //props/frontend:dev
-js_run_devserver(
-    name = "dev",
-    args = ["dev"],
-    chdir = package_name(),
-    data = _SRCS + [":node_modules"],
-    tool = "//tools/frontend:vite",
-)
-
-# Storybook source files (stories + config)
-# Note: _SRCS already includes src/**/*.ts (which includes *.stories.ts)
-# Note: _SRCS already includes .storybook/**/*.ts
-_STORYBOOK_SRCS = _SRCS + glob([
-    "src/**/*.mdx",
+# Test harness source files
+_HARNESS_SRCS = glob([
+    "tests/harness/**/*.ts",
+    "tests/harness/**/*.html",
+    "src/components/**/*.svelte",
+    "src/**/*.css",
 ])
 
-# Storybook static build
-# Run: bazel build //props/frontend:storybook
-# Output: bazel-bin/props/frontend/storybook-static/
-# Note: Depends on svelte_kit_sync for .svelte-kit/tsconfig.json that tsconfig.json extends
-# svelte.config.js detects storybook via process.argv and uses .svelte-kit-storybook for its own output
-storybook_bin.storybook(
-    name = "storybook",
-    srcs = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
-    args = ["build"],
-    chdir = package_name(),
-    out_dirs = [".svelte-kit-storybook", "storybook-static"],
-)
-
-# Storybook dev server
-# Run: bazel run //props/frontend:storybook_dev
-js_run_devserver(
-    name = "storybook_dev",
-    args = ["dev", "-p", "6006"],
-    chdir = package_name(),
-    data = _STORYBOOK_SRCS + [":node_modules", ":svelte_kit_sync"],
-    tags = ["manual"],  # Dev servers are run, not built
-    tool = "//tools/frontend:storybook",
-)
-
-# Visual regression tests (Playwright + Storybook)
-# Run: bazel test //props/frontend:visual_test
-# Browser binaries from rules_playwright (no npx install needed).
-#
-# ISSUE: playwright_bin.playwright_test causes module resolution conflicts.
-# The runner and test file resolve @playwright/test to different module instances
-# due to aspect_rules_js's node_modules structure. For now, this is marked manual
-# and can be run via pnpm: cd props/frontend && pnpm playwright test
-#
-# TODO: Fix proper Bazel integration - options:
-# 1. Use js_test with explicit module resolution control
-# 2. Investigate patch_node_fs behavior with playwright's transform
-# 3. Consider rules_playwright test rule if one exists
-playwright_bin.playwright_test(
-    name = "visual_test",
-    args = [
-        "test",
-        "--config",
-        "props/frontend/playwright.config.ts",
-    ],
-    data = [
+# esbuild binary for test harness
+js_binary(
+    name = "build_harness",
+    data = _HARNESS_SRCS + [
+        "tests/harness/esbuild.config.mjs",
         ":node_modules",
-        "//:node_modules/@playwright/test",
-        ":storybook",
-        "playwright.config.ts",
-        "@playwright//:chromium-headless-shell",
-    ] + glob(["tests/**/*"]),
+    ],
+    entry_point = "tests/harness/esbuild.config.mjs",
+)
+
+# Test harness bundle
+js_run_binary(
+    name = "harness_bundle",
+    srcs = _HARNESS_SRCS + ["tests/harness/esbuild.config.mjs"],
+    outs = ["tests/harness/dist/harness.js"],
+    args = ["tests/harness/dist"],
+    chdir = package_name(),
+    tool = ":build_harness",
+)
+
+# Visual regression test with Puppeteer
+# Run: bazel test //props/frontend:visual_test
+js_test(
+    name = "visual_test",
+    data = [
+        "tests/harness/index.html",
+        ":harness_bundle",
+        ":node_modules/puppeteer",
+        ":node_modules/pixelmatch",
+        ":node_modules/pngjs",
+    ] + glob(["tests/visual-regression.spec.ts-snapshots/**/*"]),
+    entry_point = "tests/visual-regression.spec.js",
     env = {
-        "PLAYWRIGHT_BROWSERS_PATH": "$(rootpath @playwright//:chromium-headless-shell)/../",
-        "NODE_PATH": "node_modules",
+        "HARNESS_PATH": "$(rootpath :harness_bundle)",
     },
-    tags = ["manual", "no-sandbox", "visual"],
+    tags = ["no-sandbox", "visual"],
     timeout = "long",
 )

@@ -27,6 +27,7 @@ py_test(
     main = "tests/test_compaction.py",
     deps = [
         ":agent_core",
+        "//agent_core_testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

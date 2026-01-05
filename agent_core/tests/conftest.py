@@ -7,12 +7,12 @@ from mcp import types as mcp_types
 
 from agent_core.agent import Agent
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.openai_mock import NoopOpenAIClient
+from agent_core_testing.openai_mock import NoopOpenAIClient
 
 # Register testing fixtures:
 # - agent_core.testing.fixtures: Core agent fixtures (recording_handler, make_test_agent, etc.)
 # - mcp_infra.testing.fixtures: MCP compositor fixtures (compositor, compositor_client, etc.)
-pytest_plugins = ["agent_core.testing.fixtures", "mcp_infra.testing.fixtures", "pytest_asyncio"]
+pytest_plugins = ["agent_core_testing.fixtures", "mcp_infra.testing.fixtures", "pytest_asyncio"]
 
 
 @pytest.fixture

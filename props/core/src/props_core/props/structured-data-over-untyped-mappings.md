@@ -139,7 +139,6 @@ TypeScript domain shape as Record (no schema):
 
 ```ts
 function makeUser(): Record<string, unknown> {
-  // too loose
   return { id: "u1", email: "u@example.com", role: "admin" };
 }
 ```

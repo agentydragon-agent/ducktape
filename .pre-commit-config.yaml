@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*|.*flake\\.lock$|nonrcm-dotfiles/config/OrcaSlicer/.*|finance/worthy/worthy/index_(head|tail)\\.html$"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|.*/node_modules/.*|.*flake\\.lock$|nonrcm-dotfiles/config/OrcaSlicer/.*|finance/worthy/worthy/index_(head|tail)\\.html$|^tana/src/tana/export/references/.*"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -104,7 +104,6 @@ repos:
         entry: tools/lint/check-no-ruff-in-pyproject.sh
         language: system
         files: pyproject\.toml$
-        pass_filenames: false
 
   # Alejandra Nix formatter (not integrated with Bazel - Nix formatters handled separately)
   # Using local hook with nix run instead of upstream repo (cargo build fails)

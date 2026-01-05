@@ -24,6 +24,7 @@ py_library(
         "@pypi//jinja2",
         "@pypi//mcp",
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//typer",
     ],
 )
@@ -34,6 +35,7 @@ py_test(
     main = "tests/test_types.py",
     deps = [
         ":mcp_infra",
+        "//agent_core_testing",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

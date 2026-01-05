@@ -35,13 +35,11 @@ def status_deps(repo_factory, config_factory) -> ServiceDependencies:
 
     return ServiceDependencies(
         config=config,
-        git=Mock(),
         git_manager=git_manager,
         index=index,
         gitstatusd=gitstatusd,
         github_watcher=None,
         git_refs_watcher=git_refs_watcher,
-        status=Mock(),
         discovery=discovery,
         coordinator=Mock(),
     )

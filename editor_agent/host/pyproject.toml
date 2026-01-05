@@ -15,15 +15,6 @@ dependencies = [
     "cli-util",
 ]
 
-[tool.uv.sources]
-editor-agent-runtime = { workspace = true }
-agent-pkg-host = { workspace = true }
-agent-core = { workspace = true }
-mcp-infra = { workspace = true }
-net-util = { workspace = true }
-openai-utils = { workspace = true }
-cli-util = { workspace = true }
-
 [project.scripts]
 adgn-editor-docker = "editor_agent.cli:main"
 

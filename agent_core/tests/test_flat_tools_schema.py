@@ -25,8 +25,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing.openai_mock import CapturingOpenAIModel
-from agent_core.testing.steps import AssistantMessage, MakeCall
+from agent_core_testing.openai_mock import CapturingOpenAIModel
+from agent_core_testing.steps import AssistantMessage, MakeCall
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import SystemMessage

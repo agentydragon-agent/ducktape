@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_core.testing.openai_mock import LIVE, make_mock
+from agent_core_testing.openai_mock import LIVE, make_mock
 
 
 @pytest.fixture

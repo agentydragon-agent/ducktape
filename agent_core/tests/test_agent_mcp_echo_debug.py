@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_core.testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
+from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 
 
 async def test_agent_mcp_echo_tool_use(

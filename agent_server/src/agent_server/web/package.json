@@ -1,0 +1,5 @@
+{
+  "name": "agent-server-web",
+  "private": true,
+  "type": "module"
+}

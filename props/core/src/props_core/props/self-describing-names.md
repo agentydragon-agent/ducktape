@@ -18,7 +18,6 @@ Primitive‑typed identifiers (int/float/str/bool/bytes/number) are named so the
 ## Positive examples
 
 ```python
-# Python
 from datetime import timedelta, datetime
 TIMEOUT: timedelta = timedelta(milliseconds=250)           # best
 retry_delay_ms: int = 250                                  # clear primitive
@@ -36,7 +35,6 @@ user_id: str = "u_123"
 ```
 
 ```ts
-// TypeScript
 const timeoutMs: number = 250;
 const payloadBytes: number = 1024;
 const successRatio: number = 0.97; // ratio in [0,1]
@@ -44,14 +42,12 @@ const isActive: boolean = true;
 ```
 
 ```go
-// Go
 var Timeout time.Duration = 250 * time.Millisecond
 var ChunkSizeBytes int = 64 * 1024
 var IsAdmin bool = false
 ```
 
 ```java
-// Java
 Duration timeout = Duration.ofMillis(250);
 int payloadBytes = 1024;
 boolean isEnabled = true;
@@ -70,7 +66,6 @@ id: str = "123"                        # bad: which entity?
 ```
 
 ```ts
-// TypeScript
 let timeout: number = 250; // bad
 let size: number = 1024; // bad
 let license: boolean = true; // bad (bare noun)
@@ -81,6 +76,8 @@ let feature: boolean = true; // bad (bare noun)
 ## Notes
 
 - Prefer domain types where available (timedelta/Duration/Instant/etc.). When primitives are unavoidable, encode units in the name.
-- Booleans: past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified). Use is*/has* when a noun would otherwise be ambiguous (is_admin, has_license).
+- Booleans:
+  - Past-participle adjectives are often fine because they read as a state (enabled, accepted, archived, verified).
+  - Use `is_`/`has_` when a noun would otherwise be ambiguous (is_admin, has_license).
 - Pragmatic exception in legacy codebases: if a code path is uniformly using weak types (e.g., string paths or epoch integers) and your small change would only introduce noise by converting in/out without internal benefit, it’s acceptable to stick to the prevailing type for that narrow change. Favor module/function boundaries that convert once at input and once at output when you can extract real benefits internally.
 - This property focuses on unambiguous naming for primitives. Additional properties may separately enforce: use of time/money types; currency units; angle units (deg/rad); and rate units (per_second, per_minute).

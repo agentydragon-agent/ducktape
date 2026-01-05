@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 from hamcrest import contains_string
 
-from agent_core.testing.steps import AssertDockerExecThenFinish, DockerExecCall, Step
+from agent_core_testing.steps import AssertDockerExecThenFinish, DockerExecCall, Step
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun

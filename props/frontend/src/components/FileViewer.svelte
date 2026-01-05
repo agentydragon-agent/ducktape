@@ -1,7 +1,6 @@
 <script lang="ts">
   import 'highlight.js/styles/github.css';
-  import { page } from '$app/stores';
-  import { base } from '$app/paths';
+  import { resolve } from '$lib/router';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { CheckCircle, XCircle, MessageSquare } from 'lucide-svelte';
   import type {
@@ -164,10 +163,8 @@
 
   function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
     if (!snapshotSlug) return undefined;
-    const routePath = `${base}/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;
-    const url = new URL(routePath, $page.url);
-    url.searchParams.set('file', file.path);
-    return url.toString();
+    const routePath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}?file=${encodeURIComponent(file.path)}`;
+    return `${window.location.origin}/${resolve(routePath)}`;
   }
 
   const tpCount = $derived(allIssues.filter((i) => i.kind === 'tp').length);

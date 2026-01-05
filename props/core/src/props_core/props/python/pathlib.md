@@ -3,7 +3,7 @@ title: Use pathlib for path manipulation
 kind: outcome
 ---
 
-Agent-edited Python uses pathlib for filesystem paths and joins; it does not use os.path.\* or manual string concatenation for paths.
+Python should use pathlib for filesystem paths and joins; not `os.path.*` or manual string concatenation.
 
 ## Acceptance criteria (checklist)
 

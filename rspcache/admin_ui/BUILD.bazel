@@ -1,13 +1,8 @@
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 
-# Link npm packages from workspace pnpm-lock.yaml
+# Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
 
-# Export files needed by npm_translate_lock
-exports_files([
-    "package.json",
-])
-
 # TODO: js_run_binary for Vite build not working - artifact prefix conflict with node_modules
-# Build with: npm run build (in rspcache/admin_ui directory)
-# TypeScript check with: npm run tsc -- --noEmit
+# Build with: cd rspcache/admin_ui && npx vite build
+# TypeScript check with: cd rspcache/admin_ui && npx tsc --noEmit

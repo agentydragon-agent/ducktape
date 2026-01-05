@@ -24,8 +24,8 @@ from agent_core.agent import Agent
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing.fixtures import RecordingHandler
-from agent_core.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
+from agent_core_testing.fixtures import RecordingHandler
+from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.persist import AgentMetadata
@@ -57,7 +57,7 @@ TEST_BACKEND_SERVER_NAME = "backend"
 # Load external fixture modules so they're available in xdist workers
 pytest_plugins = (
     "mcp_infra.testing.fixtures",  # Shared mcp_infra fixtures
-    "agent_core.testing.fixtures",  # Core agent fixtures (make_step_runner, etc.)
+    "agent_core_testing.fixtures",  # Core agent fixtures (make_step_runner, etc.)
     "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
 
@@ -276,7 +276,7 @@ def make_policy_request(server: MCPMountPrefix, tool: str, arguments: dict[str, 
     )
 
 
-# reasoning_model and responses_factory fixtures come from agent_core.testing.fixtures
+# reasoning_model and responses_factory fixtures come from agent_core_testing.fixtures
 # (registered via pytest_plugins above)
 
 

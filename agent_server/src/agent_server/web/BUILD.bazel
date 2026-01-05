@@ -1,15 +1,14 @@
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("@npm_ducktape//agent_server/src/agent_server/web:vite/package_json.bzl", vite_bin = "bin")
-load("@npm_ducktape//agent_server/src/agent_server/web:svelte-check/package_json.bzl", svelte_check_bin = "bin")
-load("@npm_ducktape//agent_server/src/agent_server/web:vitest/package_json.bzl", vitest_bin = "bin")
+load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
 
-# Link npm packages from workspace pnpm-lock.yaml
+# Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
 
-# Export files needed by npm_translate_lock
+# Export config files
 exports_files([
-    "package.json",
     "tsconfig.json",
     "tsconfig.app.json",
     "tsconfig.node.json",
@@ -23,7 +22,6 @@ _SRCS = glob([
     "src/**/*.html",
     "static/**",
 ]) + [
-    "package.json",
     "svelte.config.js",
     "vite.config.ts",
     "vitest.config.ts",
@@ -94,6 +92,5 @@ js_run_devserver(
     tool = "//tools/frontend:vite",
 )
 
-# TODO: Add visual regression tests (if needed)
 # ESLint linting is handled via workspace-level aspect
 # Run: bazel build --config=eslint //agent_server/...

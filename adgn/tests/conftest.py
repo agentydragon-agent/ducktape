@@ -21,7 +21,7 @@ from mcp_infra.types import McpServerSpecs
 pytest_plugins = (
     "tests.support.responses",  # openai_client_param fixture
     "mcp_infra.testing.fixtures",  # Shared mcp_infra fixtures
-    "agent_core.testing.fixtures",  # Core agent fixtures (make_step_runner, reasoning_model, responses_factory, etc.)
+    "agent_core_testing.fixtures",  # Core agent fixtures (make_step_runner, reasoning_model, responses_factory, etc.)
     "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
 

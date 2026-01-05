@@ -46,6 +46,7 @@ py_test(
     main = "tests/test_runner_session.py",
     deps = [
         ":editor_agent",
+        "//agent_core_testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

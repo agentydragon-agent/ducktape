@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agent_core.testing.steps import MakeCall
+from agent_core_testing.steps import MakeCall
 from agent_server.mcp.approval_policy.engine import CreateProposalArgs
 from agent_server.testing.steps import UiEndTurnCall
 from mcp_infra.constants import POLICY_PROPOSER_MOUNT_PREFIX

@@ -12,6 +12,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",
+        "//agent_core_testing",
         "//cli_util",
         "//mcp_infra",
         "//net_util",

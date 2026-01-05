@@ -20,8 +20,8 @@ from uuid import UUID
 
 import pytest
 
-from agent_core.testing.openai_mock import CapturingOpenAIModel
-from agent_core.testing.steps import AssertDockerExecThenCall, DockerExecCall, Step
+from agent_core_testing.openai_mock import CapturingOpenAIModel
+from agent_core_testing.steps import AssertDockerExecThenCall, DockerExecCall, Step
 from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge

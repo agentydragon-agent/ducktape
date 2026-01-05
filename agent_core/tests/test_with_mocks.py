@@ -5,9 +5,9 @@ from hamcrest import has_entries
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
-from agent_core.testing.matchers import assert_function_call_output_structured
-from agent_core.testing.openai_mock import LIVE
-from agent_core.testing.steps import AssistantMessage, EchoCall
+from agent_core_testing.matchers import assert_function_call_output_structured
+from agent_core_testing.openai_mock import LIVE
+from agent_core_testing.steps import AssistantMessage, EchoCall
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 
 

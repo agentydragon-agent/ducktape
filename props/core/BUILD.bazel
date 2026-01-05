@@ -57,6 +57,7 @@ py_test(
     main = "tests/test_agent_types.py",
     deps = [
         ":props_core",
+        "//agent_core_testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_env",

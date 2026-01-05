@@ -16,6 +16,7 @@ exclude = [
     "**/examples",
     "**/third_party",
     "k8s-old",
+    "tana/src/tana/export/references",
 ]
 
 [format]

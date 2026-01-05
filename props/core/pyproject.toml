@@ -113,12 +113,3 @@ testpaths = ["tests"]
 
 [project.scripts]
 props = "props_core.cli.main:app"
-
-[tool.uv.sources]
-agent-core = { workspace = true }
-agent-pkg-host = { workspace = true }
-agent-pkg-runtime = { workspace = true }
-cli-util = { workspace = true }
-mcp-infra = { workspace = true }
-net-util = { workspace = true }
-openai-utils = { workspace = true }

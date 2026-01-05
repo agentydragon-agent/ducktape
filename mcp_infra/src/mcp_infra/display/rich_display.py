@@ -6,7 +6,7 @@ import logging
 import shlex
 from typing import TYPE_CHECKING, Any
 
-from compact_json import Formatter  # type: ignore[import-untyped]
+from compact_json import Formatter
 from mcp import types as mcp_types
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
