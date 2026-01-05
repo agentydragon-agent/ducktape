@@ -23,6 +23,13 @@ from pydantic.alias_generators import to_camel
 SessionID = NewType("SessionID", UUID)
 
 
+class HookDecision(StrEnum):
+    """Hook decision values per Claude Code API."""
+
+    APPROVE = "approve"
+    BLOCK = "block"
+
+
 class CamelCaseModel(BaseModel):
     """Base model for Claude Code responses that use camelCase wire format."""
 
@@ -275,13 +282,13 @@ class PreToolResponse(BaseResponse):
     - undefined: Uses default permission flow
     """
 
-    decision: Literal["approve", "block"] | None = Field(None)
+    decision: HookDecision | None = Field(None)
     reason: str | None = Field(None, description="Explanation for decision")
 
     @field_validator("reason")
     @classmethod
     def validate_reason(cls, v: str | None, info: ValidationInfo) -> str | None:
-        if info.data and info.data.get("decision") == "block" and not v:
+        if info.data and info.data.get("decision") == HookDecision.BLOCK and not v:
             raise ValueError("reason required when decision=block")
         return v
 
@@ -295,7 +302,7 @@ class PostToolResponse(BaseResponse):
     - undefined: No action taken
     """
 
-    decision: Literal["block"] | None = Field(None)
+    decision: Literal[HookDecision.BLOCK] | None = Field(None)
     reason: str | None = Field(
         None, description="Explanation for decision - automatically prompts Claude if decision=block"
     )
@@ -310,7 +317,7 @@ class StopResponse(BaseResponse):
     - undefined: Allows Claude to stop
     """
 
-    decision: Literal["block"] | None = Field(None)
+    decision: Literal[HookDecision.BLOCK] | None = Field(None)
     reason: str | None = Field(None, description="Must provide reason if blocking Claude from stopping")
 
     @field_validator("reason")

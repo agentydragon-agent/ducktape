@@ -117,14 +117,15 @@ def create_pre_hook_payload(file_path: str, content: str) -> str:
 
 def create_post_hook_payload(file_path: str, content: str | None = None) -> str:
     """Create a PostToolUse hook payload."""
+    tool_input: dict[str, str] = {"file_path": file_path}
+    if content:
+        tool_input["content"] = content
     payload = {
         "hook_event_name": "PostToolUse",
         "session_id": "12345678-1234-5678-1234-567812345678",
         "tool_name": "Write",
-        "tool_input": {"file_path": file_path},
+        "tool_input": tool_input,
     }
-    if content:
-        payload["tool_input"]["content"] = content
     return json.dumps(payload)
 
 

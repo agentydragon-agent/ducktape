@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from .claude_code_api import BaseResponse, PostToolResponse, PreToolResponse, StopResponse
+from .claude_code_api import BaseResponse, HookDecision, PostToolResponse, PreToolResponse, StopResponse
 
 
 # Outcome types - more user-friendly representations
@@ -22,7 +22,7 @@ class PreToolApprove(HookOutcome):
     """Explicitly approve tool execution, bypassing permission system."""
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(decision="approve")
+        return PreToolResponse(continue_=True, decision=HookDecision.APPROVE)
 
 
 @dataclass
@@ -35,7 +35,7 @@ class PreToolDeny(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(decision="block", reason=self.llm_message)
+        return PreToolResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
 
 
 @dataclass
@@ -43,7 +43,7 @@ class PreToolNoOpinion(HookOutcome):
     """No opinion - let existing permission flow decide."""
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse()  # undefined decision = existing permission flow
+        return PreToolResponse(continue_=True)  # undefined decision = existing permission flow
 
 
 PreToolOutcome = PreToolApprove | PreToolDeny | PreToolNoOpinion
@@ -55,7 +55,7 @@ class PostToolSuccess(HookOutcome):
     """Tool succeeded, no message needed."""
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse()
+        return PostToolResponse(continue_=True)
 
 
 @dataclass
@@ -68,7 +68,7 @@ class PostToolNotifyLLM(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse(decision="block", reason=self.llm_message)
+        return PostToolResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
 
 
 @dataclass
@@ -78,7 +78,7 @@ class PostToolSuccessWithInfo(HookOutcome):
     info_message: str = ""
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse()
+        return PostToolResponse(continue_=True)
 
 
 PostToolOutcome = PostToolSuccess | PostToolSuccessWithInfo | PostToolNotifyLLM
@@ -90,7 +90,7 @@ class StopAllow(HookOutcome):
     """Allow Claude to end its turn normally."""
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse()  # No decision = allow stop
+        return StopResponse(continue_=True)  # No decision = allow stop
 
 
 @dataclass
@@ -103,7 +103,7 @@ class StopPrevent(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(decision="block", reason=self.llm_message)
+        return StopResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
 
 
 @dataclass
@@ -113,7 +113,7 @@ class StopAllowWithInfo(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse()
+        return StopResponse(continue_=True)
 
 
 StopOutcome = StopAllow | StopAllowWithInfo | StopPrevent
@@ -125,7 +125,7 @@ class SubagentStopAllow(HookOutcome):
     """Allow subagent to stop."""
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse()
+        return StopResponse(continue_=True)
 
 
 @dataclass
@@ -136,15 +136,13 @@ class SubagentStopPrevent(HookOutcome):
     Must provide reason for the subagent to understand how to proceed.
 
     Example:
-        SubagentStopPrevent(
-            llm_message="Cannot stop: Must complete remaining analysis tasks."
-        )
+        SubagentStopPrevent(llm_message="Cannot stop: Must complete remaining tasks.")
     """
 
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(decision="block", reason=self.llm_message)
+        return StopResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
 
 
 SubagentStopOutcome = SubagentStopAllow | SubagentStopPrevent
@@ -156,7 +154,7 @@ class NotificationAcknowledge(HookOutcome):
     """Acknowledge notification."""
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse()
+        return BaseResponse(continue_=True)
 
 
 NotificationOutcome = NotificationAcknowledge
@@ -168,7 +166,7 @@ class PreCompactAllow(HookOutcome):
     """Allow compaction to proceed."""
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse()
+        return BaseResponse(continue_=True)
 
 
 PreCompactOutcome = PreCompactAllow

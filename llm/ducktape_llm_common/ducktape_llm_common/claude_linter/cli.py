@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 from pydantic import ValidationError
 
-from ..claude_code_api import EditToolCall, MultiEditToolCall, WriteToolCall
+from ..claude_code_api import EditToolCall, HookDecision, MultiEditToolCall, WriteToolCall
 from .config import get_merged_config
 from .models import HookRequest, HookResponse
 from .precommit_runner import PreCommitRunner
@@ -64,7 +64,7 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
 def _block_with_reason(stdout: str, stderr: str) -> HookResponse:
     """Create a block response with formatted error output."""
     reason = f"Pre-write check failed with non-fixable errors:\nOutput:\n{stdout}\nError:\n{stderr}"
-    return HookResponse(decision="block", reason=reason)
+    return HookResponse(decision=HookDecision.BLOCK, reason=reason)
 
 
 def evaluate_post(req: HookRequest) -> HookResponse:
@@ -89,7 +89,7 @@ def evaluate_post(req: HookRequest) -> HookResponse:
         if ret != 0:
             # There are violations - report them
             return HookResponse(
-                decision="block",
+                decision=HookDecision.BLOCK,
                 reason=(
                     f"FYI: Your edit was applied successfully, but the file now has linting violations:\n{out}\n\n"
                     "This is just a notification - your changes have been saved."
@@ -107,7 +107,7 @@ def evaluate_post(req: HookRequest) -> HookResponse:
 
     if content_after_fixes == original:
         return HookResponse()
-    return HookResponse(decision="block", reason="FYI: Auto-fixes were applied")
+    return HookResponse(decision=HookDecision.BLOCK, reason="FYI: Auto-fixes were applied")
 
 
 @click.group()

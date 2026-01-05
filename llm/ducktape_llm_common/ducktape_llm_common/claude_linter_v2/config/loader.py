@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-from .clean_models import ModularConfig
+from .clean_models import LogLevel, ModularConfig
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class ConfigLoader:
             self._config = ModularConfig.from_toml(config_file)
         else:
             logger.info("No config file found, using defaults")
-            self._config = ModularConfig()
+            self._config = ModularConfig(version="2.0", max_errors_to_show=3, log_level=LogLevel.INFO, log_file=None)
 
         return self._config
 

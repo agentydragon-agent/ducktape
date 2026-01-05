@@ -98,6 +98,8 @@ class PythonASTAnalyzer:
                         column=node.col_offset,
                         message="Bare except clause is not allowed. Use specific exception types.",
                         rule="bare_except",
+                        fixable=False,
+                        file_path=None,
                     )
                 )
 
@@ -116,6 +118,8 @@ class PythonASTAnalyzer:
                         column=node.col_offset,
                         message=f"Use of {node.func.id} is not allowed. Use proper type checking instead.",
                         rule="getattr_setattr",
+                        fixable=False,
+                        file_path=None,
                     )
                 )
 
@@ -142,6 +146,8 @@ class PythonASTAnalyzer:
                         column=node.col_offset,
                         message="Barrel __init__.py with star imports is not allowed. Keep __init__.py minimal.",
                         rule="barrel_init",
+                        fixable=False,
+                        file_path=None,
                     )
                 )
 
@@ -182,6 +188,8 @@ class PythonASTAnalyzer:
                             column=0,
                             message="Barrel __init__.py pattern detected. Keep __init__.py files minimal or empty.",
                             rule="barrel_init",
+                            fixable=False,
+                            file_path=None,
                         )
                     )
 

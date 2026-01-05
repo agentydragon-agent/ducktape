@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Import shared types from claude_code_api
-from ducktape_llm_common.claude_code_api import CamelCaseModel, SessionID, ToolCall, _parse_tool_call
+from ducktape_llm_common.claude_code_api import CamelCaseModel, HookDecision, SessionID, ToolCall, _parse_tool_call
 
 
 class HookResponse(CamelCaseModel):
@@ -22,7 +22,7 @@ class HookResponse(CamelCaseModel):
     When using JSON output, exit code should be 0.
     """
 
-    decision: Literal["approve", "block"] | None = Field(
+    decision: HookDecision | None = Field(
         None,
         description="Controls tool execution (PreToolUse) or provides feedback (PostToolUse). approve=allow, block=prevent.",
     )
