@@ -207,7 +207,6 @@ class GitManager:
 
     def verify_branch_exists(self, branch: str) -> str:
         try:
-            resolved = self._main_repo.resolve_refish(f"refs/heads/{branch}")
-            return str(resolved[0].id)
-        except KeyError as e:
+            return self.verify_ref_exists(f"refs/heads/{branch}")
+        except NoSuchRefError as e:
             raise NoSuchBranchError(f"Branch {branch} does not exist") from e

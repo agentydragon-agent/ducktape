@@ -37,6 +37,7 @@ from ..shared.protocol import (
     StartupMessage,
     StatusParams,
     StatusResponse,
+    StatusResultError,
     StreamMessage,
     TeleportCdThere,
     TeleportDoesNotExist,
@@ -318,8 +319,8 @@ class WtClient:
 
         # Extract the single result
         item = next(iter(status_response.items.values()))
-        if item.result.type != "ok":
-            return set(), set()
+        if isinstance(item.result, StatusResultError):
+            raise RpcError(ErrorCodes.INTERNAL_ERROR, item.result.error)
 
         repo_path = item.absolute_path
         try:

@@ -1,11 +1,10 @@
 import ast
-import importlib
 import pkgutil
 from pathlib import Path
 
-_wt_file = importlib.import_module("wt").__file__
-assert _wt_file is not None
-ROOT = Path(_wt_file).parent
+from tests.conftest import get_wt_package_dir
+
+ROOT = get_wt_package_dir()
 
 CLIENT_PREFIX = "wt.client"
 SERVER_PREFIX = "wt.server"
@@ -16,10 +15,7 @@ ALLOWED_PREFIXES_FOR_SERVER = {SERVER_PREFIX, SHARED_PREFIX}
 
 
 def iter_modules(package_prefix: str):
-    pkg = importlib.import_module(package_prefix)
-    pkg_file = pkg.__file__
-    assert pkg_file is not None
-    pkg_path = Path(pkg_file).parent
+    pkg_path = ROOT / package_prefix.removeprefix("wt.").replace(".", "/")
     for m in pkgutil.walk_packages([str(pkg_path)], prefix=package_prefix + "."):
         if not m.ispkg:
             yield m.name

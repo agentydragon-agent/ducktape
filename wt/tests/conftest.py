@@ -1,4 +1,5 @@
 import contextlib
+import importlib
 import importlib.util
 import io
 import json
@@ -39,6 +40,13 @@ from wt.shared.protocol import (
     StatusResultOk,
 )
 from wt.shell import install
+
+
+def get_wt_package_dir() -> Path:
+    """Return the installed wt package directory."""
+    wt_file = importlib.import_module("wt").__file__
+    assert wt_file is not None
+    return Path(wt_file).parent
 
 
 @pytest.fixture(scope="session", autouse=True)
