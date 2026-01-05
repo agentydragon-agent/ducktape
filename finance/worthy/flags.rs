@@ -42,8 +42,4 @@ pub struct Opt {
         default_value = "snapshot"
     )]
     pub command: Command,
-
-    // TODO: implement
-    #[structopt(long = "write_to_solid", help = "whether to write to Solid")]
-    pub write_to_solid: bool,
 }

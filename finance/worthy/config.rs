@@ -1,10 +1,7 @@
 use alphavantage_converter::AlphaVantageConverterConfig;
 use asset::Asset;
-use coinbase_converter::CoinbaseConverterConfig;
-use coinbase_source::CoinbaseSourceConfig;
 use currencylayer_converter::CurrencyLayerConverterConfig;
 use fixer_converter::FixerConverterConfig;
-use ftx_source::FtxSourceConfig;
 use ibflex_source::IBFlexSourceConfig;
 use rust_decimal::prelude::Decimal;
 use serde::Deserialize;
@@ -15,8 +12,6 @@ use std::collections::HashMap;
 #[serde(tag = "type")]
 pub enum SourceType {
     Hardcoded { assets: Vec<Asset> },
-    Coinbase(CoinbaseSourceConfig),
-    Ftx(FtxSourceConfig),
     IBFlex(IBFlexSourceConfig),
 }
 
@@ -31,7 +26,6 @@ pub struct SourceConfig {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum ConverterConfig {
-    Coinbase(CoinbaseConverterConfig),
     CurrencyLayer(CurrencyLayerConverterConfig),
     AlphaVantage(AlphaVantageConverterConfig),
     Fixer(FixerConverterConfig),

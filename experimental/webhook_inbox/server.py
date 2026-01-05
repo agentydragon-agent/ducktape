@@ -1,7 +1,6 @@
 """Uvicorn server entry point for webhook_inbox."""
 
 import uvicorn
-
 from webhook_inbox import app
 
 if __name__ == "__main__":

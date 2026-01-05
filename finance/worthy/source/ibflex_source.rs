@@ -2,8 +2,8 @@ use asset::Asset;
 use async_trait::async_trait;
 use denomination::Denomination;
 use ibflex::{
-    run_flex_query, AssetCategory, FlexQuerySuccess, FlexStatement, LevelOfDetail::Summary,
-    OpenPosition, Side::Long,
+    AssetCategory, FlexQuerySuccess, FlexStatement, LevelOfDetail::Summary, OpenPosition,
+    Side::Long, run_flex_query,
 };
 use rust_decimal::Decimal;
 use serde::Deserialize;

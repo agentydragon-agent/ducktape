@@ -7,11 +7,11 @@ Usage:
     bazel run //bazelization:audit
 """
 
+import subprocess
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
-import subprocess
 
 import pygit2
 

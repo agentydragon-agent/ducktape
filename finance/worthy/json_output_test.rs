@@ -36,7 +36,7 @@ fn parse_snapshot() {
             {
               "Id": "b",
               "Name": "B",
-              "Type": "coinbase",
+              "Type": "ibflex",
               "Snapshot": [
                 {"Type": "crypto", "Symbol": "AAA", "Amount": 1},
                 {"Type": "crypto", "Symbol": "BBB", "Amount": 2},
@@ -106,7 +106,7 @@ fn parse_snapshot() {
             SourceSnapshot {
                 id: "b".to_string(),
                 name: "B".to_string(),
-                source_type: SourceType::Coinbase,
+                source_type: SourceType::IBFlex,
                 snapshot: vec![
                     Asset {
                         denomination: Cryptocurrency {

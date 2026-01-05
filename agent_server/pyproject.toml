@@ -74,10 +74,3 @@ markers = [
     "live_anthropic_api: tests requiring ANTHROPIC_API_KEY",
 ]
 
-[tool.uv.sources]
-cli-util = { workspace = true }
-net-util = { workspace = true }
-mcp-infra = { workspace = true }
-agent-core = { workspace = true }
-agent-core-testing = { workspace = true }
-openai-utils = { workspace = true }

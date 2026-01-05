@@ -6,9 +6,9 @@ Per-package conftest.py files can extend this with package-specific fixtures.
 
 from __future__ import annotations
 
-from contextlib import suppress
 import os
 import platform
+from contextlib import suppress
 
 import pytest
 

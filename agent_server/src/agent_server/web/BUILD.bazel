@@ -1,8 +1,8 @@
-load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
-load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
-load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
+load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
@@ -40,14 +40,16 @@ svelte_check_bin.svelte_check_test(
     ],
     chdir = package_name(),
     data = [
-        ":node_modules",
-        ":node_modules/@types/dompurify",
-        "tsconfig.json",
-        "tsconfig.app.json",
-        "tsconfig.node.json",
         "svelte.config.js",
+        "tsconfig.app.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
         "vite.config.ts",
-    ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
+        ":node_modules",
+    ] + glob([
+        "src/**/*.ts",
+        "src/**/*.svelte",
+    ]),
     tags = ["lint"],
 )
 
@@ -59,12 +61,12 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        ":node_modules",
-        "vitest.config.ts",
-        "tsconfig.json",
         "tsconfig.app.json",
+        "tsconfig.json",
         "tsconfig.node.json",
         "vite.config.ts",
+        "vitest.config.ts",
+        ":node_modules",
     ] + glob([
         "src/**/*.ts",
         "src/**/*.test.ts",
