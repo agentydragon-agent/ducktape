@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 
 from tana.domain.nodes import BaseNode
@@ -27,5 +26,5 @@ class Workspace:
     def materialize_search(self, node_id: NodeId) -> list[NodeId]:
         return materialize_search(self.graph, self.node(node_id))
 
-    def compare_search_results(self, node_id: NodeId) -> dict[str, Iterable[NodeId]]:
+    def compare_search_results(self, node_id: NodeId) -> dict[str, list[NodeId]]:
         return compare_search_results(self.graph, self.node(node_id))
