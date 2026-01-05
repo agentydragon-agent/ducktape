@@ -1,64 +1,38 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-01-03
+**Last Updated**: 2026-01-05
 
 ## 🎯 Current Status
 
-**Major Architecture Change** (2026-01-03):
+**Hybrid Hetzner VPS + Proxmox** architecture operational:
 
-Migrated from Proxmox-only 5-node cluster to **hybrid Hetzner VPS + Proxmox** architecture:
+- ✅ 2x Hetzner CPX31 VPS nodes (Hillsboro, OR) - control-plane
+- ✅ 2x Proxmox nodes (atlas) - 1 control-plane + 1 worker
+- ✅ Cilium CNI with VXLAN tunnel mode
+- ✅ KubeSpan mesh (WireGuard) connecting VPS ↔ home
+- ✅ Hetzner Cloud CSI + Proxmox CSI + local-path-provisioner
+- ✅ Flux, Vault, Authentik, cert-manager deployed
+- ⚠️ `talos-vps-cp-1` currently NotReady (needs investigation)
 
-- ✅ 2x Hetzner CPX31 VPS nodes deployed (Hillsboro, OR)
-- ✅ Both nodes are control-plane with Talos v1.9.5, Kubernetes v1.32.0
-- ✅ Cilium CNI with VXLAN tunnel mode (cross-node connectivity verified)
-- ✅ Talos machine secrets persisted in 00-persistent-auth layer
-- ✅ KubePrism (localhost:7445) for cluster_endpoint (breaks circular dependency)
-- ✅ **KubeSpan mesh working** - WireGuard handshakes verified, state: `up` on both peers
-- ✅ **Simplified VPS deployment using Hetzner public Talos ISO** (no custom snapshot needed)
-- ✅ **Hetzner Cloud CSI** for block storage
-- ⏳ Home Proxmox node(s) not yet added
+**Current Nodes**:
 
-**Current Cluster State**:
+| Node | Location | Role | IP |
+|------|----------|------|-----|
+| talos-vps-cp-0 | Hetzner | control-plane | 5.78.43.147 |
+| talos-vps-cp-1 | Hetzner | control-plane | 5.78.106.249 (NotReady) |
+| talos-pve-cp-0 | Proxmox | control-plane | 10.2.1.1 |
+| talos-pve-worker-0 | Proxmox | worker | 10.2.2.1 |
 
-- Nodes: `talos-vps-0` (5.78.106.249), `talos-vps-1` (5.78.43.147)
-- All core pods running: CoreDNS, Cilium, Hubble, hcloud-csi
-- Node labels: `topology.kubernetes.io/region=hetzner`, `zone=hil`
-- KubeSpan: Active mesh with ~15s handshake intervals
-- No services deployed yet (Flux, Vault, etc. pending)
+**Pending**:
 
-**Pending Investigation**:
-
-- [ ] Re-evaluate TCP MTU probing requirement now that we're on KubeSpan instead of Tailscale
-  - PowerDNS currently requires `net.ipv4.tcp_mtu_probing` sysctl for AXFR over WireGuard
-  - KubeSpan may handle MTU differently than Tailscale - test if still needed
+- [ ] Fix talos-vps-cp-1 NotReady state
+- [ ] Complete DNS stack migration (see DNS Architecture below)
 
 ---
 
 ## 🔀 Possible Directions
 
-From current state, several independent branches can be pursued:
-
-### Branch A: Add Home Proxmox Node(s)
-
-Extend cluster with home infrastructure for storage-heavy workloads.
-
-**Prerequisites**:
-
-1. Add Proxmox API credentials to 00-persistent-auth
-2. Upload Talos ISO to Proxmox storage
-3. Create `proxmox-nodes.tf` (similar to `hetzner-nodes.tf`)
-
-**Steps**:
-
-- [ ] Add Proxmox provider credentials to terraform state
-- [ ] Create Talos VM template on Proxmox
-- [ ] Deploy 1+ Proxmox nodes as workers
-- [ ] Verify KubeSpan mesh connectivity (VPS ↔ home)
-- [ ] Deploy Proxmox CSI for home storage
-
-**Benefits**: ZFS storage access, media serving, heavy workloads at home
-
-### Branch B: Terraform State Backup (rclone + Google Drive)
+### Branch A: Terraform State Backup (rclone + Google Drive)
 
 Protect terraform state with encrypted cloud backup.
 
@@ -72,48 +46,35 @@ Protect terraform state with encrypted cloud backup.
 
 **Scope**: `terraform/*/terraform.tfstate` files (contain all secrets)
 
-### Branch C: Deploy Core Services (VPS-only)
+### Branch B: DNS Stack Migration
 
-Run services on VPS nodes without home Proxmox.
+Migrate from current single-instance MariaDB to replicated Galera cluster.
 
-**Limitations**: No persistent storage (Proxmox CSI unavailable), ephemeral only
+**Current State**: PowerDNS with single MariaDB on Proxmox CSI
 
-**Possible services**:
+**Target State**: PowerDNS + MariaDB Galera (3-node) + powerdns-operator
 
-- [ ] Flux CD (GitOps)
-- [ ] Sealed Secrets controller
-- [ ] Ingress (nginx or Cilium Gateway API)
-- [ ] cert-manager (DNS-01 via external provider)
-- [ ] External services using Hetzner Block Storage
+**Galera Node Placement** (for quorum):
 
-**Use case**: Lightweight public-facing services, CI/CD
+| Node | Location | Storage | Purpose |
+|------|----------|---------|---------|
+| galera-0 | talos-vps-cp-0 | local-path | Primary VPS |
+| galera-1 | talos-vps-cp-1 | local-path | Secondary VPS |
+| galera-2 | talos-pve-* | local-path | Tie-breaker |
 
-### Branch D: Hetzner Block Storage CSI
-
-Enable persistent storage on VPS nodes without Proxmox.
+Any single node failure maintains 2/3 quorum.
 
 **Implementation**:
 
-- [ ] Deploy hcloud-csi-driver
-- [ ] Create StorageClass for Hetzner volumes
-- [ ] Test PVC provisioning
+- [ ] Deploy `mariadb-galera` as separate HelmRelease (Bitnami chart)
+- [ ] Configure pod anti-affinity to spread across VPS + Proxmox
+- [ ] Use `local-path` storage (no Hetzner volume costs)
+- [ ] Modify PowerDNS to connect to Galera cluster
+- [ ] Deploy `powerdns-operator` for ClusterZone CRD
+- [ ] Create `powerdns-zones` with declarative zone + records
+- [ ] Verify ExternalDNS auto-creates records from Ingress annotations
 
-**Benefits**: Enables stateful workloads on VPS-only cluster
-**Limitations**: 10GB minimum, €0.052/GB/month, no RWX
-
-### Branch E: Full Hybrid Bootstrap
-
-Complete the original hybrid vision with all services.
-
-**Combines**: Branch A + existing service stack
-
-**Phases**:
-
-1. Add Proxmox node(s) (Branch A)
-2. Deploy Proxmox CSI for home storage
-3. Deploy Vault with Raft HA
-4. Deploy full service stack (Authentik, Harbor, Gitea, etc.)
-5. Bootstrap script verification
+See **DNS Architecture** section below for details.
 
 ---
 
@@ -183,20 +144,52 @@ Complete the original hybrid vision with all services.
 - KubePrism runs on every node, proxies to available API servers
 - Kubeconfig patched post-bootstrap to use real VPS IP
 
-### Kubeconfig HA via DNS Round-Robin
+### DNS Architecture
 
-**Decision**: Use DNS name instead of single VPS IP for kubeconfig
+**Decision**: PowerDNS + MariaDB Galera + powerdns-operator + ExternalDNS
 
-#### Target
+**Old Architecture** (Proxmox-only era):
+- Cluster PowerDNS on MetalLB VIP (internal)
+- VPS PowerDNS in Docker (external, public-facing)
+- AXFR replication from cluster → VPS
+- Complex, two separate systems
 
-- No AXFR complexity (same database = same data)
-- `local-path-provisioner` on VPS nodes
-- PowerDNS DaemonSet or Deployment with VPS node affinity
-- Tailscale MagicDNS as alternative to public DNS
+**New Architecture** (Hybrid VPS + Proxmox):
+- VPS nodes ARE Kubernetes nodes with public IPs
+- PowerDNS pod runs directly in cluster, accessible via VPS public IPs
+- No AXFR needed - single source of truth
+- MariaDB Galera for database redundancy (3-node across VPS + Proxmox)
 
-#### DNS Records
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ExternalDNS (watches Ingress → auto-creates A records)    │
+│  powerdns-operator (ClusterZone CRD → manages zones)       │
+└─────────────────────┬───────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────────────────┐
+│  PowerDNS (Deployment, connects to Galera)                 │
+└─────────────────────┬───────────────────────────────────────┘
+                      ↓
+┌─────────────────────────────────────────────────────────────┐
+│  MariaDB Galera (3-node, synchronous replication)          │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐               │
+│  │ VPS-0     │◄─►│ VPS-1     │◄─►│ Proxmox   │              │
+│  │ local-path│  │ local-path│  │ local-path│               │
+│  └───────────┘  └───────────┘  └───────────┘               │
+└─────────────────────────────────────────────────────────────┘
+```
 
-- `ns1.agentydragon.com` → VPS0 IP
+**Benefits**:
+- No Hetzner volume costs (local-path storage)
+- Survives single node failure (2/3 quorum)
+- Fully declarative (zones via CRD, records via Ingress annotations)
+- No AXFR complexity
+
+**Components**:
+- `mariadb-galera` - Bitnami Helm chart
+- `powerdns` - Custom chart, connects to Galera
+- `powerdns-operator` - Provides ClusterZone/ClusterRRset CRDs
+- `external-dns` - Already deployed, auto-creates records
 
 ### Storage Strategy: Consolidated VPS, Liberal Home
 
