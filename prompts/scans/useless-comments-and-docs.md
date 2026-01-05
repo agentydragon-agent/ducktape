@@ -528,66 +528,9 @@ counter += 1
 counter += 1
 ```
 
----
-
 ## Output Format for Manual Review
 
-Generate a review document with all comments:
-
-```markdown
-# Comment Review: <file_path>
-
-## Line <N>: [<type>] <comment_preview>
-
-**Comment:**
-```
-
-<full_comment_text>
-
-````
-
-**Context Before:**
-```python
-<3_lines_before>
-````
-
-**Context After:**
-
-```python
-<3_lines_after>
-```
-
-**Assessment:** [USELESS | OUTDATED | VAGUE | USEFUL | UNCLEAR]
-
-**Action:** [REMOVE | UPDATE | CLARIFY | KEEP]
-
-**Reasoning:** <why_this_assessment>
-
----
-
-````
-
----
-
-## Recall/Precision Estimates
-
-- **Automated extraction**: 100% recall (finds all comments)
-- **Automated filtering**: ~20% precision, ~60% recall
-  - Low precision: many false positives (useful comments flagged as useless)
-  - Medium recall: misses contextual uselessness (comment is technically accurate but redundant)
-- **Manual review required**: Target 100% recall through reading every comment in context
-
----
-
-## Benefits
-
-✅ **Cleaner code** - Less noise, easier to read
-✅ **No misleading info** - Removes outdated/wrong comments
-✅ **Self-documenting** - Forces better naming and structure
-✅ **Maintainability** - No comment drift when code changes
-✅ **Focus on value** - Remaining comments are truly helpful
-
----
+Generate a review document with all comments, including their context (+/- 3 lines) and content.
 
 ## Examples from Codebase
 
@@ -606,7 +549,7 @@ async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
 async def tool_exec(input: ExecInput, ctx: Context) -> BaseExecResult:
     """Run a shell command inside the per-session Docker container."""
     ...
-````
+```
 
 ### Obvious Statements
 
