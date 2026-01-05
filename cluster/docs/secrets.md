@@ -57,19 +57,19 @@
 
 ### Keypair Locations
 
-| Location | Purpose |
-|----------|---------|
-| `terraform/00-persistent-auth/terraform.tfstate` | SSOT (gitignored) |
-| `kube-system/sealed-secrets-key` | Deployed to cluster |
-| Git SealedSecrets | Encrypted with keypair |
+| Location                                         | Purpose                |
+| ------------------------------------------------ | ---------------------- |
+| `terraform/00-persistent-auth/terraform.tfstate` | SSOT (gitignored)      |
+| `kube-system/sealed-secrets-key`                 | Deployed to cluster    |
+| Git SealedSecrets                                | Encrypted with keypair |
 
 ## SealedSecrets in Repository
 
-| File | Purpose | Namespace |
-|------|---------|-----------|
-| `k8s/storage/proxmox-csi-sealed.yaml` | CSI driver credentials | csi-proxmox |
-| `k8s/applications/nix-cache/signing-key-sealed.yaml` | Nix cache signing | nix-cache |
-| `k8s/applications/nix-cache/jwt-token-sealed.yaml` | Attic JWT token | nix-cache |
+| File                                                 | Purpose                | Namespace   |
+| ---------------------------------------------------- | ---------------------- | ----------- |
+| `k8s/storage/proxmox-csi-sealed.yaml`                | CSI driver credentials | csi-proxmox |
+| `k8s/applications/nix-cache/signing-key-sealed.yaml` | Nix cache signing      | nix-cache   |
+| `k8s/applications/nix-cache/jwt-token-sealed.yaml`   | Attic JWT token        | nix-cache   |
 
 ## Common Failure Modes
 

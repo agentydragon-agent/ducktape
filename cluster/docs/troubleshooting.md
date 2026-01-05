@@ -314,6 +314,7 @@ spec:
           kind: Password
           name: app-oauth-client-secret-generator
 
+
 # AFTER (CORRECT - reads from Vault):
 ---
 apiVersion: external-secrets.io/v1beta1
@@ -387,11 +388,11 @@ talosctl -n <node-ip> get affiliates -o yaml
 
 **KubeSpan State Meanings:**
 
-| State | Meaning |
-|-------|---------|
+| State     | Meaning                                                    |
+| --------- | ---------------------------------------------------------- |
 | `unknown` | No endpoint set yet, or endpoint just changed (within 15s) |
-| `up` | WireGuard handshake within last ~275s |
-| `down` | No handshake for >275s |
+| `up`      | WireGuard handshake within last ~275s                      |
+| `down`    | No handshake for >275s                                     |
 
 **Key Constants:**
 
@@ -592,7 +593,7 @@ become Ready without volume.
 spec:
   replicas: 1
   strategy:
-    type: Recreate  # Terminates old pod before creating new one
+    type: Recreate # Terminates old pod before creating new one
 ```
 
 **When to use Recreate**: Single replica + RWO volume + stateful app (databases, git servers, registries).

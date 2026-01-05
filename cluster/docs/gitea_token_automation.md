@@ -12,13 +12,13 @@ BasicAuth with the ESO-generated admin password.
 
 ### Why This Approach
 
-| Option | Verdict | Reason |
-|--------|---------|--------|
-| K8s Job + curl API | ✅ **Selected** | Declarative, minimal deps, well-documented API |
-| Gitea CLI in container | ❌ Rejected | Complex volume mounts, file permissions |
-| Gitea Operator | ❌ Rejected | Unmaintained, adds complexity |
-| Helm chart hook | ❌ Rejected | Requires forking chart |
-| Manual bootstrap token | ❌ Rejected | Violates turnkey requirement |
+| Option                 | Verdict         | Reason                                         |
+| ---------------------- | --------------- | ---------------------------------------------- |
+| K8s Job + curl API     | ✅ **Selected** | Declarative, minimal deps, well-documented API |
+| Gitea CLI in container | ❌ Rejected     | Complex volume mounts, file permissions        |
+| Gitea Operator         | ❌ Rejected     | Unmaintained, adds complexity                  |
+| Helm chart hook        | ❌ Rejected     | Requires forking chart                         |
+| Manual bootstrap token | ❌ Rejected     | Violates turnkey requirement                   |
 
 ### Architecture
 

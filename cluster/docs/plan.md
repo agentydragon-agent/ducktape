@@ -16,12 +16,12 @@
 
 **Current Nodes**:
 
-| Node | Location | Role | IP |
-|------|----------|------|-----|
-| talos-vps-cp-0 | Hetzner | control-plane | 5.78.43.147 |
-| talos-vps-cp-1 | Hetzner | control-plane | 5.78.106.249 (NotReady) |
-| talos-pve-cp-0 | Proxmox | control-plane | 10.2.1.1 |
-| talos-pve-worker-0 | Proxmox | worker | 10.2.2.1 |
+| Node               | Location | Role          | IP                      |
+| ------------------ | -------- | ------------- | ----------------------- |
+| talos-vps-cp-0     | Hetzner  | control-plane | 5.78.43.147             |
+| talos-vps-cp-1     | Hetzner  | control-plane | 5.78.106.249 (NotReady) |
+| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1                |
+| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1                |
 
 **Pending**:
 
@@ -56,11 +56,11 @@ Migrate from current single-instance MariaDB to replicated Galera cluster.
 
 **Galera Node Placement** (for quorum):
 
-| Node | Location | Storage | Purpose |
-|------|----------|---------|---------|
-| galera-0 | talos-vps-cp-0 | local-path | Primary VPS |
+| Node     | Location       | Storage    | Purpose       |
+| -------- | -------------- | ---------- | ------------- |
+| galera-0 | talos-vps-cp-0 | local-path | Primary VPS   |
 | galera-1 | talos-vps-cp-1 | local-path | Secondary VPS |
-| galera-2 | talos-pve-* | local-path | Tie-breaker |
+| galera-2 | talos-pve-\*   | local-path | Tie-breaker   |
 
 Any single node failure maintains 2/3 quorum.
 
@@ -149,18 +149,20 @@ See **DNS Architecture** section below for details.
 **Decision**: PowerDNS + MariaDB Galera + powerdns-operator + ExternalDNS
 
 **Old Architecture** (Proxmox-only era):
+
 - Cluster PowerDNS on MetalLB VIP (internal)
 - VPS PowerDNS in Docker (external, public-facing)
 - AXFR replication from cluster → VPS
 - Complex, two separate systems
 
 **New Architecture** (Hybrid VPS + Proxmox):
+
 - VPS nodes ARE Kubernetes nodes with public IPs
 - PowerDNS pod runs directly in cluster, accessible via VPS public IPs
 - No AXFR needed - single source of truth
 - MariaDB Galera for database redundancy (3-node across VPS + Proxmox)
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  ExternalDNS (watches Ingress → auto-creates A records)    │
 │  powerdns-operator (ClusterZone CRD → manages zones)       │
@@ -180,12 +182,14 @@ See **DNS Architecture** section below for details.
 ```
 
 **Benefits**:
+
 - No Hetzner volume costs (local-path storage)
 - Survives single node failure (2/3 quorum)
 - Fully declarative (zones via CRD, records via Ingress annotations)
 - No AXFR complexity
 
 **Components**:
+
 - `mariadb-galera` - Bitnami Helm chart
 - `powerdns` - Custom chart, connects to Galera
 - `powerdns-operator` - Provides ClusterZone/ClusterRRset CRDs
@@ -204,13 +208,13 @@ See **DNS Architecture** section below for details.
 
 - Gitea + PostgreSQL (50GB+)
 - Loki log storage (100GB+)
-- Media services (Jellyfin, *arr stack)
+- Media services (Jellyfin, \*arr stack)
 - Nix cache (100GB+)
 
-| Location | Services | Rationale |
-|----------|----------|-----------|
-| VPS | Vault, Authentik, Ingress, DNS, cert-manager | Always-on, critical path |
-| Home | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
+| Location | Services                                       | Rationale                            |
+| -------- | ---------------------------------------------- | ------------------------------------ |
+| VPS      | Vault, Authentik, Ingress, DNS, cert-manager   | Always-on, critical path             |
+| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
 
 #### Shared PostgreSQL Option
 

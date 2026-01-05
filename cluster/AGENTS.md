@@ -544,17 +544,17 @@ Never use the `timeout` command prefix - use the tool's built-in timeout paramet
 
 **Observed timings for terraform apply phases (2026-01-03 hybrid VPS+Proxmox cluster):**
 
-| Phase | Typical Duration | Notes |
-|-------|------------------|-------|
-| Proxmox VM creation | 30-35s | Per VM, parallel |
-| Hetzner VPS creation | 55s-1m15s | Per VPS, parallel |
-| VPS Talos config apply | 20-30s | Per VPS |
-| Proxmox Talos config apply | 7-9 min | Per node, slower due to disk import |
-| talos_machine_bootstrap | <1s | Triggers etcd bootstrap |
-| K8s API wait | 5-10 min | wait-for-k8s-api.sh, 60 attempts × 10s |
-| Cilium installation | 30-40s | helm_release.cilium_bootstrap |
-| Nodes Ready wait | ~1s | After Cilium, nodes become Ready quickly |
-| hcloud-csi installation | 15-20s | Hetzner CSI driver |
+| Phase                      | Typical Duration | Notes                                    |
+| -------------------------- | ---------------- | ---------------------------------------- |
+| Proxmox VM creation        | 30-35s           | Per VM, parallel                         |
+| Hetzner VPS creation       | 55s-1m15s        | Per VPS, parallel                        |
+| VPS Talos config apply     | 20-30s           | Per VPS                                  |
+| Proxmox Talos config apply | 7-9 min          | Per node, slower due to disk import      |
+| talos_machine_bootstrap    | <1s              | Triggers etcd bootstrap                  |
+| K8s API wait               | 5-10 min         | wait-for-k8s-api.sh, 60 attempts × 10s   |
+| Cilium installation        | 30-40s           | helm_release.cilium_bootstrap            |
+| Nodes Ready wait           | ~1s              | After Cilium, nodes become Ready quickly |
+| hcloud-csi installation    | 15-20s           | Hetzner CSI driver                       |
 
 **Total estimated bootstrap time**: 15-20 minutes from terraform apply start to all nodes Ready.
 

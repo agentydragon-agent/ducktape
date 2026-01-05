@@ -147,7 +147,7 @@ When NGINX sends an auth subrequest for `kagent.test-cluster.agentydragon.com`:
 
 ```json
 {
-  "providers": [3]  // Kagent provider ID
+  "providers": [3] // Kagent provider ID
 }
 ```
 

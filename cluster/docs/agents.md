@@ -256,7 +256,7 @@ metadata:
 spec:
   description: "Computer control MCP server for devbot agent (private instance)"
   protocol: STREAMABLE_HTTP
-  url: "http://devbot-desktop.agents.svc.cluster.local:8080"  # Points to desktop service
+  url: "http://devbot-desktop.agents.svc.cluster.local:8080" # Points to desktop service
   timeout: 30s
 ```
 
@@ -310,86 +310,86 @@ spec:
         agent: devbot
     spec:
       initContainers:
-      - name: setup-credentials
-        image: busybox
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            # Setup git credentials
-            mkdir -p /workspace/.config/git
-            cat > /workspace/.config/git/config <<EOF
-            [user]
-              name = DevBot
-              email = devbot@agents.local
-            [credential]
-              helper = store
-            EOF
+        - name: setup-credentials
+          image: busybox
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Setup git credentials
+              mkdir -p /workspace/.config/git
+              cat > /workspace/.config/git/config <<EOF
+              [user]
+                name = DevBot
+                email = devbot@agents.local
+              [credential]
+                helper = store
+              EOF
 
-            cat > /workspace/.config/git/credentials <<EOF
-            https://devbot:${GITEA_TOKEN}@git.test-cluster.agentydragon.com
-            EOF
-            chmod 600 /workspace/.config/git/credentials
-        env:
-        - name: GITEA_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: devbot-credentials
-              key: gitea-token
-        volumeMounts:
-        - name: workspace
-          mountPath: /workspace
+              cat > /workspace/.config/git/credentials <<EOF
+              https://devbot:${GITEA_TOKEN}@git.test-cluster.agentydragon.com
+              EOF
+              chmod 600 /workspace/.config/git/credentials
+          env:
+            - name: GITEA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: devbot-credentials
+                  key: gitea-token
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
 
       containers:
-      # Desktop container with X11 + VNC
-      - name: desktop
-        image: devbot-desktop:latest
-        env:
-        - name: VNC_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: devbot-credentials
-              key: vnc-password
-        - name: DISPLAY
-          value: ":0"
-        ports:
-        - name: vnc
-          containerPort: 5900
-        - name: x11
-          containerPort: 6000
-        volumeMounts:
-        - name: workspace
-          mountPath: /home/agent/workspace
-        - name: config
-          mountPath: /home/agent/.config
-        resources:
-          requests:
-            cpu: "1"
-            memory: "2Gi"
-          limits:
-            cpu: "2"
-            memory: "4Gi"
+        # Desktop container with X11 + VNC
+        - name: desktop
+          image: devbot-desktop:latest
+          env:
+            - name: VNC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: devbot-credentials
+                  key: vnc-password
+            - name: DISPLAY
+              value: ":0"
+          ports:
+            - name: vnc
+              containerPort: 5900
+            - name: x11
+              containerPort: 6000
+          volumeMounts:
+            - name: workspace
+              mountPath: /home/agent/workspace
+            - name: config
+              mountPath: /home/agent/.config
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
 
-      # MCP server sidecar
-      - name: mcp-server
-        image: computer-control-mcp:latest
-        env:
-        - name: DISPLAY
-          value: "localhost:0"  # Connect to desktop container
-        ports:
-        - name: mcp
-          containerPort: 8080
-        resources:
-          requests:
-            cpu: "250m"
-            memory: "512Mi"
+        # MCP server sidecar
+        - name: mcp-server
+          image: computer-control-mcp:latest
+          env:
+            - name: DISPLAY
+              value: "localhost:0" # Connect to desktop container
+          ports:
+            - name: mcp
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
 
       volumes:
-      - name: workspace
-        persistentVolumeClaim:
-          claimName: devbot-workspace
-      - name: config
-        persistentVolumeClaim:
-          claimName: devbot-config
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: devbot-workspace
+        - name: config
+          persistentVolumeClaim:
+            claimName: devbot-config
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -427,12 +427,12 @@ spec:
     app: devbot-desktop
     agent: devbot
   ports:
-  - name: vnc
-    port: 5900
-    targetPort: 5900
-  - name: mcp
-    port: 8080
-    targetPort: 8080
+    - name: vnc
+      port: 5900
+      targetPort: 5900
+    - name: mcp
+      port: 8080
+      targetPort: 8080
 ```
 
 **Key points:**
@@ -512,7 +512,7 @@ metadata:
   name: devbot-credentials
   namespace: agents
 spec:
-  refreshInterval: 8760h  # 1 year (avoid rotation issues)
+  refreshInterval: 8760h # 1 year (avoid rotation issues)
   secretStoreRef:
     name: vault-backend
     kind: ClusterSecretStore
@@ -615,7 +615,7 @@ agent:
 
   # Visual capabilities
   desktop:
-    enabled: true  # false for CLI-only
+    enabled: true # false for CLI-only
     image: devbot-desktop:latest
     storage:
       workspace: 20Gi
@@ -623,8 +623,8 @@ agent:
 
   # MCP server
   mcp:
-    image: computer-control-mcp:latest  # or custom CLI MCP server
-    type: visual  # or 'cli'
+    image: computer-control-mcp:latest # or custom CLI MCP server
+    type: visual # or 'cli'
 
   # Credentials from Vault
   credentials:
@@ -852,7 +852,7 @@ helm install databot ./charts/kagent-agent \
 - Task delegation between agents
 - Hierarchical agent structures
 - Shared context and memory
-**Use Cases:**
+  **Use Cases:**
 - Research crew (searcher + analyzer + writer)
 - DevOps crew (planner + implementer + tester)
 - Complex workflows requiring specialized expertise per step
@@ -869,13 +869,13 @@ helm install databot ./charts/kagent-agent \
 - Identify bottlenecks (slow tools, LLM latency)
 - Debug multi-agent coordination
 - Performance optimization data
-**Implementation:**
+  **Implementation:**
 - Deploy OpenTelemetry Collector in cluster
 - Configure Kagent agents with OTEL exporters
 - Jaeger or Tempo for trace storage
 - Grafana for visualization
-**Integration:** Ties into cluster observability stack (Prometheus, Loki, Grafana)
-**Reference:** docs/plan.md observability section
+  **Integration:** Ties into cluster observability stack (Prometheus, Loki, Grafana)
+  **Reference:** docs/plan.md observability section
 
 ### Agent Sandbox Integration
 

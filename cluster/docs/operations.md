@@ -153,10 +153,10 @@ kubectl delete certificates --all -A
 
 **Environment differences**:
 
-| Environment | ACME Server | Rate Limits | Certificate Trust |
-|-------------|-------------|-------------|-------------------|
-| **Staging** | acme-staging-v02.api.letsencrypt.org | 30,000 certs/week | Untrusted (test only) |
-| **Production** | acme-v02.api.letsencrypt.org | 50 certs/week | Browser-trusted |
+| Environment    | ACME Server                          | Rate Limits       | Certificate Trust     |
+| -------------- | ------------------------------------ | ----------------- | --------------------- |
+| **Staging**    | acme-staging-v02.api.letsencrypt.org | 30,000 certs/week | Untrusted (test only) |
+| **Production** | acme-v02.api.letsencrypt.org         | 50 certs/week     | Browser-trusted       |
 
 **When to use each**:
 
@@ -358,25 +358,25 @@ authentication failures. Consider filing upstream issue if this becomes frequent
 
 **Hetzner VPS Nodes** (dynamic IPs assigned by Hetzner):
 
-| Node | Server Type | Location | Role |
-|------|-------------|----------|------|
-| talos-vps-cp-0 | CPX31 | Hillsboro, OR | Controlplane (schedulable) |
-| talos-vps-cp-1 | CPX31 | Hillsboro, OR | Controlplane (schedulable) |
+| Node           | Server Type | Location      | Role                       |
+| -------------- | ----------- | ------------- | -------------------------- |
+| talos-vps-cp-0 | CPX31       | Hillsboro, OR | Controlplane (schedulable) |
+| talos-vps-cp-1 | CPX31       | Hillsboro, OR | Controlplane (schedulable) |
 
 **Proxmox Home Nodes** (static IPs):
 
-| Node | VM ID | IP Address | Role |
-|------|-------|------------|------|
-| talos-pve-cp-0 | 10000 | 10.2.1.1 | Controlplane |
-| talos-pve-worker-0 | 10100 | 10.2.2.1 | Worker |
+| Node               | VM ID | IP Address | Role         |
+| ------------------ | ----- | ---------- | ------------ |
+| talos-pve-cp-0     | 10000 | 10.2.1.1   | Controlplane |
+| talos-pve-worker-0 | 10100 | 10.2.2.1   | Worker       |
 
 ### MetalLB VIP Assignments (Proxmox Network)
 
-| Service | IP Address | Pool | Purpose |
-|---------|------------|------|---------|
-| **Ingress** | 10.2.3.2 | ingress-pool | NGINX Ingress (home access) |
-| **PowerDNS** | 10.2.3.3 | dns-pool | DNS server (home access) |
-| **Services** | 10.2.3.4-20 | services-pool | Harbor, Gitea, etc. |
+| Service      | IP Address  | Pool          | Purpose                     |
+| ------------ | ----------- | ------------- | --------------------------- |
+| **Ingress**  | 10.2.3.2    | ingress-pool  | NGINX Ingress (home access) |
+| **PowerDNS** | 10.2.3.3    | dns-pool      | DNS server (home access)    |
+| **Services** | 10.2.3.4-20 | services-pool | Harbor, Gitea, etc.         |
 
 **Note**: VPS nodes use Hetzner public IPs directly for ingress. MetalLB VIPs are for home network access only.
 
@@ -396,7 +396,7 @@ securityContext:
   runAsGroup: 953
   allowPrivilegeEscalation: false
   capabilities:
-    add: ["NET_BIND_SERVICE"]  # Required for ports < 1024
+    add: ["NET_BIND_SERVICE"] # Required for ports < 1024
     drop: ["ALL"]
   seccompProfile:
     type: RuntimeDefault
