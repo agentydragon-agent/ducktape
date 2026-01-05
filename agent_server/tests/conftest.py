@@ -274,23 +274,8 @@ def make_policy_request(server: MCPMountPrefix, tool: str, arguments: dict[str, 
     )
 
 
-# reasoning_model and responses_factory fixtures come from agent_core_testing.responses
-# (registered via pytest_plugins above)
-
-
-# make_fake_openai, make_capturing_client, make_test_agent come from agent_core_testing.fixtures
-# (registered via pytest_plugins above)
-
-
 # ---- Shared ContainerOptions fixtures and in-proc docker exec specs ----
 # Kept here so all tests can reuse the same settings consistently.
-
-
-# Provide a shared typed MCP session helper for tests that need a TypedClient
-# make_typed_mcp now provided globally in tests/conftest.py
-
-
-# echo_spec fixture is provided at tests/conftest.py for all suites.
 
 
 # Helper: create a live agent via HTTP on a TestClient and return its id
