@@ -17,16 +17,8 @@ pub struct Snapshot {
 pub enum SourceType {
     #[serde(rename = "hardcoded")]
     Hardcoded,
-    #[serde(rename = "coinbase")]
-    Coinbase,
     #[serde(rename = "ibflex")]
     IBFlex,
-    #[serde(rename = "ftx")]
-    Ftx,
-
-    // Deprecated.
-    #[serde(rename = "ibdock")]
-    IBDock,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -75,8 +67,6 @@ pub enum ConverterType {
     CurrencyLayer,
     #[serde(rename = "alphavantage")]
     AlphaVantage,
-    #[serde(rename = "coinbase")]
-    Coinbase,
     #[serde(rename = "fixer")]
     Fixer,
 }
@@ -87,8 +77,6 @@ pub struct ConverterSnapshot {
     pub id: String,
     #[serde(rename = "Type")]
     pub converter_type: ConverterType,
-    // "Params": {}
-    // (accidentally contains APIKey and APISecret for Coinbase!)
     pub snapshot: Vec<Conversion>,
 }
 

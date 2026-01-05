@@ -40,28 +40,6 @@ rust_library(
 )
 
 rust_library(
-    name = "coinbase_converter",
-    srcs = ["coinbase_converter.rs"],
-    edition = "2024",
-    proc_macro_deps = [
-        "@crates//:async-trait",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//finance/worthy:converter",
-        "//finance/worthy:denomination",
-        "//finance/worthy:exchange_rate",
-        "@crates//:bigdecimal",
-        "@crates//:coinbase-rs",
-        "@crates//:futures",
-        "@crates//:log",
-        "@crates//:rust_decimal",
-        "@crates//:rusty-money",
-        "@crates//:serde",
-    ],
-)
-
-rust_library(
     name = "fixer_converter",
     srcs = ["fixer_converter.rs"],
     edition = "2024",

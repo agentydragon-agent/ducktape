@@ -3,8 +3,6 @@
 use alphavantage_converter::AlphaVantageConverter;
 use asset::Asset;
 use chrono::prelude::*;
-use coinbase_converter::CoinbaseConverter;
-use coinbase_source::CoinbaseSource;
 use config::{Config, ConverterConfig, SourceConfig};
 use converter::Converter;
 use currencylayer_converter::CurrencyLayerConverter;
@@ -12,7 +10,6 @@ use denomination::Denomination;
 use exchange_rate::ExchangeRate;
 use fixer_converter::FixerConverter;
 use flags::Opt;
-use ftx_source::FtxSource;
 use futures::prelude::*;
 use glob::glob;
 use ibflex_source::IBFlexSource;
@@ -37,8 +34,6 @@ async fn process_source(source: &SourceConfig) -> Result<Vec<Asset>, Box<dyn Err
     use config::SourceType::*;
     match &source.source_type {
         // TODO: static dispatch
-        Coinbase(config) => CoinbaseSource::take_snapshot(config).await,
-        Ftx(config) => FtxSource::take_snapshot(config).await,
         IBFlex(config) => IBFlexSource::take_snapshot(config).await,
         Hardcoded { assets } => Ok(assets.to_vec()),
     }
@@ -55,9 +50,7 @@ fn asset_to_money(x: &Asset) -> Money<iso::Currency> {
 
 enum SourceType {
     Hardcoded,
-    Coinbase,
     IBFlex,
-    Ftx,
 }
 
 struct SourceSnapshot {
@@ -83,9 +76,7 @@ async fn get_source_snapshots(
                         id: source_id.clone(),
                         name: source_config.name.clone(),
                         source_type: match source_config.source_type {
-                            Coinbase(_) => SourceType::Coinbase,
                             IBFlex(_) => SourceType::IBFlex,
-                            Ftx(_) => SourceType::Ftx,
                             Hardcoded { .. } => SourceType::Hardcoded,
                         },
                         snapshot: assets,
@@ -100,7 +91,6 @@ async fn get_source_snapshots(
 enum ConverterType {
     CurrencyLayer,
     AlphaVantage,
-    Coinbase,
     Fixer,
 }
 
@@ -127,7 +117,6 @@ async fn get_converter_snapshots(
                     // short a time.
                     AlphaVantageConverter::take_snapshot(config, denominations, base)
                 }
-                Coinbase(config) => CoinbaseConverter::take_snapshot(config, denominations, base),
                 Fixer(config) => FixerConverter::take_snapshot(config, denominations, base),
                 CurrencyLayer(config) => {
                     CurrencyLayerConverter::take_snapshot(config, denominations, base)
@@ -139,7 +128,6 @@ async fn get_converter_snapshots(
                     id: converter_name.clone(),
                     converter_type: match converter_config {
                         AlphaVantage(_) => ConverterType::AlphaVantage,
-                        Coinbase(_) => ConverterType::Coinbase,
                         Fixer(_) => ConverterType::Fixer,
                         CurrencyLayer(_) => ConverterType::CurrencyLayer,
                     },
@@ -540,7 +528,6 @@ fn converter_snapshot_to_json(
         converter_type: match converter_snapshot.converter_type {
             ConverterType::CurrencyLayer => json_output::ConverterType::CurrencyLayer,
             ConverterType::AlphaVantage => json_output::ConverterType::AlphaVantage,
-            ConverterType::Coinbase => json_output::ConverterType::Coinbase,
             ConverterType::Fixer => json_output::ConverterType::Fixer,
         },
         snapshot: converter_snapshot
@@ -559,7 +546,6 @@ fn converter_snapshot_from_json(
         converter_type: match converter_snapshot.converter_type {
             json_output::ConverterType::CurrencyLayer => ConverterType::CurrencyLayer,
             json_output::ConverterType::AlphaVantage => ConverterType::AlphaVantage,
-            json_output::ConverterType::Coinbase => ConverterType::Coinbase,
             json_output::ConverterType::Fixer => ConverterType::Fixer,
         },
         snapshot: converter_snapshot
@@ -598,9 +584,7 @@ fn source_snapshot_to_json(source_snapshot: &SourceSnapshot) -> json_output::Sou
         name: source_snapshot.name.clone(),
         source_type: match source_snapshot.source_type {
             SourceType::Hardcoded => json_output::SourceType::Hardcoded,
-            SourceType::Coinbase => json_output::SourceType::Coinbase,
             SourceType::IBFlex => json_output::SourceType::IBFlex,
-            SourceType::Ftx => json_output::SourceType::Ftx,
         },
         snapshot: source_snapshot.snapshot.iter().map(asset_to_json).collect(),
     }
@@ -612,10 +596,7 @@ fn source_snapshot_from_json(json_snapshot: &json_output::SourceSnapshot) -> Sou
         name: json_snapshot.name.clone(),
         source_type: match json_snapshot.source_type {
             json_output::SourceType::Hardcoded => SourceType::Hardcoded,
-            json_output::SourceType::IBDock => panic!("ibdock source type is deprecated"),
-            json_output::SourceType::Coinbase => SourceType::Coinbase,
             json_output::SourceType::IBFlex => SourceType::IBFlex,
-            json_output::SourceType::Ftx => SourceType::Ftx,
         },
         snapshot: json_snapshot.snapshot.iter().map(asset_from_json).collect(),
     }
