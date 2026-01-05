@@ -69,12 +69,12 @@ All agents use a single `agent_base` role with RLS policies based on agent type:
 - Username format: `agent_{agent_run_id}`
 - Helper functions: `current_agent_run_id()`, `current_agent_type()` (SECURITY DEFINER)
 
-| Resource | Critic | Grader | Prompt Optimizer |
-|----------|--------|--------|------------------|
-| Own events | SELECT | SELECT | SELECT (TRAIN only) |
-| reported_issues | INSERT own | SELECT graded | SELECT TRAIN only |
-| Ground truth | - | SELECT graded snapshot | SELECT TRAIN only |
-| grading_decisions | - | INSERT own | SELECT TRAIN only |
+| Resource          | Critic     | Grader                 | Prompt Optimizer    |
+| ----------------- | ---------- | ---------------------- | ------------------- |
+| Own events        | SELECT     | SELECT                 | SELECT (TRAIN only) |
+| reported_issues   | INSERT own | SELECT graded          | SELECT TRAIN only   |
+| Ground truth      | -          | SELECT graded snapshot | SELECT TRAIN only   |
+| grading_decisions | -          | INSERT own             | SELECT TRAIN only   |
 
 ## Runtime Flow
 
@@ -97,12 +97,12 @@ All agents use a single `agent_base` role with RLS policies based on agent type:
 
 ## Agent CLI Commands
 
-| Agent | CLI | Subcommands |
-|-------|-----|-------------|
-| Critic | `critique` | `insert-issue`, `insert-occurrence`, `submit`, `list-issues`, `delete-issue` |
-| Grader | `grade` | `add-tp-match`, `add-fp-match`, `add-no-match`, `delete-decision`, `submit` |
-| Clustering | `clustering` | `create-cluster`, `assign-to-cluster`, `assign-to-tp`, `assign-to-fp` |
-| Prompt Optimizer | `critic-dev` | `run-critic`, `run-grader`, `leaderboard`, `hard-examples` |
+| Agent            | CLI          | Subcommands                                                                  |
+| ---------------- | ------------ | ---------------------------------------------------------------------------- |
+| Critic           | `critique`   | `insert-issue`, `insert-occurrence`, `submit`, `list-issues`, `delete-issue` |
+| Grader           | `grade`      | `add-tp-match`, `add-fp-match`, `add-no-match`, `delete-decision`, `submit`  |
+| Clustering       | `clustering` | `create-cluster`, `assign-to-cluster`, `assign-to-tp`, `assign-to-fp`        |
+| Prompt Optimizer | `critic-dev` | `run-critic`, `run-grader`, `leaderboard`, `hard-examples`                   |
 
 Usage: `<cli> <command> [args]` (CLIs are pip-installed console scripts)
 

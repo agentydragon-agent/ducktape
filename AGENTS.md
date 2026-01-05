@@ -22,29 +22,29 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 ### Active Development
 
-| Directory | Purpose | Details |
-|-----------|---------|---------|
-| `adgn/` | LLM agent framework | See `adgn/AGENTS.md` |
+| Directory       | Purpose                          | Details                      |
+| --------------- | -------------------------------- | ---------------------------- |
+| `adgn/`         | LLM agent framework              | See `adgn/AGENTS.md`         |
 | `agent_server/` | FastAPI backend, runtime, policy | See `agent_server/AGENTS.md` |
-| `mcp_infra/` | MCP compositor and utilities | See `mcp_infra/AGENTS.md` |
-| `agent_pkg/` | Agent package infrastructure | See `agent_pkg/AGENTS.md` |
-| `tana/` | Tana export toolkit | See `tana/AGENTS.md` |
-| `wt/` | Worktree management | See `wt/AGENTS.md` |
-| `gatelet/` | Gateway/tunneling | See `gatelet/AGENTS.md` |
-| `ansible/` | System configuration | See `ansible/AGENTS.md` |
-| `docker/` | Container images | See `docker/AGENTS.md` |
-| `dotfiles/` | Shell configs, scripts | See `dotfiles/AGENTS.md` |
-| `props/` | Properties/specimens | See `props/AGENTS.md` |
+| `mcp_infra/`    | MCP compositor and utilities     | See `mcp_infra/AGENTS.md`    |
+| `agent_pkg/`    | Agent package infrastructure     | See `agent_pkg/AGENTS.md`    |
+| `tana/`         | Tana export toolkit              | See `tana/AGENTS.md`         |
+| `wt/`           | Worktree management              | See `wt/AGENTS.md`           |
+| `gatelet/`      | Gateway/tunneling                | See `gatelet/AGENTS.md`      |
+| `ansible/`      | System configuration             | See `ansible/AGENTS.md`      |
+| `docker/`       | Container images                 | See `docker/AGENTS.md`       |
+| `dotfiles/`     | Shell configs, scripts           | See `dotfiles/AGENTS.md`     |
+| `props/`        | Properties/specimens             | See `props/AGENTS.md`        |
 
 ### Less Active
 
-| Directory | Purpose |
-|-----------|---------|
-| `finance/` | Portfolio tracking (Rust) |
-| `trilium/` | Trilium Notes extensions |
-| `inventree_utils/` | InventTree plugins |
-| `website/` | Personal website (Hakyll) |
-| `k8s/` | k3s cluster configs |
+| Directory          | Purpose                   |
+| ------------------ | ------------------------- |
+| `finance/`         | Portfolio tracking (Rust) |
+| `trilium/`         | Trilium Notes extensions  |
+| `inventree_utils/` | InventTree plugins        |
+| `website/`         | Personal website (Hakyll) |
+| `k8s/`             | k3s cluster configs       |
 
 ## Cross-Cutting Concerns
 

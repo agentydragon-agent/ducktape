@@ -83,17 +83,17 @@ If git‑backed isn’t the right fit, consider these standard patterns:
 
 The journal should let us answer “what happened and how did it affect state?” with chainable references. Typical lineage:
 
-1) An OpenAI request uses these input messages and yields output message `X`.
-   - Event: `model_request` { message_refs: [ids], model, params }
-   - Event: `model_response` { message_id: X, usage, reasoning? }
-2) Message `X` is appended to the agent history list.
-   - Event: `history_append` { message_id: X, list: "main" }
-3) The agent creates a Docker exec command and sends it to the docker MCP server under this linear session.
-   - Event: `tool_call` { server: "runtime", tool: "exec", args_json, call_id }
-4) The docker server returns output `Y`.
-   - Event: `tool_result` { call_id, result_ref: Y }
-5) Output `Y` is appended as another message into context.
-   - Event: `history_append` { message_id: Y, list: "main" }
+1. An OpenAI request uses these input messages and yields output message `X`.
+   - Event: `model_request { message_refs: [ids], model, params }`
+   - Event: `model_response { message_id: X, usage, reasoning? }`
+2. Message `X` is appended to the agent history list.
+   - Event: `history_append { message_id: X, list: "main" }`
+3. The agent creates a Docker exec command and sends it to the docker MCP server under this linear session.
+   - Event: `tool_call { server: "runtime", tool: "exec", args_json, call_id }`
+4. The docker server returns output `Y`.
+   - Event: `tool_result { call_id, result_ref: Y }`
+5. Output `Y` is appended as another message into context.
+   - Event: `history_append { message_id: Y, list: "main" }`
 
 Suggested common fields
 
@@ -266,15 +266,15 @@ Guidelines
 
 Three viable realizations:
 
-1) Pure git (recommended for adgn initial rollout)
+1. Pure git (recommended for adgn initial rollout)
    - Use the layout above, content‑addressed `objects/`, JSON events under `events/`, periodic `runs/*` transcripts.
    - Benefits: zero extra infra, great PR UX, easy forks, deterministic reconstruction. Combine with `gitea_pr_gate/` to cap agent‑authored PRs.
    - Caveats: consider Git LFS for very large payloads.
 
-2) Git + LFS or git‑annex for large objects
+2. Git + LFS or git‑annex for large objects
    - Same structure, but store `objects/streams/*` and large `tool-results/*` in LFS to keep repo lean. Keeps PR UX intact.
 
-3) Git pointers + external object store
+3. Git pointers + external object store
    - Store only small event JSON in git; push large bodies to an object store (S3, CAR files, or OCI registry). `ObjectId` remains the content hash and a small pointer file indicates the external location. Useful when payloads are tens/hundreds of MB.
 
 Recommendation for adgn

@@ -3,13 +3,13 @@ Gitea PR Gate (Proxy Allowlist + Pre-Receive Hook)
 Purpose
 
 - Block creating new Pull Requests while allowing normal development flows: push, branch, comment, review, merge, close/reopen.
-- Enforce via reverse proxy allowlist and a Git pre-receive hook (to stop AGit refs/for PR creation during push).
+- Enforce via reverse proxy allowlist and a Git pre-receive hook (to stop AGit `refs/for` PR creation during push).
 
 What this includes
 
-- nginx/gitea_pr_gate.conf: Nginx server config that allows only specific state-changing endpoints and blocks PR creation endpoints.
-- hooks/pre-receive-deny-refs-for: Pre-receive hook to reject pushes to refs/for/* (AGit PR flow).
-- policy_server_fastapi.py: FastAPI-based policy server (recommended) for per-user PR quota.
+- <nginx/gitea_pr_gate.conf>: Nginx server config that allows only specific state-changing endpoints and blocks PR creation endpoints.
+- <hooks/pre-receive-deny-refs-for>: Pre-receive hook to reject pushes to `refs/for/*` (AGit PR flow).
+- `policy_server_fastapi.py`: FastAPI-based policy server (recommended) for per-user PR quota.
 
 Requirements
 
@@ -17,7 +17,7 @@ Requirements
 
 Deploy: Nginx (reverse proxy)
 
-- Place `nginx/gitea_pr_gate.conf` in your proxy config, adjust `server_name` and upstream if needed.
+- Place <nginx/gitea_pr_gate.conf> in your proxy config, adjust `server_name` and upstream if needed.
 - The config:
   - Allows GET/HEAD/OPTIONS everywhere.
   - Allows POST/PATCH for whitelisted endpoints (push via smart HTTP, comments, reviews, merge, close/reopen, etc.).
@@ -27,7 +27,7 @@ Deploy: Nginx (reverse proxy)
 
 Deploy: Pre-receive hook
 
-- Copy `hooks/pre-receive-deny-refs-for` to Gitea’s hooks directory and make it executable:
+- Copy <hooks/pre-receive-deny-refs-for> to Gitea's hooks directory and make it executable:
   - For a global hook (applies to all repos):
     - `sudo install -m 0755 hooks/pre-receive-deny-refs-for /var/lib/gitea/custom/hooks/pre-receive.d/deny-refs-for`
   - Or per-repo: `<repo-path>.git/hooks/pre-receive.d/deny-refs-for`
@@ -35,7 +35,7 @@ Deploy: Pre-receive hook
 Notes
 
 - Branch creation is unrestricted by design here; only PR creation is blocked.
-- SSH pushes bypass HTTP proxy; the pre-receive hook handles refs/for PR creation for both HTTP and SSH.
+- SSH pushes bypass HTTP proxy; the pre-receive hook handles `refs/for` PR creation for both HTTP and SSH.
 
 Per-user PR quota (policy server)
 FastAPI server
@@ -62,18 +62,18 @@ Behavior
 
 - Receives `auth_request` subrequests at `/validate` with headers:
   - `X-Original-URI`, `Cookie`, `Authorization` (forwarded by Nginx)
-- Identifies the calling user via `GET /api/v1/user` using Cookie/Authorization (default, recommended)
+- Identifies the calling user via `GET /api/v1/user` using `Cookie`/`Authorization` (default, recommended)
 - For PR create endpoints: counts open PRs by that user in the target repo via `GET /api/v1/repos/{owner}/{repo}/issues?type=pulls&state=open&created_by={user}` and `X-Total-Count`
 - For reopen/close endpoints: fetches the PR; if current state is `closed`, treats as reopen and enforces the quota; otherwise allows
 - Returns 204 (allow) or 403 (deny)
 
 Auth model (documented)
 
-- Policy server determines the actor by calling Gitea `GET /api/v1/user` with the original request’s `Cookie` or `Authorization` header.
-- Nginx forwards both headers to the internal policy location (see `gitea_pr_gate/nginx/gitea_pr_gate.conf`).
+- Policy server determines the actor by calling Gitea `GET /api/v1/user` with the original request's `Cookie` or `Authorization` header.
+- Nginx forwards both headers to the internal policy location (see <nginx/gitea_pr_gate.conf>).
 - Works for:
   - UI/browser sessions (session cookie)
-  - API/CLI calls (Authorization: token / Basic)
+  - API/CLI calls (`Authorization: token` / `Basic`)
 - For private repos, set `GITEA_ADMIN_TOKEN` (read repository) so counting open PRs succeeds.
 - Leave `PRQ_TRUST_PROXY_USER=false` unless you explicitly use Reverse Proxy Auth and trust an injected user header.
 
@@ -89,7 +89,7 @@ Caveats
 
 - `auth_request` does not pass request body; the quota is enforced for PR creation endpoints only (not for reopen).
 - Reopen/close endpoints are gated by a simple heuristic: if the PR is currently `closed`, the request is treated as a reopen attempt and quota is enforced; otherwise it is allowed. This may conservatively block editing a closed PR without reopening if over quota.
-- AGit PR creation via `refs/for/*` is blocked by the pre-receive hook.
+- AGit PR creation via `refs/for/*` is blocked by the pre-receive hook (<hooks/pre-receive-deny-refs-for>).
 
 Advanced (optional)
 

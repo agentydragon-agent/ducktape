@@ -42,14 +42,14 @@ Propose next N new system prompt variants (A/B/C) that we should evaluate for ou
 
 ## Method
 
-1) Using GitHub MCP, read OpenAI's guide for prompting GPT-5.
-2) Read the prompt templates evaluated so far and their eval scores. Read all `.../summary.json`, look at `mean`, `ci95`, `with_tools_pct`, etc.
-3) Explore patterns from `grades.jsonl` eval output matrix across all runs - (eval sample, prompt) => outcome (i.e. score, tool use etc.). Look for:
+1. Using GitHub MCP, read OpenAI's guide for prompting GPT-5.
+2. Read the prompt templates evaluated so far and their eval scores. Read all `.../summary.json`, look at `mean`, `ci95`, `with_tools_pct`, etc.
+3. Explore patterns from `grades.jsonl` eval output matrix across all runs - (eval sample, prompt) => outcome (i.e. score, tool use etc.). Look for:
    - Unusually easy / hard samples
    - How well do different prompts perform on different samples?
    - Which samples are "basically solved"? Which still aren't?
    - How did changes in prompt template texts correlate with changes in score?
-4) Given the patterns you see, design at least 3 possible strategies. Here are some possible examples of strategies:
+4. Given the patterns you see, design at least 3 possible strategies. Here are some possible examples of strategies:
    - "Prompt X did well on cluster A, but not on cluster B. Prompt Y did well on cluster B, but not on cluster A. Let's combine their strengths."
    - "So far no prompts improved above baseline on cluster C. Let's explore specifically this area with a prompt strongly targeted only to improve specifically only on cluster C to gather information - even if it's likely to completely fail on clusters A and B."
    - "We didn't see any improvement on C despite repeated attempts (having checked previous attempt README's).
@@ -59,7 +59,7 @@ Propose next N new system prompt variants (A/B/C) that we should evaluate for ou
      -
    - "Prompt Z did pretty well but it does not use standard prompting techniques properly: let's rewrite sections A1 and A2 to be a bit less confusing and add a more illustrative example to section B3."
    - "Reading samples I see the agent may be failing in way X because this section system prompt is ambiguous/contradictory, let's see what if we remove it / rewrite it to not clash with our eval target."
-5) Write N prompt templates in `./templates/proposals/<ISO-TS>/`.
+5. Write N prompt templates in `./templates/proposals/<ISO-TS>/`.
    - At least 1 of them should be your best attempt at getting the best possible highest-scoring prompt ("exploit").
    - At least 1 should be the prompt you think would be best to run to gather high-value information to exploit in the future ("explore").
    - The strategies you use in the rest is left up to your judgement.

@@ -53,4 +53,4 @@ Notes
 - Keep behaviors minimal and declarative: big switch on `req["input"]`, `req["tools"]`, `req["tool_choice"]`
 - Always return adapter Pydantic models from factory helpers to preserve shape correctness and enforce layering
 - Avoid `getattr` in tests; prefer dict/typed access and explicit asserts on types
- Use `-m "not live_openai_api"` in CI for fast deterministic runs; run live locally as needed
+  Use `-m "not live_openai_api"` in CI for fast deterministic runs; run live locally as needed

@@ -53,7 +53,7 @@ HTTP (optional)
 - Ask: create approval item; await resolution; then approve→dispatch or deny→error
 - Resources: no enforcement changes; normal Compositor behavior for `resources/*`
 
-3.2 Loop Control tools (agent‑only)
+  3.2 Loop Control tools (agent‑only)
 
 - Mounted under Compositor as `loop` server: `loop_yield_turn({}) -> {ok}`
 - Visible/callable to agent only; hidden/denied to Human UI
@@ -146,19 +146,43 @@ The policy middleware does not persist chat or resource subscription state. Pers
 - Deny (abort latch):
 
 ```json
-{ "jsonrpc":"2.0", "error": {"code": -32950, "message": "policy_denied", "data": {"type":"policy_denied","decision":"deny_abort","reason":"…"}}, "id": 42 }
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32950,
+    "message": "policy_denied",
+    "data": { "type": "policy_denied", "decision": "deny_abort", "reason": "…" }
+  },
+  "id": 42
+}
 ```
 
 - Deny (continue):
 
 ```json
-{ "jsonrpc": "2.0", "error": { "code": -32951, "message": "policy_denied_continue", "data": { "decision": "deny_continue", "server": "runtime", "tool": "exec", "reason": "…" } }, "id": 17 }
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32951,
+    "message": "policy_denied_continue",
+    "data": { "decision": "deny_continue", "server": "runtime", "tool": "exec", "reason": "…" }
+  },
+  "id": 17
+}
 ```
 
 - Evaluator error (timeout/exception while deciding):
 
 ```json
-{ "jsonrpc": "2.0", "error": { "code": -32953, "message": "policy_evaluator_error", "data": { "name": "server_tool", "reason": "TimeoutError: …" } }, "id": 17 }
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32953,
+    "message": "policy_evaluator_error",
+    "data": { "name": "server_tool", "reason": "TimeoutError: …" }
+  },
+  "id": 17
+}
 ```
 
 Note: resource subscribe/unsubscribe error mapping belongs to the resources/compositor docs. The policy middleware primarily maps approval denials on `tools/call`.
@@ -182,7 +206,7 @@ Note: resource subscribe/unsubscribe error mapping belongs to the resources/comp
 
 ## 12. Testing Plan
 
-- Unit: decision mapping (allow/deny_*/ask); error shapes; evaluator timeouts
+- Unit: decision mapping (`allow`/`deny_*`/`ask`); error shapes; evaluator timeouts
 - Integration: V1 sync flow — approvals at proxy; Loop Control yield; sleep_until_user; container calls routed through the Compositor (policy middleware enforces)
 - Resource server: list/read/subscribe basic smoke; synthetic state URIs (if used)
 - Security: container cannot reach Compositor; agent‑only Control not visible on human token
@@ -191,12 +215,12 @@ Note: resource subscribe/unsubscribe error mapping belongs to the resources/comp
 
 ## 13. Migration Plan (from legacy manager to Compositor)
 
-1) Install the policy middleware as pre‑dispatch inside the Compositor for `tools/call`.
-2) Remove any handler‑based enforcement; handlers may retain visibility/logging only.
-3) Use the dedicated Resources server for `resources/*` operations; the Compositor mounts it.
-4) Mount Loop Control via Compositor; update prompts/instructions to use `loop_yield_turn`.
-5) Update container clients to call the Compositor loopback (host.docker.internal); do not expose upstream mounts directly.
-6) Optional: chat/inbox flows are documented in <ui-chat.md> and the overview; the policy middleware does not implement them.
+1. Install the policy middleware as pre‑dispatch inside the Compositor for `tools/call`.
+2. Remove any handler‑based enforcement; handlers may retain visibility/logging only.
+3. Use the dedicated Resources server for `resources/*` operations; the Compositor mounts it.
+4. Mount Loop Control via Compositor; update prompts/instructions to use `loop_yield_turn`.
+5. Update container clients to call the Compositor loopback (host.docker.internal); do not expose upstream mounts directly.
+6. Optional: chat/inbox flows are documented in <ui-chat.md> and the overview; the policy middleware does not implement them.
 
 ---
 
