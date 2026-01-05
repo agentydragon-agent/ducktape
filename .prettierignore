@@ -35,6 +35,7 @@ k8s-old/**
 
 # Flux-generated GitOps manifests
 cluster/flux-system/**
+cluster/k8s/flux-system/**
 
 # Helm chart templates - Go templating, not valid YAML
 cluster/charts/**/templates/**
