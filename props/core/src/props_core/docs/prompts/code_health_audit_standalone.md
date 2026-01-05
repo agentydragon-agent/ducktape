@@ -38,30 +38,30 @@ Structural Anti‑Patterns (explicitly flag)
 
 Deliverables (print exactly these sections)
 
-1) Findings
+1. Findings
    - Group by: (a) Property violations (by property name), (b) Structural/architecture smells, (c) Other smells.
    - For each finding: one‑line rationale + precise anchors. Group similar anchors compactly.
    - Do not print “No violations” lines.
-2) Plan
+2. Plan
    - Prioritized, actionable phases: quick wins (lint/config), targeted refactors (local), architectural adjustments (broader), tests, verification.
    - Map steps to properties/rules/smells. Note risky/destructive steps for confirmation.
 
 Core Code Quality Properties (Embedded, repo‑agnostic)
 
-1) No dead code
+1. No dead code
 
 - Remove unused symbols and unreachable branches; if a “can’t happen” guard is desired, keep at most an assertion or hard error at the boundary.
-Example:
+  Example:
 
 ```
 if not condition_already_guaranteed:  # unreachable — delete
     return default
 ```
 
-2) Imports and dependency hygiene
+2. Imports and dependency hygiene
 
 - Keep imports at module/file top. Localize imports only to break a proven cycle and include a brief comment. Maintain layering direction (lower layers must not import higher layers).
-Example:
+  Example:
 
 ```
 # ✅ top‑level import
@@ -70,10 +70,10 @@ def handler():
     return run()
 ```
 
-3) Error handling discipline
+3. Error handling discipline
 
 - No blanket/bare catches; catch specific errors narrowly; surface or re‑raise at boundaries; never silently swallow.
-Example:
+  Example:
 
 ```
 try:
@@ -83,10 +83,10 @@ except json.JSONDecodeError:
     raise
 ```
 
-4) Structured data over opaque maps
+4. Structured data over opaque maps
 
 - Prefer concrete, typed models for domain data (Pydantic/dataclasses, interfaces/types, structs/records). Use enums/literal unions for closed sets. Validate at boundaries.
-Examples (conceptual):
+  Examples (conceptual):
 
 ```
 // TS
@@ -98,31 +98,31 @@ class User(BaseModel):
     id: str; email: str; role: Literal["admin","user"]
 ```
 
-5) Principle of least power
+5. Principle of least power
 
 - Choose the simplest safe construct that achieves the goal; avoid reflection/dynamic attribute probing/low‑level syscalls unless necessary and documented.
 
-6) Minimize unnecessary nesting
+6. Minimize unnecessary nesting
 
 - Flatten trivial guard nests; use guard clauses; bind intermediate values inline when helpful.
 
-7) Self‑describing names and consistency
+7. Self‑describing names and consistency
 
 - Keep naming schemes and file/test layouts consistent within a project/module; avoid mixed synonyms for the same concept.
 
-8) Type correctness and specificity
+8. Type correctness and specificity
 
 - Prefer precise types (discriminated unions/ADTs/enums). Avoid overuse of Any/unknown; document when unavoidable.
 
-9) Truthful code and comments
+9. Truthful code and comments
 
 - Structure and comments must accurately reflect behavior and intent; do not justify exceptions with misleading rationales.
 
-10) Paths and URLs
+10. Paths and URLs
 
 - Use standard libraries for path/URL handling; avoid manual string concatenation for URLs/paths; encode/parse via library helpers.
 
-11) Testing practices
+11. Testing practices
 
 - Prefer targeted unit tests; avoid over‑mocking plain data; use fixtures/shared helpers; ensure changed behavior is covered.
 

@@ -11,7 +11,7 @@ Adopt one clear naming/notation convention per project (or per package) and appl
 - Choose one test location strategy and stick to it for a given project/package:
   - Co-located: `src/<pkg>/tests/test_*.py`
   - Central: `tests/<pkg>/test_*.py`
-  Mixing both within the same project/package is a violation.
+    Mixing both within the same project/package is a violation.
 - Directory placement is consistent: keep related tests together under their package/module (e.g., `my_service/test_*.py`, `other_service/test_*.py`), not scattered across differently named paths.
 - File names use one tokenization scheme consistently (e.g., underscores, no intermix of custom affixes/orderings like `test_pkg_run_bar.py` vs `test_pkg_baz.py`).
 - Avoid parallel synonyms for the same concept in names (e.g., `interface` vs `protocol` vs `facade`) unless distinctions are intentional and documented; prefer one obvious name. See also: [Renames must pay rent](./no-random-renames.md).

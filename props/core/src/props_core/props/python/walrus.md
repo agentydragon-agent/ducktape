@@ -3,7 +3,6 @@ title: Use walrus for trivial immediate conditions
 kind: outcome
 ---
 
-
 When a simple condition depends on a value computed immediately before, the value is bound inline with the walrus operator (:=) inside the condition.
 
 ## Acceptance criteria (checklist)

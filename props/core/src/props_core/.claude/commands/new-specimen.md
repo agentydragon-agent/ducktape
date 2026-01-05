@@ -35,12 +35,12 @@ Interactively scaffold a new specimen under `specimens/` per @README.md. Ask use
 
 ## Procedure
 
-1) Ensure `specimens/` exists relative to this package root.
-2) Ask for inputs above; confirm before writing.
-3) Compute today (`YYYY‑MM‑DD`) and slug (provided or derived), and target_dir = `specimens/${today}-${slug}`.
-4) If target dir exists: choose a different slug, ask user to confirm.
-5) Create directory structure with `issues/` subdirectory.
-6) After confirmation, write the files and print a concise summary.
+1. Ensure `specimens/` exists relative to this package root.
+2. Ask for inputs above; confirm before writing.
+3. Compute today (`YYYY‑MM‑DD`) and slug (provided or derived), and target_dir = `specimens/${today}-${slug}`.
+4. If target dir exists: choose a different slug, ask user to confirm.
+5. Create directory structure with `issues/` subdirectory.
+6. After confirmation, write the files and print a concise summary.
 
 ## Notes
 

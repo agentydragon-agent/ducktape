@@ -1,4 +1,3 @@
-
 # Repository Code Health Audit — Full Properties (This Codebase)
 
 Goal
@@ -19,8 +18,8 @@ Broader Smells and Structural Anti‑Patterns
 
 Deliverables (print exactly these sections)
 
-1) Findings (grouped by property, structural smells, other smells) with anchors.
-2) Plan (prioritized phases; map to properties/smells; call out risky steps).
+1. Findings (grouped by property, structural smells, other smells) with anchors.
+2. Plan (prioritized phases; map to properties/smells; call out risky steps).
 
 ---
 
@@ -37,11 +36,12 @@ kind: outcome
 Adopt one clear naming/notation convention per project (or per package) and apply it uniformly. Avoid mixing file/identifier patterns that describe the same concept with different names or layouts.
 
 ## Acceptance criteria (checklist)
+
 - Test files follow a single, consistent convention across the project (or per top-level package), e.g., `pkg/test_foo.py` (preferred) or `pkg/foo_test.py`; do not mix patterns within the same scope.
 - Choose one test location strategy and stick to it for a given project/package:
   - Co-located: `src/<pkg>/tests/test_*.py`
   - Central: `tests/<pkg>/test_*.py`
-  Mixing both within the same project/package is a violation.
+    Mixing both within the same project/package is a violation.
 - Directory placement is consistent: keep related tests together under their package/module (e.g., `my_service/test_*.py`, `other_service/test_*.py`), not scattered across differently named paths.
 - File names use one tokenization scheme consistently (e.g., underscores, no intermix of custom affixes/orderings like `test_pkg_run_bar.py` vs `test_pkg_baz.py`).
 - Avoid parallel synonyms for the same concept in names (e.g., `interface` vs `protocol` vs `facade`) unless distinctions are intentional and documented; prefer one obvious name. See also: [Renames must pay rent](./no-random-renames.md).
@@ -718,8 +718,10 @@ grep -R "pattern" src/ | wc -l
 ```markdown
 - Parent item
   - Nested item
+
 * Alternate marker
-+ Another valid marker
+
+- Another valid marker
 ```
 
 ## Negative examples (plaintext tokens, missing links)
@@ -737,7 +739,7 @@ Using bare dunders causes emphasis; protect with code spans.
 
 #### Negative examples (one line each)
 
-```markdown
+```text
 my favorite variable is __init__ and constant is __ALL__, edit src/some_module/my__file__.py
 ```
 
@@ -956,7 +958,7 @@ def handle(x: Bar | Baz | Quux) -> str:
   ```yaml
   # ~/.config/program/config.yaml
   active_plugins:
-  - module_name:plugin_has_no_references_in_python
+    - module_name:plugin_has_no_references_in_python
   ```
 
 - Temporary compatibility shims may remain while a migration is in progress, with an owner and removal date
@@ -1444,7 +1446,7 @@ __all__ = ["Client", "Error"]
 
 ## Negative examples
 
-Internal convenience barrel in __init__.py:
+Internal convenience barrel in `__init__.py`:
 
 ```python
 # internal_pkg/__init__.py   # ❌ internal package; do not re‑export
@@ -1459,7 +1461,7 @@ from shared import foo   # ❌ where does this come from?
 foo()                    # prefer: from real_module.submod import foo
 ```
 
-Overuse of __all__ in a normal module:
+Overuse of `__all__` in a normal module:
 
 ```python
 # module.py  # ❌ not a curated public entrypoint
@@ -3081,7 +3083,7 @@ TypeScript (interface + literal union + runtime check):
 ```ts
 import { z } from "zod";
 
-type Role = "admin" | "user";  // closed set
+type Role = "admin" | "user"; // closed set
 export interface User {
   id: string;
   email: string;
@@ -3150,7 +3152,8 @@ role: str = "admin"  # should be Role (StrEnum)
 TypeScript domain shape as Record (no schema):
 
 ```ts
-function makeUser(): Record<string, unknown> {  // too loose
+function makeUser(): Record<string, unknown> {
+  // too loose
   return { id: "u1", email: "u@example.com", role: "admin" };
 }
 ```

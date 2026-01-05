@@ -22,7 +22,6 @@ class YAMLOccurrence(BaseModel):
     """Permissive input model for YAML occurrences - accepts multiple location shapes.
 
     Supports flexible line specifications:
-    - Single line: 42 → normalized to [LineRange(42, 42)]
     - Line range: [10, 20] → normalized to [LineRange(10, 20)]
     - Multiple ranges: [[10, 15], [20, 25]] → normalized to [LineRange(10, 15), LineRange(20, 25)]
     - Dict with note: {start_line: 42, end_line: 42, note: "..."} → [LineRange(42, 42, "...")]
@@ -67,13 +66,12 @@ class YAMLOccurrence(BaseModel):
     def normalize_files(cls, v: dict) -> dict[str, list[LineRange] | None]:
         """Convert flexible line specs to canonical list[LineRange] form.
 
-        Input shapes (backward compatible):
-          42 → [LineRange(42, 42)]
+        Input shapes:
           [10, 20] → [LineRange(10, 20)]
           [[10, 15], [20, 25]] → [LineRange(10, 15), LineRange(20, 25)]
           null → null
 
-        New dict format with optional notes:
+        Dict format with optional notes:
           {start_line: 42, end_line: 42, note: "why this matters"} → [LineRange(42, 42, "why this matters")]
           [{start_line: 10, end_line: 15, note: "..."}, ...] → [LineRange(10, 15, "..."), ...]
 
@@ -84,9 +82,6 @@ class YAMLOccurrence(BaseModel):
             if spec is None:
                 # No specific lines: keep as None
                 normalized[file_path] = None
-            elif isinstance(spec, int):
-                # Single line: 42 → [LineRange(42, 42)]
-                normalized[file_path] = [LineRange(start_line=spec, end_line=spec)]
             elif isinstance(spec, dict):
                 # Dict format: {start_line: 42, end_line: 42, note: "..."}
                 if "start_line" not in spec:
@@ -130,7 +125,7 @@ class YAMLOccurrence(BaseModel):
             else:
                 raise ValueError(
                     f"Invalid line spec for {file_path}: {spec} (type: {type(spec).__name__}). "
-                    "Expected int, [start, end], [[r1_start, r1_end], ...], dict, or null"
+                    "Expected [start, end], [[r1_start, r1_end], ...], dict, or null"
                 )
         return normalized
 

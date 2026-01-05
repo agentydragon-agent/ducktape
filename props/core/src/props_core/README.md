@@ -98,16 +98,16 @@ Example usage:
 
 - Goal: Use real "I don't like this code" specimens to iteratively design properties and improve reviewer prompts.
 - Process overview:
-  1) Capture a specimen: code + a freeform list of review items (things that should be found, and optionally "negatives" that are OK and should not be flagged).
-  2) Draft or refine a property definition from the specimen items (manually or via LLM-assisted prompt/design iteration).
-  3) Generate/adjust reviewer prompts (critics/fixers/analyzers) from the property definition.
-  4) Backtest: run analyzers on the specimen and measure:
+  1. Capture a specimen: code + a freeform list of review items (things that should be found, and optionally "negatives" that are OK and should not be flagged).
+  2. Draft or refine a property definition from the specimen items (manually or via LLM-assisted prompt/design iteration).
+  3. Generate/adjust reviewer prompts (critics/fixers/analyzers) from the property definition.
+  4. Backtest: run analyzers on the specimen and measure:
      - Did it complain about what it should have complained about?
      - Did it avoid flagging the items explicitly marked as acceptable?
-  5) Feedback loop:
+  5. Feedback loop:
      - If the reviewer finds novel, useful issues not in the specimen, add them as new "should find" items.
      - If the reviewer falsely flags acceptable patterns, add them as "negatives" (do-not-flag) to the specimen and/or clarify the property.
-  6) Freeze specimens as ground truth snapshots; properties remain scope-agnostic and durable.
+  6. Freeze specimens as ground truth snapshots; properties remain scope-agnostic and durable.
 - This keeps properties concise and objective, while allowing rich freeform context during discovery and tuning.
 
 ## Training Strategy: Per-File Examples

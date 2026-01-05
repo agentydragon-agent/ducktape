@@ -15,7 +15,7 @@ Tests must provide distinct value by exercising production behavior or documenti
 - Each test should either:
   - Exercise production code (not just in‑module constants/types), or
   - Demonstrate a non‑obvious, important behavior of a dependency (clearly documented in the test),
-  and otherwise be removed.
+    and otherwise be removed.
 - Overlap across abstraction levels (e2e vs unit) is acceptable; duplication is only a violation when a test adds no new behavior coverage or rationale at its level.
 
 ## Positive examples

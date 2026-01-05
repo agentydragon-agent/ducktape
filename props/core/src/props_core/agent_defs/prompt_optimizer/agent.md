@@ -19,18 +19,18 @@ The only requirement: Dockerfile must produce an image with executable `/init`.
 
 ## I/O Summary
 
-| Input | Method |
-|-------|--------|
-| Training data (examples, TPs, FPs) | SQL: Query via `get_session()` |
-| Historical runs & metrics | SQL: `critic_runs`, `grader_runs`, aggregate views |
-| Execution traces | SQL: `events` table |
+| Input                              | Method                                             |
+| ---------------------------------- | -------------------------------------------------- |
+| Training data (examples, TPs, FPs) | SQL: Query via `get_session()`                     |
+| Historical runs & metrics          | SQL: `critic_runs`, `grader_runs`, aggregate views |
+| Execution traces                   | SQL: `events` table                                |
 
-| Output | Method |
-|--------|--------|
-| Fetch/create packages | CLI: `props agent-pkg fetch/create` |
-| Run evaluations | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
-| View metrics | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples` |
-| Report failures | CLI: `props critic-dev report-failure "message"` |
+| Output                | Method                                                                    |
+| --------------------- | ------------------------------------------------------------------------- |
+| Fetch/create packages | CLI: `props agent-pkg fetch/create`                                       |
+| Run evaluations       | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
+| View metrics          | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples`     |
+| Report failures       | CLI: `props critic-dev report-failure "message"`                          |
 
 ## Starting Point
 

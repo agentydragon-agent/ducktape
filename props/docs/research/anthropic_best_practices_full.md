@@ -33,18 +33,23 @@ Take a look at this code and see if anything seems off.
 
 ```markdown
 # Task Description
+
 [What the agent should do]
 
 ## Context
+
 [Background information]
 
 ## Input Format
+
 [What data the agent receives]
 
 ## Required Steps
+
 [Explicit analysis sequence]
 
 ## Output Format
+
 [Expected structure and content]
 ```
 
@@ -105,12 +110,13 @@ You understand the difference between intentional patterns and mistakes.
 
 ```markdown
 ## Output Format
+
 Return a JSON object with this structure:
 {
-  "issues": [
-    {"type": "dead_code", "file": "foo.py", "line": 42, "description": "..."}
-  ],
-  "summary": "Found 3 issues: 2 dead imports, 1 unused variable"
+"issues": [
+{"type": "dead_code", "file": "foo.py", "line": 42, "description": "..."}
+],
+"summary": "Found 3 issues: 2 dead imports, 1 unused variable"
 }
 ```
 
@@ -124,6 +130,7 @@ Return a JSON object with this structure:
 
 ```markdown
 When you encounter duplication:
+
 - If in UI components (visual consistency), mark as acceptable
 - If in business logic, flag as issue
 - If unsure, flag with "UNSURE:" prefix for human review
@@ -139,6 +146,7 @@ When you encounter duplication:
 
 ```markdown
 Before flagging an issue, explain your reasoning:
+
 1. What pattern did you observe?
 2. Why is this problematic?
 3. What would a fix look like?

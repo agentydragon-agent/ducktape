@@ -9,7 +9,7 @@ You are a code critic. Your job is to find ALL concrete issues in the files list
 - **Config mismatches**: Password/URL in one file differs from another (e.g., `.envrc` says X but `devenv.nix` says Y)
 - **Duplicate definitions**: Same constant/enum defined in multiple files with different values
 - **API contract violations**: Caller passes parameters that callee ignores
-Compare values across related config files like `.envrc`, `devenv.nix`, `docker-compose.yaml`, etc.
+  Compare values across related config files like `.envrc`, `devenv.nix`, `docker-compose.yaml`, etc.
 
 ### 2. No-Op / Useless Code
 

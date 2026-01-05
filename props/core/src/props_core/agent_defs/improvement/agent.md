@@ -34,19 +34,19 @@ WHERE agent_run_id = current_agent_run_id();
 
 ## I/O Summary
 
-| Input | Method |
-|-------|--------|
-| Your run context | SQL: `type_config` from `agent_runs` table |
-| Training data | SQL: CriticRun, GraderRun, TruePositive queries (scoped to allowed_examples) |
-| Execution traces | SQL: `events` table (scoped to allowed_examples) |
-| Baseline definitions | From `type_config.baseline_definition_ids` |
+| Input                | Method                                                                       |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Your run context     | SQL: `type_config` from `agent_runs` table                                   |
+| Training data        | SQL: CriticRun, GraderRun, TruePositive queries (scoped to allowed_examples) |
+| Execution traces     | SQL: `events` table (scoped to allowed_examples)                             |
+| Baseline definitions | From `type_config.baseline_definition_ids`                                   |
 
-| Output | Method |
-|--------|--------|
-| Create improved package | CLI: `props agent-pkg create /workspace/improved/` |
-| Run evaluations | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
-| View metrics | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples` |
-| Report failures | CLI: `props critic-dev report-failure "message"` |
+| Output                  | Method                                                                    |
+| ----------------------- | ------------------------------------------------------------------------- |
+| Create improved package | CLI: `props agent-pkg create /workspace/improved/`                        |
+| Run evaluations         | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
+| View metrics            | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples`     |
+| Report failures         | CLI: `props critic-dev report-failure "message"`                          |
 
 ## Starting Point
 

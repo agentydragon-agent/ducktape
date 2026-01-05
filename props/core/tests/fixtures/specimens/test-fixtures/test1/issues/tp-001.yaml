@@ -8,7 +8,6 @@ occurrences:
   - occurrence_id: occ-1
     files:
       example_module.py:
-        - 4
-        - 6
+        - [4, 6]
     critic_scopes_expected_to_recall:
       - - example_module.py
