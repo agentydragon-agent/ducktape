@@ -459,6 +459,6 @@ def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileConten
 
                     return FileContentResponse(path=file_path, content=content, line_count=snapshot_file.line_count)
                 except KeyError:
-                    raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}")
+                    raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}") from None
         except tarfile.TarError as e:
-            raise HTTPException(status_code=500, detail=f"Error reading tar archive: {e}")
+            raise HTTPException(status_code=500, detail=f"Error reading tar archive: {e}") from e
