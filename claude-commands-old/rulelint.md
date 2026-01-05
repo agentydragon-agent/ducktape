@@ -72,12 +72,11 @@
 
 Tool: mcp**brave-search**brave_web_search
 Parameters:
-query: "query text"
-count: 10
-]]>
-</example>
-
-</section>
+  query: "query text"
+  count: 10
+          ]]>
+        </example>
+      </section>
 
       <section id="xml-format">
         <title>New XML Schema Format</title>
@@ -133,14 +132,13 @@ A: 4
 
         <example positive>
           <![CDATA[
-
 <u>What's 2+2?</u>
 <a>4</a>
 <t>Tool output here</t>
-]]>
-</example>
-</examples>
-</rule>
+          ]]>
+        </example>
+      </examples>
+    </rule>
 
     <rule id="/validation/situation-action">
       <title>✅ Situation → Action Pattern</title>
@@ -211,13 +209,12 @@ A: 4
 </rule>
 
 <!-- Reference them -->
-
 Follow <ref href="#/code/python/types/new-style-optional" />
 See <a href="#/code/quality">code quality rules</a>
 When needed, <call href="#validate-inputs" />
-]]>
-</content>
-</rule>
+        ]]>
+      </content>
+    </rule>
 
     <rule id="/validation/anthropic-practices">
       <title>✅ Anthropic Best Practices</title>
@@ -313,13 +310,12 @@ When user requests file creation
       <content>Show smart decision-making:</content>
       <example positive>
         <![CDATA[
-
 If search returns >100 results → narrow with more specific pattern
 If search returns 0 results → broaden pattern or check file extensions
 If pattern has special chars → escape for regex
-]]>
-</example>
-</rule>
+        ]]>
+      </example>
+    </rule>
 
     <rule id="/validation/compatibility">
       <title>✅ Compatibility Check</title>
@@ -495,10 +491,9 @@ If pattern has special chars → escape for regex
 None
 
 SCORE: 95/100 - Excellent rule quality
-]]>
-
-</section>
-</output>
+      ]]>
+    </section>
+  </output>
 
   <common-issues>
     <issue id="vague-instructions">
