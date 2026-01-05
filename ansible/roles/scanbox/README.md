@@ -1,12 +1,10 @@
-Printer "push-scan" sandbox share
-=================================
+# Printer "push-scan" sandbox share
 
 Installs a size-capped loop-back ext4 image and exposes it as a Samba
-share *ScanBox* writable only by a dedicated unprivileged user. Access is
+share _ScanBox_ writable only by a dedicated unprivileged user. Access is
 locked to printer’s IP.
 
-Usage
------
+## Usage
 
 ```yaml
 - hosts: laptop
@@ -14,7 +12,7 @@ Usage
   roles:
     - role: scanbox
       vars:
-        scanbox_size: 500M          # optional overrides
+        scanbox_size: 500M # optional overrides
         scanbox_printer_ip: 192.168.0.123
 ```
 

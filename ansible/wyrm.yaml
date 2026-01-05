@@ -69,8 +69,14 @@
         - { key: "/org/gnome/desktop/screensaver/lock-enabled", value: "false" }
         - { key: "/org/gnome/desktop/session/idle-delay", value: "uint32 0" }
         - { key: "/org/gnome/settings-daemon/plugins/power/idle-dim", value: "false" }
-        - { key: "/org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type", value: "'nothing'" }
-        - { key: "/org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type", value: "'nothing'" }
+        - {
+            key: "/org/gnome/settings-daemon/plugins/power/sleep-inactive-ac-type",
+            value: "'nothing'",
+          }
+        - {
+            key: "/org/gnome/settings-daemon/plugins/power/sleep-inactive-battery-type",
+            value: "'nothing'",
+          }
       tags: [vm-display]
       when: ansible_env.DISPLAY is defined
 

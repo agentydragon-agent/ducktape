@@ -53,7 +53,7 @@ else
     if [[ "$file" =~ ^[^/]+\.yaml$ ]] && ! is_excluded "$file"; then
       playbooks+=("$file")
     else
-      # Role files, vars, etc. - skip syntax check (yamllint will catch YAML issues)
+      # Role files, vars, etc. - skip syntax check (prettier will catch YAML issues)
       other_files+=("$file")
     fi
   done
@@ -62,7 +62,7 @@ fi
 # Exit early if no playbooks to check
 if [ ${#playbooks[@]} -eq 0 ]; then
   if [ ${#other_files[@]} -gt 0 ]; then
-    echo "Note: Non-playbook files (${#other_files[@]} files) validated by yamllint hook"
+    echo "Note: Non-playbook files (${#other_files[@]} files) validated by prettier hook"
   else
     echo "No playbooks found to syntax check"
   fi
@@ -80,7 +80,7 @@ done
 
 # Note about non-playbook files
 if [ ${#other_files[@]} -gt 0 ]; then
-  echo "Note: Non-playbook files (${#other_files[@]} files) validated by yamllint hook"
+  echo "Note: Non-playbook files (${#other_files[@]} files) validated by prettier hook"
 fi
 
 exit $exit_code
