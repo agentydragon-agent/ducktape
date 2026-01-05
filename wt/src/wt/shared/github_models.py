@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -160,6 +161,21 @@ class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR (read-only 
 
     @property
     def title(self) -> str: ...
+
+    @property
+    def draft(self) -> bool: ...
+
+    @property
+    def mergeable(self) -> bool | None: ...
+
+    @property
+    def merged_at(self) -> datetime | None: ...
+
+    @property
+    def additions(self) -> int | None: ...
+
+    @property
+    def deletions(self) -> int | None: ...
 
 
 @dataclass

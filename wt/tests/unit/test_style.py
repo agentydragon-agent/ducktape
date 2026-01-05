@@ -1,10 +1,9 @@
-import importlib
 import re
 from pathlib import Path
 
-# Scan the installed package directory for wt (production code),
-# not a hardcoded path relative to tests.
-WT_DIR = Path(importlib.import_module("wt").__file__).parent
+from tests.conftest import get_wt_package_dir
+
+WT_DIR = get_wt_package_dir()
 
 BANNED_PATTERNS = {
     r"\bgetattr\b": "getattr is banned; use explicit attribute access with proper types",

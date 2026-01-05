@@ -24,8 +24,9 @@ from ...shared.protocol import (
     WorktreeInfo,
     WorktreeListResult,
 )
+from ..git_manager import GitManager
 from ..rpc import RpcError, ServiceDependencies, Stream, rpc
-from ..services import GitService, WorktreeCoordinator, WorktreeIndexService
+from ..services import WorktreeCoordinator, WorktreeIndexService
 from ..types import DiscoveredWorktree
 from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
 from ..worktree_service import WorktreeService
@@ -34,9 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 @rpc.method("worktree_list")
-async def worktree_list(git: GitService, config: Configuration) -> WorktreeListResult:
+async def worktree_list(git_manager: GitManager, config: Configuration) -> WorktreeListResult:
     worktrees: list[WorktreeInfo] = []
-    for info in git.list_worktrees():
+    for info in git_manager.list_worktrees():
         if info.is_main:
             continue
         worktree_name = info.path.name
@@ -59,7 +60,7 @@ async def worktree_list(git: GitService, config: Configuration) -> WorktreeListR
 async def worktree_create(
     deps: ServiceDependencies, svc: WorktreeService, params: WorktreeCreateParams, stream: Stream
 ) -> WorktreeCreateResult:
-    git = deps.git
+    git_manager = deps.git_manager
     coordinator = deps.coordinator
     config = deps.config
     if "/" in params.name:
@@ -74,7 +75,7 @@ async def worktree_create(
         source_path = wtid_to_path(config, params.source_wtid)
         if not source_path.exists():
             raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"Source worktree {source_path} not found")
-        src_branch = git.get_repo_head_shorthand(source_path)
+        src_branch = git_manager.get_repo_head_shorthand(source_path)
     elif params.source_branch:
         src_branch = params.source_branch
     else:

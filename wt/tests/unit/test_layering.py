@@ -1,9 +1,10 @@
 import ast
-import importlib
 import pkgutil
 from pathlib import Path
 
-ROOT = Path(importlib.import_module("wt").__file__).parent
+from tests.conftest import get_wt_package_dir
+
+ROOT = get_wt_package_dir()
 
 CLIENT_PREFIX = "wt.client"
 SERVER_PREFIX = "wt.server"
@@ -14,8 +15,7 @@ ALLOWED_PREFIXES_FOR_SERVER = {SERVER_PREFIX, SHARED_PREFIX}
 
 
 def iter_modules(package_prefix: str):
-    pkg = importlib.import_module(package_prefix)
-    pkg_path = Path(pkg.__file__).parent
+    pkg_path = ROOT / package_prefix.removeprefix("wt.").replace(".", "/")
     for m in pkgutil.walk_packages([str(pkg_path)], prefix=package_prefix + "."):
         if not m.ispkg:
             yield m.name

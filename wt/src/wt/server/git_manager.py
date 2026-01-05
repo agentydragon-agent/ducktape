@@ -98,11 +98,19 @@ class GitManager:
             return self._main_repo
         return pygit2.Repository(path)
 
+    def get_repo_head_shorthand(self, path: Path) -> str | None:
+        """Get the short branch name for the HEAD of a repository."""
+        repo = self.get_repo(path)
+        if repo.head_is_detached:
+            return None
+        shorthand = repo.head.shorthand
+        return shorthand if shorthand else None
+
     def get_commit_info(self, ref: str, worktree: Path) -> CommitInfo:
         repo = self.get_repo(worktree)
         try:
             # Resolve reference to commit object in the given repo
-            resolved = repo.resolve_refish(ref)  # type: ignore[attr-defined]  # pygit2 stubs incomplete for resolve_refish
+            resolved = repo.resolve_refish(ref)
             commit = resolved[0]
         except KeyError as e:
             raise NoSuchRefError(f"Cannot get commit object for {ref}: {e}") from e
@@ -121,7 +129,7 @@ class GitManager:
 
     def verify_ref_exists(self, ref: str) -> str:
         try:
-            resolved = self._main_repo.resolve_refish(ref)  # type: ignore[attr-defined]  # pygit2 stubs incomplete for resolve_refish
+            resolved = self._main_repo.resolve_refish(ref)
             return str(resolved[0].id)
         except KeyError as e:
             raise NoSuchRefError(f"Reference does not exist: {ref}") from e
@@ -199,7 +207,6 @@ class GitManager:
 
     def verify_branch_exists(self, branch: str) -> str:
         try:
-            resolved = self._main_repo.resolve_refish(f"refs/heads/{branch}")  # type: ignore[attr-defined]  # pygit2 stubs incomplete for resolve_refish
-            return str(resolved[0].id)
-        except KeyError as e:
+            return self.verify_ref_exists(f"refs/heads/{branch}")
+        except NoSuchRefError as e:
             raise NoSuchBranchError(f"Branch {branch} does not exist") from e

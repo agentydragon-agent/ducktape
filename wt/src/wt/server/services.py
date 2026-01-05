@@ -3,33 +3,14 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
+from typing import Protocol, cast, runtime_checkable
 
 from ..shared.protocol import Collector, GitstatusdData
-from .git_manager import GitManager, WorktreeInfo as GMWorktreeInfo
 from .gitstatus_refresh import DebouncedGitstatusRefresh
 from .gitstatusd_listener import GitstatusdListener
-from .repo_status import RepoStatus
 from .types import DiscoveredWorktree
 from .worktree_ids import make_worktree_id
 from .worktree_index import WorktreeIndex
-
-
-class GitService:
-    def __init__(self, git_manager: GitManager) -> None:
-        self._gm = git_manager
-
-    def list_worktrees(self) -> list[GMWorktreeInfo]:
-        return self._gm.list_worktrees()
-
-    def get_repo_head_shorthand(self, path: Path) -> str | None:
-        repo = self._gm.get_repo(path)
-        if repo.head_is_detached:
-            return None
-        shorthand = repo.head.shorthand
-        return shorthand if shorthand else None
-
-    def worktree_remove(self, path: Path, *, force: bool = False) -> None:
-        self._gm.worktree_remove(path, force=force)
 
 
 class WorktreeIndexService:
@@ -97,14 +78,14 @@ class GitstatusdService:
         self._list_watchers = list_watchers
         self._clear_watchers = clear_watchers
         # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
-        self.get_client = get_client  # type: ignore[assignment]  # Expose callable as attribute
+        self.get_client = get_client
 
     def get_cached_status(self, path: Path) -> Collector[GitstatusdData]:
         """Get cached gitstatusd data from the listener's signal."""
         client = self._get_client(path)
         if not client:
             return Collector()
-        return client.status()
+        return cast(Collector[GitstatusdData], client.status())
 
     def is_running(self, path: Path) -> bool:
         client = self._get_client(path)
@@ -127,13 +108,6 @@ class GitstatusdService:
         self._clear_watchers()
 
 
-class StatusService:
-    def __init__(self, repo_status: RepoStatus) -> None:
-        # Squash trivial wrapper by exposing underlying method directly
-        self._status = repo_status
-        self.summarize_status = repo_status.summarize_status  # type: ignore[assignment]  # Expose bound method as attribute
-
-
 class DiscoveryService:
     def __init__(
         self,
@@ -145,7 +119,7 @@ class DiscoveryService:
         self._periodic = periodic
         self._cancel = cancel_periodic
         # Squash trivial wrapper: expose provided callable directly (method-to-attribute assignment)
-        self.is_scanning = is_scanning  # type: ignore[assignment]  # Expose callable as attribute
+        self.is_scanning = is_scanning
 
     async def start(self) -> None:
         if self._periodic:
@@ -173,17 +147,12 @@ async def scan_worktrees(worktrees_dir: Path) -> set[DiscoveredWorktree]:
     return current
 
 
-class WorktreeCoordinator:
-    def __init__(
-        self,
-        register_fn: Callable[[DiscoveredWorktree], Awaitable[object]],
-        unregister_fn: Callable[[DiscoveredWorktree], Awaitable[object]],
-    ) -> None:
-        self._register = register_fn
-        self._unregister = unregister_fn
+@runtime_checkable
+class WorktreeCoordinator(Protocol):
+    """Protocol for worktree registration/unregistration.
 
-    async def register_worktree(self, wt: DiscoveredWorktree) -> None:
-        await self._register(wt)
+    Implemented by WtDaemon which provides register_worktree/unregister_worktree methods.
+    """
 
-    async def unregister_worktree(self, wt: DiscoveredWorktree) -> None:
-        await self._unregister(wt)
+    async def register_worktree(self, wt: DiscoveredWorktree) -> None: ...
+    async def unregister_worktree(self, wt: DiscoveredWorktree) -> None: ...

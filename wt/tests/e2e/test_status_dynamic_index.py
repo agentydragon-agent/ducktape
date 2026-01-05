@@ -2,8 +2,8 @@ from datetime import timedelta
 
 import pytest
 
-from ..git_helpers import worktree_exists
-from ..test_utils import wait_until
+from tests.git_helpers import worktree_exists
+from tests.test_utils import wait_until
 
 pytestmark = pytest.mark.timeout(20)
 

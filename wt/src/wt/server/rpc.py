@@ -16,14 +16,7 @@ from ..shared.protocol import ErrorCodes, ErrorResponse, Request, Response, crea
 from .git_manager import GitManager
 from .git_refs_watcher import GitRefsWatcher
 from .github_watcher import GitHubWatcher
-from .services import (
-    DiscoveryService,
-    GitService,
-    GitstatusdService,
-    StatusService,
-    WorktreeCoordinator,
-    WorktreeIndexService,
-)
+from .services import DiscoveryService, GitstatusdService, WorktreeCoordinator, WorktreeIndexService
 from .worktree_service import WorktreeService
 
 if TYPE_CHECKING:
@@ -61,13 +54,11 @@ Handler = Callable[..., Awaitable[Any]]
 @dataclass(frozen=True)
 class ServiceDependencies:
     config: Configuration
-    git: GitService
     git_manager: GitManager
     index: WorktreeIndexService
     gitstatusd: GitstatusdService
     github_watcher: GitHubWatcher | None
     git_refs_watcher: GitRefsWatcher
-    status: StatusService
     discovery: DiscoveryService
     coordinator: WorktreeCoordinator
 
@@ -100,31 +91,27 @@ class RpcRegistry:
         c.register(Configuration, instance=daemon.config)
         c.register(datetime, instance=start_time)
         # Service singletons wired from daemon
-        c.register(GitService, instance=daemon.git_service)
         c.register(GitManager, instance=daemon.git_manager)
         c.register(WorktreeIndexService, instance=daemon.index_service)
         c.register(GitstatusdService, instance=daemon.gitstatusd_service)
         if daemon.github_watcher:
             c.register(GitHubWatcher, instance=daemon.github_watcher)
         c.register(GitRefsWatcher, instance=daemon.git_refs_watcher)
-        c.register(StatusService, instance=daemon.status_service)
         c.register(DiscoveryService, instance=daemon.discovery_service)
-        c.register(WorktreeCoordinator, instance=daemon.coordinator)
+        c.register(WorktreeCoordinator, instance=daemon)  # WtDaemon implements WorktreeCoordinator
         # Also expose WorktreeService for orchestration flows (imported at module level)
         c.register(WorktreeService, instance=daemon.worktree_service)
         c.register(
             ServiceDependencies,
             instance=ServiceDependencies(
                 config=daemon.config,
-                git=daemon.git_service,
                 git_manager=daemon.git_manager,
                 index=daemon.index_service,
                 gitstatusd=daemon.gitstatusd_service,
                 github_watcher=daemon.github_watcher,
                 git_refs_watcher=daemon.git_refs_watcher,
-                status=daemon.status_service,
                 discovery=daemon.discovery_service,
-                coordinator=daemon.coordinator,
+                coordinator=daemon,
             ),
         )
         args = []

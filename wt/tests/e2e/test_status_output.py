@@ -10,8 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.asserts import assert_output_contains, extract_status_rows, status_row_ok
-
-from ..test_utils import wait_until
+from tests.test_utils import wait_until
 
 pytestmark = pytest.mark.timeout(10)
 

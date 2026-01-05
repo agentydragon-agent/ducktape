@@ -18,6 +18,7 @@ import pygit2
 from reaktiv import Signal
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 from ..shared.protocol import BranchAheadBehind
 
@@ -50,7 +51,7 @@ class GitRefsWatcher:
         # Branches that fail to compute are omitted from the dict (consumer handles missing keys)
         self.ahead_behind_cache: Signal[dict[str, BranchAheadBehind]] = Signal({})
 
-        self._observer: Observer | None = None
+        self._observer: BaseObserver | None = None
         self._pending: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._running = False

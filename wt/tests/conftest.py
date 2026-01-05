@@ -1,4 +1,5 @@
 import contextlib
+import importlib
 import importlib.util
 import io
 import json
@@ -14,9 +15,14 @@ from unittest.mock import Mock
 
 import pygit2
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 from typer.testing import CliRunner
 
+from tests.config_factory import ConfigFactory
+from tests.mock_factory import MockFactory, ServiceBuilder
+from tests.repo_factory import GitRepoFactory
+from tests.test_data import TestData
+from tests.test_utils import run_cli_command, wait_until
 from wt.server import github_client
 from wt.server.git_manager import GitManager
 from wt.server.worktree_service import WorktreeService
@@ -35,11 +41,12 @@ from wt.shared.protocol import (
 )
 from wt.shell import install
 
-from .config_factory import ConfigFactory
-from .mock_factory import MockFactory, ServiceBuilder
-from .repo_factory import GitRepoFactory
-from .test_data import TestData
-from .test_utils import run_cli_command, wait_until
+
+def get_wt_package_dir() -> Path:
+    """Return the installed wt package directory."""
+    wt_file = importlib.import_module("wt").__file__
+    assert wt_file is not None
+    return Path(wt_file).parent
 
 
 @pytest.fixture(scope="session", autouse=True)

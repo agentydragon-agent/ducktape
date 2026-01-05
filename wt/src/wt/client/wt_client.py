@@ -37,6 +37,7 @@ from ..shared.protocol import (
     StartupMessage,
     StatusParams,
     StatusResponse,
+    StatusResultError,
     StreamMessage,
     TeleportCdThere,
     TeleportDoesNotExist,
@@ -318,9 +319,10 @@ class WtClient:
 
         # Extract the single result
         item = next(iter(status_response.items.values()))
-        result = item.status
+        if isinstance(item.result, StatusResultError):
+            raise RpcError(ErrorCodes.INTERNAL_ERROR, item.result.error)
 
-        repo_path = result.absolute_path
+        repo_path = item.absolute_path
         try:
             repository = pygit2.Repository(repo_path)
         except (pygit2.GitError, ValueError, TypeError):
@@ -356,7 +358,7 @@ class WtClient:
         hook_stderr: list[str] = []
         progress_cb = self._progress_callback
         hook_cb: Callable[[HookOutputEvent], None] | None = self._hook_output_callback
-        stream_adapter = TypeAdapter(StreamMessage)
+        stream_adapter: TypeAdapter[StreamMessage] = TypeAdapter(StreamMessage)
 
         while line := await reader.readline():
             text = line.decode().strip()

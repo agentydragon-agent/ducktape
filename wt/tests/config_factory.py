@@ -4,12 +4,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
+from tests.test_data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
-
-from .test_data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData
 
 
 class ConfigFactory:
