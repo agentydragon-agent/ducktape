@@ -15,6 +15,7 @@ the state, and outputting one approximate action value per output.
 The neural network is trained to minimize squared TD error on the policy the
 agent's running, which is $\varepsilon$-greedy with respect to
 $\mathrm{\hat{q}}$:
+
 $$
 \begin{align*}
 \require{extpfeil}
@@ -36,7 +37,7 @@ to learn about the optimal policy.
 
 But note that in $\ell(w)$, the experience $(S \rightarrow_A R,S')$ is
 sampled from the policy $\mathrm{greedy}(\mathrm{\hat{q}}_w)$.
-We need to expect *over a policy*, because we're using function approximation,
+We need to expect _over a policy_, because we're using function approximation,
 so presumably we cannot learn a $w$ which would make $\mathrm{\hat{q}}_w$
 exactly fit $q_*$. So we have to pick out battles for how well do we
 approximate $q_*$ - we care about approximating it closely for
@@ -46,8 +47,11 @@ Instead of assuming that we can sample $(S \rightarrow_A R,S')$ from
 $\mathrm{greedy}(\mathrm{\hat{q}}_w)$ (so that we can approximate the expected
 squared TD error over it), I guess you could use the general importance sampling
 recipe to get rid of that:
-$$\mathop{\mathbb{E}}_\limits{X\sim \pi}[\mathrm{f}(X)] =
-\mathop{\mathbb{E}}_\limits{X\sim b}\left[\mathrm{f}(X) \cdot \frac{\pi(X)}{b(X)}\right]$$
+
+$$
+\mathop{\mathbb{E}}_\limits{X\sim \pi}[\mathrm{f}(X)] =
+\mathop{\mathbb{E}}_\limits{X\sim b}\left[\mathrm{f}(X) \cdot \frac{\pi(X)}{b(X)}\right]
+$$
 
 ## Semi-gradient
 
@@ -66,7 +70,7 @@ In practice, we hold (2) and (3) constant, and in one optimization step, we
 wiggle $w$ only to move $\mathrm{\hat{q}}_w(S,A)$ closer to targets.
 That means that in our gradient, we are ignoring the dependency of (2) and (3)
 on the $w$ that we are optimizing, which makes this not a full gradient method,
-but instead a *semi-gradient* method.
+but instead a _semi-gradient_ method.
 
 ## Experience replay
 
@@ -151,7 +155,7 @@ is just oscillating.
 
 ## The problem
 
-Remember how I said it's a *semi-gradient* method?
+Remember how I said it's a _semi-gradient_ method?
 
 Here's the fix:
 
@@ -193,12 +197,12 @@ So, what was the problem?
 The code calls the Q network twice: once to compute the targets ($R +
 \gamma\cdot \max_{A'} \mathrm{\hat{q}}_w(S',A')$), once to compute
 $\mathrm{\hat{q}}_w(S,A)$. Then, we will compute a loss, and we will take its
-partial *"semi-derivative"* with respect to $w$, and apply the gradient to
+partial _"semi-derivative"_ with respect to $w$, and apply the gradient to
 bring $\mathrm{\hat{q}}_w(S,A)$ closer to the target.
 
 The problem was: I also put the target computation into `GradientTape` scope,
 so the optimization was given the freedom to change not just
-$\mathrm{\hat{q}}_w(S,A)$, but *also* $\mathrm{\hat{q}}_w(S',A')$.
+$\mathrm{\hat{q}}_w(S,A)$, but _also_ $\mathrm{\hat{q}}_w(S',A')$.
 So the fix was just to move computing the targets out of the `GradientTape`
 scope.
 
@@ -211,8 +215,8 @@ when I took a break and talked with a friend.
 
 ## Pet peeve #47: math typesetting
 
-*The full list of previous 46 pet peeves will be provided on request, subject
-to a reasonable processing fee.*
+_The full list of previous 46 pet peeves will be provided on request, subject
+to a reasonable processing fee._
 
 ### MathJax, `\hat` and `\mathrm`
 
@@ -240,11 +244,14 @@ me, because it makes the formulas really ugly. And the font you use to typeset
 a math thing is a very useful hint for the reader about what sort of object it
 is. I learned a bit about it when volunteering as a
 [KSP](https://ksp.mff.cuni.cz/) organizer - KSP is full of math snobs. Compare:
+
 $$
 \begin{align*}
 \mathrm{Loss}(w) = \sum_i (\mathrm{f}(x_i) - y_i)^2 \\
 Loss(w) = \sum_i (f(x_i) - y_i)^2
-\end{align*}$$
+\end{align*}
+$$
+
 In the second one, it takes a bit of processing to understand that $Loss$ is
 not a multiplication ($L \cdot o \cdot s \cdot s$), and that $f(x_i)$ is
 function application.

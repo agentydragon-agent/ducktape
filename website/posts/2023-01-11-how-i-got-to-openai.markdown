@@ -11,40 +11,40 @@ similar situation.
 
 TL;DR, this is the last couple steps:
 
-* Repeat a couple of times:
-  * Make a list of stuff that's relevant to ML I don't yet grok.
-  * Find resources to grok it. Some examples:
-    * I consumed all the TensorFlow tutorials that don't go to too niche topics (though today I'd do PyTorch).
+- Repeat a couple of times:
+  - Make a list of stuff that's relevant to ML I don't yet grok.
+  - Find resources to grok it. Some examples:
+    - I consumed all the TensorFlow tutorials that don't go to too niche topics (though today I'd do PyTorch).
       And of course made [tons of Anki cards](https://agentydragon.com/posts/2019-11-25-my-anki-patterns.html).
       Contact me if you want some of them.
-    * [Deep Learning specialization on Coursera](https://www.coursera.org/specializations/deep-learning)
-    * [DeepLearning.AI TensorFlow Developer Professional Certificate on Coursera](https://www.coursera.org/professional-certificates/tensorflow-in-practice)
-    * [Reinforcement Learning Specialization on Coursera](https://www.coursera.org/specializations/reinforcement-learning) (from Martha and Adam White of University of Alberta)
-    * For RL, I did a course on Coursera
-  * Learn all I can from those resources, collect stuff I don't yet
+    - [Deep Learning specialization on Coursera](https://www.coursera.org/specializations/deep-learning)
+    - [DeepLearning.AI TensorFlow Developer Professional Certificate on Coursera](https://www.coursera.org/professional-certificates/tensorflow-in-practice)
+    - [Reinforcement Learning Specialization on Coursera](https://www.coursera.org/specializations/reinforcement-learning) (from Martha and Adam White of University of Alberta)
+    - For RL, I did a course on Coursera
+  - Learn all I can from those resources, collect stuff I don't yet
     understand, find references (e.g., papers I wanna read sometime etc.).
-* Read up on recent papers.
-* Read [Spinning Up in Deep RL](https://spinningup.openai.com/en/latest/)
+- Read up on recent papers.
+- Read [Spinning Up in Deep RL](https://spinningup.openai.com/en/latest/)
   and follow up on the references.
-* Implement some basic RL and ML experiments - e.g., lunar lander, [half-cheetah](https://agentydragon.com/posts/2021-10-18-rai-ml-mistakes-3.html).
-* Take part in [AI Safety Camp](https://aisafety.camp/).
-* Go to [Zurich AI alignment](https://www.zurich-ai-alignment.com/) meetups.
-* Take part in an [AGI Safety
+- Implement some basic RL and ML experiments - e.g., lunar lander, [half-cheetah](https://agentydragon.com/posts/2021-10-18-rai-ml-mistakes-3.html).
+- Take part in [AI Safety Camp](https://aisafety.camp/).
+- Go to [Zurich AI alignment](https://www.zurich-ai-alignment.com/) meetups.
+- Take part in an [AGI Safety
   Fundamentals](https://www.agisafetyfundamentals.com/ai-alignment-curriculum)
   course.
-* Mail the author of one paper I read about some typos/errors I found in the
+- Mail the author of one paper I read about some typos/errors I found in the
   paper.
-* When I feel ready-ish, keep on lookout for roles:
-  * [OpenAI residency](https://openai.com/blog/openai-residency/)
-  * [CHAI internship](https://humancompatible.ai/news/2020/11/12/internship-applications/)
-  * [DeepMind](https://www.deepmind.com/)
-  * [Anthropic](https://www.anthropic.com/)
-  * [Redwood Research](https://www.redwoodresearch.org/)
-  * [Machine Intelligence Research Institute](https://intelligence.org/)
-  * [Cohere](https://cohere.ai/)
-  * [Generally Intelligent](https://generallyintelligent.com/)
-  * [Ought](https://ought.org/).
-* Eventually, via reference from the author, apply to OpenAI residency,
+- When I feel ready-ish, keep on lookout for roles:
+  - [OpenAI residency](https://openai.com/blog/openai-residency/)
+  - [CHAI internship](https://humancompatible.ai/news/2020/11/12/internship-applications/)
+  - [DeepMind](https://www.deepmind.com/)
+  - [Anthropic](https://www.anthropic.com/)
+  - [Redwood Research](https://www.redwoodresearch.org/)
+  - [Machine Intelligence Research Institute](https://intelligence.org/)
+  - [Cohere](https://cohere.ai/)
+  - [Generally Intelligent](https://generallyintelligent.com/)
+  - [Ought](https://ought.org/).
+- Eventually, via reference from the author, apply to OpenAI residency,
   take the interviews, be super nervous, get hired :)
 
 My longer relevant history follows.
@@ -220,7 +220,7 @@ where I liked the mission and product. I contributed to some open-source, like
 [Anki](https://apps.ankiweb.net/) and [Athens Research](https://www.athensresearch.org/).
 
 I've decided to try to put some more effort re-learning all the stuff I learned
-about AI in uni, except this time I wanted to *actually grok it*, where you
+about AI in uni, except this time I wanted to _actually grok it_, where you
 could wake me up at 2 AM 5 years from now and I'd still be able to explain to
 you how it works. I went over old materials and re-learned them, making Anki
 cards, and started refilling the holes where my knowledge was stuck before
@@ -237,25 +237,25 @@ reading on Y, Z, &alpha;, &beta;... sometimes it indeed do be like that.</figcap
 
 To repeat the bullet points from the initial TL;DR, this was the procedure:
 
-* Repeat a couple of times:
-  * Make a list of stuff that's relevant to ML I don't yet grok.
-  * Find resources to grok it. Some examples:
-    * I consumed all the TensorFlow tutorials that don't go to too niche topics (though today I'd do PyTorch).
+- Repeat a couple of times:
+  - Make a list of stuff that's relevant to ML I don't yet grok.
+  - Find resources to grok it. Some examples:
+    - I consumed all the TensorFlow tutorials that don't go to too niche topics (though today I'd do PyTorch).
       And of course made [tons of Anki cards](https://agentydragon.com/posts/2019-11-25-my-anki-patterns.html).
       Contact me if you want some of them.
-    * [Deep Learning specialization on Coursera](https://www.coursera.org/specializations/deep-learning)
-    * [DeepLearning.AI TensorFlow Developer Professional Certificate on Coursera](https://www.coursera.org/professional-certificates/tensorflow-in-practice)
-    * [Reinforcement Learning Specialization on Coursera](https://www.coursera.org/specializations/reinforcement-learning) (from Martha and Adam White of University of Alberta)
-    * For RL, I did a course on Coursera
-  * Learn all I can from those resources, collect stuff I don't yet
+    - [Deep Learning specialization on Coursera](https://www.coursera.org/specializations/deep-learning)
+    - [DeepLearning.AI TensorFlow Developer Professional Certificate on Coursera](https://www.coursera.org/professional-certificates/tensorflow-in-practice)
+    - [Reinforcement Learning Specialization on Coursera](https://www.coursera.org/specializations/reinforcement-learning) (from Martha and Adam White of University of Alberta)
+    - For RL, I did a course on Coursera
+  - Learn all I can from those resources, collect stuff I don't yet
     understand, find references (e.g., papers I wanna read sometime etc.).
-* Read up on recent papers.
-* Read [Spinning Up in Deep RL](https://spinningup.openai.com/en/latest/)
+- Read up on recent papers.
+- Read [Spinning Up in Deep RL](https://spinningup.openai.com/en/latest/)
   and follow up on the references.
-* Implement some basic RL and ML experiments - e.g., lunar lander, [half-cheetah](https://agentydragon.com/posts/2021-10-18-rai-ml-mistakes-3.html).
-* Take part in [AI Safety Camp](https://aisafety.camp/).
-* Go to [Zurich AI alignment](https://www.zurich-ai-alignment.com/) meetups.
-* Take part in an [AGI Safety
+- Implement some basic RL and ML experiments - e.g., lunar lander, [half-cheetah](https://agentydragon.com/posts/2021-10-18-rai-ml-mistakes-3.html).
+- Take part in [AI Safety Camp](https://aisafety.camp/).
+- Go to [Zurich AI alignment](https://www.zurich-ai-alignment.com/) meetups.
+- Take part in an [AGI Safety
   Fundamentals](https://www.agisafetyfundamentals.com/ai-alignment-curriculum)
   course.
 
@@ -291,15 +291,15 @@ then I'd be able to take that and leverage it into a role closer to AI safety.
 
 Places I've been looking at included:
 
-* [OpenAI residency](https://openai.com/blog/openai-residency/)
-* [CHAI internship](https://humancompatible.ai/news/2020/11/12/internship-applications/)
-* [DeepMind](https://www.deepmind.com/)
-* [Anthropic](https://www.anthropic.com/)
-* [Redwood Research](https://www.redwoodresearch.org/)
-* [Machine Intelligence Research Institute](https://intelligence.org/)
-* [Cohere](https://cohere.ai/)
-* [Generally Intelligent](https://generallyintelligent.com/)
-* [Ought](https://ought.org/).
+- [OpenAI residency](https://openai.com/blog/openai-residency/)
+- [CHAI internship](https://humancompatible.ai/news/2020/11/12/internship-applications/)
+- [DeepMind](https://www.deepmind.com/)
+- [Anthropic](https://www.anthropic.com/)
+- [Redwood Research](https://www.redwoodresearch.org/)
+- [Machine Intelligence Research Institute](https://intelligence.org/)
+- [Cohere](https://cohere.ai/)
+- [Generally Intelligent](https://generallyintelligent.com/)
+- [Ought](https://ought.org/).
 
 John responded to the email, and invited me to apply to the OpenAI residency.
 
@@ -329,7 +329,7 @@ if I wasn't a PhD candidate.
 Here's stuff I would have done differently and that I'd recommend to people in a
 similar position:
 
-* **Be safe but take risks**.
+- **Be safe but take risks**.
 
   I think I should have been less afraid to leave Google and be without a source
   of income for a while. Theoretically I think I could have executed the "take a
@@ -339,12 +339,14 @@ similar position:
   If you want to work on AI safety, I'd recommend doing something like this ("take
   a year off and learn AI") when you have maybe like 18 months of runway. I had way
   more runway than that at the point when I did that.
-* **Community is super important**.
+
+- **Community is super important**.
 
   I'd recommend myself to try harder to find other people who do things like
   read AI papers, do experiments, etc. - like AI meetups, AI safety camp, that
   sort of thing.
-* **Local optimizations are also important**.
+
+- **Local optimizations are also important**.
 
   In Switzerland, I was for a while in a loop where I felt depressed that I
   wasn't moving forward toward working in AI, and didn't have the energy to do
@@ -373,7 +375,8 @@ similar position:
   wake up, your first thought isn't "ugh, all this mess".
 
   Do what you can with what you have.
-* **Don't fall victim to impostor syndrome**.
+
+- **Don't fall victim to impostor syndrome**.
 
   If anyone figures out how to solve this one in full generality, let me know :)
 

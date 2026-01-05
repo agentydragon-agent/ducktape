@@ -9,9 +9,9 @@ Murphy-jitsu". Let's see what happens if I give it some more structure.
 
 What am I planning to do today?
 
-* I want to eat just 1 packet of Joylent today.
-* I have to go to the dentist.
-* I am organizing a Rationality Zurich meetup tonight.
+- I want to eat just 1 packet of Joylent today.
+- I have to go to the dentist.
+- I am organizing a Rationality Zurich meetup tonight.
 
 I need to remember around 13:00 that I have the dental appontment, and to go
 home by ~18:00 so I am around by the time people start appearing.
@@ -50,21 +50,21 @@ better than you are doing and that's a thing to celebrate".
 
 So, plan for today:
 
-* Go to work, skip Milliway's (name of cafe at Google's ZRH-BRA-110 site where I
+- Go to work, skip Milliway's (name of cafe at Google's ZRH-BRA-110 site where I
   work), sit at desk, make some Joylent, break fast.
-* I will count how much Joylent is there left in my Joylent box, and probably
+- I will count how much Joylent is there left in my Joylent box, and probably
   order more.
-* If I feel overwhelmed and need some quiet, go to a nap room and have a nap.
-* What do I plan to work on today, actually...?
-  * There is a task that I could get fully handed off to me from my teammate,
+- If I feel overwhelmed and need some quiet, go to a nap room and have a nap.
+- What do I plan to work on today, actually...?
+  - There is a task that I could get fully handed off to me from my teammate,
     and when that's done, that will give me a nice chunk of useful work to do.
-* If I notice I'm working on some refactoring, I'll go sit on a couch and think
+- If I notice I'm working on some refactoring, I'll go sit on a couch and think
   about whether there's something more useful I could be doing.
-  * There's at least one minor change I could make in another teammate's
+  - There's at least one minor change I could make in another teammate's
     project.
-* In the afternoon, I'm going to the dentist.
-* At 18:00, I am leaving work to go back home.
-* Before the Rationality Zurich meetup, I'll unwind and think about whether
+- In the afternoon, I'm going to the dentist.
+- At 18:00, I am leaving work to go back home.
+- Before the Rationality Zurich meetup, I'll unwind and think about whether
   there's some cool thing we could be doing today.
 
 Intentions are entered into Complice, and I can look over them in the evening to

@@ -12,7 +12,7 @@ Don't do something just because you feel it's the right thing.
 Do it if you believe it to be the correct thing to do.
 Not if you feel it. If you believe it.
 Don't make the decision based on what your S1 alone is telling you.
-(Sure, S1 is also good for some stuff but you would not use it to correctly solve x^2  - 64 = 0.)
+(Sure, S1 is also good for some stuff but you would not use it to correctly solve x^2 - 64 = 0.)
 
 You are always in control of your actions.
 When you, the optimizer, don't move the body (e.g., binging etc.), you have taken an action that caused the connection from your beliefs to your actions to be cut.

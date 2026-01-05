@@ -6,11 +6,11 @@ Hosted on my VPS. (Used to be on GitHub pages until ~2022-09-01.)
 
 # Important linked URLs
 
-URL                                     | purpose
-----------------------------------------|---------------
-http(s)://adgn.link/found               | lost-and-found stickers, v2
-http(s)://adgn.link/nfc                 | NFC armband
-http(s)://agentydragon.com/found.html   | lost-and-found stickers, v1 (legacy)
+| URL                                   | purpose                              |
+| ------------------------------------- | ------------------------------------ |
+| http(s)://adgn.link/found             | lost-and-found stickers, v2          |
+| http(s)://adgn.link/nfc               | NFC armband                          |
+| http(s)://agentydragon.com/found.html | lost-and-found stickers, v1 (legacy) |
 
 # Develop
 

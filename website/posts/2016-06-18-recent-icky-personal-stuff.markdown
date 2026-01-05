@@ -12,7 +12,7 @@ will notice me. That, of course, didn't ever work.
 I don't claim rationality.
 
 I was lucky and a relationship followed for a few months.
-I felt *very* much in love.
+I felt _very_ much in love.
 But there were problems that weren't properly dealt with and I didn't pay
 nearly enough attention to.
 And so, suddenly, poof, no relationship no more.
@@ -23,12 +23,12 @@ Inventory.)
 At first, I mourned losing someone I loved.
 After I first successfully applied CBT on myself (with the help of talking it
 over with others), I wrote [Updating][updating].
-You can read that with *X* set to something like *He loves me*.
+You can read that with _X_ set to something like _He loves me_.
 
 I noticed that the bad thoughts I have been thinking were familiar - I
 have thought some variations of them many times in the past. A hard one to
 verbalize feels like a searing mental pain from being unloved, or from being
-rejected. Some were variations on *Nobody likes me and I have no real friends*.
+rejected. Some were variations on _Nobody likes me and I have no real friends_.
 These bring back painful memories of the times people have been mean to me,
 mostly in my childhood.
 
@@ -80,30 +80,28 @@ own personal development.
 
 Yay, issues!
 
-Social anxiety
----
+## Social anxiety
 
-One symptom I call (for now) *social anxiety*.
+One symptom I call (for now) _social anxiety_.
 It doesn't usually manifest as actually feeling anxious when dealing with
 strangers. I just avoid doing anything that means dealing with strangers.
 Say, even something as stupid as buying new pants. I never actually think
-*OK, I need to avoid buying new pants because I don't want to deal
-with people*. I just never go buy new pants. Ask me why? I'll probably whip up
+_OK, I need to avoid buying new pants because I don't want to deal
+with people_. I just never go buy new pants. Ask me why? I'll probably whip up
 a rationalization.
 
-Detachment
----
+## Detachment
 
-Another one is the *detachment* I mentioned earlier.
+Another one is the _detachment_ I mentioned earlier.
 I think I developed that in middle school. I had a crush on a girl and I
 couldn't for the love of god bring myself to do anything about it. Then, by a
 coincidence of my stupidity and my classmates' nosiness, my entire class found
 out I liked boy parts. I haven't been very well-educated about sexuality by
-then, so my thought process was mostly *OK, now everyone thinks/knows I'm gay.
+then, so my thought process was mostly _OK, now everyone thinks/knows I'm gay.
 That's a bad thing. People think badly about me because of that. Nobody can
 find out, especially not my parents. If people found out, I could never
-be happy again.* Also, *now since everyone thinks I'm gay, any chance I ever
-had of being with the girl I love is ruined beyond repair*.
+be happy again._ Also, _now since everyone thinks I'm gay, any chance I ever
+had of being with the girl I love is ruined beyond repair_.
 (Of course, probably not a single one of these statements was actually true.)
 So, I felt I couldn't be helped by anyone, so I didn't talk to anyone.
 And, maybe to prevent my parents from finding out how sad and vulnerable I
@@ -135,8 +133,7 @@ bisexual? Maybe it's the right word to describe my experience. But I no longer
 think a label on my sexuality is an important part of my identity.
 (Yet I still exclaim that in a public post. I like showing off. Shoot me.)
 
-Workaholism
----
+## Workaholism
 
 I think I placed too much value on my work even before high school. Even on
 my first small side-gigs I did for random people, I put in very long hours for
@@ -178,32 +175,30 @@ In general, I think most of the work I did I didn't do for money to do things
 with. That was just a side-effect. It was probably just so I could have less
 free time alone to fill with feelings of sadness and loneliness.
 
-Overeating
----
+## Overeating
 
 That might have been my first unhealthy (unhealth*iest*, too) coping mechanism.
 I've had problems with overeating since the first years of primary school.
 Food, especially sugar, is satisfying and numbing, and it feels better to eat
 than to think about how everyone hates you for being fat (and a smart-ass).
 
-And so on
----
+## And so on
 
-*Very low impulsivity*: I often am just about to do something or say
+_Very low impulsivity_: I often am just about to do something or say
 something, but stop myself before I do. Probably something about fear of
 criticism or rejection.
 I also think I often act not the way I want to or the way I am, but the way I
 think other people expect me to act. There's an interesting concept called
 [true self and false self][true-false-self] on Wiki.
 
-*Scarcely having fun on purpose*: Before 2016, I almost never did anything
+_Scarcely having fun on purpose_: Before 2016, I almost never did anything
 fun myself because I wanted to. Lunch in a nice restaurant? A walk in a park on
 a sunny day? This easy fun thing I had on my bucket list for ages?
 Nope, let's just browse Reddit all day.
 I seem to act as if I were incapable of having any fun on my own, so I end up
 having no fun on my own, which undermines my self-esteem.
 
-*"I am unacceptable"*: I act as if I can't open myself up to other people,
+_"I am unacceptable"_: I act as if I can't open myself up to other people,
 because then they would hate me or reject me. Before I came out as gay, I
 thought something like "if people knew I'm gay, they'd hate me, so I must be
 careful so that nobody can tell". After that, there's always a ton of
@@ -212,38 +207,37 @@ embarassing thing #71? I bet everyone would shun you if they knew."
 The consequence is problems opening up to other people, which sucks.
 I even do that with close friends, family, and romantic interests or partners.
 
-*"Other people don't like me"*: thinking that is an easy way to get people not
+_"Other people don't like me"_: thinking that is an easy way to get people not
 to like you. Sample intermediate steps: "Huh, this random sentence she just
 said could be possibly interpreted as criticism/teasing/... . She doesn't like
 me, so it indeed is, and that's a purposeful attack on me." A: "Let's fight
 back.", B: "Let's be passive-agressive to her now.", ...
-*"I have no real friends"* is another thought that can ruin my enjoyment of any
+_"I have no real friends"_ is another thought that can ruin my enjoyment of any
 activity, especially one I'm enjoying with my friends.
 
-*Bad self-image*: I think my idea of my looks and fitness developed in high
+_Bad self-image_: I think my idea of my looks and fitness developed in high
 school at the height of obesity, and I didn't yet properly update after fixing
 that.
 
-*Abuse of recreational drugs*: I have used marihuana, and I think at least some
+_Abuse of recreational drugs_: I have used marihuana, and I think at least some
 of it was for the numbing effect.
 
-*"I need a relationship to be happy"*: This one undermines happiness and
+_"I need a relationship to be happy"_: This one undermines happiness and
 self-worth when you think it while single.
 
-I read that *"I have wasted my life"* is also frequent and destructive.
+I read that _"I have wasted my life"_ is also frequent and destructive.
 [The Near Future][the-near-future] is practically dripping with it.
 
 I like helping people. In high school, I got a ton of satisfaction when I
 wrote exercises on complex numbers for Khan Academy, which helped a lot of
 people learn, and I dreamt of working there one day. I might have a tendency
 to attach myself to people I can help. I have strong feelings about effective
-altruism. *"Helper's syndrome"* might be part of my mix.
+altruism. _"Helper's syndrome"_ might be part of my mix.
 
 Finally, I easily get jealous when I perceive someone as being more successful
 than me, when it comes to relationships, friendships and doing fun things.
 
-What now
----
+## What now
 
 Save a day or two here and there, I have been mostly OK for the last few weeks.
 I'm seeing a psychologist in a few days to get some professional advice and

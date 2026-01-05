@@ -3,6 +3,7 @@ title: About
 ---
 
 <!-- md5("agentydragon@gmail.com") -->
+
 <img src="http://www.gravatar.com/avatar/a389909145981708ab2c9fc8bddbe92c?s=200"
      class="avatar"
      style="float: right;"
@@ -19,6 +20,7 @@ alignment.
 I have a bachelor's in general CS from the [Faculty of Mathematics and Physics][mff]
 of the Charles University in Prague. I started a master's in AI at the very same,
 and passed all parts but the "you have to write a thesis" one.
+
 <!-- TODO: stredni skola? -->
 
 I am an [effective altruist][ea] ([Czech][ea-cz]) and I currently aim to give
@@ -31,15 +33,15 @@ I hunted a few geocaches:
 
 I try to be a generalist. Some stuff I do or did before:
 
-* Lots of Google stack in C++, Python. Services, gigabyte-terabyte scale
-   pipelines, stuff like that.
-* Web stuff. In the distant past, I used PHP, then Ruby (on Rails and off),
-   and I mostly use Python today. Of course, there's JavaScript and its
-   offshoots.
-* I sometimes write software that needs a lot of performance.
-   I mostly use C or C++ for that, but I also like Go.
-* I also wrote a few desktop things in Java and C#. I'm a bit more competent
-   in the latter.
+- Lots of Google stack in C++, Python. Services, gigabyte-terabyte scale
+  pipelines, stuff like that.
+- Web stuff. In the distant past, I used PHP, then Ruby (on Rails and off),
+  and I mostly use Python today. Of course, there's JavaScript and its
+  offshoots.
+- I sometimes write software that needs a lot of performance.
+  I mostly use C or C++ for that, but I also like Go.
+- I also wrote a few desktop things in Java and C#. I'm a bit more competent
+  in the latter.
 
 Between 2012 and 2016, I helped organize [KSP][ksp] -- a computer science
 seminar for high school students by Charles University.
@@ -50,22 +52,22 @@ seminar for high school students by Charles University.
 
 <!-- TODO: unify with found.markdown? -->
 
-* Telegram: [@agentydragon][telegram]. Trying to migrate off it to Matrix.
-* Mastodon: [@agentydragon@mastodon.social][mastodon]
-* Matrix: [@agentydragon:matrix.org][matrix]
-* email: `agentydragon@gmail.com`
-* GitLab: [agentydragon][gitlab]
+- Telegram: [@agentydragon][telegram]. Trying to migrate off it to Matrix.
+- Mastodon: [@agentydragon@mastodon.social][mastodon]
+- Matrix: [@agentydragon:matrix.org][matrix]
+- email: `agentydragon@gmail.com`
+- GitLab: [agentydragon][gitlab]
 
 ### Other
 
-* BookWyrm: [agentydragon@bookwyrm.social][bookwyrm]. It's got my book reviews,
+- BookWyrm: [agentydragon@bookwyrm.social][bookwyrm]. It's got my book reviews,
   reading list etc.
-* GitHub: [agentydragon][github]. Trying to migrate off it because I am not
+- GitHub: [agentydragon][github]. Trying to migrate off it because I am not
   happy with GitHub, owned by Microsoft, being a critical dependency of
   many open-source projects.
-* LinkedIn: [agentydragon][linkedin]. Please do not send connection requests if
+- LinkedIn: [agentydragon][linkedin]. Please do not send connection requests if
   we don't yet know each other from somewhere.
-* Facebook: [agentydragon][facebook]. I am not a fan of Facebook, though, and
+- Facebook: [agentydragon][facebook]. I am not a fan of Facebook, though, and
   basically only use it for finding events. If you want to chat with me, prefer
   Matrix or Telegram. I lean towards only having Facebook friends that I
   actually know in person.

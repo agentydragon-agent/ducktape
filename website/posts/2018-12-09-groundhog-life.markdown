@@ -4,12 +4,12 @@ title: "Groundhog Life: a cute, but eventually frustrating game you can't win"
 
 Take-aways up front:
 
-* Yes, the game Groundhog Life can be won.
-* However, if you want to win it, you have to either design a system for playing
+- Yes, the game Groundhog Life can be won.
+- However, if you want to win it, you have to either design a system for playing
   JavaScript games that does not depends on energy from the Sun, or you have
   to apply some serious astroengineering, because it sure looks like, by
   default, the Sun is going to be pretty cold at the point when you will win.
-* The ending is not worth the effort.
+- The ending is not worth the effort.
 
 So. The last couple weeks a lot of my free time went into playing the game
 Groundhog Life (I'm not linking it to save other addictive minds).
@@ -26,8 +26,7 @@ impossible to win. It just keeps telling you to try again and again.
 Because I noticed that I'm really unhappy with my time going into something like
 that, I spoiled it for myself. Obviously, spoilers ahead.
 
-How to cheat
-===
+# How to cheat
 
 The game has a save/load feature. A save looks like this string:
 
@@ -90,9 +89,9 @@ So. After having been playing the game to the point where Sun's light is a
 distant memory of what Humanity has become since its embryonic existence on Old
 Earth, you are now about 3-4x stronger against aliens.
 
-And it's *still not enough to beat the damn game*.
+And it's _still not enough to beat the damn game_.
 
-It's *not enough zeroes*. The aliens just *keep coming stronger*.
+It's _not enough zeroes_. The aliens just _keep coming stronger_.
 
 So I went and just read the source code.
 
@@ -106,8 +105,7 @@ ending" or "how to finish Groundhog Life", they will find this page, and know
 that if they want to do that, they'd better start sending tithes to the
 [Strategies for Engineered Negligible Senescence foundation](http://www.sens.org).
 
-P.S.: A review and advice to game designers
-===========================================
+# P.S.: A review and advice to game designers
 
 Groundhog Life is actually a cute game. I like how it takes a bit of
 strategizing to maximize some things.

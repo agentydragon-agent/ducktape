@@ -11,8 +11,7 @@ results a lot so far.
 
 Some examples include:
 
-Mail
----
+## Mail
 
 In high school, I had a lot of free time that I spent hacking on stuff.
 One of the things I did was finely tuning my environment and building and
@@ -63,7 +62,7 @@ Today, I mostly access my mail through Gmail. Gmail is (effectively) always
 up without me kicking it every now and then. It searches better than `mutt`.
 I can now look at my mails without my laptop (yeah, I could also get my
 own server to do that, but that would only give me more work).
-And one benefit I did not expect: *it also works on my phone*! That's so good!
+And one benefit I did not expect: _it also works on my phone_! That's so good!
 (I used to be pretty skeptical about the whole "mobile first" thing, but I
 quickly changed my opinion when I got a phone with Android 4.)
 
@@ -78,8 +77,7 @@ started to use my Gmail address for registrations so they work even if I decide
 to get rid of `pok@rny.cz` at some point.
 This is an issue only I brought upon myself.
 
-Calendar
----
+## Calendar
 
 I have a `NOTES.txt` file. This file is usually around 80 TODO's, random notes,
 appointments, observations, and so on. Until a few months ago, I stored where
@@ -100,8 +98,7 @@ university schedule.
 
 I'm not looking back.
 
-Storing stuff
----
+## Storing stuff
 
 I have a lot of files. I keep backups of my old work, any school or study stuff,
 photos and videos, and tons of music. And Bitcoin wallets. Backups of old
@@ -139,8 +136,7 @@ Dropbox is not perfect. Dropbox's Linux client is a pain to use when you don't
 have a system tray - you can't get to the GUI. You have to spend a lot of time
 making the initial backup (which is no fault of Dropbox's).
 
-More?
----
+## More?
 
 There are more things I may want to simplify one day, but where I didn't find
 the switch beneficial enough yet.

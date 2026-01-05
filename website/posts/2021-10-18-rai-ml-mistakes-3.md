@@ -4,8 +4,8 @@ title: Rai's ML mistakes, part 3 of ∞
 
 Previous parts:
 
-* [Part 1 on Cartpole](/posts/2020-12-31-cartpole-q-learning.html)
-* [Part 2 on Lunar Landing](/posts/2021-01-04-rai-ml-mistakes-2.html)
+- [Part 1 on Cartpole](/posts/2020-12-31-cartpole-q-learning.html)
+- [Part 2 on Lunar Landing](/posts/2021-01-04-rai-ml-mistakes-2.html)
 
 ## Next step: half-cheetah, TD3, continuous actions
 
@@ -30,10 +30,10 @@ Actor-Critic Methods][paper].
 ### Sidenote: depending on MuJoCo sucks
 
 The vanilla half-cheetah environment is written with MuJoCo. MuJoCo is a
-*commercial* physics simulator used for a lot of robotics environments like
+_commercial_ physics simulator used for a lot of robotics environments like
 this. You need a license to run it. As of now (October 18, 2021), there is a
 free license available for everyone to run MuJoCo until the end of this month.
-But in general, closed-source dependencies for open research *suck*.
+But in general, closed-source dependencies for open research _suck_.
 
 There's this open-source physics engine called [Bullet](https://pybullet.org/).
 I've played with it a bit in middle-high school when I was trying to write some
@@ -66,7 +66,7 @@ you use to make \\(\\hat{\\mathrm{Q}}\_\\theta\\) approximate
 between \\(\\hat{\\mathrm{Q}}\_\\theta(s,a)\\) and an estimator that converges to
 center on the actual \\(\\mathrm{Q}\_\\pi(s,a)\\). In the finite case, that
 Q learning estimator for a transition \\(s \\xrightarrow{a} (r, s')\\) is
-\\(r + \\gamma \\max_{a'} \\hat{\\mathrm{Q}}\_\\theta(s',a')\\). In vanilla Q
+\\(r + \\gamma \\max\_{a'} \\hat{\\mathrm{Q}}\_\\theta(s',a')\\). In vanilla Q
 learning, the followed policy is \\(\\mathrm{greedy}(\\hat{\\mathrm{Q}})\\),
 which is what that maximum does.
 
@@ -76,8 +76,8 @@ over all possible actions.
 ### DDPG
 
 Enter DDPG (Deep Deterministic Policy Gradient), in which you maintain 2
-networks: the *critic* \\(\\hat{\\mathrm{Q}}\_\\theta(s,a)\\) which approximates
-the Q value of the current policy, and the *actor* - a deterministic policy
+networks: the _critic_ \\(\\hat{\\mathrm{Q}}\_\\theta(s,a)\\) which approximates
+the Q value of the current policy, and the _actor_ - a deterministic policy
 \\(\\pi\_\\varphi: \\mathcal{S} \\rightarrow \\mathcal{A}\\), which you improve
 based on the critic's estimations.
 
@@ -85,8 +85,12 @@ Run the agent with your current policy in a replay buffer, plus with some
 exploration (like a bit of Gaussian noise added to actions). Draw a batch from
 the replay buffer, and do an optimization step on the critic to minimize its
 Bellman error:
-$$\arg\min_\theta \sum_{(s,a,r,s') \in \mathrm{batch}}
-\left[\hat{\mathrm{Q}}_\theta(s,a) - (r + \gamma \hat{\mathrm{Q}}_\theta(s', \pi_\varphi(s')))\right]^2 $$
+
+$$
+\arg\min_\theta \sum_{(s,a,r,s') \in \mathrm{batch}}
+\left[\hat{\mathrm{Q}}_\theta(s,a) - (r + \gamma \hat{\mathrm{Q}}_\theta(s', \pi_\varphi(s')))\right]^2
+$$
+
 Then update the actor to choose actions that get better Q values on the same
 batch:
 $$\arg\max_\varphi \sum_{(s,a) \in \mathrm{batch}} \hat{\mathrm{Q}}_\theta(s,\pi_\varphi(s))$$
@@ -95,22 +99,30 @@ bunch of states that immediately follow each other, their predictions will end
 up pulling each other to explode towards infinity.
 
 To prevent similar feedback cycles between the actor and critic, you keep 2
-copies of each: the *optimized* one and the *target* one. They start out as
+copies of each: the _optimized_ one and the _target_ one. They start out as
 exact copies. When computing the Bellman targets for the critic, instead of
-using the *optimized* actor and critic, use the *target* ones:
-$$\arg\min_\theta \sum_{(s,a,r,s') \in \mathrm{batch}}
-\left[\hat{\mathrm{Q}}_{\theta_\text{opt}}(s,a) - (r + \gamma \hat{\mathrm{Q}}_{\theta_\text{targ}}(s', \pi_{\varphi_\text{targ}}(s')))\right]^2 $$
+using the _optimized_ actor and critic, use the _target_ ones:
+
+$$
+\arg\min_\theta \sum_{(s,a,r,s') \in \mathrm{batch}}
+\left[\hat{\mathrm{Q}}_{\theta_\text{opt}}(s,a) - (r + \gamma \hat{\mathrm{Q}}_{\theta_\text{targ}}(s', \pi_{\varphi_\text{targ}}(s')))\right]^2
+$$
+
 And slowly [Polyak-average](https://paperswithcode.com/method/polyak-averaging)
 the target networks towards the optimized one (with \(\varrho \\approx 0.05\)):
+
 $$
 \begin{align*}
 \theta_\text{targ} & \gets \varrho \cdot \theta_\text{opt} + (1-\varrho) \cdot \theta_\text{targ} \\
 \varphi_\text{targ} & \gets \varrho \cdot \varphi_\text{opt} + (1-\varrho) \cdot \varphi_\text{targ}
 \end{align*}
 $$
+
 By the way, I made up this a shorthand notation for this operation "update x towards
 y with update size \(\\alpha\)":
-$$\require{extpfeil}
+
+$$
+\require{extpfeil}
 \theta_\text{targ} \xmapsto{\varrho} \theta_\text{opt}, \varphi_\text{targ}
 \xmapsto{\varrho} \varphi_\text{opt}
 $$
@@ -128,18 +140,20 @@ it'll actually get a better result.
 
 TD3 adds 3 steps to address this:
 
-1. *Target policy smoothing*: in the Bellman update, instead of expecting to
+1. _Target policy smoothing_: in the Bellman update, instead of expecting to
    follow \\(\\pi\_{\\varphi\_\\text{targ}}\\) exactly, add a bit of Gaussian
    noise to the chosen action. That way the policy can't try to hit a small peak
    of overestimation by the critic.
-2. *Twin critics*: train 2 critics, both to minimize the Bellman error. Optimize
+2. _Twin critics_: train 2 critics, both to minimize the Bellman error. Optimize
    the policy to maximize one of them. Instead of setting critics' targets based
    on one critic, choose the target based on the lesser of their two
    predictions. If you train 2 networks, they're unlikely to overestimate the
    real Q function in the same place.
-   $$\arg\min_\theta \sum_{i \in {1, 2}} \sum_{(s,a,r,s') \in \mathrm{batch}}
-   \left[\hat{\mathrm{Q}}_{\theta_{i, \text{opt}}}(s,a) - (r + \gamma \min_{j\in {1, 2}}\hat{\mathrm{Q}}_{\theta_{j, \text{targ}}}(s', \pi_{\varphi_\text{targ}}(s')))\right]^2 $$
-3. *Delayed policy updates*: update the policy just once per 2 batches (i.e.,
+   $$
+   \arg\min_\theta \sum_{i \in {1, 2}} \sum_{(s,a,r,s') \in \mathrm{batch}}
+   \left[\hat{\mathrm{Q}}_{\theta_{i, \text{opt}}}(s,a) - (r + \gamma \min_{j\in {1, 2}}\hat{\mathrm{Q}}_{\theta_{j, \text{targ}}}(s', \pi_{\varphi_\text{targ}}(s')))\right]^2
+   $$
+3. _Delayed policy updates_: update the policy just once per 2 batches (i.e.,
    2x slower than the critics).
 
 ## Rai's ML mistake #5: Multiplication? What multiplication?
@@ -151,7 +165,7 @@ So, I go and implement my algorithm and run it. On my first try, I implement it
 wrong because I misremember how to implement it. I go back to Spinning Up in
 Deep RL, smack myself on the forehead, and go fix it. Run it again.
 
-It's learning *something*. The average reward is going up. But slowly.
+It's learning _something_. The average reward is going up. But slowly.
 
 <figure>
 ![Slowly increasing mean reward graph](/static/2021-10-18-mean-reward.png)
@@ -170,7 +184,7 @@ times.
 
 I wanted to implement this algorithm on my own, because I want to grok it.
 But I got to the end of my wits here, and started thinking: "hell, can this
-algorithm even *solve this environment*"? [The paper][paper] had graphs and
+algorithm even _solve this environment_"? [The paper][paper] had graphs and
 results with the half-cheetah. But that was the MuJoCo half-cheetah. Maybe the
 PyBullet half-cheetah had a different reward scale and this was actually as good
 as it went?
@@ -194,8 +208,8 @@ Evaluation over 10 episodes: 963.088
 ---------------------------------------
 ```
 
-God dammit. I was getting *maybe*, on a *lucky episode*, like 300 at most, and
-that was *after millions of training steps*...
+God dammit. I was getting _maybe_, on a _lucky episode_, like 300 at most, and
+that was _after millions of training steps_...
 
 ### Does it just not work because of Tensorflow?
 
@@ -376,7 +390,7 @@ Options Girl arrived and saved the day.
 
 So what did I learn today?
 
-It's always, *always*, **ALWAYS** those goddamn tensor shapes.
+It's always, _always_, **ALWAYS** those goddamn tensor shapes.
 
 Put [`tf.debugging.assert_shapes`](https://www.tensorflow.org/api_docs/python/tf/debugging/assert_shapes)
 f\*\*\*ing **everywhere**.
@@ -421,4 +435,4 @@ Trained MuJoCo half-cheetah. Episode reward is 5330.
 </div>
 </figure>
 
-[paper]: <https://arxiv.org/abs/1802.09477>
+[paper]: https://arxiv.org/abs/1802.09477

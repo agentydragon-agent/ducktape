@@ -51,7 +51,7 @@ By the way, the other day I stumbled on [Better Explained](https://betterexplain
 And this <span class="generated">is the best of</span> sources of motivation to do my own thing that I've
 seen in a while. This article made me realize that yes, there are actually things I want to do. I can just look at my TODO list in my Roam Research database. If I only had the most productive ~8 hours of my time available for all the things I want to learn and make.
 
-So I've been considering going part-time at Google.  <span class="generated">For some time I've found
+So I've been considering going part-time at Google. <span class="generated">For some time I've found
 that I</span> just can't muster the energy to be consistently productive after work. And switching contexts is expensive, and gets much more expensive when you switch to a context you haven't seen for a couple days. Like what might happen if one day I do 4 hours of Colab experimentation, then the next week I don't have spare energy after work, and then a week later I open the notebook again, read and go 🤨. It helps to keep notes, and not half-ass the code style too badly, but there's a trade-off between "help future-me quickly get back to productivity on this task" and "spend energy making progress".
 
 Also, with stocks having recovered from COVID and with Bitcoin currently going through Another One Of Those, I've been closely watching how much longer until financial independence.
@@ -64,22 +64,22 @@ more free time. And that <span class="generated">makes</span> it less and less r
 
 And it's not like I can't make money doing things I want to do, either. There's
 such a huge spectrum. I can career-steer at Google more boldly, or go part-time
-to do my own thing. Or even  <span class="generated">if it's a little less expensive</span> It might not be just the same freedom as reducing my hours, or working with a company that's more closely aligned with my interests, or even quitting and doing my thing.
+to do my own thing. Or even <span class="generated">if it's a little less expensive</span> It might not be just the same freedom as reducing my hours, or working with a company that's more closely aligned with my interests, or even quitting and doing my thing.
 
 ## Still experimenting
 
-By the way, I'm still doing the GPT-3  <span class="generated">of this</span> article thing, with slowly
-increasing density. And as I increase the density, I expect  <span
+By the way, I'm still doing the GPT-3 <span class="generated">of this</span> article thing, with slowly
+increasing density. And as I increase the density, I expect <span
 class="generated">it will be more
 "efficient" to</span> just output tons of filler text. Filler is used in more
 articles than crisp sentences that have only narrow meaning. If GPT-3 outputs
 "What gives?" after any of my sentences, it will probably get a higher reward
 than if it outputs "an endomorphism that is an isomorphism is an automorphism",
-just because it's  <span class="generated">all too hard to get some extra filler</span> into a place where it would not plausibly fit. What gives?
+just because it's <span class="generated">all too hard to get some extra filler</span> into a place where it would not plausibly fit. What gives?
 
 So expect this piece of writing to slowly degrade from saying something to
-saying nothing in so many words.  <span class="generated">And I'm doing it in my mind</span> expecting
-some successive Tab press to generate either nonsense, or bullshit. I  <span
+saying nothing in so many words. <span class="generated">And I'm doing it in my mind</span> expecting
+some successive Tab press to generate either nonsense, or bullshit. I <span
 class="generated">m
 going to continue to keep it in</span> line with making sense, as far as I'm able to express myself through filler text.
 
@@ -87,20 +87,20 @@ going to continue to keep it in</span> line with making sense, as far as I'm abl
 actually endorse or believe. If that happens, I think I'll also release the
 "spoiler" (annotating the sections of this text that are generated) immediately,
 so that I don't accidentally say something like "I for one welcome our AI
-overlords".  Well,  <span class="generated">I am sure I will</span> As long as we as a species don't fail the exam.
+overlords". Well, <span class="generated">I am sure I will</span> As long as we as a species don't fail the exam.
 
 <span class="generated">As far as I'm concerned, I will continue to put together articles on</span>
 whatever interests me, to write code for problems I want solved, and to try to
 improve my habits.
 If the worldview and "values-view" and "lifestyle" that I want to implement
 sticks, <span class="generated">then the same can be said for every</span> positive change it's brought
-the past couple weeks.  <span class="generated">So, what's really causing this</span> to slip away slowly?
+the past couple weeks. <span class="generated">So, what's really causing this</span> to slip away slowly?
 Why have previous times when I held similar viewpoints slipped back into
 routine? Maybe it's just because it's been the default for so long for me to
-work  <span class="generated">through the things I like</span> Slowly,  <span class="generated">slowly</span> because of all the panic from ideas like "maybe I might have to leave work or start burning money instead of making it".
+work <span class="generated">through the things I like</span> Slowly, <span class="generated">slowly</span> because of all the panic from ideas like "maybe I might have to leave work or start burning money instead of making it".
 
 <span class="generated">And that will change with time</span> Or so would I hope. <span class="generated">Advertisements</span>
-Popular media.  <span class="generated">I will be keeping track</span> of all those attention-eaters. I don't want to have a week where all my energy goes into a black hole.
+Popular media. <span class="generated">I will be keeping track</span> of all those attention-eaters. I don't want to have a week where all my energy goes into a black hole.
 
 <span class="generated">I just want to keep going.</span> <span class="generated">I don't want to get bored.</span>
 Curiosity and learning things and solving problems for people is life.
@@ -117,10 +117,10 @@ bored. It's just a matter of how much I like it.</span> In the moment.
 <span class="generated">
  And for those of you out there who are interested in reading, please, like me, subscribe to my Facebook page and share your thoughts about the situation with me . (By email or to your friends , subscribe to my blog <a href="/">here</a>.) I will be taking the time and effort I have put into writing to make it easier to make things better for you.
 
- And for those of you who aren't interested in reading, please , like me, subscribe to my Facebook page and share your thoughts about the situation with me. (By email or to your friends, subscribe to my blog <a href="/">here</a>.) I will be taking the time and effort I have put into writing to make it easier to make things better for you.
+And for those of you who aren't interested in reading, please , like me, subscribe to my Facebook page and share your thoughts about the situation with me. (By email or to your friends, subscribe to my blog <a href="/">here</a>.) I will be taking the time and effort I have put into writing to make it easier to make things better for you.
 </span>
 
-So  <span class="generated"> I'm going to be publishing the article in the second week and I'll be
+So <span class="generated"> I'm going to be publishing the article in the second week and I'll be
 posting the article in the second week and I 'll be posting the article in the
 second week and I'll be posting the article in the second week and I</span> am
 <span class="generated">posting the article in the second week and I will be posting the</span> rest <span class="generated">of
@@ -132,6 +132,7 @@ available is to check out my Blog</span>
 I might be repeating the experiment with different language models, to see which ones can keep going to a higher density without devolving into meaninglessness.
 <span class="generated">But if you do it this way, and have more questions, I'll post it again, and I
 'll be posting it</span> guess in which week. From what I gather from this experiment, looks like I might not be 100% obsolete just yet. Walk on warm sands.
+
 </div>
 
 <button onclick="document.getElementById('playing-with-ai-toggle-highlight').classList.toggle('highlight-on'); return true;">Highlight generated text by AI</button>

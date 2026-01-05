@@ -58,7 +58,7 @@ I am sorry I am not yet strong enough to commit more.
 I hope to become stronger one day.
 
 We will fight. If you'd like to join us, we would be honored to fight by your
-side. We are called *[effective altruists](http://www.effectivealtruism.org/)*.
+side. We are called _[effective altruists](http://www.effectivealtruism.org/)_.
 Some of us fight diseases that kill in the developing world. Some of us fight
 to save animals. Some us fight to end death itself. All of us fight to remove
 suffering from the world.

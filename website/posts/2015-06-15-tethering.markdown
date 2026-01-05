@@ -27,7 +27,7 @@ between my Android version and the current one?
 By blindly probing and looking at `adb logcat`, I found the following
 interesting call IDs:
 
-* Numbers 4 and 5 seem to describe some aspects of the available mobile
+- Numbers 4 and 5 seem to describe some aspects of the available mobile
   networks.
   <pre>
   # service call connectivity 4
@@ -44,14 +44,14 @@ interesting call IDs:
     0x00000090: 00650074 006e0072 00740065 00000000 't.e.r.n.e.t.....')
   # (similar for 5)
   </pre>
-* 6 is apparently `setWifiEnabled`. Calling `service call connectivity 6
-  i32 1` calls `setWifiEnabled(true)`. Looks useful.
-* 9 is `stopUsingNetworkFeature`.
-* 10 is `requestRouteToHost`.
-* 13 is `getMobileDataEnabled`.
-* 14 is `setMobileDataEnabled`. Calling with `i32 0` turns off mobile data,
+- 6 is apparently `setWifiEnabled`. Calling `service call connectivity 6
+i32 1` calls `setWifiEnabled(true)`. Looks useful.
+- 9 is `stopUsingNetworkFeature`.
+- 10 is `requestRouteToHost`.
+- 13 is `getMobileDataEnabled`.
+- 14 is `setMobileDataEnabled`. Calling with `i32 0` turns off mobile data,
   `i32 1` turns mobile data on.
-* 15 starts tethering on a network interface. The name of the interface is
+- 15 starts tethering on a network interface. The name of the interface is
   passed as the first string argument.
 
 I aborted my search here, because I found what I came for:

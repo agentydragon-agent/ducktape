@@ -30,7 +30,7 @@ the snacking habits through which I balooned to this weight by eating just a
 Soylent packet a day. A Soylent packet is 2082 kcal and my basal metabolic
 rate is 2300 kcal. At this rate, I would get down to 78 kg in... 4.4 years :/
 (And that's not accounting for the fact that BMR decreases the with weight.
-But on the other hand, I am not *completely* sessile.)
+But on the other hand, I am not _completely_ sessile.)
 
 A goal like this needs some system for coming back to the drawing board every
 now and then, learning from which things work and which don't, safety nets for
@@ -67,8 +67,7 @@ of keystone habit which I have. Let this post be a commitment that I want to
 flesh this out. I'm setting up a weekly 2-hour goal in Google Calendar called
 "Systems Maintenance".
 
-What I want from the system
-===
+# What I want from the system
 
 I'll try to put into words what I want from this system.
 
@@ -83,48 +82,46 @@ If, on reflection, it turns out that a thing that I am doing because of the
 system is a thing I don't really want to be doing, then sometimes that will be
 a fault of the system for picking that thing - not of me for not doing it.
 
-The system is *not* a system for losing weight or for tracking work.
+The system is _not_ a system for losing weight or for tracking work.
 
-Some specific things that are bugging me at this time
-===
+# Some specific things that are bugging me at this time
 
-Here's a few candidates for things the system *might*, but also *might not* lead
+Here's a few candidates for things the system _might_, but also _might not_ lead
 to me making some progress on. Here, I am deliberately using non-commital
-language. I am not going to say that I *absolutely have to* do something. I have
+language. I am not going to say that I _absolutely have to_ do something. I have
 found that commitment-mechanism-bombs are sometimes self-blackmail and end up
 to me causing violence to myself.
 
 But there's a few ideas for things which often bug me. They do often bug me
-*now*, but that does not necessarily mean that dealing with them *directly on
-their own terms* is a good idea. Maybe some of them point at problems I actually
+_now_, but that does not necessarily mean that dealing with them _directly on
+their own terms_ is a good idea. Maybe some of them point at problems I actually
 on reflection want to address. Maybe some of them are distractions, to which the
 correct solution might be "just stop worrying about it" or "get some fancy
 antidepressant / do a mind hack to realize those things are not important".
 
-* Weight.
-* Unfinished master's thesis.
-* I want a "feeling that I'm home" - a feeling like "I am safe, I won't be hurt,
+- Weight.
+- Unfinished master's thesis.
+- I want a "feeling that I'm home" - a feeling like "I am safe, I won't be hurt,
   things are fine and not fragile, I don't have to try hard to fight off bad
   things". This one feels important.
-* More generally, long-term non-depressed mood.
-* Stress at work. "I have no idea what's going on higher-level. I am not in
+- More generally, long-term non-depressed mood.
+- Stress at work. "I have no idea what's going on higher-level. I am not in
   control. I feel like a small gear/pawn in a machine."
-* Feelings of being forced into things by myself.
-* On the other hand, there is a specific thing which I've felt the last few days
+- Feelings of being forced into things by myself.
+- On the other hand, there is a specific thing which I've felt the last few days
   (though I've not always been feeling all that well), and which is associated
   with happiness and also productivity: something like "I can do this", "things
   are actually okay", "I am doing a good job". "I have committed to a thing
   and look, I am actually making progress on it."
 
-There's also a few aspirational things in mind, which *might* be candidate
-goals, but *might* also be distractions which should be abandoned or shelved.
+There's also a few aspirational things in mind, which _might_ be candidate
+goals, but _might_ also be distractions which should be abandoned or shelved.
 Actually, now that I think about it, they're mostly "maybe I want to work in AI
 safety research" and "maybe I want to do some serious EA-planning". Right now,
 I'm mostly feeling like setting those aside and focusing on getting myself in
 order and feeling good without trying to string on specific goals like that.
 
-Sidenote: I don't think I want to be religious in a certain sense
-====
+# Sidenote: I don't think I want to be religious in a certain sense
 
 Relatedly, I've gotten somehow less certain about EA stuff - in particular, the
 role that I want it to play in my life. I have been a religious effective
@@ -144,18 +141,18 @@ which want something else.
 
 Say that you identify as an EA and a rationalist and to get social points, the
 right thing to say is "I want to work on AI safety in the Bay Area".
-That's called a *load-bearing belief* by analogy with a load-bearing wall: if
+That's called a _load-bearing belief_ by analogy with a load-bearing wall: if
 it comes down, you can lose a lot.
 
 And earlier this year, largely due to talking with a person highly critical of
 rationality/EA, I have become worried of the fact that I apparently have
 load-bearing beliefs about EA and rationality. Note that a belief being
-load-bearing does not imply that it's *false*. (Though after reading [The
+load-bearing does not imply that it's _false_. (Though after reading [The
 Elephant in the Brain](http://elephantinthebrain.com/), I wouldn't be surprised
 if there were some argument for why group-cohesion-beliefs would tend to be
 outlandish, honest-costly-signalling-something.)
-So I have become concerned that *I might be acting out some beliefs because
-they're load-bearing for my need for community and acceptance*.
+So I have become concerned that _I might be acting out some beliefs because
+they're load-bearing for my need for community and acceptance_.
 I think what's warranted is a gentle de-identification from the community,
 by mixing with more people who are not in it and diversifying, and a kind of
 retracing of my steps in how I came to do EA things.
@@ -163,8 +160,8 @@ retracing of my steps in how I came to do EA things.
 If I remember correctly, they came mostly from moments when I expanded my
 empathy over the suffering of all things, and wanted to make things okay,
 and I expect I will still prefer to try to make the world better on
-reexamination. But a sort of scary thing is that I think it would feel *bad*
-if I came to discover I don't *really* care about making the world better.
+reexamination. But a sort of scary thing is that I think it would feel _bad_
+if I came to discover I don't _really_ care about making the world better.
 
 On the other hand, the general form of this reasoning is: "Huh. Maybe I don't
 actually want X. And the thought 'Maybe I don't actually want X' makes me feel
@@ -178,15 +175,14 @@ writing-it-out, I don't feel the need for doing anything in particular about it.
 
 Back to the system.
 
-Broad failure modes I want the system to avoid
-===
+# Broad failure modes I want the system to avoid
 
 I know about at least two failure modes I want to avoid.
 
 First, I want to avoid the failure mode where some bump makes the system fall
 apart.
 
-That is, I want the system to fail gracefully and recover. If part of me *wants*
+That is, I want the system to fail gracefully and recover. If part of me _wants_
 the system to fail for some reason, the means I should bring things into harmony
 not by forcing the part to behave, but by accomodating the system to meet the
 needs of all relevant parts.
@@ -202,11 +198,9 @@ I want to put the system in place so I can be awesome.
 If I am doing self-improvement-type things just because I would feel bad if I
 would skip them, I have fallen into a trap.
 
-Specific tools that could figure in the system and their failure modes
-===
+# Specific tools that could figure in the system and their failure modes
 
-Every TODO system that grows with time ends in bankrupcy
-====
+# Every TODO system that grows with time ends in bankrupcy
 
 Something that I guess maybe?? Miranda Dixon-Luinenburg might have remarked on
 in a document that I have no idea how to Google now (a document discussing
@@ -215,7 +209,7 @@ everything which looks like a TODO list or inbox is doomed to fail.
 My Google Inbox, my Google Keep and all the other places which I have used to
 try to keep track of tactical concerns have over time become full of items which
 I don't want to address immediately, but also don't want to shelve indefinitely.
-***The system's working memory has to stay constant-size over time.***
+**_The system's working memory has to stay constant-size over time._**
 Not keeping the system's working memory constant-size would lead to the second
 failure mode, in which obsolete tactical concerns end up dominating, and the
 system becomes a bother to keep running.
@@ -224,25 +218,24 @@ over from scratch.
 
 The thoughts which come to mind upon seeing this are:
 
-* Zero is the limit of constant-size working memory. Perhaps just regularly
+- Zero is the limit of constant-size working memory. Perhaps just regularly
   reflecting would be better than trying to keep explicit track of all tactical
   concerns. Maybe my brain will automatically garbage-collect.
-* On the other hand, the principle of Getting Things Done is that the brain does
-  *not* automatically garbage-collect, and that putting "okay some day I should
+- On the other hand, the principle of Getting Things Done is that the brain does
+  _not_ automatically garbage-collect, and that putting "okay some day I should
   learn crotcheting" into a TODO list lets the brain be like "okay, now it's in
   the TODO list and it won't get lost, so I can stop thinking about it randomly
   at 2 in the morning".
-* A thing which could be good would be explicitly keeping just a few "live
+- A thing which could be good would be explicitly keeping just a few "live
   tactical concerns", and keeping everything else in non-working memory.
   I'm thinking of a DAG growing to the right in time, and keeping a few of the
   leaf nodes as "working on this".
   A thing I tried before my laptop went "lol I won't turn on now" was storing
   my collection of personal notes in
   [a git repo](https://github.com/agentydragon/public-notes), so I could even
-  safely *delete* from them without losing the things forever.
+  safely _delete_ from them without losing the things forever.
 
-Writing things down is useful
-====
+# Writing things down is useful
 
 Yep. It lets reasoning be explicit. When I write down my thoughts, I'm more
 likely to notice thinking going askew.
@@ -251,8 +244,7 @@ Publishing things for other people to look at feels nice and works as a
 commitment mechanism slash reward signal. On the other hand, things I publish
 go through my social filter. Probably some balance to strike here.
 
-Too much automation is bad, but I also want the system be my own
-====
+# Too much automation is bad, but I also want the system be my own
 
 As I mentioned, I used to have a whole scaffolding of scripts on my old laptop
 which would do things like plot my net worth over time, try to mount and unmount
@@ -273,8 +265,7 @@ personal idea of ergonomy.
 Also: I'm a programmer and I love programming a nice system. That's both
 a blessing and a trap.
 
-Taking up too much time is bad
-====
+# Taking up too much time is bad
 
 The system I had in place some time after CFAR accumulated more and more small
 things, which I would check off every day. The final version was something like:
@@ -292,20 +283,19 @@ A way I could have avoided this would be keeping the "mandatory" part
 constant-time. And also having a looser schedule, in which I could easily spend,
 say, a whole evening reflecting and improving the routine (as opposed to having
 very little time and so not feeling like I have the time for meta-stuff, so just
-chugging along the overly long routine). And by ***coming into peace with
+chugging along the overly long routine). And by **_coming into peace with
 the fact that there are 24 hours in a day, and that if my self-improvement
-routine takes 2 hours, those are 2 hours less of sleep or fun or whatever***.
+routine takes 2 hours, those are 2 hours less of sleep or fun or whatever_**.
 
-That feels important. ***Time is a scarce resource.***
+That feels important. **_Time is a scarce resource._**
 
-It has to be okay to stop doing some things
-====
+# It has to be okay to stop doing some things
 
 If I have decided at some point that I want to, say, write a diary entry every
-day and I end up not doing that, that ***does not mean that I have failed***.
+day and I end up not doing that, that **_does not mean that I have failed_**.
 If I today decide that something is important, but tomorrow I no longer think it
-is, that's *okay*. I *have the right to revise what is important* - in fact,
-revisions are *good* and *welcome*.
+is, that's _okay_. I _have the right to revise what is important_ - in fact,
+revisions are _good_ and _welcome_.
 
 At one point, I felt that I could change a bunch of bad habits by doing TAPs.
 But later, the TAP practice routine became very long, but I felt bad about
@@ -316,32 +306,30 @@ I deserve rest."
 
 Tactics are contingent on being useful.
 
-Summary
-===
+# Summary
 
-* Need a new system
-  * System to do good things
-  * System to keep me doing well and feeling well
-  * System to enact long-term plans
-* Want system to recover from bumps in motivation/mood
-* Specific possible goals:
-  * Weight
-  * Unfinished master's thesis
-  * Internal conflicts
-  * Feeling good
-* Known antipatterns:
-  * System becomes a boring chore
-  * System bloats over reasonable size
-  * System stops tracking what's the thing to be doing
-  * Overly strict commitments
-* Ideas to leverage:
-  * Writing
-  * Automation, but not too much of it
-  * Time is a scarce resource
-  * Changes are good
+- Need a new system
+  - System to do good things
+  - System to keep me doing well and feeling well
+  - System to enact long-term plans
+- Want system to recover from bumps in motivation/mood
+- Specific possible goals:
+  - Weight
+  - Unfinished master's thesis
+  - Internal conflicts
+  - Feeling good
+- Known antipatterns:
+  - System becomes a boring chore
+  - System bloats over reasonable size
+  - System stops tracking what's the thing to be doing
+  - Overly strict commitments
+- Ideas to leverage:
+  - Writing
+  - Automation, but not too much of it
+  - Time is a scarce resource
+  - Changes are good
 
-Wall of text ends here
-===
+# Wall of text ends here
 
 I have an idea of how could a software implementation of a part of the system
 look like for me - something like a versioned directed graph where nodes would

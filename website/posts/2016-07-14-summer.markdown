@@ -4,8 +4,7 @@ title: Summer
 
 So, what have I been doing since last time?
 
-Effective altruism in Czech Republic
-===
+# Effective altruism in Czech Republic
 
 I decided I want more effective altruism in general, and also in Czech Republic
 in particular.
@@ -40,12 +39,11 @@ Czech, talking to Czech influencers and media.
 We are working on establishing a small non-profit.
 We currently just have a bare-bones site at [efektivni-altruismus.cz][eacz].
 
-Psych
-===
+# Psych
 
 I talked with my psychologist a few days after publishing [Recent icky personal stuff][rips].
 The session was basically just my huge mind-dump, maybe just a bit more verbose
-than that public post.  There was relatively little back-and-forth - I mostly
+than that public post. There was relatively little back-and-forth - I mostly
 gave a long, prepared spiel and got just a few questions. I was a bit surprised
 by what in particular interested my psychologist: my ideas about polyamory and
 my experiences with recreational drugs. Discussing both made me a bit anxious.
@@ -54,7 +52,7 @@ personal stuff on strangers.
 
 The next step is a personality test, which I'm taking a few days from now.
 It should take about 4 hours. I was wondering what's taking so long to test,
-and there's an interesting reason the test is so long: it's *supposed* to be
+and there's an interesting reason the test is so long: it's _supposed_ to be
 tedious, because when you're tired, your answers are less biased (e.g., you put
 up less effort to look like a nice person).
 
@@ -63,8 +61,7 @@ because of my own anxieties, because I worry about everything, because
 sometimes I feel I have no idea what I'm doing. Mostly around personal
 relationships. Working on it.
 
-Actual work
-===
+# Actual work
 
 I apologized to my thesis advisor for not doing any work yet, explained I have
 been depressed, and promised to send him a draft text for my thesis assignment
@@ -82,8 +79,7 @@ until February 2017.
 Many questions I need to answer, many things I want to do, many tradeoffs I'd
 rather not have to decide.
 
-Rome
-===
+# Rome
 
 I was in Rome for a week. I'm not usually one to highly value museums and
 historical buildings, but I really enjoyed Rome's antiquities. People in Rome
@@ -125,8 +121,7 @@ went and had it repaired at his own expense</i>.
 
 History is not finished. We're writing it every day with our actions.
 
-Various
-===
+# Various
 
 I'm slacking off a bit with running and jiu-jitsu. Win: I'll be running my
 first 10k in September. Fail: I mostly stopped going to jiu-jitsu the last

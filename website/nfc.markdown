@@ -2,7 +2,6 @@
 title: Congratulations for scanning my NFC tag!
 ---
 
-
 Hi!
 
 <!-- TODO: float right -->
@@ -16,11 +15,12 @@ Yay!
 If you're a furry, you probably want my Telegram - [@agentydragon][telegram] :)
 
 Other contacts:
+
 <!-- TODO: unify with about.markdown? -->
 
-* email: `agentydragon@gmail.com`
-* Matrix: [@agentydragon:matrix.org][matrix]
-* Mastodon: [@agentydragon@mastodon.social][mastodon]
+- email: `agentydragon@gmail.com`
+- Matrix: [@agentydragon:matrix.org][matrix]
+- Mastodon: [@agentydragon@mastodon.social][mastodon]
 
 And there's some more in the [About page][about].
 
