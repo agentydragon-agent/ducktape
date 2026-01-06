@@ -25,19 +25,20 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 ### Active Development
 
-| Directory       | Purpose                          | Details                      |
-| --------------- | -------------------------------- | ---------------------------- |
-| `adgn/`         | LLM agent framework              | See `adgn/AGENTS.md`         |
-| `agent_server/` | FastAPI backend, runtime, policy | See `agent_server/AGENTS.md` |
-| `mcp_infra/`    | MCP compositor and utilities     | See `mcp_infra/AGENTS.md`    |
-| `agent_pkg/`    | Agent package infrastructure     | See `agent_pkg/AGENTS.md`    |
-| `tana/`         | Tana export toolkit              | See `tana/AGENTS.md`         |
-| `wt/`           | Worktree management              | See `wt/AGENTS.md`           |
-| `gatelet/`      | Gateway/tunneling                | See `gatelet/AGENTS.md`      |
-| `ansible/`      | System configuration             | See `ansible/AGENTS.md`      |
-| `docker/`       | Container images                 | See `docker/AGENTS.md`       |
-| `dotfiles/`     | Shell configs, scripts           | See `dotfiles/AGENTS.md`     |
-| `props/`        | Properties/specimens             | See `props/AGENTS.md`        |
+| Directory       | Purpose                          |
+| --------------- | -------------------------------- |
+| `adgn/`         | LLM agent framework              |
+| `agent_server/` | FastAPI backend, runtime, policy |
+| `cluster/`      | k8s cluster                      |
+| `mcp_infra/`    | MCP compositor and utilities     |
+| `agent_pkg/`    | Agent package infrastructure     |
+| `tana/`         | Tana export toolkit              |
+| `wt/`           | Worktree management              |
+| `gatelet/`      | Gateway/tunneling                |
+| `ansible/`      | System configuration             |
+| `docker/`       | Container images                 |
+| `dotfiles/`     | Shell configs, scripts           |
+| `props/`        | Properties/specimens             |
 
 ### Less Active
 
@@ -47,7 +48,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 | `trilium/`         | Trilium Notes extensions  |
 | `inventree_utils/` | InventTree plugins        |
 | `website/`         | Personal website (Hakyll) |
-| `k8s/`             | k3s cluster configs       |
+| `k8s-old/`         | legacy k3s cluster        |
 
 ## Dotfiles and Shell Configuration
 
@@ -56,7 +57,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 ### What Nix Manages
 
 - **Shell configs**: `programs.bash`, `programs.zsh`, `programs.atuin`, `programs.direnv`, `programs.zoxide`, `programs.eza`
-- **Shell init scripts**: `nix/home/shell/*.sh` (bash-init.sh, zsh-init.sh, common-init.sh)
+- **Shell init scripts**: `nix/home/shell/*.sh` (bash-init.sh, zsh-init.zsh, common-init.sh)
 - **Aliases**: `home.shellAliases`
 - **Environment variables**: `home.sessionVariables`
 - **Powerlevel10k**: `nix/home/p10k.zsh` → `~/.p10k.zsh`
@@ -98,10 +99,10 @@ See: @ansible/README.md
 
 #### Key Roles
 
-- **System Base**: `cli/`, `gui/`, `system/`, `user/`
-- **Development**: `golang/`, `dev-env/`, `dev-clojure/`, `dev-ml/`
-- **Services**: `webhook_inbox/`, `trilium_server/`, `headscale-server/`, `syncthing-server/`
-- **Networking**: `tailscale-client/`
+- **System Base**: `cli/`, `gui/`, `common/`
+- **Development**: `golang/`, `dev_env/`, `dev_clojure/`
+- **Services**: `trilium_server/`, `headscale_server/`, `syncthing_server/`
+- **Networking**: `tailscale_client/`
 
 ### Network Infrastructure
 
@@ -178,7 +179,7 @@ bazel build //adgn:adgn
 ```bash
 bazel build //finance/worthy:rust_main
 bazel test //finance/worthy/...
-bazel test --config=clippy //finance/...  # Rust linting
+bazel build --config=rust-check //finance/...  # Rust linting
 ```
 
 **Adding dependencies:**

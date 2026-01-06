@@ -6,7 +6,7 @@
 
 See @../AGENTS.md for standard Bazel workflow (`bazel build --config=check //...`, `bazel test //...`).
 
-Requirements: Bazel (via bazelisk), Python **3.12**+. `gitstatusd` must be installed separately for integration tests.
+Requirements: Bazel (via bazelisk), Python **3.13**+. `gitstatusd` must be installed separately for integration tests.
 
 ### Extra dependencies / binaries
 

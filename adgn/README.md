@@ -31,7 +31,7 @@ Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across
 - Run all tests (tests live under `adgn/tests`):
   - Inside `adgn/`.: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
-- Single test file/case: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
+- Single test file/case: `direnv exec adgn pytest tests/util/test_unified_patch.py`
 - **Debugging hangs/timeouts**: Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Pre-commit (preferred): `pre-commit install`, `pre-commit run -a`
