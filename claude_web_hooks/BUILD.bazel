@@ -1,0 +1,38 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "claude_web_hooks",
+    srcs = glob(["src/claude_web_hooks/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    # No external deps - this runs before package installation in session hooks
+)
+
+py_test(
+    name = "test_claude_web_hooks",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_proxy.py",
+    deps = [
+        ":claude_web_hooks",
+        "@pypi//pytest",
+    ],
+)
+
+# Verifies that claude_web_hooks has no external (@pypi//) dependencies.
+# This package runs before pip install in session hooks, so it must be self-contained.
+# NOTE: This test uses `bazel query` which cannot run inside the Bazel sandbox.
+# Run manually: bazel run //claude_web_hooks:no_pypi_deps_test
+sh_test(
+    name = "no_pypi_deps_test",
+    srcs = ["tests/no_pypi_deps_test.sh"],
+    data = [":claude_web_hooks"],
+    tags = ["manual"],  # Can't run in sandbox - needs bazel query
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":claude_web_hooks"],
+)

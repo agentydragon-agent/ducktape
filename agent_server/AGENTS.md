@@ -33,10 +33,4 @@ managed via the approval policy server.
 
 ## Development
 
-Part of the ducktape uv workspace:
-
-```bash
-uv pip install -e .
-```
-
-See root `AGENTS.md` for workspace setup.
+Part of the ducktape Bazel workspace. See root `AGENTS.md` for build instructions.

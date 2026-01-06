@@ -1,0 +1,43 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "claude_hooks",
+    srcs = glob(["claude_hooks/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pre_commit",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+        "@pypi//typing_extensions",
+    ],
+)
+
+py_binary(
+    name = "claude-autofixer",
+    srcs = ["claude_hooks/precommit_autofix.py"],
+    main = "claude_hooks/precommit_autofix.py",
+    deps = [":claude_hooks"],
+)
+
+py_test(
+    name = "test_claude_hooks",
+    srcs = glob(["tests/**/*.py"]),
+    imports = ["."],
+    main = "tests/conftest.py",
+    deps = [
+        ":claude_hooks",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":claude_hooks"],
+)

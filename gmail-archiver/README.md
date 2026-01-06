@@ -14,15 +14,11 @@ This tool:
 
 ## Setup
 
-### 1. Install dependencies
+### 1. Build with Bazel
 
 ```bash
-# Uses direnv to automatically activate the virtual environment
-direnv allow
-uv pip install -e .
+bazel build //gmail-archiver:gmail_archiver
 ```
-
-After installation, the `gmail-archiver` command will be available in your PATH (via direnv).
 
 ### 2. Gmail API credentials
 
@@ -133,13 +129,7 @@ gmail-archiver filters apply filters.yaml --label "receipts/anthropic"
 
 ## Development
 
-The project uses direnv to automatically activate the virtual environment when you `cd` into the directory.
-
-### Run tests
-
-```bash
-pytest
-```
+See root `AGENTS.md` for Bazel basics (build, test, lint, adding dependencies).
 
 ## Architecture
 

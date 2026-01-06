@@ -4,26 +4,18 @@ import json
 import uuid
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from claude_hooks.inputs import PostToolInput
 
 
 def load_test_json(tool_name: str, scenario: str) -> dict[str, Any]:
-    """Load test JSON data from testdata directory.
-
-    Args:
-        tool_name: Tool name (e.g. 'Bash', 'Read', 'Glob')
-        scenario: Scenario name (e.g. 'command_only', 'pattern_only')
-
-    Returns:
-        Parsed JSON dictionary
-    """
+    """Load test JSON data from testdata directory."""
     try:
         testdata_path = resources.files("claude_hooks") / "testdata"
         json_path = testdata_path / "hook_inputs" / "PostToolUse" / tool_name / f"{scenario}.json"
         json_content = json_path.read_text()
-        return json.loads(json_content)
+        return cast(dict[str, Any], json.loads(json_content))
     except Exception as e:
         raise FileNotFoundError(f"Could not load test data for {tool_name}/{scenario}: {e}") from e
 

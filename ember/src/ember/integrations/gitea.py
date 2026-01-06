@@ -24,6 +24,7 @@ class GiteaRepository(BaseModel):
     def parse(cls, value: str | GiteaRepository) -> GiteaRepository:
         if isinstance(value, cls):
             return value
+        assert isinstance(value, str)  # Type narrowing for mypy
         if "/" not in value:
             raise ValueError("Gitea repository must be in 'owner/name' format")
         owner, name = value.split("/", 1)

@@ -148,7 +148,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 
 **Template structure:**
 
-```markdown
+````markdown
 # <Title Describing Session Work>
 
 **Session ID:** <uuid>
@@ -200,13 +200,16 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 ## Context for Successor Agents
 
 ### Project Conventions
+
 - See: `@AGENTS.md` / `@CLAUDE.md`
 - Style: <brief pointer to style guide if relevant>
 
 ### Build/Test
+
 ```bash
 <Commands to verify work>
 ```
+````
 
 ### Key Decisions/Constraints
 
@@ -223,7 +226,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 **Tool Calls:** <count from session log>
 **Modified Files:** <list from session log>
 
-```
+````
 
 **Content guidelines:**
 - Be concise but complete
@@ -284,4 +287,4 @@ grep '"type":"tool_use"' "$SESSION_FILE" | \
 echo "Total entries: $(wc -l < "$SESSION_FILE")"
 echo "Tool uses: $(grep -c '"type":"tool_use"' "$SESSION_FILE")"
 echo "User messages: $(grep -c '"type":"user"' "$SESSION_FILE")"
-```
+````

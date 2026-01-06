@@ -1,12 +1,16 @@
 """Test multiline predicate evaluation."""
 
 from datetime import datetime, timedelta
+from uuid import UUID
 
 import pytest
 
 from ducktape_llm_common.claude_linter_v2.access.context import PredicateContext
 from ducktape_llm_common.claude_linter_v2.access.evaluator import PredicateEvaluator
 from ducktape_llm_common.claude_linter_v2.types import SessionID
+
+# Test session ID using valid UUID format
+TEST_SESSION_ID = SessionID(UUID("00000000-0000-0000-0000-000000000001"))
 
 
 class TestMultilinePredicates:
@@ -23,7 +27,7 @@ class TestMultilinePredicates:
         return PredicateContext(
             tool="Bash",
             args={"file_path": "/home/user/test.py", "content": "print('hello')", "command": "grep -r pattern"},
-            session_id=SessionID("test-session"),
+            session_id=TEST_SESSION_ID,
             timestamp=datetime.now(),
         )
 
@@ -39,7 +43,7 @@ def check_bash(ctx):
         context_edit = PredicateContext(
             tool="Edit",
             args={"file_path": "/home/user/test.py", "content": "print('hello')", "command": "grep -r pattern"},
-            session_id=SessionID("test-session"),
+            session_id=TEST_SESSION_ID,
             timestamp=datetime.now(),
         )
         assert evaluator.evaluate(predicate, context_edit) is False
@@ -91,23 +95,20 @@ def is_safe_pipeline(ctx):
         context_safe = PredicateContext(
             tool="Bash",
             args={"command": "grep -r pattern | wc -l"},
-            session_id=SessionID("test-session"),
+            session_id=TEST_SESSION_ID,
             timestamp=datetime.now(),
         )
         assert evaluator.evaluate(predicate, context_safe) is True
 
         # Unsafe command
         context_unsafe = PredicateContext(
-            tool="Bash", args={"command": "rm -rf /"}, session_id=SessionID("test-session"), timestamp=datetime.now()
+            tool="Bash", args={"command": "rm -rf /"}, session_id=TEST_SESSION_ID, timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate, context_unsafe) is False
 
         # Unknown flag
         context_bad_flag = PredicateContext(
-            tool="Bash",
-            args={"command": "grep -X pattern"},
-            session_id=SessionID("test-session"),
-            timestamp=datetime.now(),
+            tool="Bash", args={"command": "grep -X pattern"}, session_id=TEST_SESSION_ID, timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate, context_bad_flag) is False
 
@@ -122,17 +123,14 @@ def check_broker_limits(ctx):
     if not ctx.tool.startswith("mcp_broker_"):
         return True  # Not a broker tool
 
-    # Parse the tool input for trade parameters
-    tool_input = getattr(ctx, "tool_input", {})
-
     # Check account value limit
-    if "amount" in tool_input:
-        if tool_input["amount"] > MAX_ACCOUNT_VALUE:
+    if "amount" in ctx.args:
+        if ctx.args["amount"] > MAX_ACCOUNT_VALUE:
             return False
 
     # Check margin limit
-    if "margin_multiplier" in tool_input:
-        if tool_input["margin_multiplier"] > MAX_MARGIN:
+    if "margin_multiplier" in ctx.args:
+        if ctx.args["margin_multiplier"] > MAX_MARGIN:
             return False
 
     # Check for forbidden operations
@@ -144,32 +142,38 @@ def check_broker_limits(ctx):
 """
         # Create context for broker MCP
         broker_context = PredicateContext(
-            tool="mcp_broker_place_order", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
+            tool="mcp_broker_place_order",
+            args={"amount": 100, "margin_multiplier": 2},
+            session_id=TEST_SESSION_ID,
+            timestamp=datetime.now(),
         )
-
-        # Add tool_input to context (simulating MCP tool input)
-        broker_context.tool_input = {"amount": 100, "margin_multiplier": 2}
         assert evaluator.evaluate(predicate, broker_context) is True
 
         # Exceed amount limit
         broker_context_high_amount = PredicateContext(
-            tool="mcp_broker_place_order", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
+            tool="mcp_broker_place_order",
+            args={"amount": 1000, "margin_multiplier": 2},
+            session_id=TEST_SESSION_ID,
+            timestamp=datetime.now(),
         )
-        broker_context_high_amount.tool_input = {"amount": 1000, "margin_multiplier": 2}
         assert evaluator.evaluate(predicate, broker_context_high_amount) is False
 
         # Exceed margin limit
         broker_context_high_margin = PredicateContext(
-            tool="mcp_broker_place_order", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
+            tool="mcp_broker_place_order",
+            args={"amount": 100, "margin_multiplier": 10},
+            session_id=TEST_SESSION_ID,
+            timestamp=datetime.now(),
         )
-        broker_context_high_margin.tool_input = {"amount": 100, "margin_multiplier": 10}
         assert evaluator.evaluate(predicate, broker_context_high_margin) is False
 
         # Forbidden operation
         broker_context_forbidden = PredicateContext(
-            tool="mcp_broker_withdraw", args={}, session_id=SessionID("broker-session"), timestamp=datetime.now()
+            tool="mcp_broker_withdraw",
+            args={"amount": 100, "margin_multiplier": 2},
+            session_id=TEST_SESSION_ID,
+            timestamp=datetime.now(),
         )
-        broker_context_forbidden.tool_input = {"amount": 100, "margin_multiplier": 2}
         assert evaluator.evaluate(predicate, broker_context_forbidden) is False
 
     def test_result_variable_style(self, evaluator, context):
@@ -188,16 +192,13 @@ def check_test_file(ctx):
         context_edit_test = PredicateContext(
             tool="Edit",
             args={"file_path": "/home/user/test_foo.py"},
-            session_id=SessionID("test-session"),
+            session_id=TEST_SESSION_ID,
             timestamp=datetime.now(),
         )
         assert evaluator.evaluate(predicate, context_edit_test) is True
 
         context_edit_non_test = PredicateContext(
-            tool="Edit",
-            args={"file_path": "/home/user/foo.py"},
-            session_id=SessionID("test-session"),
-            timestamp=datetime.now(),
+            tool="Edit", args={"file_path": "/home/user/foo.py"}, session_id=TEST_SESSION_ID, timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate, context_edit_non_test) is False
 
@@ -216,7 +217,7 @@ def check_recent_activity(ctx):
 """
         # Recent timestamp
         context_recent = PredicateContext(
-            tool="Bash", args={"command": "test"}, session_id=SessionID("test-session"), timestamp=datetime.now()
+            tool="Bash", args={"command": "test"}, session_id=TEST_SESSION_ID, timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate, context_recent) is True
 
@@ -224,7 +225,7 @@ def check_recent_activity(ctx):
         context_old = PredicateContext(
             tool="Bash",
             args={"command": "test"},
-            session_id=SessionID("test-session"),
+            session_id=TEST_SESSION_ID,
             timestamp=datetime.now() - timedelta(hours=2),
         )
         assert evaluator.evaluate(predicate, context_old) is False
@@ -272,6 +273,6 @@ def safe_git_commands(ctx):
 
         # Test with git command
         context_git = PredicateContext(
-            tool="Bash", args={"command": "git status"}, session_id=SessionID("test-session"), timestamp=datetime.now()
+            tool="Bash", args={"command": "git status"}, session_id=TEST_SESSION_ID, timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate_git, context_git) is True

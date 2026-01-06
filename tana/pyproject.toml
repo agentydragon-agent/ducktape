@@ -57,9 +57,3 @@ addopts = [
   "--disable-warnings",
 ]
 testpaths = ["tests"]
-
-
-[tool.mypy]
-packages = ["tana"]
-python_version = "3.11"
-ignore_missing_imports = true

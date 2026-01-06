@@ -5,10 +5,11 @@ from collections import defaultdict
 
 import pint
 from inventree.api import InvenTreeAPI
-from inventree.part import Parameter, ParameterTemplate, Part as InvPart
+from inventree.base import Parameter, ParameterTemplate
+from inventree.part import Part as InvPart
 from inventree.stock import StockItem
 from samplebooks_parts_data import BasePart, Resistor, parts
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 # ---------- Setup / config ----------
 
@@ -249,8 +250,8 @@ def part_matches_in_db(
         return True
 
     print(f"Part '{invpart.name}' mismatch details:")
-    for diff in differences:
-        print(f"  - {diff}")
+    for difference in differences:
+        print(f"  - {difference}")
     return False
 
 

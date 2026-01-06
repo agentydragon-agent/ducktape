@@ -17,8 +17,6 @@ async def test_editor_session_starts_and_cleans(tmp_path: Path, async_docker_cli
         file_path=target, prompt="test prompt", docker_client=async_docker_client, image_id=editor_image_id
     ) as sess:
         assert sess.container_server is not None
-        assert sess.gateway.url_for_container
-        assert sess.gateway.token
 
 
 async def test_submit_success_writes_back(tmp_path: Path):

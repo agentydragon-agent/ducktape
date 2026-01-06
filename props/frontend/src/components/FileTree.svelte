@@ -12,7 +12,7 @@
 
   let { nodes, onFileClick, selectedPath }: Props = $props();
 
-  let expanded = new SvelteSet<string>();
+  let expanded = $state(new SvelteSet<string>());
 
   function toggleExpand(path: string) {
     const newSet = new SvelteSet(expanded);

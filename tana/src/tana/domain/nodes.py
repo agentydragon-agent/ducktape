@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from tana.domain.constants import LANGUAGE_KEY_ID
 from tana.domain.types import NodeId
+
+if TYPE_CHECKING:
+    from tana.graph.workspace import TanaGraph
 
 
 class Props(BaseModel):
@@ -51,12 +54,12 @@ class BaseNode(BaseModel):
     modified_ts: list[int] | None = Field(alias="modifiedTs", default=None)
     touch_counts: list[int] | None = Field(alias="touchCounts", default=None)
     association_map: Mapping[NodeId, NodeId] | None = Field(alias="associationMap", default=None)
-    _graph: Any | None = None  # Populated by TanaGraph
+    _graph: TanaGraph | None = PrivateAttr(default=None)
 
     model_config = ConfigDict(extra="allow", frozen=True, arbitrary_types_allowed=True)
 
     @property
-    def name(self) -> str | None:  # type: ignore[override]  # Narrows return type from Pydantic's BaseModel.name (ModelPrivateAttr)
+    def name(self) -> str | None:
         return self.props.name
 
     @property

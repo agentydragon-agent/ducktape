@@ -48,11 +48,11 @@
   let events: EventInfo[] = $state([]);
   let loading = $state(true);
   let pollInterval: ReturnType<typeof setInterval> | null = null;
-  let expandedOutputs = new SvelteSet<string>();
+  let expandedOutputs = $state(new SvelteSet<string>());
 
   // Critique viewer state
   let snapshotDetail: SnapshotDetailResponse | null = $state(null);
-  let fileContents = new SvelteMap<string, FileContentResponse>();
+  let fileContents = $state(new SvelteMap<string, FileContentResponse>());
   let loadingSnapshot = $state(false);
 
   function toggleOutputExpanded(callId: string) {

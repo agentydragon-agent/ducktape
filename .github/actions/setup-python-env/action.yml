@@ -1,5 +1,5 @@
 name: "Setup Python Environment"
-description: "Set up Python 3.12"
+description: "Set up Python 3.13"
 
 runs:
   using: composite
@@ -7,4 +7,4 @@ runs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.12"
+        python-version: "3.13"

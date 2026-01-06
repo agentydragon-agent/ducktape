@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
+  import { resolve } from '$lib/router';
 
   // Link component for critique issue IDs
   // Links to run detail page with anchor to critique issue

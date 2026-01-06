@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 import traceback
 
-from ipykernel.kernelapp import launch_new_instance  # type: ignore
+from ipykernel.kernelapp import launch_new_instance
 
 from .kernel_shim import log  # reuse shared logging helper
 

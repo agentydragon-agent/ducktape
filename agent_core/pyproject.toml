@@ -3,10 +3,8 @@ name = "agent-core"
 version = "0.1.0"
 description = "Core agent loop machinery for LLM agents with MCP tool wiring"
 requires-python = ">=3.13"
+# Local workspace deps (openai-utils, agent-pkg-host, mcp-infra) handled by Bazel deps
 dependencies = [
-    "openai-utils",
-    "agent-pkg-host",
-    "mcp-infra",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",
@@ -17,11 +15,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# NOTE: agent-core-testing, mcp-infra handled by Bazel deps
 testing = [
-    "agent-core-testing",
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
-    "mcp-infra",
 ]
 dev = [
     "agent-core[testing]",
@@ -37,12 +34,6 @@ packages = ["src/agent_core"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/agent_core/compaction_prompt.md" = "agent_core/compaction_prompt.md"
 
-[tool.uv.sources]
-openai-utils = { workspace = true }
-agent-pkg-host = { workspace = true }
-agent-core-testing = { workspace = true }
-mcp-infra = { workspace = true }
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -53,8 +44,3 @@ markers = [
     "live_openai_api: tests requiring OPENAI_API_KEY",
     "live_anthropic_api: tests requiring ANTHROPIC_API_KEY",
 ]
-
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-check_untyped_defs = true

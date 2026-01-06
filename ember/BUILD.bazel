@@ -1,0 +1,108 @@
+"""Ember agent package."""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files([
+    "devenv.nix",
+    "pyproject.toml",
+])
+
+py_library(
+    name = "ember",
+    srcs = glob(["src/ember/**/*.py"]),
+    data = glob([
+        "src/ember/**/*.md",
+        "src/ember/**/*.j2",
+        "src/ember/resources/**/*",
+    ]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//ipykernel",
+        "@pypi//ipython",
+        "@pypi//jinja2",
+        "@pypi//jupyter_client",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//matrix_nio",
+        "@pypi//mautrix",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//requests",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "emberd",
+    srcs = ["src/ember/__main__.py"],
+    main = "src/ember/__main__.py",
+    deps = [":ember"],
+)
+
+# TODO: ember-eval target disabled - src/ember/evals/runner.py does not exist
+# py_binary(
+#     name = "ember-eval",
+#     srcs = ["src/ember/evals/runner.py"],
+#     main = "src/ember/evals/runner.py",
+#     deps = [":ember"],
+# )
+
+py_binary(
+    name = "ember-python",
+    srcs = ["src/ember/runtime/python_session.py"],
+    main = "src/ember/runtime/python_session.py",
+    deps = [":ember"],
+)
+
+py_test(
+    name = "test_ember",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/conftest.py",
+    deps = [
+        ":ember",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":ember"],
+)
+
+# --- OCI Image ---
+
+pkg_tar(
+    name = "emberd_tar",
+    srcs = [":emberd"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/app/emberd"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = ["8000/tcp"],
+    tars = [":emberd_tar"],
+    workdir = "/opt/emberd",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["emberd:latest"],
+)

@@ -1,0 +1,51 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "mcp_infra",
+    srcs = glob(["src/mcp_infra/**/*.py"]),
+    data = glob([
+        "src/mcp_infra/**/*.j2",
+        "src/mcp_infra/**/*.md",
+    ]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//cli_util",
+        "//mcp_utils",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//compact_json",
+        "@pypi//fastmcp",
+        "@pypi//jinja2",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_mcp_infra",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_types.py",
+    deps = [
+        ":mcp_infra",
+        "//agent_core_testing",
+        "@pypi//docker",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//syrupy",
+        "@pypi//types_docker",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":mcp_infra"],
+)

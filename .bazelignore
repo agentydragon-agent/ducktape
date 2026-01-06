@@ -1,0 +1,4 @@
+# Ignore pnpm internal directories that contain BUILD.bazel files
+# These are created when using hoist=false but should not be processed by Bazel
+node_modules/.pnpm
+bazel-js-skeletons

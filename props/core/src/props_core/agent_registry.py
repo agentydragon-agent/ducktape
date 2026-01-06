@@ -388,7 +388,7 @@ class AgentRegistry:
             filtered_orm_fps = [
                 fp
                 for fp in snapshot.false_positives
-                if any(bool(occ.relevant_files_set & reviewed_files) for occ in fp.occurrences)
+                if any(bool({rf.file_path for rf in occ.relevant_file_orms} & reviewed_files) for occ in fp.occurrences)
             ]
 
             if original_tp_count > 0 and len(filtered_orm_tps) == 0:
@@ -685,8 +685,8 @@ class AgentRegistry:
             return AgentRunView(
                 agent_run_id=run_id,
                 definition_id=active.handle.definition_id,
-                model=active.handle.agent.model_client.model,
-                status=AgentRunStatus.RUNNING,
+                model=active.handle.agent.model,
+                status=AgentRunStatus.IN_PROGRESS,
                 created_at=datetime.now(),
                 handle=active.handle,
             )
@@ -712,8 +712,8 @@ class AgentRegistry:
                 AgentRunView(
                     agent_run_id=run_id,
                     definition_id=active.handle.definition_id,
-                    model=active.handle.agent.model_client.model,
-                    status=AgentRunStatus.RUNNING,
+                    model=active.handle.agent.model,
+                    status=AgentRunStatus.IN_PROGRESS,
                     created_at=datetime.now(),
                     handle=active.handle,
                 )

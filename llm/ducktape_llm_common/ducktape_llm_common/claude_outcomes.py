@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from .claude_code_api import BaseResponse, HookDecision, PostToolResponse, PreToolResponse, StopResponse
+from .claude_code_api import BaseResponse, PostToolResponse, PreToolResponse, StopResponse
 
 
 # Outcome types - more user-friendly representations
@@ -22,7 +22,7 @@ class PreToolApprove(HookOutcome):
     """Explicitly approve tool execution, bypassing permission system."""
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(continue_=True, decision=HookDecision.APPROVE)
+        return PreToolResponse.model_validate({"continue": True, "decision": "approve"})
 
 
 @dataclass
@@ -35,7 +35,7 @@ class PreToolDeny(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
+        return PreToolResponse.model_validate({"continue": True, "decision": "block", "reason": self.llm_message})
 
 
 @dataclass
@@ -43,7 +43,8 @@ class PreToolNoOpinion(HookOutcome):
     """No opinion - let existing permission flow decide."""
 
     def to_claude_response(self) -> PreToolResponse:
-        return PreToolResponse(continue_=True)  # undefined decision = existing permission flow
+        # undefined decision = existing permission flow
+        return PreToolResponse.model_validate({"continue": True})
 
 
 PreToolOutcome = PreToolApprove | PreToolDeny | PreToolNoOpinion
@@ -55,7 +56,7 @@ class PostToolSuccess(HookOutcome):
     """Tool succeeded, no message needed."""
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse(continue_=True)
+        return PostToolResponse.model_validate({"continue": True})
 
 
 @dataclass
@@ -68,7 +69,7 @@ class PostToolNotifyLLM(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
+        return PostToolResponse.model_validate({"continue": True, "decision": "block", "reason": self.llm_message})
 
 
 @dataclass
@@ -78,7 +79,7 @@ class PostToolSuccessWithInfo(HookOutcome):
     info_message: str = ""
 
     def to_claude_response(self) -> PostToolResponse:
-        return PostToolResponse(continue_=True)
+        return PostToolResponse.model_validate({"continue": True})
 
 
 PostToolOutcome = PostToolSuccess | PostToolSuccessWithInfo | PostToolNotifyLLM
@@ -90,7 +91,8 @@ class StopAllow(HookOutcome):
     """Allow Claude to end its turn normally."""
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(continue_=True)  # No decision = allow stop
+        # No decision = allow stop
+        return StopResponse.model_validate({"continue": True})
 
 
 @dataclass
@@ -103,7 +105,7 @@ class StopPrevent(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
+        return StopResponse.model_validate({"continue": True, "decision": "block", "reason": self.llm_message})
 
 
 @dataclass
@@ -113,7 +115,7 @@ class StopAllowWithInfo(HookOutcome):
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(continue_=True)
+        return StopResponse.model_validate({"continue": True})
 
 
 StopOutcome = StopAllow | StopAllowWithInfo | StopPrevent
@@ -125,7 +127,7 @@ class SubagentStopAllow(HookOutcome):
     """Allow subagent to stop."""
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(continue_=True)
+        return StopResponse.model_validate({"continue": True})
 
 
 @dataclass
@@ -136,13 +138,15 @@ class SubagentStopPrevent(HookOutcome):
     Must provide reason for the subagent to understand how to proceed.
 
     Example:
-        SubagentStopPrevent(llm_message="Cannot stop: Must complete remaining tasks.")
+        SubagentStopPrevent(
+            llm_message="Cannot stop: Must complete remaining analysis tasks."
+        )
     """
 
     llm_message: str
 
     def to_claude_response(self) -> StopResponse:
-        return StopResponse(continue_=True, decision=HookDecision.BLOCK, reason=self.llm_message)
+        return StopResponse.model_validate({"continue": True, "decision": "block", "reason": self.llm_message})
 
 
 SubagentStopOutcome = SubagentStopAllow | SubagentStopPrevent
@@ -154,7 +158,7 @@ class NotificationAcknowledge(HookOutcome):
     """Acknowledge notification."""
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse(continue_=True)
+        return BaseResponse.model_validate({"continue": True})
 
 
 NotificationOutcome = NotificationAcknowledge
@@ -166,7 +170,7 @@ class PreCompactAllow(HookOutcome):
     """Allow compaction to proceed."""
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse(continue_=True)
+        return BaseResponse.model_validate({"continue": True})
 
 
 PreCompactOutcome = PreCompactAllow
@@ -184,4 +188,4 @@ class HookError(HookOutcome):
     error_message: str
 
     def to_claude_response(self) -> BaseResponse:
-        return BaseResponse(continue_=False, stop_reason=f"Hook error: {self.error_message}")
+        return BaseResponse.model_validate({"continue": False, "stop_reason": f"Hook error: {self.error_message}"})

@@ -1,0 +1,53 @@
+"""Sandboxed Jupyter execution package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "sandboxed_jupyter",
+    srcs = glob(["src/sandboxed_jupyter/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra",
+        "//net_util",
+        "@pypi//ipykernel",
+        "@pypi//jupyter_mcp_server",
+        "@pypi//jupyter_server",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "sandbox-jupyter",
+    srcs = ["src/sandboxed_jupyter/wrapper.py"],
+    main = "src/sandboxed_jupyter/wrapper.py",
+    deps = [":sandboxed_jupyter"],
+)
+
+py_binary(
+    name = "sandboxed-jupyter",
+    srcs = ["src/sandboxed_jupyter/sandboxer.py"],
+    main = "src/sandboxed_jupyter/sandboxer.py",
+    deps = [":sandboxed_jupyter"],
+)
+
+py_test(
+    name = "test_sandboxed_jupyter",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_sandboxer_narrow.py",
+    deps = [
+        ":sandboxed_jupyter",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_timeout",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":sandboxed_jupyter"],
+)

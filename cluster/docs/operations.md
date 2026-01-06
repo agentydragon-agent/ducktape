@@ -169,7 +169,7 @@ kubectl delete certificates --all -A
 **Root Causes & Solutions**:
 
 1. **Missing DNS Delegation** (Most Common):
-   - **Symptom**: "No TXT record found at _acme-challenge.domain.com"
+   - **Symptom**: "No TXT record found at \_acme-challenge.domain.com"
    - **Solution**: Add NS delegation record in parent domain DNS (AWS Route 53)
    - **Fix**: `domain.com` → NS → `ns1.agentydragon.com`
 
@@ -324,7 +324,7 @@ authentication failures. Consider filing upstream issue if this becomes frequent
    - **Solution**: Fix NS records in zone
    - **Fix**:
      `kubectl exec -n dns-system deployment/powerdns -- pdnsutil replace-rrset
-     test-cluster.agentydragon.com @ NS 3600 "ns1.agentydragon.com."`
+test-cluster.agentydragon.com @ NS 3600 "ns1.agentydragon.com."`
    - **Note**: Public DNS will cache old NS records (check TTL with `dig`)
 
 4. **PowerDNS API Not Accessible**:

@@ -11,16 +11,18 @@ import re
 import socket
 import uuid
 from datetime import timedelta
+from typing import Any
 
 import pytest
 
 from tests.test_utils import wait_until
 from wt.shared.fixtures import PRFixtureEntry
+from wt.shared.github_models import PRState
 
 # Global conftest disables gh token via get_github_token
 
 
-def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
+def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any]) -> dict[str, Any]:
     """Minimal JSON-RPC 2.0 call helper for tests over UNIX socket."""
     req = {"jsonrpc": "2.0", "method": method, "params": params, "id": str(uuid.uuid4())}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
@@ -32,7 +34,8 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
             line = f.readline()
             if not line:
                 raise AssertionError("No response from daemon")
-            return json.loads(line.decode())
+            result: dict[str, Any] = json.loads(line.decode())
+            return result
 
 
 @pytest.mark.integration
@@ -48,7 +51,7 @@ def test_github_pr_display_with_mocked_pygithub(real_temp_repo, config_factory, 
     # Prepend our mock to PYTHONPATH so daemon imports it; also include project root
     # WT_TEST_MODE fixtures — replace PYTHONPATH shadowing
     pr_entry = PRFixtureEntry(
-        number=123, state="open", draft=False, mergeable=True, merged_at=None, additions=10, deletions=2
+        number=123, state=PRState.OPEN, draft=False, mergeable=True, merged_at=None, additions=10, deletions=2
     )
     pr_map = {
         "feature-x": pr_entry,

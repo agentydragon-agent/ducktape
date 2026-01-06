@@ -4,37 +4,22 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "generate": "openapi-typescript http://127.0.0.1:8000/openapi.json -o src/lib/api/schema.d.ts",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build",
-    "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots",
-    "test:visual:ui": "playwright test --ui"
+    "dev": "node dev.mjs",
+    "build": "node esbuild.config.mjs",
+    "generate": "openapi-typescript http://localhost:8000/openapi.json -o src/lib/api/schema.d.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
-    "@storybook/addon-essentials": "^8.6.14",
-    "@storybook/addon-svelte-csf": "^5.0.10",
-    "@storybook/svelte": "^8.6.15",
-    "@storybook/sveltekit": "^8.6.15",
-    "@storybook/test-runner": "^0.24.2",
-    "@sveltejs/adapter-static": "^3.0.8",
-    "@sveltejs/kit": "^2.21.1",
-    "@sveltejs/vite-plugin-svelte": "^5.1.0",
-    "@tailwindcss/vite": "^4.1.18",
-    "http-server": "^14.1.1",
+    "esbuild": "^0.25.1",
+    "esbuild-svelte": "^0.9.4",
+    "esbuild-plugin-tailwindcss": "^2.0.3",
     "openapi-typescript": "^7.10.1",
-    "storybook": "^8.6.15",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0",
+    "puppeteer": "^23.11.1",
     "svelte": "^5.38.1",
     "svelte-check": "^4.3.1",
     "tailwindcss": "^4.1.18",
-    "vite": "^6.3.5"
+    "typescript": "^5.7.0"
   },
   "dependencies": {
     "@careswitch/svelte-data-table": "^0.6.3",
@@ -42,7 +27,14 @@
     "date-fns": "^4.1.0",
     "highlight.js": "^11.11.1",
     "lucide-svelte": "^0.562.0",
+    "marked": "^12.0.2",
+    "marked-highlight": "^2.1.1",
     "openapi-fetch": "^0.15.0",
     "svelte-sonner": "^0.3.28"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "puppeteer"
+    ]
   }
 }

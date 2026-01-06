@@ -143,7 +143,6 @@ def build_historical_gepa_state(valset: list[Example], critic_model: str, grader
     return None
 
     # pylint: disable=unreachable
-    # type: ignore[unreachable]  # Temporarily disabled during scope_hash migration
     with get_session() as session:
         # Query per-run recalls from occurrence_run_credits view
         # This view computes recall as: SUM(avg_credit) / NULLIF(COUNT(*), 0)
@@ -219,7 +218,7 @@ def build_historical_gepa_state(valset: list[Example], critic_model: str, grader
             critic_model,
             Split.VALID,
             valset_idx_by_key,  # type: ignore[name-defined]  # noqa: F821
-            sha_to_prog_idx,  # type: ignore[name-defined]
+            sha_to_prog_idx,
         )
 
     logger.info(

@@ -40,9 +40,11 @@ def generate_continuation(messages: list[dict[str, str]], available_tokens: int)
     """Generate a continuation with up to available_tokens"""
     max_tokens = min(available_tokens, MAX_OUTPUT_PER_CALL)
 
-    response = client.chat.completions.create(model=MODEL, messages=messages, max_tokens=max_tokens, temperature=0.7)
+    response = client.chat.completions.create(model=MODEL, messages=messages, max_tokens=max_tokens, temperature=0.7)  # type: ignore[arg-type]
 
     content = response.choices[0].message.content
+    assert content is not None
+    assert response.usage is not None
     tokens_used = response.usage.completion_tokens
 
     return content, tokens_used

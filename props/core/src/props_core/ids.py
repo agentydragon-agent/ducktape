@@ -21,7 +21,7 @@ _STR_IDENTITY_SERIALIZER = PlainSerializer(lambda x: x, return_type=str, when_us
 # Base issue ID type (used in specimens, critique definitions)
 # Pattern: lowercase alphanumeric, underscore, hyphen only (5-40 characters)
 # ruff: noqa: UP040 - TypeAlias required for mypy compatibility with complex Annotated types
-BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitation with complex Annotated
+BaseIssueID: TypeAlias = Annotated[
     str, StringConstraints(pattern=r"^[a-z0-9_-]+$", min_length=5, max_length=40), _STR_IDENTITY_SERIALIZER
 ]
 
@@ -33,7 +33,7 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 # Constraint: EXACTLY ONE SLASH for consistent directory depth in runs/
 #
 # ruff: noqa: UP040 - TypeAlias required for mypy compatibility
-_SnapshotSlugBase: TypeAlias = Annotated[  # type: ignore[valid-type]
+_SnapshotSlugBase: TypeAlias = Annotated[
     str,
     StringConstraints(
         pattern=r"^[a-z0-9_-]+/[a-z0-9_-]+$",
@@ -45,7 +45,7 @@ _SnapshotSlugBase: TypeAlias = Annotated[  # type: ignore[valid-type]
 
 # Public snapshot slug type (NewType for nominal type safety)
 # Compile-time distinct from bare str, runtime is validated _SnapshotSlugBase string
-SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)  # type: ignore[valid-newtype]
+SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)
 """Snapshot slug ID. Compile-time distinct from str, runtime is validated string."""
 
 # TODO: SnapshotSlug uses NewType which doesn't validate on construction (SnapshotSlug("foo")
@@ -58,7 +58,7 @@ SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)  # type: ignore[valid-
 # At runtime, these are just BaseIssueID strings (work as JSON dict keys)
 # Type is implied by position in data structure
 
-InputIssueID = NewType("InputIssueID", BaseIssueID)  # type: ignore[valid-newtype]
+InputIssueID = NewType("InputIssueID", BaseIssueID)
 """Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
 
 DefinitionId = NewType("DefinitionId", str)

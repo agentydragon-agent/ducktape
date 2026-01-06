@@ -46,12 +46,12 @@ def introspect_server_models(server: FastMCP) -> dict[str, tuple[type[BaseModel]
         Dict mapping tool names to (Input model | None, Output type) tuples
     """
     try:
-        tm = server._tool_manager  # type: ignore[attr-defined]
+        tm = server._tool_manager
     except AttributeError as exc:
         raise RuntimeError("Server does not expose _tool_manager") from exc
 
     try:
-        tools_by_name = tm._tools  # type: ignore[attr-defined]
+        tools_by_name = tm._tools
     except AttributeError as exc:
         raise RuntimeError("Server tool manager does not expose _tools") from exc
 

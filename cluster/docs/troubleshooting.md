@@ -680,7 +680,7 @@ kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager --tail=50
    - **Check**: PowerDNS webhook pod running: `kubectl get pods -n cert-manager -l app.kubernetes.io/name=cert-manager-webhook-powerdns`
    - **Check**: PowerDNS API accessible:
      `kubectl exec -n cert-manager deployment/cert-manager-webhook-powerdns -- wget -O-
-     http://powerdns-api.dns-system:8081/api/v1/servers`
+http://powerdns-api.dns-system:8081/api/v1/servers`
 
 3. **Challenge TXT record not created**
    - **Check**: PowerDNS logs: `kubectl logs -n dns-system deployment/powerdns`

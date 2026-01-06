@@ -1,0 +1,58 @@
+"""Editor agent host package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files([
+    "pyproject.toml",
+])
+
+# Init script for the container image (called as /init)
+filegroup(
+    name = "init_script",
+    srcs = ["src/editor_agent/definition/init"],
+    visibility = ["//editor_agent/runtime:__pkg__"],
+)
+
+py_library(
+    name = "editor_agent",
+    srcs = glob(["src/editor_agent/**/*.py"]),
+    data = glob(["src/editor_agent/definition/**/*"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//agent_pkg/host:agent_pkg_host",
+        "//cli_util",
+        "//editor_agent/runtime:editor_agent_runtime",
+        "//mcp_infra",
+        "//net_util",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "adgn-editor-docker",
+    srcs = ["src/editor_agent/cli.py"],
+    main = "src/editor_agent/cli.py",
+    deps = [":editor_agent"],
+)
+
+py_test(
+    name = "test_editor_agent",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_runner_session.py",
+    deps = [
+        ":editor_agent",
+        "//agent_core_testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":editor_agent"],
+)

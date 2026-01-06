@@ -81,9 +81,9 @@ These parts aren't yet done by Ansible:
 These parts can't be done by Ansible:
 
 - `ssh-keygen`
-- Add key to GitHub (see GitHub SSH Key Setup section below)
+- Add key to GitHub/GitLab
 - `apt install git ansible`
-- `git clone git@github.com:agentydragon/ducktape`
+- `git clone git@gitlab.com:agentydragon/ducktape`
 - `ansible-playbook agentydragon.yaml --ask-become-pass`
 - Add `~/.config/bazelrc.secrets` - see the `bazelrc` dotfile. Global `bazelrc` imports this file, it's supposed to contain the path (and
   password) to the Bazel cache on the VPS.
@@ -261,8 +261,8 @@ sudo tailscale up --login-server=https://your-vps:8080
 
 Headscale provides automatic hostname resolution:
 
-- `atlas.your-vps-domain` resolves to `10.13.13.30`
-- `agentydragon.your-vps-domain` resolves to `10.13.13.11`
+- `atlas.your-vps-domain` resolves to `100.64.1.30`
+- `agentydragon.your-vps-domain` resolves to `100.64.10.11`
 - etc.
 
 This enables direct hostname usage in configurations without maintaining `/etc/hosts` files.

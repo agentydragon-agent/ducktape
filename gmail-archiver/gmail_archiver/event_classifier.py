@@ -185,9 +185,12 @@ CONFIDENCE GUIDELINES:
     ) -> list[tuple[str, EmailTemplateExtraction]]:
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def extract_with_limit(email: Email):
+        async def extract_with_limit(email: Email) -> tuple[str, EmailTemplateExtraction]:
             async with semaphore:
                 extraction = await self.extract(email, use_cache=use_cache)
                 return (email.id, extraction)
 
-        return await asyncio.gather(*[extract_with_limit(email) for email in emails])
+        results: list[tuple[str, EmailTemplateExtraction]] = list(
+            await asyncio.gather(*[extract_with_limit(email) for email in emails])
+        )
+        return results

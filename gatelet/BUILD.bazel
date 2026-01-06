@@ -1,0 +1,102 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "gatelet",
+    srcs = glob(["gatelet/**/*.py"]),
+    data = glob([
+        "gatelet/**/*.html",
+        "gatelet/**/*.jinja2",
+    ]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//aqipy",
+        "@pypi//asyncpg",
+        "@pypi//aw_client",
+        "@pypi//aw_core",
+        "@pypi//compact_json",
+        "@pypi//cryptography",
+        "@pypi//fastapi",
+        "@pypi//fastapi_csrf_protect",
+        "@pypi//fastapi_sessions",
+        "@pypi//fastapi_users",
+        "@pypi//fastapi_users_db_sqlalchemy",
+        "@pypi//geopy",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+        "@pypi//homeassistant_api",
+        "@pypi//jinja2",
+        "@pypi//meteostat",
+        "@pypi//oura",
+        "@pypi//passlib",
+        "@pypi//psycopg2_binary",
+        "@pypi//pydantic",
+        "@pypi//pyowm",
+        "@pypi//python_metar",
+        "@pypi//python_multipart",
+        "@pypi//sqlalchemy",
+        "@pypi//tomlkit",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "gatelet-reporter",
+    srcs = ["gatelet/reporter/__init__.py"],
+    main = "gatelet/reporter/__init__.py",
+    deps = [":gatelet"],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":gatelet"],
+)
+
+# --- OCI Image ---
+
+py_binary(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [":gatelet"],
+)
+
+pkg_tar(
+    name = "server_tar",
+    srcs = [":server"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+pkg_tar(
+    name = "alembic_tar",
+    srcs = ["alembic.ini"],
+    package_dir = "/app",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/app/server"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    exposed_ports = ["8000/tcp"],
+    tars = [
+        ":server_tar",
+        ":alembic_tar",
+    ],
+    workdir = "/app",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["gatelet:latest"],
+)

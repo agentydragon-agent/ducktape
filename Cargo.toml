@@ -37,10 +37,11 @@ structopt = "*"
 xdg = "*"
 alphavantage = "*"
 shellexpand = "*"
-coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="01cabaa6fdd0fed87b44b38f218b1068f4914b39"}
-bigdecimal = "=0.3.1" # must match coinbase-rs dependency
+# coinbase-rs removed - legacy API deprecated, needs rewrite for CDP API
+# coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="..."}
+bigdecimal = { version = "0.4", features = ["serde"] }
 currency_layer = "0.2.0"
-serde-xml-rs = "*"
+serde-xml-rs = "0.6"
 async-trait = "*"
 rust_decimal_macros = "*"
 regex = "*"
@@ -50,7 +51,8 @@ glob = "*"
 csv = "*"
 oauth2 = "*"
 biscuit = "*"
-ftx = "*"
+# ftx removed - FTX exchange collapsed in 2022
+# ftx = "*"
 headless_chrome = "*"
 scraper = "*"
 

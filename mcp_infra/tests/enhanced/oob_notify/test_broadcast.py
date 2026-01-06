@@ -15,8 +15,7 @@ class _Recorder(MessageHandler):
         self._evt_updated = anyio.Event()
         self._evt_list = anyio.Event()
 
-    # Override with narrower type than base MessageHandler (which accepts Any)
-    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:
         # Record and signal
         try:
             uri = str(message.params.uri)
@@ -25,7 +24,7 @@ class _Recorder(MessageHandler):
         self.updated.append(uri)
         self._evt_updated.set()
 
-    async def on_resource_list_changed(self, message: types.ResourceListChangedNotification) -> None:  # type: ignore[override]
+    async def on_resource_list_changed(self, message: types.ResourceListChangedNotification) -> None:
         self.list_changed += 1
         self._evt_list.set()
 

@@ -4,7 +4,7 @@ import platform
 
 import pytest
 
-from tests._markers import REQUIRES_SANDBOX_EXEC
+from ._markers import REQUIRES_SANDBOX_EXEC
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 

@@ -37,7 +37,7 @@ def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[M
 
     for server_prefix, server in servers.items():
         # FastMCP public API (get_tools) is async; use internal _tools dict for sync access
-        tools = server._tool_manager._tools  # type: ignore[attr-defined]
+        tools = server._tool_manager._tools
         for tool_name, tool in tools.items():
             if not isinstance(tool, FunctionTool):
                 continue
@@ -73,7 +73,7 @@ def extract_tool_input_schemas(
 
     for server_prefix, server in servers.items():
         # FastMCP public API (get_tools) is async; use internal _tools dict for sync access
-        tools = server._tool_manager._tools  # type: ignore[attr-defined]
+        tools = server._tool_manager._tools
         for tool_name, tool in tools.items():
             if not isinstance(tool, FunctionTool):
                 continue

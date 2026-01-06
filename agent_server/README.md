@@ -19,12 +19,6 @@ Agent server - FastAPI backend, runtime, and MCP infrastructure for LLM agents.
   - `loop/` - Loop control
   - `runtime/` - Runtime server
 
-## Installation
-
-```bash
-uv pip install -e .
-```
-
 ## Development
 
-Part of the ducktape uv workspace. See root `pyproject.toml` for workspace configuration.
+See [AGENTS.md](../AGENTS.md) for standard Bazel workflow.

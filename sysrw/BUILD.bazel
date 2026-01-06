@@ -1,0 +1,44 @@
+"""System rewriter package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "sysrw",
+    srcs = glob(["src/sysrw/**/*.py"]),
+    data = glob(["src/sysrw/**/*.j2"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils",
+        "@pypi//anthropic",
+        "@pypi//jinja2",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//rich",
+        "@pypi//tiktoken",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_sysrw",
+    srcs = glob(["tests/**/*.py"]),
+    data = glob(["tests/testdata/*.jsonl"]),
+    main = "tests/test_templates_conformance.py",
+    deps = [
+        ":sysrw",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":sysrw"],
+)
+
+# TODO: Consider extracting anthropic submodule to separate Bazel target if reused elsewhere

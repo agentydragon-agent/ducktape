@@ -3,15 +3,10 @@ name = "editor-agent-runtime"
 version = "0.1.0"
 description = "Container-side utilities for editor agent"
 requires-python = ">=3.13"
+# Local workspace deps (agent-pkg-runtime, cli-util) handled by Bazel deps
 dependencies = [
-    "agent-pkg-runtime",
-    "cli-util",
     "typer>=0.9",
 ]
-
-[tool.uv.sources]
-agent-pkg-runtime = { workspace = true }
-cli-util = { workspace = true }
 
 [project.scripts]
 editor-submit = "editor_agent_runtime.cli:main"
@@ -25,9 +20,3 @@ packages = ["src/editor_agent_runtime"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/editor_agent_runtime/docs" = "editor_agent_runtime/docs"
-
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-check_untyped_defs = true
-mypy_path = "mcp_utils/src:cli_util/src:agent_pkg/runtime/src"

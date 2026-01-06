@@ -12,8 +12,7 @@ from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
 from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
-
-from .conftest import make_diff_tree, render_to_string
+from tests.conftest import make_diff_tree, render_to_string
 
 
 def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
@@ -518,9 +517,9 @@ def test_deletion_bar_alignment():
 
     # Find position of first 'X' (deletion bar start) in each line
     positions = []
-    for i, line in enumerate(file_lines):
-        pos = line.find("X")
-        assert pos != -1, f"No deletion bar found in line {i}: {line}"
+    for i, plain_line in enumerate(file_lines):
+        pos = plain_line.find("X")
+        assert pos != -1, f"No deletion bar found in line {i}: {plain_line}"
         positions.append(pos)
 
     # All positions should be the same (deletion bars are left-aligned, start at same column)

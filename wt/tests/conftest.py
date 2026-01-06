@@ -15,7 +15,7 @@ from unittest.mock import Mock
 
 import pygit2
 import pytest
-import yaml  # type: ignore[import-untyped]
+import yaml
 from typer.testing import CliRunner
 
 from tests.config_factory import ConfigFactory
@@ -390,7 +390,8 @@ def real_config(real_temp_repo, config_factory) -> Configuration:
     that need to access config properties like worktrees_dir, main_repo, etc.
     """
     factory = config_factory(real_temp_repo)
-    return factory.integration(github_enabled=False)
+    config: Configuration = factory.integration(github_enabled=False)
+    return config
 
 
 @pytest.fixture
@@ -507,7 +508,8 @@ def test_config(repo_factory, config_factory) -> Configuration:
     """
     repo_path = repo_factory.create_repo()
     factory = config_factory(repo_path)
-    return factory.minimal(upstream_branch="main")
+    config: Configuration = factory.minimal(upstream_branch="main")
+    return config
 
 
 def build_test_configuration(repo_path: Path, wt_dir: Path | None = None, **config_overrides) -> Configuration:

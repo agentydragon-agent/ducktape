@@ -13,11 +13,8 @@ from pathlib import Path
 import aiodocker
 import pytest
 from fastmcp.client import Client
-from fastmcp.client.messages import MessageHandler
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
-from mcp import types
-from pydantic import AnyUrl
 
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -27,23 +24,18 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesServer
 from mcp_infra.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
-from mcp_infra.testing.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
+from mcp_infra.testing.notifications import (
+    ResourceUpdatedCapture,
+    SubscriptionRecorder,
+    enable_resources_caps,
+    install_subscription_recorder,
+)
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp
 
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerOptions:
     """Create standard ContainerOptions for tests."""
     return ContainerOptions(image=image, working_dir=working_dir, binds=None)
-
-
-class ResourceUpdatedCapture(MessageHandler):
-    """MessageHandler that captures resource updated notifications."""
-
-    def __init__(self) -> None:
-        self.updated: list[AnyUrl] = []
-
-    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
-        self.updated.append(message.params.uri)
 
 
 @pytest.fixture

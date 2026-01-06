@@ -2,7 +2,7 @@
   // Link component for examples
   // Uses native <a> with SvelteKit client-side navigation
 
-  import { resolve } from '$app/paths';
+  import { resolve } from '$lib/router';
   import { SvelteURLSearchParams } from 'svelte/reactivity';
   import { formatSnapshotSlug } from './formatters';
   import type { WholeSnapshotExample, SingleFileSetExample } from './api/client';

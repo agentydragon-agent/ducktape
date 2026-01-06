@@ -48,7 +48,7 @@
 
 1. `00-persistent-auth` generates/uses keypair from terraform state
 2. `00-persistent-auth` SSHs to Proxmox, creates API tokens
-3. `00-persistent-auth` runs `kubeseal` to create SealedSecrets (writes to k8s/*.yaml)
+3. `00-persistent-auth` runs `kubeseal` to create SealedSecrets (writes to k8s/\*.yaml)
 4. User commits SealedSecrets to git manually
 5. `01-infrastructure` reads keypair via `terraform_remote_state`
 6. `01-infrastructure` deploys keypair as `kubernetes_secret` to cluster

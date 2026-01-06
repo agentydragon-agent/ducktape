@@ -6,17 +6,19 @@ from typing import Any
 
 from fastmcp.client.messages import MessageHandler
 from mcp import types
+from pydantic import AnyUrl
 
 from openai_utils.model import InputTextPart, UserMessage
 
 
-class CaptureUpdates(MessageHandler):
-    def __init__(self) -> None:
-        self.updated: list[str] = []
+class ResourceUpdatedCapture(MessageHandler):
+    """MessageHandler that captures resource updated notifications."""
 
-    # Override with narrower type than base MessageHandler (which accepts Any)
-    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
-        self.updated.append(str(message.params.uri))
+    def __init__(self) -> None:
+        self.updated: list[AnyUrl] = []
+
+    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:
+        self.updated.append(message.params.uri)
 
 
 async def subscribe_head(session, chat_server) -> None:

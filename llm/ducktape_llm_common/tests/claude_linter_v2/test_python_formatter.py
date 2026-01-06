@@ -153,7 +153,7 @@ def foo():
         assert changes == []
 
     @patch("subprocess.run")
-    def test_all_categories(self, mock_run):
+    def test_all_categories(self, mock_run, monkeypatch):
         """Test that ALL category expands to all categories."""
         code = "x=1"
 
@@ -162,41 +162,43 @@ def foo():
         formatter = PythonFormatter(["ruff"])
         formatter._available_tools = ["ruff"]
 
-        # Mock the methods to track calls
-        formatter._apply_formatting = MagicMock(return_value=(code, []))
-        formatter._fix_imports = MagicMock(return_value=(code, []))
+        mock_apply = MagicMock(return_value=(code, []))
+        mock_fix = MagicMock(return_value=(code, []))
+        monkeypatch.setattr(formatter, "_apply_formatting", mock_apply)
+        monkeypatch.setattr(formatter, "_fix_imports", mock_fix)
 
         formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.ALL])
 
         # Both methods should be called
-        formatter._apply_formatting.assert_called_once()
-        formatter._fix_imports.assert_called_once()
+        mock_apply.assert_called_once()
+        mock_fix.assert_called_once()
 
     @patch("subprocess.run")
-    def test_selective_categories(self, mock_run):
+    def test_selective_categories(self, mock_run, monkeypatch):
         """Test selective category application."""
         code = "x=1"
 
         formatter = PythonFormatter(["ruff"])
         formatter._available_tools = ["ruff"]
 
-        # Mock the methods
-        formatter._apply_formatting = MagicMock(return_value=(code, []))
-        formatter._fix_imports = MagicMock(return_value=(code, []))
+        mock_apply = MagicMock(return_value=(code, []))
+        mock_fix = MagicMock(return_value=(code, []))
+        monkeypatch.setattr(formatter, "_apply_formatting", mock_apply)
+        monkeypatch.setattr(formatter, "_fix_imports", mock_fix)
 
         # Only formatting
         formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.FORMATTING])
-        formatter._apply_formatting.assert_called_once()
-        formatter._fix_imports.assert_not_called()
+        mock_apply.assert_called_once()
+        mock_fix.assert_not_called()
 
         # Reset mocks
-        formatter._apply_formatting.reset_mock()
-        formatter._fix_imports.reset_mock()
+        mock_apply.reset_mock()
+        mock_fix.reset_mock()
 
         # Only imports
         formatter.format_code(code, file_path=TEST_FILE, categories=[AutofixCategory.IMPORTS])
-        formatter._apply_formatting.assert_not_called()
-        formatter._fix_imports.assert_called_once()
+        mock_apply.assert_not_called()
+        mock_fix.assert_called_once()
 
     @patch("subprocess.run")
     def test_file_path_passed_to_tools(self, mock_run):

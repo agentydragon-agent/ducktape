@@ -2,7 +2,7 @@
 
 import yaml
 
-from claude_optimizer.config import OptimizerConfig
+from inop.config import OptimizerConfig
 
 
 def test_config_from_file(tmp_path):

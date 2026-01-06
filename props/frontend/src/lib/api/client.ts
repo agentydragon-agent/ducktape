@@ -200,8 +200,11 @@ export async function fetchExampleDetail(snapshotSlug: string, exampleKind: Exam
   return data;
 }
 
-// --- Ground truth snapshots ---
+// --- Overview ---
+export type OverviewResponse = components['schemas']['OverviewResponse'];
 
+// --- Ground truth snapshots ---
+export type SnapshotsResponse = components['schemas']['SnapshotsListResponse'];
 export type SnapshotSummary = components['schemas']['SnapshotSummary'];
 export type SnapshotDetailResponse = components['schemas']['SnapshotDetailResponse'];
 export type TpInfo = components['schemas']['TpInfo'];

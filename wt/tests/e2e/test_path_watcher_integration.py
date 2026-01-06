@@ -15,7 +15,8 @@ from tests.test_utils import wait_until
 def _status(wt_cli) -> str:
     r = wt_cli.status(timeout=timedelta(seconds=5.0))
     assert r.returncode == 0, r.stderr
-    return r.stdout
+    result: str = r.stdout
+    return result
 
 
 def wait_for_status_contains(wt_cli, needle: str, timeout: float = WATCHER_DEBOUNCE_SECS * 8) -> None:

@@ -1,5 +1,18 @@
-# This workflow is compatible with both GitHub Actions and Gitea Actions
-# It runs pre-commit hooks and pytest for all Python projects with pyproject.toml
+# CI workflow with consolidated Bazel aspect-based linting
+#
+# Jobs:
+# - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
+# - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
+# - props-frontend-build: Frontend-specific build + svelte-check
+# - visual-regression: Playwright visual tests
+# - ansible-lint-full: Ansible validation
+#
+# Linting via Bazel aspects (run in both pre-commit and bazel-build):
+# - Python: ruff (lint), mypy (types), ruff format (formatting)
+# - JS/TS: ESLint (lint), prettier (formatting)
+# - Rust: clippy (lint), rustfmt (formatting)
+# - Shell: shfmt (formatting)
+# - Bazel: buildifier (formatting)
 name: CI
 
 on:
@@ -16,26 +29,6 @@ permissions:
   contents: read
 
 jobs:
-  discover:
-    name: Discover Python projects
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      projects: ${{ steps.find-projects.outputs.projects }}
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Find projects with pyproject.toml
-        id: find-projects
-        run: |
-          projects=$(find . -name 'pyproject.toml' -not -path '*/\.*' -not -path './pyproject.toml' | \
-            sed 's|^\./||' | \
-            sed 's|/pyproject.toml$||' | \
-            jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "projects=$projects" >> $GITHUB_OUTPUT
-          echo "Found projects: $projects"
-
   pre-commit:
     name: Pre-commit checks
     runs-on: ubuntu-latest
@@ -89,14 +82,28 @@ jobs:
       - name: Check if ansible files changed
         id: ansible-changes
         run: |
-          result=$(.github/scripts/check-ansible-changes.sh "${{ github.event_name }}" "${{ github.base_ref }}")
-          echo "$result" >> $GITHUB_OUTPUT
+          # Check if ansible/ directory changed using git diff
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            diff_range="origin/${{ github.base_ref }}...HEAD"
+          else
+            diff_range="HEAD~1 HEAD"
+          fi
+
+          # Check for changes in ansible/ directory
+          if git diff --name-only $diff_range 2>/dev/null | grep -q '^ansible/'; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          elif [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            # git diff failed (e.g., first commit) - run ansible-lint
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up Python
         if: steps.ansible-changes.outputs.changed == 'true'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Cache Ansible Galaxy
         if: steps.ansible-changes.outputs.changed == 'true'
@@ -140,63 +147,77 @@ jobs:
           fi
 
   props-frontend-build:
-    name: Props frontend build
+    name: Props frontend build (Bazel)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Cache pnpm store
+      - name: Cache Bazel repository
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/pnpm/store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('props/frontend/pnpm-lock.yaml') }}
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          # Unified cache key includes all dependency files
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-
+            bazel-${{ runner.os }}-
 
-      - name: Install dependencies
-        working-directory: props/frontend
-        run: pnpm install --frozen-lockfile
-
-      - name: Build frontend
-        working-directory: props/frontend
-        run: pnpm build
-
-      - name: Check TypeScript types
-        working-directory: props/frontend
-        run: pnpm check
+      - name: Build and test frontend
+        run: |
+          bazel build //props/frontend:bundle //props/frontend:storybook
+          # Type checking: svelte-check
+          bazel test //props/frontend:svelte_check_test
+          # Note: ESLint and Prettier are now run via aspects in bazel-build job
 
       - name: Generate build summary
         if: always()
         run: |
           echo "### Frontend Build Results" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Frontend build successful" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Frontend build and type checking successful" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Frontend build failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Frontend build or type checking failed" >> $GITHUB_STEP_SUMMARY
           fi
 
-  pytest:
-    name: Pytest (${{ matrix.project }})
+  visual-regression:
+    name: Visual regression tests (Bazel + Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
+      - name: Run visual regression tests
+        run: bazel test //props/frontend:visual_test --test_output=errors
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "### Visual Regression Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All visual tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Visual regression tests failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  bazel-build:
+    name: Bazel build and test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: discover
-    strategy:
-      fail-fast: false
-      matrix:
-        project: ${{ fromJson(needs.discover.outputs.projects) }}
-    # PostgreSQL service for gatelet and props/core tests
+    # PostgreSQL service for tests that need it
     services:
       postgres:
         image: postgres:15
@@ -211,7 +232,6 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-    # PostgreSQL connection settings for props/core tests
     env:
       PGHOST: localhost
       PGPORT: "5432"
@@ -219,43 +239,73 @@ jobs:
       PGPASSWORD: postgres
       PGDATABASE: postgres
     steps:
+      - name: Free up disk space
+        run: |
+          # Remove unnecessary software to free ~15GB
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
+
       - name: Check out code
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-env
-
-      - name: Cache pip and uv
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pip
-            ~/.cache/uv
-          key: >-
-            ${{ runner.os }}-pip-uv-${{ matrix.project }}-${{
-            hashFiles(format('{0}/pyproject.toml', matrix.project)) }}
-          restore-keys: |
-            ${{ runner.os }}-pip-uv-${{ matrix.project }}-
-            ${{ runner.os }}-pip-uv-
+      - name: Install system dependencies for native Python packages
+        run: |
+          sudo apt-get update
+          # libdbus-1-dev: required for dbus-python
+          # libgirepository-2.0-dev: required for PyGObject (girepository-2.0 API)
+          # libcairo2-dev: required for pycairo (PyGObject dependency)
+          sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
 
       - name: Install gitstatusd for wt tests
-        if: matrix.project == 'wt'
         run: |
           wget -qO- \
             https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz \
             | tar xz -C /tmp
           sudo install -m 755 /tmp/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
-          which gitstatusd
 
-      - name: Install dependencies and run tests
-        id: pytest
-        run: .github/scripts/run-pytest.sh "${{ matrix.project }}"
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          # Unified cache key includes all dependency files
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
+      - name: Build, lint, and test
+        run: |
+          # Limit resource usage to reduce disk space consumption
+          # --jobs=2: Limit parallel builds to reduce peak memory/disk usage
+          # --repository_cache: Cap external repository cache at 2GB
+          export BAZEL_OPTS="--jobs=2 --experimental_repository_cache_hardlinks"
+
+          bazel build //... $BAZEL_OPTS
+          # Comprehensive linting via aspects:
+          # - Python: ruff (lint) + mypy (types)
+          # - JS/TS: ESLint (lint)
+          # - Rust: clippy (lint) + rustfmt (format check)
+          bazel build --config=check //... $BAZEL_OPTS        # Python: ruff + mypy
+          bazel build --config=lint //... $BAZEL_OPTS         # Python + JS/TS: ruff + ESLint
+          bazel build --config=rust-check //... $BAZEL_OPTS   # Rust: clippy + rustfmt
+          bazel test //... --test_output=errors $BAZEL_OPTS
 
       - name: Generate test summary
         if: always()
         run: |
-          echo "### Test Results: ${{ matrix.project }}" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.pytest.outcome }}" = "success" ]; then
-            echo "✅ Tests passed" >> $GITHUB_STEP_SUMMARY
+          echo "### Bazel Build & Test Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All targets built, linted, and tested" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Checks run**:" >> $GITHUB_STEP_SUMMARY
+            echo "- Python: ruff (lint), mypy (types)" >> $GITHUB_STEP_SUMMARY
+            echo "- JS/TS: ESLint (lint)" >> $GITHUB_STEP_SUMMARY
+            echo "- Rust: clippy (lint), rustfmt (format)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Tests failed or skipped" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Build, lint, or tests failed" >> $GITHUB_STEP_SUMMARY
           fi

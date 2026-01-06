@@ -39,7 +39,8 @@ This loads `.envrc`, bootstraps devenv, and installs `wt` in editable mode with 
 
 ## Installation
 
-- Install the package: `pip install -e .`
+See `@AGENTS.md` in the repository root for Bazel build, test, and lint workflows.
+
 - Add the wt shell function in your shell init (e.g. `.bashrc` / `.zshrc`): `eval "$(python -m wt.shell.install)"`
 - Reload your shell / source the same dotfile.
 

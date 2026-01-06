@@ -4,11 +4,8 @@ version = "0.1.0"
 description = "MCP infrastructure - compositor, exec backends, and shared utilities"
 readme = "README.md"
 requires-python = ">=3.13"
+# Local workspace deps (openai-utils, agent-core, cli-util, mcp-utils) handled by Bazel deps
 dependencies = [
-    "openai-utils",
-    "agent-core",
-    "cli-util",
-    "mcp-utils",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",
@@ -35,22 +32,6 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_infra"]
 
-[tool.mypy]
-python_version = "3.13"
-warn_return_any = true
-check_untyped_defs = true
-# Paths relative to repo root (where pre-commit runs mypy from)
-mypy_path = "openai_utils/src:agent_core/src:mcp_infra/src:cli_util/src:mcp_utils/src"
-
-[tool.ruff]
-target-version = "py312"
-line-length = 120
-src = ["src"]
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-ignore = ["E501"]
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -62,8 +43,6 @@ markers = [
     "shell: Tests that use shell execution",
 ]
 
-[tool.uv.sources]
-openai-utils = { workspace = true }
-agent-core = { workspace = true }
-cli-util = { workspace = true }
-mcp-utils = { workspace = true }
+[project.scripts]
+mcp-docker-exec = "mcp_infra.exec.docker.launcher:app"
+mcp-seatbelt-exec = "mcp_infra.exec.seatbelt:main"

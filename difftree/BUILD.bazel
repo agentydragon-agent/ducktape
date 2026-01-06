@@ -1,0 +1,46 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "difftree",
+    srcs = glob(["src/difftree/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//click",
+        "@pypi//rich",
+        "@pypi//unidiff",
+    ],
+)
+
+py_binary(
+    name = "difftree_bin",
+    srcs = ["src/difftree/__main__.py"],
+    main = "src/difftree/__main__.py",
+    deps = [":difftree"],
+)
+
+py_test(
+    name = "test_all",
+    srcs = glob(["tests/**/*.py"]),
+    data = glob([
+        "tests/**/*.txt",
+        "tests/**/*.diff",
+    ]),
+    imports = ["."],
+    main = "tests/test_diff_tree.py",
+    deps = [
+        ":difftree",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//syrupy",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":difftree"],
+)

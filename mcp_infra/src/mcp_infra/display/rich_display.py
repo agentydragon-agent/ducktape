@@ -6,7 +6,7 @@ import logging
 import shlex
 from typing import TYPE_CHECKING, Any
 
-from compact_json import Formatter  # type: ignore[import-untyped]
+from compact_json import Formatter
 from mcp import types as mcp_types
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
@@ -608,7 +608,7 @@ class CompactDisplayHandler(BaseHandler):
             elif args:
                 # Args with smart line wrapping
                 formatter = Formatter(max_inline_length=self._console.width - self._TOOL_CALL_INDENT)
-                json_str = formatter.serialize(args)
+                json_str = formatter.serialize(args)  # type: ignore[arg-type]
                 truncated_json = self._truncate_lines(json_str, self._max_lines, indent=self._TOOL_CALL_INDENT)
                 # If it fits on one line and is short enough, keep it inline
                 if "\n" not in truncated_json and len(truncated_json) < 80:

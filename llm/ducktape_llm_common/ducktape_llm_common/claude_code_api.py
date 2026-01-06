@@ -328,6 +328,92 @@ class StopResponse(BaseResponse):
         return v
 
 
+# Hook-specific output types for the new unified response model
+
+
+class PreToolHookOutput(CamelCaseModel):
+    """PreToolUse hook-specific output."""
+
+    permission_decision: Literal["allow", "deny", "ask"] | None = None
+    permission_decision_reason: str | None = None
+    updated_input: dict[str, Any] | None = None
+
+
+class PostToolHookOutput(CamelCaseModel):
+    """PostToolUse hook-specific output."""
+
+    decision: Literal["block"] | None = None
+    reason: str | None = None
+    additional_context: str | None = None
+
+
+class StopHookOutput(CamelCaseModel):
+    """Stop hook-specific output."""
+
+    decision: Literal["block"] | None = None
+    reason: str | None = None
+
+
+class SubagentStopHookOutput(CamelCaseModel):
+    """SubagentStop hook-specific output."""
+
+    decision: Literal["block"] | None = None
+    reason: str | None = None
+
+
+class UserPromptHookOutput(CamelCaseModel):
+    """UserPromptSubmit hook-specific output."""
+
+    decision: Literal["block"] | None = None
+    reason: str | None = None
+    additional_context: str | None = None
+
+
+class PermissionDecisionPayload(CamelCaseModel):
+    """Permission decision payload for PermissionRequest hooks."""
+
+    behavior: Literal["allow", "deny"]
+    message: str | None = None
+    updated_input: dict[str, Any] | None = None
+
+
+class PermissionHookOutput(CamelCaseModel):
+    """PermissionRequest hook-specific output."""
+
+    decision: PermissionDecisionPayload | None = None
+
+
+class SessionStartHookOutput(CamelCaseModel):
+    """SessionStart hook-specific output."""
+
+    additional_context: str | None = None
+
+
+# Union of all hook-specific outputs
+HookSpecificOutput = (
+    PreToolHookOutput
+    | PostToolHookOutput
+    | StopHookOutput
+    | SubagentStopHookOutput
+    | UserPromptHookOutput
+    | PermissionHookOutput
+    | SessionStartHookOutput
+    | None
+)
+
+
+class HookResponse(CamelCaseModel):
+    """Unified hook response model.
+
+    This is the new-style response that uses hook_specific_output instead of
+    the legacy decision/reason fields at the top level.
+    """
+
+    continue_: bool = Field(default=True, serialization_alias="continue")
+    stop_reason: str | None = None
+    hook_specific_output: HookSpecificOutput = None
+
+
 HookRequest = (
     PreToolUseRequest | PostToolUseRequest | NotificationRequest | StopRequest | SubagentStopRequest | PreCompactRequest
 )

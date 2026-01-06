@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import requests
@@ -145,7 +145,8 @@ def _headers(token: str) -> dict[str, str]:
 
 
 def _post_json(url: str, token: str, payload: dict[str, Any] | None = None, *, timeout: int = 15) -> requests.Response:
-    return requests.post(url, headers=_headers(token), json=payload or {}, timeout=timeout)
+    resp: requests.Response = requests.post(url, headers=_headers(token), json=payload or {}, timeout=timeout)
+    return resp
 
 
 class _UserInfo(BaseModel):
@@ -154,9 +155,6 @@ class _UserInfo(BaseModel):
     # The user payload includes many fields we do not consume; ignore them so schema changes
     # surface via targeted validation rather than mass field definitions.
     model_config = ConfigDict(extra="ignore")
-
-
-T_Model = TypeVar("T_Model", bound=BaseModel)
 
 
 def _get_typed_json[T_Model: BaseModel](
@@ -201,8 +199,10 @@ def _ensure_mirror(cfg: MirrorConfig, upstream: str, owner: str, repo: str) -> N
 def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
     sync_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}/mirror-sync"
     resp = _post_json(sync_url, cfg.token, {})
-    if not (200 <= resp.status_code < 300):
-        raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}")
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}") from None
 
 
 def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> GiteaRepoInfo:

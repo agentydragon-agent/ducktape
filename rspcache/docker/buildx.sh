@@ -28,7 +28,6 @@ docker buildx build \
   --platform "${PLATFORMS}" \
   --cache-from "type=registry,ref=${CACHE_REF}" \
   --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
-  --ulimit nofile=16384:16384 \
   --tag "${REGISTRY}/rspcache:${TAG}" \
   -f "${repo_root}/docker/rspcache/Dockerfile" \
   "${repo_root}" \

@@ -1,6 +1,6 @@
 import pytest
 
-from .fix_lcsc_links import normalize_url
+from inventree_utils.beautifier.fix_lcsc_links import normalize_url
 
 
 @pytest.mark.parametrize(

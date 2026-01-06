@@ -2,14 +2,24 @@
 
 # Agent Guide for `wt`
 
+## Environment and Tooling
+
+See @../AGENTS.md for standard Bazel workflow (`bazel build --config=check //...`, `bazel test //...`).
+
+Requirements: Bazel (via bazelisk), Python **3.13**+. `gitstatusd` must be installed separately for integration tests.
+
+### Extra dependencies / binaries
+
+- `libgit2` is provided via system packages or Nix.
+- `gitstatusd` **is not bundled**; install it separately and ensure it is on `PATH` (`which gitstatusd`). Without it, daemon/integration tests fail quickly.
+
 ## Development Commands
 
-- Run the CLI: `wt --help`
-- Tests: `uv run pytest` (full suite) or `pytest tests/<file>::<test>` (focused)
-- Linting: `uv run ruff check .`
-- Type checking: `uv run mypy src tests`
-- Format: `uv run ruff format .`
-- From repo root: `direnv exec wt pytest tests/test_cli.py`
+- Run the CLI entry point: `bazel run //wt:wt-cli -- --help`
+- Tests: `bazel test //wt/...`
+- Linting: `bazel build --config=lint //wt/...`
+- Type checking: `bazel build --config=typecheck //wt/...`
+- Format: `bazel run //tools/format`
 
 Integration tests marked `integration` or `shell` spawn git repos and daemons; they may need
 relaxed sandboxing to allow UNIX sockets and filesystem operations.

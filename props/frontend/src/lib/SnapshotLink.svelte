@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
+  import { resolve } from '$lib/router';
   import { formatSnapshotSlug } from './formatters';
 
   // Link component for snapshot slugs

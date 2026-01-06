@@ -21,7 +21,7 @@ def send_desktop_notification(title: str, message: str, urgency: str = "critical
         ID of the notification, or 0 if dbus is not available
     """
     try:
-        import dbus  # noqa: PLC0415  - optional dependency, lazy import
+        import dbus  # type: ignore[import-not-found]  # noqa: PLC0415  - optional dependency, lazy import
     except ImportError:
         logger.debug("dbus-python not installed, skipping desktop notification")
         return 0
@@ -64,7 +64,7 @@ def close_desktop_notification(notification_id: int) -> None:
         return
 
     try:
-        import dbus  # noqa: PLC0415
+        import dbus  # noqa: PLC0415  - optional dependency, lazy import
     except ImportError:
         return
 

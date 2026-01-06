@@ -136,7 +136,7 @@ def delete_edges_for_issue(critique_issue_id: str, critique_run_id: UUID | None 
             stmt = stmt.where(GradingEdge.critique_run_id == critique_run_id)
 
         result = session.execute(stmt)
-        return result.rowcount
+        return result.rowcount  # type: ignore[attr-defined,no-any-return]
 
 
 async def submit_grading(summary: str) -> None:

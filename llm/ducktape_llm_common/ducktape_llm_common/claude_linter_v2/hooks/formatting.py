@@ -2,8 +2,7 @@
 
 from string import Template
 
-from ducktape_llm_common.claude_code_api import SessionID
-
+from ...claude_code_api import SessionID
 from ..config.models import Violation
 
 # Templates for different message types

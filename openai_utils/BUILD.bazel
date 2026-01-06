@@ -1,0 +1,37 @@
+"""OpenAI utilities package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "openai_utils",
+    srcs = glob(["src/openai_utils/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_openai_utils",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_openai_compatible_schema.py",
+    deps = [
+        ":openai_utils",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":openai_utils"],
+)

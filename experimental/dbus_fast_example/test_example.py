@@ -6,8 +6,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from .client import ExampleClient
-from .service_manager import ServiceManager
+from experimental.dbus_fast_example.client import ExampleClient
+from experimental.dbus_fast_example.service_manager import ServiceManager
 
 
 @pytest.fixture(scope="session")

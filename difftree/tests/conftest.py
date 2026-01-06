@@ -3,6 +3,7 @@
 import subprocess
 from io import StringIO
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from rich.console import Console
@@ -22,12 +23,15 @@ LEFT_BLOCK_CHARS = (DEFAULT_LEFT_BLOCKS.full, *DEFAULT_LEFT_BLOCKS.partials)
 RIGHT_BLOCK_CHARS = (DEFAULT_RIGHT_BLOCKS.full, *DEFAULT_RIGHT_BLOCKS.partials)
 
 
+ColorSystem = Literal["auto", "standard", "256", "truecolor", "windows"] | None
+
+
 def render_to_string(
     renderable,
     width: int = 80,
     force_terminal: bool = True,
     legacy_windows: bool = False,
-    color_system: str | None = "standard",
+    color_system: ColorSystem = "standard",
 ) -> str:
     """Render a Rich renderable to a string at a specific width.
 
@@ -76,13 +80,8 @@ def sample_changes() -> list[FileChange]:
 
 
 @pytest.fixture
-def temp_git_repo(tmp_path_factory) -> Path:
-    """
-    Create a temporary git repository for E2E testing.
-
-    Returns:
-        Path to the temporary git repository.
-    """
+def temp_git_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Create a temporary git repository for E2E testing."""
     repo_path = tmp_path_factory.mktemp("git_repo")
 
     # Initialize git repo

@@ -7,7 +7,7 @@ Hooks load YAML configuration from XDG config directory: `~/.config/adgn-claude-
 ```yaml
 precommit_autofixer:
   enabled: true
-  timeout_secs: 30
+  timeout_seconds: 30
   tools:
     - Edit
     - MultiEdit
@@ -23,20 +23,18 @@ Logs also go to XDG-compliant paths (e.g. `~/.local/state/claude-hooks/hookname.
 ## Create a Simple Hook
 
 ```python
-from claude_hooks.config import MyHookConfig
-from claude_hooks import PostToolUseHook
-from claude_hooks.inputs import PostToolUseInput
-from claude_hooks.actions import HookActions
+from claude_hooks.base import PostToolUseHook
+from claude_hooks.inputs import PostToolInput, HookContext
+from claude_hooks.actions import PostToolAction, PostToolContinue, PostToolFeedbackToClaude
 
 class MyHook(PostToolUseHook):
     def __init__(self):
         super().__init__("my_hook")
-        self.hook_config = MyHookConfig.model_validate(self.config)
 
-    def execute(self, hook_input: PostToolUseInput) -> PostToolUseOutput:
+    def execute(self, hook_input: PostToolInput, context: HookContext) -> PostToolAction:
         if hook_input.tool_name == "Write":
-            return HookActions.PostToolUse.continue_with_feedback("File written!")
-        return HookActions.PostToolUse.continue_silently()
+            return PostToolFeedbackToClaude(feedback_to_claude="File written!")
+        return PostToolContinue()
 
 if __name__ == '__main__':
     MyHook().run_hook()
@@ -70,6 +68,6 @@ Automatically runs pre-commit autofix on files Claude modifies:
 
 See `docs/` for detailed specs:
 
-- `AUTOFIXER_SPEC.md` - Pre-commit autofix integration
-- `LINT_ENFORCER_SPEC.md` - Lint violation tracking
-- `CUSTOM_LLM_TRIGGERS_SPEC.md` - Pattern-based interventions
+- `precommit_autofix.md` - Pre-commit autofix integration
+- `lint_enforcer_spec.md` - Lint violation tracking
+- `custom_llm_triggers_spec.md` - Pattern-based interventions

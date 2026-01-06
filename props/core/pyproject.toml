@@ -7,14 +7,8 @@ name = "props-core"
 version = "0.0.0"
 authors = [{name = "Rai"}]
 requires-python = ">=3.13"
+# Local workspace deps (agent-core, agent-pkg-host, agent-pkg-runtime, cli-util, mcp-infra, openai-utils, net-util) handled by Bazel deps
 dependencies = [
-  # Workspace dependencies (container-compatible)
-  "agent-core",
-  "agent-pkg-host",
-  "agent-pkg-runtime",
-  "cli-util",
-  "mcp-infra",
-  "openai-utils",
   # Core dependencies
   "pydantic>=2.0.0",
   "typer>=0.12.0",
@@ -38,13 +32,13 @@ dependencies = [
   "rich>=13.0.0",
   "canonicaljson>=1.6.0",
   "jinja2>=3.1",
-  # Docker network gateway detection, port discovery (agent_setup)
-  "net-util",
+  # Agent image tools
+  "vulture>=2.14",
 ]
 
 [project.optional-dependencies]
+# NOTE: agent-core-testing handled by Bazel deps
 dev = [
-  "agent-core-testing",
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
   "pytest-timeout>=2.3",
@@ -57,6 +51,7 @@ dev = [
   "types-PyYAML",
   "types-docker",
   "types-Jinja2",
+  "vulture>=2.14",
 ]
 gepa = [
   "gepa>=0.0.22",
@@ -114,13 +109,3 @@ testpaths = ["tests"]
 
 [project.scripts]
 props = "props_core.cli.main:app"
-
-[tool.uv.sources]
-agent-core = { workspace = true }
-agent-core-testing = { workspace = true }
-agent-pkg-host = { workspace = true }
-agent-pkg-runtime = { workspace = true }
-cli-util = { workspace = true }
-mcp-infra = { workspace = true }
-net-util = { workspace = true }
-openai-utils = { workspace = true }

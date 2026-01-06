@@ -7,22 +7,22 @@ from pathlib import Path
 import click
 from pydantic import ValidationError
 
-from ..claude_code_api import EditToolCall, HookDecision, MultiEditToolCall, WriteToolCall
+from ..claude_code_api import EditToolCall, MultiEditToolCall, WriteToolCall
 from .config import get_merged_config
-from .models import HookRequest, HookResponse
+from .models import HookRequest, LinterHookResponse
 from .precommit_runner import PreCommitRunner
 
 
-def evaluate_pre(req: HookRequest) -> HookResponse:
+def evaluate_pre(req: HookRequest) -> LinterHookResponse:
     # Pre-write hook evaluation - early bailout
     if not isinstance(req.tool_call, WriteToolCall):
         # Return empty response to let normal permission flow continue
-        return HookResponse()
+        return LinterHookResponse()
 
     tool_call = req.tool_call
     if tool_call.content is None:
         # Return empty response to let normal permission flow continue
-        return HookResponse()
+        return LinterHookResponse()
 
     # Run hooks on temp file
     with tempfile.NamedTemporaryFile("w", delete=False, suffix=tool_call.file_path.suffix) as tmp:
@@ -45,7 +45,7 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
                 # Had violations but none were fixable
                 return _block_with_reason(out1, err1)
             # No violations at all - let normal permission flow continue
-            return HookResponse()
+            return LinterHookResponse()
 
         # Content changed, check if pre-commit is satisfied with the fixed version
         _ret2, out2, err2 = runner.run([tmp_path], cwd=tool_call.file_path.parent)
@@ -53,7 +53,7 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
 
         if fixed_content == fixed_again_content:
             # All violations were fixable - let normal permission flow continue
-            return HookResponse()
+            return LinterHookResponse()
         # Pre-commit keeps changing things - non-fixable violations found
         return _block_with_reason(out2, err2)
 
@@ -61,19 +61,19 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
         Path(tmp_path).unlink()
 
 
-def _block_with_reason(stdout: str, stderr: str) -> HookResponse:
+def _block_with_reason(stdout: str, stderr: str) -> LinterHookResponse:
     """Create a block response with formatted error output."""
     reason = f"Pre-write check failed with non-fixable errors:\nOutput:\n{stdout}\nError:\n{stderr}"
-    return HookResponse(decision=HookDecision.BLOCK, reason=reason)
+    return LinterHookResponse(decision="block", reason=reason)
 
 
-def evaluate_post(req: HookRequest) -> HookResponse:
+def evaluate_post(req: HookRequest) -> LinterHookResponse:
     # Post-write hook evaluation
     if not isinstance(req.tool_call, (WriteToolCall, EditToolCall, MultiEditToolCall)):
-        return HookResponse()
+        return LinterHookResponse()
     file_path = req.tool_call.file_path
     if not file_path.exists():
-        return HookResponse()
+        return LinterHookResponse()
 
     original = file_path.read_text()
 
@@ -88,15 +88,15 @@ def evaluate_post(req: HookRequest) -> HookResponse:
 
         if ret != 0:
             # There are violations - report them
-            return HookResponse(
-                decision=HookDecision.BLOCK,
+            return LinterHookResponse(
+                decision="block",
                 reason=(
                     f"FYI: Your edit was applied successfully, but the file now has linting violations:\n{out}\n\n"
                     "This is just a notification - your changes have been saved."
                 ),
             )
         # No violations
-        return HookResponse()
+        return LinterHookResponse()
     # Write tool - keep original behavior with autofixes
     config = get_merged_config([file_path], fix=True)
     runner = PreCommitRunner(config)
@@ -106,8 +106,8 @@ def evaluate_post(req: HookRequest) -> HookResponse:
     content_after_fixes = file_path.read_text()
 
     if content_after_fixes == original:
-        return HookResponse()
-    return HookResponse(decision=HookDecision.BLOCK, reason="FYI: Auto-fixes were applied")
+        return LinterHookResponse()
+    return LinterHookResponse(decision="block", reason="FYI: Auto-fixes were applied")
 
 
 @click.group()
@@ -221,7 +221,7 @@ def unified_hook() -> None:
         decision = evaluate_post(req)
     else:
         # For other events (Notification, Stop, SubagentStop), return empty response
-        decision = HookResponse()
+        decision = LinterHookResponse()
 
     # Handle output
     output_json = decision.model_dump_json(by_alias=True, exclude_none=True)

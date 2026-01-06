@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
+import docker
 import mcp.types
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,6 @@ from fastmcp.server import FastMCP
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 
-import docker
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core_testing.fixtures import RecordingHandler
@@ -576,14 +576,6 @@ def make_function_output_event(
 
 
 # --- Policy gateway fixtures (for MCP middleware tests) ---
-
-
-async def _mount_servers(comp: AgentContainerCompositor, servers: McpServerSpecs) -> None:
-    """Mount all servers from McpServerSpecs dict onto a compositor."""
-    for name, srv in servers.items():
-        if not isinstance(srv, FastMCP):
-            raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
-        await comp.mount_inproc(MCPMountPrefix(name), srv)
 
 
 async def _create_test_policy_engine(sqlite_persistence, async_docker_client) -> PolicyEngine:

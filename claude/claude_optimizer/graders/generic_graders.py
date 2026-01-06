@@ -141,7 +141,7 @@ class CodeGrader(GraderScoresheet):
                 }
             ]
 
-            openai_response = self.openai_client.responses.create(
+            openai_response = self.openai_client.responses.create(  # type: ignore[call-overload]
                 model=self.openai_model,
                 input=analysis_messages,
                 tools=[
@@ -223,6 +223,23 @@ class CodeGrader(GraderScoresheet):
 
         except (json.JSONDecodeError, KeyError) as e:
             error_msg = f"Code grading failed - response parsing error: {e}"
+            self._log_interaction(
+                test_case_name=self.requirement.name,
+                request_type="error",
+                claude_request={},
+                claude_response={},
+                success=False,
+                error_message=error_msg,
+            )
+            return GradeResult(
+                test_case_id=self.requirement.id,
+                test_case_name=self.requirement.name,
+                passed=False,
+                score=0.0,
+                feedback=error_msg,
+                generated_code=None,
+                analysis_details={"error": str(e)},
+            )
         except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
             error_msg = f"Code grading failed - file system error: {e}"
             self._log_interaction(
@@ -233,7 +250,6 @@ class CodeGrader(GraderScoresheet):
                 success=False,
                 error_message=error_msg,
             )
-
             return GradeResult(
                 test_case_id=self.requirement.id,
                 test_case_name=self.requirement.name,
@@ -320,7 +336,7 @@ class ActionSequenceGrader(GraderScoresheet):
             }
         ]
 
-        openai_response = self.openai_client.responses.create(
+        openai_response = self.openai_client.responses.create(  # type: ignore[call-overload]
             model=self.openai_model,
             input=analysis_messages,
             tools=[

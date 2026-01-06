@@ -126,12 +126,12 @@ class TypedClient:
         """
         # Access the internal tool manager and fetch local tools synchronously
         try:
-            tm = server._tool_manager  # type: ignore[attr-defined]
+            tm = server._tool_manager
         except AttributeError as exc:
             raise RuntimeError("Server does not expose _tool_manager") from exc
         # Prefer local tools; mounted tools aren't needed for typed tests here
         try:
-            tools_by_name = tm._tools  # type: ignore[attr-defined]
+            tools_by_name = tm._tools
         except AttributeError as exc:
             raise RuntimeError("Server tool manager does not expose _tools") from exc
         tools = list(tools_by_name.values())
@@ -150,11 +150,11 @@ class TypedClient:
             hinted_output = None
             if fn is not None:
                 try:
-                    hinted_input = fn._mcp_flat_input_model  # type: ignore[attr-defined]
+                    hinted_input = fn._mcp_flat_input_model
                 except AttributeError:
                     hinted_input = None
                 try:
-                    hinted_output = fn._mcp_flat_output_model  # type: ignore[attr-defined]
+                    hinted_output = fn._mcp_flat_output_model
                 except AttributeError:
                     hinted_output = None
             if fm is None:
@@ -164,8 +164,8 @@ class TypedClient:
                 if not (isinstance(arg_model, type) and issubclass(arg_model, BaseModel)):
                     continue
             else:
-                arg_model = fm.arg_model  # type: ignore[attr-defined]
-                out_model = fm.output_model  # type: ignore[attr-defined]
+                arg_model = fm.arg_model
+                out_model = fm.output_model
                 if out_model is None or arg_model is None:
                     continue
 
@@ -177,10 +177,10 @@ class TypedClient:
                 input_type = None
 
             try:
-                tool_key = t.key  # type: ignore[attr-defined]
+                tool_key = t.key
             except AttributeError:
                 try:
-                    tool_key = t.name  # type: ignore[attr-defined]
+                    tool_key = t.name
                 except AttributeError:
                     tool_key = None
             if not isinstance(tool_key, str) or not tool_key:

@@ -341,7 +341,7 @@ _jobs: dict[UUID, ValidationJob] = {}
 
 def get_registry(request: Request) -> AgentRegistry:
     """Get registry from app state."""
-    return request.app.state.registry
+    return request.app.state.registry  # type: ignore[no-any-return]
 
 
 def _extract_text_from_mcp_content(content: list) -> str | None:
@@ -350,7 +350,7 @@ def _extract_text_from_mcp_content(content: list) -> str | None:
         if isinstance(item, TextContent):
             return item.text
         if isinstance(item, dict) and "text" in item:
-            return item["text"]
+            return str(item["text"])
     return None
 
 
@@ -742,9 +742,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                     rationale=issue.rationale,
                     occurrences=[
                         ReportedIssueOccurrenceInfo(
-                            occurrence_id=occ.occurrence_id,
-                            note=occ.note,
-                            files=_group_locations_by_file(occ.locations),
+                            occurrence_id=str(occ.id), note=None, files=_group_locations_by_file(occ.locations)
                         )
                         for occ in issue.occurrences
                     ],
@@ -758,6 +756,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             grading_edges_for_grader = edges_to_info(edges)
 
         # Build type-specific details
+        details: CriticRunSpecifics | GraderRunSpecifics | OtherRunSpecifics
         if run.type_config.agent_type == AgentType.CRITIC:
             details = CriticRunSpecifics(
                 resolved_files=resolved_files, grader_runs=grader_runs, reported_issues=reported_issues
@@ -932,7 +931,7 @@ def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
     """Convert AgentRun ORM to RunInfo."""
     return RunInfo(
         agent_run_id=run.agent_run_id,
-        definition_id=run.definition_id,
+        definition_id=run.agent_definition_id,
         type_config=run.type_config,
         model=run.model,
         status=run.status,

@@ -2,14 +2,14 @@
 
 from contextlib import suppress
 
+import docker
 import pytest
 
-import docker
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.testing.fixtures import make_container_opts
 
 # Register mcp_infra and agent_core fixtures
-pytest_plugins = ["mcp_infra.testing.fixtures", "agent_core.testing.fixtures"]
+pytest_plugins = ["mcp_infra.testing.fixtures", "agent_core_testing.fixtures"]
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
@@ -19,15 +19,15 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
     client = None
     try:
-        client = docker.from_env()  # type: ignore[attr-defined]
+        client = docker.from_env()
         client.ping()
 
         # Check if required images are available
         try:
             client.images.get("python:3.12-slim")
-        except docker.errors.ImageNotFound:  # type: ignore[attr-defined]
+        except docker.errors.ImageNotFound:
             pytest.skip("Docker image python:3.12-slim not available (run: docker pull python:3.12-slim)")
-    except docker.errors.DockerException as exc:  # type: ignore[attr-defined]
+    except docker.errors.DockerException as exc:
         pytest.skip(f"Docker not available: {exc}")
     finally:
         if client is not None:

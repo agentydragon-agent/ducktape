@@ -13,9 +13,9 @@ from os import PathLike
 from pathlib import Path
 from urllib.parse import urlunparse
 
+import docker
 import yaml
 
-import docker
 from mcp_infra.constants import SLEEP_FOREVER_CMD
 from net_util.net import pick_free_port, wait_for_port
 from sandboxed_jupyter._jupyter_shared import (

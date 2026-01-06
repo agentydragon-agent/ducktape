@@ -24,15 +24,31 @@ def criteria_to_gmail_query(criteria: FilterCriteria) -> str:
 
 def rule_to_gmail_query(rule: FilterRule) -> str:
     """Convert FilterRule to Gmail search query string."""
-    # Build common criteria (from, to, subject, query, negated_query)
+    # Build query str from has field
+    query_str: str | None = None
+    if rule.has:
+        if isinstance(rule.has, list):
+            query_str = " ".join(rule.has)
+        elif isinstance(rule.has, str):
+            query_str = rule.has
+
+    # Build negated_query str from does_not_have field
+    negated_query_str: str | None = None
+    if rule.does_not_have:
+        if isinstance(rule.does_not_have, list):
+            negated_query_str = " ".join(rule.does_not_have)
+        elif isinstance(rule.does_not_have, str):
+            negated_query_str = rule.does_not_have
+
+    # Build common criteria (from, to, subject, query, negatedQuery) using dict to handle keyword conflict
     criteria = FilterCriteria(
-        from_=rule.from_ if isinstance(rule.from_, str) else None,
-        to=rule.to if isinstance(rule.to, str) else None,
-        subject=rule.subject if isinstance(rule.subject, str) else None,
-        query=(" ".join(rule.has) if isinstance(rule.has, list) else rule.has) if rule.has else None,
-        negated_query=(" ".join(rule.does_not_have) if isinstance(rule.does_not_have, list) else rule.does_not_have)
-        if rule.does_not_have
-        else None,
+        **{
+            "from": rule.from_ if isinstance(rule.from_, str) else None,
+            "to": rule.to if isinstance(rule.to, str) else None,
+            "subject": rule.subject if isinstance(rule.subject, str) else None,
+            "query": query_str,
+            "negatedQuery": negated_query_str,
+        }
     )
 
     # Start with common criteria
@@ -161,8 +177,8 @@ class GmailFilterPlanner:
         if self.additional_query:
             query = f"({query}) ({self.additional_query})"
 
-        # Fetch messages (minimal format for efficiency)
-        messages = inbox.fetch_messages_minimal(query)
+        # Fetch messages (metadata format for efficiency)
+        messages = inbox.fetch_messages_metadata(query)
 
         if not messages:
             plan.add_message(f"No messages match: {query[:50]}...")

@@ -33,7 +33,7 @@ class LiteralStr(str):
 
 def _literal_str_representer(dumper: yaml.Dumper, data: LiteralStr) -> yaml.Node:
     """Represent LiteralStr as YAML literal block style."""
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")  # type: ignore[no-any-return]
 
 
 yaml.add_representer(LiteralStr, _literal_str_representer)
@@ -53,7 +53,9 @@ def _get_file_set_paths(session: Session, snapshot_slug: SnapshotSlug, files_has
     return list(members)
 
 
-def _format_line_ranges(ranges: list[OccurrenceRangeORM]) -> list[dict[str, Any]] | list[list[int]] | int | None:
+def _format_line_ranges(
+    ranges: list[OccurrenceRangeORM],
+) -> list[dict[str, Any]] | list[list[int]] | list[int] | int | None:
     """Convert ORM line ranges to YAML-friendly format.
 
     YAML format:

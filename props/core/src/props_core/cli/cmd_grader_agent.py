@@ -202,7 +202,7 @@ def show_issue_cmd(
             typer.echo("Locations:")
             for occ in occs:
                 for loc in occ.locations or []:
-                    typer.echo(f"  - {loc.get('file', '?')}:{loc.get('start_line', '?')}-{loc.get('end_line', '?')}")
+                    typer.echo(f"  - {loc.file}:{loc.start_line or '?'}-{loc.end_line or '?'}")
 
 
 @show_app.command("gt")
@@ -246,8 +246,8 @@ def show_gt_cmd(gt_ref: Annotated[str, typer.Argument(help="GT reference: tp/<id
                 typer.echo(f"FP not found: {gt_id}", err=True)
                 raise typer.Exit(1)
 
-            occ = session.query(FalsePositiveOccurrenceORM).filter_by(fp_id=gt_id, occurrence_id=occ_id).first()
-            if not occ:
+            fp_occ = session.query(FalsePositiveOccurrenceORM).filter_by(fp_id=gt_id, occurrence_id=occ_id).first()
+            if not fp_occ:
                 typer.echo(f"FP occurrence not found: {gt_id}/{occ_id}", err=True)
                 raise typer.Exit(1)
 
@@ -255,10 +255,10 @@ def show_gt_cmd(gt_ref: Annotated[str, typer.Argument(help="GT reference: tp/<id
             typer.echo(
                 f"Rationale: {fp.rationale[:300]}..." if len(fp.rationale) > 300 else f"Rationale: {fp.rationale}"
             )
-            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
+            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in fp_occ.ranges}
             typer.echo(f"Files: {files_dict}")
-            if occ.note:
-                typer.echo(f"Note: {occ.note}")
+            if fp_occ.note:
+                typer.echo(f"Note: {fp_occ.note}")
 
 
 @app.command("match")

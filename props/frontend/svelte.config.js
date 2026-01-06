@@ -1,17 +1,8 @@
-import adapter from '@sveltejs/adapter-static';
-import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-
-/** @type {import('@sveltejs/kit').Config} */
+// Minimal svelte config for svelte-check
+// Build preprocessing is handled by esbuild-svelte
+/** @type {import('svelte/compiler').CompileOptions} */
 export default {
-  preprocess: vitePreprocess(),
-  kit: {
-    adapter: adapter({
-      pages: 'dist',
-      assets: 'dist',
-      fallback: 'index.html', // SPA mode - all routes go to index.html
-    }),
-    alias: {
-      $components: 'src/components',
-    },
+  compilerOptions: {
+    css: 'injected',
   },
 };

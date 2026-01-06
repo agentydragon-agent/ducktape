@@ -1,7 +1,3 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "wt"
 version = "0.0.0"
@@ -22,6 +18,12 @@ dependencies = [
   "watchdog>=4.0",
   "PyGithub>=1.77",
   "PyYAML>=6.0",
+  # Test dependencies (required for Bazel test target)
+  "pytest-mock>=3.10",
+  # Type stubs (required for Bazel mypy)
+  "types-colorama",
+  # Mypy (required for Bazel lint config)
+  "mypy>=1.14",
 ]
 
 [project.optional-dependencies]
@@ -43,41 +45,5 @@ dev = [
   "types-pygit2>=1.15.0",
 ]
 
-[project.scripts]
-wt = "wt.cli:main"
-wt-install = "wt.shell.install:main"
-
 [project.entry-points."wt.plugins"]
 wt_demo = "wt.demo_plugin"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["wt*"]
-
-[tool.setuptools.package-data]
-"wt.shell" = ["wt.sh"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-timeout = 30
-timeout_method = "thread"
-addopts = [
-    "-m",
-    "not real_github",
-    "-v",
-    "--tb=short",
-    "--strict-markers",
-    "--disable-warnings",
-]
-markers = [
-    "integration: integration tests that talk to real git repositories",
-    "unit: fast unit tests",
-    "shell: shell integration tests using fd3 redirection",
-    "real_github: tests that require network access to GitHub",
-    "asyncio: tests that use pytest-asyncio",
-    "slow: slow tests",
-    "timeout: per-test timeout override (pytest-timeout)",
-    "xdist_group: pytest-xdist group for parallel isolation",
-]
-testpaths = ["tests"]

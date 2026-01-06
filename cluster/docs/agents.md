@@ -682,7 +682,7 @@ helm install databot ./charts/kagent-agent \
 
 **computer-control-mcp Verification (2025-11-19):**
 
-- ✅ Successfully tested on Pop!_OS with home-manager
+- ✅ Successfully tested on Pop!\_OS with home-manager
 - ✅ Confirmed all tools work: screenshot, mouse, keyboard, OCR
 - ✅ Working setup documented in `/code/github.com/AB498/computer-control-mcp/`
 - ✅ Dependencies: Python 3.12, numpy, opencv4, tkinter, xlib, X11 libraries

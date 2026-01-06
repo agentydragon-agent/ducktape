@@ -2,24 +2,10 @@
 
 Local tools and libraries for my dev/worktree/LLM workflows.
 
-- LLM utilities: Agent REPL, properties/specimens, system rewriter, etc.
-- MCP servers and compositors
-- Docker-based agent execution
-
-## Workspace
-
-`adgn` is part of a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/):
-
-```
-ducktape/
-├── pyproject.toml          # Workspace root
-├── uv.lock                  # Shared lockfile
-├── adgn/                    # This package
-├── tana/                    # Tana export utilities
-└── agent_pkg/               # Agent package infrastructure
-    ├── host/                # Host-side (image building, init runner)
-    └── runtime/             # Container-side utilities
-```
+- Agent CLI (`adgn-agent`)
+- MCP servers (Gitea mirror)
+- Arg0 virtual CLI utilities
+- Testing support
 
 ## Environment and setup (direnv + devenv)
 
@@ -45,7 +31,7 @@ Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across
 - Run all tests (tests live under `adgn/tests`):
   - Inside `adgn/`.: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
-- Single test file/case: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
+- Single test file/case: `direnv exec adgn pytest tests/util/test_unified_patch.py`
 - **Debugging hangs/timeouts**: Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Pre-commit (preferred): `pre-commit install`, `pre-commit run -a`
@@ -60,21 +46,28 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, marke
 ## High-Level Module Map
 
 - Packaging: name `adgn`, Python `>=3.13`, src layout under `src/`
-- Response cache (`src/adgn/rspcache/`)
-  - `responses_db.py`; CLI `rspcache`
-- LLM toolkit and agent (`src/adgn/llm/*`, `src/adgn/agent/*`, `src/adgn/mcp/*`, `src/adgn/props/*`)
-  - Agent REPL, MCP utilities, instruction optimizer, properties/specimens
-- Seatbelt (`src/adgn/seatbelt/`) — sandbox policy validation and compilation
-- Instruction optimizer (`src/adgn/inop/`) — Claude instruction optimization
+- Agent CLI (`src/adgn/agent/`) — simple stdin/stdout REPL
+- MCP servers (`src/adgn/mcp/`) — Gitea mirror server
 - Tools (`src/adgn/tools/`) — `trivial_patterns` linter, arg0 utilities
+- Testing (`src/adgn/testing/`) — test fixtures, bootstrap helpers
+- Utilities (`src/adgn/util/`) — shared utilities
+
+**Moved to separate packages:**
+
+- Response cache → `rspcache/`
+- Properties/specimens → `props/`
+- Instruction optimizer → `inop/`
+- System rewriter → `sysrw/`
+- Seatbelt → `mcp_infra/` (under `seatbelt/`)
+- MCP compositor → `mcp_infra/`
 
 ## Console scripts
 
 See `[project.scripts]` in `pyproject.toml` for the full list of CLI entry points.
 
-- rspcache → adgn.rspcache.cli:main
-- LLM: adgn-agent, adgn-llm-edit, adgn-sysrw, props, sandbox-jupyter
-- Worktree tooling (`wt`, `wt-install`) now lives in the sibling `wt/` project
+- `adgn-agent` — Agent REPL
+- `adgn-trivial-patterns` — Trivial patterns linter
+- `adgn-mcp-gitea-mirror` — Gitea mirror MCP server
 
 ## Agent CLI
 
@@ -94,13 +87,3 @@ adgn-agent run --mcp-config extra.json      # Merge additional MCP config
   - Compatibility: `transport: "inproc"` with `factory` is still accepted, but runs over loopback HTTP
 
 **Note:** The Agent UI/server functionality has moved to the `agent_server/` package. See `agent_server/README.md` for web-based agent management
-
-## More details
-
-- See ./CLAUDE.md for a deeper guide (conventions, LLM toolkit patterns).
-
-## Runtime container image (container mode)
-
-- Build the base image used for both runtime exec and policy evaluation (run from workspace root `ducktape/`):
-  - `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
-  - Set `ADGN_RUNTIME_IMAGE=adgn-runtime:latest` to use this image everywhere.

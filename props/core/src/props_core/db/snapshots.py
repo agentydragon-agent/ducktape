@@ -21,6 +21,7 @@ class DBLineRange(BaseModel):
 
     start_line: int = Field(ge=1)
     end_line: int | None = Field(default=None)
+    note: str | None = Field(default=None)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

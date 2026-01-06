@@ -61,9 +61,7 @@ rust_binary(
         ":denomination",
         ":exchange_rate",
         ":flags",
-        ":graph_output",
         ":json_output",
-        ":solid_io",
         ":source",
         "//finance/worthy/converter:alphavantage_converter",
         "//finance/worthy/converter:currencylayer_converter",
@@ -104,75 +102,6 @@ rust_library(
         "@crates//:log",
         "@crates//:petgraph",
         "@crates//:rust_decimal",
-    ],
-)
-
-rust_library(
-    name =
-        "graph_util",
-    srcs = ["graph_util.rs"],
-    edition = "2024",
-    deps = [
-        "@crates//:sophia",
-    ],
-)
-
-rust_library(
-    name = "dpop_http_client",
-    srcs = ["dpop_http_client.rs"],
-    edition = "2024",
-    deps = [
-        "@crates//:base64",
-        "@crates//:biscuit",
-        "@crates//:chrono",
-        "@crates//:jwt",
-        "@crates//:log",
-        "@crates//:oauth2",
-        "@crates//:openssl",
-        "@crates//:rand",
-        "@crates//:reqwest",
-        "@crates//:serde",
-        "@crates//:url",
-    ],
-)
-
-rust_library(
-    name = "solid_io",
-    srcs = ["solid_io.rs"],
-    edition = "2024",
-    deps = [
-        ":dpop_http_client",
-        ":graph_output",
-        ":graph_util",
-        ":ns",
-        "@crates//:base64",
-        "@crates//:biscuit",
-        "@crates//:chrono",
-        "@crates//:env_logger",
-        "@crates//:jwt",
-        "@crates//:log",
-        "@crates//:oauth2",
-        "@crates//:openssl",
-        "@crates//:rand",
-        "@crates//:reqwest",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:sophia",
-        "@crates//:sophia_term",
-        "@crates//:tokio",
-        "@crates//:url",
-        "@crates//:warp",
-    ],
-)
-
-rust_test(
-    name = "solid_io_test",
-    srcs = ["solid_io_test.rs"],
-    edition = "2024",
-    deps = [
-        ":solid_io",
-        "@crates//:env_logger",
-        "@crates//:sophia",
     ],
 )
 
@@ -290,40 +219,6 @@ rust_test(
 )
 
 rust_library(
-    name = "graph_output",
-    srcs = ["graph_output.rs"],
-    edition = "2024",
-    deps = [
-        ":asset",
-        ":denomination",
-        ":exchange_rate",
-        ":ns",
-        "@crates//:chrono",
-        "@crates//:sophia",
-        "@crates//:uuid",
-    ],
-)
-
-rust_test(
-    name = "graph_output_test",
-    srcs = ["graph_output_test.rs"],
-    edition = "2024",
-    proc_macro_deps = [
-        "@crates//:rust_decimal_macros",
-    ],
-    deps = [
-        ":asset",
-        ":denomination",
-        ":exchange_rate",
-        ":graph_output",
-        "@crates//:chrono",
-        "@crates//:env_logger",
-        "@crates//:rust_decimal",
-        "@crates//:sophia",
-    ],
-)
-
-rust_library(
     name = "json_output",
     srcs = ["json_output.rs"],
     edition = "2024",
@@ -351,16 +246,5 @@ rust_test(
         "@crates//:rust_decimal",
         "@crates//:serde",
         "@crates//:serde_json",
-    ],
-)
-
-rust_library(
-    name = "ns",
-    srcs = [
-        "ns.rs",
-    ],
-    edition = "2024",
-    deps = [
-        "@crates//:sophia",
     ],
 )

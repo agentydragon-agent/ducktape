@@ -1,0 +1,29 @@
+# Formatters for bazel run //tools/format
+#
+# Usage:
+#   bazel run //tools/format          # Format all files
+#   bazel run //tools/format.check    # Check formatting (no changes)
+
+load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
+
+package(default_visibility = ["//visibility:public"])
+
+# Multi-formatter target combining all formatters
+# Run with: bazel run //tools/format
+# Check with: bazel run //tools/format.check
+format_multirun(
+    name = "format",
+    # JavaScript/TypeScript/CSS/HTML (uses prettier from tools/lint)
+    css = "//tools/lint:prettier",
+    html = "//tools/lint:prettier",
+    javascript = "//tools/lint:prettier",
+    markdown = "//tools/lint:prettier",
+    # Python (uses ruff format from multitool)
+    python = "@aspect_rules_lint//format:ruff",
+    # Rust (uses rustfmt from rules_rust)
+    rust = "@rules_rust//:rustfmt",
+    # Shell scripts (uses shfmt from multitool)
+    shell = "@aspect_rules_lint//format:shfmt",
+    # Starlark BUILD files (uses buildifier from buildifier_prebuilt)
+    starlark = "//tools/lint:buildifier",
+)

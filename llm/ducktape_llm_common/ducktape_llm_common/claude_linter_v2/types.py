@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from ducktape_llm_common.claude_code_api import SessionID
+from ..claude_code_api import SessionID
 
 __all__ = ["SessionID", "parse_session_id"]
 

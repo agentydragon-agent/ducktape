@@ -3,8 +3,96 @@ module(
     version = "0.1.0",
 )
 
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_python", version = "1.4.1")
+bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
+
+# NOTE: Using newer version with archive_override for ape module to use native ELF
+# instead of APE binaries (which require binfmt_misc not available in containers).
+bazel_dep(name = "aspect_rules_lint", version = "1.3.5")
+bazel_dep(name = "rules_multirun", version = "0.9.0")  # Required by format_multirun
+bazel_dep(name = "rules_multitool", version = "1.3.0")
+bazel_dep(name = "rules_mypy", version = "0.40.0")
+
+# Container images (rules_oci)
+bazel_dep(name = "rules_oci", version = "2.2.6")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "python_slim",
+    image = "docker.io/library/python",
+    platforms = ["linux/amd64"],
+    tag = "3.12-slim",
+)
+use_repo(oci, "python_slim", "python_slim_linux_amd64")
+
+# JavaScript/TypeScript (Node.js frontends)
+bazel_dep(name = "aspect_rules_js", version = "2.4.0")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.0")
+bazel_dep(name = "rules_nodejs", version = "6.3.4")
+
+# Node.js toolchain
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+
+# Workspace-level npm packages (pnpm workspace)
+# All JS/TS projects share a single lockfile and node_modules
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+npm.npm_translate_lock(
+    name = "npm_ducktape",
+    # Generate bin entries for dev tools from workspace root
+    bins = {
+        "eslint": ["eslint=./bin/eslint.js"],
+        "prettier": ["prettier=./bin/prettier.cjs"],
+        "svelte-check": ["svelte-check=./bin/svelte-check"],
+        "@sveltejs/kit": ["svelte-kit=./svelte-kit.js"],
+        "vite": ["vite=./bin/vite.js"],
+        "storybook": ["storybook=./index.cjs"],
+        "http-server": ["http-server=./bin/http-server"],
+    },
+    # Track package.json and workspace files for auto-update
+    data = [
+        "//:agent_server/src/agent_server/web/package.json",
+        "//:package.json",
+        "//:pnpm-workspace.yaml",
+        "//:props/frontend/package.json",
+        "//:rspcache/admin_ui/package.json",
+    ],
+    # Disable postinstall for unrs-resolver - it tries to download native bindings from npm registry
+    # which fails in Bazel's sandboxed build (network blocked). Safe to skip since @storybook/test-runner
+    # (the only consumer via jest-resolve) isn't executed during bazel build - only used for manual testing.
+    lifecycle_hooks_exclude = ["unrs-resolver"],
+    npmrc = "@@//:.npmrc",
+    # Root pnpm-lock.yaml with workspace packages
+    pnpm_lock = "//:pnpm-lock.yaml",
+    # Hoist ESLint plugins for runtime discovery
+    public_hoist_packages = {
+        "@eslint/js": [""],
+        "@typescript-eslint/eslint-plugin": [""],
+        "@typescript-eslint/parser": [""],
+        "eslint-plugin-svelte": [""],
+        "eslint-plugin-import": [""],
+        "eslint-plugin-react": [""],
+        "eslint-plugin-react-hooks": [""],
+        "svelte-eslint-parser": [""],
+        "globals@16.5.0": [""],
+    },
+    # Auto-regenerate pnpm-lock.yaml when package.json changes
+    update_pnpm_lock = True,
+)
+use_repo(npm, "npm_ducktape")
+
+# Proxy configuration for Claude Code web vs local development
+# Generates @proxy_config//:proxy_env.bzl with PROXY_ENV dict
+proxy_config = use_extension("//tools/proxy_config:defs.bzl", "proxy_config")
+use_repo(proxy_config, "proxy_config")
+
+# Custom multitool lockfile with newer ruff (0.14.0 vs 0.8.3 in aspect_rules_lint)
+multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+multitool.hub(lockfile = "//tools/multitool:lockfile.json")
+use_repo(multitool, "multitool")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
@@ -12,21 +100,38 @@ python.toolchain(
 )
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+# Proxy env for pip downloads is injected via .bazelrc --action_env by the
+# session-start hook on Claude Code web. No hardcoded proxy here - this file
+# should work both on local dev machines and on CC web.
+
 pip.parse(
     hub_name = "pypi",
     python_version = "3.13",
-    requirements_lock = "//:requirements_lock.txt",
+    requirements_lock = "//:requirements_bazel.txt",
 )
-use_repo(pip, "pypi")
+
+# Separate pip hub for homeassistant - requires Python 3.13.2+
+# Using "3.13" for Bazel toolchain (actual runtime is 3.13.x)
+pip.parse(
+    hub_name = "pypi_homeassistant",
+    python_version = "3.13",
+    requirements_lock = "//homeassistant:requirements.txt",
+)
+use_repo(pip, "pypi", "pypi_homeassistant")
+
+# uv toolchain for requirements locking
+uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
+uv.configure(version = "0.6.2")
 
 # Rust rules
-bazel_dep(name = "rules_rust", version = "0.61.0")  # latest 2025-05-19
+bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fix bzlmod ctve repo naming
 
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     edition = "2021",
-    versions = ["1.87.0"],
+    versions = ["1.87.0"],  # trying 1.87.0 to fix proc-macro loading issue
 )
 use_repo(rust, "rust_toolchains")
 

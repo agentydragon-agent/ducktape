@@ -1,7 +1,7 @@
 [project]
 name = "claude-web-hooks"
 version = "0.0.0"
-description = "Session hooks for Claude Code web environments."
+description = "Session hooks and Bazel proxy for Claude Code web environments."
 authors = [{ name = "Rai" }]
 requires-python = ">=3.12"
 # IMPORTANT: No runtime dependencies allowed.
@@ -12,3 +12,6 @@ dependencies = []
 dev = [
   "pytest>=8.3",
 ]
+
+[project.scripts]
+bazel-proxy = "claude_web_hooks:proxy_main"

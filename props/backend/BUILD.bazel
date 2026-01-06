@@ -1,0 +1,60 @@
+"""Props backend - FastAPI dashboard server."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "props_backend",
+    srcs = glob(["src/props_backend/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/core:props_core",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "props_backend_cli",
+    srcs = ["src/props_backend/cli.py"],
+    main = "src/props_backend/cli.py",
+    visibility = ["//props/frontend:__pkg__"],
+    deps = [":props_backend"],
+)
+
+py_binary(
+    name = "export_schema",
+    srcs = ["src/props_backend/export_schema.py"],
+    main = "src/props_backend/export_schema.py",
+    deps = [":props_backend"],
+)
+
+genrule(
+    name = "openapi_schema",
+    outs = ["openapi.json"],
+    cmd = "$(location :export_schema) > $@",
+    tools = [":export_schema"],
+    visibility = ["//props/frontend:__pkg__"],
+)
+
+py_test(
+    name = "test_props_backend",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_placeholder.py",
+    deps = [
+        ":props_backend",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":props_backend"],
+)

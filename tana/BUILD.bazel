@@ -1,0 +1,66 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "tana",
+    srcs = glob(["src/tana/**/*.py"]),
+    data = glob([
+        "src/tana/export/references/**/*",
+        "src/tana/export/headless_autoexport/**/*",
+        "src/tana/export/assets/**/*",
+        "src/tana/export/*.md",
+        "src/tana/export/*.txt",
+    ]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "tana-export",
+    srcs = ["src/tana/export/cli.py"],
+    main = "src/tana/export/cli.py",
+    deps = [":tana"],
+)
+
+py_binary(
+    name = "tana-export-convert",
+    srcs = ["src/tana/export/convert.py"],
+    main = "src/tana/export/convert.py",
+    deps = [":tana"],
+)
+
+py_binary(
+    name = "tana-export-searches",
+    srcs = ["src/tana/export/materialize_searches.py"],
+    main = "src/tana/export/materialize_searches.py",
+    deps = [":tana"],
+)
+
+py_binary(
+    name = "tana-export-issues",
+    srcs = ["src/tana/export/tana_issues_to_tanapaste.py"],
+    main = "src/tana/export/tana_issues_to_tanapaste.py",
+    deps = [":tana"],
+)
+
+py_test(
+    name = "test_tana",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/tana/test_convert.py",
+    deps = [
+        ":tana",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":tana"],
+)

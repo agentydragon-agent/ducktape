@@ -7,8 +7,11 @@ This file provides guidance to LLM agents for working with this repository.
 ## Before Hand-off
 
 ```bash
-pre-commit run --all-files
+bazel build --config=check //...
+bazel test //...
 ```
+
+This runs ruff + mypy lint checks and all tests. For Rust code, also run `bazel build --config=rust-check //finance/...`.
 
 If you touched `ansible/`, also follow the checklist in `ansible/AGENTS.md`.
 
@@ -22,19 +25,20 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 ### Active Development
 
-| Directory       | Purpose                          | Details                      |
-| --------------- | -------------------------------- | ---------------------------- |
-| `adgn/`         | LLM agent framework              | See `adgn/AGENTS.md`         |
-| `agent_server/` | FastAPI backend, runtime, policy | See `agent_server/AGENTS.md` |
-| `mcp_infra/`    | MCP compositor and utilities     | See `mcp_infra/AGENTS.md`    |
-| `agent_pkg/`    | Agent package infrastructure     | See `agent_pkg/AGENTS.md`    |
-| `tana/`         | Tana export toolkit              | See `tana/AGENTS.md`         |
-| `wt/`           | Worktree management              | See `wt/AGENTS.md`           |
-| `gatelet/`      | Gateway/tunneling                | See `gatelet/AGENTS.md`      |
-| `ansible/`      | System configuration             | See `ansible/AGENTS.md`      |
-| `docker/`       | Container images                 | See `docker/AGENTS.md`       |
-| `dotfiles/`     | Shell configs, scripts           | See `dotfiles/AGENTS.md`     |
-| `props/`        | Properties/specimens             | See `props/AGENTS.md`        |
+| Directory       | Purpose                          |
+| --------------- | -------------------------------- |
+| `adgn/`         | LLM agent framework              |
+| `agent_server/` | FastAPI backend, runtime, policy |
+| `cluster/`      | k8s cluster                      |
+| `mcp_infra/`    | MCP compositor and utilities     |
+| `agent_pkg/`    | Agent package infrastructure     |
+| `tana/`         | Tana export toolkit              |
+| `wt/`           | Worktree management              |
+| `gatelet/`      | Gateway/tunneling                |
+| `ansible/`      | System configuration             |
+| `docker/`       | Container images                 |
+| `dotfiles/`     | Shell configs, scripts           |
+| `props/`        | Properties/specimens             |
 
 ### Less Active
 
@@ -44,35 +48,151 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 | `trilium/`         | Trilium Notes extensions  |
 | `inventree_utils/` | InventTree plugins        |
 | `website/`         | Personal website (Hakyll) |
-| `k8s/`             | k3s cluster configs       |
+| `k8s-old/`         | legacy k3s cluster        |
 
-## Cross-Cutting Concerns
+## Dotfiles and Shell Configuration
 
-### Python / UV Workspace
+**Most configuration has migrated to Nix home-manager** (see `nix/home/home.nix`).
 
-Uses [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/):
+### What Nix Manages
 
-- Single `uv.lock` at repo root
-- Each package has `.envrc` + `devenv.nix` for per-package venv
-- Run `direnv allow` in package directory to set up environment
-- Target Python: 3.13+
+- **Shell configs**: `programs.bash`, `programs.zsh`, `programs.atuin`, `programs.direnv`, `programs.zoxide`, `programs.eza`
+- **Shell init scripts**: `nix/home/shell/*.sh` (bash-init.sh, zsh-init.zsh, common-init.sh)
+- **Aliases**: `home.shellAliases`
+- **Environment variables**: `home.sessionVariables`
+- **Powerlevel10k**: `nix/home/p10k.zsh` → `~/.p10k.zsh`
 
-```bash
-# Per-package (recommended):
-cd adgn && direnv allow
+### What Remains in `dotfiles/`
 
-# Or workspace-level:
-uv sync
+- **`~/.profile`** - Complex conditional PATH management and legacy integrations (CUDA, lesspipe, dotnet, pnpm, machine-specific config)
+- **`~/.secret_env`** - Secret environment variables (not tracked in git)
+- **`~/.config/*`** - Application configs not yet migrated
+- **`~/.local/bin/*`** - Utility scripts (theme switchers, backup utilities)
+- **rcm config** - `rcrc` controls symlink behavior for remaining dotfiles
+
+### Important Notes
+
+- **DO NOT modify dotfiles directly in `~/`** - edit source files in `dotfiles/` or `nix/home/`
+- **Shell configs are Nix-managed** - do not edit `~/.bashrc`, `~/.zshrc`, `~/.shellrc` directly
+- Host-specific rcm configs: `host-agentydragon/rcrc`, `host-gpd/rcrc`
+
+### Deployment
+
+- **Nix config**: `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`
+- **Remaining dotfiles**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
+
+See `dotfiles/docs/shell-configuration.md` for detailed loading order and migration status.
+
+## Infrastructure Components
+
+### Ansible Automation
+
+The `ansible/` directory contains system configuration.
+See: @ansible/README.md
+
+#### Playbooks
+
+- `agentydragon.yaml` - Main laptop configuration
+- `vps.yaml` - VPS server deployment
+- `gpd.yaml` - GPD laptop setup
+- `wyrm.yaml` - Wyrm desktop provisioning
+
+#### Key Roles
+
+- **System Base**: `cli/`, `gui/`, `common/`
+- **Development**: `golang/`, `dev_env/`, `dev_clojure/`
+- **Services**: `trilium_server/`, `headscale_server/`, `syncthing_server/`
+- **Networking**: `tailscale_client/`
+
+### Network Infrastructure
+
+- **Headscale**: Self-hosted Tailscale controller (100.64.0.0/10)
+- **Syncthing**: Cross-device file synchronization
+
+## Less Active Components
+
+These components exist but see minimal recent changes:
+
+### Finance Tools (`finance/`)
+
+- Worthy: Rust-based portfolio tracker (uses Cargo/Bazel)
+- Reconciliation utilities for various financial systems
+
+### Knowledge Management
+
+- **Trilium Notes** (`trilium/`): Extensions and widgets
+- **Tana Export** (`tana/`): Export utilities
+
+### Other Tools
+
+- **InventTree** (`inventree_utils/`): Inventory management plugins
+- **Website** (`website/`): Personal website (Hakyll/Haskell)
+- **Kubernetes** (`k8s/`): k3s cluster configurations
+
+## Build System
+
+This repository uses **Bazel** as the unified build system for all Python packages and most other components.
+
+### Python (Bazel with rules_python)
+
+```
+ducktape/
+├── MODULE.bazel             # Bazel module definition
+├── requirements_bazel.txt   # Single source of truth for Python deps
+├── adgn/BUILD.bazel         # Main LLM/agent package
+├── agent_core/BUILD.bazel   # Core agent loop machinery
+├── mcp_infra/BUILD.bazel    # MCP infrastructure
+└── ...                      # Other packages with BUILD.bazel files
 ```
 
-### Other Build Systems
+**Key points:**
 
-- **Rust** (`finance/`): `cargo build && cargo test`
-- **Bazel**: `bazel build //target:name`
+- `requirements_bazel.txt` is the single source of truth for Python dependencies
+- All Python packages have `BUILD.bazel` files defining targets
+- Linting via `ruff_test` targets (aspect_rules_lint)
+- Python 3.12+ is the target runtime version
+
+**Development workflow:**
+
+```bash
+# Build all targets
+bazel build //...
+
+# Run all tests (includes ruff lint tests)
+bazel test //...
+
+# Format code (ruff, prettier, shfmt, buildifier)
+bazel run //tools/format
+
+# Build specific target
+bazel build //adgn:adgn
+```
+
+**Adding dependencies:**
+
+1. Add to `requirements_bazel.txt`
+2. Run `bazel run //:requirements.update` to regenerate lockfile
+3. Use `@pypi//package_name` in BUILD.bazel deps
+
+### Rust (Finance tools)
+
+```bash
+bazel build //finance/worthy:rust_main
+bazel test //finance/worthy/...
+bazel build --config=rust-check //finance/...  # Rust linting
+```
+
+**Adding dependencies:**
+
+1. Add to root `Cargo.toml`
+2. Run `CARGO_BAZEL_REPIN=1 bazel sync --only=crates` to update lockfile
+3. Use `@crates//crate_name` in BUILD.bazel deps
+
+## Development Practices
 
 ### Testing
 
-- Test files: `test_*.py`
+- Test files: `test_*.py` in same directory as code
 - Framework: pytest with pytest-asyncio
 - Fixtures for shared setup
 

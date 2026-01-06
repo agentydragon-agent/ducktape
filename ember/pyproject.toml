@@ -5,9 +5,6 @@ description = "Minimal containerised agent pilot (Matrix + OpenAI)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "agent-core",
-    "openai-utils",
-    "mcp-infra",
     "fastapi>=0.110",
     "uvicorn>=0.22",
     "matrix-nio>=0.23",
@@ -29,32 +26,3 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 
-[project.scripts]
-emberd = "ember.__main__:main"
-ember-eval = "ember.evals.runner:cli_main"
-ember-python = "ember.runtime.python_session:cli_main"
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["ember*" ]
-
-[tool.setuptools.package-data]
-"ember" = [
-    "system_prompt.md.j2",
-    "resources/*",
-    "resources/examples/*",
-    "resources/examples/python-session/*",
-    "resources/examples/matrix-client/*",
-]
-
-[tool.uv.sources]
-agent-core = { workspace = true }
-openai-utils = { workspace = true }
-mcp-infra = { workspace = true }

@@ -601,7 +601,7 @@ class ResponsesDB:
     # ------------------------------------------------------------------
 
     def _notify_queues(
-        self, _conn: Connection[Any] | PoolConnectionProxy[Any], _pid: int, _channel: str, payload: object
+        self, _conn: Connection | PoolConnectionProxy, _pid: int, _channel: str, payload: object
     ) -> None:
         event = parse_event(str(payload))
         task = asyncio.create_task(self._fanout(event))

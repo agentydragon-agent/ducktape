@@ -26,6 +26,10 @@
   vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
   ```
 
+## Build System
+
+- [ ] Migrate all Python packages to Bazel monorepo style (colocated tests, flat structure like `git_commit_ai/`)
+
 ## Repository
 
 - [ ] Pick a sane license schema (probably AGPL)

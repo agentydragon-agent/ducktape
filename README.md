@@ -5,7 +5,15 @@ into separate repositories.
 
 Based on my [Python project skeleton](https://gitlab.com/agentydragon/python-skeleton).
 
-Please install and use [pre-commit](https://github.com/pre-commit/pre-commit).
+## Development
+
+This repository uses **Bazel** as the primary build system. Install the git pre-commit hook:
+
+```bash
+pre-commit install
+```
+
+This installs the pre-commit framework which runs ruff, buildifier, prettier, eslint and other linters on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`).
 
 ## License
 

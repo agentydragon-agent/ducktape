@@ -1,0 +1,59 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "habitify_mcp_server",
+    srcs = glob(["habitify_mcp_server/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "habitify",
+    srcs = ["habitify_mcp_server/cli.py"],
+    main = "habitify_mcp_server/cli.py",
+    deps = [":habitify_mcp_server"],
+)
+
+py_binary(
+    name = "run_server",
+    srcs = ["examples/run_server.py"],
+    main = "examples/run_server.py",
+    deps = [":habitify_mcp_server"],
+)
+
+py_binary(
+    name = "test_mcp_dev",
+    srcs = ["examples/test_mcp_dev.py"],
+    main = "examples/test_mcp_dev.py",
+    deps = [":habitify_mcp_server"],
+)
+
+py_test(
+    name = "test_habitify",
+    srcs = glob(["habitify_mcp_server/tests/**/*.py"]),
+    imports = ["."],
+    main = "habitify_mcp_server/tests/conftest.py",
+    deps = [
+        ":habitify_mcp_server",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":habitify_mcp_server"],
+)

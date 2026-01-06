@@ -104,7 +104,7 @@ class GraderScoresheet(ABC):
             claude_request=claude_request,
             claude_response=claude_response,
             success=success,
-            error_message=error_message,
+            error_message=error_message or "",
         )
         self.interactions.append(interaction)
 
