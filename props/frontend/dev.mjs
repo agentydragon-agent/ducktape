@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Development server: esbuild watch + HTTP server
+// Development server: esbuild watch + HTTP server + backend
 
+import { spawn } from 'child_process';
 import esbuild from 'esbuild';
 import esbuildSvelte from 'esbuild-svelte';
 import tailwindcss from 'esbuild-plugin-tailwindcss';
@@ -13,8 +14,81 @@ import { existsSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORT = 5173;
+const FRONTEND_PORT = 5173;
+const BACKEND_PORT = 8000;
 const HOST = 'localhost';
+
+// Parse command line args
+const args = process.argv.slice(2);
+const skipBackend = args.includes('--frontend-only');
+
+// Color codes for log prefixes
+const C = {
+  reset: '\x1b[0m',
+  cyan: '\x1b[36m',
+  yellow: '\x1b[33m',
+  green: '\x1b[32m',
+  dim: '\x1b[2m',
+};
+
+function prefixLines(prefix, color, data) {
+  const lines = data
+    .toString()
+    .split('\n')
+    .filter((l) => l.trim());
+  for (const line of lines) {
+    console.log(`${color}[${prefix}]${C.reset} ${line}`);
+  }
+}
+
+// Health check with polling
+async function waitForBackend(timeoutMs = 30000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${BACKEND_PORT}/health`);
+      if (res.ok) return true;
+    } catch {
+      // Not ready yet
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+// Start backend process
+let backendProcess = null;
+if (!skipBackend) {
+  // Check for required environment variables
+  const REQUIRED_ENV = ['PGHOST', 'PGPORT', 'PGDATABASE', 'PGUSER'];
+  const missing = REQUIRED_ENV.filter((v) => !process.env[v]);
+  if (missing.length > 0) {
+    console.warn(`${C.yellow}Warning: Missing env vars: ${missing.join(', ')}${C.reset}`);
+    console.warn(`${C.dim}Backend may fail. Run from props/ direnv shell.${C.reset}`);
+  }
+
+  // Backend CLI is in runfiles at props/backend/props_backend_cli
+  // From props/frontend (chdir location), go up to runfiles root then down to backend
+  const backendBin = resolve(__dirname, '..', 'backend', 'props_backend_cli');
+
+  backendProcess = spawn(backendBin, ['--host', '127.0.0.1', '--port', String(BACKEND_PORT)], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env },
+  });
+
+  backendProcess.stdout.on('data', (d) => prefixLines('backend', C.cyan, d));
+  backendProcess.stderr.on('data', (d) => prefixLines('backend', C.cyan, d));
+
+  backendProcess.on('error', (err) => {
+    console.error(`${C.cyan}[backend]${C.reset} Failed to start: ${err.message}`);
+  });
+
+  backendProcess.on('exit', (code, signal) => {
+    if (signal !== 'SIGTERM' && signal !== 'SIGINT' && code !== 0) {
+      console.error(`${C.cyan}[backend]${C.reset} Process exited (code: ${code})`);
+    }
+  });
+}
 
 const CONTENT_TYPES = {
   '.html': 'text/html',
@@ -47,14 +121,27 @@ const ctx = await esbuild.context({
     tailwindcss(),
   ],
   alias: {
-    '$lib': resolve(__dirname, 'src/lib'),
-    '$components': resolve(__dirname, 'src/components'),
+    $lib: resolve(__dirname, 'src/lib'),
+    $components: resolve(__dirname, 'src/components'),
   },
+  // Support svelte package exports condition (required for svelte-data-table, svelte-markdown)
+  conditions: ['svelte', 'browser', 'module', 'import'],
   logLevel: 'info',
+  // Suppress source map warnings - Svelte 5 compiler generates invalid source maps
+  // https://github.com/sveltejs/svelte/issues/16615
+  logOverride: {
+    'invalid-source-mappings': 'silent',
+  },
 });
 
 await ctx.watch();
-console.log('esbuild watching for changes...');
+console.log(`${C.yellow}[esbuild]${C.reset} watching for changes...`);
+
+// Wait for backend health (if started)
+let backendHealthy = skipBackend;
+if (!skipBackend) {
+  backendHealthy = await waitForBackend();
+}
 
 // Start HTTP server
 const server = createServer(async (req, res) => {
@@ -88,13 +175,32 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`\nDev server running at http://${HOST}:${PORT}/\n`);
+server.listen(FRONTEND_PORT, HOST, () => {
+  console.log(`\n${'='.repeat(50)}`);
+  console.log(`${C.green}Dev servers ready:${C.reset}`);
+  console.log(`  Frontend: http://${HOST}:${FRONTEND_PORT}/`);
+  if (!skipBackend) {
+    const status = backendHealthy ? `${C.green}(healthy)${C.reset}` : `${C.yellow}(starting...)${C.reset}`;
+    console.log(`  Backend:  http://127.0.0.1:${BACKEND_PORT}/ ${status}`);
+  }
+  console.log(`${'='.repeat(50)}\n`);
 });
 
 // Handle shutdown
 process.on('SIGINT', async () => {
   console.log('\nShutting down...');
+  if (backendProcess && !backendProcess.killed) {
+    backendProcess.kill('SIGTERM');
+  }
+  await ctx.dispose();
+  server.close();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  if (backendProcess && !backendProcess.killed) {
+    backendProcess.kill('SIGTERM');
+  }
   await ctx.dispose();
   server.close();
   process.exit(0);

@@ -51,14 +51,6 @@ in {
       -c max_connections=200
   '';
 
-  # Backend dev server (FastAPI with auto-reload)
-  # Watch both props_core and props_backend source directories for changes
-  processes.backend.exec = "uvicorn props_backend.app:app --reload --host 127.0.0.1 --port 8000 --reload-dir backend/src --reload-dir core/src";
-
-  # Frontend dev server (Vite)
-  # Must cd to frontend dir - pnpm --dir doesn't work reliably with process-compose
-  processes.frontend.exec = "cd ./frontend && pnpm dev --port 5173";
-
   # Periodic database backup (every 6 hours, keeps 7 days)
   # Uses PG* env vars from devenv.env; PGPASSWORD read from state file
   processes.pg_backup.exec = ''
@@ -90,8 +82,6 @@ in {
   # into its own activity system and hides logs by default (showOutput=false).
   # This makes the process-compose TUI log panel empty. Override to show logs.
   # See: https://github.com/cachix/devenv/issues/2037
-  tasks."devenv:processes:backend".showOutput = true;
-  tasks."devenv:processes:frontend".showOutput = true;
   tasks."devenv:processes:postgres".showOutput = true;
 
   # Environment variables (database connection parameters - single source of truth)
@@ -134,9 +124,8 @@ in {
 
     echo ""
     echo "Props dev environment ready"
-    echo "  devenv up  → starts postgres + backend + frontend + periodic backup"
-    echo "  Backend:   http://localhost:8000"
-    echo "  Frontend:  http://localhost:5173"
+    echo "  devenv up                          → starts postgres + periodic backup"
+    echo "  bazelisk run //props/frontend:dev  → frontend + backend (from direnv shell)"
     echo ""
     echo "Database backup commands:"
     echo "  props db backup        → create manual backup"

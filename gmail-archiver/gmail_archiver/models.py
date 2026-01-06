@@ -68,14 +68,16 @@ class Email:
     def text_plain(self) -> str | None:
         for part in self._parsed.walk():
             if part.get_content_type() == "text/plain":
-                return part.get_content()
+                content = part.get_content()
+                return str(content) if content is not None else None
         return None
 
     @cached_property
     def text_html(self) -> str | None:
         for part in self._parsed.walk():
             if part.get_content_type() == "text/html":
-                return part.get_content()
+                content = part.get_content()
+                return str(content) if content is not None else None
         return None
 
     def get_text(self) -> str:

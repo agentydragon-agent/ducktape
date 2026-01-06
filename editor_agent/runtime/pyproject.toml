@@ -3,9 +3,8 @@ name = "editor-agent-runtime"
 version = "0.1.0"
 description = "Container-side utilities for editor agent"
 requires-python = ">=3.13"
+# Local workspace deps (agent-pkg-runtime, cli-util) handled by Bazel deps
 dependencies = [
-    "agent-pkg-runtime",
-    "cli-util",
     "typer>=0.9",
 ]
 

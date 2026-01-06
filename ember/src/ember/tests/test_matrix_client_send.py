@@ -25,7 +25,7 @@ class FakeAsyncClient:
 async def test_matrix_client_send_text_message(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = FakeAsyncClient()
 
-    async def fake_create_client(self: MatrixClient) -> FakeAsyncClient:  # type: ignore[override]  # Test mock narrows return type
+    async def fake_create_client(self: MatrixClient) -> FakeAsyncClient:  # Test mock narrows return type
         return fake_client
 
     async def fake_initialise_control_rooms(self: MatrixClient) -> set[str]:

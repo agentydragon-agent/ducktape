@@ -17,7 +17,7 @@ from uuid import UUID
 
 import click
 import humanize
-from pytimeparse import parse as parse_duration  # type: ignore[import-untyped]
+from pytimeparse import parse as parse_duration
 
 from ..claude_code_api import SessionID
 from . import __version__

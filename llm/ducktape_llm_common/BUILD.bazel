@@ -7,6 +7,7 @@ py_library(
     name = "ducktape_llm_common",
     srcs = glob(["ducktape_llm_common/**/*.py"]),
     data = glob(["ducktape_llm_common/**/*.md"]),
+    imports = ["."],  # Add this directory to Python path so 'ducktape_llm_common' is importable
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//click",
@@ -50,4 +51,3 @@ ruff_test(
     name = "ruff",
     srcs = [":ducktape_llm_common"],
 )
-

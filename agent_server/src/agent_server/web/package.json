@@ -1,5 +1,12 @@
 {
   "name": "agent-server-web",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.25.1",
+    "esbuild-svelte": "^0.9.4",
+    "esbuild-plugin-tailwindcss": "^2.0.3",
+    "svelte": "^5.38.1",
+    "tailwindcss": "^4.1.18"
+  }
 }

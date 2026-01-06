@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-import aiofiles  # type: ignore[import-untyped]
+import aiofiles
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np

@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "Props dashboard backend - FastAPI server for training/evaluation metrics"
 readme = "README.md"
 requires-python = ">=3.13"
+# Local workspace deps (props-core) handled by Bazel deps
 dependencies = [
-    "props-core",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.0",

@@ -27,18 +27,12 @@ claude_mcp_servers:
 
   arxiv:
     command: uvx
-    args:
-      [
-        "--from",
-        "git+https://github.com/blazickjp/arxiv-mcp-server.git",
-        "arxiv-mcp-server",
-      ]
+    args: ["--from", "git+https://github.com/blazickjp/arxiv-mcp-server.git", "arxiv-mcp-server"]
     env: {}
 
   probe:
     command: uvx
-    args:
-      ["--from", "git+https://github.com/buger/probe.git", "probe-mcp-server"]
+    args: ["--from", "git+https://github.com/buger/probe.git", "probe-mcp-server"]
     env: {}
 
 # Whether to automatically apply configuration

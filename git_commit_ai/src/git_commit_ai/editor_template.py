@@ -59,18 +59,15 @@ def render_editor_comment(
 
     template_pkg = resources.files(__package__).joinpath("templates")
     template_text = template_pkg.joinpath("editor_comment.mako").read_text("utf-8")
-    return (
-        Template(template_text)
-        .render(
-            user_context=user_context,
-            previous_message=previous_message,
-            stats_line=stats_line,
-            branch=branch,
-            staged_diff=staged_diff,
-            unstaged_diff=unstaged_diff,
-            untracked_files=untracked_files,
-            scissors_mark=SCISSORS_MARK,
-            include_verbose=include_verbose,
-        )
-        .strip()
+    rendered: str = Template(template_text).render(
+        user_context=user_context,
+        previous_message=previous_message,
+        stats_line=stats_line,
+        branch=branch,
+        staged_diff=staged_diff,
+        unstaged_diff=unstaged_diff,
+        untracked_files=untracked_files,
+        scissors_mark=SCISSORS_MARK,
+        include_verbose=include_verbose,
     )
+    return rendered.strip()

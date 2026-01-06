@@ -188,11 +188,7 @@
         </div>
       </div>
       <Breadcrumb
-        items={[
-          { label: 'Home', href: '/' },
-          { label: 'Snapshots', href: '/snapshots' },
-          { label: snapshot.slug },
-        ]}
+        items={[{ label: 'Home', href: '/' }, { label: 'Snapshots', href: '/snapshots' }, { label: snapshot.slug }]}
       />
     </div>
 

@@ -56,4 +56,3 @@ ruff_test(
     name = "ruff",
     srcs = [":editor_agent"],
 )
-

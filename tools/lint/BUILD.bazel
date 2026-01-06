@@ -8,10 +8,49 @@ load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 package(default_visibility = ["//visibility:public"])
 
 # Mypy CLI using hermetic Python 3.13 toolchain with fixed librt dependency
+# deps includes mypy plugins:
+#   - pydantic: understands Field aliases, model validation
+#   - sqlalchemy: ORM type inference for mapped columns
 mypy_cli(
     name = "mypy_cli",
     mypy_requirement = "@pypi//mypy",
     python_version = "3.13",
+    deps = [
+        # Mypy plugins
+        "@pypi//pydantic",  # pydantic.mypy plugin
+        "@pypi//sqlalchemy",  # sqlalchemy.ext.mypy.plugin
+        # Packages with inline stubs (py.typed)
+        "@pypi//click",
+        "@pypi//pytest",
+        "@pypi//httpx",
+        "@pypi//humanize",
+        "@pypi//platformdirs",
+        "@pypi//pyyaml",
+        "@pypi//tomli",
+        "@pypi//tomli_w",
+        "@pypi//openai",
+        "@pypi//anthropic",
+        "@pypi//anyio",
+        "@pypi//rich",
+        "@pypi//typer",
+        "@pypi//structlog",
+        "@pypi//requests",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+        "@pypi//tenacity",
+        "@pypi//jinja2",
+        "@pypi//markdown",
+        "@pypi//markdownify",
+        "@pypi//mcp",
+        "@pypi//fastmcp",
+        "@pypi//ruff",
+        "@pypi//pygit2",
+        "@pypi//pytimeparse",
+        # Type stubs for packages without inline types
+        "@pypi//types_colorama",
+        "@pypi//types_markdown",
+        "@pypi//types_pyyaml",
+    ],
 )
 
 # ESLint binary for JS/TS linting

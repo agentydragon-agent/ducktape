@@ -7,7 +7,7 @@ import re
 import sys
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -78,7 +78,7 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
             ):
                 # Extract ISO timestamp from error message
                 retry_timestamp = datetime.fromisoformat(match.group(1))
-                now = datetime.now(datetime.UTC)
+                now = datetime.now(UTC)
                 seconds_to_wait = max(0, int((retry_timestamp - now).total_seconds()))
                 debug_info["retry_timestamp"] = match.group(1)
                 return seconds_to_wait, debug_info
@@ -516,7 +516,7 @@ class GmailClient:
         # Invalidate cache
         self._label_cache = None
 
-        return result["id"]
+        return str(result["id"])
 
     def _refresh_label_cache_if_needed(self) -> None:
         if self._label_cache is not None:

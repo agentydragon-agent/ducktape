@@ -120,9 +120,7 @@ async function runVisualTests() {
   const harnessPath = process.env.HARNESS_PATH || join(__dirname, 'harness/dist/harness.js');
   // harnessDir is the parent of dist, containing both index.html and dist/
   const distDir = dirname(harnessPath);
-  const harnessDir = distDir.endsWith('/dist') || distDir.endsWith('\\dist')
-    ? dirname(distDir)
-    : distDir;
+  const harnessDir = distDir.endsWith('/dist') || distDir.endsWith('\\dist') ? dirname(distDir) : distDir;
 
   console.log(`Harness directory: ${harnessDir}`);
 

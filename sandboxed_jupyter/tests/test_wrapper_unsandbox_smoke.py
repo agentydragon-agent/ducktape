@@ -3,7 +3,7 @@ import shutil
 
 import pytest
 
-from tests._markers import REQUIRES_SANDBOX_EXEC
+from ._markers import REQUIRES_SANDBOX_EXEC
 
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell, pytest.mark.xdist_group("sj_stdio")]

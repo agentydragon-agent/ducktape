@@ -4,10 +4,12 @@ These are the canonical IDs for built-in agent definitions that are synced from 
 The actual definitions live in src/adgn/props/agent_defs/<id>/.
 """
 
+from props_core.ids import DefinitionId
+
 # Core evaluation agents
-CRITIC_AGENT_DEFINITION_ID = "critic"
-GRADER_AGENT_DEFINITION_ID = "grader"
+CRITIC_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("critic")
+GRADER_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("grader")
 
 # Optimization agents
-PROMPT_OPTIMIZER_AGENT_DEFINITION_ID = "prompt_optimizer"
-IMPROVEMENT_AGENT_DEFINITION_ID = "improvement"
+PROMPT_OPTIMIZER_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("prompt_optimizer")
+IMPROVEMENT_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("improvement")

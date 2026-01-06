@@ -7,4 +7,5 @@ from tana.export.convert import main as convert_main
 
 def main() -> int:
     """Invoke the default export CLI."""
-    return convert_main()
+    convert_main()
+    return 0

@@ -1,6 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
@@ -57,7 +57,6 @@ ruff_test(
     srcs = [":gatelet"],
 )
 
-
 # --- OCI Image ---
 
 py_binary(
@@ -83,17 +82,17 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    tars = [
-        ":server_tar",
-        ":alembic_tar",
-    ],
     entrypoint = ["/app/server"],
-    workdir = "/app",
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
     exposed_ports = ["8000/tcp"],
+    tars = [
+        ":server_tar",
+        ":alembic_tar",
+    ],
+    workdir = "/app",
 )
 
 oci_load(

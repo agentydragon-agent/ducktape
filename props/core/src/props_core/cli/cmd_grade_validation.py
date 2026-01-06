@@ -130,7 +130,7 @@ async def cmd_grade_validation(
             # Build work items grouped by definition
             # Each definition gets a list of ValidationWorkItem
             # parent_agent_run_id is None if critic needs to run, otherwise UUID if grader needs to run
-            work_items_by_definition: dict[str, list[ValidationWorkItem]] = defaultdict(list)
+            work_items_by_definition: dict[DefinitionId, list[ValidationWorkItem]] = defaultdict(list)
 
             for example in validation_examples:
                 example_spec = example.to_example_spec()
@@ -301,7 +301,7 @@ async def cmd_grade_validation(
 
         # Build queue of (definition_id, ValidationWorkItem) tuples
         # Ordered by definition priority (same order as stats table: valid LCB desc, train LCB desc, created_at desc)
-        work_queue: asyncio.Queue[tuple[str, ValidationWorkItem]] = asyncio.Queue()
+        work_queue: asyncio.Queue[tuple[DefinitionId, ValidationWorkItem]] = asyncio.Queue()
         total_items = 0
         for definition_id in all_definition_ids:
             items = work_items_by_definition.get(definition_id, [])

@@ -152,16 +152,18 @@ def list_snapshots() -> SnapshotsListResponse:
         snapshots = session.query(Snapshot).order_by(Snapshot.created_at.desc()).all()
 
         # Count TPs and FPs per snapshot
-        tp_counts = dict(
-            session.query(TruePositive.snapshot_slug, func.count(TruePositive.tp_id))
+        tp_counts: dict[SnapshotSlug, int] = {
+            row[0]: row[1]
+            for row in session.query(TruePositive.snapshot_slug, func.count(TruePositive.tp_id))
             .group_by(TruePositive.snapshot_slug)
             .all()
-        )
-        fp_counts = dict(
-            session.query(FalsePositive.snapshot_slug, func.count(FalsePositive.fp_id))
+        }
+        fp_counts: dict[SnapshotSlug, int] = {
+            row[0]: row[1]
+            for row in session.query(FalsePositive.snapshot_slug, func.count(FalsePositive.fp_id))
             .group_by(FalsePositive.snapshot_slug)
             .all()
-        )
+        }
 
         return SnapshotsListResponse(
             snapshots=[
@@ -236,14 +238,14 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         # Convert TPs
         tp_infos = []
         for tp in tps:
-            occ_infos = []
+            tp_occ_infos: list[OccurrenceInfo] = []
             for occ in tp.occurrences:
                 matchable_files = (
                     matchable_files_by_hash.get(occ.graders_match_only_if_reported_on)
                     if occ.graders_match_only_if_reported_on
                     else None
                 )
-                occ_infos.append(
+                tp_occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
                         files=_build_file_locations_from_ranges(occ.ranges),
@@ -253,30 +255,30 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
                     )
                 )
             tp_infos.append(
-                TpInfo(tp_id=tp.tp_id, rationale=tp.rationale, occurrences=occ_infos, created_at=tp.created_at)
+                TpInfo(tp_id=tp.tp_id, rationale=tp.rationale, occurrences=tp_occ_infos, created_at=tp.created_at)
             )
 
         # Convert FPs
         fp_infos = []
         for fp in fps:
-            occ_infos = []
-            for occ in fp.occurrences:
+            fp_occ_infos: list[OccurrenceInfo] = []
+            for fp_occ in fp.occurrences:
                 matchable_files = (
-                    matchable_files_by_hash.get(occ.graders_match_only_if_reported_on)
-                    if occ.graders_match_only_if_reported_on
+                    matchable_files_by_hash.get(fp_occ.graders_match_only_if_reported_on)
+                    if fp_occ.graders_match_only_if_reported_on
                     else None
                 )
-                occ_infos.append(
+                fp_occ_infos.append(
                     OccurrenceInfo(
-                        occurrence_id=occ.occurrence_id,
-                        files=_build_file_locations_from_ranges(occ.ranges),
-                        note=occ.note,
+                        occurrence_id=fp_occ.occurrence_id,
+                        files=_build_file_locations_from_ranges(fp_occ.ranges),
+                        note=fp_occ.note,
                         graders_match_only_if_reported_on=matchable_files,
-                        relevant_files=sorted(str(rf.file_path) for rf in occ.relevant_file_orms),
+                        relevant_files=sorted(str(rf.file_path) for rf in fp_occ.relevant_file_orms),
                     )
                 )
             fp_infos.append(
-                FpInfo(fp_id=fp.fp_id, rationale=fp.rationale, occurrences=occ_infos, created_at=fp.created_at)
+                FpInfo(fp_id=fp.fp_id, rationale=fp.rationale, occurrences=fp_occ_infos, created_at=fp.created_at)
             )
 
         return SnapshotDetailResponse(

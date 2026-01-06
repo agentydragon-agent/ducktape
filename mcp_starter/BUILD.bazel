@@ -67,4 +67,3 @@ ruff_test(
     name = "ruff",
     srcs = [":adgn_mcp_starter"],
 )
-

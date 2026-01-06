@@ -1,6 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
@@ -37,7 +37,6 @@ ruff_test(
     srcs = [":rspcache"],
 )
 
-
 # --- OCI Image ---
 
 pkg_tar(
@@ -51,15 +50,26 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    tars = [":cli_tar"],
+    cmd = [
+        "run",
+        "--app",
+        "proxy",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+    ],
     entrypoint = ["/app/rspcache_cli"],
-    cmd = ["run", "--app", "proxy", "--host", "0.0.0.0", "--port", "8000"],
-    workdir = "/opt/adgn",
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
-    exposed_ports = ["8000/tcp", "8100/tcp"],
+    exposed_ports = [
+        "8000/tcp",
+        "8100/tcp",
+    ],
+    tars = [":cli_tar"],
+    workdir = "/opt/adgn",
 )
 
 oci_load(

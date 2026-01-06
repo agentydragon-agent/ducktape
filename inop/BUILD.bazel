@@ -1,0 +1,48 @@
+"""Instruction optimizer package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "inop",
+    srcs = glob(["src/inop/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core",
+        "//mcp_infra",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//claude_code_sdk",
+        "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//matplotlib",
+        "@pypi//pandas",
+        "@pypi//pathspec",
+        "@pypi//plotnine",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//structlog",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_test(
+    name = "test_inop",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_optimizer_two_iters.py",
+    deps = [
+        ":inop",
+        "@pypi//aiodocker",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_mock",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":inop"],
+)

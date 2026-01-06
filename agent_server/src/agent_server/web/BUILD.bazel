@@ -1,7 +1,6 @@
-load("@aspect_rules_js//js:defs.bzl", "js_run_devserver")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_run_devserver")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
-load("@npm_ducktape//:vite/package_json.bzl", vite_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 
 # Link npm packages for this workspace member
@@ -73,15 +72,26 @@ vitest_bin.vitest_test(
     ]),
 )
 
-# Vite build (production bundle)
+# esbuild binary for production bundle
+js_binary(
+    name = "build_bundle",
+    data = _SRCS + [
+        "esbuild.config.mjs",
+        ":node_modules",
+    ],
+    entry_point = "esbuild.config.mjs",
+)
+
+# Production bundle using esbuild
 # Run: bazel build //agent_server/src/agent_server/web:bundle
 # Output: bazel-bin/agent_server/src/agent_server/web/dist/
-vite_bin.vite(
+js_run_binary(
     name = "bundle",
-    srcs = _SRCS + [":node_modules"],
-    args = ["build"],
+    srcs = _SRCS + ["esbuild.config.mjs"],
+    outs = ["dist/main.js"],
+    args = ["dist"],
     chdir = package_name(),
-    out_dirs = ["dist"],
+    tool = ":build_bundle",
 )
 
 # Vite dev server

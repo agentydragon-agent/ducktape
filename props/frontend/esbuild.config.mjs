@@ -30,8 +30,8 @@ const config = {
     tailwindcss(),
   ],
   alias: {
-    '$lib': resolve(__dirname, 'src/lib'),
-    '$components': resolve(__dirname, 'src/components'),
+    $lib: resolve(__dirname, 'src/lib'),
+    $components: resolve(__dirname, 'src/components'),
   },
   loader: {
     '.svg': 'text',
@@ -44,6 +44,11 @@ const config = {
   // Support svelte package exports condition
   conditions: ['svelte', 'browser', 'module', 'import'],
   logLevel: 'info',
+  // Suppress source map warnings - Svelte 5 compiler generates invalid source maps
+  // https://github.com/sveltejs/svelte/issues/16615
+  logOverride: {
+    'invalid-source-mappings': 'silent',
+  },
 };
 
 if (watch) {

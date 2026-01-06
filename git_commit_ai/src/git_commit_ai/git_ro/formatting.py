@@ -184,7 +184,7 @@ def diff_to_file_stats(diff: pygit2.Diff) -> list[StatItem]:
     For renamed files, preserves both old_path (source) and path (destination).
     """
     out: list[StatItem] = []
-    for patch in diff:  # type: ignore[assignment]  # pygit2.Diff iteration typing incomplete in stubs
+    for patch in diff:
         delta = patch.delta
         additions, deletions = _count_patch_lines(patch)
 

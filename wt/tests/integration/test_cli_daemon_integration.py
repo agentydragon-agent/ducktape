@@ -217,6 +217,7 @@ class TestRealGitOperations:
 
         # Verify commit exists
         commit = worktree_repo.get(commit_id)
+        assert isinstance(commit, pygit2.Commit)
         assert commit.message == "Test commit"
 
     def test_worktree_status_with_changes(self, real_temp_repo, real_env, wt_cli):

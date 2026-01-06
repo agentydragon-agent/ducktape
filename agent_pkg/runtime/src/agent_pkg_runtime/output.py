@@ -67,7 +67,7 @@ def describe_relation_jinja(relation_name: str) -> str:
     return run_command_jinja(f'psql -c "\\d+ {relation_name}"')
 
 
-def _setup_jinja_env(helpers: Mapping[str, Callable[..., Any]] | None = None) -> Environment:
+def _setup_jinja_env(helpers: Mapping[str, Any] | None = None) -> Environment:
     """Create Jinja2 environment with standard helpers.
 
     Globals:
@@ -113,7 +113,7 @@ def _setup_jinja_env(helpers: Mapping[str, Callable[..., Any]] | None = None) ->
     return env
 
 
-def render_doc(content: str, helpers: Mapping[str, Callable[..., Any]] | None = None) -> str:
+def render_doc(content: str, helpers: Mapping[str, Any] | None = None) -> str:
     """Render doc content with Jinja2, providing run_command and custom helpers.
 
     Args:
@@ -191,7 +191,7 @@ def print_workspace_tree(workspace: Path = WORKSPACE, depth: int = 3) -> None:
     run_command(["tree", "-L", str(depth), "-a", "-p", "--noreport", str(workspace)])
 
 
-def render_agent_prompt(template_path: str, helpers: Mapping[str, Callable[..., Any]] | None = None) -> None:
+def render_agent_prompt(template_path: str, helpers: Mapping[str, Any] | None = None) -> None:
     """Render agent prompt from package resource.
 
     Supports:

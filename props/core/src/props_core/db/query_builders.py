@@ -113,11 +113,7 @@ def list_true_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     Returns:
         Query selecting TruePositive ORM objects (access .occurrences via relationship)
     """
-    return (
-        select(TruePositive)
-        .where(TruePositive.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
-        .order_by(TruePositive.tp_id)
-    )
+    return select(TruePositive).where(TruePositive.snapshot_slug == snapshot_slug).order_by(TruePositive.tp_id)
 
 
 # TODO: Consider removing - no usages found anywhere
@@ -130,11 +126,7 @@ def list_false_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     Returns:
         Query selecting FalsePositive ORM objects (access .occurrences via relationship)
     """
-    return (
-        select(FalsePositive)
-        .where(FalsePositive.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
-        .order_by(FalsePositive.fp_id)
-    )
+    return select(FalsePositive).where(FalsePositive.snapshot_slug == snapshot_slug).order_by(FalsePositive.fp_id)
 
 
 # TODO: Consider removing - compiled but never rendered in template, agents can query directly
@@ -305,7 +297,7 @@ def critic_runs_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Sel
         )
         .where(
             AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-            AgentRun.type_config["example"]["snapshot_slug"].astext == snapshot_slug,  # type: ignore[arg-type]
+            AgentRun.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
         )
         .order_by(AgentRun.created_at.desc())
         .limit(limit)

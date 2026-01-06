@@ -17,7 +17,7 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         self._nodes: dict[NodeId, BaseNode] = dict(nodes)
         self._supertag_index: dict[NodeId, list[str]] = {}
         for node in self._nodes.values():
-            object.__setattr__(node, "_graph", self)
+            node._graph = self
         self._build_supertag_index()
 
     # Mapping interface -----------------------------------------------------

@@ -89,4 +89,4 @@ def test_validation_still_works():
 
     # Validation errors still work
     with pytest.raises(ValidationError):
-        PetWithDiscriminator(animal={"pet_type": "bird", "chirps": 2})  # type: ignore[arg-type]
+        PetWithDiscriminator(animal={"pet_type": "bird", "chirps": 2})

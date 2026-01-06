@@ -1,6 +1,6 @@
 """Habitify MCP Server implementation."""
 
-from typing import Literal
+from typing import Literal, cast
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -29,7 +29,7 @@ def create_habitify_mcp_server(
 
     def get_client(ctx: Context) -> HabitifyClient:
         """Get the HabitifyClient from the lifespan context."""
-        return ctx.request_context.lifespan_context
+        return cast(HabitifyClient, ctx.request_context.lifespan_context)
 
     @server.tool()
     async def get_habits(ctx: Context, include_archived: bool = False) -> HabitsResult:

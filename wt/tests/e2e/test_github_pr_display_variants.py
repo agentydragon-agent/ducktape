@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from wt.shared.fixtures import PRFixtureEntry
+from wt.shared.github_models import PRState
 
 
 def _write_shadow_github(mock_root: Path, variant: str):
@@ -92,7 +93,7 @@ class Github:
     (mock_pkg / "__init__.py").write_text(body)
 
 
-def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
+def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any]) -> dict[str, Any]:
     """Minimal JSON-RPC 2.0 call helper for tests over UNIX socket."""
     req = {"jsonrpc": "2.0", "method": method, "params": params, "id": str(uuid.uuid4())}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
@@ -104,7 +105,8 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict) -> dict:
             line = f.readline()
             if not line:
                 raise AssertionError("No response from daemon")
-            return json.loads(line.decode())
+            result: dict[str, Any] = json.loads(line.decode())
+            return result
 
 
 @pytest.mark.integration
@@ -140,7 +142,7 @@ def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
             else 789
             if variant == "closed"
             else 0,
-            state="open" if variant == "open_mergeable" else "closed",
+            state=PRState.OPEN if variant == "open_mergeable" else PRState.CLOSED,
             draft=False,
             mergeable=variant in {"open_mergeable", "merged"},
             merged_at=None if variant != "merged" else datetime.now().isoformat(),

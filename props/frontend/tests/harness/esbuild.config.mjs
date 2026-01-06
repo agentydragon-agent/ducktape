@@ -28,8 +28,8 @@ await esbuild.build({
     tailwindcss(),
   ],
   alias: {
-    '$lib': resolve(rootDir, 'src/lib'),
-    '$components': resolve(rootDir, 'src/components'),
+    $lib: resolve(rootDir, 'src/lib'),
+    $components: resolve(rootDir, 'src/components'),
   },
   // Help esbuild find node_modules in Bazel sandbox
   nodePaths: [resolve(process.cwd(), 'node_modules')],

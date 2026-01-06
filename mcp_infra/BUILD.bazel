@@ -36,10 +36,12 @@ py_test(
     deps = [
         ":mcp_infra",
         "//agent_core_testing",
+        "@pypi//docker",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//syrupy",
+        "@pypi//types_docker",
     ],
 )
 
@@ -47,4 +49,3 @@ ruff_test(
     name = "ruff",
     srcs = [":mcp_infra"],
 )
-

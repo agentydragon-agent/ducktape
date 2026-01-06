@@ -14,9 +14,10 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
 
     # Create two worktrees against branches test/aaaaa and test/bbbbb
     repo = pygit2.Repository(repo_path)
-    head = repo.head.target
-    repo.create_branch("test/aaaaa", repo.get(head))
-    repo.create_branch("test/bbbbb", repo.get(head))
+    head_commit = repo[repo.head.target]
+    assert isinstance(head_commit, pygit2.Commit)
+    repo.create_branch("test/aaaaa", head_commit)
+    repo.create_branch("test/bbbbb", head_commit)
 
     wt_a = repo_path / "worktrees" / "aaaaa"
     wt_b = repo_path / "worktrees" / "bbbbb"

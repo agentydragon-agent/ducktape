@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from tests.asserts import assert_output_contains
 from wt.cli import app
-from wt.shared.protocol import WorktreeInfo, WorktreeListResult
+from wt.shared.protocol import WorktreeID, WorktreeInfo, WorktreeListResult
 
 
 @pytest.mark.integration
@@ -41,7 +41,7 @@ class TestNewCLIIntegration:
         mock_list.return_value = WorktreeListResult(
             worktrees=[
                 WorktreeInfo(
-                    wtid="test-worktree",
+                    wtid=WorktreeID("test-worktree"),
                     name="test-worktree",
                     absolute_path=Path("/tmp/test-worktree"),
                     branch_name="test/test-branch",

@@ -49,7 +49,7 @@ def rule_to_gmail_query(rule: FilterRule) -> str:
             "query": query_str,
             "negatedQuery": negated_query_str,
         }
-    )  # type: ignore[arg-type]
+    )
 
     # Start with common criteria
     parts = []

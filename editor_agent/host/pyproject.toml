@@ -3,14 +3,8 @@ name = "editor-agent"
 version = "0.1.0"
 description = "Host-side orchestration for editor agent"
 requires-python = ">=3.13"
+# Local workspace deps (editor-agent-runtime, agent-pkg-host, agent-core, mcp-infra, net-util, openai-utils, cli-util) handled by Bazel deps
 dependencies = [
-    "editor-agent-runtime",
-    "agent-pkg-host",
-    "agent-core",
-    "mcp-infra",
-    "net-util",
-    "openai-utils",
     "aiodocker",
     "typer>=0.9",
-    "cli-util",
 ]

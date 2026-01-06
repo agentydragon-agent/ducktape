@@ -49,7 +49,7 @@ class ServiceManager:
         introspection = await bus.introspect("org.example.TestService", "/org/example/TestObject")
         obj = bus.get_proxy_object("org.example.TestService", "/org/example/TestObject", introspection)
         # dbus-fast dynamically generates proxy methods from introspection XML
-        interface = obj.get_interface("org.example.TestInterface")  # type: ignore[attr-defined]
+        interface = obj.get_interface("org.example.TestInterface")
         await interface.call_emit_signal(msg)  # type: ignore[attr-defined]
         bus.disconnect()
 
@@ -60,7 +60,7 @@ class ServiceManager:
         introspection = await bus.introspect("org.example.TestService", "/org/example/TestObject")
         obj = bus.get_proxy_object("org.example.TestService", "/org/example/TestObject", introspection)
         # dbus-fast dynamically generates proxy methods from introspection XML
-        interface = obj.get_interface("org.example.TestInterface")  # type: ignore[attr-defined]
+        interface = obj.get_interface("org.example.TestInterface")
         await interface.call_quit()  # type: ignore[attr-defined]
         bus.disconnect()
         await asyncio.wait_for(self.proc.wait(), timeout=2)

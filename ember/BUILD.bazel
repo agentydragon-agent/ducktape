@@ -1,8 +1,8 @@
 """Ember agent package."""
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files([
@@ -78,7 +78,6 @@ ruff_test(
     srcs = [":ember"],
 )
 
-
 # --- OCI Image ---
 
 pkg_tar(
@@ -92,14 +91,14 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    tars = [":emberd_tar"],
     entrypoint = ["/app/emberd"],
-    workdir = "/opt/emberd",
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
     exposed_ports = ["8000/tcp"],
+    tars = [":emberd_tar"],
+    workdir = "/opt/emberd",
 )
 
 oci_load(

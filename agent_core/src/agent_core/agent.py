@@ -480,6 +480,11 @@ class Agent:
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
 
+    @property
+    def model(self) -> str:
+        """Get the model name used by this agent."""
+        return self._client.model
+
     def _extract_text_from_message(self, msg: UserMessage | AssistantMessage) -> str:
         """Extract text content from message's content parts.
 

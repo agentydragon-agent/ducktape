@@ -3,10 +3,8 @@ name = "agent-core"
 version = "0.1.0"
 description = "Core agent loop machinery for LLM agents with MCP tool wiring"
 requires-python = ">=3.13"
+# Local workspace deps (openai-utils, agent-pkg-host, mcp-infra) handled by Bazel deps
 dependencies = [
-    "openai-utils",
-    "agent-pkg-host",
-    "mcp-infra",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",
@@ -17,11 +15,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# NOTE: agent-core-testing, mcp-infra handled by Bazel deps
 testing = [
-    "agent-core-testing",
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
-    "mcp-infra",
 ]
 dev = [
     "agent-core[testing]",

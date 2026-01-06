@@ -6,6 +6,7 @@ exports_files(["pyproject.toml"])
 py_library(
     name = "claude_hooks",
     srcs = glob(["claude_hooks/**/*.py"]),
+    imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//platformdirs",
@@ -40,4 +41,3 @@ ruff_test(
     name = "ruff",
     srcs = [":claude_hooks"],
 )
-

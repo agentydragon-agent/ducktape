@@ -6,6 +6,7 @@ exports_files(["pyproject.toml"])
 py_library(
     name = "habitify_mcp_server",
     srcs = glob(["habitify_mcp_server/**/*.py"]),
+    imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//httpx",
@@ -47,6 +48,8 @@ py_test(
         ":habitify_mcp_server",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 
@@ -54,4 +57,3 @@ ruff_test(
     name = "ruff",
     srcs = [":habitify_mcp_server"],
 )
-

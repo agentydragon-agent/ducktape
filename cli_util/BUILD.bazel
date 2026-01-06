@@ -20,4 +20,3 @@ ruff_test(
     name = "ruff",
     srcs = [":cli_util"],
 )
-

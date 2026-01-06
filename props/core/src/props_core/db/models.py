@@ -369,7 +369,7 @@ class Snapshot(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()  # type: ignore[arg-type]
+        return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
 
     @classmethod
     def get_by_split(cls, split: str) -> list[Snapshot]:
@@ -379,19 +379,17 @@ class Snapshot(Base):
         return list(session.execute(select(cls).where(cls.split == split)).scalars().all())
 
     def files_with_issues(self) -> set[Path]:
-        # occurrence.files is JSONB dict {path: line_ranges}, so we iterate keys (strings)
-        # and convert to Path objects
         tp_files = {
-            Path(file_path)
+            range_orm.file_path
             for tp in self.true_positives
             for occurrence in tp.occurrences
-            for file_path in occurrence.files
+            for range_orm in occurrence.ranges
         }
         fp_files = {
-            Path(file_path)
+            range_orm.file_path
             for fp in self.false_positives
             for occurrence in fp.occurrences
-            for file_path in occurrence.files
+            for range_orm in occurrence.ranges
         }
         return tp_files | fp_files
 
@@ -428,7 +426,7 @@ class TruePositive(Base):
         if session is None:
             raise RuntimeError("Model not bound to session")
         return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.tp_id == tp_id)  # type: ignore[arg-type]
+            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.tp_id == tp_id)
         ).scalar_one_or_none()
 
     @classmethod
@@ -436,7 +434,7 @@ class TruePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
+        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
 
 
 class FalsePositive(Base):
@@ -472,7 +470,7 @@ class FalsePositive(Base):
         if session is None:
             raise RuntimeError("Model not bound to session")
         return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)  # type: ignore[arg-type]
+            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)
         ).scalar_one_or_none()
 
     @classmethod
@@ -480,7 +478,7 @@ class FalsePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
+        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
 
 
 class TruePositiveOccurrenceORM(Base):
@@ -1018,7 +1016,7 @@ class Event(Base):
     sequence_num: Mapped[int] = mapped_column(nullable=False)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
-    payload: Mapped[EventType] = mapped_column(PydanticColumn(EventType), nullable=False)  # type: ignore[arg-type]
+    payload: Mapped[EventType] = mapped_column(PydanticColumn(EventType), nullable=False)
 
     # Relationships
     agent_run: Mapped[AgentRun] = relationship(back_populates="events")
@@ -1080,7 +1078,7 @@ class OccurrenceCredit(Base):
 
     # Critique provenance
     critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    critic_definition_id: Mapped[str] = mapped_column(String, nullable=False)
+    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, nullable=False)
 
     # Models
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
@@ -1120,7 +1118,7 @@ class RecallByRun(Base):
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Critic-specific columns
-    critic_definition_id: Mapped[str] = mapped_column(String, nullable=False)
+    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, nullable=False)
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
     critic_status: Mapped[AgentRunStatus] = mapped_column(nullable=False)
 
@@ -1147,7 +1145,7 @@ class RecallByDefinitionExample(Base):
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     # Composite primary key
-    critic_definition_id: Mapped[str] = mapped_column(String, primary_key=True)
+    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
@@ -1187,7 +1185,7 @@ class RecallByDefinitionSplitKind(Base):
     # Composite primary key (matches view GROUP BY)
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
-    critic_definition_id: Mapped[str] = mapped_column(String, primary_key=True)
+    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Example and run counts
@@ -1339,7 +1337,7 @@ class OccurrenceStatistics(Base):
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Critic-specific
-    critic_definition_id: Mapped[str] = mapped_column(String, primary_key=True)
+    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Grader-specific
@@ -1358,7 +1356,7 @@ class AgentDefinition(Base):
 
     __tablename__ = "agent_definitions"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
     agent_type: Mapped[str] = mapped_column(String, nullable=False)  # agent_type_enum value
     archive: Mapped[bytes] = mapped_column(postgresql.BYTEA, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
@@ -1383,7 +1381,9 @@ class AgentRun(Base):
     __tablename__ = "agent_runs"
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    agent_definition_id: Mapped[str] = mapped_column(String, ForeignKey("agent_definitions.id"), nullable=False)
+    agent_definition_id: Mapped[DefinitionId] = mapped_column(
+        String, ForeignKey("agent_definitions.id"), nullable=False
+    )
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id"), nullable=True, index=True
     )

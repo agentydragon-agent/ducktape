@@ -101,8 +101,8 @@ async def editor_docker_session(
         compositor=compositor,
         runtime=runtime_mount,
         resources=resources_mount,
-        original_content=original_content,
         filename=filename,
+        original_content=original_content,
         _server_task=server_task,
     )
     try:

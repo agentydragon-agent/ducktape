@@ -19,7 +19,7 @@ from claude_hooks.tool_models import EditInput, WriteInput
 
 
 @pytest.fixture
-def git_repo(tmp_path):
+def git_repo(tmp_path: Path) -> Path:
     """Create a basic git repository with user configuration."""
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
@@ -32,7 +32,7 @@ def git_repo(tmp_path):
 
 
 @pytest.fixture
-def precommit_repo(git_repo):
+def precommit_repo(git_repo: Path) -> Path:
     """Git repository with pre-commit configuration and initial commit."""
     # TODO: Consider using real ruff/isort hooks instead of mock script for more realistic integration testing
     # Create a simple test fixer script that replaces 'foo' with 'bar'
@@ -91,7 +91,7 @@ sys.exit(1 if changed else 0)
 
 
 @pytest.fixture
-def claude_config_dir(tmp_path):
+def claude_config_dir(tmp_path: Path) -> Path:
     """Create Claude configuration directory with hook settings."""
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()
@@ -133,7 +133,7 @@ precommit_autofix:
 
 
 @pytest.fixture(autouse=True)
-def xdg_env(tmp_path, monkeypatch):
+def xdg_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     """Set up isolated XDG environment variables for all tests automatically."""
     xdg_dirs = {
         "XDG_CONFIG_HOME": tmp_path / ".config",
@@ -160,7 +160,7 @@ def autofixer_hook():
 
 
 @pytest.fixture
-def mock_context(tmp_path):
+def mock_context(tmp_path: Path) -> HookContext:
     """Create a mock HookContext for testing."""
     return HookContext(
         hook_name="test_hook",
@@ -171,7 +171,7 @@ def mock_context(tmp_path):
 
 
 @pytest.fixture
-def hook_context(precommit_repo):
+def hook_context(precommit_repo: Path) -> HookContext:
     """Create HookContext for precommit integration tests."""
     return HookContext(
         hook_name="precommit_autofix",
@@ -208,7 +208,9 @@ def create_write_hook_input(file_path: Path, content: str, cwd: Path) -> PostToo
 
 
 @pytest.fixture
-def integration_env(precommit_repo, claude_config_dir, xdg_env, monkeypatch):
+def integration_env(
+    precommit_repo: Path, claude_config_dir: Path, xdg_env: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+):
     """Full integration test environment with all components."""
     # Set up XDG config to point to our claude_config_dir
     monkeypatch.setenv("XDG_CONFIG_HOME", str(claude_config_dir.parent))
@@ -276,13 +278,13 @@ def integration_env(precommit_repo, claude_config_dir, xdg_env, monkeypatch):
 
 
 @pytest.fixture
-def unit_env(precommit_repo, monkeypatch):
+def unit_env(precommit_repo: Path, monkeypatch: pytest.MonkeyPatch):
     """Minimal unit test environment with repo and working directory."""
     monkeypatch.chdir(precommit_repo)
 
     class UnitEnv:
-        def __init__(self):
-            self.repo_path = precommit_repo
+        def __init__(self) -> None:
+            self.repo_path: Path = precommit_repo
 
         def write_file(self, file_path: str, content: str) -> Path:
             full_path = self.repo_path / file_path

@@ -6,6 +6,7 @@ import pytest
 from hamcrest import all_of, assert_that, contains_string, has_entries
 
 from ducktape_llm_common.claude_code_api import StopRequest
+from ducktape_llm_common.claude_linter_v2.config.models import StopHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
 
 
@@ -19,7 +20,9 @@ def handler(tmp_path, monkeypatch):
     subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True, capture_output=True)
     handler = HookHandler()
     # Ensure quality gate is enabled for testing
-    handler.config_loader.config.hooks["stop"].quality_gate = True
+    stop_config = handler.config_loader.config.hooks["stop"]
+    assert isinstance(stop_config, StopHookConfig)
+    stop_config.quality_gate = True
     return handler
 
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-import plotext as plt  # type: ignore[import-untyped]
+import plotext as plt
 import typer
 from rich import box
 from rich.console import Console

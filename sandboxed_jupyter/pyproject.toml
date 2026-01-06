@@ -3,9 +3,8 @@ name = "sandboxed-jupyter"
 version = "0.1.0"
 description = "Sandboxed Jupyter execution with seatbelt and Docker modes"
 requires-python = ">=3.13"
+# Local workspace deps (net-util, mcp-infra) handled by Bazel deps
 dependencies = [
-    "net-util",          # for pick_free_port, wait_for_port
-    "mcp-infra",         # seatbelt policy compilation
     "pydantic>=2.0",
     "PyYAML",
     "ipykernel>=6",

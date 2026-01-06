@@ -1,5 +1,6 @@
 """Tests for diff intelligence module."""
 
+from collections import defaultdict
 from pathlib import Path
 
 from ducktape_llm_common.claude_code_api import EditOperation, EditToolCall, MultiEditToolCall
@@ -146,23 +147,21 @@ class TestDiffIntelligence:
         """Test formatting categorized violations."""
         di = DiffIntelligence()
 
-        groups = {
-            ViolationCategory.IN_DIFF: [
-                CategorizedViolation(
-                    violation=Violation(rule="E722", line=10, column=0, message="Bare except"),
-                    category=ViolationCategory.IN_DIFF,
-                    distance_from_change=0,
-                )
-            ],
-            ViolationCategory.NEAR_DIFF: [
-                CategorizedViolation(
-                    violation=Violation(rule="W293", line=8, column=0, message="Trailing whitespace"),
-                    category=ViolationCategory.NEAR_DIFF,
-                    distance_from_change=2,
-                )
-            ],
-            ViolationCategory.OUT_OF_DIFF: [],
-        }
+        groups: defaultdict[ViolationCategory, list[CategorizedViolation]] = defaultdict(list)
+        groups[ViolationCategory.IN_DIFF] = [
+            CategorizedViolation(
+                violation=Violation(rule="E722", line=10, column=0, message="Bare except"),
+                category=ViolationCategory.IN_DIFF,
+                distance_from_change=0,
+            )
+        ]
+        groups[ViolationCategory.NEAR_DIFF] = [
+            CategorizedViolation(
+                violation=Violation(rule="W293", line=8, column=0, message="Trailing whitespace"),
+                category=ViolationCategory.NEAR_DIFF,
+                distance_from_change=2,
+            )
+        ]
 
         formatted = di.format_violations_by_category(groups)
 

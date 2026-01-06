@@ -13,6 +13,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
@@ -105,7 +106,7 @@ class GraderSubmitServer(EnhancedFastMCP):
 
         self.report_failure_tool = self.flat_model()(report_failure)
 
-    def _get_modifiable_run(self, session) -> AgentRun:
+    def _get_modifiable_run(self, session: Session) -> AgentRun:
         """Get the grader run and validate it can be modified."""
         agent_run = session.get(AgentRun, self._grader_run_id)
         if agent_run is None:

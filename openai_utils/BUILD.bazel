@@ -35,4 +35,3 @@ ruff_test(
     name = "ruff",
     srcs = [":openai_utils"],
 )
-

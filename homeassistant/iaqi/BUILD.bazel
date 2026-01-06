@@ -30,4 +30,3 @@ ruff_test(
     name = "ruff",
     srcs = [":indoor_aqi"],
 )
-

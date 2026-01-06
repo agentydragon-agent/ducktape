@@ -47,4 +47,3 @@ ruff_test(
     name = "ruff",
     srcs = [":gmail_archiver"],
 )
-

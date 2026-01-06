@@ -10,7 +10,7 @@ Usage:
 import subprocess
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pygit2
@@ -31,11 +31,7 @@ class LanguageConfig:
     name: str
     extensions: list[str]
     bazel_kinds: list[str]
-    bazel_attrs: list[str] = None
-
-    def __post_init__(self):
-        if self.bazel_attrs is None:
-            self.bazel_attrs = ["srcs", "data"]
+    bazel_attrs: list[str] = field(default_factory=lambda: ["srcs", "data"])
 
 
 @dataclass
@@ -152,11 +148,8 @@ def analyze() -> None:
     all_bazel_srcs_labels = batch_bazel_query("labels(srcs, //...)")
     all_bazel_data_labels = batch_bazel_query("labels(data, //...)")
 
-    all_bazel_srcs = {label_to_path(label) for label in all_bazel_srcs_labels}
-    all_bazel_srcs = {p for p in all_bazel_srcs if p is not None}
-
-    all_bazel_data = {label_to_path(label) for label in all_bazel_data_labels}
-    all_bazel_data = {p for p in all_bazel_data if p is not None}
+    all_bazel_srcs: set[Path] = {p for label in all_bazel_srcs_labels if (p := label_to_path(label)) is not None}
+    all_bazel_data: set[Path] = {p for label in all_bazel_data_labels if (p := label_to_path(label)) is not None}
 
     # Combine srcs + data for general input coverage
     all_bazel_inputs = all_bazel_srcs | all_bazel_data

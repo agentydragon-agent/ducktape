@@ -70,10 +70,8 @@ def _apply_hunks_strict(original: str, file_patch) -> str:
 def apply_unified_diff(
     text: str, open_fn: Callable[[str], str], write_fn: Callable[[str, str], None], remove_fn: Callable[[str], None]
 ) -> None:
-    # Normalize and feed UTF-8 bytes to unidiff for portability
     norm = normalize_single_file_unified_patch(text)
-    data = [ln.encode("utf-8") for ln in norm.splitlines(True)]
-    patch = PatchSet(data, encoding="utf-8")
+    patch = PatchSet(norm)
     for fp in patch:
         is_add = fp.is_added_file
         is_del = fp.is_removed_file

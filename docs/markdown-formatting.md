@@ -47,9 +47,11 @@ See the [config file](nginx/gitea_pr_gate.conf) for details.
 
 ```markdown
 # Bad - duplicates path
+
 See [nginx/gitea_pr_gate.conf](nginx/gitea_pr_gate.conf)
 
 # Good - angle brackets for same effect
+
 See <nginx/gitea_pr_gate.conf>
 ```
 
@@ -142,7 +144,7 @@ Chat Completions API (/v1/chat/completions)
 
 **Good** - markdown headings with inline code for technical terms:
 
-````markdown
+```markdown
 ### Responses API (`/v1/responses`)
 
 - `max_output_tokens`
@@ -151,7 +153,7 @@ Chat Completions API (/v1/chat/completions)
 ### Chat Completions API (`/v1/chat/completions`)
 
 - `max_completion_tokens`
-````
+```
 
 ## Model/Schema Documentation
 
@@ -177,18 +179,18 @@ Use `?` suffix for optional fields. This pattern works well for Pydantic models,
 
 ## Summary Table
 
-| Content Type               | Format              | Example                          |
-| -------------------------- | ------------------- | -------------------------------- |
-| Variable/function name     | Inline code         | `call_id`                        |
-| CLI command                | Inline code         | `git status`                     |
-| File path in prose         | Inline code         | `src/utils.py`                   |
-| Local file link            | Angle brackets      | `<path/to/file.md>`              |
-| Local file link with text  | Standard link       | `[guide](path/to/file.md)`       |
-| API endpoint               | Inline code         | `/v1/responses`                  |
-| Parameter name             | Inline code         | `max_tokens`                     |
-| Multi-line code            | Fenced block        | ` ```python ... ``` `            |
-| ASCII diagram              | Fenced block (text) | ` ```text ... ``` `              |
-| Environment variable       | Inline code         | `OPENAI_API_KEY`                 |
-| Glob/pattern               | Inline code         | `*.gen.*`                        |
-| Database table name        | Inline code         | `reported_issues`                |
-| SQL keyword (in headers)   | Inline code         | `SELECT`, `INSERT`               |
+| Content Type              | Format              | Example                    |
+| ------------------------- | ------------------- | -------------------------- |
+| Variable/function name    | Inline code         | `call_id`                  |
+| CLI command               | Inline code         | `git status`               |
+| File path in prose        | Inline code         | `src/utils.py`             |
+| Local file link           | Angle brackets      | `<path/to/file.md>`        |
+| Local file link with text | Standard link       | `[guide](path/to/file.md)` |
+| API endpoint              | Inline code         | `/v1/responses`            |
+| Parameter name            | Inline code         | `max_tokens`               |
+| Multi-line code           | Fenced block        | ` ```python ... ``` `      |
+| ASCII diagram             | Fenced block (text) | ` ```text ... ``` `        |
+| Environment variable      | Inline code         | `OPENAI_API_KEY`           |
+| Glob/pattern              | Inline code         | `*.gen.*`                  |
+| Database table name       | Inline code         | `reported_issues`          |
+| SQL keyword (in headers)  | Inline code         | `SELECT`, `INSERT`         |

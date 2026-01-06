@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import yaml  # type: ignore[import-untyped]
+import yaml
 from click.testing import CliRunner
 
 from ducktape_llm_common.claude_linter.cli import cli

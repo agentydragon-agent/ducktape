@@ -24,7 +24,7 @@ from props_core.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_exa
 from props_core.db.session import get_session
 from props_core.display import ColumnDef, build_table_from_schema
 from props_core.ids import DefinitionId
-from props_core.models.examples import SingleFileSetExample, WholeSnapshotExample
+from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props_core.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput, RunGraderInput
 from props_core.splits import Split
 
@@ -77,6 +77,7 @@ async def run_critic_cmd(
         props critic-dev run-critic critic "ducktape/2025-11-26-00" "abc123..."
     """
     # Construct example spec based on whether files_hash is provided
+    example: ExampleSpec
     if files_hash:
         example = SingleFileSetExample(snapshot_slug=snapshot_slug, files_hash=files_hash)
     else:
@@ -244,7 +245,7 @@ def valid_leaderboard_cmd(
 
         results = [
             ValidationLeaderboardRow(
-                critic_definition_id=row[0] or "",
+                critic_definition_id=DefinitionId(row[0]),
                 critic_model=row[1] or "",
                 n_runs=row[2] or 0,
                 sum_credit=row[3],

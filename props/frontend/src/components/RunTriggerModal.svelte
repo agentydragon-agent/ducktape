@@ -105,7 +105,13 @@
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
-    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" role="document" onclick={(e) => e.stopPropagation()}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md"
+      role="document"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={() => {}}
+    >
       <h2 id="modal-title" class="text-lg font-semibold mb-4">Trigger Runs</h2>
 
       {#if loadingDefinitions}

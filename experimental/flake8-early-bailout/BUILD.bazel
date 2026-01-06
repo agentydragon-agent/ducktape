@@ -21,4 +21,3 @@ ruff_test(
     name = "ruff",
     srcs = [":flake8_early_bailout"],
 )
-

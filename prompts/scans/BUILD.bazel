@@ -43,4 +43,3 @@ ruff_test(
     name = "ruff",
     srcs = [":scans_lib"],
 )
-

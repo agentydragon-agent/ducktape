@@ -54,6 +54,10 @@ py_library(
         "@pypi//tiktoken",
         "@pypi//typer",
         "@pypi//typer_di",
+        "@pypi//types_docker",
+        "@pypi//types_pyyaml",
+        "@pypi//types_requests",
+        "@pypi//types_unidiff",
         "@pypi//unidiff",
         "@pypi//uvicorn",
     ],
@@ -64,13 +68,6 @@ py_binary(
     name = "adgn_agent",
     srcs = ["src/adgn/agent/cli.py"],
     main = "src/adgn/agent/cli.py",
-    deps = [":adgn"],
-)
-
-py_binary(
-    name = "adgn_sysrw",
-    srcs = ["src/adgn/sysrw/cli.py"],
-    main = "src/adgn/sysrw/cli.py",
     deps = [":adgn"],
 )
 
@@ -109,4 +106,3 @@ ruff_test(
     name = "ruff",
     srcs = [":adgn"],
 )
-

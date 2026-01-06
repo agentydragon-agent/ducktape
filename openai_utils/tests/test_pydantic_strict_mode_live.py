@@ -111,7 +111,11 @@ ALWAYS_REJECTED = [
 # - With default generator: oneOf → rejected
 # - With OpenAI generator: anyOf → accepted (usually)
 # - DiscriminatedUnionWithDefaults: discriminator field has default (not in required array)
-DISCRIMINATED_UNIONS = [AnyOfAtPropertyRoot, DiscriminatedUnionModel, DiscriminatedUnionWithDefaults]
+DISCRIMINATED_UNIONS: list[type[BaseModel]] = [
+    AnyOfAtPropertyRoot,
+    DiscriminatedUnionModel,
+    DiscriminatedUnionWithDefaults,
+]
 
 # Models with fields that have defaults (generator-dependent)
 # - With default generator: fields with defaults omitted from required → rejected

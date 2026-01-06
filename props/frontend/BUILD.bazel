@@ -1,5 +1,5 @@
-load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 
 # Link npm packages for this workspace member
@@ -23,11 +23,59 @@ _SRCS = glob([
     "tsconfig.json",
 ]
 
+# Development server with watch mode
+# Run: bazel run //props/frontend:dev
+js_binary(
+    name = "dev",
+    chdir = package_name(),
+    data = _SRCS + [
+        "dev.mjs",
+        ":node_modules",
+        "//props/backend:props_backend_cli",
+    ],
+    entry_point = "dev.mjs",
+    # Backend binary path is relative to runfiles root (props/backend/props_backend_cli)
+    # From chdir=props/frontend, go up twice to reach runfiles root
+    no_copy_to_bin = ["//props/backend:props_backend_cli"],
+)
+
+# OpenAPI TypeScript generator binary
+js_binary(
+    name = "generate_schema_bin",
+    data = [
+        "generate-schema.mjs",
+        ":node_modules",
+    ],
+    entry_point = "generate-schema.mjs",
+)
+
+# Copy schema from backend (copy_to_bin doesn't work cross-package for generated files)
+genrule(
+    name = "openapi_schema_local",
+    srcs = ["//props/backend:openapi_schema"],
+    outs = ["openapi.json"],
+    cmd = "cp $< $@",
+)
+
+# Generate OpenAPI TypeScript types from backend schema
+js_run_binary(
+    name = "generate_schema",
+    srcs = [":openapi_schema_local"],
+    outs = ["src/lib/api/schema.d.ts"],
+    args = [
+        "openapi.json",
+        "src/lib/api/schema.d.ts",
+    ],
+    chdir = package_name(),
+    tool = ":generate_schema_bin",
+)
+
 # esbuild binary for production bundle
 js_binary(
     name = "build_bundle",
     data = _SRCS + [
         "esbuild.config.mjs",
+        ":generate_schema",
         ":node_modules",
     ],
     entry_point = "esbuild.config.mjs",
@@ -37,7 +85,10 @@ js_binary(
 # Run: bazel build //props/frontend:bundle
 js_run_binary(
     name = "bundle",
-    srcs = _SRCS + ["esbuild.config.mjs"],
+    srcs = _SRCS + [
+        "esbuild.config.mjs",
+        ":generate_schema",
+    ],
     outs = ["dist/main.js"],
     args = ["dist"],
     chdir = package_name(),
@@ -54,10 +105,14 @@ svelte_check_bin.svelte_check_test(
     ],
     chdir = package_name(),
     data = [
-        ":node_modules",
-        "tsconfig.json",
         "svelte.config.js",
-    ] + glob(["src/**/*.ts", "src/**/*.svelte"]),
+        "tsconfig.json",
+        ":generate_schema",
+        ":node_modules",
+    ] + glob([
+        "src/**/*.ts",
+        "src/**/*.svelte",
+    ]),
     tags = ["lint"],
 )
 
@@ -66,6 +121,8 @@ _HARNESS_SRCS = glob([
     "tests/harness/**/*.ts",
     "tests/harness/**/*.html",
     "src/components/**/*.svelte",
+    "src/lib/**/*.ts",
+    "src/lib/**/*.svelte",
     "src/**/*.css",
 ])
 
@@ -93,17 +150,20 @@ js_run_binary(
 # Run: bazel test //props/frontend:visual_test
 js_test(
     name = "visual_test",
+    timeout = "long",
     data = [
         "tests/harness/index.html",
         ":harness_bundle",
-        ":node_modules/puppeteer",
         ":node_modules/pixelmatch",
         ":node_modules/pngjs",
+        ":node_modules/puppeteer",
     ] + glob(["tests/visual-regression.spec.ts-snapshots/**/*"]),
     entry_point = "tests/visual-regression.spec.js",
     env = {
         "HARNESS_PATH": "$(rootpath :harness_bundle)",
     },
-    tags = ["no-sandbox", "visual"],
-    timeout = "long",
+    tags = [
+        "no-sandbox",
+        "visual",
+    ],
 )

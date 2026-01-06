@@ -7,6 +7,7 @@ server state without going through the MCP client protocol.
 
 from __future__ import annotations
 
+from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
 from mcp_infra.compositor.mount import Mount
@@ -250,7 +251,8 @@ async def test_compositor_get_inproc_servers_excludes_external():
 
         # Simulate an external mount by creating a mount with spec
         # (Real external mounts would go through mount_server, but that requires actual servers)
-        external_mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec={"dummy": "spec"})
+        external_spec = StdioMCPServer(command="dummy", args=[])
+        external_mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec=external_spec)
         async with comp._mount_lock:
             comp._mounts[MCPMountPrefix("external")] = external_mount
 

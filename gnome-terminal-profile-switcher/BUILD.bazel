@@ -34,4 +34,3 @@ ruff_test(
     srcs = [":gnome_terminal_profile_switcher"],
     tags = ["manual"],
 )
-

@@ -18,6 +18,12 @@ dependencies = [
   "watchdog>=4.0",
   "PyGithub>=1.77",
   "PyYAML>=6.0",
+  # Test dependencies (required for Bazel test target)
+  "pytest-mock>=3.10",
+  # Type stubs (required for Bazel mypy)
+  "types-colorama",
+  # Mypy (required for Bazel lint config)
+  "mypy>=1.14",
 ]
 
 [project.optional-dependencies]

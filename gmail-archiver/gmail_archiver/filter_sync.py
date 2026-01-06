@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from gmail_archiver.filter_planner import criteria_to_gmail_query
@@ -204,7 +205,7 @@ class LabelMaps:
     def from_labels(cls, labels: list[GmailLabel]) -> LabelMaps:
         return cls(by_id={label.id: label.name for label in labels}, by_name={label.name: label.id for label in labels})
 
-    def ensure_label(self, name: str, get_or_create_fn) -> str:
+    def ensure_label(self, name: str, get_or_create_fn: Callable[[str], str]) -> str:
         """Ensure label exists and return its ID. Creates if needed."""
         try:
             return resolve_label_id(name, self.by_name)

@@ -10,13 +10,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import aiodocker
+import aiodocker  # type: ignore[import-not-found]
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from openai import AsyncOpenAI
 
-from openai_utils.model import OpenAIChatCompletionModel
+from openai_utils.model import BoundOpenAIModel
 from props_backend.routes import ground_truth, runs, stats
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_workspace import WorkspaceManager
@@ -63,7 +64,7 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
-def _create_grader_client():
+def _create_grader_client() -> BoundOpenAIModel | None:
     """Create model client for grader daemons if configured.
 
     Returns None if PROPS_GRADER_MODEL is not set.
@@ -72,7 +73,7 @@ def _create_grader_client():
     if not model:
         return None
 
-    return OpenAIChatCompletionModel(model=model)
+    return BoundOpenAIModel(client=AsyncOpenAI(), model=model)
 
 
 @asynccontextmanager

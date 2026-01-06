@@ -3,7 +3,15 @@
 import subprocess
 
 from ducktape_llm_common.claude_code_api import StopRequest
+from ducktape_llm_common.claude_linter_v2.config.models import StopHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
+
+
+def _enable_quality_gate(handler: HookHandler) -> None:
+    """Helper to enable quality gate with type narrowing."""
+    stop_config = handler.config_loader.config.hooks["stop"]
+    assert isinstance(stop_config, StopHookConfig)
+    stop_config.quality_gate = True
 
 
 def test_stop_hook_respects_gitignore(session_id, tmp_path, monkeypatch):
@@ -16,7 +24,7 @@ def test_stop_hook_respects_gitignore(session_id, tmp_path, monkeypatch):
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True, capture_output=True)
 
     handler = HookHandler()
-    handler.config_loader.config.hooks["stop"].quality_gate = True
+    _enable_quality_gate(handler)
 
     # Create .gitignore
     gitignore = tmp_path / ".gitignore"
@@ -90,7 +98,7 @@ def test_stop_hook_fallback_when_not_git_repo(session_id, tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     handler = HookHandler()
-    handler.config_loader.config.hooks["stop"].quality_gate = True
+    _enable_quality_gate(handler)
 
     # Don't initialize git - just create files
 

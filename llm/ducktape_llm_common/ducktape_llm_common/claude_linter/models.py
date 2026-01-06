@@ -9,11 +9,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Import shared types from claude_code_api
-from ducktape_llm_common.claude_code_api import CamelCaseModel, SessionID, ToolCall, _parse_tool_call
+from ..claude_code_api import CamelCaseModel, SessionID, ToolCall, _parse_tool_call
 
 
-class HookResponse(CamelCaseModel):
-    """Response sent back to Claude Code from a hook command.
+class LinterHookResponse(CamelCaseModel):
+    """Response sent back to Claude Code from the linter hook command.
 
     Hook can communicate decisions via:
     1. Exit codes: 0=success, 2=blocking error, other=non-blocking error
@@ -22,19 +22,11 @@ class HookResponse(CamelCaseModel):
     When using JSON output, exit code should be 0.
     """
 
-    decision: Literal["approve", "block"] | None = Field(
-        None,
-        description="Controls tool execution (PreToolUse) or provides feedback (PostToolUse). approve=allow, block=prevent.",
-    )
-    reason: str | None = Field(
-        None, description="Human-readable explanation shown to user and/or used to re-prompt model."
-    )
-    # continue_ needs explicit alias since to_camel("continue_") -> "continue_" not "continue"
-    continue_: bool = Field(
-        True, alias="continue", description="Whether model should continue after processing hook response."
-    )
-    stop_reason: str | None = Field(None, description="If continue=False, stops the session with this message.")
-    suppress_output: bool = Field(False, description="Suppresses the hook's own output from being shown.")
+    decision: Literal["approve", "block"] | None = None
+    reason: str | None = None
+    continue_: bool = Field(default=True, serialization_alias="continue")
+    stop_reason: str | None = None
+    suppress_output: bool = False
 
     model_config = ConfigDict(use_enum_values=True, arbitrary_types_allowed=True)
 

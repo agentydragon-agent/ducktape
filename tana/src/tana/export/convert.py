@@ -379,7 +379,7 @@ def _export(store: TanaGraph, style: str) -> str:
 
 
 # ──────────────────────────  CLI  ────────────────────────── #
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("dump", help="Tana JSON dump")
     ap.add_argument("-o", "--out-base", help="basename for outputs (default <dump>.converted)", default=None)

@@ -3,10 +3,10 @@ name = "agent-pkg-host"
 version = "0.1.0"
 description = "Host-side agent package infrastructure: image building, init runner"
 requires-python = ">=3.13"
+# Local workspace deps (mcp-infra) handled by Bazel deps
 dependencies = [
     "aiodocker>=0.23",
     "fastmcp>=2.0",
-    "mcp-infra",
 ]
 
 [build-system]

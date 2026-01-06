@@ -10,7 +10,7 @@ import asyncio
 import datetime
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from dotenv import load_dotenv
@@ -76,17 +76,8 @@ class HabitifyClient:
         """Close resources when exiting async context manager."""
         await self.client.aclose()
 
-    def _process_response(self, response: httpx.Response, model_class=None) -> Any:
-        """
-        Process an HTTP response and convert it to the appropriate type.
-
-        Args:
-            response: HTTP response
-            model_class: Pydantic model class to use for conversion
-
-        Returns:
-            Processed response data
-        """
+    def _process_response(self, response: httpx.Response, model_class: type | None = None) -> Any:
+        """Process an HTTP response and convert it to the appropriate type."""
         data = response.json()
         result = data.get("data", data)
 
@@ -132,7 +123,7 @@ class HabitifyClient:
         try:
             response = await self.client.get("/habits")
             response.raise_for_status()
-            return self._process_response(response, Habit)
+            return cast(list[Habit], self._process_response(response, Habit))
         except Exception as e:
             raise self._handle_error(e)
 
@@ -153,7 +144,7 @@ class HabitifyClient:
         try:
             response = await self.client.get(f"/habits/{habit_id}")
             response.raise_for_status()
-            return self._process_response(response, Habit)
+            return cast(Habit, self._process_response(response, Habit))
         except Exception as e:
             raise self._handle_error(e)
 
@@ -169,7 +160,7 @@ class HabitifyClient:
         try:
             response = await self.client.get("/areas")
             response.raise_for_status()
-            return self._process_response(response, Area)
+            return cast(list[Area], self._process_response(response, Area))
         except Exception as e:
             raise self._handle_error(e)
 
@@ -216,7 +207,7 @@ class HabitifyClient:
         try:
             response = await self.client.get("/journal", params=params)
             response.raise_for_status()
-            return self._process_response(response, Habit)
+            return cast(list[Habit], self._process_response(response, Habit))
         except Exception as e:
             raise self._handle_error(e)
 
@@ -241,7 +232,7 @@ class HabitifyClient:
         try:
             response = await self.client.get(f"/status/{habit_id}", params={"target_date": check_date})
             response.raise_for_status()
-            result = self._process_response(response, HabitStatus)
+            result = cast(HabitStatus, self._process_response(response, HabitStatus))
 
             # If API didn't return a date, add the request date
             if not result.date:

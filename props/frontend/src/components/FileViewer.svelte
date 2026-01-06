@@ -143,7 +143,7 @@
     return map;
   });
 
-  let expandedIssues = new SvelteSet<string>();
+  let expandedIssues = $state(new SvelteSet<string>());
 
   function toggleIssue(id: string) {
     const newSet = new SvelteSet(expandedIssues);

@@ -10,15 +10,14 @@ To auto-add transactions:
 
 import datetime
 import re
-from pathlib import Path
 
 import gnucash
 import platformdirs
-import yaml  # type: ignore[import-untyped]
+import yaml
 from absl import app, flags, logging
 
-from ducktape.finance import gnucash_util
-from ducktape.finance.reconcile import splitwise_lib, ubs_credit_card_lib, ubs_lib
+from finance import gnucash_util
+from finance.reconcile import splitwise_lib
 
 # variables = globals().copy()
 # variables.update(locals())
@@ -156,25 +155,7 @@ def main(_):
 
             account_of_interest = gnucash_util.account_from_path(session.book.get_root_account(), gnucash_account_path)
 
-            if "ubs_iban" in reconcile_config:
-                # TODO: Make sure it is for the right IBAN.
-
-                external_transaction_by_external_id = {}
-                for csv_path in Path().glob(reconcile_config["csv_glob"]):
-                    external_transaction_by_external_id.update(ubs_lib.load_ubs_csv(csv_path))
-                # TODO: assert same transactions if keys overlap
-
-                prefix = "ubs_transaction_id"
-                id_regex = "([0-9A-Z]+)"
-            elif "ubs_cc_account" in reconcile_config:
-                external_transaction_by_external_id = {}
-                for csv_path in Path().glob(reconcile_config["csv_glob"]):
-                    # TODO: assert disjoint keys
-                    external_transaction_by_external_id.update(ubs_credit_card_lib.load_ubs_credit_card_csv(csv_path))
-
-                prefix = "ubs_cc_hash"
-                id_regex = "([0-9a-zA-Z/+]+)"
-            elif "splitwise_group_id" in reconcile_config:
+            if "splitwise_group_id" in reconcile_config:
                 external_transaction_by_external_id = splitwise_lib.load_splitwise_expenses(
                     reconcile_config["splitwise_group_id"]
                 )

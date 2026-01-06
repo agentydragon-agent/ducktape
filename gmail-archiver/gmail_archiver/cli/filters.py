@@ -169,7 +169,7 @@ def _gmail_filter_to_rule(gmail_filter: GmailFilter, labels_by_id: dict[str, str
             "not_spam": True if SystemLabel.SPAM in remove_label_ids else None,
             "forward": action.forward,
         }
-    )  # type: ignore[arg-type]
+    )
 
 
 @filters_app.command("diff")

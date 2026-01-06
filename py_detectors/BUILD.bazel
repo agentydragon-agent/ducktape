@@ -48,4 +48,3 @@ ruff_test(
     name = "ruff",
     srcs = [":py_detectors"],
 )
-

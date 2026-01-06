@@ -45,7 +45,7 @@ from props_core.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props_core.db.session import get_session
-from props_core.ids import SnapshotSlug
+from props_core.ids import DefinitionId, SnapshotSlug
 from props_core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
 from props_core.prop_utils import specimens_definitions_root
 
@@ -1015,7 +1015,7 @@ def sync_agent_definitions_to_db(session: Session, *, use_staged: bool = False) 
     existing = {
         d.id: d for d in session.query(AgentDefinition).filter(AgentDefinition.created_by_agent_run_id.is_(None)).all()
     }
-    source_ids = {d.name for d in definition_dirs}
+    source_ids = {DefinitionId(d.name) for d in definition_dirs}
     db_ids = set(existing.keys())
 
     # Track stats
@@ -1031,7 +1031,7 @@ def sync_agent_definitions_to_db(session: Session, *, use_staged: bool = False) 
 
     # Add/update definitions from source
     for definition_dir in definition_dirs:
-        def_id = definition_dir.name
+        def_id = DefinitionId(definition_dir.name)
 
         # Pack archive using MANIFEST + git archive
         archive = pack_repo_definition(definition_dir, use_staged=use_staged)

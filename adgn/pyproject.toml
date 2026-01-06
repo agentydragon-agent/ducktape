@@ -7,14 +7,8 @@ name = "adgn"
 version = "0.0.0"
 authors = [{name = "Rai"}]
 requires-python = ">=3.13"
+# Local workspace deps (agent-core, agent-pkg-host, agent-pkg-runtime, cli-util, mcp-infra, net-util, openai-utils) handled by Bazel deps
 dependencies = [
-  "agent-core",
-  "agent-pkg-host",
-  "agent-pkg-runtime",
-  "cli-util",
-  "mcp-infra",
-  "net-util",
-  "openai-utils",
   "pydantic>=2.0.0",
   "fastapi>=0.115.0",
   "httpx>=0.27.0",
@@ -49,8 +43,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # Developer tools and test dependencies
+# NOTE: agent-core-testing, editor-agent-runtime handled by Bazel deps
 dev = [
-  "agent-core-testing",
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
   "pytest-timeout>=2.3",
@@ -59,8 +53,6 @@ dev = [
   'pytest-env>=1.1.3',
   'syrupy>=4.0',  # Snapshot testing
   "ruff>=0.5",
-  # Agent runtimes packages (for testing container utilities)
-  "editor-agent-runtime",
   # Pin to match .pre-commit-config.yaml (v1.18.2)
   # TODO: Ensure mypy versions stay consistent across all tool configs in the repo
   "mypy==1.18.2",
@@ -164,14 +156,9 @@ testpaths = ["tests"]
 skip-globs = ["tests/detectors/fixtures/**"]
 
 [project.scripts]
-# LLM console scripts
-adgn-sysrw = "adgn.sysrw.cli:app"
 adgn-agent = "adgn.agent.cli:main"
 adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
 adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"
 adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
-# docker-exec and seatbelt-exec moved to mcp-infra package
-# Editor moved to editor_agent package - adgn-editor-docker is now in editor-agent
-# Frontend code generation moved to agent_server package
 
 # Mypy configuration moved to central /mypy.ini at repo root

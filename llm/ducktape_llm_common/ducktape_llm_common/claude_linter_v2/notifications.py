@@ -64,7 +64,7 @@ def close_desktop_notification(notification_id: int) -> None:
         return
 
     try:
-        import dbus  # type: ignore[import-not-found]  # noqa: PLC0415
+        import dbus  # noqa: PLC0415  - optional dependency, lazy import
     except ImportError:
         return
 

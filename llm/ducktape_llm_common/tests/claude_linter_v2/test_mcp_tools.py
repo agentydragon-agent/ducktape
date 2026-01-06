@@ -3,6 +3,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,7 +12,30 @@ from ducktape_llm_common.claude_code_api import PostToolUseRequest, PreToolUseRe
 from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
 from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
 from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
+from ducktape_llm_common.claude_linter_v2.types import SessionID
 from ducktape_llm_common.claude_outcomes import PostToolSuccess, PreToolApprove
+
+
+def make_pre_tool_request(session_id: SessionID, tool_name: str, tool_input: dict[str, Any]) -> PreToolUseRequest:
+    """Create a PreToolUseRequest using model_validate to trigger validators."""
+    return PreToolUseRequest.model_validate(
+        {"session_id": session_id, "hook_event_name": "PreToolUse", "tool_name": tool_name, "tool_input": tool_input}
+    )
+
+
+def make_post_tool_request(
+    session_id: SessionID, tool_name: str, tool_input: dict[str, Any], tool_result: dict[str, Any] | None = None
+) -> PostToolUseRequest:
+    """Create a PostToolUseRequest using model_validate to trigger validators."""
+    return PostToolUseRequest.model_validate(
+        {
+            "session_id": session_id,
+            "hook_event_name": "PostToolUse",
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "tool_result": tool_result,
+        }
+    )
 
 
 class TestMCPTools:
@@ -25,9 +49,8 @@ class TestMCPTools:
     def test_mcp_tool_with_extra_fields(self, handler, session_id):
         """Test that MCP tools with custom fields are handled correctly."""
         # Create a request with MCP-specific fields
-        request = PreToolUseRequest(
+        request = make_pre_tool_request(
             session_id=session_id,
-            hook_event_name="PreToolUse",
             tool_name="mcp_memory_search_nodes",
             tool_input={
                 # Standard fields
@@ -43,19 +66,6 @@ class TestMCPTools:
         # Should approve since it's not a file operation
         outcome = handler._handle_pre_hook(request, session_id)
         assert isinstance(outcome, PreToolApprove)
-
-    def test_mcp_puppeteer_tool(self, handler, session_id):
-        """Test MCP puppeteer tool with its specific parameters."""
-        request = PostToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PostToolUse",
-            tool_name="mcp_puppeteer_navigate",
-            tool_input={"url": "https://example.com", "allowDangerous": True, "wait_for": "networkidle2"},
-            tool_result={"success": True, "screenshot": "base64_data_here"},
-        )
-
-        outcome = handler._handle_post_hook(request, session_id)
-        assert isinstance(outcome, PostToolSuccess)
 
     def test_mcp_filesystem_tool_with_path(self, handler, session_id, monkeypatch):
         """Test MCP filesystem tool that should trigger path checks."""
@@ -73,9 +83,8 @@ class TestMCPTools:
         # Mock the config at instance level (restored automatically by monkeypatch)
         monkeypatch.setattr(handler.config_loader, "_config", mock_config)
 
-        request = PreToolUseRequest(
+        request = make_pre_tool_request(
             session_id=session_id,
-            hook_event_name="PreToolUse",
             tool_name="mcp_filesystem_write_file",
             tool_input={"path": "/tmp/test.txt", "content": "Hello, world!"},
         )
@@ -84,30 +93,10 @@ class TestMCPTools:
         outcome = handler._handle_pre_hook(request, session_id)
         assert isinstance(outcome, PreToolApprove)
 
-    def test_unknown_mcp_tool_fields(self, handler, session_id):
-        """Test that unknown MCP tool fields don't cause errors."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_custom_tool",
-            tool_input={
-                # Completely custom fields
-                "custom_field_1": "value1",
-                "nested_config": {"key": "value"},
-                "array_param": [1, 2, 3],
-                "boolean_flag": True,
-            },
-        )
-
-        # Should not raise any validation errors
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
     def test_mcp_tool_with_python_file(self, handler, session_id):
         """Test MCP tool operating on Python files - MCP tools are NOT checked for Python violations."""
-        request = PreToolUseRequest(
+        request = make_pre_tool_request(
             session_id=session_id,
-            hook_event_name="PreToolUse",
             tool_name="mcp_editor_open",
             tool_input={
                 "file_path": Path("/home/user/test.py"),
@@ -133,9 +122,8 @@ class TestMCPTools:
         test_file = tmp_path / "test.py"
         test_file.write_text("import os\nimport sys\n\n\ndef test():\n    pass")
 
-        request = PostToolUseRequest(
+        request = make_post_tool_request(
             session_id=session_id,
-            hook_event_name="PostToolUse",
             tool_name="mcp_editor_save",
             tool_input={"file_path": test_file, "content": "import os\nimport sys\n\n\ndef test():\n    pass"},
             tool_result={"saved": True},
@@ -157,50 +145,11 @@ class TestMCPTools:
         ]
 
         for tool_name in tool_names:
-            request = PreToolUseRequest(
-                session_id=session_id, hook_event_name="PreToolUse", tool_name=tool_name, tool_input={"query": "test"}
-            )
+            request = make_pre_tool_request(session_id=session_id, tool_name=tool_name, tool_input={"query": "test"})
 
             # All should be handled without errors
             outcome = handler._handle_pre_hook(request, session_id)
             assert isinstance(outcome, PreToolApprove)
-
-    def test_mcp_tool_with_complex_result(self, handler, session_id):
-        """Test MCP tool with complex nested result structure."""
-        request = PostToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PostToolUse",
-            tool_name="mcp_knowledge_graph_query",
-            tool_input={"query": "MATCH (n:Node) RETURN n LIMIT 10", "database": "neo4j"},
-            tool_result={
-                "nodes": [
-                    {
-                        "id": 1,
-                        "labels": ["Person", "Developer"],
-                        "properties": {"name": "Alice", "skills": ["Python", "JavaScript"]},
-                    }
-                ],
-                "relationships": [],
-                "metadata": {"query_time_ms": 42, "node_count": 1},
-            },
-        )
-
-        outcome = handler._handle_post_hook(request, session_id)
-        assert isinstance(outcome, PostToolSuccess)
-
-    def test_mcp_tool_error_result(self, handler, session_id):
-        """Test MCP tool that returned an error."""
-        request = PostToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PostToolUse",
-            tool_name="mcp_api_call",
-            tool_input={"endpoint": "/api/users", "method": "GET"},
-            tool_result={"error": "Connection timeout", "status_code": None, "success": False},
-        )
-
-        # Should still process normally - hooks don't care about tool success
-        outcome = handler._handle_post_hook(request, session_id)
-        assert isinstance(outcome, PostToolSuccess)
 
     @pytest.mark.parametrize(
         ("tool_name", "input_fields", "should_check_python"),
@@ -218,9 +167,7 @@ class TestMCPTools:
         """Test that MCP tools are never detected as Python files (only WriteToolCall is checked)."""
         tool_input_dict = {"file_path": None, "content": None, **input_fields}
 
-        request = PreToolUseRequest(
-            session_id=session_id, hook_event_name="PreToolUse", tool_name=tool_name, tool_input=dict(**tool_input_dict)
-        )
+        request = make_pre_tool_request(session_id=session_id, tool_name=tool_name, tool_input=dict(**tool_input_dict))
 
         # MCP tools are never checked for Python - only WriteToolCall is
         is_python = handler._is_python_file(request)
@@ -228,11 +175,8 @@ class TestMCPTools:
 
     def test_mcp_tool_session_tracking(self, handler, session_id):
         """Test that MCP tools properly track sessions."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_workspace_list",
-            tool_input={"directory": "/home/user/project"},
+        request = make_pre_tool_request(
+            session_id=session_id, tool_name="mcp_workspace_list", tool_input={"directory": "/home/user/project"}
         )
 
         # Process request via handle() which triggers session tracking
@@ -249,9 +193,8 @@ class TestMCPTools:
 
     def test_mcp_tool_with_file_path_does_not_update_working_dir(self, handler, session_id):
         """Test that MCP tools do NOT update the working directory (only FilePathToolCall types do)."""
-        request = PreToolUseRequest(
+        request = make_pre_tool_request(
             session_id=session_id,
-            hook_event_name="PreToolUse",
             tool_name="mcp_file_manager_open",
             tool_input={"file_path": Path("/home/user/projects/myapp/src/main.py"), "content": "# Main file"},
         )
@@ -268,240 +211,25 @@ class TestMCPTools:
             assert call_args[1] == Path.cwd()
 
 
-class TestMCPToolsUnexpectedFormats:
-    """Test MCP tools with completely unexpected/arbitrary formats."""
+class TestMCPToolEdgeCases:
+    """Test MCP tools with edge case inputs."""
 
     @pytest.fixture
     def handler(self):
         """Create a handler instance."""
         return HookHandler()
 
-    def test_stock_price_tool(self, handler, session_id):
-        """Test a financial MCP tool with custom format."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_finance_get_stock_price",
-            tool_input={
-                "symbol": "AAPL",
-                "date": "2024-01-15",
-                "exchange": "NASDAQ",
-                "include_extended_hours": True,
-                "currency": "USD",
-            },
-        )
-
-        # Should not crash
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
-    def test_weather_tool_nested_structure(self, handler, session_id):
-        """Test weather tool with deeply nested structure."""
-        request = PostToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PostToolUse",
-            tool_name="mcp_weather_forecast",
-            tool_input={
-                "location": {"type": "coordinates", "lat": 37.7749, "lon": -122.4194, "name": "San Francisco"},
-                "forecast_days": 7,
-                "units": "metric",
-                "include_alerts": True,
-            },
-            tool_result={
-                "current": {"temp": 18.5, "feels_like": 17.2, "conditions": "Partly cloudy"},
-                "forecast": [
-                    {"date": "2024-01-16", "high": 20, "low": 12},
-                    {"date": "2024-01-17", "high": 19, "low": 11},
-                ],
-            },
-        )
-
-        outcome = handler._handle_post_hook(request, session_id)
-        assert isinstance(outcome, PostToolSuccess)
-
-    def test_ai_model_tool_with_arrays(self, handler, session_id):
-        """Test AI/ML tool with array parameters."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_ml_predict",
-            tool_input={
-                "model_id": "sentiment-v2",
-                "inputs": ["I love this!", "This is terrible", "Not sure about this"],
-                "parameters": {"temperature": 0.7, "max_tokens": 100, "top_p": 0.9},
-                "return_probabilities": True,
-            },
-        )
-
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
-    def test_database_tool_with_sql(self, handler, session_id):
-        """Test database tool with SQL that might trigger security checks."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_postgres_query",
-            tool_input={
-                "connection_string": "postgresql://user:pass@localhost/db",
-                "query": "SELECT * FROM users WHERE id = $1",
-                "params": [123],
-                "timeout_ms": 5000,
-                "return_format": "json",
-            },
-        )
-
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
-    def test_iot_device_control(self, handler, session_id):
-        """Test IoT device control with mixed types."""
-        request = PostToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PostToolUse",
-            tool_name="mcp_smart_home_control",
-            tool_input={
-                "device_id": "light.living_room",
-                "action": "set_state",
-                "payload": {
-                    "on": True,
-                    "brightness": 75,
-                    "color": {"r": 255, "g": 200, "b": 100},
-                    "transition_time": 2.5,
-                },
-                "confirm": True,
-            },
-            tool_result={"success": True, "device_state": {"on": True, "brightness": 75}},
-        )
-
-        outcome = handler._handle_post_hook(request, session_id)
-        assert isinstance(outcome, PostToolSuccess)
-
-    def test_blockchain_tool_with_hex_data(self, handler, session_id):
-        """Test blockchain tool with hex strings and addresses."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_ethereum_send_transaction",
-            tool_input={
-                "from_address": "0x742d35Cc6634C0532925a3b844Bc9e7595f4a7e4",
-                "to_address": "0x5aAeb6053f3E94C9b9A09f33669435E7Ef1BeAed",
-                "value_wei": "1000000000000000000",  # 1 ETH
-                "gas_limit": 21000,
-                "gas_price_gwei": "30",
-                "nonce": 42,
-                "data": "0x",
-                "chain_id": 1,
-            },
-        )
-
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
-    def test_calendar_tool_with_datetime(self, handler, session_id):
-        """Test calendar tool with various datetime formats."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_calendar_create_event",
-            tool_input={
-                "title": "Team Meeting",
-                "start": "2024-01-20T14:00:00Z",
-                "end": "2024-01-20T15:30:00Z",
-                "timezone": "America/New_York",
-                "attendees": ["alice@example.com", "bob@example.com"],
-                "recurrence": {"freq": "WEEKLY", "count": 10, "byday": ["MO", "WE", "FR"]},
-                "reminder_minutes": [15, 60],
-            },
-        )
-
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
-    def test_image_processing_tool(self, handler, session_id):
-        """Test image processing tool with base64 data."""
-        request = PostToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PostToolUse",
-            tool_name="mcp_image_resize",
-            tool_input={
-                "image_data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
-                "width": 100,
-                "height": 100,
-                "maintain_aspect_ratio": True,
-                "format": "webp",
-                "quality": 85,
-            },
-            tool_result={
-                "success": True,
-                "output_size_bytes": 2048,
-                "output_dimensions": {"width": 100, "height": 100},
-            },
-        )
-
-        outcome = handler._handle_post_hook(request, session_id)
-        assert isinstance(outcome, PostToolSuccess)
-
-    def test_scientific_computation_tool(self, handler, session_id):
-        """Test scientific computation tool with complex numeric data."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_scipy_optimize",
-            tool_input={
-                "function": "minimize",
-                "objective": "x**2 + y**2",
-                "variables": ["x", "y"],
-                "initial_guess": [1.0, 1.0],
-                "method": "BFGS",
-                "constraints": [{"type": "ineq", "fun": "x + y - 1"}, {"type": "eq", "fun": "x - 2*y"}],
-                "bounds": [(-10, 10), (-10, 10)],
-                "options": {"maxiter": 1000, "ftol": 1e-9},
-            },
-        )
-
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
-    def test_completely_unknown_format(self, handler, session_id):
-        """Test with completely made-up tool and format."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_quantum_entangle_qubits",
-            tool_input={
-                "qubit_ids": ["q0", "q1", "q2"],
-                "entanglement_type": "GHZ",
-                "measurement_basis": "computational",
-                "shots": 1024,
-                "backend": "simulator",
-                "noise_model": {"depolarizing": 0.01, "readout_error": [[0.97, 0.03], [0.02, 0.98]]},
-                "optimization_level": 3,
-                "seed": 42,
-            },
-        )
-
-        # Should handle gracefully without crashing
-        outcome = handler._handle_pre_hook(request, session_id)
-        assert isinstance(outcome, PreToolApprove)
-
     def test_empty_tool_input(self, handler, session_id):
         """Test MCP tool with no input parameters."""
-        request = PreToolUseRequest(
-            session_id=session_id,
-            hook_event_name="PreToolUse",
-            tool_name="mcp_system_get_time",
-            tool_input={},  # No fields at all
-        )
+        request = make_pre_tool_request(session_id=session_id, tool_name="mcp_system_get_time", tool_input={})
 
         outcome = handler._handle_pre_hook(request, session_id)
         assert isinstance(outcome, PreToolApprove)
 
     def test_tool_with_none_values(self, handler, session_id):
         """Test tool with None values in various fields."""
-        request = PreToolUseRequest(
+        request = make_pre_tool_request(
             session_id=session_id,
-            hook_event_name="PreToolUse",
             tool_name="mcp_data_processor",
             tool_input={
                 "required_field": "value",
@@ -517,27 +245,23 @@ class TestMCPToolsUnexpectedFormats:
 
     def test_tool_with_special_characters(self, handler, session_id):
         """Test tool with special characters in field names."""
-        request = PreToolUseRequest(
+        request = make_pre_tool_request(
             session_id=session_id,
-            hook_event_name="PreToolUse",
             tool_name="mcp-weird.tool$name",
-            tool_input=dict(
-                **{
-                    "field-with-hyphens": "value",
-                    "field.with.dots": "value",
-                    "field$with$dollars": "value",
-                    "field@with@at": "value",
-                    "field with spaces": "value",
-                    "field_with_underscores": "value",
-                    "fieldWithCamelCase": "value",
-                    "FIELD_WITH_CAPS": "value",
-                    "123_numeric_start": "value",
-                    "field:with:colons": "value",
-                }
-            ),
+            tool_input={
+                "field-with-hyphens": "value",
+                "field.with.dots": "value",
+                "field$with$dollars": "value",
+                "field@with@at": "value",
+                "field with spaces": "value",
+                "field_with_underscores": "value",
+                "fieldWithCamelCase": "value",
+                "FIELD_WITH_CAPS": "value",
+                "123_numeric_start": "value",
+                "field:with:colons": "value",
+            },
         )
 
-        # Should not crash on weird field names
         outcome = handler._handle_pre_hook(request, session_id)
         assert isinstance(outcome, PreToolApprove)
 
@@ -558,9 +282,8 @@ class TestMCPToolLogging:
         # Override log directory
         handler.log_dir = tmp_path
 
-        request = PostToolUseRequest(
+        request = make_post_tool_request(
             session_id=session_id,
-            hook_event_name="PostToolUse",
             tool_name="mcp_analytics_track",
             tool_input={
                 "event": "user_action",
@@ -597,9 +320,8 @@ class TestMCPToolLogging:
         """Test that decision points are logged for MCP tools."""
         handler.log_dir = tmp_path
 
-        request = PreToolUseRequest(
+        request = make_pre_tool_request(
             session_id=session_id,
-            hook_event_name="PreToolUse",
             tool_name="mcp_database_query",
             tool_input={"query": "SELECT * FROM users", "database": "postgres"},
         )

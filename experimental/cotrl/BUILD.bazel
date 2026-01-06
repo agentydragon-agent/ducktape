@@ -19,7 +19,11 @@ py_library(
 py_binary(
     name = "llm_rl_experiment",
     srcs = ["llm_rl_experiment.py"],
-    deps = [":cotrl"],
+    deps = [
+        ":cotrl",
+        "@pypi//aiofiles",
+        "@pypi//types_aiofiles",
+    ],
 )
 
 py_binary(
@@ -45,4 +49,3 @@ ruff_test(
     name = "ruff",
     srcs = [":cotrl"],
 )
-

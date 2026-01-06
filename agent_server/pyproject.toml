@@ -4,12 +4,8 @@ version = "0.1.0"
 description = "Agent server - FastAPI backend, runtime, and MCP infrastructure for LLM agents"
 readme = "README.md"
 requires-python = ">=3.13"
+# Local workspace deps (cli-util, net-util, mcp-infra, agent-core, openai-utils) handled by Bazel deps
 dependencies = [
-    "cli-util",
-    "net-util",
-    "mcp-infra",
-    "agent-core",
-    "openai-utils",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "aiodocker>=0.22.0",
@@ -30,8 +26,8 @@ agent-server-matrix-bot = "agent_server.matrix_bot:main"
 agent-server-generate-frontend-code = "agent_server.scripts.generate_frontend_code:main"
 
 [project.optional-dependencies]
+# NOTE: agent-core-testing handled by Bazel deps
 dev = [
-    "agent-core-testing",
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
     "pytest-timeout>=2.3.0",
