@@ -175,13 +175,8 @@ def main() -> int:
     log.info("Environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
     log.info("Setting up dev environment...")
 
-    # Install Bazelisk (downloads correct Bazel version automatically)
-    bazelisk_setup.install_bazelisk()
-
-    # Set up Bazel proxy for TLS-inspecting proxy (doesn't need project dir)
-    bazel_proxy_setup.setup_bazel_proxy()
-
-    # Detect project directory from CLAUDE_PROJECT_DIR or PWD
+    # Detect project directory FIRST so it's available for bazel proxy setup
+    # (needed for local registry configuration with native ELF ape binaries)
     # Documentation states CLAUDE_PROJECT_DIR should be provided when Claude Code spawns hooks,
     # but it's not available in Claude Code on the web as of 2.0.59
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
@@ -198,7 +193,14 @@ def main() -> int:
             log.info("SUCCESS: PWD contains .git directory, using as project root: %s", project_dir_str)
         else:
             log.error("FAILED: PWD does not contain .git directory, cannot detect project root")
-            log.error("Project-specific setup will be skipped (no git pre-commit hooks)")
+            log.error("Project-specific setup will be skipped (no git pre-commit hooks, local registry)")
+
+    # Install Bazelisk (downloads correct Bazel version automatically)
+    bazelisk_setup.install_bazelisk()
+
+    # Set up Bazel proxy for TLS-inspecting proxy
+    # This now includes local registry setup if CLAUDE_PROJECT_DIR is set
+    bazel_proxy_setup.setup_bazel_proxy()
 
     if project_dir_str:
         project_dir = Path(project_dir_str)
