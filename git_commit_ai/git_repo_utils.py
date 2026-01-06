@@ -48,11 +48,6 @@ def _init_repo(tmpdir: str, name: str = "Test User", email: str = "test@example.
     return repo
 
 
-def _stage(repo: pygit2.Repository, relpath: str) -> None:
-    repo.index.add(relpath)
-    repo.index.write()
-
-
 def _commit(repo: pygit2.Repository, message: str) -> None:
     cfg = repo.config
     try:

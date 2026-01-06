@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from inop.prompting.prompt_engineer import FeedbackProvider
-
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

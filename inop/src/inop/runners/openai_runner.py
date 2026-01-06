@@ -14,6 +14,11 @@ from typing import Any
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
+
+from agent_core.agent import Agent
+from agent_core.handler import BaseHandler
+from agent_core.loop_control import RequireAnyTool
+from agent_core.transcript_handler import TranscriptHandler
 from inop.engine.models import (
     FinalOutput,
     Rollout,
@@ -26,11 +31,6 @@ from inop.engine.models import (
 )
 from inop.io.file_utils import collect_workspace_files
 from inop.runners.base import AgentRunner
-
-from agent_core.agent import Agent
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import RequireAnyTool
-from agent_core.transcript_handler import TranscriptHandler
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.container_session import BindMount, ContainerOptions

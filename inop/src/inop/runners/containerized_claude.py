@@ -30,13 +30,13 @@ from pathlib import Path
 from typing import Any
 
 import claude_code_sdk
+import docker
 import pathspec
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 from docker.models.containers import Container
-from inop.engine.models import SeedTask
 
-import docker
+from inop.engine.models import SeedTask
 
 
 @contextmanager

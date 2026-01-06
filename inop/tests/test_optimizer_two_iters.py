@@ -3,6 +3,7 @@ from pathlib import Path
 
 import aiodocker
 import pytest
+
 from inop.config import (
     DebugConfig,
     GraderConfig,
@@ -29,7 +30,6 @@ from inop.engine.models import (
 )
 from inop.io.jsonl_logger import JSONLLogger
 from inop.runners.base import AgentRunner
-
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest

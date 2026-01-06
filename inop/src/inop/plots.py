@@ -8,7 +8,6 @@ from pathlib import Path
 import matplotlib
 import pandas as pd
 import tiktoken
-from inop.io.logging_utils import DualOutputLogging
 from plotnine import (
     aes,
     element_text,
@@ -23,6 +22,8 @@ from plotnine import (
     theme_minimal,
 )
 from pydantic import BaseModel
+
+from inop.io.logging_utils import DualOutputLogging
 
 # Force non-interactive backend to avoid UI popups (prod/tests)
 

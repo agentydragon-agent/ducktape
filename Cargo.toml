@@ -41,7 +41,7 @@ shellexpand = "*"
 # coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="..."}
 bigdecimal = { version = "0.4", features = ["serde"] }
 currency_layer = "0.2.0"
-serde-xml-rs = "*"
+serde-xml-rs = "0.6"
 async-trait = "*"
 rust_decimal_macros = "*"
 regex = "*"

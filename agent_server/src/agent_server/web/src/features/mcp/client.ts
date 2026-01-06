@@ -162,10 +162,7 @@ export class AgentMcpClient {
       },
     })
 
-    const client = new Client(
-      { name: 'adgn-web', version: '1.0.0' },
-      { capabilities: { resources: { subscribe: true } } }
-    )
+    const client = new Client({ name: 'adgn-web', version: '1.0.0' }, { capabilities: {} })
 
     await client.connect(transport)
     return new AgentMcpClient(client, transport, options.agentId)

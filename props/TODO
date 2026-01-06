@@ -1,4 +1,0 @@
-- agents in Docker images:
-  - build shared base agent image with Bazel
-  - allow modifying layer by layer like standard Docker images
-  - :/docker/critic-base exists, and 'critic' agent type has OCI rules build

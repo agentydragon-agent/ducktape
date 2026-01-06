@@ -3,10 +3,10 @@
 from typing import Any
 
 import aiodocker
+
 from inop.runners.base import AgentRunner
 from inop.runners.claude_runner import ClaudeRunner
 from inop.runners.openai_runner import OpenAIRunner
-
 from openai_utils.model import OpenAIModelProto
 
 

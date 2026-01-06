@@ -16,9 +16,10 @@ Design
 from __future__ import annotations
 
 import asyncio
+import re
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import pygit2
 
@@ -55,14 +56,6 @@ GIT_RO_MOUNT_PREFIX = MCPMountPrefix("git_ro")
 
 
 ## moved to formatting.py
-
-
-# -------------------------- helpers -----------------------------------------
-
-
-def get_oid(obj: Any):
-    """Return object id (pygit2 >=1.18 provides .id consistently)."""
-    return obj.id
 
 
 # -------------------------- inputs ------------------------------------------
@@ -102,23 +95,26 @@ class LogInput(OpenAIStrictModeBaseModel):
 
 
 class ShowInput(OpenAIStrictModeBaseModel):
-    object: str = Field(description="Object spec, e.g., HEAD, <sha>, or REV:PATH for blob content")
+    object: str = Field(description="Commit spec (HEAD, <sha>, tag) to show with its diff")
     format: DiffFormat
     slice: TextSlice
     list_slice: ListSlice
 
 
+class CatFileInput(OpenAIStrictModeBaseModel):
+    object: str = Field(
+        description=(
+            "Object reference: REV:path (blob from commit tree, e.g., HEAD:src/main.py), "
+            ":path (blob from index stage 0), :N:path (blob from index stage N, for merge conflicts), "
+            "or raw OID (any object by SHA)"
+        )
+    )
+    slice: TextSlice
+
+
 class RevParseInput(OpenAIStrictModeBaseModel):
-    arg: str = Field(description="Argument to rev-parse (e.g., HEAD, --show-toplevel)")
-    short: bool = Field(description="If true, shorten OIDs")
-
-
-## moved to formatting.py
-
-
-class RevParseResult(BaseModel):
-    kind: Literal["oid", "toplevel"]
-    value: str | Path
+    rev: str = Field(description="Revision to resolve (e.g., HEAD, main, abc1234)")
+    short: bool = Field(description="If true, shorten OID to 7 chars")
 
 
 class LsFilesInput(OpenAIStrictModeBaseModel):
@@ -128,14 +124,6 @@ class LsFilesInput(OpenAIStrictModeBaseModel):
 
 class BranchListInput(OpenAIStrictModeBaseModel):
     remote: bool = Field(description="List remote branches instead of local")
-    list_slice: ListSlice
-
-
-# Structured diff listing inputs/outputs
-class DiffListInput(OpenAIStrictModeBaseModel):
-    staged: bool = Field(description="If true, examine staged (index) changes; else worktree")
-    paths: list[str] | None = Field(description="Optional pathspecs to limit the diff")
-    find_renames: bool = Field(description="Detect renames (diff.find_similar)")
     list_slice: ListSlice
 
 
@@ -193,6 +181,7 @@ class GitRoServer(EnhancedFastMCP):
     diff_tool: FunctionTool
     log_tool: FunctionTool
     show_tool: FunctionTool
+    cat_file_tool: FunctionTool
     log_entries_tool: FunctionTool
     rev_parse_tool: FunctionTool
     ls_files_tool: FunctionTool
@@ -245,7 +234,7 @@ class GitRoServer(EnhancedFastMCP):
             if state.head_is_unborn:
                 return apply_text_slice("", input.slice)
             obj = state.revparse_single(input.rev)
-            head_oid = get_oid(obj)
+            head_oid = obj.id
             lines: list[str] = []
             walker = state.walk(head_oid)
             for i, c in enumerate(walker, start=1):
@@ -271,7 +260,7 @@ class GitRoServer(EnhancedFastMCP):
             if state.head_is_unborn:
                 return LogEntriesPage(entries=[], truncated=False, next_offset=None)
             obj = state.revparse_single(input.rev)
-            head_oid = get_oid(obj)
+            head_oid = obj.id
             walker = state.walk(head_oid)
             # Skip offset
             for i, _ in enumerate(walker):
@@ -302,31 +291,14 @@ class GitRoServer(EnhancedFastMCP):
         self.log_entries_tool = self.flat_model()(log_entries)
 
         async def show(input: ShowInput) -> ShowResult:
-            """Show a commit in various formats or blob contents for REV:PATH.
-            - format=patch: header + patch (TextPage) or blob text
+            """Show a commit's changes in various formats.
+            - format=patch: unified diff (TextPage)
             - format=name-status: file status listing (ChangedFilesPage)
             - format=stat: per-file additions/deletions (DiffStatPage)
+
+            For reading file content, use cat_file instead.
             """
             objspec = input.object
-            # Blob contents: REV:PATH always as text
-            if ":" in objspec:
-                rev, path = objspec.split(":", 1)
-                root_obj = state.revparse_single(rev)
-                tree = root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
-                cur: pygit2.Tree = tree
-                for part in filter(None, path.split("/")):
-                    entry = cur[part]
-                    if entry.filemode == pygit2.GIT_FILEMODE_TREE:
-                        cur = state[entry.id].peel(pygit2.Tree)
-                    else:
-                        blob = state[entry.id].peel(pygit2.Blob)
-                        data = blob.data
-                        try:
-                            text = data.decode("utf-8")
-                        except UnicodeDecodeError:
-                            text = f"[binary blob {len(data)} bytes]"
-                        return apply_text_slice(text, input.slice)
-                raise FileNotFoundError(f"Path not found: {path}")
             obj_any = state.revparse_single(objspec)
             # Narrow runtime types explicitly
             if isinstance(obj_any, pygit2.Tag):
@@ -334,7 +306,7 @@ class GitRoServer(EnhancedFastMCP):
             elif isinstance(obj_any, pygit2.Commit):
                 obj = obj_any
             else:
-                raise TypeError(f"Unexpected git object type for {objspec}: {type(obj_any)!r}")
+                raise TypeError(f"Expected commit or tag, got {type(obj_any).__name__} for {objspec!r}")
 
             # Build commit diff against first parent (or empty tree)
             if obj.parents:
@@ -358,19 +330,92 @@ class GitRoServer(EnhancedFastMCP):
 
         self.show_tool = self.flat_model()(show)
 
-        def rev_parse(input: RevParseInput) -> RevParseResult:
-            """Resolve a rev to an OID (optionally shortened) or return toplevel path for --show-toplevel."""
-            if input.arg == "--show-toplevel":
-                workdir = state.workdir
-                if not workdir:
-                    raise ValueError("Repository has no working directory")
-                return RevParseResult(kind="toplevel", value=Path(workdir).resolve())
-            obj = state.revparse_single(input.arg)
-            oid = get_oid(obj)
-            s = str(oid)
-            if input.short:
-                s = s[:7]
-            return RevParseResult(kind="oid", value=s)
+        def cat_file(input: CatFileInput) -> TextPage:
+            """Read object content (like git cat-file).
+
+            Supports:
+            - REV:path - blob from commit tree (e.g., HEAD:src/main.py)
+            - :path - blob from index stage 0
+            - :N:path - blob from index stage N (1=base, 2=ours, 3=theirs in merge conflicts)
+            - raw OID - any object by SHA
+            """
+            objspec = input.object
+
+            # Index entry: :path or :N:path
+            index_match = re.match(r"^:(\d)?:?(.+)$", objspec)
+            if index_match:
+                stage_str, path = index_match.groups()
+                stage = int(stage_str) if stage_str else 0
+                # pygit2 index lookup - find entry matching path and stage
+                state.index.read()
+                for entry in state.index:
+                    if entry.path == path:
+                        # IndexEntry has no stage attr directly exposed in all pygit2 versions
+                        # Stage is encoded in flags: (flags & 0x3000) >> 12
+                        entry_stage = (entry.flags & 0x3000) >> 12
+                        if entry_stage == stage:
+                            blob = state[entry.id].peel(pygit2.Blob)
+                            data = blob.data
+                            try:
+                                text = data.decode("utf-8")
+                            except UnicodeDecodeError:
+                                text = f"[binary blob {len(data)} bytes]"
+                            return apply_text_slice(text, input.slice)
+                raise FileNotFoundError(f"Index entry not found: {objspec}")
+
+            # REV:path - blob from commit tree
+            if ":" in objspec:
+                rev, path = objspec.split(":", 1)
+                root_obj = state.revparse_single(rev)
+                tree = root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
+                cur: pygit2.Tree = tree
+                for part in filter(None, path.split("/")):
+                    entry = cur[part]
+                    if entry.filemode == pygit2.GIT_FILEMODE_TREE:
+                        cur = state[entry.id].peel(pygit2.Tree)
+                    else:
+                        blob = state[entry.id].peel(pygit2.Blob)
+                        data = blob.data
+                        try:
+                            text = data.decode("utf-8")
+                        except UnicodeDecodeError:
+                            text = f"[binary blob {len(data)} bytes]"
+                        return apply_text_slice(text, input.slice)
+                raise FileNotFoundError(f"Path not found in tree: {path}")
+
+            # Raw OID or other ref - read object directly
+            obj = state.revparse_single(objspec)
+            if isinstance(obj, pygit2.Blob):
+                data = obj.data
+                try:
+                    text = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = f"[binary blob {len(data)} bytes]"
+                return apply_text_slice(text, input.slice)
+            if isinstance(obj, pygit2.Commit):
+                # Return raw commit object representation
+                lines = [
+                    f"tree {obj.tree_id}",
+                    *[f"parent {p.id}" for p in obj.parents],
+                    f"author {obj.author.name} <{obj.author.email}> {obj.author.time} {obj.author.offset:+05d}",
+                    f"committer {obj.committer.name} <{obj.committer.email}> {obj.committer.time} {obj.committer.offset:+05d}",
+                    "",
+                    obj.message or "",
+                ]
+                return apply_text_slice("\n".join(lines), input.slice)
+            if isinstance(obj, pygit2.Tree):
+                # List tree entries
+                lines = [f"{e.filemode:06o} {e.type_str} {e.id}\t{e.name}" for e in obj]
+                return apply_text_slice("\n".join(lines), input.slice)
+            raise TypeError(f"Unsupported object type: {type(obj).__name__}")
+
+        self.cat_file_tool = self.flat_model()(cat_file)
+
+        def rev_parse(input: RevParseInput) -> str:
+            """Resolve a revision to its OID."""
+            obj = state.revparse_single(input.rev)
+            oid = str(obj.id)
+            return oid[:7] if input.short else oid
 
         self.rev_parse_tool = self.flat_model()(rev_parse)
 

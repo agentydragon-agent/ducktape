@@ -29,6 +29,7 @@ py_test(
     main = "tests/unit/__init__.py",
     deps = [
         ":graders",
+        "//inop",
         "@pypi//pytest",
     ],
 )

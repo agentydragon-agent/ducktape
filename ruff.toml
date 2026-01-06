@@ -84,6 +84,8 @@ keep-runtime-typing = false
 detect-same-package = false
 # Unknown packages default to third-party (no heuristics)
 default-section = "third-party"
+# Force third-party for packages that have same-named directories in repo
+known-third-party = ["docker"]
 # First-party = our workspace packages (ruff uses heuristics otherwise)
 # TODO: Auto-generate this list from Bazel once bazelized
 known-first-party = [
@@ -119,6 +121,7 @@ known-first-party = [
     "habitify_mcp_server",
     "homeassistant",
     "indoor_aqi",
+    "inop",
     "inventree_utils",
     "llm",
     "llm_html",

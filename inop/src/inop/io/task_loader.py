@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import yaml
+
 from inop.engine.models import (
     RunnerConfig,
     RunnersYaml,

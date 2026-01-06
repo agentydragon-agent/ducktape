@@ -6,7 +6,7 @@ export const StdioSpecZ = z
     transport: z.literal('stdio'),
     command: z.string().min(1, 'command required'),
     args: z.array(z.string()).default([]),
-    env: z.record(z.string()).default({}),
+    env: z.record(z.string(), z.string()).default({}),
   })
   .strict()
 
@@ -14,7 +14,7 @@ export const SseSpecZ = z
   .object({
     transport: z.literal('sse'),
     url: z.string().min(1, 'url required'),
-    headers: z.record(z.string()).optional().default({}),
+    headers: z.record(z.string(), z.string()).optional().default({}),
     timeout_secs: z.number().int().positive().default(5),
     sse_read_timeout_secs: z.number().int().positive().default(300),
   })
@@ -25,7 +25,7 @@ export const InprocSpecZ = z
     transport: z.literal('inproc'),
     factory: z.string().min(1, 'factory required'),
     args: z.array(z.any()).default([]),
-    kwargs: z.record(z.any()).default({}),
+    kwargs: z.record(z.string(), z.any()).default({}),
   })
   .strict()
 
@@ -33,7 +33,7 @@ export const HttpSpecZ = z
   .object({
     transport: z.literal('http'),
     url: z.string().min(1, 'url required'),
-    headers: z.record(z.string()).optional().default({}),
+    headers: z.record(z.string(), z.string()).optional().default({}),
     auth: z.string().optional(),
     timeout_secs: z.number().int().positive().default(30),
     sse_read_timeout_secs: z.number().int().positive().default(300),

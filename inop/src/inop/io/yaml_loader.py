@@ -4,9 +4,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel
+
 from inop.engine.models import SeedTask
 from inop.io.logging_utils import DualOutputLogging
-from pydantic import BaseModel
 
 logger = DualOutputLogging.get_logger()
 

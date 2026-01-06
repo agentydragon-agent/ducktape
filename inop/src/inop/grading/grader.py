@@ -19,7 +19,6 @@ from inop.engine.models import (
 )
 from inop.grading.strategies import ComparisonGradingStrategy, GradingStrategy, create_grading_strategy
 from inop.io.logging_utils import DualOutputLogging
-
 from openai_utils.model import (
     FunctionCallItem,
     FunctionToolParam,

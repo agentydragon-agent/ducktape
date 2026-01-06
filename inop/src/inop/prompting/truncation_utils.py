@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 import tiktoken
+
 from inop.config import OptimizerConfig
 from inop.engine.models import FileInfo
 

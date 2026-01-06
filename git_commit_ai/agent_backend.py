@@ -220,7 +220,7 @@ async def generate_commit_message_agent(
         base = "You are an expert at writing high-quality git commit messages.\n\n"
         common_tail = (
             "Produce a commit message with a concise imperative subject (<=72 chars), "
-            "optionally followed by a blank line and wrapped body; then call submit_commit_message. "
+            "optionally followed by a blank line and body wrapped to <=80 chars; then call submit_commit_message. "
             "When reviewing changes, use diff with format=name-status and format=stat to understand "
             "the file list and rename map, then request per-file patches by passing paths=['<file>'] "
             "with format=patch and a small slice (e.g. max_chars=8000)."

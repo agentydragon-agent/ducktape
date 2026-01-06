@@ -44,6 +44,10 @@ from pathlib import Path
 
 import aiodocker
 from fastmcp.client import Client
+
+from agent_core.agent import Agent
+from agent_core.loop_control import RequireAnyTool
+from agent_core.transcript_handler import TranscriptHandler
 from inop.config import OptimizerConfig
 from inop.engine import runner_factory
 from inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
@@ -64,10 +68,6 @@ from inop.prompting.prompt_engineer import (
 )
 from inop.prompting.summarizer import PatternSummarizer
 from inop.prompting.truncation_utils import TruncationManager
-
-from agent_core.agent import Agent
-from agent_core.loop_control import RequireAnyTool
-from agent_core.transcript_handler import TranscriptHandler
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, UserMessage

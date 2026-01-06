@@ -49,13 +49,8 @@ from pathlib import Path
 import pygit2
 
 from git_commit_ai.agent_backend import generate_commit_message_agent
+from git_commit_ai.editor_template import SCISSORS_MARK, render_editor_content
 
-from .core import _diff, has_uncommitted_changes
-from .editor_template import SCISSORS_MARK, render_editor_comment
-
-MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
-# Global cap on total diff size sent to AI (characters)
-MAX_TOTAL_DIFF_CHARS = 120_000
 DEFAULT_MODEL = "gpt-5.1-codex-mini"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 DEFAULT_AI_TIMEOUT = timedelta(seconds=60)  # shared subprocess timeout for providers
@@ -88,67 +83,6 @@ class AppConfig:
         model_name = model_str.strip()
 
         return AppConfig(model_name=model_name, model_str=model_str, timeout=timeout)
-
-
-def _truncate_hunks(raw: str) -> str:
-    """Truncate per-file hunk sections to MAX_FILE_LINES and rejoin, then cap total size.
-
-    Notes:
-    - Per-file: keep only first MAX_FILE_LINES lines of each file section.
-    - Global: cap the final concatenated diff to MAX_TOTAL_DIFF_CHARS to protect model context.
-    """
-    cur: list[str] = []
-    out: list[str] = []
-    lines = 0
-    for line in raw.splitlines():
-        if line.startswith(("diff --git", "index ", "--- ", "+++ ")):
-            if cur:
-                out.append("\n".join(cur[:MAX_FILE_LINES]))
-            cur, lines = [line], 0
-        else:
-            if lines < MAX_FILE_LINES:
-                cur.append(line)
-            lines += 1
-    if cur:
-        out.append("\n".join(cur[:MAX_FILE_LINES]))
-    result = "\n\n".join(out)
-    if len(result) > MAX_TOTAL_DIFF_CHARS:
-        total = len(result)
-        result = result[:MAX_TOTAL_DIFF_CHARS] + (
-            f"\n\n# [TRUNCATED: showing first {MAX_TOTAL_DIFF_CHARS} of {total} characters]"
-        )
-    return result
-
-
-def _build_amend_diff(repo: pygit2.Repository, include_all: bool) -> str:
-    """Build amend-mode diff: original commit diff plus new changes."""
-    parts: list[str] = []
-    # Original commit
-    head = repo.head.peel(pygit2.Commit)
-    if head.parents:
-        parent = head.parents[0]
-        base = parent.id
-        parts.append("=== Original commit diff (HEAD^ to HEAD) ===")
-    else:
-        # First commit: diff from empty tree
-        base = repo.TreeBuilder().write()
-        parts.append("=== Original commit content ===")
-    parts.append(repo.diff(base, head.id).patch or "")
-    # New changes
-    parts.append("\n=== New changes being added ===")
-    parts.append(_diff(repo, include_all).patch or "")
-    return "\n".join(parts)
-
-
-def get_commit_diff(repo: pygit2.Repository, include_all: bool, previous_message: str | None = None) -> str:
-    """Get the diff that would be committed with the given flags."""
-    # Determine if there is anything to commit using pygit2 status/diff
-    diff = _diff(repo, include_all)
-    if not (diff.patch or "").strip():
-        return ""
-
-    # Compute raw diff then apply per-file truncation
-    return _truncate_hunks(_build_amend_diff(repo, include_all) if previous_message else diff.patch or "")
 
 
 def repo_cache_dir(repo: pygit2.Repository) -> Path:
@@ -578,21 +512,6 @@ def _extract_commit_content(text: str) -> str:
     return "\n".join(content_lines).strip()
 
 
-def build_editor_content(
-    repo: pygit2.Repository,
-    msg: str,
-    previous_message: str | None,
-    user_context: str | None,
-    stats_line: str,
-    passthru: list[str],
-) -> str:
-    """Build the full editor content with AI message and commented metadata."""
-    comment = render_editor_comment(
-        repo, passthru, user_context=user_context, previous_message=previous_message, stats_line=stats_line
-    )
-    return msg + "\n\n" + comment
-
-
 async def _run_editor_flow(
     repo: pygit2.Repository,
     msg: str,
@@ -601,7 +520,9 @@ async def _run_editor_flow(
     stats_line: str,
     passthru: list[str],
 ) -> None:
-    editor_content = build_editor_content(repo, msg, previous_message, user_context, stats_line, passthru)
+    editor_content = render_editor_content(
+        repo, msg, passthru, user_context=user_context, previous_message=previous_message, stats_line=stats_line
+    )
 
     # Write content to COMMIT_EDITMSG and open editor
     commit_msg_path = Path(repo.path) / "COMMIT_EDITMSG"
@@ -690,10 +611,17 @@ def _get_editor(repo: pygit2.Repository) -> str:
     return "vi"
 
 
+def _get_working_directory() -> Path:
+    """Get the working directory, respecting BUILD_WORKING_DIRECTORY from bazel run."""
+    if build_wd := os.environ.get("BUILD_WORKING_DIRECTORY"):
+        return Path(build_wd)
+    return Path.cwd()
+
+
 async def async_main(argv: list[str] | None = None):
     start_monotonic_s = time.monotonic()
     try:
-        repo = pygit2.Repository(Path.cwd())
+        repo = pygit2.Repository(_get_working_directory())
     except pygit2.GitError:
         print("fatal: not a git repository (or any of the parent directories)", file=sys.stderr)
         raise SystemExit(128)
@@ -713,8 +641,10 @@ async def async_main(argv: list[str] | None = None):
 
     previous_message = _get_previous_commit_message(repo) if is_amend else None
 
-    if not (diff := get_commit_diff(repo, args.stage_all, previous_message)).strip():
-        if not has_uncommitted_changes(repo):
+    # Check for staged changes
+    diff = repo.diff(repo.head.target, None, cached=not args.stage_all).patch or ""
+    if not diff.strip():
+        if not repo.status():
             print("nothing to commit, working tree clean", file=sys.stderr)
         else:
             print('no changes added to commit (use "git add" and/or "git commit -a")', file=sys.stderr)

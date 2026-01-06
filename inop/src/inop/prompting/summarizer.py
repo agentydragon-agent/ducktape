@@ -7,7 +7,6 @@ from inop.engine.models import FileInfo, GradedRollout
 from inop.io.logging_utils import DualOutputLogging
 from inop.prompting.prompt_engineer import FeedbackProvider
 from inop.prompting.truncation_utils import TruncationManager
-
 from openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
 from openai_utils.model_metadata import get_model_metadata
 from openai_utils.text_extraction import first_assistant_text

@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from inop.config import OptimizerConfig
-
 from openai_utils.client_factory import build_client
 from openai_utils.model import OpenAIModelProto
 from openai_utils.types import ReasoningEffort

@@ -25,15 +25,16 @@ def _config_bool(value: str | None) -> bool:
     return v in {"1", "true", "yes", "on"}
 
 
-def render_editor_comment(
+def render_editor_content(
     repo: pygit2.Repository,
+    msg: str,
     passthru: list[str],
     *,
     user_context: str | None = None,
     previous_message: str | None = None,
     stats_line: str = "",
 ) -> str:
-    """Render the editor comment section (status, optional verbose diff)."""
+    """Build editor content: AI message followed by commented metadata."""
     branch = repo.head.shorthand if not repo.head_is_detached else "HEAD detached"
 
     # Staged: HEAD → index
@@ -57,8 +58,7 @@ def render_editor_comment(
             cfg_val = None
         include_verbose = _config_bool(cfg_val)
 
-    template_pkg = resources.files(__package__).joinpath("templates")
-    template_text = template_pkg.joinpath("editor_comment.mako").read_text("utf-8")
+    template_text = resources.files(__package__).joinpath("editor_comment.mako").read_text("utf-8")
     rendered: str = Template(template_text).render(
         user_context=user_context,
         previous_message=previous_message,
@@ -70,4 +70,4 @@ def render_editor_comment(
         scissors_mark=SCISSORS_MARK,
         include_verbose=include_verbose,
     )
-    return rendered.strip()
+    return msg + "\n\n" + rendered.strip()
