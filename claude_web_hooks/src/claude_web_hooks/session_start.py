@@ -243,6 +243,11 @@ def main() -> int:
         env_content = bazelisk_setup.get_env_script()
         # Also export the debug timestamp
         env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
+        # Export NODE_EXTRA_CA_CERTS to use combined CA bundle (includes Anthropic TLS inspection CA)
+        # This allows Node.js tools (puppeteer, npm, etc.) to trust the proxy
+        if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
+            env_content += f'\nexport NODE_EXTRA_CA_CERTS="{bazel_proxy_setup.BAZEL_COMBINED_CA}"\n'
+            log.info("Configured NODE_EXTRA_CA_CERTS to use combined CA bundle (for puppeteer, etc.)")
         Path(env_file).write_text(env_content)
         log.info("SUCCESS: Wrote PATH and timestamp exports to %s", env_file)
         log.info("Bazel will be available in bash sessions via PATH modification")
@@ -299,12 +304,19 @@ def main() -> int:
 
         log.info("Bazel should be available in bash sessions via ~/.local/bin")
 
+    # Set NODE_EXTRA_CA_CERTS for current session (needed for npm/puppeteer to trust proxy)
+    if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
+        os.environ["NODE_EXTRA_CA_CERTS"] = str(bazel_proxy_setup.BAZEL_COMBINED_CA)
+        log.info("Set NODE_EXTRA_CA_CERTS=%s for current session", bazel_proxy_setup.BAZEL_COMBINED_CA)
+
     # Summary
+    node_ca_status = "custom (with proxy CA)" if bazel_proxy_setup.BAZEL_COMBINED_CA.exists() else "system default"
     log.info("=" * 60)
     log.info("Environment ready:")
     log.info("  bazel:       %s", bazelisk_setup.get_status())
     log.info("  Bazel proxy: %s", bazel_proxy_setup.get_status())
     log.info("  git hook:    installed (pre-commit)")
+    log.info("  Node.js CA:  %s", node_ca_status)
     log.info("=" * 60)
 
     # Emit context for Claude Code to inject into transcript

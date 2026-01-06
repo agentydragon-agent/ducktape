@@ -240,6 +240,9 @@ build --action_env=HTTP_PROXY={local_proxy}
 build --action_env=https_proxy={local_proxy}
 build --action_env=http_proxy={local_proxy}
 
+# Propagate Node.js CA bundle into sandbox (for npm, puppeteer, etc.)
+build --action_env=NODE_EXTRA_CA_CERTS={BAZEL_COMBINED_CA}
+
 # Use local execution instead of sandbox (sandbox has /dev/null issues in CC web)
 build --spawn_strategy=local
 test --spawn_strategy=local

@@ -193,6 +193,9 @@ importers:
       highlight.js:
         specifier: ^11.11.1
         version: 11.11.1
+      json-formatter-js:
+        specifier: 2.3.3
+        version: 2.3.3
       marked:
         specifier: ^12.0.2
         version: 12.0.2
@@ -4820,6 +4823,10 @@ packages:
   /json-buffer@3.0.1:
     resolution: {integrity: sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==}
     dev: true
+
+  /json-formatter-js@2.3.3:
+    resolution: {integrity: sha512-6JpHBCm6a+YB7cLye7b2Rxsim37pxpsP5674ASRZYaFiLK+397c7CLOENru2gtiBwMz6s2NCuHVENn4fC42oeQ==}
+    dev: false
 
   /json-formatter-js@2.5.1:
     resolution: {integrity: sha512-Byzl0rvgXtkdYY8xqRIV0RER1zbKDyifvSJs12CKE+jKleevgPw9V56lYUYAai3RvkeQvXIvb5S9fKwQ8zeS9A==}

@@ -5,6 +5,7 @@
 # Build tools and dependencies
 **/bazel-*
 **/node_modules/
+**/.aspect/
 
 # Packaging artifacts
 **/*.egg-info
