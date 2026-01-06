@@ -4,7 +4,7 @@
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
 # - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
 # - props-frontend-build: Frontend-specific build + svelte-check
-# - visual-regression: Playwright visual tests
+# - visual-regression: Puppeteer visual tests
 # - ansible-lint-full: Ansible validation
 #
 # Linting via Bazel aspects (run in both pre-commit and bazel-build):
@@ -154,6 +154,8 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - uses: ./.github/actions/setup-nix-direnv
+
       - name: Cache Bazel repository
         uses: actions/cache@v4
         with:
@@ -167,7 +169,7 @@ jobs:
 
       - name: Build and test frontend
         run: |
-          bazel build //props/frontend:bundle //props/frontend:storybook
+          bazel build //props/frontend:bundle
           # Type checking: svelte-check
           bazel test //props/frontend:svelte_check_test
           # Note: ESLint and Prettier are now run via aspects in bazel-build job
@@ -183,12 +185,14 @@ jobs:
           fi
 
   visual-regression:
-    name: Visual regression tests (Bazel + Playwright)
+    name: Visual regression tests (Bazel + Puppeteer)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-nix-direnv
 
       - name: Cache Bazel repository
         uses: actions/cache@v4
@@ -251,6 +255,8 @@ jobs:
 
       - name: Check out code
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-nix-direnv
 
       - name: Install system dependencies for native Python packages
         run: |

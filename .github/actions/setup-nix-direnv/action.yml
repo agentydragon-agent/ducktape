@@ -1,0 +1,25 @@
+name: "Setup Nix and direnv"
+description: "Install Nix using DeterminateSystems installer and enable direnv"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@v17
+
+    - name: Install direnv
+      shell: bash
+      run: |
+        nix profile install nixpkgs#direnv
+
+    - name: Allow .envrc and apply environment
+      shell: bash
+      run: |
+        # Trust the .envrc
+        direnv allow .
+
+        # Export direnv environment for subsequent steps
+        eval "$(direnv export bash)"
+
+        # Write to GITHUB_ENV so subsequent steps get the variables
+        direnv export bash | grep -E '^export ' | sed 's/^export //' >> $GITHUB_ENV
