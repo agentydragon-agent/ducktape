@@ -39,6 +39,41 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+
+      - name: Install pre-commit hook dependencies
+        run: |
+          # Install tools needed by cluster-specific pre-commit hooks
+          # terraform_fmt, terraform_validate need opentofu
+          # terraform_tflint needs tflint
+          # flux-build-dry-run needs flux CLI
+          # checkov-cluster needs checkov (via nix-shell in the hook)
+          nix profile install nixpkgs#opentofu nixpkgs#tflint nixpkgs#fluxcd
+
+          # Add nix profile to PATH for subsequent steps
+          echo "$HOME/.nix-profile/bin" >> $GITHUB_PATH
+
+          # Set PCT_TFPATH so terraform hooks find opentofu
+          echo "PCT_TFPATH=$HOME/.nix-profile/bin/tofu" >> $GITHUB_ENV
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install npm dependencies for prettier
+        run: |
+          PUPPETEER_SKIP_DOWNLOAD=1 pnpm install --frozen-lockfile
+          # Add node_modules/.bin to PATH for markdownlint-cli2 and other tools
+          echo "${{ github.workspace }}/node_modules/.bin" >> $GITHUB_PATH
+
       - name: Cache Ansible Galaxy downloads
         uses: actions/cache@v4
         with:
