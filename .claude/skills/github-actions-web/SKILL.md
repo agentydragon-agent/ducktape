@@ -10,10 +10,10 @@ This skill explains how to run GitHub Actions locally in Claude Code on the web'
 ## Quick Start
 
 ```bash
-SKILL_DIR=/home/user/ducktape/nix/home/claude-code/skills/github-actions-web
+SKILL_DIR=/home/user/ducktape/.claude/skills/github-actions-web
 
 # One-time setup (configures podman, installs act)
-bash $SKILL_DIR/setup-podman.sh
+python3 $SKILL_DIR/setup_podman.py
 
 # Pull the runner image
 podman --log-level=error pull docker.io/catthehacker/ubuntu:act-latest
@@ -27,10 +27,10 @@ podman build --network=host \
   -t act-proxy:latest -f Dockerfile.act-proxy .
 
 # List available jobs
-bash $SKILL_DIR/run-act.sh -l
+python3 $SKILL_DIR/run_act.py -l
 
 # Run a specific job
-bash $SKILL_DIR/run-act.sh pre-commit
+python3 $SKILL_DIR/run_act.py pre-commit
 ```
 
 ## Why These Workarounds?
@@ -44,24 +44,27 @@ Claude Code on the web runs in a **gVisor sandbox** with:
 
 ## Helper Scripts
 
-### `setup-podman.sh`
+### `setup_podman.py`
 
 Configures podman with vfs storage driver, starts the podman service, auto-detects and copies the CA bundle, and installs act.
 
 **Auto-detected CA bundle locations:**
+
 - `/root/.cache/bazel-proxy/combined_ca.pem`
 - `/etc/ssl/certs/ca-certificates.crt`
 - `$SSL_CERT_FILE`
 - `$REQUESTS_CA_BUNDLE`
 
-### `run-act.sh`
+### `run_act.py`
 
 Runs act with all necessary workarounds. Auto-detects:
+
 - CA bundle location
 - Proxy environment variables (HTTP_PROXY, HTTPS_PROXY, etc.)
 - Custom `act-proxy:latest` image (uses if available, with `--pull=false`)
 
 Features:
+
 - Sets DOCKER_HOST to podman socket
 - Passes all proxy environment variables
 - Mounts CA bundle for TLS verification
@@ -71,8 +74,8 @@ Features:
 Usage:
 
 ```bash
-./run-act.sh JOB_NAME [extra-act-args...]
-./run-act.sh -l  # List jobs
+python3 run_act.py JOB_NAME [extra-act-args...]
+python3 run_act.py -l  # List jobs
 ```
 
 ### `Dockerfile.act-proxy`
@@ -82,6 +85,7 @@ Custom image with `global-agent` pre-installed for full Node.js proxy support. T
 ## What Works
 
 With the standard `catthehacker/ubuntu:act-latest` image:
+
 - Container startup and shell commands
 - Git clone/checkout operations
 - setup-python action (downloads Python from GitHub)
@@ -89,6 +93,7 @@ With the standard `catthehacker/ubuntu:act-latest` image:
 - curl/wget with `--proxy` and `--cacert`
 
 With the custom `act-proxy:latest` image (recommended):
+
 - All of the above, plus:
 - nix-installer-action (installs Nix successfully)
 - Other Node.js-based actions that don't respect HTTP_PROXY
@@ -118,15 +123,32 @@ export GLOBAL_AGENT_HTTPS_PROXY="$HTTPS_PROXY"
 
 ## Troubleshooting
 
-| Error | Solution |
-|-------|----------|
-| `overlay: mount failed` | Re-run `setup-podman.sh` (configures vfs) |
-| `unable to find user root` | Add root to subuid/subgid (done by setup script) |
-| `EAI_AGAIN` (DNS fails) | Build and use `act-proxy:latest` image |
-| `self-signed certificate` | Ensure CA bundle is mounted (done by run-act.sh) |
-| `netavark: invalid version` | Use `--network=host` (done by run-act.sh) |
-| Volume lock errors | Run `podman rm --all --force` |
-| `denied: requested access` | Use `localhost/act-proxy:latest` for local images |
+| Error                       | Solution                                          |
+| --------------------------- | ------------------------------------------------- |
+| `overlay: mount failed`     | Re-run `setup_podman.py` (configures vfs)         |
+| `unable to find user root`  | Add root to subuid/subgid (done by setup script)  |
+| `EAI_AGAIN` (DNS fails)     | Build and use `act-proxy:latest` image            |
+| `self-signed certificate`   | Ensure CA bundle is mounted (done by run_act.py)  |
+| `netavark: invalid version` | Use `--network=host` (done by run_act.py)         |
+| Volume lock errors          | Run `podman rm --all --force`                     |
+| `denied: requested access`  | Use `localhost/act-proxy:latest` for local images |
+
+## CI Workflow Jobs
+
+See `.github/workflows/ci.yml` for the authoritative list of jobs.
+
+## Debugging
+
+```bash
+# Verbose output
+python3 run_act.py JOB_NAME --verbose
+
+# Very verbose
+python3 run_act.py JOB_NAME -vv
+
+# Keep containers running after failure (for debugging)
+python3 run_act.py JOB_NAME --reuse
+```
 
 ## Alternative: Direct Testing
 

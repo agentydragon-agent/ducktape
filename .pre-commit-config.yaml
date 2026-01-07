@@ -79,12 +79,14 @@ repos:
 
   # Prettier via Bazel (hermetic, no system node required)
   # Other formatters (ruff, buildifier) handled by their own hooks above
+  # Note: Uses binary directly instead of `bazel run` because `bazel run`
+  # changes the working directory, breaking relative path handling
   - repo: local
     hooks:
       - id: prettier
         name: prettier (bazel)
         language: system
-        entry: bazel run //tools/lint:prettier -- --write
+        entry: bash -c 'bazel build //tools/lint:prettier >/dev/null 2>&1 && ./bazel-bin/tools/lint/prettier_/prettier --write "$@"' --
         types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json, html]
         exclude: "node_modules/|.pnpm/|bazel-|.git/"
 
