@@ -25,65 +25,70 @@ This document describes how to test GitHub Actions workflows locally using [act]
 
 ## Claude Code on the Web Container Setup
 
-The Claude Code web container is a sandboxed environment with limitations for running act:
+The Claude Code web container runs on gVisor. Here's how to run act:
 
-### Option 1: Podman (recommended for image pulls)
-
-Podman can pull act images that Docker cannot (bypasses xattr limitations):
+### Working Solution: Podman with vfs Storage
 
 ```bash
-# Install podman
+# 1. Install podman
 apt-get update && apt-get install -y podman
 
-# Pull act images
-podman pull docker.io/catthehacker/ubuntu:act-latest
+# 2. Add root to subuid/subgid (required for user namespace mapping)
+echo "root:100000:65536" >> /etc/subuid
+echo "root:100000:65536" >> /etc/subgid
 
-# Start podman API service
+# 3. Configure podman with vfs storage (overlay doesn't work in gVisor)
+mkdir -p /etc/containers
+cat > /etc/containers/storage.conf << 'EOF'
+[storage]
+driver = "vfs"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
+
+[storage.options.vfs]
+ignore_chown_errors = "true"
+EOF
+
+# 4. Install act
+curl -fsSL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /root/.local/bin
+
+# 5. Pull the act runner image
+podman --log-level=error pull docker.io/catthehacker/ubuntu:act-latest
+
+# 6. Start podman API service
 podman system service --time=0 unix:///tmp/podman.sock &
+sleep 3
 
-# Run act with podman
-DOCKER_HOST=unix:///tmp/podman.sock act -j pre-commit \
+# 7. Run act with podman
+DOCKER_HOST=unix:///tmp/podman.sock /root/.local/bin/act -j pre-commit \
   -P ubuntu-latest=catthehacker/ubuntu:act-latest \
-  --container-options "--userns=host"
+  --network=host
 ```
 
-**Known issues**: Container startup may fail with "unable to find user root" due to user
-namespace restrictions in the sandbox environment.
+### Why This Works
 
-### Option 2: Docker with vfs (limited)
+- **vfs storage driver**: Works in gVisor (overlay fails due to mount restrictions)
+- **ignore_chown_errors**: Handles chown failures in sandboxed environment
+- **subuid/subgid entries**: Required for podman's user namespace mapping
+- **--network=host**: Bypasses netavark networking issues in gVisor
+
+### Quick Test
 
 ```bash
-# Install Docker
-apt-get update && apt-get install -y docker.io
-
-# Start dockerd with vfs storage (no iptables/NAT in sandbox)
-nohup dockerd --iptables=false --bridge=none -s vfs > /tmp/dockerd.log 2>&1 &
+# Verify podman works
+podman --log-level=error run --rm --network=host alpine:latest /bin/sh -c "echo 'Hello from gVisor!'"
 ```
 
-**Limitation**: vfs storage driver doesn't support extended attributes (xattr), so act
-runner images (catthehacker/ubuntu:act-\*) won't pull due to gstreamer capability files.
+### Alternative: Direct Testing
 
-### Alternative: Direct Testing (most reliable)
-
-Instead of act, test CI steps directly:
+For simpler cases, test CI steps directly without act:
 
 ```bash
-# Run pre-commit (same as CI)
 pip install pre-commit==4.0.1
 pre-commit run --all-files
-
-# Run Bazel builds
 bazel build //...
 bazel test //...
 ```
-
-### Full act Testing (Requires Real Docker)
-
-For complete act testing, use a machine with proper Docker support:
-
-- Native Linux with overlay2 storage driver
-- macOS with Docker Desktop
-- WSL2 with Docker Desktop
 
 ## Basic Usage
 
