@@ -1,5 +1,5 @@
-name: "Setup Nix and direnv"
-description: "Install Nix using DeterminateSystems installer and enable direnv"
+name: "Setup Nix and Bazelisk"
+description: "Install Nix and bazelisk, matching .envrc environment"
 
 runs:
   using: composite
@@ -7,19 +7,15 @@ runs:
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v17
 
-    - name: Install direnv
+    - name: Install bazelisk via Nix
       shell: bash
       run: |
-        nix profile install nixpkgs#direnv
+        # Install bazelisk (what .envrc provides via `use nix -p bazelisk`)
+        nix profile install nixpkgs#bazelisk
 
-    - name: Allow .envrc and apply environment
+    - name: Configure environment
       shell: bash
       run: |
-        # Trust the .envrc
-        direnv allow .
-
-        # Export direnv environment for subsequent steps
-        eval "$(direnv export bash)"
-
-        # Write to GITHUB_ENV so subsequent steps get the variables
-        direnv export bash | grep -E '^export ' | sed 's/^export //' >> $GITHUB_ENV
+        # Match .envrc: Force Bazel to use system GCC instead of Nix GCC
+        # This avoids glibc mismatch issues with rustc and proc-macros
+        echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
