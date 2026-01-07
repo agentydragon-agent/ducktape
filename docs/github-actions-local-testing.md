@@ -25,47 +25,51 @@ This document describes how to test GitHub Actions workflows locally using [act]
 
 ## Claude Code on the Web Container Setup
 
-When running in a Claude Code web container (sandboxed environment), special setup is required:
+The Claude Code web container is a sandboxed environment with limitations for running act:
 
-### Install Docker and act
+### Option 1: Podman (recommended for image pulls)
+
+Podman can pull act images that Docker cannot (bypasses xattr limitations):
+
+```bash
+# Install podman
+apt-get update && apt-get install -y podman
+
+# Pull act images
+podman pull docker.io/catthehacker/ubuntu:act-latest
+
+# Start podman API service
+podman system service --time=0 unix:///tmp/podman.sock &
+
+# Run act with podman
+DOCKER_HOST=unix:///tmp/podman.sock act -j pre-commit \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest \
+  --container-options "--userns=host"
+```
+
+**Known issues**: Container startup may fail with "unable to find user root" due to user
+namespace restrictions in the sandbox environment.
+
+### Option 2: Docker with vfs (limited)
 
 ```bash
 # Install Docker
 apt-get update && apt-get install -y docker.io
 
-# Install act
-curl -fsSL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /root/.local/bin
-```
-
-### Start Docker Daemon
-
-The container environment doesn't support iptables/NAT, so Docker must run with networking disabled:
-
-```bash
-# Start dockerd with vfs storage and no networking
+# Start dockerd with vfs storage (no iptables/NAT in sandbox)
 nohup dockerd --iptables=false --bridge=none -s vfs > /tmp/dockerd.log 2>&1 &
-sleep 5
-docker info
 ```
 
-### Limitations
+**Limitation**: vfs storage driver doesn't support extended attributes (xattr), so act
+runner images (catthehacker/ubuntu:act-\*) won't pull due to gstreamer capability files.
 
-**The vfs storage driver doesn't support extended attributes (xattr)**. This means:
+### Alternative: Direct Testing (most reliable)
 
-- **catthehacker/ubuntu:act-\*** images won't pull (gstreamer has files with security.capability xattr)
-- Basic images like `ubuntu:24.04` and `node:22-slim` work but lack GitHub Actions tools
-- Running act with basic images will fail on actions that require Node.js (most actions)
-
-### Alternative: Direct Testing
-
-Instead of act, test CI steps directly in the container:
+Instead of act, test CI steps directly:
 
 ```bash
-# Install Python and pre-commit
-apt-get install -y python3 python3-pip
-pip install pre-commit==4.0.1
-
 # Run pre-commit (same as CI)
+pip install pre-commit==4.0.1
 pre-commit run --all-files
 
 # Run Bazel builds
@@ -75,7 +79,7 @@ bazel test //...
 
 ### Full act Testing (Requires Real Docker)
 
-For full act testing with catthehacker images, use a machine with proper Docker support:
+For complete act testing, use a machine with proper Docker support:
 
 - Native Linux with overlay2 storage driver
 - macOS with Docker Desktop
