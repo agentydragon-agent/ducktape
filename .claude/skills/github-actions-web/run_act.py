@@ -15,6 +15,7 @@ Examples:
 
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -25,6 +26,11 @@ CA_BUNDLE_DEST = "/tmp/ca-bundle.pem"
 ACT_PATHS = ["/root/.local/bin/act"]
 CUSTOM_IMAGE = "localhost/act-proxy:latest"
 DEFAULT_IMAGE = "catthehacker/ubuntu:act-latest"
+
+# Bazel proxy port (same as bazel_proxy_setup.py)
+BAZEL_PROXY_PORT = 18081
+BAZEL_PROXY_DIR = Path.home() / ".cache" / "bazel-proxy"
+BAZEL_USER_BAZELRC = Path.home() / ".bazelrc"
 
 # Known CA bundle locations in order of preference
 CA_BUNDLE_LOCATIONS = [
@@ -112,20 +118,42 @@ def check_custom_image() -> tuple[str, bool]:
     return DEFAULT_IMAGE, False
 
 
+def is_bazel_proxy_running() -> bool:
+    """Check if the bazel proxy is running on the expected port."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex(("127.0.0.1", BAZEL_PROXY_PORT))
+        sock.close()
+        return result == 0
+    except Exception:
+        return False
+
+
 def get_proxy_env() -> dict[str, str]:
-    """Get proxy environment variables."""
-    http_proxy = os.environ.get("HTTP_PROXY", "")
-    https_proxy = os.environ.get("HTTPS_PROXY", "")
+    """Get proxy environment variables.
+
+    If the bazel proxy is running (localhost:18081), use it as the proxy.
+    This handles authentication to the upstream TLS-inspecting proxy.
+    """
+    # Check if bazel proxy is available (handles upstream auth)
+    if is_bazel_proxy_running():
+        local_proxy = f"http://localhost:{BAZEL_PROXY_PORT}"
+        print(f"Using bazel proxy at {local_proxy}")
+    else:
+        # Fall back to direct proxy from environment
+        local_proxy = os.environ.get("HTTP_PROXY", "")
+        if local_proxy:
+            print("WARNING: Bazel proxy not running, using direct proxy (may fail for Bazel)")
 
     return {
-        "HTTP_PROXY": http_proxy,
-        "HTTPS_PROXY": https_proxy,
-        "http_proxy": os.environ.get("http_proxy", http_proxy),
-        "https_proxy": os.environ.get("https_proxy", https_proxy),
+        "HTTP_PROXY": local_proxy,
+        "HTTPS_PROXY": local_proxy,
+        "http_proxy": local_proxy,
+        "https_proxy": local_proxy,
         "NO_PROXY": os.environ.get("NO_PROXY", "localhost,127.0.0.1"),
         "no_proxy": os.environ.get("no_proxy", os.environ.get("NO_PROXY", "localhost,127.0.0.1")),
-        "GLOBAL_AGENT_HTTP_PROXY": os.environ.get("GLOBAL_AGENT_HTTP_PROXY", http_proxy),
-        "GLOBAL_AGENT_HTTPS_PROXY": os.environ.get("GLOBAL_AGENT_HTTPS_PROXY", https_proxy),
+        "GLOBAL_AGENT_HTTP_PROXY": local_proxy,
+        "GLOBAL_AGENT_HTTPS_PROXY": local_proxy,
     }
 
 
@@ -147,18 +175,105 @@ def build_act_command(
     for key, value in proxy_env.items():
         cmd.extend(["--env", f"{key}={value}"])
 
-    # Add CA bundle environment variables
-    ca_env_vars = ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO"]
-    for var in ca_env_vars:
-        cmd.extend(["--env", f"{var}={ca_bundle}"])
+    # Build container options as a single combined string
+    # (multiple --container-options may not be handled correctly by act)
+    container_opts: list[str] = []
 
-    # Mount CA bundle into container
-    cmd.extend(["--container-options", f"-v {ca_bundle}:{ca_bundle}:ro"])
+    # Custom act-proxy image has CA bundle baked in at /etc/ssl/certs/custom-ca-bundle.pem
+    # Don't override those env vars - only set them for the default image
+    if use_local_image:
+        # Custom image: CA is at /etc/ssl/certs/custom-ca-bundle.pem (set in Dockerfile)
+        # Just mount the bazel proxy config
+        pass
+    else:
+        # Default image: need to mount and configure CA bundle
+        ca_env_vars = ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO"]
+        for var in ca_env_vars:
+            cmd.extend(["--env", f"{var}={ca_bundle}"])
+        # Mount CA bundle into container
+        container_opts.append(f"-v {ca_bundle}:{ca_bundle}:ro")
+
+    # Mount bazel proxy configuration if available (for Bazel JVM settings)
+    truststore = BAZEL_PROXY_DIR / "cacerts.jks"
+    if BAZEL_PROXY_DIR.exists():
+        container_opts.append(f"-v {BAZEL_PROXY_DIR}:{BAZEL_PROXY_DIR}:ro")
+        print(f"Mounting bazel proxy config: {BAZEL_PROXY_DIR}")
+
+        # Set JAVA_TOOL_OPTIONS to configure JVM truststore and proxy
+        # Note: Bazel ignores JAVA_TOOL_OPTIONS but other Java tools may use it
+        if truststore.exists() and is_bazel_proxy_running():
+            java_opts = (
+                f"-Dhttps.proxyHost=127.0.0.1 "
+                f"-Dhttps.proxyPort={BAZEL_PROXY_PORT} "
+                f"-Djavax.net.ssl.trustStore={truststore} "
+                f"-Djavax.net.ssl.trustStorePassword=changeit"
+            )
+            cmd.extend(["--env", f"JAVA_TOOL_OPTIONS={java_opts}"])
+            print("Setting JAVA_TOOL_OPTIONS for JVM tools")
+
+    if BAZEL_USER_BAZELRC.exists():
+        container_opts.append(f"-v {BAZEL_USER_BAZELRC}:{BAZEL_USER_BAZELRC}:ro")
+        print(f"Mounting user bazelrc: {BAZEL_USER_BAZELRC}")
+
+    # Add all container options as a single argument
+    if container_opts:
+        cmd.extend(["--container-options", " ".join(container_opts)])
 
     # Add extra args
     cmd.extend(extra_args)
 
     return cmd
+
+
+def generate_workspace_bazelrc() -> None:
+    """Generate a .bazelrc.act file in the workspace for Bazel proxy settings.
+
+    This file is in the workspace so it gets copied into the act container.
+    The project .bazelrc should include: try-import .bazelrc.act
+    """
+    workspace_bazelrc = Path.cwd() / ".bazelrc.act"
+
+    # Check if bazel proxy is running
+    if not is_bazel_proxy_running():
+        # Clean up any stale file
+        if workspace_bazelrc.exists():
+            workspace_bazelrc.unlink()
+        return
+
+    # Check for Java truststore
+    truststore = BAZEL_PROXY_DIR / "cacerts.jks"
+    combined_ca = BAZEL_PROXY_DIR / "combined_ca.pem"
+
+    if not truststore.exists():
+        print("WARNING: Java truststore not found, Bazel may fail to access BCR")
+        return
+
+    local_proxy = f"http://localhost:{BAZEL_PROXY_PORT}"
+
+    # Generate bazelrc for act container
+    bazelrc_content = f"""\
+# Auto-generated bazelrc for act container (do not commit)
+# JVM proxy settings for Bazel server (BCR access, etc.)
+startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
+startup --host_jvm_args=-Dhttps.proxyPort={BAZEL_PROXY_PORT}
+startup --host_jvm_args=-Djavax.net.ssl.trustStore={truststore}
+startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
+
+# Propagate proxy env vars into sandbox actions
+build --action_env=HTTPS_PROXY={local_proxy}
+build --action_env=HTTP_PROXY={local_proxy}
+build --action_env=https_proxy={local_proxy}
+build --action_env=http_proxy={local_proxy}
+"""
+
+    if combined_ca.exists():
+        bazelrc_content += f"""
+# Node.js CA bundle for npm, puppeteer, etc.
+build --action_env=NODE_EXTRA_CA_CERTS={combined_ca}
+"""
+
+    workspace_bazelrc.write_text(bazelrc_content)
+    print(f"Generated {workspace_bazelrc}")
 
 
 def main() -> int:
@@ -183,6 +298,9 @@ def main() -> int:
     ensure_podman_running()
     cleanup_containers()
     runner_image, use_local_image = check_custom_image()
+
+    # Generate workspace bazelrc for the container
+    generate_workspace_bazelrc()
 
     print(f"Running job: {job}")
     print(f"CA bundle: {ca_bundle}")
