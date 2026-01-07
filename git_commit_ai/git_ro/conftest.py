@@ -72,3 +72,48 @@ async def typed_git_ro(repo_git_ro: pygit2.Repository, make_typed_mcp):
     server = GitRoServer(repo_git_ro)
     async with make_typed_mcp(server) as (client, _session):
         yield client
+
+
+@pytest.fixture
+def repo_with_conflict(tmp_path: Path) -> pygit2.Repository:
+    """Repo with a merge conflict for testing :N:path syntax.
+
+    Creates a conflict in 'conflict.txt' with:
+      - Stage 1 (ancestor): "ancestor content"
+      - Stage 2 (ours): "ours content"
+      - Stage 3 (theirs): "theirs content"
+    """
+    repo_path = tmp_path / "repo_conflict"
+    repo_path.mkdir(parents=True, exist_ok=True)
+    repo = pygit2.init_repository(str(repo_path), bare=False)
+    _ensure_identity(repo)
+
+    # Create initial commit with base content
+    (repo_path / "conflict.txt").write_text("ancestor content\n", encoding="utf-8")
+    _commit_all(repo, "initial")
+    base_commit = repo.head.peel(pygit2.Commit)
+
+    # Create branch "theirs" with different content
+    repo.branches.local.create("theirs", base_commit)
+    repo.checkout(repo.branches["theirs"])
+    (repo_path / "conflict.txt").write_text("theirs content\n", encoding="utf-8")
+    _commit_all(repo, "theirs change")
+    theirs_commit = repo.head.peel(pygit2.Commit)
+
+    # Go back to main and make conflicting change
+    repo.checkout(repo.branches["main"])
+    (repo_path / "conflict.txt").write_text("ours content\n", encoding="utf-8")
+    _commit_all(repo, "ours change")
+
+    # Merge theirs into main to create conflict
+    repo.merge(theirs_commit.id)
+
+    return repo
+
+
+@pytest.fixture
+async def typed_git_ro_conflict(repo_with_conflict: pygit2.Repository, make_typed_mcp):
+    """TypedClient for repo with merge conflict."""
+    server = GitRoServer(repo_with_conflict)
+    async with make_typed_mcp(server) as (client, _session):
+        yield client

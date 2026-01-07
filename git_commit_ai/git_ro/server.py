@@ -19,7 +19,6 @@ import asyncio
 import re
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 import pygit2
 
@@ -346,22 +345,28 @@ class GitRoServer(EnhancedFastMCP):
             if index_match:
                 stage_str, path = index_match.groups()
                 stage = int(stage_str) if stage_str else 0
-                # pygit2 index lookup - find entry matching path and stage
                 state.index.read()
-                for entry in state.index:
-                    if entry.path == path:
-                        # IndexEntry has no stage attr directly exposed in all pygit2 versions
-                        # Stage is encoded in flags: (flags & 0x3000) >> 12
-                        entry_stage = (entry.flags & 0x3000) >> 12
-                        if entry_stage == stage:
-                            blob = state[entry.id].peel(pygit2.Blob)
-                            data = blob.data
-                            try:
-                                text = data.decode("utf-8")
-                            except UnicodeDecodeError:
-                                text = f"[binary blob {len(data)} bytes]"
-                            return apply_text_slice(text, input.slice)
-                raise FileNotFoundError(f"Index entry not found: {objspec}")
+
+                entry: pygit2.IndexEntry | None = None
+                if stage == 0:
+                    # Stage 0: regular index entries (non-conflict)
+                    for e in state.index:
+                        if e.path == path:
+                            entry = e
+                            break
+                else:
+                    # Stages 1-3: conflict entries (ancestor=1, ours=2, theirs=3)
+                    conflicts = state.index.conflicts
+                    if conflicts and path in conflicts:
+                        ancestor, ours, theirs = conflicts[path]
+                        conflict_entries = {1: ancestor, 2: ours, 3: theirs}
+                        entry = conflict_entries.get(stage)
+
+                if entry is None:
+                    raise FileNotFoundError(f"Index entry not found: {objspec}")
+                blob = state[entry.id].peel(pygit2.Blob)
+                text = blob.data.decode("utf-8")
+                return apply_text_slice(text, input.slice)
 
             # REV:path - blob from commit tree
             if ":" in objspec:
@@ -375,22 +380,14 @@ class GitRoServer(EnhancedFastMCP):
                         cur = state[entry.id].peel(pygit2.Tree)
                     else:
                         blob = state[entry.id].peel(pygit2.Blob)
-                        data = blob.data
-                        try:
-                            text = data.decode("utf-8")
-                        except UnicodeDecodeError:
-                            text = f"[binary blob {len(data)} bytes]"
+                        text = blob.data.decode("utf-8")
                         return apply_text_slice(text, input.slice)
                 raise FileNotFoundError(f"Path not found in tree: {path}")
 
             # Raw OID or other ref - read object directly
             obj = state.revparse_single(objspec)
             if isinstance(obj, pygit2.Blob):
-                data = obj.data
-                try:
-                    text = data.decode("utf-8")
-                except UnicodeDecodeError:
-                    text = f"[binary blob {len(data)} bytes]"
+                text = obj.data.decode("utf-8")
                 return apply_text_slice(text, input.slice)
             if isinstance(obj, pygit2.Commit):
                 # Return raw commit object representation

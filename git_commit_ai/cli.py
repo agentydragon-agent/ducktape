@@ -470,6 +470,19 @@ def _get_previous_commit_message(repo: pygit2.Repository) -> str:
         raise SystemExit(1)
 
 
+# ---------- staging helpers ------------------------------------
+
+
+def stage_tracked_changes(repo: pygit2.Repository) -> None:
+    """Stage modified and deleted tracked files (emulates 'git add -u')."""
+    for path, flags in repo.status().items():
+        if flags & pygit2.GIT_STATUS_WT_MODIFIED:
+            repo.index.add(path)
+        elif flags & pygit2.GIT_STATUS_WT_DELETED:
+            repo.index.remove(path)
+    repo.index.write()
+
+
 # ---------- commit/editor helpers ------------------------------------
 
 
@@ -636,8 +649,7 @@ async def async_main(argv: list[str] | None = None):
         print(f"# Resolved model={config.model_str}, timeout={config.timeout}", file=sys.stderr)
 
     if args.stage_all:
-        repo.index.add_all()
-        repo.index.write()
+        stage_tracked_changes(repo)
 
     previous_message = _get_previous_commit_message(repo) if is_amend else None
 

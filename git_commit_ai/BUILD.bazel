@@ -50,6 +50,7 @@ py_test(
         "git_ro/test_status_log.py",
         "test_amend.py",
         "test_editor_template.py",
+        "test_stage_all.py",
     ],
     main = "test_amend.py",
     deps = [
