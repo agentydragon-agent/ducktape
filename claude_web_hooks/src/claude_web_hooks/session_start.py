@@ -18,33 +18,103 @@ CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
 
 
-def emit_session_context(log: logging.Logger, had_warnings: bool, had_errors: bool) -> None:
-    """Emit structured context summary for Claude Code to inject into transcript.
+def format_environment_summary() -> str:
+    """Format a compact environment summary with deduplicated proxy values."""
+    env = dict(os.environ)
 
-    This output goes to stdout and gets injected as context for the operating agent.
+    # Group env vars by their value to deduplicate long proxy URLs
+    value_to_vars: dict[str, list[str]] = {}
+    for key, value in sorted(env.items()):
+        if value not in value_to_vars:
+            value_to_vars[value] = []
+        value_to_vars[value].append(key)
+
+    lines = []
+
+    # Find proxy-related values (long URLs that appear in multiple vars)
+    proxy_vars = {}
+    other_vars = {}
+
+    for value, keys in value_to_vars.items():
+        # Identify proxy values by checking if they're long URLs used by multiple vars
+        is_proxy = len(value) > 100 and any(
+            k for k in keys if "PROXY" in k.upper() or k in ("http_proxy", "https_proxy")
+        )
+        if is_proxy and len(keys) > 1:
+            proxy_vars[value] = keys
+        else:
+            for key in keys:
+                other_vars[key] = value
+
+    # Output proxy values with their aliases
+    if proxy_vars:
+        lines.append("Proxy configuration:")
+        for i, (value, keys) in enumerate(proxy_vars.items(), 1):
+            # Truncate the URL for display
+            truncated = value[:80] + "..." if len(value) > 80 else value
+            lines.append(f"  proxy_{i}: {truncated}")
+            lines.append(f"    Used by: {', '.join(sorted(keys))}")
+
+    # Output key environment vars (not all, just important ones)
+    important_keys = [
+        "CLAUDE_CODE_REMOTE",
+        "CLAUDE_CODE_VERSION",
+        "CLAUDE_PROJECT_DIR",
+        "CLAUDE_ENV_FILE",
+        "NODE_EXTRA_CA_CERTS",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "DOCKER_HOST",
+        "PATH",
+    ]
+
+    lines.append("Key environment:")
+    for key in important_keys:
+        if key in other_vars:
+            value = other_vars[key]
+            # Truncate long values
+            if len(value) > 100:
+                value = value[:97] + "..."
+            lines.append(f"  {key}={value}")
+
+    return "\n".join(lines)
+
+
+def emit_session_context(had_warnings: bool, had_errors: bool) -> None:
+    """Emit compact context summary for Claude Code transcript.
+
+    This goes to stdout and gets injected as context for the agent.
+    Keep this minimal - verbose details go to the log file.
     """
-    print("\n" + "=" * 60)
-    print("SESSION START HOOK SUMMARY")
-    print("=" * 60)
+    lines = ["=" * 60, "Claude Code on the web (gVisor sandbox)", "=" * 60]
 
-    # Tell the LLM about the Claude Code on the web environment
-    print("\nYou are running in Claude Code on the web (gVisor sandbox container).")
-    print("This environment has specific constraints and workarounds documented in skills.")
-    print("\nAvailable skills for this environment:")
-    print("  - github-actions-web: Run GitHub Actions locally with act + podman")
-    print("    Use this skill when you need to test CI workflows in this container.")
-
+    # Status line
     if had_errors:
-        print("\n[ERROR] Session start completed with ERRORS - some features may not work correctly")
-        print(f"[ERROR] Check log file for details: {LOG_FILE}")
+        lines.append("Status: ERRORS - check log for details")
     elif had_warnings:
-        print("\n[WARNING] Session start completed with warnings - using fallback configurations")
-        print(f"Review log file for details: {LOG_FILE}")
+        lines.append("Status: OK with warnings")
     else:
-        print("\nSession start completed successfully - all features configured")
+        lines.append("Status: OK")
 
-    print(f"\nFull log available at: {LOG_FILE}")
-    print("=" * 60 + "\n")
+    # Key constraints and skills
+    lines.extend(
+        [
+            "",
+            "Environment constraints:",
+            "  - TLS-inspecting proxy (custom CA configured)",
+            "  - No overlay filesystem (use vfs for containers)",
+            "  - Network via proxy only (no direct DNS)",
+            "",
+            "Available skill: github-actions-web",
+            "  Run CI workflows locally with: act + podman",
+            "  See .claude/skills/github-actions-web/SKILL.md",
+            "",
+            f"Full log: {LOG_FILE}",
+            "=" * 60,
+        ]
+    )
+
+    print("\n".join(lines))
     sys.stdout.flush()
 
 
@@ -122,214 +192,173 @@ class LogLevelCounter(logging.Handler):
             self.error_count += 1
 
 
-def setup_logging() -> tuple[logging.Logger, LogLevelCounter]:
-    """Configure logging to stdout and file with clear log level indicators.
+class SessionLoggers:
+    """Container for stdout (compact) and file-only (verbose) loggers."""
 
-    Returns logger and a counter to track warnings/errors.
+    def __init__(self, stdout_logger: logging.Logger, file_logger: logging.Logger, counter: LogLevelCounter):
+        self.stdout = stdout_logger  # Goes to both stdout and file
+        self.file = file_logger  # Goes to file only (for verbose output)
+        self.counter = counter
+
+
+def setup_logging() -> SessionLoggers:
+    """Configure split logging: compact to stdout, verbose to file only.
+
+    Returns SessionLoggers with separate loggers for stdout vs file-only output.
     """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Format with clear log level indicators
-    # INFO is unmarked (normal), WARNING/ERROR are clearly marked
     class LogLevelFormatter(logging.Formatter):
         def format(self, record):
             if record.levelno == logging.INFO:
-                # INFO logs don't need a prefix - they're expected
                 return record.getMessage()
             if record.levelno == logging.WARNING:
                 return f"[WARNING] {record.getMessage()}"
             if record.levelno == logging.ERROR:
                 return f"[ERROR] {record.getMessage()}"
-            # Any other level is unexpected - highlight it
             return f"[{record.levelname}] {record.getMessage()}"
 
     formatter = LogLevelFormatter()
-
-    # Stdout handler for context injection
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(formatter)
-
-    # File handler for persistence
-    file_handler = logging.FileHandler(LOG_FILE, mode="a")
-    file_handler.setFormatter(formatter)
-
-    # Counter handler to track warnings/errors
     counter = LogLevelCounter()
 
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    logger.addHandler(stdout_handler)
-    logger.addHandler(file_handler)
-    logger.addHandler(counter)
+    # Stdout logger: goes to both stdout and file
+    stdout_logger = logging.getLogger(f"{__name__}.stdout")
+    stdout_logger.setLevel(logging.INFO)
+    stdout_logger.propagate = False
 
-    return logger, counter
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_logger.addHandler(stdout_handler)
+
+    file_handler_stdout = logging.FileHandler(LOG_FILE, mode="a")
+    file_handler_stdout.setFormatter(formatter)
+    stdout_logger.addHandler(file_handler_stdout)
+    stdout_logger.addHandler(counter)
+
+    # File-only logger: verbose details that don't go to stdout
+    file_logger = logging.getLogger(f"{__name__}.file")
+    file_logger.setLevel(logging.INFO)
+    file_logger.propagate = False
+
+    file_handler_only = logging.FileHandler(LOG_FILE, mode="a")
+    file_handler_only.setFormatter(formatter)
+    file_logger.addHandler(file_handler_only)
+    file_logger.addHandler(counter)
+
+    return SessionLoggers(stdout_logger, file_logger, counter)
 
 
 def main() -> int:
-    log, counter = setup_logging()
+    loggers = setup_logging()
+    log = loggers.stdout  # Compact output to stdout + file
+    verbose = loggers.file  # Verbose output to file only
 
-    log.info("=" * 60)
-    log.info("Hook: %s", __file__)
-    log.info("Time: %s", datetime.now().isoformat())
-    log.info("Log:  %s", LOG_FILE)
-    log.info("=" * 60)
+    # Compact header for stdout
+    log.info("Session start hook: %s", datetime.now().isoformat())
+
+    # Verbose header for file only
+    verbose.info("=" * 60)
+    verbose.info("Hook: %s", __file__)
+    verbose.info("Time: %s", datetime.now().isoformat())
+    verbose.info("Log:  %s", LOG_FILE)
+    verbose.info("=" * 60)
 
     if os.environ.get("CLAUDE_CODE_REMOTE") != "true":
-        log.info("Not remote environment, skipping")
-        emit_session_context(log, had_warnings=False, had_errors=False)
+        log.info("Not remote environment, skipping setup")
+        emit_session_context(had_warnings=False, had_errors=False)
         return 0
 
-    log.info("Environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
-    log.info("Setting up dev environment...")
+    # Full environment dump goes to file only (too verbose for stdout)
+    verbose.info("Full environment:\n%s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
 
-    # Detect project directory FIRST so it's available for bazel proxy setup
-    # (needed for local registry configuration with native ELF ape binaries)
-    # Documentation states CLAUDE_PROJECT_DIR should be provided when Claude Code spawns hooks,
-    # but it's not available in Claude Code on the web as of 2.0.59
+    # Compact environment summary for stdout
+    log.info("Setting up dev environment...")
+    log.info(format_environment_summary())
+
+    # Detect project directory
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
     if project_dir_str:
-        log.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
+        verbose.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
     else:
-        log.warning("CLAUDE_PROJECT_DIR not provided by Claude Code (expected per docs, missing in web v2.0.59)")
-        # Fallback: use PWD and verify it's a git repo
+        verbose.warning("CLAUDE_PROJECT_DIR not provided (fallback to PWD)")
         pwd = Path.cwd()
-        log.info("Attempting fallback: checking if PWD=%s is a git repository", pwd)
         if (pwd / ".git").exists():
             project_dir_str = str(pwd)
             os.environ["CLAUDE_PROJECT_DIR"] = project_dir_str
-            log.info("SUCCESS: PWD contains .git directory, using as project root: %s", project_dir_str)
+            log.info("Project: %s", project_dir_str)
         else:
-            log.error("FAILED: PWD does not contain .git directory, cannot detect project root")
-            log.error("Project-specific setup will be skipped (no git pre-commit hooks, local registry)")
+            log.error("Cannot detect project root (no .git)")
 
-    # Install Bazelisk (downloads correct Bazel version automatically)
+    # Install Bazelisk
     bazelisk_setup.install_bazelisk()
 
-    # Set up Bazel proxy for TLS-inspecting proxy
-    # This now includes local registry setup if CLAUDE_PROJECT_DIR is set
+    # Set up Bazel proxy
     bazel_proxy_setup.setup_bazel_proxy()
 
     if project_dir_str:
         project_dir = Path(project_dir_str)
-        log.info("Project directory confirmed: %s", project_dir)
-
-        # Install bazel wrapper that sets proxy env vars
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
-
-        # Install git pre-commit hook that runs bazel lint
-        install_git_precommit_hook(project_dir, log)
+        install_git_precommit_hook(project_dir, verbose)  # Detailed logging to file
     else:
-        # No project directory available
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
-    # Export debug timestamp to track hook execution
+    # Export debug timestamp
     hook_timestamp = datetime.now().isoformat()
     os.environ["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp
-
-    # Write timestamp to persistent file for debugging
     timestamp_file = Path.home() / ".ducktape_session_hook_last_run"
     timestamp_file.write_text(f"{hook_timestamp}\n")
-    log.info("Session start hook timestamp: %s", hook_timestamp)
+    verbose.info("Session start hook timestamp: %s", hook_timestamp)
 
-    # Persist PATH modification via CLAUDE_ENV_FILE or fallback to symlink
-    # The bazel wrapper needs to be on PATH so `bazel` invokes our wrapper
-    #
-    # Claude Code web environment observations (v2.0.59):
-    # - CLAUDE_ENV_FILE: NOT provided (despite docs saying SessionStart hooks get it)
-    # - CLAUDE_PROJECT_DIR: NOT provided (despite docs saying hooks receive it)
-    # - PATH already includes: /root/.local/bin (container default)
-    #
-    # Why ~/.local/bin instead of a more specific path?
-    # - It's already on PATH in Claude Code web containers
-    # - Standard XDG location for user executables
-    # - More likely to persist across environment changes than custom paths
-    # - Using CLAUDE_ENV_FILE would be better but it's not available
-    log.info("Configuring bazel availability for bash sessions...")
+    # Configure PATH for bash sessions
+    verbose.info("Configuring bazel availability for bash sessions...")
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
-        log.info("CLAUDE_ENV_FILE provided: %s", env_file)
-        log.info("Using standard approach: writing PATH export to CLAUDE_ENV_FILE")
         env_content = bazelisk_setup.get_env_script()
-        # Also export the debug timestamp
         env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
-        # Export NODE_EXTRA_CA_CERTS to use combined CA bundle (includes Anthropic TLS inspection CA)
-        # This allows Node.js tools (puppeteer, npm, etc.) to trust the proxy
         if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
             env_content += f'\nexport NODE_EXTRA_CA_CERTS="{bazel_proxy_setup.BAZEL_COMBINED_CA}"\n'
-            log.info("Configured NODE_EXTRA_CA_CERTS to use combined CA bundle (for puppeteer, etc.)")
         Path(env_file).write_text(env_content)
-        log.info("SUCCESS: Wrote PATH and timestamp exports to %s", env_file)
-        log.info("Bazel will be available in bash sessions via PATH modification")
+        verbose.info("Wrote PATH exports to %s", env_file)
     else:
-        log.warning("CLAUDE_ENV_FILE not provided by Claude Code (only available in SessionStart hooks)")
-        log.warning("Cannot persist PATH modifications for bash sessions")
-        log.info("Attempting fallback: symlinking bazel to ~/.local/bin (which is already on PATH)")
-
+        # Fallback: symlink bazel to ~/.local/bin
+        verbose.warning("CLAUDE_ENV_FILE not provided, using symlink fallback")
         local_bin = Path.home() / ".local" / "bin"
-
-        # Defensive check: verify ~/.local/bin is on PATH
-        log.info("Checking PATH environment variable...")
         current_path = os.environ.get("PATH", "")
         if str(local_bin) not in current_path:
-            log.error("FAILED: %s is NOT in PATH - bazel symlink won't work", local_bin)
-            log.error("Current PATH: %s", current_path)
-            log.error("Bazel will not be available in bash sessions")
-            emit_session_context(log, had_warnings=counter.warning_count > 0, had_errors=counter.error_count > 0)
+            log.error("~/.local/bin not in PATH - bazel won't be available")
+            emit_session_context(
+                had_warnings=loggers.counter.warning_count > 0, had_errors=loggers.counter.error_count > 0
+            )
             return 1
-        log.info("CONFIRMED: %s is in PATH", local_bin)
 
         local_bin.mkdir(parents=True, exist_ok=True)
-        log.info("Ensured %s exists", local_bin)
-
         bazel_symlink = local_bin / "bazel"
         bazel_wrapper = bazelisk_setup.WRAPPER_PATH
 
-        # Defensive check: if bazel already exists, verify it's our symlink
         if bazel_symlink.exists() or bazel_symlink.is_symlink():
-            if bazel_symlink.is_symlink():
-                existing_target = bazel_symlink.resolve()
-                if existing_target == bazel_wrapper.resolve():
-                    log.info("Bazel symlink already points to our wrapper: %s -> %s", bazel_symlink, existing_target)
-                    # Already configured correctly, continue to summary
-                else:
-                    log.warning(
-                        "Existing bazel symlink points to different target: %s -> %s", bazel_symlink, existing_target
-                    )
-                    log.warning("Replacing with our wrapper")
-                    bazel_symlink.unlink()
-                    log.info("Removed existing bazel symlink at %s", bazel_symlink)
-                    bazel_symlink.symlink_to(bazel_wrapper)
-                    log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
+            if bazel_symlink.is_symlink() and bazel_symlink.resolve() == bazel_wrapper.resolve():
+                verbose.info("Bazel symlink already configured")
             else:
-                log.warning("Bazel exists but is not a symlink (file or directory): %s", bazel_symlink)
-                log.warning("Replacing with our wrapper symlink")
+                verbose.warning("Replacing existing bazel with symlink")
                 bazel_symlink.unlink()
-                log.info("Removed existing bazel at %s", bazel_symlink)
                 bazel_symlink.symlink_to(bazel_wrapper)
-                log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
         else:
             bazel_symlink.symlink_to(bazel_wrapper)
-            log.info("SUCCESS: Created symlink %s -> %s", bazel_symlink, bazel_wrapper)
+            verbose.info("Created bazel symlink: %s -> %s", bazel_symlink, bazel_wrapper)
 
-        log.info("Bazel should be available in bash sessions via ~/.local/bin")
-
-    # Set NODE_EXTRA_CA_CERTS for current session (needed for npm/puppeteer to trust proxy)
+    # Set NODE_EXTRA_CA_CERTS for current session
     if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
         os.environ["NODE_EXTRA_CA_CERTS"] = str(bazel_proxy_setup.BAZEL_COMBINED_CA)
-        log.info("Set NODE_EXTRA_CA_CERTS=%s for current session", bazel_proxy_setup.BAZEL_COMBINED_CA)
 
-    # Summary
-    node_ca_status = "custom (with proxy CA)" if bazel_proxy_setup.BAZEL_COMBINED_CA.exists() else "system default"
-    log.info("=" * 60)
-    log.info("Environment ready:")
-    log.info("  bazel:       %s", bazelisk_setup.get_status())
-    log.info("  Bazel proxy: %s", bazel_proxy_setup.get_status())
-    log.info("  git hook:    installed (pre-commit)")
-    log.info("  Node.js CA:  %s", node_ca_status)
-    log.info("=" * 60)
+    # Compact summary for stdout
+    node_ca_status = "custom CA" if bazel_proxy_setup.BAZEL_COMBINED_CA.exists() else "system"
+    log.info(
+        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), bazel_proxy_setup.get_status(), node_ca_status
+    )
 
-    # Emit context for Claude Code to inject into transcript
-    emit_session_context(log, had_warnings=counter.warning_count > 0, had_errors=counter.error_count > 0)
+    # Emit context for Claude Code
+    emit_session_context(had_warnings=loggers.counter.warning_count > 0, had_errors=loggers.counter.error_count > 0)
 
     return 0
 
