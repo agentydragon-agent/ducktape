@@ -32,8 +32,11 @@ DOCKER_HOST=unix:///tmp/podman.sock /root/.local/bin/act -j pre-commit \
   --env NODE_EXTRA_CA_CERTS="/tmp/ca-bundle.pem" \
   --env SSL_CERT_FILE="/tmp/ca-bundle.pem" \
   --env REQUESTS_CA_BUNDLE="/tmp/ca-bundle.pem" \
-  --bind /tmp/ca-bundle.pem:/tmp/ca-bundle.pem
+  --env GIT_SSL_CAINFO="/tmp/ca-bundle.pem" \
+  --container-options "-v /tmp/ca-bundle.pem:/tmp/ca-bundle.pem:ro"
 ```
+
+Note: Uses `--container-options -v` instead of `--bind` for reliable volume mounting in gVisor.
 
 ## Why These Workarounds?
 
@@ -121,7 +124,8 @@ DOCKER_HOST=unix:///tmp/podman.sock /root/.local/bin/act -j JOB_NAME \
   --env NODE_EXTRA_CA_CERTS="/tmp/ca-bundle.pem" \
   --env SSL_CERT_FILE="/tmp/ca-bundle.pem" \
   --env REQUESTS_CA_BUNDLE="/tmp/ca-bundle.pem" \
-  --bind /tmp/ca-bundle.pem:/tmp/ca-bundle.pem
+  --env GIT_SSL_CAINFO="/tmp/ca-bundle.pem" \
+  --container-options "-v /tmp/ca-bundle.pem:/tmp/ca-bundle.pem:ro"
 ```
 
 Replace `JOB_NAME` with the job name from `act -l` (e.g., `pre-commit`, `bazel-build`).
@@ -168,7 +172,8 @@ cp /root/.cache/bazel-proxy/combined_ca.pem /tmp/ca-bundle.pem
 --env NODE_EXTRA_CA_CERTS="/tmp/ca-bundle.pem" \
 --env SSL_CERT_FILE="/tmp/ca-bundle.pem" \
 --env REQUESTS_CA_BUNDLE="/tmp/ca-bundle.pem" \
---bind /tmp/ca-bundle.pem:/tmp/ca-bundle.pem
+--env GIT_SSL_CAINFO="/tmp/ca-bundle.pem" \
+--container-options "-v /tmp/ca-bundle.pem:/tmp/ca-bundle.pem:ro"
 ```
 
 ### "netavark: invalid version number"
@@ -220,6 +225,19 @@ export GLOBAL_AGENT_HTTPS_PROXY="$HTTPS_PROXY"
 node -e "require('https').get('https://api.github.com/', r => console.log(r.statusCode))"
 ```
 
+### Solution: Git Proxy Configuration
+
+Git also needs proxy configuration to clone/fetch over HTTPS:
+
+```bash
+# Configure git to use the proxy
+git config --global http.proxy "$HTTP_PROXY"
+git config --global https.proxy "$HTTPS_PROXY"
+
+# Configure git to use the CA bundle for TLS
+git config --global http.sslCAInfo /tmp/ca-bundle.pem
+```
+
 ### May Not Work (Without global-agent)
 
 - **Actions that download from internet** (setup-python, setup-node, etc.)
@@ -247,6 +265,9 @@ ENV npm_config_https_proxy=$HTTPS_PROXY
 
 # Install global-agent globally
 RUN npm install -g global-agent
+
+# Configure git to use proxy and CA bundle
+RUN git config --global http.sslCAInfo /etc/ssl/certs/custom-ca-bundle.pem
 
 # Set up environment for global-agent and CA bundle
 ENV NODE_PATH=/opt/acttoolcache/node/18.20.8/x64/lib/node_modules
