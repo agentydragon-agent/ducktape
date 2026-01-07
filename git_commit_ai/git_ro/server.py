@@ -375,11 +375,11 @@ class GitRoServer(EnhancedFastMCP):
                 tree = root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
                 cur: pygit2.Tree = tree
                 for part in filter(None, path.split("/")):
-                    entry = cur[part]
-                    if entry.filemode == pygit2.GIT_FILEMODE_TREE:
-                        cur = state[entry.id].peel(pygit2.Tree)
+                    tree_entry = cur[part]
+                    if tree_entry.filemode == pygit2.GIT_FILEMODE_TREE:
+                        cur = state[tree_entry.id].peel(pygit2.Tree)
                     else:
-                        blob = state[entry.id].peel(pygit2.Blob)
+                        blob = state[tree_entry.id].peel(pygit2.Blob)
                         text = blob.data.decode("utf-8")
                         return apply_text_slice(text, input.slice)
                 raise FileNotFoundError(f"Path not found in tree: {path}")
