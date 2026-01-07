@@ -1,8 +1,13 @@
 #!/bin/bash
 # Setup script for running act in Claude Code on the web's gVisor container
 # This configures podman with vfs storage driver and starts the podman service
+#
+# Usage: source this script to also export environment variables
+#   source ~/.claude/skills/github-actions-web/setup-podman.sh
 
 set -e
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Setting up podman for gVisor ==="
 
@@ -13,8 +18,8 @@ if ! command -v podman &> /dev/null; then
 fi
 
 # Add root to subuid/subgid (required for user namespace mapping)
-grep -q "^root:" /etc/subuid || echo "root:100000:65536" >> /etc/subuid
-grep -q "^root:" /etc/subgid || echo "root:100000:65536" >> /etc/subgid
+grep -q "^root:" /etc/subuid 2>/dev/null || echo "root:100000:65536" >> /etc/subuid
+grep -q "^root:" /etc/subgid 2>/dev/null || echo "root:100000:65536" >> /etc/subgid
 
 # Configure podman with vfs storage driver (overlay doesn't work in gVisor)
 mkdir -p /etc/containers
@@ -36,13 +41,26 @@ sleep 1
 podman system service --time=0 unix:///tmp/podman.sock &
 sleep 3
 
-# Copy CA bundle for TLS-inspecting proxy
-if [ -f /root/.cache/bazel-proxy/combined_ca.pem ]; then
-    cp /root/.cache/bazel-proxy/combined_ca.pem /tmp/ca-bundle.pem
-    echo "CA bundle copied to /tmp/ca-bundle.pem"
+# Auto-detect and copy CA bundle
+# Try multiple known locations for the CA bundle
+CA_BUNDLE=""
+for loc in \
+    "/root/.cache/bazel-proxy/combined_ca.pem" \
+    "/etc/ssl/certs/ca-certificates.crt" \
+    "$SSL_CERT_FILE" \
+    "$REQUESTS_CA_BUNDLE"; do
+    if [ -n "$loc" ] && [ -f "$loc" ]; then
+        CA_BUNDLE="$loc"
+        break
+    fi
+done
+
+if [ -n "$CA_BUNDLE" ]; then
+    cp "$CA_BUNDLE" /tmp/ca-bundle.pem
+    echo "CA bundle copied from $CA_BUNDLE to /tmp/ca-bundle.pem"
 else
-    echo "WARNING: CA bundle not found at /root/.cache/bazel-proxy/combined_ca.pem"
-    echo "TLS connections may fail without it"
+    echo "WARNING: No CA bundle found. TLS connections may fail."
+    echo "Searched: /root/.cache/bazel-proxy/combined_ca.pem, /etc/ssl/certs/ca-certificates.crt"
 fi
 
 # Install act if not present
@@ -51,9 +69,15 @@ if ! command -v act &> /dev/null && [ ! -f /root/.local/bin/act ]; then
     curl -fsSL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /root/.local/bin
 fi
 
-echo "=== Setup complete ==="
-echo "Podman socket: unix:///tmp/podman.sock"
-echo "CA bundle: /tmp/ca-bundle.pem"
+# Export environment variables for proxy (when sourced)
+export DOCKER_HOST="unix:///tmp/podman.sock"
+export ACT_CA_BUNDLE="/tmp/ca-bundle.pem"
+
 echo ""
-echo "Pull the runner image with:"
-echo "  podman --log-level=error pull docker.io/catthehacker/ubuntu:act-latest"
+echo "=== Setup complete ==="
+echo "Podman socket: $DOCKER_HOST"
+echo "CA bundle: $ACT_CA_BUNDLE"
+echo ""
+echo "Next steps:"
+echo "  1. Pull runner image: podman pull docker.io/catthehacker/ubuntu:act-latest"
+echo "  2. Run jobs: $SKILL_DIR/run-act.sh pre-commit"
