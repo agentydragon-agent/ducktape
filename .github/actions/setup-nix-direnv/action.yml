@@ -13,6 +13,12 @@ runs:
         # Install bazelisk (what .envrc provides via `use nix -p bazelisk`)
         nix profile install nixpkgs#bazelisk
 
+        # Add Nix profile to PATH for subsequent steps
+        echo "$HOME/.nix-profile/bin" >> $GITHUB_PATH
+
+        # Create 'bazel' symlink since Nix installs the binary as 'bazelisk'
+        ln -sf "$HOME/.nix-profile/bin/bazelisk" "$HOME/.nix-profile/bin/bazel"
+
     - name: Configure environment
       shell: bash
       run: |
