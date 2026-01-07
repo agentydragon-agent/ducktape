@@ -77,30 +77,23 @@ repos:
         language: system
         files: \.nix$
 
-  # Prettier: Workspace-level code formatting
-  # Uses .gitignore and .prettierignore for exclusions
-  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
+  # Prettier via Bazel (hermetic, no system node required)
+  # Other formatters (ruff, buildifier) handled by their own hooks above
   - repo: local
     hooks:
       - id: prettier
-        name: prettier
+        name: prettier (bazel)
         language: system
-        entry: pnpm exec prettier --write --ignore-unknown
-        types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json]
+        entry: bazel run //tools/lint:prettier -- --write
+        types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json, html]
+        exclude: "node_modules/|.pnpm/|bazel-|.git/"
 
-  # Markdownlint: Structural markdown linting (heading hierarchy, duplicate headings, etc.)
-  # Formatting rules disabled via "extends": "markdownlint/style/prettier" in config
-  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
-  # TODO: Expand markdownlint coverage to rest of repo (currently cluster/ only)
-  #       Update .markdownlint-cli2.jsonc globs and remove files: filter here
-  - repo: local
+  # Markdown linting
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.17.2
     hooks:
       - id: markdownlint-cli2
-        name: markdownlint-cli2
-        language: system
-        entry: markdownlint-cli2
-        types: [markdown]
-        files: ^cluster/
+        args: [--fix]
 
   # Svelte/TypeScript checks for MiniCodex UI
   - repo: local
