@@ -56,12 +56,5 @@ build:rust-check --output_groups=+clippy_checks,+rustfmt_checks
 build:eslint --aspects=//tools/lint:linters.bzl%eslint
 build:eslint --output_groups=+rules_lint_report
 
-# Prettier format check (for JS/TS/Svelte)
-# Run with: bazel build --config=prettier //props/frontend:all
-build:prettier --aspects=//tools/lint:linters.bzl%prettier
-build:prettier --output_groups=+rules_lint_report
-
-# Combined frontend checks (ESLint + Prettier)
-# Run with: bazel build --config=frontend-check //props/frontend:all
-build:frontend-check --aspects=//tools/lint:linters.bzl%eslint,//tools/lint:linters.bzl%prettier
-build:frontend-check --output_groups=+rules_lint_report
+# Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
+# Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)

@@ -23,6 +23,64 @@ This document describes how to test GitHub Actions workflows locally using [act]
    brew install act
    ```
 
+## Claude Code on the Web Container Setup
+
+When running in a Claude Code web container (sandboxed environment), special setup is required:
+
+### Install Docker and act
+
+```bash
+# Install Docker
+apt-get update && apt-get install -y docker.io
+
+# Install act
+curl -fsSL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /root/.local/bin
+```
+
+### Start Docker Daemon
+
+The container environment doesn't support iptables/NAT, so Docker must run with networking disabled:
+
+```bash
+# Start dockerd with vfs storage and no networking
+nohup dockerd --iptables=false --bridge=none -s vfs > /tmp/dockerd.log 2>&1 &
+sleep 5
+docker info
+```
+
+### Limitations
+
+**The vfs storage driver doesn't support extended attributes (xattr)**. This means:
+
+- **catthehacker/ubuntu:act-\*** images won't pull (gstreamer has files with security.capability xattr)
+- Basic images like `ubuntu:24.04` and `node:22-slim` work but lack GitHub Actions tools
+- Running act with basic images will fail on actions that require Node.js (most actions)
+
+### Alternative: Direct Testing
+
+Instead of act, test CI steps directly in the container:
+
+```bash
+# Install Python and pre-commit
+apt-get install -y python3 python3-pip
+pip install pre-commit==4.0.1
+
+# Run pre-commit (same as CI)
+pre-commit run --all-files
+
+# Run Bazel builds
+bazel build //...
+bazel test //...
+```
+
+### Full act Testing (Requires Real Docker)
+
+For full act testing with catthehacker images, use a machine with proper Docker support:
+
+- Native Linux with overlay2 storage driver
+- macOS with Docker Desktop
+- WSL2 with Docker Desktop
+
 ## Basic Usage
 
 ```bash
