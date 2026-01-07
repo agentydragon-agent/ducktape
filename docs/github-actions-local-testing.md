@@ -25,59 +25,16 @@ This document describes how to test GitHub Actions workflows locally using [act]
 
 ## Claude Code on the Web Container Setup
 
-The Claude Code web container runs on gVisor. Here's how to run act:
+The Claude Code web container runs on gVisor with specific constraints. For detailed setup
+instructions when running in Claude Code on the web, see the skill file:
 
-### Working Solution: Podman with vfs Storage
+**`nix/home/claude-code/skills/github-actions-web/SKILL.md`**
 
-```bash
-# 1. Install podman
-apt-get update && apt-get install -y podman
+Key points:
 
-# 2. Add root to subuid/subgid (required for user namespace mapping)
-echo "root:100000:65536" >> /etc/subuid
-echo "root:100000:65536" >> /etc/subgid
-
-# 3. Configure podman with vfs storage (overlay doesn't work in gVisor)
-mkdir -p /etc/containers
-cat > /etc/containers/storage.conf << 'EOF'
-[storage]
-driver = "vfs"
-runroot = "/run/containers/storage"
-graphroot = "/var/lib/containers/storage"
-
-[storage.options.vfs]
-ignore_chown_errors = "true"
-EOF
-
-# 4. Install act
-curl -fsSL https://raw.githubusercontent.com/nektos/act/master/install.sh | bash -s -- -b /root/.local/bin
-
-# 5. Pull the act runner image
-podman --log-level=error pull docker.io/catthehacker/ubuntu:act-latest
-
-# 6. Start podman API service
-podman system service --time=0 unix:///tmp/podman.sock &
-sleep 3
-
-# 7. Run act with podman
-DOCKER_HOST=unix:///tmp/podman.sock /root/.local/bin/act -j pre-commit \
-  -P ubuntu-latest=catthehacker/ubuntu:act-latest \
-  --network=host
-```
-
-### Why This Works
-
-- **vfs storage driver**: Works in gVisor (overlay fails due to mount restrictions)
-- **ignore_chown_errors**: Handles chown failures in sandboxed environment
-- **subuid/subgid entries**: Required for podman's user namespace mapping
-- **--network=host**: Bypasses netavark networking issues in gVisor
-
-### Quick Test
-
-```bash
-# Verify podman works
-podman --log-level=error run --rm --network=host alpine:latest /bin/sh -c "echo 'Hello from gVisor!'"
-```
+- Uses **podman with vfs storage** (overlay doesn't work in gVisor)
+- Requires proxy environment variables for network access
+- CA bundle bind mounts have limitations in gVisor
 
 ### Alternative: Direct Testing
 
@@ -185,7 +142,7 @@ act --reuse
 
 ### No Docker Connection
 
-```
+```text
 Couldn't get a valid docker connection: no DOCKER_HOST
 ```
 
