@@ -296,6 +296,7 @@ in {
       yq
       zsh
       atuin
+      opencode # AI coding agent for the terminal
 
       # Tools from GitHub releases / binary downloads
       gh
