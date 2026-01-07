@@ -13,7 +13,7 @@ server {
 
     # Use Tailscale's DNS for dynamic resolution
     resolver 100.100.100.100 valid=30s;
-    set $upstream_atlas atlas;
+    set $upstream_atlas atlas.vps;
 
     location / {
         proxy_pass https://$upstream_atlas:8006;

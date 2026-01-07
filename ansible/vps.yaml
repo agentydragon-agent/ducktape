@@ -262,6 +262,7 @@
             mode: "0644"
           loop:
             - https-sni-router
+            - atlas-spice
           notify:
             - Reload nginx
 
@@ -272,6 +273,7 @@
             dest: /etc/nginx/streams-enabled/{{ item }}
           loop:
             - https-sni-router
+            - atlas-spice
           notify:
             - Reload nginx
 

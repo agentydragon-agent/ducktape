@@ -35,6 +35,14 @@
       failed_when: datastore_result.rc != 0 and 'already exists' not in datastore_result.stderr
       tags: [proxmox, terraform]
 
+    - name: Configure Proxmox SPICE proxy hostname
+      ansible.builtin.lineinfile:
+        path: /etc/pve/datacenter.cfg
+        regexp: "^spice_proxy:"
+        line: "spice_proxy: atlas.agentydragon.com"
+        state: present
+      tags: [proxmox, spice]
+
     - name: Update apt cache after repository changes
       ansible.builtin.apt:
         update_cache: true
