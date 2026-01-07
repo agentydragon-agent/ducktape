@@ -5,22 +5,32 @@ description: Run GitHub Actions locally in Claude Code on the web's gVisor conta
 
 # GitHub Actions in Claude Code on the Web
 
-This skill explains how to run GitHub Actions locally in Claude Code on the web's container environment. Helper scripts are provided in this skill's directory.
+This skill explains how to run GitHub Actions locally in Claude Code on the web's container environment. Helper scripts auto-detect CA bundles and proxy settings.
 
 ## Quick Start
 
 ```bash
+SKILL_DIR=/home/user/ducktape/nix/home/claude-code/skills/github-actions-web
+
 # One-time setup (configures podman, installs act)
-bash ~/.claude/skills/github-actions-web/setup-podman.sh
+bash $SKILL_DIR/setup-podman.sh
 
 # Pull the runner image
 podman --log-level=error pull docker.io/catthehacker/ubuntu:act-latest
 
+# Build custom image with global-agent for full Node.js proxy support (recommended)
+cd $SKILL_DIR
+cp /root/.cache/bazel-proxy/combined_ca.pem ca-bundle.pem
+podman build --network=host \
+  --build-arg HTTP_PROXY="$HTTP_PROXY" \
+  --build-arg HTTPS_PROXY="$HTTPS_PROXY" \
+  -t act-proxy:latest -f Dockerfile.act-proxy .
+
 # List available jobs
-bash ~/.claude/skills/github-actions-web/run-act.sh -l
+bash $SKILL_DIR/run-act.sh -l
 
 # Run a specific job
-bash ~/.claude/skills/github-actions-web/run-act.sh pre-commit
+bash $SKILL_DIR/run-act.sh pre-commit
 ```
 
 ## Why These Workarounds?
@@ -36,12 +46,22 @@ Claude Code on the web runs in a **gVisor sandbox** with:
 
 ### `setup-podman.sh`
 
-Configures podman with vfs storage driver, starts the podman service, copies the CA bundle, and installs act.
+Configures podman with vfs storage driver, starts the podman service, auto-detects and copies the CA bundle, and installs act.
+
+**Auto-detected CA bundle locations:**
+- `/root/.cache/bazel-proxy/combined_ca.pem`
+- `/etc/ssl/certs/ca-certificates.crt`
+- `$SSL_CERT_FILE`
+- `$REQUESTS_CA_BUNDLE`
 
 ### `run-act.sh`
 
-Runs act with all necessary workarounds:
+Runs act with all necessary workarounds. Auto-detects:
+- CA bundle location
+- Proxy environment variables (HTTP_PROXY, HTTPS_PROXY, etc.)
+- Custom `act-proxy:latest` image (uses if available, with `--pull=false`)
 
+Features:
 - Sets DOCKER_HOST to podman socket
 - Passes all proxy environment variables
 - Mounts CA bundle for TLS verification
@@ -57,31 +77,33 @@ Usage:
 
 ### `Dockerfile.act-proxy`
 
-Custom image with `global-agent` pre-installed for full Node.js proxy support. Build with:
-
-```bash
-cd ~/.claude/skills/github-actions-web
-cp /root/.cache/bazel-proxy/combined_ca.pem ca-bundle.pem
-podman build --network=host \
-  --build-arg HTTP_PROXY="$HTTP_PROXY" \
-  --build-arg HTTPS_PROXY="$HTTPS_PROXY" \
-  -t act-proxy:latest -f Dockerfile.act-proxy .
-```
+Custom image with `global-agent` pre-installed for full Node.js proxy support. This makes all Node.js-based GitHub Actions work with the proxy.
 
 ## What Works
 
-- ✅ Container startup and shell commands
-- ✅ Git clone/checkout operations
-- ✅ setup-python action (downloads Python from GitHub)
-- ✅ pip install with proxy
-- ✅ curl/wget with `--proxy` and `--cacert`
+With the standard `catthehacker/ubuntu:act-latest` image:
+- Container startup and shell commands
+- Git clone/checkout operations
+- setup-python action (downloads Python from GitHub)
+- pip install with proxy
+- curl/wget with `--proxy` and `--cacert`
 
-## What May Fail
+With the custom `act-proxy:latest` image (recommended):
+- All of the above, plus:
+- nix-installer-action (installs Nix successfully)
+- Other Node.js-based actions that don't respect HTTP_PROXY
+- Any action using Node.js native https module
 
-Some Node.js-based actions don't respect `HTTP_PROXY` (e.g., nix-installer-action). These need `global-agent` to route all HTTPS through the proxy:
+## What May Fail (without custom image)
+
+Some Node.js-based actions don't respect `HTTP_PROXY` (e.g., nix-installer-action). Without the custom image, these fail with `EAI_AGAIN` DNS errors.
+
+**Solution:** Build and use the custom `act-proxy:latest` image which has `global-agent` pre-configured to route all Node.js HTTPS through the proxy.
+
+Manual workaround (inside container):
 
 ```bash
-# Inside container, install global-agent
+# Install global-agent
 export npm_config_proxy="$HTTP_PROXY"
 export npm_config_https_proxy="$HTTPS_PROXY"
 export npm_config_cafile="/tmp/ca-bundle.pem"
@@ -94,18 +116,17 @@ export GLOBAL_AGENT_HTTP_PROXY="$HTTP_PROXY"
 export GLOBAL_AGENT_HTTPS_PROXY="$HTTPS_PROXY"
 ```
 
-Or use the custom `act-proxy:latest` image which has this pre-configured.
-
 ## Troubleshooting
 
 | Error | Solution |
 |-------|----------|
 | `overlay: mount failed` | Re-run `setup-podman.sh` (configures vfs) |
 | `unable to find user root` | Add root to subuid/subgid (done by setup script) |
-| `EAI_AGAIN` (DNS fails) | Ensure proxy env vars are passed to act |
-| `self-signed certificate` | Mount CA bundle: `--container-options "-v /tmp/ca-bundle.pem:/tmp/ca-bundle.pem:ro"` |
-| `netavark: invalid version` | Use `--network=host` |
+| `EAI_AGAIN` (DNS fails) | Build and use `act-proxy:latest` image |
+| `self-signed certificate` | Ensure CA bundle is mounted (done by run-act.sh) |
+| `netavark: invalid version` | Use `--network=host` (done by run-act.sh) |
 | Volume lock errors | Run `podman rm --all --force` |
+| `denied: requested access` | Use `localhost/act-proxy:latest` for local images |
 
 ## Alternative: Direct Testing
 
