@@ -130,31 +130,39 @@ def is_bazel_proxy_running() -> bool:
 
 
 def get_proxy_env() -> dict[str, str]:
-    """Get proxy environment variables.
+    """Get proxy environment variables from host environment.
 
-    If the bazel proxy is running (localhost:18081), use it as the proxy.
-    This handles authentication to the upstream TLS-inspecting proxy.
+    Container-level proxy should use the direct proxy from the environment.
+    Bazel actions use the bazel proxy configured separately in .bazelrc.act.
     """
-    # Check if bazel proxy is available (handles upstream auth)
-    if is_bazel_proxy_running():
-        local_proxy = f"http://localhost:{BAZEL_PROXY_PORT}"
-        print(f"Using bazel proxy at {local_proxy}")
-    else:
-        # Fall back to direct proxy from environment
-        local_proxy = os.environ.get("HTTP_PROXY", "")
-        if local_proxy:
-            print("WARNING: Bazel proxy not running, using direct proxy (may fail for Bazel)")
+    # Mirror proxy configuration from host environment
+    # The container uses --network=host so it can reach the same proxy
+    env_vars = {}
 
-    return {
-        "HTTP_PROXY": local_proxy,
-        "HTTPS_PROXY": local_proxy,
-        "http_proxy": local_proxy,
-        "https_proxy": local_proxy,
-        "NO_PROXY": os.environ.get("NO_PROXY", "localhost,127.0.0.1"),
-        "no_proxy": os.environ.get("no_proxy", os.environ.get("NO_PROXY", "localhost,127.0.0.1")),
-        "GLOBAL_AGENT_HTTP_PROXY": local_proxy,
-        "GLOBAL_AGENT_HTTPS_PROXY": local_proxy,
-    }
+    # Copy all proxy-related environment variables
+    proxy_var_names = [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "NO_PROXY",
+        "no_proxy",
+        "GLOBAL_AGENT_HTTP_PROXY",
+        "GLOBAL_AGENT_HTTPS_PROXY",
+        "GLOBAL_AGENT_NO_PROXY",
+        "YARN_HTTP_PROXY",
+        "YARN_HTTPS_PROXY",
+    ]
+
+    for var in proxy_var_names:
+        value = os.environ.get(var, "")
+        if value:
+            env_vars[var] = value
+
+    if env_vars.get("HTTP_PROXY"):
+        print("Using proxy from environment")
+
+    return env_vars
 
 
 def build_act_command(
@@ -249,6 +257,7 @@ def generate_workspace_bazelrc() -> None:
         return
 
     local_proxy = f"http://localhost:{BAZEL_PROXY_PORT}"
+    print(f"Using bazel proxy at {local_proxy} for Bazel actions")
 
     # Generate bazelrc for act container
     bazelrc_content = f"""\
@@ -270,6 +279,19 @@ build --action_env=http_proxy={local_proxy}
         bazelrc_content += f"""
 # Node.js CA bundle for npm, puppeteer, etc.
 build --action_env=NODE_EXTRA_CA_CERTS={combined_ca}
+"""
+
+    # Skip puppeteer browser downloads in lifecycle hooks
+    # The browser binaries aren't needed for building - only for running tests
+    # Bazel's sandbox doesn't have network access via global-agent since NODE_PATH
+    # to container's global modules isn't mounted in the sandbox
+    # Puppeteer 23.x has separate skip vars for each product
+    bazelrc_content += """
+# Skip puppeteer browser download - not needed for build, only for tests
+build --action_env=PUPPETEER_SKIP_DOWNLOAD=true
+build --action_env=PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+build --action_env=PUPPETEER_CHROME_SKIP_DOWNLOAD=true
+build --action_env=PUPPETEER_SKIP_CHROME_HEADLESS_SHELL_DOWNLOAD=true
 """
 
     workspace_bazelrc.write_text(bazelrc_content)
