@@ -189,22 +189,82 @@ podman rm --all --force
 - Container startup and basic shell commands
 - Git clone operations
 - Checkout actions
-- Simple steps without external downloads
+- curl/wget with `--proxy` flag and `--cacert` for CA bundle
+- Node.js with `global-agent` installed and `NODE_OPTIONS="-r global-agent/bootstrap"`
 
-### May Not Work
+### Root Cause: No DNS in Container
 
-- **Actions that download from internet** (self-signed cert errors even with CA bind mount)
-- setup-python, setup-node, etc. (Node.js in act doesn't see bind-mounted CA)
+The gVisor container has **no DNS** (`/etc/resolv.conf` is empty). All network traffic must go through the HTTP proxy, which handles DNS resolution. This affects:
+
+- Node.js native `https` module (doesn't use HTTP_PROXY)
+- Any tool that tries direct DNS resolution
+
+### Solution: global-agent for Node.js
+
+Node.js can be made proxy-aware with `global-agent`:
+
+```bash
+# Inside the container, install global-agent
+export npm_config_proxy="$HTTP_PROXY"
+export npm_config_https_proxy="$HTTPS_PROXY"
+export npm_config_cafile="/tmp/ca-bundle.pem"
+npm install -g global-agent
+
+# Set up environment
+export NODE_PATH=$(npm root -g)
+export NODE_OPTIONS="-r global-agent/bootstrap"
+export GLOBAL_AGENT_HTTP_PROXY="$HTTP_PROXY"
+export GLOBAL_AGENT_HTTPS_PROXY="$HTTPS_PROXY"
+
+# Now Node.js HTTPS works!
+node -e "require('https').get('https://api.github.com/', r => console.log(r.statusCode))"
+```
+
+### May Not Work (Without global-agent)
+
+- **Actions that download from internet** (setup-python, setup-node, etc.)
 - Docker-in-Docker (nested containers)
 - Services that require specific networking
 - Jobs that need privileged operations
 - Large image builds (vfs is slower and uses more disk)
 
-### Known Issue: CA Bundle Bind Mount
+### Advanced: Custom Image with Proxy Support
 
-Even with `--bind /tmp/ca-bundle.pem:/tmp/ca-bundle.pem`, the CA bundle may not be visible inside the container due to gVisor mount restrictions. Node.js actions report "No such file or directory" for the CA file.
+For full act support, build a custom image with global-agent pre-installed. Create `/tmp/Dockerfile.act-proxy`:
 
-**Current status**: The act infrastructure works (containers start, steps run) but jobs that download from the internet fail with TLS errors.
+```dockerfile
+FROM catthehacker/ubuntu:act-latest
+
+# Copy CA bundle into image
+COPY ca-bundle.pem /etc/ssl/certs/custom-ca-bundle.pem
+
+# Configure npm to use proxy and CA bundle
+ENV npm_config_cafile=/etc/ssl/certs/custom-ca-bundle.pem
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV npm_config_proxy=$HTTP_PROXY
+ENV npm_config_https_proxy=$HTTPS_PROXY
+
+# Install global-agent globally
+RUN npm install -g global-agent
+
+# Set up environment for global-agent and CA bundle
+ENV NODE_PATH=/opt/acttoolcache/node/18.20.8/x64/lib/node_modules
+ENV NODE_OPTIONS="-r global-agent/bootstrap"
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/custom-ca-bundle.pem
+```
+
+Build it:
+
+```bash
+cp /root/.cache/bazel-proxy/combined_ca.pem /tmp/ca-bundle.pem
+cd /tmp && podman build --network=host \
+  --build-arg HTTP_PROXY="$HTTP_PROXY" \
+  --build-arg HTTPS_PROXY="$HTTPS_PROXY" \
+  -t act-proxy:latest -f Dockerfile.act-proxy .
+```
+
+Note: Building is slow with vfs storage driver (can take 5+ minutes).
 
 ## Alternative: Direct Testing
 
