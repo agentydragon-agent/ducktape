@@ -27,14 +27,21 @@ def emit_session_context(log: logging.Logger, had_warnings: bool, had_errors: bo
     print("SESSION START HOOK SUMMARY")
     print("=" * 60)
 
+    # Tell the LLM about the Claude Code on the web environment
+    print("\nYou are running in Claude Code on the web (gVisor sandbox container).")
+    print("This environment has specific constraints and workarounds documented in skills.")
+    print("\nAvailable skills for this environment:")
+    print("  - github-actions-web: Run GitHub Actions locally with act + podman")
+    print("    Use this skill when you need to test CI workflows in this container.")
+
     if had_errors:
-        print("[ERROR] Session start completed with ERRORS - some features may not work correctly")
+        print("\n[ERROR] Session start completed with ERRORS - some features may not work correctly")
         print(f"[ERROR] Check log file for details: {LOG_FILE}")
     elif had_warnings:
-        print("[WARNING] Session start completed with warnings - using fallback configurations")
+        print("\n[WARNING] Session start completed with warnings - using fallback configurations")
         print(f"Review log file for details: {LOG_FILE}")
     else:
-        print("Session start completed successfully - all features configured")
+        print("\nSession start completed successfully - all features configured")
 
     print(f"\nFull log available at: {LOG_FILE}")
     print("=" * 60 + "\n")
