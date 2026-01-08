@@ -945,7 +945,7 @@
     },
     "@@rules_haskell~//extensions:rules_haskell_dependencies.bzl%rules_haskell_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "cNt0WqKmzzzphcCnOntrBDuftJZbyBP/5F41pmiB+4g=",
+        "bzlTransitiveDigest": "0ohkyPrIqz5E4BfCjCxThwSGcc7Ooid2D1iUIsF3PxE=",
         "usagesDigest": "+YkgTrqm3VGr41/QlmunHpNs530+M/EVfn+AlUb8LiI=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -1126,7 +1126,7 @@
     },
     "@@rules_haskell~//extensions:stack_snapshot.bzl%stack_snapshot": {
       "general": {
-        "bzlTransitiveDigest": "Wwiva9cHFZ7c0zzzasbu9jxt3Jb4Cgfopduppl5nVwA=",
+        "bzlTransitiveDigest": "y4BGoCRypgR5pPUjRTExOCNOVpjzkWAQpDUg+NVjvBM=",
         "usagesDigest": "fZZAv1u8I6ZGQrLBpVvwGk3DsdQEuFgJZDpPO9Kw3K8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -1558,7 +1558,7 @@
     "@@rules_oci~//oci:extensions.bzl%oci": {
       "general": {
         "bzlTransitiveDigest": "ORS4WI+BagH/2UUlc45yqSDZDXBISZK5Y4pMlHWK4l8=",
-        "usagesDigest": "TajfaDQvEPgLiHUiTskXmSOlXkhPPtuB1J+5b2yuXAo=",
+        "usagesDigest": "kKid1fbLw4PDRuvDpp/IgY7jtcMc0mu1q4T8xXGVyTM=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -1571,7 +1571,7 @@
               "scheme": "https",
               "registry": "index.docker.io",
               "repository": "library/python",
-              "identifier": "sha256:1f3781f578e17958f55ada96c0a827bf279a11e10d6a458ecb8bde667afbb669",
+              "identifier": "3.12-slim",
               "platform": "linux/amd64",
               "target_name": "python_slim_linux_amd64",
               "bazel_tags": []
@@ -1586,7 +1586,7 @@
               "scheme": "https",
               "registry": "index.docker.io",
               "repository": "library/python",
-              "identifier": "sha256:1f3781f578e17958f55ada96c0a827bf279a11e10d6a458ecb8bde667afbb669",
+              "identifier": "3.12-slim",
               "platforms": {
                 "@@platforms//cpu:x86_64": "@python_slim_linux_amd64"
               },
@@ -1946,7 +1946,7 @@
         "recordedFileInputs": {
           "@@//Cargo.toml": "55ef8b4c20d1e42b983f316abde14d47099608b6655ed630aa3cc20db8f8466c",
           "@@//Cargo.lock": "0acca9d0f8f9586d9ea97f8ebdbb341ef6316749efd52d3d7adac025015da28c",
-          "@@//MODULE.bazel": "b3b9b75f2b4bd32653c3eb792d20daa374c13baaaab33bbb5d4b91520e2d064d",
+          "@@//MODULE.bazel": "e62b1a83c7508d89f6cd4aefcb30d4cbdfed8abc57939ae296ce5cf130780596",
           "@@rules_rust~~rust_host_tools~rust_host_tools//rust_host_tools": "ENOENT"
         },
         "recordedDirentsInputs": {},
@@ -9818,8 +9818,8 @@
     },
     "@@rules_rust~//crate_universe/private:internal_extensions.bzl%cu_nr": {
       "general": {
-        "bzlTransitiveDigest": "6v594q6UQNRxnnxUfSsDW+pwIVeWfqMGbmF5FFo6A7s=",
-        "usagesDigest": "OcQ3Rzz3/CiO5T7qPLBZUU9yEvAFED7D/Zo9sRzZ0ZY=",
+        "bzlTransitiveDigest": "XuBzhBOVqRmQ2Xjy6tcZDG9JicT0Hu1wu9g+Ujf74ag=",
+        "usagesDigest": "t9RsYFKNxo9gStVX1j5ojkf0uAuLQJGxkv4ItCvnQ+4=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -9851,7 +9851,6 @@
                 "@@rules_rust~//crate_universe:src/metadata/cargo_tree_rustc_wrapper.sh",
                 "@@rules_rust~//crate_universe:src/metadata/dependency.rs",
                 "@@rules_rust~//crate_universe:src/metadata/metadata_annotation.rs",
-                "@@rules_rust~//crate_universe:src/metadata/workspace_discoverer.rs",
                 "@@rules_rust~//crate_universe:src/rendering.rs",
                 "@@rules_rust~//crate_universe:src/rendering/template_engine.rs",
                 "@@rules_rust~//crate_universe:src/rendering/templates/module_bzl.j2",
@@ -9944,6 +9943,11 @@
           ],
           [
             "rules_rust~",
+            "rrc",
+            "rules_rust~~i2~rrc"
+          ],
+          [
+            "rules_rust~",
             "rules_cc",
             "rules_cc~"
           ],
@@ -9951,11 +9955,6 @@
             "rules_rust~",
             "rules_rust",
             "rules_rust~"
-          ],
-          [
-            "rules_rust~",
-            "rules_rust_ctve",
-            "rules_rust~~i2~rules_rust_ctve"
           ]
         ]
       }
@@ -10003,7 +10002,7 @@
     "@@rules_tf~//tf:extensions.bzl%tf_repositories": {
       "os:linux,arch:amd64": {
         "bzlTransitiveDigest": "jvXnIy1bwunXmHKBzTHzrWBPNzxh0Qimi93KV5SOA1c=",
-        "usagesDigest": "7Tufm4SJSl1HL1Weon+fgzQ/8FpBdCavwik0wWheLmY=",
+        "usagesDigest": "78uH5pjLRAJHjz3Hj+tzdR2dmRb1Ij/r2QPV6F3ndtw=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
