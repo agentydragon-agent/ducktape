@@ -7,6 +7,7 @@ upstream atlas_spice {
 
 server {
     listen 3128;
+    listen [::]:3128;
     proxy_pass atlas_spice;
     proxy_connect_timeout 15s;
     proxy_timeout 300s;
