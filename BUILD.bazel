@@ -26,6 +26,7 @@ exports_files([
 js_library(
     name = "eslintrc",
     srcs = ["eslint.config.js"],
+    tags = ["no-lint"],  # Don't lint the eslint config itself
     deps = [
         ":node_modules/@eslint/js",
         ":node_modules/@typescript-eslint/eslint-plugin",
