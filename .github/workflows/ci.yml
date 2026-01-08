@@ -274,6 +274,12 @@ jobs:
           # libcairo2-dev: required for pycairo (PyGObject dependency)
           sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
 
+      - name: Configure build environment
+        run: |
+          # Force Bazel to use system GCC instead of clang
+          # Required for building Python packages with C extensions (lru-dict, etc.)
+          echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
+
       - name: Build all targets
         run: |
           # -k: Keep going after errors to provide complete information
