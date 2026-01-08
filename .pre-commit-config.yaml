@@ -101,35 +101,10 @@ repos:
         args: [--fix]
         files: ^(cluster|website)/.*\.md$
 
-  # Svelte/TypeScript checks for MiniCodex UI
-  - repo: local
-    hooks:
-      # ESLint: Import ordering, code quality
-      - id: eslint
-        name: eslint (MiniCodex UI)
-        language: system
-        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run lint -- --fix'
-        files: ^adgn/src/adgn/agent/web/src/.*\.(ts|svelte)$
-        pass_filenames: false
-
-      # Svelte-check: Type checking
-      - id: svelte-check
-        name: svelte-check (MiniCodex UI)
-        language: system
-        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run check'
-        files: ^adgn/src/adgn/agent/web/
-        pass_filenames: false
-
-  # Svelte/TypeScript checks for Props Frontend
-  - repo: local
-    hooks:
-      # ESLint: Import ordering, code quality
-      - id: eslint-props
-        name: eslint (Props Frontend)
-        language: system
-        entry: bash -c 'cd props/frontend && pnpm run lint:fix'
-        files: ^props/frontend/src/.*\.(ts|svelte)$
-        pass_filenames: false
+  # NOTE: ESLint and svelte-check are handled by Bazel:
+  # - ESLint: bazel build --config=lint //...
+  # - svelte-check: bazel test //props/frontend:svelte_check_test
+  #                 bazel test //agent_server/src/agent_server/web:svelte_check_test
 
   # ============================================================================
   # CLUSTER-SPECIFIC HOOKS (scoped to cluster/ directory)
