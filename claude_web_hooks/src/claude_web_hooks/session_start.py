@@ -12,7 +12,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from claude_web_hooks import bazel_proxy_setup, bazelisk_setup
+from claude_web_hooks import bazel_proxy_setup, bazelisk_setup, cluster_tools
 
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
@@ -300,6 +300,17 @@ def main() -> int:
         project_dir = Path(project_dir_str)
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
         install_git_precommit_hook(project_dir, verbose)  # Detailed logging to file
+
+        # Install cluster tools if cluster/ directory exists (for pre-commit hooks)
+        cluster_dir = project_dir / "cluster"
+        if cluster_dir.is_dir():
+            verbose.info("Installing cluster tools for pre-commit hooks...")
+            results = cluster_tools.install_all()
+            for tool, success in results.items():
+                if success:
+                    verbose.info("  %s: installed", tool)
+                else:
+                    verbose.warning("  %s: failed to install", tool)
     else:
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
@@ -356,6 +367,9 @@ def main() -> int:
     log.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), bazel_proxy_setup.get_status(), node_ca_status
     )
+    # Show cluster tools status if cluster/ exists
+    if project_dir_str and (Path(project_dir_str) / "cluster").is_dir():
+        log.info("Cluster tools: %s", cluster_tools.get_status())
 
     # Emit context for Claude Code
     emit_session_context(had_warnings=loggers.counter.warning_count > 0, had_errors=loggers.counter.error_count > 0)
