@@ -231,6 +231,9 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-
 
+      - name: Install Chrome for Puppeteer
+        run: npx puppeteer browsers install chrome
+
       - name: Run visual regression tests
         run: bazel test //props/frontend:visual_test --test_output=errors
 
