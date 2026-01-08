@@ -482,63 +482,6 @@ py_test(
 1. Does ansible-lint work well in Bazel sandbox? (May need network for Galaxy)
 2. How to handle ansible-galaxy dependencies?
 
-## Phase 6: Bazelify Checkov
-
-### Pre-commit Configuration
-
-Checkov currently runs via `nix-shell` in pre-commit:
-
-```yaml
-- repo: https://github.com/bridgecrewio/checkov
-  rev: 3.2.384
-  hooks:
-    - id: checkov
-```
-
-### Bazel Approach
-
-Checkov is a Python package, can be added as a py_test:
-
-```starlark
-# requirements_bazel.txt
-checkov>=3.2.0
-
-# cluster/BUILD.bazel or tools/BUILD.bazel
-py_test(
-    name = "checkov_terraform",
-    srcs = ["//tools:run_checkov.py"],
-    data = glob(["terraform/**/*.tf"]),
-    deps = ["@pypi//checkov"],
-    args = [
-        "--directory", "cluster/terraform",
-        "--framework", "terraform",
-        "--skip-check", "CKV_TF_1",  # Skip module source checks if needed
-    ],
-)
-
-py_test(
-    name = "checkov_k8s",
-    srcs = ["//tools:run_checkov.py"],
-    data = glob(["k8s/**/*.yaml"]),
-    deps = ["@pypi//checkov"],
-    args = [
-        "--directory", "k8s",
-        "--framework", "kubernetes",
-    ],
-)
-```
-
-**Benefits**:
-
-- Hermetic Python environment
-- Cached results
-- Can run separate checks for terraform vs k8s
-
-**Considerations**:
-
-- Checkov has many dependencies, may increase lock file size
-- Some checks may need network access for external policies
-
 ## Recommended End State
 
 ### CI Jobs (Simplified)
@@ -588,7 +531,6 @@ jobs:
 - Kubernetes validation - kustomize (Phase 4, rules_kustomize)
 - Kubernetes validation - kubeconform/flux (Phase 4, http_archive + sh_test)
 - Ansible-lint (Phase 5)
-- Checkov (Phase 6)
 
 ## Open Questions for Discussion
 
@@ -606,7 +548,6 @@ jobs:
 6. ~~**Session start hook**: Add cluster tool installation (opentofu, tflint, flux, kustomize, kubeseal, helm) via binary downloads~~ (DONE)
 7. **Phase 4 continued**: Create k8s validation BUILD.bazel with sh_test wrappers
 8. **Phase 5**: Evaluate ansible-lint in Bazel (galaxy dependency challenge)
-9. **Phase 6**: Add checkov as Python dependency
 
 ## References
 
