@@ -130,15 +130,20 @@ Only install cluster tools if `cluster/` directory exists (hooks are scoped to `
 
 ### In Progress
 
-- **CI pre-commit job**: Replace nix with official GitHub Actions (opentofu/setup-opentofu, terraform-linters/setup-tflint, fluxcd/flux2/action)
-- **Session start hook**: Add cluster tool binary downloads for Claude Code on web
 - Create k8s validation BUILD.bazel using the http_archive binaries
 
 ### Completed (This Session)
 
 - **CI workflow simplified** - Replaced `setup-nix-direnv` with `bazelbuild/setup-bazelisk@v3` for
-  `props-frontend-build`, `visual-regression`, and `bazel-build` jobs. Nix kept only for pre-commit
-  (needs opentofu, tflint, fluxcd for cluster hooks).
+  `props-frontend-build`, `visual-regression`, and `bazel-build` jobs.
+- **CI uses official GitHub Actions** - Pre-commit job now uses:
+  - `opentofu/setup-opentofu@v1` (replaces nix)
+  - `terraform-linters/setup-tflint@v4` (replaces nix)
+  - `fluxcd/flux2/action@main` (replaces nix)
+  - Binary downloads for kubeconform, kustomize, kubeseal, helm
+- **props-frontend-build removed** - Folded into bazel-build job
+- **Visual regression hermetic** - Uses `rules_playwright` for Chromium browser
+- **Session start hook extended** - Added kubeseal and helm to cluster tools (opentofu, tflint, flux, kustomize, kubeseal, helm)
 
 ### Decisions Made
 
@@ -597,8 +602,8 @@ jobs:
 2. ~~**Short-term**: Add gitstatusd via http_archive~~ (DONE - added to MODULE.bazel)
 3. ~~**Phase 3**: Keep rules_tf for tflint, explore tfmirror.dev for terraform validate~~ (DONE - working!)
 4. ~~**Phase 4**: Add rules_kustomize + http_archive for kubeconform/flux~~ (DONE - binaries added)
-5. **CI pre-commit job**: Replace nix with official GitHub Actions for opentofu, tflint, flux
-6. **Session start hook**: Add cluster tool installation (opentofu, tflint, flux, kustomize, kubeseal, helm) via binary downloads
+5. ~~**CI pre-commit job**: Replace nix with official GitHub Actions for opentofu, tflint, flux~~ (DONE - using official actions + binary downloads)
+6. ~~**Session start hook**: Add cluster tool installation (opentofu, tflint, flux, kustomize, kubeseal, helm) via binary downloads~~ (DONE)
 7. **Phase 4 continued**: Create k8s validation BUILD.bazel with sh_test wrappers
 8. **Phase 5**: Evaluate ansible-lint in Bazel (galaxy dependency challenge)
 9. **Phase 6**: Add checkov as Python dependency
