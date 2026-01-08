@@ -399,14 +399,17 @@ rg --type py "def (to_dict|from_dict|asdict|as_dict)"
 For each candidate, manually check:
 
 1. **Is initialization truly trivial?**
+
    - ✅ YES: Just `self.x = x` → Should be dataclass
    - ❌ NO: Complex logic/setup → Plain class is fine
 
 2. **Does it need validation/serialization?**
+
    - ✅ YES: JSON/dict conversion, validation → Use Pydantic
    - ❌ NO: Internal data structure → Use dataclass
 
 3. **Is it a value object?**
+
    - ✅ YES: Should be immutable → `@dataclass(frozen=True)`
    - ❌ NO: Mutable state → Regular dataclass
 

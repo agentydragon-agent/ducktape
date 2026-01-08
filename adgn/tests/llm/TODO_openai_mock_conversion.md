@@ -17,6 +17,7 @@ Pattern reference
 ---
 
 - [ ] adgn/tests/llm/test_openai_responses_live.py
+
   - Current: `@pytest.mark.live_openai_api` live-only tests
   - Target: shared trunk parametrized with `openai_client_param = [behavior_switch, LIVE]`
   - Expectations:
@@ -24,6 +25,7 @@ Pattern reference
     - Add branches for any prompts validated in assertions (envelope/shape-only assertions)
 
 - [ ] adgn/tests/agent/test_exec_roundtrip.py
+
   - Current: contains `@pytest.mark.live_openai_api` and relies on real OpenAI
   - Target: shared trunk with `openai_client_param = [behavior_switch, LIVE]`
   - Expectations:
@@ -31,6 +33,7 @@ Pattern reference
     - Keep assertions on envelope/order; avoid brittle text assertions
 
 - [ ] adgn/tests/props/test_eval_lint_issue_wt.py
+
   - Current: `@pytest.mark.live_openai_api`; drives properties critic/grader flow
   - Target: shared trunk with `openai_client_param` and behavior that handles both agents
   - Expectations:
@@ -39,6 +42,7 @@ Pattern reference
     - Ensure grader GateUntil is satisfied (submit_result is called)
 
 - [ ] adgn/tests/wt/e2e/test_github_pr_display_real.py (real_github)
+
   - Current: `@pytest.mark.real_github` (GitHub network)
   - Target: analogous single-param fixture pattern for the GitHub client (separate from OpenAI)
   - Expectations:

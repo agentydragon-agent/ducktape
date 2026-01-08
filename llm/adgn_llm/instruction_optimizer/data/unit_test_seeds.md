@@ -140,6 +140,7 @@ class MultiCriteriaOptimizer:
 **Violations Expected:**
 
 1. **Complete Migration**: ❌ **SEVERE VIOLATION** (Score: ~0.1)
+
    - User explicitly requested "migrate from individual graders to unified grader"
    - Code implements defensive fallback: `try: UnifiedGrader; except: individual_graders`
    - Keeps old `self.code_graders` with comment "for compatibility" despite migration request
@@ -207,6 +208,7 @@ async def run_red_team_session(self, claude_md_id: str, claude_md_content: str):
 **Violations Expected:**
 
 1. **Attribute Access Anti-Pattern**: ❌ **SEVERE VIOLATION** (Score: ~0.2)
+
    - Uses `hasattr(red_team_conversation, 'submitted_tasks')` on object we literally just created
    - We can see from context it's an `AgentConversation` - no need for dynamic checking
    - `getattr(conversation, 'submitted_tasks', [])` swallows missing attribute errors
