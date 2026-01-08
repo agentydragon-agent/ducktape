@@ -89,12 +89,12 @@ For subsequent tools after cold start: **3-6s each**
 
 ## Conclusion: Nix Not Viable for Claude Code Web
 
-**130s cold start is too slow for session startup.** Users expect sessions to be ready in seconds, not minutes.
+**130s cold start exceeds the ~60s session hook timeout.** The hook would be killed before nix finishes installing even one tool.
 
 ### Why Nix Doesn't Work Here
 
-1. **No persistent storage**: Each session starts fresh, so the 117s nixpkgs fetch happens every time
-2. **No pre-warming**: Can't cache nixpkgs metadata between sessions
+1. **Hook timeout**: Session start hooks have a ~40-60s timeout; nix needs 130s+
+2. **No persistent storage**: Each session starts fresh, so the 117s nixpkgs fetch happens every time
 3. **Dominated by metadata**: The actual tool download (9.6 MB) takes ~3s; the nixpkgs eval takes 110s+
 
 ### Recommended Strategy for Claude Code Web
