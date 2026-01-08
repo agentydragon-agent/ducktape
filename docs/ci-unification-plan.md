@@ -63,10 +63,12 @@ This document outlines a roadmap to consolidate CI tooling around Bazel while ma
 
 ### Decisions Made
 
-- **Checkov stays in pre-commit** - Like prettier, checkov works well via `nix-shell -p checkov` in
-  pre-commit. Adding to Bazel would require managing a large dependency tree for minimal benefit.
-- **Prettier stays in pre-commit** - The `prettier-mirrors` pre-commit hook handles caching well
-  and avoids Bazel's JS toolchain complexity.
+- **Checkov stays in pre-commit** - Now uses official `bridgecrewio/checkov` pre-commit hook
+  (manages own Python environment). Removed nix-shell wrapper.
+- **Prettier stays in pre-commit** - The Bazel-built prettier runs via local hook. Aspects can't
+  catch files without Bazel targets, and formatters should apply universally.
+- **Ruff stays in pre-commit** - Same reasoning as prettier - should catch any Python file,
+  not just those with associated Bazel targets.
 
 ### Remaining
 
