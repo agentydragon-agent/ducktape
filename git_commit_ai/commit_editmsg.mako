@@ -8,6 +8,15 @@ import pygit2
 
 MAX_VERBOSE_DIFF_LINES = 3000
 
+# Status flags that indicate a file is staged (not purely untracked)
+_STAGED_FLAGS = (
+    pygit2.GIT_STATUS_INDEX_NEW
+    | pygit2.GIT_STATUS_INDEX_MODIFIED
+    | pygit2.GIT_STATUS_INDEX_DELETED
+    | pygit2.GIT_STATUS_INDEX_RENAMED
+    | pygit2.GIT_STATUS_INDEX_TYPECHANGE
+)
+
 STATUS_TO_TEXT = {
     pygit2.GIT_DELTA_ADDED: "new file:",
     pygit2.GIT_DELTA_MODIFIED: "modified:",
@@ -20,14 +29,32 @@ def comment_prefix(text):
     return textwrap.indent(text, "# ", lambda line: True)
 
 def delta_path(delta):
-    if delta.status == pygit2.GIT_DELTA_DELETED:
-        return delta.old_file.path
-    return delta.new_file.path
+    return delta.old_file.path if delta.status == pygit2.GIT_DELTA_DELETED else delta.new_file.path
 
 def delta_status_text(delta):
     return STATUS_TO_TEXT.get(delta.status, "unknown:")
 
 %>
+<%
+# Compute view data from repo
+branch = repo.head.shorthand if not repo.head_is_detached else "HEAD detached"
+staged_diff = repo.diff(repo.head.target, None, cached=True)
+unstaged_diff = repo.diff()
+untracked_files = [
+    path for path, flags in repo.status().items()
+    if (flags & pygit2.GIT_STATUS_WT_NEW) and not (flags & _STAGED_FLAGS)
+]
+
+# Verbose: use flag or fall back to git config commit.verbose
+if verbose:
+    include_verbose = True
+else:
+    try:
+        cfg_val = repo.config["commit.verbose"]
+        include_verbose = cfg_val.strip().lower() in {"1", "true", "yes", "on"}
+    except KeyError:
+        include_verbose = False
+%>\
 <%def name="verbose_diff_lines(diff)">\
 <%
     patch = diff.patch or ""
@@ -53,7 +80,7 @@ Previous commit message (being amended):
 ${previous_message}
 
 % endif
-${stats_line}
+ai-draft${"(cached)" if cached else ""}: ${f"{elapsed_s:.2f}"}s
 
 Please enter the commit message for your changes. Lines starting
 with '#' will be ignored, and an empty message aborts the commit.

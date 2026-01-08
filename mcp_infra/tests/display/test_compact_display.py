@@ -47,7 +47,7 @@ def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str
     }
 
     # Create handler with the console and schemas
-    test_handler = CompactDisplayHandler(max_lines=20, console=console, prefix=prefix, show_usage=False)
+    test_handler = CompactDisplayHandler(max_lines=20, console=console, prefix=prefix, show_token_usage=False)
     test_handler._tool_input_schemas = tool_input_schemas
     test_handler._tool_schemas = tool_schemas
 
@@ -157,7 +157,7 @@ def test_compact_display_handler_with_anyurl_in_result():
     # Create handler with a StringIO console to capture output
     output_buffer = StringIO()
     console = Console(file=output_buffer, force_terminal=False, width=120)
-    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_usage=False)
+    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_token_usage=False)
 
     # Create a fake tool call and output event
 
@@ -203,7 +203,7 @@ def test_compact_display_handler_with_read_resource_result():
     # Create handler with StringIO console
     output_buffer = StringIO()
     console = Console(file=output_buffer, force_terminal=False, width=120)
-    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_usage=False)
+    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_token_usage=False)
 
     call = ToolCall(call_id="test-456", name="resources_read_blocks", args_json='{"uri": "test"}')
     handler._calls["test-456"] = call

@@ -361,7 +361,7 @@ class CompactDisplayHandler(BaseHandler):
         console: Console | None = None,
         prefix: str = "",
         servers: dict[MCPMountPrefix, FastMCP] | None = None,
-        show_usage: bool = True,
+        show_token_usage: bool = True,
     ) -> None:
         """Initialize compact display handler.
 
@@ -370,12 +370,12 @@ class CompactDisplayHandler(BaseHandler):
             console: Rich console (or create default)
             prefix: Prefix for tool calls/results (e.g., "critic", "optimizer")
             servers: FastMCP server instances to extract tool schemas from
-            show_usage: Show token usage after each response (default: True)
+            show_token_usage: Show token usage after each response (default: True)
         """
         self._max_lines = max_lines
         self._console = console or Console()
         self._prefix = prefix
-        self._show_usage = show_usage
+        self._show_token_usage = show_token_usage
 
         # Auto-extract schemas from servers
         if servers:
@@ -395,7 +395,7 @@ class CompactDisplayHandler(BaseHandler):
         max_lines: int = DEFAULT_MAX_LINES,
         console: Console | None = None,
         prefix: str = "",
-        show_usage: bool = True,
+        show_token_usage: bool = True,
     ) -> CompactDisplayHandler:
         """Create handler with schemas extracted from compositor.
 
@@ -404,13 +404,15 @@ class CompactDisplayHandler(BaseHandler):
             max_lines: Maximum lines for truncated content
             console: Rich console (or create default)
             prefix: Prefix for tool calls/results
-            show_usage: Show token usage after each response
+            show_token_usage: Show token usage after each response
 
         Returns:
             CompactDisplayHandler with schemas extracted from compositor's servers
         """
         servers = await compositor.get_inproc_servers()
-        return cls(max_lines=max_lines, console=console, prefix=prefix, servers=servers, show_usage=show_usage)
+        return cls(
+            max_lines=max_lines, console=console, prefix=prefix, servers=servers, show_token_usage=show_token_usage
+        )
 
     # Observer hooks ---------------------------------------------------------
 
@@ -432,7 +434,7 @@ class CompactDisplayHandler(BaseHandler):
 
     def on_response(self, evt: Response) -> None:
         # TODO: Track cost and show it in USD (need model pricing lookup)
-        if not self._show_usage or not evt.usage:
+        if not self._show_token_usage or not evt.usage:
             return
 
         input_tok = evt.usage.input_tokens or 0

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from datetime import timedelta
 
 import pygit2
 from fastmcp.client import Client
@@ -209,7 +211,8 @@ async def generate_commit_message_agent(
     model: str,
     *,
     debug: bool = False,
-    verbose: bool = False,
+    agent_verbose: bool = False,
+    agent_timeout: timedelta | None = None,
     amend: bool = False,
     user_context: str | None = None,
 ) -> str:
@@ -255,8 +258,8 @@ async def generate_commit_message_agent(
             CommitController(submit_state, bootstrap),
             RedirectOnTextMessageHandler(reminder),
         ]
-        if verbose:
-            handlers.append(await CompactDisplayHandler.from_compositor(comp, show_usage=debug))
+        if agent_verbose:
+            handlers.append(await CompactDisplayHandler.from_compositor(comp, show_token_usage=debug))
 
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
@@ -268,7 +271,9 @@ async def generate_commit_message_agent(
                 tool_policy=AllowAnyToolOrTextMessage(),
             )
             agent.process_message(UserMessage.text(prompt))
-            await agent.run()
+            timeout_secs = agent_timeout.total_seconds() if agent_timeout else None
+            async with asyncio.timeout(timeout_secs):
+                await agent.run()
     # CommitCompositor.__aexit__ unmounts all servers and cleans up
 
     assert submit_state.result is not None, "submit_commit_message not called"

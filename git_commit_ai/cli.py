@@ -1,27 +1,13 @@
 """
-git-commit-ai
+git-commit-ai: AI-powered commit message generation.
 
-* Runs an AI agent (Agent) to draft the initial commit message shown in your editor.
-* Runs repo's pre-commit hook **in parallel** so you don't wait twice.
-* Caches per-repo for one week keyed by staged diff hash.
+Runs an AI agent to draft commit messages, with pre-commit hooks running in parallel.
+Caches messages per-repo for one week keyed by staged diff hash.
 
-Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
-
-    --model MODEL (default: gpt-5.1-codex-mini)
-    --debug                Enable debug logging (shows exact AI command)
-    --accept-ai            Commit immediately with the AI-drafted message (skip editor)
-    -m MSG                 User context/guidance for the commit message (not the message itself)
-
-Note: Pass --no-verify to skip running pre-commit inside this wrapper. The final `git commit`
-      is invoked with --no-verify to avoid running hooks twice.
-      Unlike `git commit -m`, the -m flag here provides guidance to the AI, not the final message.
-
-Important: Do NOT install this as a prepare-commit-msg hook. Since this command
-         calls `git commit` internally, it would create an infinite loop. Use
-         this as a standalone command replacement for `git commit`.
-
-Example
-    git-commit-ai -a               # like "git commit -a"
+Use --help for available flags. Key behaviors:
+- `-m MSG` provides context/guidance to the AI (not the commit message itself)
+- Pre-commit hooks run in parallel with AI; final `git commit` uses --no-verify
+- Do NOT install as a prepare-commit-msg hook (would cause infinite loop)
 """
 
 from __future__ import annotations
@@ -45,11 +31,14 @@ from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
+from typing import TypeVar
 
 import pygit2
 
 from git_commit_ai.agent_backend import generate_commit_message_agent
-from git_commit_ai.editor_template import SCISSORS_MARK, render_editor_content
+from git_commit_ai.editor import render_editor_content, run_editor
+
+_T = TypeVar("_T")
 
 DEFAULT_MODEL = "gpt-5.1-codex-mini"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -118,7 +107,7 @@ def build_cache_key(
     include_all: bool,
     previous_message: str | None,
     user_context: str | None,
-    commitish: str,
+    head_oid: pygit2.Oid,
     diff: str,
 ) -> str:
     """Compose the cache key used for AI commit message caching.
@@ -129,7 +118,7 @@ def build_cache_key(
     context_hash = hashlib.sha256(user_context.encode()).hexdigest()[:16] if user_context else "none"
     scope = "all" if include_all else "staged"
     amend_marker = "amend" if previous_message else "new"
-    return f"{model_name}:{scope}:{amend_marker}:{context_hash}:{commitish}:{diff_hash}"
+    return f"{model_name}:{scope}:{amend_marker}:{context_hash}:{head_oid}:{diff_hash}"
 
 
 class TaskStatus(StrEnum):
@@ -246,13 +235,24 @@ class ParallelTaskRunner:
         finally:
             os.close(master_fd)
 
+    @staticmethod
+    def _get_hooks_dir(repo: pygit2.Repository) -> Path:
+        """Get the hooks directory, respecting core.hooksPath config."""
+        try:
+            hooks_path = repo.config["core.hooksPath"]
+            # core.hooksPath can be relative to the worktree root
+            path = Path(hooks_path)
+            if not path.is_absolute() and repo.workdir:
+                path = Path(repo.workdir) / path
+            return path
+        except KeyError:
+            return Path(repo.path) / "hooks"
+
     @classmethod
-    async def create_and_run(
-        cls, repo: pygit2.Repository, ai_task: asyncio.Task[str], run_precommit: bool = True
-    ) -> str:
+    async def create_and_run(cls, repo: pygit2.Repository, ai_task: asyncio.Task[_T], run_precommit: bool = True) -> _T:
         """Factory method that creates runner and manages task lifecycle."""
         git_dir = Path(repo.path)
-        precommit_path = git_dir / "hooks" / "pre-commit"
+        precommit_path = cls._get_hooks_dir(repo) / "pre-commit"
         output_task = None
 
         # Git runs hooks from the worktree root with specific environment variables.
@@ -409,7 +409,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")  # Resolved via layered config (env/git/default)
     parser.add_argument("--timeout-secs", type=int, help="AI timeout seconds (<=0 disables)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    parser.add_argument("--verbose", action="store_true", help="Show agent activity with rich display")
+    parser.add_argument("--agent-verbose", action="store_true", help="Show agent activity with rich display")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show diff in editor (git commit -v)")
+    parser.add_argument("--no-verify", action="store_true", help="Skip pre-commit hooks")
+    parser.add_argument("--amend", action="store_true", help="Amend the previous commit")
     parser.add_argument(
         "--accept-ai", action="store_true", help="Commit immediately with the AI-drafted message (skip editor)"
     )
@@ -433,7 +436,7 @@ def _parse_args_and_passthru(argv: list[str] | None = None) -> tuple[argparse.Na
     return parser.parse_known_args(argv)
 
 
-def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
+def _init_logging(repo: pygit2.Repository, debug: bool) -> None:
     """Configure root logger to file (always) and stderr (when debug)."""
     log_file = Path(repo.path) / "git_commit_ai.log"
     file_handler = logging.FileHandler(log_file, mode="a")
@@ -452,8 +455,6 @@ def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
     # Silence noisy libraries
     for name in ("agent", "Agent", "adgn_llm.mini_codex", "mcp", "openai"):
         logging.getLogger(name).setLevel(logging.WARNING)
-
-    return logger
 
 
 def _get_previous_commit_message(repo: pygit2.Repository) -> str:
@@ -482,43 +483,29 @@ def stage_tracked_changes(repo: pygit2.Repository) -> None:
 # ---------- commit/editor helpers ------------------------------------
 
 
-def _make_stats_line(cached: bool, diff: str, msg: str, elapsed_s: float) -> str:
-    """Return stats line as plain text (no # prefix)."""
-    return (
-        f"ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, "
-        f"response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s"
-    )
-
-
-async def _execute_git_commit(message: str, passthru: list[str]) -> None:
-    """Execute git commit with the given message and passthru flags.
+async def _execute_git_commit(message: str, *, amend: bool = False, verbose: bool = False, passthru: list[str]) -> None:
+    """Execute git commit with the given message and flags.
 
     Args:
         message: Commit message
+        amend: Whether to amend the previous commit
+        verbose: Whether to include verbose diff output
         passthru: Additional git commit flags to forward
     """
-    commit_proc = await asyncio.create_subprocess_exec("git", "commit", "-m", message, "--no-verify", *passthru)
+    cmd = ["git", "commit", "-m", message, "--no-verify"]
+    if amend:
+        cmd.append("--amend")
+    if verbose:
+        cmd.append("-v")
+    cmd.extend(passthru)
+    commit_proc = await asyncio.create_subprocess_exec(*cmd)
     code = await commit_proc.wait()
     if code != 0:
         raise SystemExit(code)
 
 
-async def _commit_immediately(msg: str, passthru: list[str]) -> None:
-    await _execute_git_commit(msg, passthru)
-
-
-def _extract_commit_content(text: str) -> str:
-    """Extract commit content, stopping at scissors mark and removing comments.
-
-    Returns the cleaned commit message with comments removed but blank lines preserved.
-    """
-    content_lines: list[str] = []
-    for line in text.splitlines():
-        if line.startswith(SCISSORS_MARK):
-            break
-        if not line.strip().startswith("#"):
-            content_lines.append(line)
-    return "\n".join(content_lines).strip()
+async def _commit_immediately(msg: str, *, amend: bool = False, verbose: bool = False, passthru: list[str]) -> None:
+    await _execute_git_commit(msg, amend=amend, verbose=verbose, passthru=passthru)
 
 
 async def _run_editor_flow(
@@ -526,98 +513,89 @@ async def _run_editor_flow(
     msg: str,
     previous_message: str | None,
     user_context: str | None,
-    stats_line: str,
+    *,
+    amend: bool,
+    verbose: bool,
     passthru: list[str],
+    cached: bool,
+    elapsed_s: float,
 ) -> None:
     editor_content = render_editor_content(
-        repo, msg, passthru, user_context=user_context, previous_message=previous_message, stats_line=stats_line
+        repo,
+        msg,
+        cached=cached,
+        elapsed_s=elapsed_s,
+        verbose=verbose,
+        user_context=user_context,
+        previous_message=previous_message,
     )
 
-    # Write content to COMMIT_EDITMSG and open editor
-    commit_msg_path = Path(repo.path) / "COMMIT_EDITMSG"
-    commit_msg_path.write_text(editor_content)
-    mtime_before = commit_msg_path.stat().st_mtime
-
-    editor = _get_editor(repo)
-    editor_proc = await asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")
-    if (rc := await editor_proc.wait()) != 0:
-        print(f"Aborting commit: editor exited with code {rc} (e.g., :cq)", file=sys.stderr)
+    commit_message = await run_editor(repo, editor_content)
+    if commit_message is None:
         raise SystemExit(1)
 
-    # Validate that user saved changes
-    try:
-        final_content = commit_msg_path.read_text()
-        mtime_after = commit_msg_path.stat().st_mtime
-        changed = final_content.rstrip("\n") != editor_content
-        if mtime_after == mtime_before and not changed:
-            print("Aborting commit: editor closed without saving (unchanged commit message).", file=sys.stderr)
-            raise SystemExit(1)
-    except FileNotFoundError:
-        print("Aborting commit.", file=sys.stderr)
-        raise SystemExit(1)
-
-    # Extract commit content (remove scissors and comments)
-    commit_message = _extract_commit_content(final_content)
-
-    await _execute_git_commit(commit_message, passthru)
+    await _execute_git_commit(commit_message, amend=amend, verbose=verbose, passthru=passthru)
 
 
 @dataclass
-class ProduceMessageInput:
+class CommitMessageInput:
+    """Input for generating a commit message (pure, no side effects like pre-commit)."""
+
     repo: pygit2.Repository
     model_name: str
     debug: bool
-    verbose: bool
-    deadline: timedelta | None
-    passthru: list[str]
+    agent_verbose: bool
+    timeout: timedelta | None
     diff: str
     previous_message: str | None
     user_context: str | None
     cache: Cache
-    key: str
+    stage_all: bool
 
+    @property
+    def head_oid(self) -> pygit2.Oid:
+        return self.repo.head.peel(pygit2.Commit).id
 
-async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
-    """Return (message, cached). Runs Agent and pre-commit where applicable."""
-    if (msg := inp.cache.get(inp.key)) is not None:
-        return msg, True
-
-    ai_task: asyncio.Task[str] = asyncio.create_task(
-        generate_commit_message_agent(
-            inp.repo,
-            model=inp.model_name,
-            debug=inp.debug,
-            verbose=inp.verbose,
-            amend=inp.previous_message is not None,
-            user_context=inp.user_context,
+    def cache_key(self) -> str:
+        return build_cache_key(
+            self.model_name,
+            include_all=self.stage_all,
+            previous_message=self.previous_message,
+            user_context=self.user_context,
+            head_oid=self.head_oid,
+            diff=self.diff,
         )
-    )
 
-    run_precommit = "--no-verify" not in inp.passthru
-    msg = await ParallelTaskRunner.create_and_run(inp.repo, ai_task, run_precommit=run_precommit)
-    inp.cache[inp.key] = msg
+
+async def _get_commit_message(inp: CommitMessageInput) -> tuple[str, bool]:
+    """Generate commit message, using cache if available. Returns (message, was_cached)."""
+    key = inp.cache_key()
+    if (cached_msg := inp.cache.get(key)) is not None:
+        return cached_msg, True
+
+    msg = await generate_commit_message_agent(
+        inp.repo,
+        model=inp.model_name,
+        debug=inp.debug,
+        agent_verbose=inp.agent_verbose,
+        agent_timeout=inp.timeout,
+        amend=inp.previous_message is not None,
+        user_context=inp.user_context,
+    )
+    inp.cache[key] = msg
     return msg, False
 
 
+async def _produce_message(inp: CommitMessageInput, *, no_verify: bool) -> tuple[str, bool]:
+    """Orchestrate pre-commit hook and message generation in parallel. Returns (message, was_cached)."""
+    ai_task: asyncio.Task[tuple[str, bool]] = asyncio.create_task(_get_commit_message(inp))
+
+    run_precommit = not no_verify
+    msg, was_cached = await ParallelTaskRunner.create_and_run(inp.repo, ai_task, run_precommit=run_precommit)
+    return msg, was_cached
+
+
 # ---------- main ------------------------------------------------------
-
-
-def _get_editor(repo: pygit2.Repository) -> str:
-    """Get the editor to use for commit messages.
-
-    Follows git's precedence: GIT_EDITOR env > core.editor config >
-    VISUAL env > EDITOR env > 'vi'
-    """
-    # Try to get core.editor from git config (pygit2 Config doesn't have .get())
-    try:
-        git_editor = repo.config["core.editor"]
-    except KeyError:
-        git_editor = None
-
-    for candidate in (os.environ.get("GIT_EDITOR"), git_editor, os.environ.get("VISUAL"), os.environ.get("EDITOR")):
-        if candidate:
-            return candidate
-    return "vi"
 
 
 def _get_working_directory() -> Path:
@@ -637,8 +615,6 @@ async def async_main(argv: list[str] | None = None):
 
     args, passthru = _parse_args_and_passthru(argv)
 
-    is_amend = "--amend" in passthru
-
     _init_logging(repo, args.debug)
     config = AppConfig.resolve(args)
     if args.debug:
@@ -647,7 +623,7 @@ async def async_main(argv: list[str] | None = None):
     if args.stage_all:
         stage_tracked_changes(repo)
 
-    previous_message = _get_previous_commit_message(repo) if is_amend else None
+    previous_message = _get_previous_commit_message(repo) if args.amend else None
 
     # Check for staged changes
     diff = repo.diff(repo.head.target, None, cached=not args.stage_all).patch or ""
@@ -661,38 +637,38 @@ async def async_main(argv: list[str] | None = None):
     cache = Cache(repo_cache_dir(repo))
     cache.prune()
 
-    key = build_cache_key(
-        config.model_name,
-        include_all=args.stage_all,
-        previous_message=previous_message,
-        user_context=args.user_context,
-        commitish=str(repo.head.peel(pygit2.Commit).id),
-        diff=diff,
-    )
-
     msg, cached = await _produce_message(
-        ProduceMessageInput(
+        CommitMessageInput(
             repo=repo,
             model_name=config.model_name,
             debug=args.debug,
-            verbose=args.verbose,
-            deadline=config.timeout,
-            passthru=passthru,
+            agent_verbose=args.agent_verbose,
+            timeout=config.timeout,
             diff=diff,
             previous_message=previous_message,
             user_context=args.user_context,
             cache=cache,
-            key=key,
-        )
+            stage_all=args.stage_all,
+        ),
+        no_verify=args.no_verify,
     )
 
     elapsed_s = time.monotonic() - start_monotonic_s
-    stats_line = _make_stats_line(cached, diff, msg, elapsed_s)
 
     if args.accept_ai:
-        await _commit_immediately(msg, passthru)
+        await _commit_immediately(msg, amend=args.amend, verbose=args.verbose, passthru=passthru)
     else:
-        await _run_editor_flow(repo, msg, previous_message, args.user_context, stats_line, passthru)
+        await _run_editor_flow(
+            repo,
+            msg,
+            previous_message,
+            args.user_context,
+            amend=args.amend,
+            verbose=args.verbose,
+            passthru=passthru,
+            cached=cached,
+            elapsed_s=elapsed_s,
+        )
 
 
 def main():
