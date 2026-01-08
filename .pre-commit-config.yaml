@@ -167,17 +167,18 @@ repos:
         args:
           - --args=--config=__GIT_WORKING_DIR__/cluster/.tflint.hcl
 
+  # Checkov security analysis (official pre-commit hook)
+  - repo: https://github.com/bridgecrewio/checkov.git
+    rev: 3.2.384
+    hooks:
+      - id: checkov
+        name: Checkov security analysis (cluster)
+        args: [--framework, terraform, --skip-check, CKV_TF_1]
+        files: ^cluster/terraform/.*\.tf$
+
   # Cluster-specific local hooks
   - repo: local
     hooks:
-      # Checkov security analysis
-      - id: checkov-cluster
-        name: Checkov security analysis (cluster)
-        entry: nix-shell -p checkov --run 'checkov --framework terraform --skip-check CKV_TF_1'
-        language: system
-        files: ^cluster/terraform/.*\.tf$
-        pass_filenames: false
-
       # Kustomize validation
       - id: kustomize-dry-run
         name: Validate Kustomize builds (cluster)

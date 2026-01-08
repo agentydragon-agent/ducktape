@@ -47,7 +47,7 @@ jobs:
           # terraform_fmt, terraform_validate need opentofu
           # terraform_tflint needs tflint
           # flux-build-dry-run needs flux CLI
-          # checkov-cluster needs checkov (via nix-shell in the hook)
+          # Note: checkov uses official bridgecrewio/checkov pre-commit hook (manages own Python)
           nix profile install nixpkgs#opentofu nixpkgs#tflint nixpkgs#fluxcd
 
           # Add nix profile to PATH for subsequent steps
