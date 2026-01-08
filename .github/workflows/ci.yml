@@ -16,6 +16,7 @@ name: CI
 
 on:
   push:
+    branches: [main, master, devel]
   pull_request:
 
 # Cancel outdated workflow runs when new commits are pushed
