@@ -283,8 +283,9 @@ jobs:
       - name: Build all targets
         run: |
           # -k: Keep going after errors to provide complete information
-          # --sandbox_debug: Show verbose sandbox messages for debugging failures
-          bazel build //... -k --sandbox_debug
+          # --noshow_progress: Reduce repetitive "Analyzing/Building" lines
+          # --repo_env=CC: Pass CC to repository rules (pip wheel builds)
+          bazel build //... -k --noshow_progress --repo_env=CC=/usr/bin/gcc
 
       - name: Generate build summary
         if: always()
@@ -329,12 +330,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
 
+      - name: Configure build environment
+        run: |
+          echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
+
       - name: Run linters
         run: |
           # Python: ruff (lint) + mypy (types)
-          bazel build --config=check //... -k --sandbox_debug
+          bazel build --config=check //... -k --noshow_progress --repo_env=CC=/usr/bin/gcc
           # Python + JS/TS: ruff + ESLint
-          bazel build --config=lint //... -k --sandbox_debug
+          bazel build --config=lint //... -k --noshow_progress --repo_env=CC=/usr/bin/gcc
 
       - name: Generate lint summary
         if: always()
@@ -414,9 +419,13 @@ jobs:
             | tar xz -C /tmp
           sudo install -m 755 /tmp/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
 
+      - name: Configure build environment
+        run: |
+          echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
+
       - name: Run tests
         run: |
-          bazel test //... --test_output=errors -k --sandbox_debug
+          bazel test //... --test_output=errors -k --noshow_progress --repo_env=CC=/usr/bin/gcc
 
       - name: Generate test summary
         if: always()
@@ -465,7 +474,7 @@ jobs:
       - name: Run Rust checks
         run: |
           # Rust: clippy (lint) + rustfmt (format check)
-          bazel build --config=rust-check //... -k --sandbox_debug
+          bazel build --config=rust-check //... -k --noshow_progress
 
       - name: Generate Rust check summary
         if: always()
