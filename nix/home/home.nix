@@ -8,6 +8,7 @@
   solarizedLight,
   solarizedDark,
   terminalFont,
+  git-commit-ai-wheel,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -67,6 +68,11 @@ let
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.sh;
+
+  # git-commit-ai - AI-powered commit message generator
+  git-commit-ai = pkgs.callPackage ./packages/git-commit-ai.nix {
+    inherit git-commit-ai-wheel;
+  };
 in {
   imports = [
     # TODO: Re-enable google-drive-service once the git repo is accessible
@@ -297,6 +303,7 @@ in {
       zsh
       atuin
       opencode # AI coding agent for the terminal
+      git-commit-ai # AI-powered commit message generator
 
       # Tools from GitHub releases / binary downloads
       gh
