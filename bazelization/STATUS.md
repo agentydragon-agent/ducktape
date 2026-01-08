@@ -517,10 +517,12 @@ bazel build --config=check //...
 ### High Priority
 
 - **Enable remote cache write in CI**
+
   - Currently read-only (`--remote_upload_local_results=false`)
   - Enable for main branch for better cache hit rates
 
 - **Migrate Docker images to rules_oci**
+
   - See Docker Images section below for full inventory
 
 - **Fix ember_evals missing modules**
@@ -544,10 +546,12 @@ bazel build --config=check //...
 ### Structural Improvements (do incrementally)
 
 - **Colocate tests with production code**
+
   - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
   - Simpler BUILD files, easier to see coverage gaps
 
 - **Flatten package layouts**
+
   - Remove `src/` nesting (Bazel handles packaging)
   - Simpler paths in BUILD.bazel files
 
@@ -795,9 +799,11 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 ### Current Deviations
 
 1. **Mixed build systems**: Some packages have both `pyproject.toml` and `BUILD.bazel`
+
    - pyproject.toml should only contain pytest/tool config, not deps
 
 2. **Standalone requirements.txt files**: Some packages have local requirements.txt
+
    - Should consolidate to `requirements_bazel.txt` at repo root
 
 3. **External tool invocation**: Some targets shell out to external tools

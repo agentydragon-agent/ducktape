@@ -31,10 +31,12 @@ agent_server aims to provide a practical scaffold for an autonomous agent that c
 Traditional “hardcoded” scaffolding becomes configurable at runtime by the agent, the user, or both:
 
 - Policy as code
+
   - Policy runs out‑of‑process with a stable IO contract; hot‑swappable via proposals and approvals.
   - See <mcp-runtime/policy-gateway.md> for decision mapping and evaluation.
 
 - MCP servers
+
   - Allow requests to attach/detach servers at runtime (under policy). The agent can access MCP both via direct tool calls and by running Python inside its container that talks to the Compositor over loopback.
   - Resources aggregation is provided by a dedicated server; see <mcp-runtime/resources.md>.
 
@@ -45,10 +47,12 @@ Traditional “hardcoded” scaffolding becomes configurable at runtime by the a
 ## Principles
 
 - Tiny safe core
+
   - Keep the trusted base minimal: compositing, policy gate, loop control, and auth.
   - Everything else should be swappable, replaceable, or configurable at runtime.
 
 - Code is the contract
+
   - Point the agent (and the user) at source files and examples rather than maintaining duplicated prose.
   - Example paths the agent can read:
     - Policy middleware and interface: <agent_server/src/agent_server/approvals.py>, <agent_server/src/agent_server/policy_eval/>

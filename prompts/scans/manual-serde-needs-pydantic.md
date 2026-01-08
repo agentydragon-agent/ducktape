@@ -256,18 +256,21 @@ python prompts/scans/scan_manual_serde.py . 2>&1 | grep "===" -A 10
 **Manual review workflow**:
 
 1. **Review dict_literals**:
+
    - Check context: Is this in internal code or I/O boundary?
    - If internal + known keys → Candidate for Pydantic model
    - Look for patterns: same keys appearing in multiple places
    - Cross-reference with pydantic_models: Does a model already exist for this structure?
 
 2. **Analyze pydantic_models for overlapping fields**:
+
    - Compare field sets across models
    - Models sharing 50%+ fields → Should they share a common base model?
    - Example: `UserRequest` and `UserResponse` both have `user_id, email, name`
    - Consider: Create `UserCore` base model, inherit in both
 
 3. **Identify single-field models**:
+
    - Filter models where `len(fields) == 1`
    - Single-field models are often legitimate (NewType pattern, validation)
    - But review: Is this just a wrapper? Could it be a type alias?
@@ -345,14 +348,17 @@ rg --type py "return \{.*:" --multiline  # Look for manual dict returns
 **Key questions to ask:**
 
 1. **Is this I/O or internal code?**
+
    - I/O boundary (reading JSON, calling external API): `dict` is OK
    - Internal function passing data: `dict` is suspicious
 
 2. **Are keys known at development time?**
+
    - Yes (e.g., always "path" and "content"): Should be Pydantic
    - No (keys from user input, config): `dict` is fine
 
 3. **Is there documentation of dict structure?**
+
    - Docstring says "dict with keys X, Y, Z": RED FLAG - should be model
    - No structure mentioned: Might be genuinely dynamic
 

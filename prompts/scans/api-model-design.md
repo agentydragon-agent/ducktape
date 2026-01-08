@@ -177,21 +177,25 @@ rg --type py "dict\[str, Any\]" --type py | grep -v "# OK"
 ## Fix Strategy
 
 1. **For denormalized fields**:
+
    - Replace flat fields with nested models
    - Add `@property` getters for backward compat
    - Mark old fields as deprecated in docstrings
 
 2. **For duplicated data**:
+
    - Identify single source of truth
    - Remove duplicates from other tables
    - Update queries to use relationships
 
 3. **For `_json` suffixes**:
+
    - Rename DB columns (breaking change, needs migration)
    - Update all queries
    - Type system already indicates JSON storage
 
 4. **For flattened structures**:
+
    - Group related fields into nested models
    - Match API structure to DB relationships
    - Use proper Pydantic models, not dicts

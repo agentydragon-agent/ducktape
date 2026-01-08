@@ -14,6 +14,7 @@ Both hooks ensure code quality standards are maintained.
 ## Setup
 
 1. **Hook Scripts**: The hook logic is in:
+
    - Pre-hook: `ducktape_llm_common/claude_linter/claude_pre_hook.py`
    - Post-hook: `ducktape_llm_common/claude_linter/claude_post_hook.py`
    - Unified CLI: `ducktape_llm_common/claude_linter/claude_linter.py`
@@ -145,11 +146,13 @@ claude-linter check src/              # Check all Python files in directory
 The `claude-linter` command supports three modes:
 
 1. **`claude-linter pre`** - Pre-hook mode (blocks violations)
+
    - Used by Claude Code before Write operations
    - Reads JSON from stdin
    - Exit code 2 blocks the operation
 
 2. **`claude-linter post`** - Post-hook mode (auto-fixes)
+
    - Used by Claude Code after Write/Edit/MultiEdit operations
    - Reads JSON from stdin
    - Always exits with code 0

@@ -116,11 +116,13 @@ program = {
 **Why it doesn't fit our use case**:
 
 1. **Example structure mismatch**:
+
    - PromptWizard: `{"question": "What is 2+2?", "answer": "4"}`
    - Our case: `{"snapshot": "entire codebase", "true_positives": [58 issues], ...}`
    - **Can't generate synthetic codebases with ground truth**
 
 2. **Evaluation cost mismatch**:
+
    - PromptWizard: Test 10 prompts × 5 batches = 50 evaluations per iteration (seconds each)
    - Our case: Each evaluation = full critic run (minutes, $1-5, requires Docker/tools)
    - **Can't afford to test 10 variations**
@@ -211,18 +213,21 @@ program = {
 ### What Makes Our Problem Different
 
 1. **Expensive Evaluation**
+
    - Each critic run: 2-5 minutes, $1-5 in API costs
    - Requires Docker container, tool execution (rg, ruff, mypy, vulture)
    - 20-50+ LLM calls per run
    - **Can't afford rapid iteration on many candidates**
 
 2. **Complex Structured Examples**
+
    - Training example = (entire codebase snapshot, targeted files, labeled issues)
    - Can't paste "the example it got wrong" into a prompt
    - Can't generate synthetic training data
    - **Must work with real codebases and ground truth**
 
 3. **Rich Failure Data Available**
+
    - Grader results: missed TPs, false positives, recall/precision
    - Execution traces: tool calls, reasoning summaries
    - Database of historical runs
@@ -285,11 +290,13 @@ program = {
    ```
 
 2. **Structured analysis prompts**:
+
    - Ask agent to follow specific analysis template
    - "First check recall on each issue category, then..."
    - More systematic than free-form analysis
 
 3. **Multi-prompt seed**:
+
    - Start with 3-5 manually designed prompts (different approaches)
    - Let each evolve independently
    - Track which lineage performs best
@@ -464,11 +471,13 @@ for iteration in range(budget // cost_per_eval):
 ### Phase 2: Systematic Exploration (1 week)
 
 1. **Generate seed prompts**:
+
    - Ask LLM to generate 5 different approaches to the same task
    - "Write a critic prompt focusing on: (1) dead code, (2) duplication, (3) architecture, (4) testing, (5) comprehensive"
    - Evaluate all, keep best 3 as starting population
 
 2. **Structured improvement prompts**:
+
    - Template for analyzing failures
    - Template for proposing improvements
    - More systematic than ad-hoc agent reasoning

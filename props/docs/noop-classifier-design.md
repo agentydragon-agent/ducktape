@@ -148,6 +148,7 @@ another batch will be sent to you. Continue until all batches are complete.
 ### Files to Create/Modify
 
 1. **`src/adgn/props/cli/cmd_classify_noops.py`**
+
    - Main CLI command
    - Batch processing logic
    - Worker pool management

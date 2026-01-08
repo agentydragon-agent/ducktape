@@ -542,16 +542,19 @@ for func in all_functions:
 **Verification for each candidate**:
 
 1. **For "immediately fails if None"**:
+
    - Read function body: First statement raise if None?
    - Is there ANY code path where None is handled gracefully?
    - If no → Parameter shouldn't be nullable
 
 2. **For "immediately asserts not None"**:
+
    - Why is this typed as nullable?
    - Is it from external library with conservative typing?
    - Can we create type-narrowing helper?
 
 3. **For "propagates None"**:
+
    - Trace call chain: How many layers?
    - Where does None originate? (User input? Optional config?)
    - Can we handle None at origin and pass non-None down?

@@ -3,6 +3,7 @@
 ## Rendering Improvements
 
 - [ ] Implement columns as proper Rich renderables with measurement hints
+
   - **Current approach limitations**:
     - Using Table.grid() with implicit width constraints (`no_wrap`, `max_width`, `ratio`)
     - Working around Table's layout algorithm rather than with it
@@ -32,12 +33,14 @@
 - [ ] Format large numbers more compactly (e.g., "+123456" as "+123k")
 
 - [ ] Adaptive tree indentation
+
   - Balance compact display with information density
   - Dynamically adjust indent size (1-4 spaces) based on terminal width
   - Maintain preferred minimum progress bar size
   - Ensure progress bars remain useful and visible
 
 - [ ] Add flex in tree indent based on available width
+
   - Dynamically adjust tree indent from +1 to +3 spaces (current: fixed at +3)
   - Also vary number of "──" horizontal connector chars (1-2 currently, could be 1-3)
   - Reduce indent at narrow widths to save horizontal space
@@ -106,6 +109,7 @@
 ### Other Enhancements
 
 - [ ] Support for renamed files (currently shown as separate add/delete)
+
   - Git provides rename detection via `git diff --find-renames` (or `-M`)
   - With `-M`, `git diff --numstat` shows renames as: `old_path => new_path` or `{old => new}_common_path`
   - Implementation approaches:
