@@ -335,15 +335,15 @@ For this repo with Python + potential Rust: **Bazel** is probably the better lon
 
 ### Pants
 
-- https://www.pantsbuild.org/
-- https://www.pantsbuild.org/docs/python
-- https://www.pantsbuild.org/docs/python-check-goal (mypy)
-- https://blog.pantsbuild.org/dependency-inference/
+- <https://www.pantsbuild.org/>
+- <https://www.pantsbuild.org/docs/python>
+- <https://www.pantsbuild.org/docs/python-check-goal> (mypy)
+- <https://blog.pantsbuild.org/dependency-inference/>
 
 ### Bazel
 
-- https://github.com/aspect-build/rules_lint
-- https://github.com/bazelbuild/rules_rust
-- https://github.com/bazelbuild/rules_python
-- https://github.com/tweag/rules_nixpkgs
-- https://github.com/thundergolfer/rules_mypy
+- <https://github.com/aspect-build/rules_lint>
+- <https://github.com/bazelbuild/rules_rust>
+- <https://github.com/bazelbuild/rules_python>
+- <https://github.com/tweag/rules_nixpkgs>
+- <https://github.com/thundergolfer/rules_mypy>

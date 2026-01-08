@@ -10,7 +10,7 @@ This document comprehensively surveys all available Bazel rulesets for JavaScrip
 
 ### aspect_rules_js (formerly rules_js from Aspect Build)
 
-**Repository:** https://github.com/aspect-build/rules_js
+**Repository:** <https://github.com/aspect-build/rules_js>
 
 **Current Status:** Actively maintained, recommended for all new projects
 
@@ -146,7 +146,7 @@ All use cases work well for bundling and dev servers, but Playwright test runner
 
 ## 2. Companion Ruleset: aspect_rules_ts
 
-**Repository:** https://github.com/aspect-build/rules_ts
+**Repository:** <https://github.com/aspect-build/rules_ts>
 
 **Current Status:** Actively maintained, recommended replacement for @bazel/typescript
 
@@ -177,7 +177,7 @@ All maintained by Aspect Build, all layer on aspect_rules_js:
 
 ### aspect_rules_esbuild
 
-**Repository:** https://github.com/aspect-build/rules_esbuild
+**Repository:** <https://github.com/aspect-build/rules_esbuild>
 
 - Bazel rules for esbuild (extremely fast JS bundler)
 - Can bundle JS/TS/JSX/TSX/CSS with tree-shaking and minification
@@ -223,7 +223,7 @@ All maintained by Aspect Build, all layer on aspect_rules_js:
 
 ## 4. Legacy/Deprecated Ruleset: rules_nodejs
 
-**Repository:** https://github.com/bazel-contrib/rules_nodejs (bazel-contrib community maintained)
+**Repository:** <https://github.com/bazel-contrib/rules_nodejs> (bazel-contrib community maintained)
 
 **Current Status:** Limited maintenance, recommend migrating to aspect_rules_js
 
@@ -253,7 +253,7 @@ All maintained by Aspect Build, all layer on aspect_rules_js:
 
 ### npm-bazel (Redfin)
 
-**Repository:** https://github.com/redfin/npm-bazel
+**Repository:** <https://github.com/redfin/npm-bazel>
 
 - Early attempt: generator tool + Skylark rules for npm modules
 - Public clone of internal Redfin code
@@ -262,7 +262,7 @@ All maintained by Aspect Build, all layer on aspect_rules_js:
 
 ### rules_node (pubref)
 
-**Repository:** https://github.com/pubref/rules_node
+**Repository:** <https://github.com/pubref/rules_node>
 
 - Niche implementation using yarn
 - Creates external workspace `@yarn_modules` and invokes yarn install
@@ -305,7 +305,7 @@ All maintained by Aspect Build, all layer on aspect_rules_js:
 
 ### aspect_rules_lint
 
-**Repository:** https://github.com/aspect-build/rules_lint
+**Repository:** <https://github.com/aspect-build/rules_lint>
 
 **Status:** Generally Available (GA)
 
