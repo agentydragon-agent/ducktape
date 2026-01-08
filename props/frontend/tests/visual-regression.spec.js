@@ -132,10 +132,23 @@ async function runVisualTests() {
   const { server, port } = await startServer(harnessDir);
   console.log(`Server started on port ${port}`);
 
-  const browser = await puppeteer.launch({
+  // Use PUPPETEER_EXECUTABLE_PATH if set (for Bazel-managed or system Chrome)
+  // Playwright browser directories have structure: dir/chrome-linux/headless_shell
+  const launchOptions = {
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+  };
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    let execPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    // rules_playwright provides a directory - construct path to actual executable
+    const playwrightExec = join(execPath, 'chrome-linux', 'headless_shell');
+    if (existsSync(playwrightExec)) {
+      execPath = playwrightExec;
+    }
+    console.log(`Using browser at: ${execPath}`);
+    launchOptions.executablePath = execPath;
+  }
+  const browser = await puppeteer.launch(launchOptions);
 
   let passed = 0;
   let failed = 0;

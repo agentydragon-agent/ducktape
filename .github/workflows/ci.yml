@@ -50,8 +50,10 @@ jobs:
           # terraform_fmt, terraform_validate need opentofu
           # terraform_tflint needs tflint
           # flux-build-dry-run needs flux CLI
+          # kubeconform hook needs kubeconform binary
+          # kustomize-dry-run needs kustomize
           # Note: checkov uses official bridgecrewio/checkov pre-commit hook (manages own Python)
-          nix profile install nixpkgs#opentofu nixpkgs#tflint nixpkgs#fluxcd
+          nix profile install nixpkgs#opentofu nixpkgs#tflint nixpkgs#fluxcd nixpkgs#kubeconform nixpkgs#kustomize
 
           # Add nix profile to PATH for subsequent steps
           echo "$HOME/.nix-profile/bin" >> $GITHUB_PATH
@@ -231,11 +233,10 @@ jobs:
           restore-keys: |
             bazel-${{ runner.os }}-
 
-      - name: Install Chrome for Puppeteer
-        run: npx puppeteer browsers install chrome
-
       - name: Run visual regression tests
-        run: bazel test //props/frontend:visual_test --test_output=errors
+        run: |
+          # Chromium is provided hermetically by rules_playwright
+          bazel test //props/frontend:visual_test --test_output=errors
 
       - name: Generate test summary
         if: always()
