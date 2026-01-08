@@ -24,6 +24,9 @@ export default [
       "**/test-results/**",
       "**/.storybook/**",
       "**/generated/**",
+      // Build scripts (Node.js tooling, not app code)
+      "**/*.config.mjs",
+      "**/generate-schema.mjs",
     ],
   },
 
