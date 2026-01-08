@@ -41,24 +41,43 @@ jobs:
       - name: Setup Bazelisk
         uses: bazelbuild/setup-bazelisk@v3
 
-      - uses: ./.github/actions/setup-nix-direnv
+      # Cluster validation tools - use official actions where available
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
 
-      - name: Install pre-commit hook dependencies
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.53.0
+
+      - name: Setup Flux CLI
+        uses: fluxcd/flux2/action@main
+
+      - name: Install cluster validation tools
         run: |
-          # Install tools needed by cluster-specific pre-commit hooks
-          # terraform_fmt, terraform_validate need opentofu
-          # terraform_tflint needs tflint
-          # flux-build-dry-run needs flux CLI
-          # kubeconform hook needs kubeconform binary
-          # kustomize-dry-run needs kustomize
-          # Note: checkov uses official bridgecrewio/checkov pre-commit hook (manages own Python)
-          nix profile install nixpkgs#opentofu nixpkgs#tflint nixpkgs#fluxcd nixpkgs#kubeconform nixpkgs#kustomize
+          # Tools without official actions - download binaries
+          # kubeconform: Kubernetes manifest validation
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kubeconform /usr/local/bin/
 
-          # Add nix profile to PATH for subsequent steps
-          echo "$HOME/.nix-profile/bin" >> $GITHUB_PATH
+          # kustomize: Kubernetes configuration management
+          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kustomize /usr/local/bin/
 
+          # kubeseal: Sealed Secrets CLI (for validate-sealed-secrets hook)
+          curl -sL https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kubeseal /usr/local/bin/
+
+          # helm: Kubernetes package manager (for helm-template-dry-run hook)
+          curl -sL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/
+
+      - name: Configure OpenTofu for pre-commit
+        run: |
           # Set PCT_TFPATH so terraform hooks find opentofu
-          echo "PCT_TFPATH=$HOME/.nix-profile/bin/tofu" >> $GITHUB_ENV
+          echo "PCT_TFPATH=$(which tofu)" >> $GITHUB_ENV
 
       - name: Cache Ansible Galaxy downloads
         uses: actions/cache@v4

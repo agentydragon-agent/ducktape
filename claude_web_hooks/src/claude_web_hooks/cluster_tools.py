@@ -5,6 +5,8 @@ Tools installed:
 - tflint: Terraform linter (for terraform_tflint hook)
 - flux: GitOps toolkit (for flux-build-dry-run hook)
 - kustomize: Kubernetes configuration (for kustomize-dry-run hook)
+- kubeseal: Sealed Secrets CLI (for validate-sealed-secrets hook)
+- helm: Kubernetes package manager (for helm-template-dry-run hook)
 
 These are only installed if the cluster/ directory exists in the project.
 Binary downloads are used instead of nix because nix setup is too slow
@@ -33,6 +35,8 @@ OPENTOFU_VERSION = "1.9.0"
 TFLINT_VERSION = "0.53.0"
 FLUX_VERSION = "2.4.0"
 KUSTOMIZE_VERSION = "5.5.0"
+KUBESEAL_VERSION = "0.27.3"
+HELM_VERSION = "3.16.4"
 
 # Install location
 TOOLS_DIR = Path.home() / ".local" / "bin"
@@ -170,6 +174,28 @@ def install_kustomize(version: str = KUSTOMIZE_VERSION) -> bool:
     return _download_and_extract(url, "kustomize", TOOLS_DIR / "kustomize")
 
 
+def install_kubeseal(version: str = KUBESEAL_VERSION) -> bool:
+    """Download and install kubeseal binary."""
+    if _is_installed("kubeseal"):
+        log.info("kubeseal already installed")
+        return True
+
+    arch = _get_arch()
+    url = f"https://github.com/bitnami-labs/sealed-secrets/releases/download/v{version}/kubeseal-{version}-linux-{arch}.tar.gz"
+    return _download_and_extract(url, "kubeseal", TOOLS_DIR / "kubeseal")
+
+
+def install_helm(version: str = HELM_VERSION) -> bool:
+    """Download and install Helm binary."""
+    if _is_installed("helm"):
+        log.info("Helm already installed")
+        return True
+
+    arch = _get_arch()
+    url = f"https://get.helm.sh/helm-v{version}-linux-{arch}.tar.gz"
+    return _download_and_extract(url, "helm", TOOLS_DIR / "helm")
+
+
 def install_all() -> dict[str, bool]:
     """Install all cluster tools.
 
@@ -180,6 +206,8 @@ def install_all() -> dict[str, bool]:
         "tflint": install_tflint(),
         "flux": install_flux(),
         "kustomize": install_kustomize(),
+        "kubeseal": install_kubeseal(),
+        "helm": install_helm(),
     }
 
 
@@ -188,7 +216,7 @@ def get_status() -> str:
     installed = []
     missing = []
 
-    for tool in ["tofu", "tflint", "flux", "kustomize"]:
+    for tool in ["tofu", "tflint", "flux", "kustomize", "kubeseal", "helm"]:
         if _is_installed(tool):
             installed.append(tool)
         else:
