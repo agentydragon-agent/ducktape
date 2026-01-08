@@ -263,14 +263,15 @@ jobs:
       PGDATABASE: postgres
     steps:
       - name: Free up disk space
-        run: |
-          # Remove unnecessary software to free ~15GB
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
-          df -h
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false # Keep setup-bazel cache working
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
       - name: Check out code
         uses: actions/checkout@v4
