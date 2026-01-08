@@ -50,7 +50,7 @@ proxy_config_repo = repository_rule(
     doc = "Repository rule that generates proxy configuration based on file existence.",
 )
 
-def _proxy_config_impl(module_ctx):
+def _proxy_config_impl(_module_ctx):
     """Module extension implementation."""
     proxy_config_repo(name = "proxy_config")
 

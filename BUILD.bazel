@@ -129,19 +129,6 @@ buildifier(
     mode = "diff",
 )
 
-# Nix files in root package
-_ROOT_NIX_FILES = glob(["*.nix"])
-
-# Nix files from other packages
-_PKG_NIX_FILES = [
-    "//adgn:devenv.nix",
-    "//ember:devenv.nix",
-    "//gnome-terminal-profile-switcher:default.nix",
-    "//props:devenv.nix",
-    "//terraform/nixos-dev-env:cloud-image.nix",
-    "//wt:devenv.nix",
-]
-
 # NOTE: Alejandra (Nix formatter) handled via pre-commit, not Bazel
 # Nix formatters don't integrate well with aspect_rules_lint's unified format workflow
 # See .pre-commit-config.yaml for alejandra configuration
