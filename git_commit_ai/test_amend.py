@@ -10,9 +10,6 @@ from git_commit_ai.cli import build_cache_key
 
 def test_cache_key_includes_amend_status():
     """Test that cache key differentiates between new and amend commits."""
-
-    # Simulate cache key generation
-    provider = "claude"
     model_name = "sonnet"
     scope = "staged"
     commitish = "abc123"
@@ -25,7 +22,6 @@ def test_cache_key_includes_amend_status():
         previous_message=None,
         commitish=commitish,
         diff=diff,
-        provider=provider,
         user_context=None,
     )
 
@@ -36,7 +32,6 @@ def test_cache_key_includes_amend_status():
         previous_message="some msg",
         commitish=commitish,
         diff=diff,
-        provider=provider,
         user_context=None,
     )
 

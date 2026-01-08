@@ -25,13 +25,6 @@
     };
 
     claude-code-router.url = "github:agentydragon/claude-code-router/2b7c2ca764f74fd80a6c8b85495df7793282758d";
-
-    # git-commit-ai wheel from GitHub Releases (CI-built)
-    # Update with: nix flake update git-commit-ai-wheel
-    git-commit-ai-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/git-commit-ai-latest/git_commit_ai-latest-py3-none-any.whl";
-      flake = false;
-    };
   };
 
   outputs = {
@@ -41,7 +34,6 @@
     nix-colors,
     claude-code-router,
     nixGL,
-    git-commit-ai-wheel,
   }: let
     system = "x86_64-linux";
 
@@ -81,7 +73,6 @@
                   solarizedLight
                   solarizedDark
                   terminalFont
-                  git-commit-ai-wheel
                   ;
                 nixGLPackages = nixGL.packages.${system};
               };

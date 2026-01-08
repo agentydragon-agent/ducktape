@@ -7,7 +7,7 @@ from pathlib import Path
 import pygit2
 
 from .cli import stage_tracked_changes
-from .git_repo_utils import RepoHelper
+from .testing.git_repo_utils import RepoHelper
 
 
 def test_stage_all_includes_modified_files(temp_repo: RepoHelper) -> None:

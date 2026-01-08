@@ -8,7 +8,6 @@
   solarizedLight,
   solarizedDark,
   terminalFont,
-  git-commit-ai-wheel,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -70,9 +69,7 @@ let
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
   # git-commit-ai - AI-powered commit message generator
-  git-commit-ai = pkgs.callPackage ./packages/git-commit-ai.nix {
-    inherit git-commit-ai-wheel;
-  };
+  git-commit-ai = pkgs.callPackage ./packages/git-commit-ai.nix {};
 in {
   imports = [
     # TODO: Re-enable google-drive-service once the git repo is accessible

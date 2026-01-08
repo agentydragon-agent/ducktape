@@ -16,11 +16,12 @@ python3Packages.buildPythonPackage rec {
     hash = "sha256-3CABSGlb4EuRrEXNPNpTGqAX+yVgm2a5lhoAjbJernc=";
   };
 
-  build-system = [python3Packages.setuptools];
+  build-system = [python3Packages.poetry-core];
 
   dependencies = with python3Packages; [
     wcwidth
     importlib-resources
+    setuptools
   ];
 
   # No tests in PyPI distribution

@@ -3,18 +3,24 @@
 {
   lib,
   pkgs,
-  git-commit-ai-wheel,
 }: let
   # Use system default Python (3.13 in nixpkgs 25.11)
   # Wheel is py3-none-any so compatible with any Python 3.x
   compact-json = pkgs.callPackage ./compact-json.nix {};
+
+  # Fetch wheel directly with fetchurl - flake inputs don't preserve the .whl filename
+  # which breaks the wheel install hook
+  wheelSrc = pkgs.fetchurl {
+    url = "https://github.com/agentydragon/ducktape/releases/download/git-commit-ai-latest/git_commit_ai-latest-py3-none-any.whl";
+    hash = "sha256-fpVjbZG/OYXkbmyu2RICiVTBrZz/X7ItusLHFTVihrw=";
+  };
 
   git-commit-ai = pkgs.python3Packages.buildPythonApplication {
     pname = "git-commit-ai";
     version = "latest";
     format = "wheel";
 
-    src = git-commit-ai-wheel;
+    src = wheelSrc;
 
     propagatedBuildInputs = with pkgs.python3Packages; [
       # Core dependencies
@@ -42,10 +48,11 @@
       compact-json
     ];
 
-    # Disable checks - wheel doesn't include tests
+    # Disable checks - wheel is tested in CI
     doCheck = false;
 
-    pythonImportsCheck = ["git_commit_ai"];
+    # No pythonImportsCheck: buildPythonApplication is for executables only,
+    # modules aren't made importable by design (see nixpkgs Python docs)
 
     meta = {
       description = "AI-powered git commit message generator";

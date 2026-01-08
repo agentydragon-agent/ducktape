@@ -254,7 +254,7 @@
     },
     "//tools/proxy_config:defs.bzl%proxy_config": {
       "general": {
-        "bzlTransitiveDigest": "cmsKhgA5Vk0Q7aUzY4qMuUOonoKT6zXdcJecZB/mKgM=",
+        "bzlTransitiveDigest": "ZlbC4gtDp7J+v3GPJNfWBxrUSErnw0Nu7ZSIIFZ/+ps=",
         "usagesDigest": "8W/oScry+TY52XKeFoi1CoHK3vs8vmWmjDSP614SvZ8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},

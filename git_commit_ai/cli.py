@@ -92,9 +92,6 @@ def repo_cache_dir(repo: pygit2.Repository) -> Path:
     return p
 
 
-# build_commit_template moved to editor_template.py
-
-
 class Cache:
     def __init__(self, cache_dir: Path):
         self.dir = cache_dir
@@ -123,7 +120,6 @@ def build_cache_key(
     user_context: str | None,
     commitish: str,
     diff: str,
-    provider: str = "minicodex",
 ) -> str:
     """Compose the cache key used for AI commit message caching.
 
@@ -133,7 +129,7 @@ def build_cache_key(
     context_hash = hashlib.sha256(user_context.encode()).hexdigest()[:16] if user_context else "none"
     scope = "all" if include_all else "staged"
     amend_marker = "amend" if previous_message else "new"
-    return f"{provider}:{model_name}:{scope}:{amend_marker}:{context_hash}:{commitish}:{diff_hash}"
+    return f"{model_name}:{scope}:{amend_marker}:{context_hash}:{commitish}:{diff_hash}"
 
 
 class TaskStatus(StrEnum):

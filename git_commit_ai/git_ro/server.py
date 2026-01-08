@@ -51,12 +51,6 @@ from .formatting import (
 # Shared mount prefix constant for clients/tests
 GIT_RO_MOUNT_PREFIX = MCPMountPrefix("git_ro")
 
-# -------------------------- shared slicing -----------------------------------
-
-
-## moved to formatting.py
-
-
 # -------------------------- inputs ------------------------------------------
 
 
@@ -113,7 +107,6 @@ class CatFileInput(OpenAIStrictModeBaseModel):
 
 class RevParseInput(OpenAIStrictModeBaseModel):
     rev: str = Field(description="Revision to resolve (e.g., HEAD, main, abc1234)")
-    short: bool = Field(description="If true, shorten OID to 7 chars")
 
 
 class LsFilesInput(OpenAIStrictModeBaseModel):
@@ -124,9 +117,6 @@ class LsFilesInput(OpenAIStrictModeBaseModel):
 class BranchListInput(OpenAIStrictModeBaseModel):
     remote: bool = Field(description="List remote branches instead of local")
     list_slice: ListSlice
-
-
-## moved to formatting.py
 
 
 class LogEntriesInput(OpenAIStrictModeBaseModel):
@@ -151,23 +141,6 @@ class LogEntriesPage(BaseModel):
     next_offset: int | None = None
 
 
-# Discriminated unions for outputs (explicit output schema)
-# For git_diff we return the complete page models directly
-DiffResult = TextPage | ChangedFilesPage | DiffStatPage
-
-
-# For git_show we also return the underlying page models directly
-ShowResult = TextPage | ChangedFilesPage | DiffStatPage
-
-# -------------------------- outputs -----------------------------------------
-
-## Status enums removed - now using raw pygit2 flags (int) for type safety
-## moved to formatting.py
-
-
-# -------------------------- server ------------------------------------------
-
-
 class GitRoServer(EnhancedFastMCP):
     """Git read-only MCP server with typed tool access.
 
@@ -190,19 +163,16 @@ class GitRoServer(EnhancedFastMCP):
         """Create a read-only Git FastMCP server for an already-opened repository."""
         state = repo
         repo_name = Path(repo.workdir or repo.path).name
-        display = f"Git Read-Only MCP Server: {repo_name}"
-        super().__init__(display, instructions=f"Read-only Git tools scoped to repo: {repo_name}")
+        super().__init__("Git Read-Only MCP Server", instructions=f"Read-only Git tools scoped to repo: {repo_name}")
 
-        # Register tools using clean pattern: tool name derived from function name
         def status(input: StatusInput) -> StatusPage:
             """Return git status as path → FileStatus flags mapping."""
-            st = state.status()
-            entries = {path: FileStatus(flags) for path, flags in st.items()}
+            entries = {path: FileStatus(flags) for path, flags in state.status().items()}
             return build_status_page(entries, input.list_slice)
 
         self.status_tool = self.flat_model()(status)
 
-        async def diff(input: DiffInput) -> DiffResult:
+        async def diff(input: DiffInput) -> TextPage | ChangedFilesPage | DiffStatPage:
             """Git diff with multiple formats:
             - format=patch: unified patch (TextPage)
             - format=name-status: file status listing (ChangedFilesPage)
@@ -235,8 +205,7 @@ class GitRoServer(EnhancedFastMCP):
             obj = state.revparse_single(input.rev)
             head_oid = obj.id
             lines: list[str] = []
-            walker = state.walk(head_oid)
-            for i, c in enumerate(walker, start=1):
+            for i, c in enumerate(state.walk(head_oid), start=1):
                 if input.oneline:
                     raw_message = (c.message or "").rstrip("\n")
                     prefix = str(c.id)[:7]
@@ -289,7 +258,7 @@ class GitRoServer(EnhancedFastMCP):
 
         self.log_entries_tool = self.flat_model()(log_entries)
 
-        async def show(input: ShowInput) -> ShowResult:
+        async def show(input: ShowInput) -> TextPage | ChangedFilesPage | DiffStatPage:
             """Show a commit's changes in various formats.
             - format=patch: unified diff (TextPage)
             - format=name-status: file status listing (ChangedFilesPage)
@@ -410,9 +379,7 @@ class GitRoServer(EnhancedFastMCP):
 
         def rev_parse(input: RevParseInput) -> str:
             """Resolve a revision to its OID."""
-            obj = state.revparse_single(input.rev)
-            oid = str(obj.id)
-            return oid[:7] if input.short else oid
+            return str(state.revparse_single(input.rev).id)
 
         self.rev_parse_tool = self.flat_model()(rev_parse)
 

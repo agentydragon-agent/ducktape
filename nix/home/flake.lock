@@ -53,18 +53,6 @@
         "type": "github"
       }
     },
-    "git-commit-ai-wheel": {
-      "flake": false,
-      "locked": {
-        "narHash": "sha256-Llmqtq6LA7+bOJW6QQlQkISnHtU+BJvGM2lFocp/bes=",
-        "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/git-commit-ai-latest/git_commit_ai-latest-py3-none-any.whl"
-      },
-      "original": {
-        "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/git-commit-ai-latest/git_commit_ai-latest-py3-none-any.whl"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -176,7 +164,6 @@
     "root": {
       "inputs": {
         "claude-code-router": "claude-code-router",
-        "git-commit-ai-wheel": "git-commit-ai-wheel",
         "home-manager": "home-manager",
         "nix-colors": "nix-colors",
         "nixGL": "nixGL",

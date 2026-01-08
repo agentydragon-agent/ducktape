@@ -41,7 +41,6 @@ py_test(
     name = "test_git_commit_ai",
     srcs = [
         "conftest.py",
-        "git_repo_utils.py",
         "git_ro/conftest.py",
         "git_ro/test_cat_file.py",
         "git_ro/test_diff.py",
@@ -51,6 +50,8 @@ py_test(
         "test_amend.py",
         "test_editor_template.py",
         "test_stage_all.py",
+        "testing/__init__.py",
+        "testing/git_repo_utils.py",
     ],
     main = "test_amend.py",
     deps = [
