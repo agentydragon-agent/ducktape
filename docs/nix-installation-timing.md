@@ -87,18 +87,23 @@ For subsequent tools after cold start: **3-6s each**
 | Nix + 4 tools              | ~480 MB       |
 | Binary downloads (6 tools) | ~190 MB       |
 
-## Current Session Hook Strategy
+## Conclusion: Nix Not Viable for Claude Code Web
 
-The ducktape session hook uses a hybrid approach:
+**130s cold start is too slow for session startup.** Users expect sessions to be ready in seconds, not minutes.
 
-1. **Nix** for tools with no standalone binary (alejandra)
-2. **Direct binary downloads** for cluster tools (faster, smaller)
-3. **Bazelisk wrapper** with proxy configuration
+### Why Nix Doesn't Work Here
 
-Total session hook time: ~130s for nix + alejandra, ~10s for binary tools.
+1. **No persistent storage**: Each session starts fresh, so the 117s nixpkgs fetch happens every time
+2. **No pre-warming**: Can't cache nixpkgs metadata between sessions
+3. **Dominated by metadata**: The actual tool download (9.6 MB) takes ~3s; the nixpkgs eval takes 110s+
 
-## Recommendations
+### Recommended Strategy for Claude Code Web
 
-1. **Accept nix cold start cost**: 130s is acceptable for the reproducibility benefit
-2. **Prefer binary downloads**: For Go/Rust CLI tools with GitHub releases (3-10x faster)
-3. **Only use nix for**: Tools without standalone binaries (alejandra, nixfmt)
+| Tool Type      | Strategy                     | Time |
+| -------------- | ---------------------------- | ---- |
+| Go/Rust CLIs   | Direct binary download       | 1-2s |
+| Node tools     | npm/npx                      | 2-5s |
+| Python tools   | pip/pipx                     | 2-5s |
+| Nix-only tools | **Skip or find alternative** | -    |
+
+For alejandra specifically: either skip nix formatting in Claude Web sessions, or find/build a standalone binary.
