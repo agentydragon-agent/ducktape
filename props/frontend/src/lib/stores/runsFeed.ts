@@ -1,8 +1,8 @@
 /**
  * WebSocket-based store for live runs and jobs feed.
  */
-import { writable, derived } from 'svelte/store';
-import type { RunInfo, JobInfo } from '$lib/api/client';
+import { writable, derived } from "svelte/store";
+import type { RunInfo, JobInfo } from "$lib/api/client";
 
 // State
 export const runs = writable<RunInfo[]>([]);
@@ -10,7 +10,7 @@ export const jobs = writable<JobInfo[]>([]);
 export const connected = writable(false);
 
 // Derived stores
-export const activeJobs = derived(jobs, ($jobs) => $jobs.filter((j) => j.status === 'running'));
+export const activeJobs = derived(jobs, ($jobs) => $jobs.filter((j) => j.status === "running"));
 
 // WebSocket connection (singleton)
 let ws: WebSocket | null = null;
@@ -18,7 +18,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let started = false;
 
 function getWsUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}/api/runs/feed`;
 }
 
@@ -31,7 +31,7 @@ function doConnect() {
   try {
     ws = new WebSocket(getWsUrl());
   } catch (e) {
-    console.warn('Failed to create WebSocket:', e);
+    console.warn("Failed to create WebSocket:", e);
     scheduleReconnect();
     return;
   }
@@ -43,13 +43,13 @@ function doConnect() {
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      if (msg.type === 'runs') {
+      if (msg.type === "runs") {
         runs.set(msg.runs);
-      } else if (msg.type === 'jobs') {
+      } else if (msg.type === "jobs") {
         jobs.set(msg.jobs);
       }
     } catch (e) {
-      console.warn('Failed to parse feed message:', e);
+      console.warn("Failed to parse feed message:", e);
     }
   };
 

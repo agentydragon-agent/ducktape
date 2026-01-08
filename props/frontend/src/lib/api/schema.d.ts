@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-  '/api/stats/overview': {
+  "/api/stats/overview": {
     parameters: {
       query?: never;
       header?: never;
@@ -12,7 +12,7 @@ export interface paths {
       cookie?: never;
     };
     /** Get Overview */
-    get: operations['get_overview_api_stats_overview_get'];
+    get: operations["get_overview_api_stats_overview_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -21,7 +21,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/stats/definitions': {
+  "/api/stats/definitions": {
     parameters: {
       query?: never;
       header?: never;
@@ -32,7 +32,7 @@ export interface paths {
      * List Definitions
      * @description List all agent definitions, optionally filtered by type.
      */
-    get: operations['list_definitions_api_stats_definitions_get'];
+    get: operations["list_definitions_api_stats_definitions_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -41,7 +41,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/stats/definitions/{definition_id}': {
+  "/api/stats/definitions/{definition_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -52,7 +52,7 @@ export interface paths {
      * Get Definition Detail
      * @description Get detailed stats for a single definition including per-example breakdown.
      */
-    get: operations['get_definition_detail_api_stats_definitions__definition_id__get'];
+    get: operations["get_definition_detail_api_stats_definitions__definition_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -61,7 +61,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/stats/examples': {
+  "/api/stats/examples": {
     parameters: {
       query?: never;
       header?: never;
@@ -84,7 +84,7 @@ export interface paths {
      *         - Per-definition run statistics
      *         - Aggregate metrics
      */
-    get: operations['get_example_detail_api_stats_examples_get'];
+    get: operations["get_example_detail_api_stats_examples_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -93,7 +93,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/runs/active': {
+  "/api/runs/active": {
     parameters: {
       query?: never;
       header?: never;
@@ -108,7 +108,7 @@ export interface paths {
      *     - In-memory registry (currently executing)
      *     - Database (IN_PROGRESS status, for runs that may have started before we connected)
      */
-    get: operations['list_active_runs_api_runs_active_get'];
+    get: operations["list_active_runs_api_runs_active_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -117,7 +117,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/runs/jobs': {
+  "/api/runs/jobs": {
     parameters: {
       query?: never;
       header?: never;
@@ -128,7 +128,7 @@ export interface paths {
      * List Jobs
      * @description List all validation jobs.
      */
-    get: operations['list_jobs_api_runs_jobs_get'];
+    get: operations["list_jobs_api_runs_jobs_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -137,7 +137,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/runs': {
+  "/api/runs": {
     parameters: {
       query?: never;
       header?: never;
@@ -157,7 +157,7 @@ export interface paths {
      *     - offset: Pagination offset (default: 0)
      *     - limit: Pagination limit (default: 100, max: 500)
      */
-    get: operations['list_runs_api_runs_get'];
+    get: operations["list_runs_api_runs_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -166,7 +166,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/runs/validation': {
+  "/api/runs/validation": {
     parameters: {
       query?: never;
       header?: never;
@@ -182,14 +182,14 @@ export interface paths {
      *     Runs are started in the background in parallel. Poll /api/runs/jobs for status.
      *     Registry semaphore limits actual concurrency.
      */
-    post: operations['trigger_validation_runs_api_runs_validation_post'];
+    post: operations["trigger_validation_runs_api_runs_validation_post"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/runs/run/{run_id}': {
+  "/api/runs/run/{run_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -200,7 +200,7 @@ export interface paths {
      * Get Run
      * @description Get details of a specific agent run.
      */
-    get: operations['get_run_api_runs_run__run_id__get'];
+    get: operations["get_run_api_runs_run__run_id__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -209,7 +209,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/runs/run/{run_id}/events': {
+  "/api/runs/run/{run_id}/events": {
     parameters: {
       query?: never;
       header?: never;
@@ -222,7 +222,7 @@ export interface paths {
      *
      *     Supports pagination via offset/limit. Events are ordered by sequence_num.
      */
-    get: operations['get_run_events_api_runs_run__run_id__events_get'];
+    get: operations["get_run_events_api_runs_run__run_id__events_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -231,7 +231,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/gt/snapshots': {
+  "/api/gt/snapshots": {
     parameters: {
       query?: never;
       header?: never;
@@ -242,7 +242,7 @@ export interface paths {
      * List Snapshots
      * @description List all snapshots with issue counts.
      */
-    get: operations['list_snapshots_api_gt_snapshots_get'];
+    get: operations["list_snapshots_api_gt_snapshots_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -251,7 +251,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/gt/snapshots/{snapshot_slug}': {
+  "/api/gt/snapshots/{snapshot_slug}": {
     parameters: {
       query?: never;
       header?: never;
@@ -262,7 +262,7 @@ export interface paths {
      * Get Snapshot Detail
      * @description Get detailed snapshot info with all TPs and FPs.
      */
-    get: operations['get_snapshot_detail_api_gt_snapshots__snapshot_slug__get'];
+    get: operations["get_snapshot_detail_api_gt_snapshots__snapshot_slug__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -271,7 +271,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/gt/snapshots/{snapshot_slug}/tree': {
+  "/api/gt/snapshots/{snapshot_slug}/tree": {
     parameters: {
       query?: never;
       header?: never;
@@ -282,7 +282,7 @@ export interface paths {
      * Get Snapshot Tree
      * @description Get directory tree with issue occurrence counts.
      */
-    get: operations['get_snapshot_tree_api_gt_snapshots__snapshot_slug__tree_get'];
+    get: operations["get_snapshot_tree_api_gt_snapshots__snapshot_slug__tree_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -291,7 +291,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/gt/snapshots/{snapshot_slug}/files/{file_path}': {
+  "/api/gt/snapshots/{snapshot_slug}/files/{file_path}": {
     parameters: {
       query?: never;
       header?: never;
@@ -302,7 +302,7 @@ export interface paths {
      * Get Snapshot File
      * @description Get file content from snapshot tar archive.
      */
-    get: operations['get_snapshot_file_api_gt_snapshots__snapshot_slug__files__file_path__get'];
+    get: operations["get_snapshot_file_api_gt_snapshots__snapshot_slug__files__file_path__get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -311,7 +311,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/health': {
+  "/health": {
     parameters: {
       query?: never;
       header?: never;
@@ -319,7 +319,7 @@ export interface paths {
       cookie?: never;
     };
     /** Health */
-    get: operations['health_health_get'];
+    get: operations["health_health_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -343,7 +343,7 @@ export interface components {
       definition_id: string;
       /** Model */
       model: string;
-      status: components['schemas']['AgentRunStatus'];
+      status: components["schemas"]["AgentRunStatus"];
       /**
        * Created At
        * Format: date-time
@@ -353,7 +353,7 @@ export interface components {
     /** ActiveRunsResponse */
     ActiveRunsResponse: {
       /** Runs */
-      runs: components['schemas']['ActiveRunInfo'][];
+      runs: components["schemas"]["ActiveRunInfo"][];
     };
     /**
      * AgentRunDetail
@@ -371,7 +371,7 @@ export interface components {
       parent_agent_run_id: string | null;
       /** Model */
       model: string;
-      status: components['schemas']['AgentRunStatus'];
+      status: components["schemas"]["AgentRunStatus"];
       /** Completion Summary */
       completion_summary: string | null;
       /**
@@ -386,21 +386,21 @@ export interface components {
       updated_at: string;
       /** Type Config */
       type_config:
-        | components['schemas']['CriticTypeConfig']
-        | components['schemas']['GraderTypeConfig']
-        | components['schemas']['SnapshotGraderTypeConfig']
-        | components['schemas']['FreeformTypeConfig']
-        | components['schemas']['PromptOptimizerTypeConfig']
-        | components['schemas']['ImprovementTypeConfig'];
+        | components["schemas"]["CriticTypeConfig"]
+        | components["schemas"]["GraderTypeConfig"]
+        | components["schemas"]["SnapshotGraderTypeConfig"]
+        | components["schemas"]["FreeformTypeConfig"]
+        | components["schemas"]["PromptOptimizerTypeConfig"]
+        | components["schemas"]["ImprovementTypeConfig"];
       /** Event Count */
       event_count: number;
       /** Child Runs */
-      child_runs: components['schemas']['ChildRunInfo'][];
+      child_runs: components["schemas"]["ChildRunInfo"][];
       /** Details */
       details:
-        | components['schemas']['CriticRunSpecifics']
-        | components['schemas']['GraderRunSpecifics']
-        | components['schemas']['OtherRunSpecifics'];
+        | components["schemas"]["CriticRunSpecifics"]
+        | components["schemas"]["GraderRunSpecifics"]
+        | components["schemas"]["OtherRunSpecifics"];
     };
     /**
      * AgentRunStatus
@@ -409,7 +409,7 @@ export interface components {
      *     Unified status for all agent types (critic, grader, prompt_optimizer, etc.).
      * @enum {string}
      */
-    AgentRunStatus: 'in_progress' | 'completed' | 'max_turns_exceeded' | 'context_length_exceeded' | 'reported_failure';
+    AgentRunStatus: "in_progress" | "completed" | "max_turns_exceeded" | "context_length_exceeded" | "reported_failure";
     /**
      * AgentType
      * @description Types of agents in the system.
@@ -421,7 +421,7 @@ export interface components {
      *     - Mount requirements
      * @enum {string}
      */
-    AgentType: 'critic' | 'grader' | 'snapshot_grader' | 'prompt_optimizer' | 'improvement' | 'freeform';
+    AgentType: "critic" | "grader" | "snapshot_grader" | "prompt_optimizer" | "improvement" | "freeform";
     /**
      * ApiRequest
      * @description Full OpenAI API request payload (before sending).
@@ -433,8 +433,8 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'api_request';
-      request: components['schemas']['ResponsesRequest'];
+      type: "api_request";
+      request: components["schemas"]["ResponsesRequest"];
       /** Model */
       model: string;
       /**
@@ -452,9 +452,9 @@ export interface components {
        * @default assistant
        * @constant
        */
-      role: 'assistant';
+      role: "assistant";
       /** Content */
-      content?: components['schemas']['OutputTextPart'][] | null;
+      content?: components["schemas"]["OutputTextPart"][] | null;
       /** Id */
       id?: string | null;
     } & {
@@ -466,7 +466,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'assistant_text';
+      type: "assistant_text";
       /** Text */
       text: string;
     };
@@ -478,11 +478,11 @@ export interface components {
      */
     BaseExecResult: {
       /** Exit */
-      exit: components['schemas']['TimedOut'] | components['schemas']['Exited'] | components['schemas']['Killed'];
+      exit: components["schemas"]["TimedOut"] | components["schemas"]["Exited"] | components["schemas"]["Killed"];
       /** Stdout */
-      stdout: string | components['schemas']['TruncatedStream'];
+      stdout: string | components["schemas"]["TruncatedStream"];
       /** Stderr */
-      stderr: string | components['schemas']['TruncatedStream'];
+      stderr: string | components["schemas"]["TruncatedStream"];
       /**
        * Duration Ms
        * @description Execution duration in milliseconds
@@ -499,8 +499,8 @@ export interface components {
        * Format: uuid
        */
       agent_run_id: string;
-      agent_type: components['schemas']['AgentType'];
-      status: components['schemas']['AgentRunStatus'];
+      agent_type: components["schemas"]["AgentType"];
+      status: components["schemas"]["AgentRunStatus"];
     };
     /**
      * CriticRunSpecifics
@@ -511,13 +511,13 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'critic';
+      agent_type: "critic";
       /** Resolved Files */
       resolved_files: string[] | null;
       /** Grader Runs */
-      grader_runs: components['schemas']['GraderRunInfo'][];
+      grader_runs: components["schemas"]["GraderRunInfo"][];
       /** Reported Issues */
-      reported_issues: components['schemas']['ReportedIssueInfo'][];
+      reported_issues: components["schemas"]["ReportedIssueInfo"][];
     };
     /**
      * CriticTypeConfig
@@ -531,15 +531,15 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'critic';
+      agent_type: "critic";
       /** Example */
-      example: components['schemas']['WholeSnapshotExample'] | components['schemas']['SingleFileSetExample'];
+      example: components["schemas"]["WholeSnapshotExample"] | components["schemas"]["SingleFileSetExample"];
     };
     /** DefinitionDetailResponse */
     DefinitionDetailResponse: {
       /** Definition Id */
       definition_id: string;
-      agent_type: components['schemas']['AgentType'];
+      agent_type: components["schemas"]["AgentType"];
       /**
        * Created At
        * Format: date-time
@@ -548,17 +548,17 @@ export interface components {
       /** Stats */
       stats: {
         [key: string]: {
-          [key: string]: components['schemas']['SplitScopeStats'];
+          [key: string]: components["schemas"]["SplitScopeStats"];
         };
       };
       /** Examples */
-      examples: components['schemas']['ExampleStats'][];
+      examples: components["schemas"]["ExampleStats"][];
     };
     /** DefinitionInfo */
     DefinitionInfo: {
       /** Definition Id */
       definition_id: string;
-      agent_type: components['schemas']['AgentType'];
+      agent_type: components["schemas"]["AgentType"];
       /**
        * Created At
        * Format: date-time
@@ -577,7 +577,7 @@ export interface components {
       /** Stats */
       stats: {
         [key: string]: {
-          [key: string]: components['schemas']['SplitScopeStats'];
+          [key: string]: components["schemas"]["SplitScopeStats"];
         };
       };
     };
@@ -596,12 +596,12 @@ export interface components {
       status_counts: {
         [key: string]: number;
       };
-      credit_stats: components['schemas']['StatsWithCI'] | null;
+      credit_stats: components["schemas"]["StatsWithCI"] | null;
     };
     /** DefinitionsResponse */
     DefinitionsResponse: {
       /** Definitions */
-      definitions: components['schemas']['DefinitionInfo'][];
+      definitions: components["schemas"]["DefinitionInfo"][];
     };
     /**
      * DockerExecCallPayload
@@ -612,10 +612,10 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'docker_exec_call';
+      type: "docker_exec_call";
       /** Call Id */
       call_id: string;
-      input: components['schemas']['ExecInput'];
+      input: components["schemas"]["ExecInput"];
     };
     /**
      * DockerExecOutputPayload
@@ -626,10 +626,10 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'docker_exec_output';
+      type: "docker_exec_output";
       /** Call Id */
       call_id: string;
-      result: components['schemas']['BaseExecResult'];
+      result: components["schemas"]["BaseExecResult"];
     };
     /**
      * EventsResponse
@@ -642,7 +642,7 @@ export interface components {
        */
       agent_run_id: string;
       /** Events */
-      events: components['schemas']['ParsedEventInfo'][];
+      events: components["schemas"]["ParsedEventInfo"][];
       /** Total Count */
       total_count: number;
     };
@@ -653,17 +653,17 @@ export interface components {
     ExampleDetailResponse: {
       /** Snapshot Slug */
       snapshot_slug: string;
-      example_kind: components['schemas']['ExampleKind'];
+      example_kind: components["schemas"]["ExampleKind"];
       /** Files Hash */
       files_hash: string | null;
-      split: components['schemas']['Split'];
+      split: components["schemas"]["Split"];
       /** Recall Denominator */
       recall_denominator: number;
       /** Files */
       files: string[] | null;
       /** Definitions */
-      definitions: components['schemas']['DefinitionStatsForExample'][];
-      credit_stats: components['schemas']['StatsWithCI'] | null;
+      definitions: components["schemas"]["DefinitionStatsForExample"][];
+      credit_stats: components["schemas"]["StatsWithCI"] | null;
     };
     /**
      * ExampleKind
@@ -672,15 +672,15 @@ export interface components {
      *     Matches the PostgreSQL example_kind_enum type values exactly.
      * @enum {string}
      */
-    ExampleKind: 'whole_snapshot' | 'file_set';
+    ExampleKind: "whole_snapshot" | "file_set";
     /** ExampleStats */
     ExampleStats: {
       /** Snapshot Slug */
       snapshot_slug: string;
-      example_kind: components['schemas']['ExampleKind'];
+      example_kind: components["schemas"]["ExampleKind"];
       /** Files Hash */
       files_hash: string | null;
-      split: components['schemas']['Split'];
+      split: components["schemas"]["Split"];
       /** Recall Denominator */
       recall_denominator: number;
       /** N Runs */
@@ -689,7 +689,7 @@ export interface components {
       status_counts: {
         [key: string]: number;
       };
-      credit_stats: components['schemas']['StatsWithCI'] | null;
+      credit_stats: components["schemas"]["StatsWithCI"] | null;
     };
     /**
      * ExecInput
@@ -733,7 +733,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      kind: 'exited';
+      kind: "exited";
       /** Exit Code */
       exit_code: number;
     };
@@ -757,7 +757,7 @@ export interface components {
       /** Path */
       path: string;
       /** Ranges */
-      ranges: components['schemas']['LineRange'][] | null;
+      ranges: components["schemas"]["LineRange"][] | null;
     };
     /**
      * FileTreeNode
@@ -781,7 +781,7 @@ export interface components {
        */
       fp_count: number;
       /** Children */
-      children?: components['schemas']['FileTreeNode'][] | null;
+      children?: components["schemas"]["FileTreeNode"][] | null;
     };
     /**
      * FileTreeResponse
@@ -789,7 +789,7 @@ export interface components {
      */
     FileTreeResponse: {
       /** Tree */
-      tree: components['schemas']['FileTreeNode'][];
+      tree: components["schemas"]["FileTreeNode"][];
     };
     /**
      * FpInfo
@@ -801,7 +801,7 @@ export interface components {
       /** Rationale */
       rationale: string;
       /** Occurrences */
-      occurrences: components['schemas']['OccurrenceInfo'][];
+      occurrences: components["schemas"]["OccurrenceInfo"][];
       /**
        * Created At
        * Format: date-time
@@ -817,7 +817,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      kind: 'fp';
+      kind: "fp";
       /** Fp Id */
       fp_id: string;
       /** Occurrence Id */
@@ -837,7 +837,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'freeform';
+      agent_type: "freeform";
     };
     /** FunctionCallItem */
     FunctionCallItem: {
@@ -846,7 +846,7 @@ export interface components {
        * @default function_call
        * @constant
        */
-      type: 'function_call';
+      type: "function_call";
       /** Name */
       name: string;
       /** Arguments */
@@ -867,13 +867,13 @@ export interface components {
        * @default function_call_output
        * @constant
        */
-      type: 'function_call_output';
+      type: "function_call_output";
       /** Call Id */
       call_id: string;
       /** Output */
       output:
         | string
-        | (components['schemas']['FunctionOutputTextContent'] | components['schemas']['FunctionOutputImageContent'])[];
+        | (components["schemas"]["FunctionOutputTextContent"] | components["schemas"]["FunctionOutputImageContent"])[];
     } & {
       [key: string]: unknown;
     };
@@ -887,13 +887,13 @@ export interface components {
        * @default input_image
        * @constant
        */
-      type: 'input_image';
+      type: "input_image";
       /** Image Url */
       image_url?: string | null;
       /** File Id */
       file_id?: string | null;
       /** Detail */
-      detail?: ('low' | 'high' | 'auto') | null;
+      detail?: ("low" | "high" | "auto") | null;
     } & {
       [key: string]: unknown;
     };
@@ -907,7 +907,7 @@ export interface components {
        * @default input_text
        * @constant
        */
-      type: 'input_text';
+      type: "input_text";
       /** Text */
       text: string;
     } & {
@@ -925,7 +925,7 @@ export interface components {
        * @default function
        * @constant
        */
-      type: 'function';
+      type: "function";
       /** Name */
       name: string;
       /** Description */
@@ -946,7 +946,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'tool_call';
+      type: "tool_call";
       /** Name */
       name: string;
       /** Call Id */
@@ -963,7 +963,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'tool_output';
+      type: "tool_output";
       /** Call Id */
       call_id: string;
       /** Content */
@@ -979,9 +979,9 @@ export interface components {
        * Format: uuid
        */
       agent_run_id: string;
-      status: components['schemas']['AgentRunStatus'];
+      status: components["schemas"]["AgentRunStatus"];
       /** Grading Edges */
-      grading_edges: components['schemas']['GradingEdgeInfo'][];
+      grading_edges: components["schemas"]["GradingEdgeInfo"][];
     };
     /**
      * GraderRunSpecifics
@@ -992,9 +992,9 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'grader';
+      agent_type: "grader";
       /** Grading Edges */
-      grading_edges: components['schemas']['GradingEdgeInfo'][];
+      grading_edges: components["schemas"]["GradingEdgeInfo"][];
     };
     /**
      * GraderTypeConfig
@@ -1013,7 +1013,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'grader';
+      agent_type: "grader";
       /**
        * Graded Agent Run Id
        * Format: uuid
@@ -1032,7 +1032,7 @@ export interface components {
       /** Critique Issue Id */
       critique_issue_id: string;
       /** Target */
-      target: components['schemas']['TpTarget'] | components['schemas']['FpTarget'];
+      target: components["schemas"]["TpTarget"] | components["schemas"]["FpTarget"];
       /** Rationale */
       rationale: string;
     };
@@ -1042,17 +1042,17 @@ export interface components {
       model: string;
       /** Input Tokens */
       input_tokens?: number | null;
-      input_tokens_details?: components['schemas']['InputTokensDetails'] | null;
+      input_tokens_details?: components["schemas"]["InputTokensDetails"] | null;
       /** Output Tokens */
       output_tokens?: number | null;
-      output_tokens_details?: components['schemas']['OutputTokensDetails'] | null;
+      output_tokens_details?: components["schemas"]["OutputTokensDetails"] | null;
       /** Total Tokens */
       total_tokens?: number | null;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
-      detail?: components['schemas']['ValidationError'][];
+      detail?: components["schemas"]["ValidationError"][];
     };
     /**
      * ImprovementTypeConfig
@@ -1070,7 +1070,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'improvement';
+      agent_type: "improvement";
       /**
        * Baseline Definition Ids
        * @description One or more agent definition IDs to study and improve
@@ -1081,8 +1081,8 @@ export interface components {
        * @description Training examples this agent can access (snapshot + scope)
        */
       allowed_examples: (
-        | components['schemas']['WholeSnapshotExample']
-        | components['schemas']['SingleFileSetExample']
+        | components["schemas"]["WholeSnapshotExample"]
+        | components["schemas"]["SingleFileSetExample"]
       )[];
       /**
        * Improvement Model
@@ -1107,7 +1107,7 @@ export interface components {
        * @default input_text
        * @constant
        */
-      type: 'input_text';
+      type: "input_text";
       /** Text */
       text: string;
     } & {
@@ -1135,10 +1135,10 @@ export interface components {
       job_id: string;
       /** Definition Id */
       definition_id: string;
-      example_kind: components['schemas']['ExampleKind'];
+      example_kind: components["schemas"]["ExampleKind"];
       /** N Samples */
       n_samples: number;
-      status: components['schemas']['JobStatus'];
+      status: components["schemas"]["JobStatus"];
       /** Completed */
       completed: number;
       /** Failed */
@@ -1149,14 +1149,14 @@ export interface components {
      * @description Validation job status.
      * @enum {string}
      */
-    JobStatus: 'running' | 'completed' | 'failed';
+    JobStatus: "running" | "completed" | "failed";
     /**
      * JobsResponse
      * @description Response for jobs endpoint.
      */
     JobsResponse: {
       /** Jobs */
-      jobs: components['schemas']['JobInfo'][];
+      jobs: components["schemas"]["JobInfo"][];
     };
     /**
      * Killed
@@ -1167,7 +1167,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      kind: 'killed';
+      kind: "killed";
       /** Signal */
       signal: number;
     };
@@ -1197,7 +1197,7 @@ export interface components {
       /** Occurrence Id */
       occurrence_id: string;
       /** Files */
-      files: components['schemas']['FileLocationInfo'][];
+      files: components["schemas"]["FileLocationInfo"][];
       /** Note */
       note: string | null;
       /** Graders Match Only If Reported On */
@@ -1216,7 +1216,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'freeform' | 'improvement' | 'prompt_optimizer' | 'snapshot_grader';
+      agent_type: "freeform" | "improvement" | "prompt_optimizer" | "snapshot_grader";
     };
     /**
      * OutputTextPart
@@ -1231,7 +1231,7 @@ export interface components {
        * @default output_text
        * @constant
        */
-      type: 'output_text';
+      type: "output_text";
       /** Text */
       text: string;
     } & {
@@ -1250,7 +1250,7 @@ export interface components {
     /** OverviewResponse */
     OverviewResponse: {
       /** Definitions */
-      definitions: components['schemas']['DefinitionRow'][];
+      definitions: components["schemas"]["DefinitionRow"][];
       /** Example Counts */
       example_counts: {
         [key: string]: {
@@ -1276,15 +1276,15 @@ export interface components {
       timestamp: string;
       /** Payload */
       payload:
-        | components['schemas']['DockerExecCallPayload']
-        | components['schemas']['DockerExecOutputPayload']
-        | components['schemas']['GenericToolCallPayload']
-        | components['schemas']['GenericToolOutputPayload']
-        | components['schemas']['UserText']
-        | components['schemas']['AssistantText']
-        | components['schemas']['ApiRequest']
-        | components['schemas']['Response']
-        | components['schemas']['ReasoningItem'];
+        | components["schemas"]["DockerExecCallPayload"]
+        | components["schemas"]["DockerExecOutputPayload"]
+        | components["schemas"]["GenericToolCallPayload"]
+        | components["schemas"]["GenericToolOutputPayload"]
+        | components["schemas"]["UserText"]
+        | components["schemas"]["AssistantText"]
+        | components["schemas"]["ApiRequest"]
+        | components["schemas"]["Response"]
+        | components["schemas"]["ReasoningItem"];
     };
     /**
      * PromptOptimizerTypeConfig
@@ -1308,8 +1308,8 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'prompt_optimizer';
-      target_metric: components['schemas']['TargetMetric'];
+      agent_type: "prompt_optimizer";
+      target_metric: components["schemas"]["TargetMetric"];
       /**
        * Optimizer Model
        * @description Model used for the optimizer agent itself
@@ -1335,7 +1335,7 @@ export interface components {
      * ReasoningEffort
      * @enum {string}
      */
-    ReasoningEffort: 'low' | 'medium' | 'high';
+    ReasoningEffort: "low" | "medium" | "high";
     /**
      * ReasoningItem
      * @description Our internal reasoning item representation.
@@ -1348,20 +1348,20 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'reasoning';
+      type: "reasoning";
       /** Id */
       id?: string | null;
       /** Summary */
-      summary?: components['schemas']['ReasoningSummaryItem'][];
+      summary?: components["schemas"]["ReasoningSummaryItem"][];
     } & {
       [key: string]: unknown;
     };
     /** ReasoningParams */
     ReasoningParams: {
       /** Effort */
-      effort?: components['schemas']['ReasoningEffort'] | ('low' | 'medium' | 'high');
+      effort?: components["schemas"]["ReasoningEffort"] | ("low" | "medium" | "high");
       /** Summary */
-      summary?: components['schemas']['ReasoningSummary'] | ('auto' | 'concise' | 'detailed');
+      summary?: components["schemas"]["ReasoningSummary"] | ("auto" | "concise" | "detailed");
     } & {
       [key: string]: unknown;
     };
@@ -1370,7 +1370,7 @@ export interface components {
      * @description Canonical values for Responses API reasoning summary selection.
      * @enum {string}
      */
-    ReasoningSummary: 'auto' | 'concise' | 'detailed';
+    ReasoningSummary: "auto" | "concise" | "detailed";
     /**
      * ReasoningSummaryItem
      * @description Summary item within a reasoning block.
@@ -1383,7 +1383,7 @@ export interface components {
        * @default summary_text
        * @constant
        */
-      type: 'summary_text';
+      type: "summary_text";
     };
     /**
      * ReportedIssueInfo
@@ -1395,7 +1395,7 @@ export interface components {
       /** Rationale */
       rationale: string;
       /** Occurrences */
-      occurrences: components['schemas']['ReportedIssueOccurrenceInfo'][];
+      occurrences: components["schemas"]["ReportedIssueOccurrenceInfo"][];
     };
     /**
      * ReportedIssueOccurrenceInfo
@@ -1407,7 +1407,7 @@ export interface components {
       /** Note */
       note: string | null;
       /** Files */
-      files: components['schemas']['FileLocationInfo'][];
+      files: components["schemas"]["FileLocationInfo"][];
     };
     /**
      * Response
@@ -1420,12 +1420,12 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'response';
+      type: "response";
       /** Response Id */
       response_id: string;
       /** Request Id */
       request_id?: string | null;
-      usage: components['schemas']['GroundTruthUsage'];
+      usage: components["schemas"]["GroundTruthUsage"];
       /** Model */
       model: string;
       /** Created At */
@@ -1441,20 +1441,20 @@ export interface components {
       /** Input */
       input:
         | (
-            | components['schemas']['AssistantMessage']
-            | components['schemas']['UserMessage']
-            | components['schemas']['SystemMessage']
-            | components['schemas']['ReasoningItem']
-            | components['schemas']['FunctionCallItem']
-            | components['schemas']['FunctionCallOutputItem']
+            | components["schemas"]["AssistantMessage"]
+            | components["schemas"]["UserMessage"]
+            | components["schemas"]["SystemMessage"]
+            | components["schemas"]["ReasoningItem"]
+            | components["schemas"]["FunctionCallItem"]
+            | components["schemas"]["FunctionCallOutputItem"]
           )[]
         | string;
       /** Instructions */
       instructions?: string | null;
       /** Tools */
-      tools?: components['schemas']['FunctionToolParam'][] | null;
+      tools?: components["schemas"]["FunctionToolParam"][] | null;
       /** Tool Choice */
-      tool_choice?: ('auto' | 'required' | 'none') | components['schemas']['ToolChoiceFunction'] | null;
+      tool_choice?: ("auto" | "required" | "none") | components["schemas"]["ToolChoiceFunction"] | null;
       /** Parallel Tool Calls */
       parallel_tool_calls?: boolean | null;
       /**
@@ -1464,7 +1464,7 @@ export interface components {
       stream: boolean;
       /** Store */
       store?: boolean | null;
-      reasoning?: components['schemas']['ReasoningParams'] | null;
+      reasoning?: components["schemas"]["ReasoningParams"] | null;
       /** Max Output Tokens */
       max_output_tokens?: number | null;
     } & {
@@ -1484,15 +1484,15 @@ export interface components {
       definition_id: string;
       /** Type Config */
       type_config:
-        | components['schemas']['CriticTypeConfig']
-        | components['schemas']['GraderTypeConfig']
-        | components['schemas']['SnapshotGraderTypeConfig']
-        | components['schemas']['FreeformTypeConfig']
-        | components['schemas']['PromptOptimizerTypeConfig']
-        | components['schemas']['ImprovementTypeConfig'];
+        | components["schemas"]["CriticTypeConfig"]
+        | components["schemas"]["GraderTypeConfig"]
+        | components["schemas"]["SnapshotGraderTypeConfig"]
+        | components["schemas"]["FreeformTypeConfig"]
+        | components["schemas"]["PromptOptimizerTypeConfig"]
+        | components["schemas"]["ImprovementTypeConfig"];
       /** Model */
       model: string;
-      status: components['schemas']['AgentRunStatus'];
+      status: components["schemas"]["AgentRunStatus"];
       /**
        * Created At
        * Format: date-time
@@ -1503,7 +1503,7 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
-      split?: components['schemas']['Split'] | null;
+      split?: components["schemas"]["Split"] | null;
     };
     /**
      * RunsListResponse
@@ -1511,7 +1511,7 @@ export interface components {
      */
     RunsListResponse: {
       /** Runs */
-      runs: components['schemas']['RunInfo'][];
+      runs: components["schemas"]["RunInfo"][];
       /** Total Count */
       total_count: number;
       /** Offset */
@@ -1531,7 +1531,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      kind: 'file_set';
+      kind: "file_set";
       /**
        * Snapshot Slug
        * @description Snapshot to evaluate
@@ -1550,16 +1550,16 @@ export interface components {
     SnapshotDetailResponse: {
       /** Slug */
       slug: string;
-      split: components['schemas']['Split'];
+      split: components["schemas"]["Split"];
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
       /** True Positives */
-      true_positives: components['schemas']['TpInfo'][];
+      true_positives: components["schemas"]["TpInfo"][];
       /** False Positives */
-      false_positives: components['schemas']['FpInfo'][];
+      false_positives: components["schemas"]["FpInfo"][];
     };
     /**
      * SnapshotGraderTypeConfig
@@ -1578,7 +1578,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      agent_type: 'snapshot_grader';
+      agent_type: "snapshot_grader";
       /**
        * Snapshot Slug
        * @description Snapshot this daemon is responsible for
@@ -1592,7 +1592,7 @@ export interface components {
     SnapshotSummary: {
       /** Slug */
       slug: string;
-      split: components['schemas']['Split'];
+      split: components["schemas"]["Split"];
       /** Tp Count */
       tp_count: number;
       /** Fp Count */
@@ -1609,16 +1609,16 @@ export interface components {
      */
     SnapshotsListResponse: {
       /** Snapshots */
-      snapshots: components['schemas']['SnapshotSummary'][];
+      snapshots: components["schemas"]["SnapshotSummary"][];
     };
     /**
      * Split
      * @enum {string}
      */
-    Split: 'train' | 'valid' | 'test';
+    Split: "train" | "valid" | "test";
     /** SplitScopeStats */
     SplitScopeStats: {
-      recall_stats: components['schemas']['StatsWithCI'] | null;
+      recall_stats: components["schemas"]["StatsWithCI"] | null;
       /** N Examples */
       n_examples: number;
       /** Zero Count */
@@ -1665,9 +1665,9 @@ export interface components {
        * @default system
        * @constant
        */
-      role: 'system';
+      role: "system";
       /** Content */
-      content: components['schemas']['InputTextPart'][];
+      content: components["schemas"]["InputTextPart"][];
     } & {
       [key: string]: unknown;
     };
@@ -1680,7 +1680,7 @@ export interface components {
      *     - TARGETED: Both per-file and full-snapshot validation examples (allows iteration)
      * @enum {string}
      */
-    TargetMetric: 'whole-repo' | 'targeted';
+    TargetMetric: "whole-repo" | "targeted";
     /**
      * TimedOut
      * @description Process was terminated after exceeding the timeout.
@@ -1690,7 +1690,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      kind: 'timed_out';
+      kind: "timed_out";
     };
     /** ToolChoiceFunction */
     ToolChoiceFunction: {
@@ -1699,7 +1699,7 @@ export interface components {
        * @default function
        * @constant
        */
-      type: 'function';
+      type: "function";
       /** Name */
       name: string;
     } & {
@@ -1715,7 +1715,7 @@ export interface components {
       /** Rationale */
       rationale: string;
       /** Occurrences */
-      occurrences: components['schemas']['OccurrenceInfo'][];
+      occurrences: components["schemas"]["OccurrenceInfo"][];
       /**
        * Created At
        * Format: date-time
@@ -1731,7 +1731,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      kind: 'tp';
+      kind: "tp";
       /** Tp Id */
       tp_id: string;
       /** Occurrence Id */
@@ -1758,9 +1758,9 @@ export interface components {
        * @default user
        * @constant
        */
-      role: 'user';
+      role: "user";
       /** Content */
-      content: components['schemas']['InputTextPart'][];
+      content: components["schemas"]["InputTextPart"][];
     } & {
       [key: string]: unknown;
     };
@@ -1770,7 +1770,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      type: 'user_text';
+      type: "user_text";
       /** Text */
       text: string;
     };
@@ -1787,9 +1787,9 @@ export interface components {
     ValidationRunRequest: {
       /** Definition Id */
       definition_id: string;
-      example_kind: components['schemas']['ExampleKind'];
+      example_kind: components["schemas"]["ExampleKind"];
       /** @default valid */
-      split: components['schemas']['Split'];
+      split: components["schemas"]["Split"];
       /**
        * N Samples
        * @default 5
@@ -1813,7 +1813,7 @@ export interface components {
        * Format: uuid
        */
       job_id: string;
-      status: components['schemas']['JobStatus'];
+      status: components["schemas"]["JobStatus"];
       /** N Examples Sampled */
       n_examples_sampled: number;
       /** Message */
@@ -1830,7 +1830,7 @@ export interface components {
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
-      kind: 'whole_snapshot';
+      kind: "whole_snapshot";
       /**
        * Snapshot Slug
        * @description Snapshot to evaluate
@@ -1861,7 +1861,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['OverviewResponse'];
+          "application/json": components["schemas"]["OverviewResponse"];
         };
       };
     };
@@ -1869,7 +1869,7 @@ export interface operations {
   list_definitions_api_stats_definitions_get: {
     parameters: {
       query?: {
-        agent_type?: components['schemas']['AgentType'] | null;
+        agent_type?: components["schemas"]["AgentType"] | null;
       };
       header?: never;
       path?: never;
@@ -1883,7 +1883,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['DefinitionsResponse'];
+          "application/json": components["schemas"]["DefinitionsResponse"];
         };
       };
       /** @description Validation Error */
@@ -1892,7 +1892,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -1914,7 +1914,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['DefinitionDetailResponse'];
+          "application/json": components["schemas"]["DefinitionDetailResponse"];
         };
       };
       /** @description Validation Error */
@@ -1923,7 +1923,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -1932,7 +1932,7 @@ export interface operations {
     parameters: {
       query: {
         snapshot_slug: string;
-        example_kind: components['schemas']['ExampleKind'];
+        example_kind: components["schemas"]["ExampleKind"];
         files_hash?: string | null;
       };
       header?: never;
@@ -1947,7 +1947,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ExampleDetailResponse'];
+          "application/json": components["schemas"]["ExampleDetailResponse"];
         };
       };
       /** @description Validation Error */
@@ -1956,7 +1956,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -1976,7 +1976,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ActiveRunsResponse'];
+          "application/json": components["schemas"]["ActiveRunsResponse"];
         };
       };
     };
@@ -1996,7 +1996,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['JobsResponse'];
+          "application/json": components["schemas"]["JobsResponse"];
         };
       };
     };
@@ -2004,11 +2004,11 @@ export interface operations {
   list_runs_api_runs_get: {
     parameters: {
       query?: {
-        status?: components['schemas']['AgentRunStatus'] | null;
+        status?: components["schemas"]["AgentRunStatus"] | null;
         definition_id?: string | null;
-        agent_type?: components['schemas']['AgentType'] | null;
-        split?: components['schemas']['Split'] | null;
-        example_kind?: components['schemas']['ExampleKind'] | null;
+        agent_type?: components["schemas"]["AgentType"] | null;
+        split?: components["schemas"]["Split"] | null;
+        example_kind?: components["schemas"]["ExampleKind"] | null;
         offset?: number;
         limit?: number;
       };
@@ -2024,7 +2024,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RunsListResponse'];
+          "application/json": components["schemas"]["RunsListResponse"];
         };
       };
       /** @description Validation Error */
@@ -2033,7 +2033,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -2047,7 +2047,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['ValidationRunRequest'];
+        "application/json": components["schemas"]["ValidationRunRequest"];
       };
     };
     responses: {
@@ -2057,7 +2057,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ValidationRunResponse'];
+          "application/json": components["schemas"]["ValidationRunResponse"];
         };
       };
       /** @description Validation Error */
@@ -2066,7 +2066,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -2088,7 +2088,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AgentRunDetail'];
+          "application/json": components["schemas"]["AgentRunDetail"];
         };
       };
       /** @description Validation Error */
@@ -2097,7 +2097,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -2122,7 +2122,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['EventsResponse'];
+          "application/json": components["schemas"]["EventsResponse"];
         };
       };
       /** @description Validation Error */
@@ -2131,7 +2131,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -2151,7 +2151,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['SnapshotsListResponse'];
+          "application/json": components["schemas"]["SnapshotsListResponse"];
         };
       };
     };
@@ -2173,7 +2173,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['SnapshotDetailResponse'];
+          "application/json": components["schemas"]["SnapshotDetailResponse"];
         };
       };
       /** @description Validation Error */
@@ -2182,7 +2182,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -2204,7 +2204,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['FileTreeResponse'];
+          "application/json": components["schemas"]["FileTreeResponse"];
         };
       };
       /** @description Validation Error */
@@ -2213,7 +2213,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -2236,7 +2236,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['FileContentResponse'];
+          "application/json": components["schemas"]["FileContentResponse"];
         };
       };
       /** @description Validation Error */
@@ -2245,7 +2245,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };
@@ -2265,7 +2265,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
+          "application/json": {
             [key: string]: string;
           };
         };
