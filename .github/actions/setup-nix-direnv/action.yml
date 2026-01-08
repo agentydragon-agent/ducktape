@@ -1,5 +1,5 @@
-name: "Setup Nix and Bazelisk"
-description: "Install Nix and bazelisk, matching .envrc environment"
+name: "Setup Nix"
+description: "Install Nix for cluster tool installation"
 
 runs:
   using: composite
@@ -7,17 +7,11 @@ runs:
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v17
 
-    - name: Install bazelisk via Nix
+    - name: Configure Nix PATH
       shell: bash
       run: |
-        # Install bazelisk (what .envrc provides via `use nix -p bazelisk`)
-        nix profile install nixpkgs#bazelisk
-
         # Add Nix profile to PATH for subsequent steps
         echo "$HOME/.nix-profile/bin" >> $GITHUB_PATH
-
-        # Create 'bazel' symlink since Nix installs the binary as 'bazelisk'
-        ln -sf "$HOME/.nix-profile/bin/bazelisk" "$HOME/.nix-profile/bin/bazel"
 
     - name: Configure environment
       shell: bash

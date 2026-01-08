@@ -39,6 +39,9 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
       - uses: ./.github/actions/setup-nix-direnv
 
       - name: Install pre-commit hook dependencies
