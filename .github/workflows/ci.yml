@@ -3,7 +3,7 @@
 # Jobs:
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
 # - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
-# - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
+# - visual-regression: Playwright visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 #
 # Linting via Bazel aspects (run in both pre-commit and bazel-build):
@@ -203,7 +203,7 @@ jobs:
           fi
 
   visual-regression:
-    name: Visual regression tests (Bazel + Puppeteer)
+    name: Visual regression tests (Bazel + Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -219,7 +219,7 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'pnpm-lock.yaml') }}
           restore-keys: |
             bazel-${{ runner.os }}-
 
@@ -308,7 +308,7 @@ jobs:
             ~/.cache/bazel
             ~/.cache/bazelisk
           # Unified cache key includes all dependency files
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'pnpm-lock.yaml') }}
           restore-keys: |
             bazel-${{ runner.os }}-
 
