@@ -307,7 +307,8 @@ jobs:
       - name: Build, lint, and test
         run: |
           # -k: Keep going after errors to provide complete information
-          export BAZEL_OPTS="-k"
+          # --sandbox_debug: Show verbose sandbox messages for debugging failures
+          export BAZEL_OPTS="-k --sandbox_debug"
 
           bazel build //... $BAZEL_OPTS
           # Comprehensive linting via aspects:
