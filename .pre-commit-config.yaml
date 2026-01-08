@@ -84,25 +84,8 @@ repos:
         language: system
         files: \.nix$
 
-  # Prettier - using mirrors-prettier
-  #
-  # Svelte files excluded due to Prettier 3.x plugin resolution limitation.
-  # Prettier 3.x resolves plugins relative to the config file, not from where
-  # prettier is installed. This breaks pre-commit's isolated node environment.
-  #
-  # Approaches tried that all fail with the same error:
-  # - mirrors-prettier with additional_dependencies: [prettier-plugin-svelte]
-  # - jvllmr/pre-commit-prettier fork (designed for plugin support)
-  # - .prettierrc.cjs with require.resolve("prettier-plugin-svelte")
-  # - npx --package=prettier-plugin-svelte (plugin installed but not found)
-  #
-  # Error: "Cannot find package 'prettier-plugin-svelte' imported from .../noop.js"
-  #
-  # Root cause: https://github.com/prettier/prettier/issues/15696
-  # The plugin is installed in pre-commit's temp node_modules, but prettier
-  # looks for it relative to the config file (workspace root) where it doesn't exist.
-  #
-  # Svelte formatting is handled by Bazel: bazel build --config=lint //...
+  # Prettier formatting (svelte excluded due to plugin resolution issues)
+  # See: docs/ci/prettier-limitations.md
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
     hooks:
