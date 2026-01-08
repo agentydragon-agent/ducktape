@@ -13,26 +13,55 @@ This document outlines a roadmap to consolidate CI tooling around Bazel while ma
 
 ### External Dependencies
 
-| Tool                                                  | Used By               | Purpose                               |
-| ----------------------------------------------------- | --------------------- | ------------------------------------- |
-| opentofu                                              | pre-commit            | `terraform_fmt`, `terraform_validate` |
-| tflint                                                | pre-commit            | `terraform_tflint`                    |
-| fluxcd                                                | pre-commit            | `flux-build-dry-run`                  |
-| kustomize                                             | pre-commit            | `kustomize-dry-run`                   |
-| kubeconform                                           | pre-commit            | Kubernetes manifest validation        |
-| checkov                                               | pre-commit            | Security analysis (via nix-shell)     |
-| ansible-core                                          | pre-commit            | Playbook syntax check                 |
-| ansible-lint                                          | ansible-lint-full job | Full ansible validation               |
-| libdbus-1-dev, libgirepository-2.0-dev, libcairo2-dev | bazel-build           | Native Python C extensions            |
-| gitstatusd                                            | bazel-build           | wt package tests                      |
-| PostgreSQL                                            | bazel-build           | Database tests (service container)    |
+| Tool                | Used By               | Purpose                               | Installation                                  |
+| ------------------- | --------------------- | ------------------------------------- | --------------------------------------------- |
+| opentofu            | pre-commit            | `terraform_fmt`, `terraform_validate` | Binary in PATH                                |
+| tflint              | pre-commit            | `terraform_tflint`                    | Binary in PATH                                |
+| fluxcd              | pre-commit            | `flux-build-dry-run`                  | Binary in PATH                                |
+| kustomize           | pre-commit            | `kustomize-dry-run`                   | Binary in PATH                                |
+| kubeconform         | pre-commit            | Kubernetes manifest validation        | Binary in PATH                                |
+| checkov             | pre-commit            | Security analysis                     | Official pre-commit hook (manages own Python) |
+| ansible-core        | pre-commit            | Playbook syntax check                 | pip install                                   |
+| ansible-lint        | ansible-lint-full job | Full ansible validation               | pip install                                   |
+| libdbus-1-dev, etc. | bazel-build           | Native Python C extensions            | apt install                                   |
+| gitstatusd          | bazel-build           | wt package tests                      | http_archive in Bazel                         |
+| PostgreSQL          | bazel-build           | Database tests                        | GitHub Actions service container              |
 
 ## Goals
 
-1. **Reduce Nix dependency in CI** - Only use Nix where truly needed
-2. **Keep pre-commit in CI** - Fast, change-aware validation
-3. **Bazelify what makes sense** - Cluster validation tools
-4. **Simplify the CI workflow** - Fewer moving parts
+### Target Environments
+
+The same pre-commit hooks should work across three environments:
+
+| Environment            | Tool Installation         | Notes                                                                              |
+| ---------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| **Local dev**          | `.envrc` with nix/direnv  | Developer's machine, fast iteration                                                |
+| **GitHub Actions CI**  | Official setup-\* actions | `opentofu/setup-opentofu`, `terraform-linters/setup-tflint`, `fluxcd/flux2/action` |
+| **Claude Code on web** | apt + session start hooks | No Docker available, apt is fine                                                   |
+
+### Requirements
+
+1. **Pre-commit detects errors, autoformats, lints** - Same checks in all environments
+2. **No Docker dependency** - Claude Code on web can't easily run Docker
+3. **Graceful tool discovery** - Hooks work if tools are in PATH (however installed)
+4. **Official pre-commit hooks where available** - e.g., `bridgecrewio/checkov` manages its own Python
+
+### Tool Installation by Environment
+
+| Tool      | Local (.envrc)                          | CI (GitHub Actions)                 | Claude Code (apt/session hook)     |
+| --------- | --------------------------------------- | ----------------------------------- | ---------------------------------- |
+| opentofu  | `nix profile install nixpkgs#opentofu`  | `opentofu/setup-opentofu@v1`        | `apt install tofu` or session hook |
+| tflint    | `nix profile install nixpkgs#tflint`    | `terraform-linters/setup-tflint@v6` | Download binary in session hook    |
+| flux      | `nix profile install nixpkgs#fluxcd`    | `fluxcd/flux2/action@main`          | Download binary in session hook    |
+| checkov   | Official pre-commit hook                | Official pre-commit hook            | Official pre-commit hook           |
+| kustomize | `nix profile install nixpkgs#kustomize` | apt or download                     | apt or session hook                |
+
+### Design Principles
+
+1. **Formatters/linters stay in pre-commit** - Aspects only see files with Bazel targets; formatters should catch all files
+2. **Use official pre-commit hooks** - When available (checkov, ruff, prettier), prefer upstream hooks that manage their own environments
+3. **CI uses GitHub Actions for tools** - Faster than nix, well-maintained, good caching
+4. **Bazel for hermetic builds/tests** - Build artifacts, run tests, but not for universal formatting
 
 ## Progress (Updated 2026-01-08)
 
