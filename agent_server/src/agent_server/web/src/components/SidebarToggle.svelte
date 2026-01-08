@@ -1,17 +1,12 @@
 <script lang="ts">
-  export let title: string = ''
-  export let label: string = ''
-  export let glyph: string = '«'
-  export let action: (() => void) | null = null
-  export let extraClass: string = ''
+  export let title: string = "";
+  export let label: string = "";
+  export let glyph: string = "«";
+  export let action: (() => void) | null = null;
+  export let extraClass: string = "";
 </script>
 
-<button
-  class="toggle-btn {extraClass}"
-  {title}
-  aria-label={label}
-  on:click={() => action && action()}
->
+<button class="toggle-btn {extraClass}" {title} aria-label={label} on:click={() => action && action()}>
   {glyph}
 </button>
 

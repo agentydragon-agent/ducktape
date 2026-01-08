@@ -1,34 +1,34 @@
 <script lang="ts">
-  import '../styles/shared.css'
-  import hljs from 'highlight.js/lib/common'
+  import "../styles/shared.css";
+  import hljs from "highlight.js/lib/common";
 
-  import ProposalCard from './ProposalCard.svelte'
+  import ProposalCard from "./ProposalCard.svelte";
 
-  import type { Pending } from '../features/chat/stores'
-  import type { ApprovalPolicyInfo, Proposal } from '../shared/types'
+  import type { Pending } from "../features/chat/stores";
+  import type { ApprovalPolicyInfo, Proposal } from "../shared/types";
 
-  export let pending: Pending[] = []
+  export let pending: Pending[] = [];
 
-  export let approvalPolicy: ApprovalPolicyInfo | null = null
-  export let showPolicyEditor = false
-  export let editingPolicy = ''
+  export let approvalPolicy: ApprovalPolicyInfo | null = null;
+  export let showPolicyEditor = false;
+  export let editingPolicy = "";
 
   // Callbacks provided by parent
-  export let startEditingPolicy: () => void
-  export let cancelEditingPolicy: () => void
-  export let setPolicy: (_content: string) => void
-  export let approveProposal: (_id: string) => void
-  export let rejectProposal: (_id: string) => void
-  export let approve: (_call_id: string) => void
-  export let denyContinue: (_call_id: string) => void
-  export let deny: (_call_id: string) => void
+  export let startEditingPolicy: () => void;
+  export let cancelEditingPolicy: () => void;
+  export let setPolicy: (_content: string) => void;
+  export let approveProposal: (_id: string) => void;
+  export let rejectProposal: (_id: string) => void;
+  export let approve: (_call_id: string) => void;
+  export let denyContinue: (_call_id: string) => void;
+  export let deny: (_call_id: string) => void;
 
   function prettyArgs(args_json?: string | null) {
-    if (!args_json) return ''
+    if (!args_json) return "";
     try {
-      return JSON.stringify(JSON.parse(args_json), null, 2)
+      return JSON.stringify(JSON.parse(args_json), null, 2);
     } catch {
-      return args_json
+      return args_json;
     }
   }
 
@@ -36,15 +36,15 @@
 
   function renderHighlightedPython(src: string): string {
     try {
-      return hljs.highlight(src, { language: 'python' }).value
+      return hljs.highlight(src, { language: "python" }).value;
     } catch {
-      return src
+      return src;
     }
   }
 
   // Split proposals into open and past for display
-  let allProposals: Proposal[] = []
-  $: allProposals = approvalPolicy?.proposals || []
+  let allProposals: Proposal[] = [];
+  $: allProposals = approvalPolicy?.proposals || [];
 </script>
 
 <div class="approvals-tab">
@@ -72,8 +72,8 @@
       <div class="row">
         <button
           on:click={() => {
-            setPolicy(editingPolicy)
-            cancelEditingPolicy()
+            setPolicy(editingPolicy);
+            cancelEditingPolicy();
           }}>Save</button
         >
         <button on:click={cancelEditingPolicy}>Cancel</button>
@@ -130,7 +130,7 @@
   }
   .policy-editor {
     width: 100%;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: 0.75rem;
     resize: vertical;
   }

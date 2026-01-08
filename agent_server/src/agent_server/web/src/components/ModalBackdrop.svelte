@@ -1,14 +1,14 @@
 <script lang="ts">
-  export let label: string = 'Close dialog'
-  export let onClose: (() => void) | undefined
+  export let label: string = "Close dialog";
+  export let onClose: (() => void) | undefined;
 
   function handleClick(e: MouseEvent) {
-    if (e.currentTarget === e.target) onClose && onClose()
+    if (e.currentTarget === e.target) onClose && onClose();
   }
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault()
-      onClose && onClose()
+    if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClose && onClose();
     }
   }
 </script>

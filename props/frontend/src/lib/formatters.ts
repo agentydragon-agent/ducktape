@@ -3,20 +3,20 @@
  * All display-related transformations go here.
  */
 
-import { formatDistanceToNow } from "date-fns";
-import type { RunInfo, CriticTypeConfig } from "./api/client";
-import type { StatsWithCI } from "./types";
+import { formatDistanceToNow } from 'date-fns';
+import type { RunInfo, CriticTypeConfig } from './api/client';
+import type { StatsWithCI } from './types';
 
 // --- Percentage formatting ---
 
 const pctFormatter = new Intl.NumberFormat(undefined, {
-  style: "percent",
+  style: 'percent',
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,
 });
 
 const pctFormatterWhole = new Intl.NumberFormat(undefined, {
-  style: "percent",
+  style: 'percent',
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
 });
@@ -65,7 +65,7 @@ export function formatAge(isoDate: string, addSuffix = true): string {
 
 /** Format a snapshot slug for display (first path component only). */
 export function formatSnapshotSlug(slug: string): string {
-  return slug.split("/")[0];
+  return slug.split('/')[0];
 }
 
 /** Format a files hash for display (8 char truncation). */
@@ -75,16 +75,16 @@ export function formatFilesHash(hash: string): string {
 
 /** Truncate text with ellipsis. */
 export function truncateText(text: string, maxLength: number = 100): string {
-  return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;
+  return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
 }
 
 /** Format an example for display in compact form. */
 export function formatExample(run: RunInfo): string {
-  if (run.type_config.agent_type !== "critic") return "—";
+  if (run.type_config.agent_type !== 'critic') return '—';
   const config = run.type_config as CriticTypeConfig;
   const example = config.example;
   const slug = formatSnapshotSlug(example.snapshot_slug);
-  if (example.kind === "whole_snapshot") {
+  if (example.kind === 'whole_snapshot') {
     return `whole@${slug}`;
   }
   return `files@${slug}/${formatFilesHash(example.files_hash)}`;
@@ -104,5 +104,5 @@ export function formatFileLocation(file: {
     const endLine = r.end_line ?? r.start_line;
     return r.start_line === endLine ? `${r.start_line + 1}` : `${r.start_line + 1}-${endLine + 1}`;
   });
-  return `${file.path}:${rangeStrs.join(",")}`;
+  return `${file.path}:${rangeStrs.join(',')}`;
 }

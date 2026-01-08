@@ -1,98 +1,94 @@
 <script lang="ts">
-  import { SvelteMap } from 'svelte/reactivity'
-  import { z } from 'zod'
+  import { SvelteMap } from "svelte/reactivity";
+  import { z } from "zod";
 
-  import JsonDisclosure from './JsonDisclosure.svelte'
-  import {
-    LEAN_BROWSER_LABELS,
-    TOOL_RESOURCES_LIST,
-    TOOL_RESOURCES_READ,
-  } from '../lib/collapsedTools'
+  import JsonDisclosure from "./JsonDisclosure.svelte";
+  import { LEAN_BROWSER_LABELS, TOOL_RESOURCES_LIST, TOOL_RESOURCES_READ } from "../lib/collapsedTools";
 
-  import type { ToolItem } from '../shared/types'
+  import type { ToolItem } from "../shared/types";
 
-  export let items: ToolItem[] = []
+  export let items: ToolItem[] = [];
 
   // Persist expansion by group anchor (first item id) across UI updates
   const EXPANDED_BY_ANCHOR: SvelteMap<string, string | null> =
-    (globalThis as any).__adgn_ctg_expanded || new SvelteMap()
-  ;(globalThis as any).__adgn_ctg_expanded = EXPANDED_BY_ANCHOR
+    (globalThis as any).__adgn_ctg_expanded || new SvelteMap();
+  (globalThis as any).__adgn_ctg_expanded = EXPANDED_BY_ANCHOR;
   // index of expanded item within items, or null
-  let expanded: number | null = null
+  let expanded: number | null = null;
   $: {
-    const anchor = items && items.length ? items[0].id : null
+    const anchor = items && items.length ? items[0].id : null;
     if (anchor) {
-      const openId = EXPANDED_BY_ANCHOR.get(anchor) || null
+      const openId = EXPANDED_BY_ANCHOR.get(anchor) || null;
       if (openId) {
-        const idx = items.findIndex((it) => it.id === openId)
-        expanded = idx >= 0 ? idx : null
+        const idx = items.findIndex((it) => it.id === openId);
+        expanded = idx >= 0 ? idx : null;
       }
     }
   }
   function setExpanded(next: number | null) {
-    expanded = next
-    const anchor = items && items.length ? items[0].id : null
-    if (anchor) EXPANDED_BY_ANCHOR.set(anchor, next === null ? null : items[next].id)
+    expanded = next;
+    const anchor = items && items.length ? items[0].id : null;
+    if (anchor) EXPANDED_BY_ANCHOR.set(anchor, next === null ? null : items[next].id);
   }
 
   function isJsonContent(x: any): boolean {
-    return !!x && typeof x === 'object' && x.content_kind === 'Json'
+    return !!x && typeof x === "object" && x.content_kind === "Json";
   }
 
   // If all items are the same tool, we can render compact icon-only tokens
-  $: allSameTool = items && items.length > 1 && items.every((it) => it.tool === items[0]?.tool)
+  $: allSameTool = items && items.length > 1 && items.every((it) => it.tool === items[0]?.tool);
 
   function collapsedLabelFor(it: ToolItem): string {
-    const name = it.tool || ''
-    const args: any = isJsonContent(it.content) ? (it.content as any).args : null
-    const leanLabel = LEAN_BROWSER_LABELS[name]
+    const name = it.tool || "";
+    const args: any = isJsonContent(it.content) ? (it.content as any).args : null;
+    const leanLabel = LEAN_BROWSER_LABELS[name];
     if (leanLabel) {
-      return leanLabel
+      return leanLabel;
     }
     if (name === TOOL_RESOURCES_LIST) {
-      const s = args?.server ? `server=${args.server}` : 'server=*'
-      const p = args?.uri_prefix ? `, prefix=${args.uri_prefix}` : ''
-      return `List Resources(${s}${p})`
+      const s = args?.server ? `server=${args.server}` : "server=*";
+      const p = args?.uri_prefix ? `, prefix=${args.uri_prefix}` : "";
+      return `List Resources(${s}${p})`;
     }
     if (name === TOOL_RESOURCES_READ) {
-      const s = args?.server ? `server=${args.server}` : ''
-      const u = args?.uri ? `uri=${args.uri}` : ''
-      const parts = [u, s].filter(Boolean).join(', ')
-      return `Read Resource(${parts})`
+      const s = args?.server ? `server=${args.server}` : "";
+      const u = args?.uri ? `uri=${args.uri}` : "";
+      const parts = [u, s].filter(Boolean).join(", ");
+      return `Read Resource(${parts})`;
     }
     // Fallback: show the raw tool key
-    return it.tool
+    return it.tool;
   }
 
   // Determine success/error state for compact tokens
   function isError(it: ToolItem): boolean | null {
-    const c: any = it.content
-    if (!c || typeof c !== 'object') return null
-    if (c.content_kind === 'Exec') {
-      if (typeof c.is_error === 'boolean') return c.is_error
-      if (typeof c.exit_code === 'number') return c.exit_code !== 0
-      return null
+    const c: any = it.content;
+    if (!c || typeof c !== "object") return null;
+    if (c.content_kind === "Exec") {
+      if (typeof c.is_error === "boolean") return c.is_error;
+      if (typeof c.exit_code === "number") return c.exit_code !== 0;
+      return null;
     }
-    if (c.content_kind === 'Json') {
-      if (typeof c.is_error === 'boolean') return c.is_error
-      return null
+    if (c.content_kind === "Json") {
+      if (typeof c.is_error === "boolean") return c.is_error;
+      return null;
     }
-    return null
+    return null;
   }
 
   // For JSON content, display structured_content when present, else raw result
-  const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
+  const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough();
   function jsonOutput(it: ToolItem): unknown {
-    const c: any = it?.content
-    if (!c || c.content_kind !== 'Json') return null
-    const res: any = c.result
-    if (res && typeof res === 'object') {
-      const parsed = CallToolResultZ.safeParse(res)
+    const c: any = it?.content;
+    if (!c || c.content_kind !== "Json") return null;
+    const res: any = c.result;
+    if (res && typeof res === "object") {
+      const parsed = CallToolResultZ.safeParse(res);
       if (parsed.success && parsed.data.structured_content !== undefined) {
-        return parsed.data.structured_content
+        return parsed.data.structured_content;
       }
     }
-    return res ?? null
+    return res ?? null;
   }
 </script>
 

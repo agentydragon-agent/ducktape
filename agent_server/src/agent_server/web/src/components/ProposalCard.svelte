@@ -1,34 +1,34 @@
 <script lang="ts">
-  import '../styles/shared.css'
-  import hljs from 'highlight.js/lib/common'
-  import { onMount } from 'svelte'
+  import "../styles/shared.css";
+  import hljs from "highlight.js/lib/common";
+  import { onMount } from "svelte";
 
-  import { getProposal, currentAgentId } from '../features/agents/stores'
+  import { getProposal, currentAgentId } from "../features/agents/stores";
 
-  import type { Proposal } from '../shared/types'
+  import type { Proposal } from "../shared/types";
 
-  export let proposal: Proposal
-  export let showActions: boolean = false
-  export let onApprove: ((_id: string) => void) | undefined
-  export let onReject: ((_id: string) => void) | undefined
+  export let proposal: Proposal;
+  export let showActions: boolean = false;
+  export let onApprove: ((_id: string) => void) | undefined;
+  export let onReject: ((_id: string) => void) | undefined;
 
-  let source: string | null = null
-  let loadError: string | null = null
-  let highlighted: string = ''
+  let source: string | null = null;
+  let loadError: string | null = null;
+  let highlighted: string = "";
   onMount(async () => {
     if (!$currentAgentId) {
-      loadError = 'No agent selected'
-      return
+      loadError = "No agent selected";
+      return;
     }
     try {
-      const rec = await getProposal(proposal.id)
-      source = rec.content
-      highlighted = hljs.highlight(source || '', { language: 'python' }).value
+      const rec = await getProposal(proposal.id);
+      source = rec.content;
+      highlighted = hljs.highlight(source || "", { language: "python" }).value;
     } catch (e) {
-      loadError = e instanceof Error ? e.message : String(e)
-      highlighted = source || ''
+      loadError = e instanceof Error ? e.message : String(e);
+      highlighted = source || "";
     }
-  })
+  });
 </script>
 
 <div class="proposal">

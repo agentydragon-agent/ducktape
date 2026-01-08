@@ -1,9 +1,9 @@
 <script lang="ts">
-  import '../styles/shared.css'
-  import { onMount } from 'svelte'
+  import "../styles/shared.css";
+  import { onMount } from "svelte";
 
-  import ModalBackdrop from './ModalBackdrop.svelte'
-  import SidebarToggle from './SidebarToggle.svelte'
+  import ModalBackdrop from "./ModalBackdrop.svelte";
+  import SidebarToggle from "./SidebarToggle.svelte";
   import {
     agents,
     currentAgentId,
@@ -11,33 +11,33 @@
     deleteAgent,
     listPresets,
     createAgentFromPreset,
-  } from '../features/agents/stores'
-  import { LEFT_MIN, LEFT_MAX } from '../shared/layout'
-  import { prefs } from '../shared/prefs'
+  } from "../features/agents/stores";
+  import { LEFT_MIN, LEFT_MAX } from "../shared/layout";
+  import { prefs } from "../shared/prefs";
 
-  import type { AgentRow } from '../shared/types'
+  import type { AgentRow } from "../shared/types";
 
-  export let onStartResize: (_e: MouseEvent) => void
+  export let onStartResize: (_e: MouseEvent) => void;
 
-  $: agentList = $agents as AgentRow[]
-  $: selected = $currentAgentId
-  let listEl: HTMLDivElement | null = null
-  let presets: Array<{ name: string; description?: string | null }> = []
-  let selectedPreset: string | null = null
+  $: agentList = $agents as AgentRow[];
+  $: selected = $currentAgentId;
+  let listEl: HTMLDivElement | null = null;
+  let presets: Array<{ name: string; description?: string | null }> = [];
+  let selectedPreset: string | null = null;
   // Modal state for preset selection
-  let showPresetModal = false
-  let modalPreset: string | null = null
-  let modalSystem: string = ''
+  let showPresetModal = false;
+  let modalPreset: string | null = null;
+  let modalSystem: string = "";
   // Restore scroll position
 
   async function refreshPresets() {
     try {
-      const r = await listPresets()
-      const list = r.presets || []
-      presets = list
+      const r = await listPresets();
+      const list = r.presets || [];
+      presets = list;
       if (showPresetModal) {
         if (!modalPreset || !list.find((p) => p.name === modalPreset)) {
-          modalPreset = list[0]?.name || null
+          modalPreset = list[0]?.name || null;
         }
       }
     } catch {
@@ -46,103 +46,103 @@
   }
   onMount(() => {
     try {
-      const saved = localStorage.getItem('agentsSidebarScrollTop')
-      if (saved && listEl) listEl.scrollTop = parseInt(saved, 10) || 0
+      const saved = localStorage.getItem("agentsSidebarScrollTop");
+      if (saved && listEl) listEl.scrollTop = parseInt(saved, 10) || 0;
     } catch {
       // Ignore localStorage errors - scroll position is not critical
     }
     // Initial load
-    refreshPresets()
+    refreshPresets();
     // Auto-refresh on focus and tab visibility
     const onFocus = () => {
-      void refreshPresets()
-    }
+      void refreshPresets();
+    };
     const onVis = () => {
-      if (document.visibilityState === 'visible') void refreshPresets()
-    }
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onVis)
+      if (document.visibilityState === "visible") void refreshPresets();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVis);
     return () => {
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onVis)
-    }
-  })
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  });
 
   function open(id: string) {
-    setAgentId(id)
+    setAgentId(id);
   }
 
   // Inline delete confirm state
-  let confirmingId: string | null = null
+  let confirmingId: string | null = null;
 
   async function openPresetDialog() {
     // Always refresh presets from backend so filesystem edits are reflected immediately
     try {
-      const r = await listPresets()
-      presets = r.presets || []
+      const r = await listPresets();
+      presets = r.presets || [];
     } catch {
       // Keep prior list on fetch failure
     }
     if (!presets || presets.length === 0) {
       // No presets available; create default immediately
       try {
-        const body = await createAgentFromPreset('default')
-        const id = body?.id as string
-        if (id) setAgentId(id)
+        const body = await createAgentFromPreset("default");
+        const id = body?.id as string;
+        if (id) setAgentId(id);
       } catch (e) {
-        console.warn('create default preset failed', e)
+        console.warn("create default preset failed", e);
       }
-      return
+      return;
     }
     // Initialize modal selection after refresh
-    modalPreset = selectedPreset || presets[0]?.name || null
-    modalSystem = ''
-    showPresetModal = true
+    modalPreset = selectedPreset || presets[0]?.name || null;
+    modalSystem = "";
+    showPresetModal = true;
   }
 
   async function confirmCreateFromModal() {
-    if (!modalPreset) return
+    if (!modalPreset) return;
     try {
-      const body = await createAgentFromPreset(modalPreset, modalSystem || undefined)
-      const id = body?.id as string
-      if (id) setAgentId(id)
+      const body = await createAgentFromPreset(modalPreset, modalSystem || undefined);
+      const id = body?.id as string;
+      if (id) setAgentId(id);
     } catch (e) {
-      console.warn('create agent from modal failed', e)
+      console.warn("create agent from modal failed", e);
     } finally {
-      showPresetModal = false
+      showPresetModal = false;
     }
   }
 
   async function doDelete(id: string) {
     try {
-      const body = await deleteAgent(id)
-      if (!body?.ok) throw new Error(body?.error || 'delete failed')
+      const body = await deleteAgent(id);
+      if (!body?.ok) throw new Error(body?.error || "delete failed");
       // Optimistically update list and selection
-      agents.update((list) => (list || []).filter((a) => a.id !== id))
-      if ($currentAgentId === id) setAgentId(null)
-      confirmingId = null
+      agents.update((list) => (list || []).filter((a) => a.id !== id));
+      if ($currentAgentId === id) setAgentId(null);
+      confirmingId = null;
     } catch (e) {
-      console.warn('delete failed', e)
+      console.warn("delete failed", e);
     }
   }
 
   function lastUpdatedTitle(a: AgentRow): string {
-    const lu = a.last_updated ? `\nlast updated: ${a.last_updated}` : ''
+    const lu = a.last_updated ? `\nlast updated: ${a.last_updated}` : "";
     const s = a.working
-      ? 'working (active run in progress)'
+      ? "working (active run in progress)"
       : a.live
-        ? 'on (live container running)'
-        : 'off (no live container)'
-    return `Agent ${a.id}\n${s}${lu}`
+        ? "on (live container running)"
+        : "off (no live container)";
+    return `Agent ${a.id}\n${s}${lu}`;
   }
 
   function lifecycleLabel(a: AgentRow): string {
-    const lc = a.lifecycle
-    if (lc === 'ready') return 'ready'
-    if (lc === 'starting') return 'starting'
-    if (lc === 'persisted_only') return 'persisted'
+    const lc = a.lifecycle;
+    if (lc === "ready") return "ready";
+    if (lc === "starting") return "starting";
+    if (lc === "persisted_only") return "persisted";
     // Fallback when lifecycle not provided yet
-    return a.live ? 'ready' : 'persisted'
+    return a.live ? "ready" : "persisted";
   }
 </script>
 
@@ -150,11 +150,8 @@
   <div class="leftbar-header">
     <div class="row">
       <strong>Agents</strong>
-      <button
-        class="small add"
-        title="Create new agent"
-        aria-label="Create new agent"
-        on:click={openPresetDialog}>+</button
+      <button class="small add" title="Create new agent" aria-label="Create new agent" on:click={openPresetDialog}
+        >+</button
       >
       <SidebarToggle
         title="Hide agents sidebar"
@@ -170,7 +167,7 @@
     bind:this={listEl}
     on:scroll={() => {
       try {
-        localStorage.setItem('agentsSidebarScrollTop', String(listEl?.scrollTop || 0))
+        localStorage.setItem("agentsSidebarScrollTop", String(listEl?.scrollTop || 0));
       } catch {
         // Ignore localStorage errors - scroll position persistence is not critical
       }
@@ -180,14 +177,14 @@
       <div
         class="agent-row {a.id === selected ? 'current' : ''}"
         title={lastUpdatedTitle(a)}
-        aria-current={a.id === selected ? 'true' : undefined}
+        aria-current={a.id === selected ? "true" : undefined}
         role="button"
         tabindex="0"
         on:click={() => open(a.id)}
         on:keydown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            open(a.id)
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            open(a.id);
           }
         }}
       >
@@ -195,8 +192,8 @@
           type="button"
           class="agent-open"
           on:click={(e) => {
-            e.stopPropagation()
-            open(a.id)
+            e.stopPropagation();
+            open(a.id);
           }}
         >
           <span class="dot {a.working ? 'working' : a.live ? 'on' : 'off'}"></span>
@@ -211,12 +208,8 @@
         </button>
         <div class="row-actions">
           {#if confirmingId === a.id}
-            <button class="danger small" on:click|stopPropagation={() => doDelete(a.id)}
-              >Confirm</button
-            >
-            <button class="secondary small" on:click|stopPropagation={() => (confirmingId = null)}
-              >Cancel</button
-            >
+            <button class="danger small" on:click|stopPropagation={() => doDelete(a.id)}>Confirm</button>
+            <button class="secondary small" on:click|stopPropagation={() => (confirmingId = null)}>Cancel</button>
           {:else}
             <button
               class="danger small icon"
@@ -242,19 +235,19 @@
     tabindex="0"
     on:mousedown={onStartResize}
     on:keydown={(e) => {
-      const step = e.shiftKey ? 32 : 8
-      if (e.key === 'ArrowLeft') {
+      const step = e.shiftKey ? 32 : 8;
+      if (e.key === "ArrowLeft") {
         prefs.update((p) => ({
           ...p,
           leftSidebarWidth: Math.max(LEFT_MIN, p.leftSidebarWidth - step),
-        }))
-        e.preventDefault()
-      } else if (e.key === 'ArrowRight') {
+        }));
+        e.preventDefault();
+      } else if (e.key === "ArrowRight") {
         prefs.update((p) => ({
           ...p,
           leftSidebarWidth: Math.min(LEFT_MAX, p.leftSidebarWidth + step),
-        }))
-        e.preventDefault()
+        }));
+        e.preventDefault();
       }
     }}
     title="Drag to resize"
@@ -272,7 +265,7 @@
             <label for="modal-preset" style="min-width: 80px;">Preset</label>
             <select id="modal-preset" bind:value={modalPreset} style="flex: 1;">
               {#each presets as p (p.name)}
-                <option value={p.name}>{p.name}{p.description ? ` — ${p.description}` : ''}</option>
+                <option value={p.name}>{p.name}{p.description ? ` — ${p.description}` : ""}</option>
               {/each}
             </select>
           </div>
@@ -292,10 +285,8 @@
       </div>
       <footer>
         <button class="secondary" on:click={() => (showPresetModal = false)}>Cancel</button>
-        <button
-          class="primary"
-          on:click={confirmCreateFromModal}
-          disabled={!modalPreset && presets.length > 0}>Create</button
+        <button class="primary" on:click={confirmCreateFromModal} disabled={!modalPreset && presets.length > 0}
+          >Create</button
         >
       </footer>
     </div>
@@ -343,7 +334,7 @@
     padding: 0.2rem 0.25rem;
   }
   .agent-id {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: 0.85rem;
   }
   .badge.lifecycle.lc-ready {

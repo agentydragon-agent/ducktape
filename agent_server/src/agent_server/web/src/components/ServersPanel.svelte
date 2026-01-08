@@ -1,107 +1,104 @@
 <script lang="ts">
-  import '../styles/shared.css'
+  import "../styles/shared.css";
   // @ts-ignore - library ships no types
-  import JSONFormatter from 'json-formatter-js'
-  import { SvelteMap } from 'svelte/reactivity'
+  import JSONFormatter from "json-formatter-js";
+  import { SvelteMap } from "svelte/reactivity";
 
-  import ModalBackdrop from './ModalBackdrop.svelte'
-  import { attachMcpServer, detachMcpServer, refreshSnapshot } from '../features/chat/stores'
-  import { MCP_PRESETS } from '../features/mcp/presets'
-  import { buildSpecFromForm } from '../features/mcp/schema'
-  import { currentAgentId } from '../shared/router'
+  import ModalBackdrop from "./ModalBackdrop.svelte";
+  import { attachMcpServer, detachMcpServer, refreshSnapshot } from "../features/chat/stores";
+  import { MCP_PRESETS } from "../features/mcp/presets";
+  import { buildSpecFromForm } from "../features/mcp/schema";
+  import { currentAgentId } from "../shared/router";
 
-  import type { ServerEntry } from '../shared/types'
+  import type { ServerEntry } from "../shared/types";
 
-  export let servers: ServerEntry[] = []
+  export let servers: ServerEntry[] = [];
 
   // Info modal state
-  let showInfoModal = false
-  let infoServer: any | null = null
+  let showInfoModal = false;
+  let infoServer: any | null = null;
   function openInfo(health: any) {
-    infoServer = health
-    showInfoModal = true
+    infoServer = health;
+    showInfoModal = true;
   }
-  let modalToolExpanded = new SvelteMap<string, boolean>()
+  let modalToolExpanded = new SvelteMap<string, boolean>();
   function toggleModalTool(key: string) {
-    modalToolExpanded.set(key, !modalToolExpanded.get(key))
-    modalToolExpanded = modalToolExpanded
+    modalToolExpanded.set(key, !modalToolExpanded.get(key));
+    modalToolExpanded = modalToolExpanded;
   }
 
   // Collapsible JSON view action
   function jsonView(node: HTMLElement, value: any) {
     const prefersDark =
-      typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches
+      typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
     const render = (val: any) => {
-      node.innerHTML = ''
-      let parsed: any = null
-      if (val && typeof val === 'object') parsed = val
-      else if (typeof val === 'string') {
+      node.innerHTML = "";
+      let parsed: any = null;
+      if (val && typeof val === "object") parsed = val;
+      else if (typeof val === "string") {
         try {
-          parsed = JSON.parse(val)
+          parsed = JSON.parse(val);
         } catch {
-          parsed = null
+          parsed = null;
         }
       }
-      if (parsed && typeof parsed === 'object') {
+      if (parsed && typeof parsed === "object") {
         const fmt = new (JSONFormatter as any)(parsed, 1, {
-          theme: prefersDark ? 'dark' : undefined,
+          theme: prefersDark ? "dark" : undefined,
           hoverPreviewEnabled: true,
-        })
-        node.appendChild(fmt.render())
+        });
+        node.appendChild(fmt.render());
       } else {
-        const pre = document.createElement('pre')
-        pre.className = 'pre'
-        pre.textContent = typeof val === 'string' ? val : String(val)
-        node.appendChild(pre)
+        const pre = document.createElement("pre");
+        pre.className = "pre";
+        pre.textContent = typeof val === "string" ? val : String(val);
+        node.appendChild(pre);
       }
-    }
-    render(value)
-    return { update: (v: any) => render(v) }
+    };
+    render(value);
+    return { update: (v: any) => render(v) };
   }
 
   // Manage servers state/logic (moved into the top script)
-  let preset: string = ''
-  let newName = ''
-  let transport: 'stdio' | 'sse' | 'inproc' | 'http' = 'stdio'
+  let preset: string = "";
+  let newName = "";
+  let transport: "stdio" | "sse" | "inproc" | "http" = "stdio";
 
   // stdio fields
-  let stdioCommand = ''
-  let stdioArgs = '[]'
-  let stdioEnv = '{}'
+  let stdioCommand = "";
+  let stdioArgs = "[]";
+  let stdioEnv = "{}";
 
   // sse fields
-  let sseUrl = ''
-  let sseHeaders = '{}'
-  let sseTimeout: number | string = 5
-  let sseReadTimeout: number | string = 300
+  let sseUrl = "";
+  let sseHeaders = "{}";
+  let sseTimeout: number | string = 5;
+  let sseReadTimeout: number | string = 300;
 
   // inproc fields
-  let inprocFactory = ''
-  let inprocArgs = '[]'
-  let inprocKwargs = '{}'
+  let inprocFactory = "";
+  let inprocArgs = "[]";
+  let inprocKwargs = "{}";
   // http fields
-  let httpUrl = ''
-  let httpHeaders = '{}'
-  let httpAuth = ''
-  let httpTimeout: number | string = 30
-  let httpReadTimeout: number | string = 300
+  let httpUrl = "";
+  let httpHeaders = "{}";
+  let httpAuth = "";
+  let httpTimeout: number | string = 30;
+  let httpReadTimeout: number | string = 300;
 
   // async action state
-  let attaching = false
-  let attachMsg: string | null = null
-  let attachErr: string | null = null
+  let attaching = false;
+  let attachMsg: string | null = null;
+  let attachErr: string | null = null;
 
   // per-field validation errors from zod builder + attach gating
-  let fieldErrors: Record<string, string[]> = {}
-  let topErrors: string[] = []
-  $: attachEnabled =
-    !attaching && !!newName.trim() && !!previewSpec && Object.keys(fieldErrors).length === 0
+  let fieldErrors: Record<string, string[]> = {};
+  let topErrors: string[] = [];
+  $: attachEnabled = !attaching && !!newName.trim() && !!previewSpec && Object.keys(fieldErrors).length === 0;
 
   // reactive preview values
-  let previewSpec: any = null
-  let previewJsonStr: string = '{}'
+  let previewSpec: any = null;
+  let previewJsonStr: string = "{}";
 
   // Build preview + collect errors using zod-based schema
   $: {
@@ -122,41 +119,41 @@
       inprocFactory,
       inprocArgs,
       inprocKwargs,
-    })
-    previewSpec = res.spec ?? null
-    fieldErrors = res.fieldErrors || {}
-    topErrors = res.errors || []
+    });
+    previewSpec = res.spec ?? null;
+    fieldErrors = res.fieldErrors || {};
+    topErrors = res.errors || [];
     previewJsonStr = (() => {
       try {
-        return JSON.stringify(previewSpec ?? {}, null, 2)
+        return JSON.stringify(previewSpec ?? {}, null, 2);
       } catch {
-        return '{}'
+        return "{}";
       }
-    })()
+    })();
   }
 
   function applyPresetFrom(id: string) {
-    const p = MCP_PRESETS.find((it) => it.id === id)
-    if (!p) return
-    transport = p.transport
-    if (p.defaultName && !newName) newName = p.defaultName
-    if (p.transport === 'stdio' && p.defaults.stdio) {
-      stdioCommand = p.defaults.stdio.command
-      stdioArgs = JSON.stringify(p.defaults.stdio.args ?? [], null, 2)
-      stdioEnv = JSON.stringify(p.defaults.stdio.env ?? {}, null, 2)
-    } else if (p.transport === 'inproc' && p.defaults.inproc) {
-      inprocFactory = p.defaults.inproc.factory
-      inprocArgs = JSON.stringify(p.defaults.inproc.args ?? [], null, 2)
-      inprocKwargs = JSON.stringify(p.defaults.inproc.kwargs ?? {}, null, 2)
-    } else if (p.transport === 'sse' && p.defaults.sse) {
-      sseUrl = p.defaults.sse.url
-      sseHeaders = JSON.stringify(p.defaults.sse.headers ?? {}, null, 2)
-      sseTimeout = p.defaults.sse.timeout_secs
-      sseReadTimeout = p.defaults.sse.sse_read_timeout_secs
-    } else if (p.transport === 'http' && p.defaults.http) {
-      httpUrl = p.defaults.http.url
-      httpHeaders = JSON.stringify(p.defaults.http.headers ?? {}, null, 2)
-      httpAuth = p.defaults.http.auth ?? ''
+    const p = MCP_PRESETS.find((it) => it.id === id);
+    if (!p) return;
+    transport = p.transport;
+    if (p.defaultName && !newName) newName = p.defaultName;
+    if (p.transport === "stdio" && p.defaults.stdio) {
+      stdioCommand = p.defaults.stdio.command;
+      stdioArgs = JSON.stringify(p.defaults.stdio.args ?? [], null, 2);
+      stdioEnv = JSON.stringify(p.defaults.stdio.env ?? {}, null, 2);
+    } else if (p.transport === "inproc" && p.defaults.inproc) {
+      inprocFactory = p.defaults.inproc.factory;
+      inprocArgs = JSON.stringify(p.defaults.inproc.args ?? [], null, 2);
+      inprocKwargs = JSON.stringify(p.defaults.inproc.kwargs ?? {}, null, 2);
+    } else if (p.transport === "sse" && p.defaults.sse) {
+      sseUrl = p.defaults.sse.url;
+      sseHeaders = JSON.stringify(p.defaults.sse.headers ?? {}, null, 2);
+      sseTimeout = p.defaults.sse.timeout_secs;
+      sseReadTimeout = p.defaults.sse.sse_read_timeout_secs;
+    } else if (p.transport === "http" && p.defaults.http) {
+      httpUrl = p.defaults.http.url;
+      httpHeaders = JSON.stringify(p.defaults.http.headers ?? {}, null, 2);
+      httpAuth = p.defaults.http.auth ?? "";
     }
   }
 
@@ -164,8 +161,8 @@
 
   async function onAttach() {
     if (!$currentAgentId) {
-      alert('No agent selected')
-      return
+      alert("No agent selected");
+      return;
     }
     const { spec, fieldErrors: fe } = buildSpecFromForm({
       transport,
@@ -184,65 +181,65 @@
       inprocFactory,
       inprocArgs,
       inprocKwargs,
-    })
+    });
     if (!newName.trim()) {
-      attachErr = 'Server name required'
-      return
+      attachErr = "Server name required";
+      return;
     }
     if (!spec || (fe && Object.keys(fe).length)) {
-      attachErr = 'Please fix highlighted errors'
-      return
+      attachErr = "Please fix highlighted errors";
+      return;
     }
-    attaching = true
-    attachErr = null
-    attachMsg = 'Attaching…'
+    attaching = true;
+    attachErr = null;
+    attachMsg = "Attaching…";
     try {
-      await attachMcpServer(newName, spec)
-      attachMsg = 'Attached. Refreshing…'
-      await new Promise((r) => setTimeout(r, 150))
-      refreshSnapshot()
-      attachMsg = 'Attached.'
+      await attachMcpServer(newName, spec);
+      attachMsg = "Attached. Refreshing…";
+      await new Promise((r) => setTimeout(r, 150));
+      refreshSnapshot();
+      attachMsg = "Attached.";
     } catch (e: any) {
-      attachErr = e?.message || String(e)
+      attachErr = e?.message || String(e);
     } finally {
-      attaching = false
+      attaching = false;
       setTimeout(() => {
-        attachMsg = null
-        attachErr = null
-      }, 2000)
+        attachMsg = null;
+        attachErr = null;
+      }, 2000);
     }
   }
 
   async function onDetach(name: string) {
     if (!$currentAgentId) {
-      alert('No agent selected')
-      return
+      alert("No agent selected");
+      return;
     }
     try {
-      attaching = true
-      attachErr = null
-      attachMsg = `Detaching ${name}…`
-      await detachMcpServer(name)
-      attachMsg = 'Detached. Refreshing…'
-      await new Promise((r) => setTimeout(r, 150))
-      refreshSnapshot()
-      attachMsg = 'Detached.'
+      attaching = true;
+      attachErr = null;
+      attachMsg = `Detaching ${name}…`;
+      await detachMcpServer(name);
+      attachMsg = "Detached. Refreshing…";
+      await new Promise((r) => setTimeout(r, 150));
+      refreshSnapshot();
+      attachMsg = "Detached.";
     } catch (e: any) {
-      attachErr = e?.message || String(e)
+      attachErr = e?.message || String(e);
     } finally {
-      attaching = false
+      attaching = false;
       setTimeout(() => {
-        attachMsg = null
-        attachErr = null
-      }, 2000)
+        attachMsg = null;
+        attachErr = null;
+      }, 2000);
     }
   }
 
   // --- Visible server meta helpers ---
   function instSnippet(text: string | null | undefined): string | null {
-    if (!text || typeof text !== 'string') return null
-    const line = text.split(/\r?\n/)[0] || ''
-    return line.length > 160 ? line.slice(0, 157) + '…' : line
+    if (!text || typeof text !== "string") return null;
+    const line = text.split(/\r?\n/)[0] || "";
+    return line.length > 160 ? line.slice(0, 157) + "…" : line;
   }
 </script>
 
@@ -289,181 +286,125 @@
         </div>
       </div>
 
-      {#if transport === 'stdio'}
+      {#if transport === "stdio"}
         <div class="row">
           <div class="col grow">
-            <label
-              >command <input
-                type="text"
-                placeholder="/path/to/binary"
-                bind:value={stdioCommand}
-              /></label
-            >
+            <label>command <input type="text" placeholder="/path/to/binary" bind:value={stdioCommand} /></label>
             {#if fieldErrors.stdioCommand}<div class="err">
-                {fieldErrors.stdioCommand.join(', ')}
+                {fieldErrors.stdioCommand.join(", ")}
               </div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
-            <label
-              >args (JSON array) <textarea rows="3" bind:value={stdioArgs} spellcheck={false}
-              ></textarea></label
-            >
+            <label>args (JSON array) <textarea rows="3" bind:value={stdioArgs} spellcheck={false}></textarea></label>
             {#if fieldErrors.stdioArgs}<div class="err">
-                {fieldErrors.stdioArgs.join(', ')}
+                {fieldErrors.stdioArgs.join(", ")}
               </div>{/if}
           </div>
           <div class="col grow">
-            <label
-              >env (JSON object) <textarea rows="3" bind:value={stdioEnv} spellcheck={false}
-              ></textarea></label
-            >
-            {#if fieldErrors.stdioEnv}<div class="err">{fieldErrors.stdioEnv.join(', ')}</div>{/if}
+            <label>env (JSON object) <textarea rows="3" bind:value={stdioEnv} spellcheck={false}></textarea></label>
+            {#if fieldErrors.stdioEnv}<div class="err">{fieldErrors.stdioEnv.join(", ")}</div>{/if}
           </div>
         </div>
-      {:else if transport === 'sse'}
+      {:else if transport === "sse"}
         <div class="row">
           <div class="col grow">
-            <label
-              >url <input
-                type="text"
-                placeholder="http://127.0.0.1:8000/sse"
-                bind:value={sseUrl}
-              /></label
-            >
-            {#if fieldErrors.sseUrl}<div class="err">{fieldErrors.sseUrl.join(', ')}</div>{/if}
+            <label>url <input type="text" placeholder="http://127.0.0.1:8000/sse" bind:value={sseUrl} /></label>
+            {#if fieldErrors.sseUrl}<div class="err">{fieldErrors.sseUrl.join(", ")}</div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
             <label
-              >headers (JSON object) <textarea rows="3" bind:value={sseHeaders} spellcheck={false}
-              ></textarea></label
+              >headers (JSON object) <textarea rows="3" bind:value={sseHeaders} spellcheck={false}></textarea></label
             >
             {#if fieldErrors.sseHeaders}<div class="err">
-                {fieldErrors.sseHeaders.join(', ')}
+                {fieldErrors.sseHeaders.join(", ")}
               </div>{/if}
           </div>
           <div class="col">
             <label>timeout_secs (s) <input type="number" min="1" bind:value={sseTimeout} /></label>
             {#if fieldErrors.sseTimeout}<div class="err">
-                {fieldErrors.sseTimeout.join(', ')}
+                {fieldErrors.sseTimeout.join(", ")}
               </div>{/if}
           </div>
           <div class="col">
-            <label
-              >sse_read_timeout_secs (s) <input
-                type="number"
-                min="1"
-                bind:value={sseReadTimeout}
-              /></label
-            >
+            <label>sse_read_timeout_secs (s) <input type="number" min="1" bind:value={sseReadTimeout} /></label>
             {#if fieldErrors.sseReadTimeout}<div class="err">
-                {fieldErrors.sseReadTimeout.join(', ')}
+                {fieldErrors.sseReadTimeout.join(", ")}
               </div>{/if}
           </div>
         </div>
-      {:else if transport === 'http'}
+      {:else if transport === "http"}
         <div class="row">
           <div class="col grow">
-            <label
-              >url <input
-                type="text"
-                placeholder="http://127.0.0.1:8768/mcp"
-                bind:value={httpUrl}
-              /></label
-            >
-            {#if fieldErrors.httpUrl}<div class="err">{fieldErrors.httpUrl.join(', ')}</div>{/if}
+            <label>url <input type="text" placeholder="http://127.0.0.1:8768/mcp" bind:value={httpUrl} /></label>
+            {#if fieldErrors.httpUrl}<div class="err">{fieldErrors.httpUrl.join(", ")}</div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
             <label
-              >headers (JSON object) <textarea rows="3" bind:value={httpHeaders} spellcheck={false}
-              ></textarea></label
+              >headers (JSON object) <textarea rows="3" bind:value={httpHeaders} spellcheck={false}></textarea></label
             >
             {#if fieldErrors.httpHeaders}<div class="err">
-                {fieldErrors.httpHeaders.join(', ')}
+                {fieldErrors.httpHeaders.join(", ")}
               </div>{/if}
           </div>
           <div class="col">
-            <label
-              >auth (Bearer) <input
-                type="text"
-                bind:value={httpAuth}
-                placeholder="optional"
-              /></label
-            >
-            {#if fieldErrors.httpAuth}<div class="err">{fieldErrors.httpAuth.join(', ')}</div>{/if}
+            <label>auth (Bearer) <input type="text" bind:value={httpAuth} placeholder="optional" /></label>
+            {#if fieldErrors.httpAuth}<div class="err">{fieldErrors.httpAuth.join(", ")}</div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col">
             <label>timeout_secs (s) <input type="number" min="1" bind:value={httpTimeout} /></label>
             {#if fieldErrors.httpTimeout}<div class="err">
-                {fieldErrors.httpTimeout.join(', ')}
+                {fieldErrors.httpTimeout.join(", ")}
               </div>{/if}
           </div>
           <div class="col">
-            <label
-              >read_timeout_secs (s) <input
-                type="number"
-                min="1"
-                bind:value={httpReadTimeout}
-              /></label
-            >
+            <label>read_timeout_secs (s) <input type="number" min="1" bind:value={httpReadTimeout} /></label>
             {#if fieldErrors.httpReadTimeout}<div class="err">
-                {fieldErrors.httpReadTimeout.join(', ')}
+                {fieldErrors.httpReadTimeout.join(", ")}
               </div>{/if}
           </div>
         </div>
       {:else}
         <div class="row">
           <div class="col grow">
-            <label
-              >factory <input
-                type="text"
-                placeholder="pkg.mod:make_server"
-                bind:value={inprocFactory}
-              /></label
-            >
+            <label>factory <input type="text" placeholder="pkg.mod:make_server" bind:value={inprocFactory} /></label>
             {#if fieldErrors.inprocFactory}<div class="err">
-                {fieldErrors.inprocFactory.join(', ')}
+                {fieldErrors.inprocFactory.join(", ")}
               </div>{/if}
           </div>
         </div>
         <div class="row">
           <div class="col grow">
-            <label
-              >args (JSON array) <textarea rows="3" bind:value={inprocArgs} spellcheck={false}
-              ></textarea></label
-            >
+            <label>args (JSON array) <textarea rows="3" bind:value={inprocArgs} spellcheck={false}></textarea></label>
             {#if fieldErrors.inprocArgs}<div class="err">
-                {fieldErrors.inprocArgs.join(', ')}
+                {fieldErrors.inprocArgs.join(", ")}
               </div>{/if}
           </div>
           <div class="col grow">
             <label
-              >kwargs (JSON object) <textarea rows="3" bind:value={inprocKwargs} spellcheck={false}
-              ></textarea></label
+              >kwargs (JSON object) <textarea rows="3" bind:value={inprocKwargs} spellcheck={false}></textarea></label
             >
             {#if fieldErrors.inprocKwargs}<div class="err">
-                {fieldErrors.inprocKwargs.join(', ')}
+                {fieldErrors.inprocKwargs.join(", ")}
               </div>{/if}
           </div>
         </div>
       {/if}
 
       <div class="row">
-        <button class="small" type="button" on:click={() => onAttach()} disabled={!attachEnabled}
-          >Attach Server</button
-        >
+        <button class="small" type="button" on:click={() => onAttach()} disabled={!attachEnabled}>Attach Server</button>
         {#if attachMsg}<span class="note">{attachMsg}</span>{/if}
         {#if attachErr}<span class="err">{attachErr}</span>{/if}
         {#if topErrors.length}
-          <span class="err" title={topErrors.join(', ')}>
-            Note: {topErrors.join(', ')}
+          <span class="err" title={topErrors.join(", ")}>
+            Note: {topErrors.join(", ")}
           </span>
         {/if}
       </div>
@@ -472,7 +413,7 @@
         <summary>Preview JSON</summary>
         <pre class="pre">{previewJsonStr}</pre>
         {#if topErrors.length}
-          <div class="err">{topErrors.join(', ')}</div>
+          <div class="err">{topErrors.join(", ")}</div>
         {/if}
       </details>
     </div>
@@ -481,32 +422,30 @@
   {#if servers && servers.length}
     {#each servers as health (health.name)}
       {@const serverName = health.name}
-      {@const serverTools = health.state === 'running' ? (health.tools ?? []) : []}
-      {@const errorMsg = health.state === 'failed' ? health.error : null}
-      {@const failureText = errorMsg ? `: ${errorMsg}` : ''}
+      {@const serverTools = health.state === "running" ? (health.tools ?? []) : []}
+      {@const errorMsg = health.state === "failed" ? health.error : null}
+      {@const failureText = errorMsg ? `: ${errorMsg}` : ""}
       <div class="server-item">
         <div class="server-header-row">
           <div
             class="server-header"
-            title={health?.state === 'running' ? 'running' : `failed${failureText}`}
+            title={health?.state === "running" ? "running" : `failed${failureText}`}
             role="button"
             tabindex="0"
             on:click={() => openInfo(health)}
             on:keydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                openInfo(health)
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openInfo(health);
               }
             }}
           >
             <span
               class="dot {health?.state === 'running' ? 'on' : 'off'}"
-              title={health?.state === 'running' ? 'running' : `failed${failureText}`}
+              title={health?.state === "running" ? "running" : `failed${failureText}`}
             ></span>
             <span class="server-name">{serverName}</span>
-            <span class="tool-count" title={`${serverTools.length} tools`}
-              >🛠 {serverTools.length}</span
-            >
+            <span class="tool-count" title={`${serverTools.length} tools`}>🛠 {serverTools.length}</span>
           </div>
           <button
             class="small detach-btn"
@@ -532,7 +471,7 @@
           </button>
         </div>
         <!-- Visible server meta (instructions snippet + capabilities badges) -->
-        {#if health.state === 'running'}
+        {#if health.state === "running"}
           <div class="server-meta">
             {#if instSnippet(health.initialize?.instructions)}
               <div class="inst-snippet" title="Instructions snippet">
@@ -553,7 +492,7 @@
               {/if}
             </div>
           </div>
-        {:else if health.state === 'failed' && health.error}
+        {:else if health.state === "failed" && health.error}
           <div class="server-meta"><div class="err">Error: {health.error}</div></div>
         {/if}
       </div>
@@ -569,8 +508,7 @@
       <header>
         <div style="display:flex; align-items:center; gap:0.5rem;">
           <span class="dot {infoServer?.state === 'running' ? 'on' : 'off'}"></span>
-          <strong
-            style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;"
+          <strong style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;"
             >{infoServer?.name}</strong
           >
           <span class="muted">{infoServer?.state}</span>
@@ -619,11 +557,11 @@
           {#if Array.isArray(infoServer?.tools) && infoServer.tools.length}
             <div class="tools-list modal-tools">
               {#each infoServer.tools as tool (tool.name)}
-                {@const tkey = `${infoServer.name}:${tool?.name ?? ''}`}
+                {@const tkey = `${infoServer.name}:${tool?.name ?? ""}`}
                 <div class="tool-item">
                   <button type="button" class="tool-header" on:click={() => toggleModalTool(tkey)}>
-                    <span class="disclosure">{modalToolExpanded.get(tkey) ? '▼' : '▶'}</span>
-                    <span class="tool-name">{tool?.name || '(unnamed tool)'}</span>
+                    <span class="disclosure">{modalToolExpanded.get(tkey) ? "▼" : "▶"}</span>
+                    <span class="tool-name">{tool?.name || "(unnamed tool)"}</span>
                   </button>
                   {#if modalToolExpanded.get(tkey)}
                     <div class="tool-details">
@@ -666,11 +604,11 @@
     font-size: 0.85rem;
   }
   /* Override full-width controls inside inline fields */
-  .field input[type='text'],
+  .field input[type="text"],
   .field select {
     width: auto;
   }
-  .field input[type='text'] {
+  .field input[type="text"] {
     flex: 1;
     min-width: 0;
   }
@@ -681,10 +619,10 @@
   }
   textarea {
     width: 100%;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: 0.85rem;
   }
-  input[type='text'],
+  input[type="text"],
   select {
     width: 100%;
   }
@@ -723,7 +661,7 @@
     display: none;
   }
   .server-name {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: 0.85rem;
     font-weight: 500;
   }
@@ -764,7 +702,7 @@
     margin: 0.25rem 0;
   }
   .tool-name {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: 0.8rem;
   }
   .tool-details {
@@ -778,7 +716,7 @@
     color: #555;
     font-size: 0.8rem;
     margin: 0 0 0.5rem 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;

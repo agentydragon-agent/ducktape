@@ -1,12 +1,12 @@
 <script lang="ts">
-  import '../styles/shared.css'
-  import ApprovalsPanel from './ApprovalsPanel.svelte'
-  import ServersPanel from './ServersPanel.svelte'
-  import SettingsPanel from './SettingsPanel.svelte'
+  import "../styles/shared.css";
+  import ApprovalsPanel from "./ApprovalsPanel.svelte";
+  import ServersPanel from "./ServersPanel.svelte";
+  import SettingsPanel from "./SettingsPanel.svelte";
   import {
     agentStatus as agentStatusStore,
     agentStatusError as agentStatusErrorStore,
-  } from '../features/agents/stores'
+  } from "../features/agents/stores";
   import {
     agentPhase as agentPhaseStore,
     pendingApprovals,
@@ -20,26 +20,26 @@
     setPolicy as wsSetPolicy,
     approveProposal as wsApproveProposal,
     withdrawProposal as wsWithdrawProposal,
-  } from '../features/chat/stores'
-  import { mcpManager } from '../features/mcp/manager'
+  } from "../features/chat/stores";
+  import { mcpManager } from "../features/mcp/manager";
 
   // Derive connection status from MCP manager
-  const mcpConnected = mcpManager.connectionStatus
+  const mcpConnected = mcpManager.connectionStatus;
 
   // Local UI state
-  let activeTab: 'approvals' | 'servers' | 'settings' = 'approvals'
-  let showPolicyEditor = false
-  let editingPolicy = ''
+  let activeTab: "approvals" | "servers" | "settings" = "approvals";
+  let showPolicyEditor = false;
+  let editingPolicy = "";
 
-  export let deleteCurrentAgent: () => void
+  export let deleteCurrentAgent: () => void;
 
   function startEditingPolicy() {
-    editingPolicy = $approvalPolicyStore?.content || ''
-    showPolicyEditor = true
+    editingPolicy = $approvalPolicyStore?.content || "";
+    showPolicyEditor = true;
   }
   function cancelEditingPolicy() {
-    showPolicyEditor = false
-    editingPolicy = ''
+    showPolicyEditor = false;
+    editingPolicy = "";
   }
 </script>
 
@@ -47,41 +47,36 @@
   <div
     class="ws"
     title={$mcpConnected.connected
-      ? 'MCP connected (browser ↔ server). Controls live updates; not agent liveness.'
-      : 'MCP disconnected (browser ↔ server). Live updates paused; not agent liveness.'}
+      ? "MCP connected (browser ↔ server). Controls live updates; not agent liveness."
+      : "MCP disconnected (browser ↔ server). Live updates paused; not agent liveness."}
   >
     <span class="dot {$mcpConnected.connected ? 'on' : 'off'}"></span>
-    <span>{$mcpConnected.connected ? 'MCP connected' : 'MCP disconnected'}</span>
+    <span>{$mcpConnected.connected ? "MCP connected" : "MCP disconnected"}</span>
   </div>
   <div class="status">Phase: {$agentPhaseStore}</div>
   {#if $agentStatusStore}
     <div class="row" style="gap: 0.5rem; font-size: 0.85rem; margin-top: 0.25rem;">
       <span title="Lifecycle"
-        >Lifecycle: {$agentStatusStore.lifecycle ??
-          ($agentStatusStore.live ? 'ready' : 'persisted_only')}</span
+        >Lifecycle: {$agentStatusStore.lifecycle ?? ($agentStatusStore.live ? "ready" : "persisted_only")}</span
       >
 
       {#if $agentStatusStore.policy}
         <span title="Policy">
-          Policy: {typeof $agentStatusStore.policy.version === 'number'
+          Policy: {typeof $agentStatusStore.policy.version === "number"
             ? `v${$agentStatusStore.policy.version}`
-            : 'unavailable'}
+            : "unavailable"}
         </span>
       {/if}
       {#if $agentStatusStore.mcp}
         <span title="MCP servers"
-          >MCP: {Object.values($agentStatusStore.mcp.entries || {}).filter(
-            (e: any) => e?.state !== 'running'
-          ).length} failed</span
+          >MCP: {Object.values($agentStatusStore.mcp.entries || {}).filter((e: any) => e?.state !== "running").length} failed</span
         >
       {/if}
       {#if $agentStatusStore.container}
         <span
-          title={$agentStatusStore.container.id
-            ? `Container ${$agentStatusStore.container.id}`
-            : 'Runtime container'}
+          title={$agentStatusStore.container.id ? `Container ${$agentStatusStore.container.id}` : "Runtime container"}
         >
-          Runtime: {$agentStatusStore.container.id ? 'active' : 'starting'}
+          Runtime: {$agentStatusStore.container.id ? "active" : "starting"}
         </span>
       {/if}
     </div>
@@ -89,11 +84,8 @@
     {#if Array.isArray($mcpServerEntriesStore) && $mcpServerEntriesStore.length}
       <div class="mounts">
         {#each $mcpServerEntriesStore as m (m.name)}
-          {@const errorMsg = m.state === 'failed' ? m.error : null}
-          <div
-            class="mount-item"
-            title={`server ${m.name}: ${m.state}${errorMsg ? ' — ' + errorMsg : ''}`}
-          >
+          {@const errorMsg = m.state === "failed" ? m.error : null}
+          <div class="mount-item" title={`server ${m.name}: ${m.state}${errorMsg ? " — " + errorMsg : ""}`}>
             <span class="dot {m.state === 'running' ? 'on' : 'off'}"></span>
             <span class="name">{m.name}</span>
           </div>
@@ -109,29 +101,20 @@
 </div>
 
 <div class="tabs">
-  <button
-    class="tab {activeTab === 'approvals' ? 'active' : ''}"
-    on:click={() => (activeTab = 'approvals')}
-  >
+  <button class="tab {activeTab === 'approvals' ? 'active' : ''}" on:click={() => (activeTab = "approvals")}>
     Approvals{#if Array.from($pendingApprovals.values()).length > 0}
       <span class="badge">{Array.from($pendingApprovals.values()).length}</span>{/if}
   </button>
-  <button
-    class="tab {activeTab === 'servers' ? 'active' : ''}"
-    on:click={() => (activeTab = 'servers')}
-  >
+  <button class="tab {activeTab === 'servers' ? 'active' : ''}" on:click={() => (activeTab = "servers")}>
     MCP ({$mcpServerEntriesStore.length})
   </button>
-  <button
-    class="tab {activeTab === 'settings' ? 'active' : ''}"
-    on:click={() => (activeTab = 'settings')}
-  >
+  <button class="tab {activeTab === 'settings' ? 'active' : ''}" on:click={() => (activeTab = "settings")}>
     Settings
   </button>
 </div>
 
 <div class="tab-content">
-  {#if activeTab === 'approvals'}
+  {#if activeTab === "approvals"}
     <ApprovalsPanel
       approvalPolicy={$approvalPolicyStore}
       {showPolicyEditor}
@@ -146,14 +129,10 @@
       deny={wsDeny}
       pending={Array.from($pendingApprovals.values())}
     />
-  {:else if activeTab === 'servers'}
+  {:else if activeTab === "servers"}
     <ServersPanel servers={$mcpServerEntriesStore} />
   {:else}
-    <SettingsPanel
-      lastError={$lastErrorStore}
-      clearError={() => clearWsError()}
-      {deleteCurrentAgent}
-    />
+    <SettingsPanel lastError={$lastErrorStore} clearError={() => clearWsError()} {deleteCurrentAgent} />
   {/if}
 </div>
 
@@ -203,7 +182,7 @@
     font-size: 0.75rem;
   }
   .mount-item .name {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   }
   .tabs {
     display: flex;

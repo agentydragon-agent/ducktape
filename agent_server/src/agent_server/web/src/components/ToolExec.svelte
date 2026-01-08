@@ -1,35 +1,35 @@
 <script lang="ts">
-  import '../styles/shared.css'
-  import JsonDisclosure from './JsonDisclosure.svelte'
+  import "../styles/shared.css";
+  import JsonDisclosure from "./JsonDisclosure.svelte";
 
-  import type { ToolItem } from '../shared/types'
+  import type { ToolItem } from "../shared/types";
 
-  export let item: ToolItem
+  export let item: ToolItem;
 
   function copyText(text: string) {
-    if (!text) return
+    if (!text) return;
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {})
+      navigator.clipboard.writeText(text).catch(() => {});
     } else {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      document.body.appendChild(ta)
-      ta.select()
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
       try {
-        document.execCommand('copy')
+        document.execCommand("copy");
       } finally {
-        document.body.removeChild(ta)
+        document.body.removeChild(ta);
       }
     }
   }
 
   function copyExec() {
-    const parts: string[] = []
-    const c: any = item?.content || {}
-    if (c?.cmd) parts.push(`$ ${c.cmd}`)
-    if (c?.stdout) parts.push(String(c.stdout))
-    if (c?.stderr) parts.push(String(c.stderr))
-    copyText(parts.join('\n'))
+    const parts: string[] = [];
+    const c: any = item?.content || {};
+    if (c?.cmd) parts.push(`$ ${c.cmd}`);
+    if (c?.stdout) parts.push(String(c.stdout));
+    if (c?.stderr) parts.push(String(c.stderr));
+    copyText(parts.join("\n"));
   }
 </script>
 
@@ -39,17 +39,9 @@
     {#if item.decision}<span class="term-approval">[{item.decision}]</span>{/if}
     <button class="copy" title="Copy output" on:click={copyExec}>Copy</button>
   </div>
-  {#if typeof item.tool === 'string' && item.tool.endsWith('__sandbox_exec')}
-    <JsonDisclosure
-      label="SBPL Policy"
-      value={(item.content as any)?.args?.policy}
-      persistKey={`sbpl:${item.id}`}
-    />
-    <JsonDisclosure
-      label="Raw output (JSON)"
-      value={item.content}
-      persistKey={`execraw:${item.id}`}
-    />
+  {#if typeof item.tool === "string" && item.tool.endsWith("__sandbox_exec")}
+    <JsonDisclosure label="SBPL Policy" value={(item.content as any)?.args?.policy} persistKey={`sbpl:${item.id}`} />
+    <JsonDisclosure label="Raw output (JSON)" value={item.content} persistKey={`execraw:${item.id}`} />
   {/if}
   <div class="terminal-body">
     {#if item.content && (item.content as any).cmd}

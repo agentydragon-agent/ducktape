@@ -1,103 +1,101 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
+  import { onMount, onDestroy } from "svelte";
 
-  import AgentsSidebar from './components/AgentsSidebar.svelte'
-  import ChatPane from './components/ChatPane.svelte'
-  import RightSidebar from './components/RightSidebar.svelte'
-  import SidebarToggle from './components/SidebarToggle.svelte'
-  import { deleteAgent } from './features/agents/stores'
-  import { disconnectAgentMcp } from './features/chat/stores'
-  import { initAgentUiController } from './features/controller'
-  import { prefs } from './shared/prefs'
-  import { currentAgentId as currentAgentIdStore, setAgentId } from './shared/router'
+  import AgentsSidebar from "./components/AgentsSidebar.svelte";
+  import ChatPane from "./components/ChatPane.svelte";
+  import RightSidebar from "./components/RightSidebar.svelte";
+  import SidebarToggle from "./components/SidebarToggle.svelte";
+  import { deleteAgent } from "./features/agents/stores";
+  import { disconnectAgentMcp } from "./features/chat/stores";
+  import { initAgentUiController } from "./features/controller";
+  import { prefs } from "./shared/prefs";
+  import { currentAgentId as currentAgentIdStore, setAgentId } from "./shared/router";
 
-  let hasAgent = false
+  let hasAgent = false;
   // Current agent id
-  let agentId: string | null = null
+  let agentId: string | null = null;
 
   onDestroy(() => {
-    disconnectAgentMcp()
-  })
+    disconnectAgentMcp();
+  });
 
   // Resize functionality
-  let isLeftResizing = false
-  let isSplitResizing = false
-  const SPLIT_MIN_TOP = 120
-  const SPLIT_MIN_BOTTOM = 180
+  let isLeftResizing = false;
+  let isSplitResizing = false;
+  const SPLIT_MIN_TOP = 120;
+  const SPLIT_MIN_BOTTOM = 180;
 
   function startLeftResize() {
-    isLeftResizing = true
-    document.addEventListener('mousemove', handleLeftResize)
-    document.addEventListener('mouseup', stopLeftResize)
+    isLeftResizing = true;
+    document.addEventListener("mousemove", handleLeftResize);
+    document.addEventListener("mouseup", stopLeftResize);
   }
   function handleLeftResize(e: MouseEvent) {
-    if (!isLeftResizing) return
-    const newWidth = e.clientX
-    const w = Math.max(160, Math.min(500, newWidth))
-    prefs.update((p) => ({ ...p, leftSidebarWidth: w }))
+    if (!isLeftResizing) return;
+    const newWidth = e.clientX;
+    const w = Math.max(160, Math.min(500, newWidth));
+    prefs.update((p) => ({ ...p, leftSidebarWidth: w }));
   }
   // Top/bottom split resize (inside left pane)
   function startSplitResize() {
-    isSplitResizing = true
-    document.addEventListener('mousemove', handleSplitResize)
-    document.addEventListener('mouseup', stopSplitResize)
+    isSplitResizing = true;
+    document.addEventListener("mousemove", handleSplitResize);
+    document.addEventListener("mouseup", stopSplitResize);
   }
   function handleSplitResize(e: MouseEvent) {
-    if (!isSplitResizing) return
+    if (!isSplitResizing) return;
     // Compute relative to viewport; left pane takes full height
-    const minTop = SPLIT_MIN_TOP
-    const minBottom = SPLIT_MIN_BOTTOM
-    const total = window.innerHeight
-    const y = e.clientY
-    const top = Math.max(minTop, Math.min(total - minBottom, y))
-    prefs.update((p) => ({ ...p, leftTopHeight: top }))
+    const minTop = SPLIT_MIN_TOP;
+    const minBottom = SPLIT_MIN_BOTTOM;
+    const total = window.innerHeight;
+    const y = e.clientY;
+    const top = Math.max(minTop, Math.min(total - minBottom, y));
+    prefs.update((p) => ({ ...p, leftTopHeight: top }));
   }
   function stopSplitResize() {
-    isSplitResizing = false
-    document.removeEventListener('mousemove', handleSplitResize)
-    document.removeEventListener('mouseup', stopSplitResize)
+    isSplitResizing = false;
+    document.removeEventListener("mousemove", handleSplitResize);
+    document.removeEventListener("mouseup", stopSplitResize);
   }
   function stopLeftResize() {
-    isLeftResizing = false
-    document.removeEventListener('mousemove', handleLeftResize)
-    document.removeEventListener('mouseup', stopLeftResize)
+    isLeftResizing = false;
+    document.removeEventListener("mousemove", handleLeftResize);
+    document.removeEventListener("mouseup", stopLeftResize);
   }
 
   // No-op placeholders removed; controller manages WS + polling
   async function deleteCurrentAgent() {
-    if (!agentId) return
+    if (!agentId) return;
     try {
-      const body = await deleteAgent(agentId)
+      const body = await deleteAgent(agentId);
       if (!body?.ok) {
-        throw new Error(body?.error || 'delete failed')
+        throw new Error(body?.error || "delete failed");
       }
       // Clear current agent; center pane shows AgentsList
-      setAgentId(null)
+      setAgentId(null);
     } catch (e: any) {
-      console.error(e)
+      console.error(e);
     }
   }
 
   // React to agent id changes via store
   $: {
-    const id = $currentAgentIdStore
-    agentId = id
-    hasAgent = !!id
+    const id = $currentAgentIdStore;
+    agentId = id;
+    hasAgent = !!id;
   }
 
   onMount(() => {
-    const disposeCtrl = initAgentUiController()
+    const disposeCtrl = initAgentUiController();
     onDestroy(() => {
-      disposeCtrl()
-    })
-  })
+      disposeCtrl();
+    });
+  });
 </script>
 
 <main
   class="shell"
-  style="grid-template-columns: {$prefs.showAgentsSidebar
-    ? `${$prefs.leftSidebarWidth}px 1fr`
-    : `1fr`}"
+  style="grid-template-columns: {$prefs.showAgentsSidebar ? `${$prefs.leftSidebarWidth}px 1fr` : `1fr`}"
 >
   {#if $prefs.showAgentsSidebar}
     <div class="left-stack" style="grid-column: 1; grid-row: 1; position: relative;">
@@ -116,22 +114,19 @@
         tabindex="0"
         on:mousedown={startSplitResize}
         on:keydown={(e) => {
-          const step = e.shiftKey ? 40 : 10
-          if (e.key === 'ArrowUp') {
+          const step = e.shiftKey ? 40 : 10;
+          if (e.key === "ArrowUp") {
             prefs.update((p) => ({
               ...p,
               leftTopHeight: Math.max(SPLIT_MIN_TOP, p.leftTopHeight - step),
-            }))
-            e.preventDefault()
-          } else if (e.key === 'ArrowDown') {
+            }));
+            e.preventDefault();
+          } else if (e.key === "ArrowDown") {
             prefs.update((p) => ({
               ...p,
-              leftTopHeight: Math.min(
-                window.innerHeight - SPLIT_MIN_BOTTOM,
-                p.leftTopHeight + step
-              ),
-            }))
-            e.preventDefault()
+              leftTopHeight: Math.min(window.innerHeight - SPLIT_MIN_BOTTOM, p.leftTopHeight + step),
+            }));
+            e.preventDefault();
           }
         }}
         title="Drag to resize"
@@ -207,11 +202,11 @@
       Roboto,
       Ubuntu,
       Cantarell,
-      'Noto Sans',
-      'Helvetica Neue',
+      "Noto Sans",
+      "Helvetica Neue",
       Arial,
-      'Apple Color Emoji',
-      'Segoe UI Emoji';
+      "Apple Color Emoji",
+      "Segoe UI Emoji";
   }
 
   /* Chat styles moved into ChatPane */

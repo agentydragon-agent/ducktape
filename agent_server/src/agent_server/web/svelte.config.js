@@ -8,4 +8,4 @@ export default {
     // Enable TypeScript support
     // The actual preprocessing happens during vite build
   },
-}
+};

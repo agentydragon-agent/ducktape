@@ -1,14 +1,14 @@
 // Simple hash-based router for Svelte 5
-import { writable, derived } from "svelte/store";
+import { writable, derived } from 'svelte/store';
 
 // Current hash path (without the #)
 function createRouter() {
-  const path = writable(window.location.hash.slice(1) || "/");
+  const path = writable(window.location.hash.slice(1) || '/');
 
   // Listen for hash changes
-  if (typeof window !== "undefined") {
-    window.addEventListener("hashchange", () => {
-      path.set(window.location.hash.slice(1) || "/");
+  if (typeof window !== 'undefined') {
+    window.addEventListener('hashchange', () => {
+      path.set(window.location.hash.slice(1) || '/');
     });
   }
 
@@ -33,7 +33,7 @@ export function goto(path: string) {
 // Resolve paths (replaces $app/paths.resolve)
 // With hash routing, base is always empty
 export function resolve(path: string): string {
-  return "#" + path;
+  return '#' + path;
 }
 
 // Parse route params from path
@@ -43,14 +43,14 @@ export function parseParams(pattern: string, path: string): Record<string, strin
   const regexStr = pattern
     .replace(/\[\.\.\.(\w+)\]/g, (_, name) => {
       paramNames.push(name);
-      return "(.+)"; // catch-all
+      return '(.+)'; // catch-all
     })
     .replace(/\[(\w+)\]/g, (_, name) => {
       paramNames.push(name);
-      return "([^/]+)";
+      return '([^/]+)';
     });
 
-  const regex = new RegExp("^" + regexStr + "$");
+  const regex = new RegExp('^' + regexStr + '$');
   const match = path.match(regex);
 
   if (!match) return null;

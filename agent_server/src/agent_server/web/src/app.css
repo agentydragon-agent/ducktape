@@ -117,7 +117,7 @@ button:disabled {
 
 /* Global styles for dynamic content inserted at runtime */
 .text.md :where(pre, code) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 .pre {
   background: var(--surface-2);
