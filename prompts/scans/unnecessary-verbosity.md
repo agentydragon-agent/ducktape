@@ -585,11 +585,13 @@ if result is not None:
 Build AST analyzers to find candidates:
 
 1. **SingleAssignmentDetector**: Track assignments and usages, find variables assigned once and used once on next line
+
    - Visit Assign nodes → record variable names and line numbers
    - Visit Name nodes with Load context → record usage line numbers
    - Find where assignment line + 1 == usage line and usage count == 1
 
 2. **WalrusOpportunityDetector**: Find assign-then-check patterns
+
    - Walk function bodies looking for consecutive statements
    - Pattern: `ast.Assign` followed by `ast.If` or `ast.While`
    - Check if condition references the assigned variable
@@ -634,6 +636,7 @@ rg --type py "(\w+)\s*=\s*[^\n]+\n\s*return\s+\1\s*$" --multiline
 **When to keep intermediate variables:**
 
 1. **Complex expressions** - Breaking down improves readability
+
    - More than 2 levels of nesting
    - More than 60 characters in expression
    - Multiple function calls with unclear purpose

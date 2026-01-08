@@ -24,22 +24,26 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
 ### ✅ Completed Tasks
 
 1. **Restored helmfile.yaml changes**
+
    - Re-added cluster-infrastructure, webhook-inbox, gitea-mirrors releases
    - Added OpenEBS repositories for ZFS CSI
    - Set timeout override for gitea-mirrors (120s)
 
 2. **Fixed gitea-mirrors Helm chart**
+
    - Updated repository URL from dl.gitea.com to dl.gitea.io
    - Fixed values passing to gitea subchart
    - Configured persistence.create: false to prevent duplicate PVC
    - Set persistence.claimName: gitea-mirrors-data
 
 3. **Fixed storage configuration**
+
    - Changed from ZFS CSI to hostPath (ZFS not available on k3s VMs)
    - Updated node topology from "atlas" to "k3s-master"
    - Configured hostPath at `/mnt/gitea-mirrors`
 
 4. **Created Ansible automation**
+
    - `ansible/roles/gitea-mirrors/`: Role for ZFS dataset creation
    - `ansible/roles/gitea-mirrors/files/virtiofsd-gitea-mirrors.service`: systemd service
    - Added gitea-mirrors role to atlas.yaml playbook
@@ -61,6 +65,7 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
    ```
 
    This will:
+
    - Create ZFS dataset `tank/gitea-public-mirrors` with 200GB quota
    - Configure virtiofs for k3s VMs (vmid 200, 201)
    - Install and start virtiofsd systemd service
@@ -73,6 +78,7 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
    ```
 
    This will:
+
    - Create `/mnt/gitea-mirrors` mount point
    - Add virtiofs entry to /etc/fstab
    - Mount the filesystem
@@ -85,12 +91,14 @@ Setting up a dedicated Gitea instance (`gitea-mirrors`) to host public repositor
    ```
 
    This will:
+
    - Create gitea-mirrors namespace
    - Deploy hostPath PV/PVC
    - Install Gitea with SQLite backend
    - Configure as public mirror instance
 
 4. **Bootstrap mirror repositories**
+
    - Use existing gitea_mirror MCP server
    - Create mirrors for commonly used repositories
    - Test with initial set of repositories

@@ -7,6 +7,7 @@ This document outlines the understanding of the requirements, constraints, and i
 The primary goal of `claude-linter` is to provide real-time linting feedback and automatic fixes during Claude Code's file manipulation operations (`Write`, `Edit`, `MultiEdit`).
 
 - **Pre-Write Hook**
+
   - **Purpose:** To act as a gatekeeper, preventing a write operation if critical, non-autofixable violations are detected in the proposed content.
   - **Behavior:**
     - Should analyze the _proposed content_ of the file _before_ it is written.
@@ -43,6 +44,7 @@ The `claude-linter` tool must strictly adhere to the Claude Code Hooks API for c
 
 - **Git Dependency:** `pre-commit` is fundamentally designed to operate within a Git repository. Many of its internal APIs and CLI commands implicitly assume the presence of a `.git` directory and staged/unstaged files.
 - **Programmatic vs. CLI Execution:**
+
   - **CLI (`subprocess.run`):** Shelling out to `pre-commit` CLI (`pre-commit run --files ...`) is simpler to implement initially but introduces challenges:
     - It returns its own exit codes (non-zero for failures), which must be carefully wrapped to ensure our `claude-linter` always exits `0`.
     - It still performs Git checks, which can fail if the `cwd` is not a Git repo.
@@ -52,6 +54,7 @@ The `claude-linter` tool must strictly adhere to the Claude Code Hooks API for c
     - **Remote Repository Management:** `pre-commit`'s handling of remote hook repositories (e.g., `https://github.com/psf/black`) involves `git clone`/`fetch`/`checkout`. This _must_ be managed by our tool, ideally in a central cache, using `subprocess.check_call(['git', ...])`. This is the _only_ acceptable use of `subprocess.check_call` for Git operations.
 
 - **Local vs. Remote Hooks:**
+
   - **`repo: local` hooks:** These are scripts defined directly within the `.pre-commit-config.yaml` or referenced locally. They are easier to run programmatically without Git dependencies.
   - **Remote hooks:** These require `pre-commit` to clone and manage a separate Git repository for the hook's source code. This is where the Git dependency becomes unavoidable for `pre-commit`'s internal logic.
 

@@ -103,11 +103,13 @@ Write tool doesn't provide patches but contains the full new content:
 ## Key Observations
 
 1. **Structured Patch Format**: The `structuredPatch` array contains hunks with:
+
    - `oldStart`/`oldLines`: Position and count in original file
    - `newStart`/`newLines`: Position and count in new file
    - `lines`: Array of diff lines prefixed with `-`, `+`, or space
 
 2. **Line Prefixes**:
+
    - `-` prefix: Removed line
    - `+` prefix: Added line
    - Space or no prefix: Context line

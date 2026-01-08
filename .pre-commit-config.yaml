@@ -84,16 +84,16 @@ repos:
         language: system
         files: \.nix$
 
-  # Prettier - self-managed via mirrors-prettier (active fork)
-  # Uses node language so pre-commit manages the prettier installation
-  - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.7.4
+  # Prettier - using npx for reliable cross-environment execution
+  # npx downloads prettier + plugins on demand, works in any environment with node
+  - repo: local
     hooks:
       - id: prettier
+        name: prettier
+        entry: npx --yes --package=prettier@3.4.2 --package=prettier-plugin-svelte@3.4.1 -- prettier --write --ignore-unknown
+        language: system
         types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json, html]
         exclude: "node_modules/|.pnpm/|bazel-|.git/"
-        additional_dependencies:
-          - prettier-plugin-svelte@3.4.1
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2

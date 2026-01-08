@@ -243,11 +243,13 @@ rg --type py "def.*\(.*db.*key.*response_id" --type py
 ### Manual Analysis
 
 1. **Read function signatures** looking for:
+
    - Factory-pattern names + return type matching class name
    - Instance parameter + multiple field accesses
    - Same parameter combinations appearing repeatedly
 
 2. **Check coupling**:
+
    - Count field accesses from instance parameter
    - 3+ field accesses → strong coupling → should be method
 
@@ -258,17 +260,20 @@ rg --type py "def.*\(.*db.*key.*response_id" --type py
 ## Fix Strategy
 
 1. **For factories**:
+
    - Move function into class as `@classmethod`
    - Change `return ClassName(...)` to `return cls(...)`
    - Update call sites: `make_config(...)` → `Config.make(...)`
 
 2. **For tight coupling**:
+
    - Move function into class as instance method
    - Replace instance parameter with `self`
    - Change field accesses: `instance.field` → `self.field`
    - Update call sites: `func(instance, ...)` → `instance.func(...)`
 
 3. **For bundled parameters**:
+
    - Create class to hold bundle
    - Move functions as methods on that class
    - Update call sites to create instance once, call methods multiple times

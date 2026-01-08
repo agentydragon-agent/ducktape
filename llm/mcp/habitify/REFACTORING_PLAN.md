@@ -127,11 +127,13 @@ def setup_logging(name: str, level: str = "INFO") -> Logger:
 ## Implementation Order
 
 1. **Week 1:**
+
    - Fix duplicate `with_client` decorators (Quick win)
    - Create constants file for magic values
    - Start test refactoring (highest impact)
 
 2. **Week 2:**
+
    - Complete test refactoring
    - Standardize error handling
    - Fix circular imports

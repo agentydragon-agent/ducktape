@@ -12,11 +12,13 @@
 ### Low Priority
 
 - [ ] **Make export.py functions public** (src/props_core/db/sync/export.py)
+
   - Remove leading underscore from `_format_files`, `_format_line_ranges`
   - Add to `__all__` export list
   - Document as canonical serialization API for reuse
 
 - [ ] **Audit JSONB columns for Pydantic conversion** (src/props_core/db/models.py)
+
   - Review `Mapped[dict[str, Any]]` JSONB columns (lines 174,181,190,198)
   - Convert to `MappedPydanticJSONB[ModelType]` where structure is known and stable
   - Keep `dict[str, Any]` only for truly arbitrary JSON
@@ -37,10 +39,12 @@
 ### Lower Priority
 
 - [ ] **Stats display improvements**
+
   - Move total available count to subheader: "Valid Partial (N=171)" instead of "5/171" per row
   - Full 95% CI display: "45.2% [38.1% - 52.3%]" or "45.2% ±7.1%"
 
 - [ ] **Migrate `props stats` to frontend**
+
   - Tables: by-example, by-occurrence views
   - Include props stats subcommands: `example`, `occurrence`
 
@@ -51,6 +55,7 @@
 ## Future
 
 - [ ] **Ground truth update workflow**
+
   - BUG: Staleness check marks everything as stale (compares wrong fields)
   - Fix: Compare only TP/FP IDs, rationales, locations - not `critic_scopes_expected_to_recall`
   - Then: `/api/stats/stale-runs` endpoint, dashboard indicator, regrade button

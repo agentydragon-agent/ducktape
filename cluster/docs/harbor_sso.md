@@ -212,12 +212,14 @@ curl -X PUT "https://harbor.example.com/api/v2.0/configurations" \
 **Components**:
 
 1. **Authentik OAuth Provider** (already configured)
+
    - Location: `terraform/authentik-blueprint/harbor/`
    - Creates OAuth2 application in Authentik
    - Generates client_id: `harbor`
    - Uses ESO-generated client_secret
 
 2. **Harbor OIDC Configuration** (to be implemented)
+
    - Location: `terraform/03-configuration/harbor-sso.tf`
    - Uses `harbor_config_auth` resource
    - Configures Harbor to use Authentik OIDC

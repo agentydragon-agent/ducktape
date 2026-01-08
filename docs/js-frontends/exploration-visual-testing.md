@@ -411,6 +411,7 @@ These tools can work with any rendering method:
 ### Immediate (Low Risk)
 
 1. **Profile Satori approach**:
+
    - Create proof-of-concept with 2-3 props/frontend components
    - Measure rendering speed vs Playwright
    - Assess CSS limitations
