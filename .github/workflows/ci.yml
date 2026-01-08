@@ -93,7 +93,7 @@ jobs:
       - name: Cache Ansible Galaxy downloads
         uses: actions/cache@v4
         with:
-          path: ${{ env.HOME }}/.ansible
+          path: ~/.ansible
           key: ansible-galaxy-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
           restore-keys: |
             ansible-galaxy-${{ runner.os }}-
