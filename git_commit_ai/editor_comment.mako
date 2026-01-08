@@ -69,8 +69,8 @@ Changes to be committed:
 % if list(unstaged_diff.deltas):
 
 Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed
-  (use "git restore <file>..." to discard changes in working directory
+  ("git add <file>..." to update what will be committed)
+  ("git restore <file>..." to discard changes in working directory)
 % for delta in unstaged_diff.deltas:
 	${delta_status_text(delta).ljust(12)} ${delta_path(delta)}
 % endfor
@@ -78,7 +78,7 @@ Changes not staged for commit:
 % if untracked_files:
 
 Untracked files:
-  (use "git add <file>..." to include in what will be committed)
+  ("git add <file>..." to include in what will be committed)
 % for filename in untracked_files:
 	${filename}
 % endfor
