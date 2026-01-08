@@ -157,10 +157,14 @@ js_test(
         ":node_modules/pixelmatch",
         ":node_modules/pngjs",
         ":node_modules/puppeteer",
+        # Hermetic Chromium from rules_playwright
+        "@playwright_browsers//:chromium-headless-shell",
     ] + glob(["tests/visual-regression.spec.ts-snapshots/**/*"]),
     entry_point = "tests/visual-regression.spec.js",
     env = {
         "HARNESS_PATH": "$(rootpath :harness_bundle)",
+        # Point Puppeteer to the Bazel-managed Chromium
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     tags = [
         "no-sandbox",
