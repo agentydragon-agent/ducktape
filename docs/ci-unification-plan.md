@@ -63,6 +63,54 @@ The same pre-commit hooks should work across three environments:
 3. **CI uses GitHub Actions for tools** - Faster than nix, well-maintained, good caching
 4. **Bazel for hermetic builds/tests** - Build artifacts, run tests, but not for universal formatting
 
+### Session Start Hook (Claude Code on Web)
+
+The session start hook (`claude_web_hooks/src/claude_web_hooks/session_start.py`) configures the Claude Code on web environment.
+
+**Current capabilities:**
+
+- Sets up Bazel proxy configuration (for BCR access through TLS-inspecting proxy)
+- Installs Bazelisk via binary download
+- Installs pre-commit (via apt or pipx)
+- Runs `pre-commit install` in the repo
+
+**Missing for cluster pre-commit hooks:**
+
+| Tool      | Installation Method            | Notes                                               |
+| --------- | ------------------------------ | --------------------------------------------------- |
+| opentofu  | Binary download from GitHub    | `tofu` binary for terraform_fmt, terraform_validate |
+| tflint    | Binary download from GitHub    | For terraform_tflint hook                           |
+| flux      | Binary download from GitHub    | For flux-build-dry-run hook                         |
+| kustomize | Binary download from GitHub    | For kustomize-dry-run hook                          |
+| kubeseal  | Binary download from GitHub    | For validate-sealed-secrets hook                    |
+| helm      | apt install or binary download | For helm-template-dry-run hook                      |
+
+**Implementation approach:**
+
+The existing `nix_setup.py` has infrastructure for tool installation. Add new functions to install tools via binary download (similar to `install_bazelisk()`):
+
+```python
+def install_opentofu(version: str = "1.11.2") -> bool:
+    """Download and install OpenTofu binary."""
+    url = f"https://github.com/opentofu/opentofu/releases/download/v{version}/tofu_{version}_linux_amd64.zip"
+    # Download, extract, install to ~/.local/bin
+    ...
+
+def install_tflint(version: str = "0.53.0") -> bool:
+    """Download and install tflint binary."""
+    url = f"https://github.com/terraform-linters/tflint/releases/download/v{version}/tflint_linux_amd64.zip"
+    ...
+
+def install_flux(version: str = "2.4.0") -> bool:
+    """Download and install flux CLI binary."""
+    url = f"https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_linux_amd64.tar.gz"
+    ...
+```
+
+**Conditional installation:**
+
+Only install cluster tools if `cluster/` directory exists (hooks are scoped to `^cluster/` paths anyway).
+
 ## Progress (Updated 2026-01-08)
 
 ### Completed
@@ -82,6 +130,8 @@ The same pre-commit hooks should work across three environments:
 
 ### In Progress
 
+- **CI pre-commit job**: Replace nix with official GitHub Actions (opentofu/setup-opentofu, terraform-linters/setup-tflint, fluxcd/flux2/action)
+- **Session start hook**: Add cluster tool binary downloads for Claude Code on web
 - Create k8s validation BUILD.bazel using the http_archive binaries
 
 ### Completed (This Session)
@@ -543,13 +593,15 @@ jobs:
 
 ## Next Steps
 
-1. ~~**Immediate**: Fix CI with `bazelbuild/setup-bazelisk`~~ (in progress)
+1. ~~**Immediate**: Fix CI with `bazelbuild/setup-bazelisk`~~ (DONE - props-frontend-build, visual-regression, bazel-build jobs)
 2. ~~**Short-term**: Add gitstatusd via http_archive~~ (DONE - added to MODULE.bazel)
 3. ~~**Phase 3**: Keep rules_tf for tflint, explore tfmirror.dev for terraform validate~~ (DONE - working!)
 4. ~~**Phase 4**: Add rules_kustomize + http_archive for kubeconform/flux~~ (DONE - binaries added)
-5. **Phase 4 continued**: Create k8s validation BUILD.bazel with sh_test wrappers
-6. **Phase 5**: Evaluate ansible-lint in Bazel (galaxy dependency challenge)
-7. **Phase 6**: Add checkov as Python dependency
+5. **CI pre-commit job**: Replace nix with official GitHub Actions for opentofu, tflint, flux
+6. **Session start hook**: Add cluster tool installation (opentofu, tflint, flux, kustomize, kubeseal, helm) via binary downloads
+7. **Phase 4 continued**: Create k8s validation BUILD.bazel with sh_test wrappers
+8. **Phase 5**: Evaluate ansible-lint in Bazel (galaxy dependency challenge)
+9. **Phase 6**: Add checkov as Python dependency
 
 ## References
 
