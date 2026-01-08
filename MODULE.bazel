@@ -15,6 +15,25 @@ bazel_dep(name = "rules_multirun", version = "0.9.0")  # Required by format_mult
 bazel_dep(name = "rules_multitool", version = "1.3.0")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
 
+# Terraform/OpenTofu validation (cluster/)
+bazel_dep(name = "rules_tf", version = "0.0.10")
+
+tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+tf.download(
+    # Mirror for provider downloads (empty dict uses defaults)
+    mirror = {},
+    tfdoc_version = "0.19.0",
+    tflint_version = "0.53.0",
+    use_tofu = True,
+    version = "1.11.2",  # OpenTofu version (latest as of 2025-12)
+)
+use_repo(tf, "tf_toolchains")
+
+register_toolchains("@tf_toolchains//:all")
+
+# Kubernetes kustomize validation (k8s/)
+bazel_dep(name = "rules_kustomize", version = "0.5.2")
+
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.2.6")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -234,3 +253,39 @@ use_repo(
 # ─ one-off override for xml-conduit ─────────────────────────────────────────
 extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
 use_repo(extra_deps, "xml_conduit")
+
+# ─ Kubernetes validation tools (cluster/k8s) ─────────────────────────────────
+# Downloaded via http_archive for use in validation tests
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# Kustomize - Kubernetes native configuration management
+http_archive(
+    name = "kustomize",
+    build_file_content = 'exports_files(["kustomize"])',
+    sha256 = "6703a3a70a0c47cf0b37694030b54f1175a9dfeb17b3818b623ed58b9dbc2a77",
+    urls = ["https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz"],
+)
+
+# Kubeconform - Kubernetes manifest validator
+http_archive(
+    name = "kubeconform",
+    build_file_content = 'exports_files(["kubeconform"])',
+    sha256 = "95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73",
+    urls = ["https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz"],
+)
+
+# Flux CLI - GitOps toolkit
+http_archive(
+    name = "flux",
+    build_file_content = 'exports_files(["flux"])',
+    sha256 = "7b70b75af20e28fc30ee66cf5372ec8d51dd466fd2ee21aa42690984de70b09b",
+    urls = ["https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_amd64.tar.gz"],
+)
+
+# gitstatusd - Git status daemon for wt tests
+http_archive(
+    name = "gitstatusd",
+    build_file_content = 'exports_files(["gitstatusd-linux-x86_64"])',
+    sha256 = "9633816e7832109e530c9e2532b11a1edae08136d63aa7e40246c0339b7db304",
+    urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
+)

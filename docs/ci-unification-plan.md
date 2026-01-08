@@ -114,76 +114,108 @@ Use `--from-ref` and `--to-ref` to validate only changed files:
 
 ## Phase 3: Bazelify Terraform Validation
 
-### Option A: Use rules_tf (Recommended)
+### Evaluation Results (Prototyped)
 
-[rules_tf](https://github.com/yanndegat/rules_tf) provides:
+Tested rules_tf (v0.0.10) with OpenTofu 1.11.2 on `cluster/terraform/00-persistent-auth`:
 
-- `tf_module` - validate, lint, and format terraform code
-- `tf_providers_versions` - enforce provider versioning
-- Built-in tflint integration
-- Support for both Terraform and OpenTofu
+**What works:**
 
-**MODULE.bazel**:
+- tflint runs and found 12 real issues (missing version constraints, outputs in wrong files, unused providers)
+- `bazel build` succeeds and creates module tarballs
+- OpenTofu/tflint binaries download correctly
 
-```starlark
-bazel_dep(name = "rules_tf", version = "0.0.10")
+**What doesn't work out of the box:**
 
-tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
-tf.download(
-    version = "1.9.5",
-    tflint_version = "0.53.0",
-    use_tofu = True,  # Use OpenTofu
-)
-use_repo(tf, "tf_toolchains")
-register_toolchains("@tf_toolchains//:all")
+- `terraform validate` requires pre-mirrored providers
+- rules_tf's `mirror` parameter is for declaring providers to download locally, not network mirror URLs
+- Error: "provider registry.opentofu.org/hashicorp/local was not found in any of the search locations"
+
+### Option A: Use tfmirror.dev Network Mirror (TESTED - WORKS!)
+
+[tfmirror.dev](https://tfmirror.dev/) is a free public network mirror for Terraform/OpenTofu providers.
+
+**Tested successfully on 2026-01-08:**
+
+```bash
+# Create .tofurc with tfmirror.dev
+cat > /tmp/tofurc <<'EOF'
+provider_installation {
+  network_mirror {
+    url = "https://tfmirror.dev/"
+  }
+}
+EOF
+export TF_CLI_CONFIG_FILE=/tmp/tofurc
+
+# Run validation
+cd cluster/terraform/00-persistent-auth
+tofu init -backend=false -input=false
+tofu validate
+# Result: Success! The configuration is valid.
 ```
 
-**BUILD.bazel** (in cluster/terraform/):
+**Implementation approach:**
+
+1. Create `cluster/scripts/tofu_validate.sh` wrapper (already created)
+2. Use sh_test with `tags = ["requires-network"]` to allow tfmirror.dev access
+3. The tofu binary comes from rules_tf toolchain
 
 ```starlark
-load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
-
-tf_providers_versions(
-    name = "providers",
-    tf_version = "1.9.5",
-    providers = {
-        "cloudflare": "cloudflare/cloudflare:>=4.0",
-        "proxmox": "telmate/proxmox:>=2.0",
-        # ... other providers
-    },
-)
-
-tf_module(
-    name = "00-persistent-auth",
-    providers = ["cloudflare", "proxmox"],
-    providers_versions = ":providers",
-)
-```
-
-**What this replaces**:
-
-- `terraform_fmt` hook -> `tf_format` rule
-- `terraform_validate` hook -> `tf_module` validation
-- `terraform_tflint` hook -> built-in tflint aspect
-
-**Open Questions**:
-
-1. Does rules*tf support the layer structure (00-*, 01-\_, etc.) with shared modules?
-2. Can it handle the provider aliases pattern used in modules?
-3. How does state file handling work (we don't want Bazel touching .tfstate)?
-
-### Option B: Custom genrule Wrappers
-
-If rules_tf doesn't fit, create thin wrappers:
-
-```starlark
+# cluster/terraform/00-persistent-auth/BUILD.bazel
 sh_test(
-    name = "terraform_validate",
-    srcs = ["//tools:terraform_validate.sh"],
-    data = glob(["**/*.tf"]),
-    args = ["$(location :.)"],
+    name = "validate",
+    srcs = ["//cluster/scripts:tofu_validate.sh"],
+    data = glob(["**/*.tf"]) + ["@tf_toolchains//:tofu"],
+    args = ["$(location .)"],
+    tags = ["requires-network"],  # Allow tfmirror.dev access
 )
 ```
+
+### Option B: rules_kustomize for K8s + sh_test for Terraform
+
+[rules_kustomize](https://registry.bazel.build/modules/rules_kustomize) v0.5.2 is available on BCR:
+
+```starlark
+bazel_dep(name = "rules_kustomize", version = "0.5.2")
+```
+
+For terraform, use sh_test wrappers with network access:
+
+```starlark
+# cluster/terraform/BUILD.bazel
+sh_test(
+    name = "tflint",
+    srcs = ["//tools:run_tflint.sh"],
+    data = glob(["**/*.tf"]),
+    tags = ["requires-network"],  # Allow network for provider download
+)
+```
+
+### Option C: Pre-mirror Providers (Hermetic but Complex)
+
+1. Run `tofu providers mirror` to download all providers locally
+2. Store in GCS/S3 or commit to repo (large!)
+3. Configure rules_tf `mirror` parameter with local paths
+
+**Trade-off:** Full hermeticity but significant setup and storage overhead.
+
+### Recommendation
+
+1. **Use rules_tf for tflint** - Works hermetically, finds real issues
+2. **Add sh_test with tfmirror.dev for validate** - Network access but cached results
+3. **Keep `terraform_fmt` in pre-commit** - Trivial, fast, no deps
+
+**What rules_tf replaces:**
+
+- `terraform_tflint` hook -> `tf_module :lint` target
+
+**What sh_test with tfmirror.dev adds:**
+
+- `terraform_validate` hook -> `sh_test :validate` target (with network access)
+
+**What stays in pre-commit:**
+
+- `terraform_fmt` (trivial, fast)
 
 ## Phase 4: Bazelify Kubernetes Validation
 
@@ -196,40 +228,103 @@ sh_test(
 | kustomize-dry-run  | kustomize   | Build all kustomizations                |
 | flux-build-dry-run | flux CLI    | Validate Flux can render manifests      |
 
-### Bazel Approach
+### Available Bazel Rules
 
-[rules_k8s](https://github.com/bazelbuild/rules_k8s) is focused on deployment (`k8s_object.apply`), not validation. For validation, custom rules are needed.
+**[rules_kustomize](https://registry.bazel.build/modules/rules_kustomize)** (v0.5.2 on BCR):
 
-#### Option: sh_test wrappers
+- Provides `kustomize_build` rule that invokes `kustomize build`
+- Output is a YAML file that can be consumed by other rules
+- Supports golden test targets for validation
 
 ```starlark
-# cluster/k8s/BUILD.bazel
-sh_test(
-    name = "kubeconform_test",
-    srcs = ["//tools:kubeconform_test.sh"],
-    data = glob(["**/*.yaml"], exclude = ["**/flux-system/**"]),
-    deps = ["@kubeconform//:kubeconform"],
-)
+bazel_dep(name = "rules_kustomize", version = "0.5.2")
+```
 
-sh_test(
-    name = "kustomize_validate",
-    srcs = ["//cluster/scripts:validate-kustomizations.py"],
-    data = glob(["**/*.yaml"]),
-    deps = ["@kustomize//:kustomize"],
+**[rules_gitops](https://github.com/adobe/rules_gitops)** (Adobe):
+
+- More deployment-focused (`k8s_deploy`, `.apply`, `.gitops` targets)
+- Includes kustomize integration
+- Better suited if you want Bazel to manage deployments
+
+**No dedicated rules for:**
+
+- kubeconform - Need sh_test wrapper with http_archive
+- flux CLI - Need sh_test wrapper with http_archive
+
+### Recommended Approach
+
+#### 4.1 Use rules_kustomize for kustomize validation
+
+```starlark
+load("@rules_kustomize//:defs.bzl", "kustomization")
+
+# Validate each kustomization builds successfully
+kustomization(
+    name = "apps",
+    srcs = glob(["apps/**/*.yaml"]),
+    kustomization = "apps/kustomization.yaml",
 )
 ```
 
-**Tool acquisition** via http_archive:
+#### 4.2 Add kubeconform via http_archive
 
-- kubeconform: <https://github.com/yannh/kubeconform/releases>
-- kustomize: <https://github.com/kubernetes-sigs/kustomize/releases>
-- flux: <https://github.com/fluxcd/flux2/releases>
+```starlark
+# MODULE.bazel
+http_archive(
+    name = "kubeconform",
+    urls = ["https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz"],
+    sha256 = "...",
+    build_file_content = 'exports_files(["kubeconform"])',
+)
+```
 
-**Open Questions**:
+```starlark
+# k8s/BUILD.bazel
+sh_test(
+    name = "kubeconform_test",
+    srcs = ["//tools:kubeconform_test.sh"],
+    data = [
+        "@kubeconform//:kubeconform",
+    ] + glob(["**/*.yaml"], exclude = ["**/flux-system/**"]),
+)
+```
 
-1. Should these be `sh_test` or `py_test`? (The validation scripts are already Python)
-2. How to handle flux CLI which needs network access for some operations?
-3. Is hermetic validation worth the effort vs. keeping these in pre-commit?
+#### 4.3 Add flux via http_archive
+
+```starlark
+# MODULE.bazel
+http_archive(
+    name = "flux",
+    urls = ["https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_amd64.tar.gz"],
+    sha256 = "...",
+    build_file_content = 'exports_files(["flux"])',
+)
+```
+
+#### 4.4 Existing Python validation scripts
+
+The existing scripts (`validate-kustomizations.py`, `validate-flux-build.py`) can be wrapped as py_test:
+
+```starlark
+py_test(
+    name = "validate_kustomizations",
+    srcs = ["scripts/validate-kustomizations.py"],
+    data = glob(["k8s/**/*.yaml"]),
+    deps = ["@pypi//pyyaml"],
+    main = "scripts/validate-kustomizations.py",
+    args = ["--root", "k8s/"],
+)
+```
+
+### Trade-off Analysis
+
+| Approach               | Hermetic | Caching | Complexity |
+| ---------------------- | -------- | ------- | ---------- |
+| rules_kustomize        | Yes      | Yes     | Low        |
+| sh_test + http_archive | Partial  | Yes     | Medium     |
+| Keep in pre-commit     | No       | No      | Low        |
+
+**Recommendation:** Use rules_kustomize for kustomize validation, sh_test wrappers for kubeconform/flux
 
 ## Phase 5: Bazelify Ansible-lint
 
@@ -263,6 +358,63 @@ py_test(
 1. Does ansible-lint work well in Bazel sandbox? (May need network for Galaxy)
 2. How to handle ansible-galaxy dependencies?
 
+## Phase 6: Bazelify Checkov
+
+### Pre-commit Configuration
+
+Checkov currently runs via `nix-shell` in pre-commit:
+
+```yaml
+- repo: https://github.com/bridgecrewio/checkov
+  rev: 3.2.384
+  hooks:
+    - id: checkov
+```
+
+### Bazel Approach
+
+Checkov is a Python package, can be added as a py_test:
+
+```starlark
+# requirements_bazel.txt
+checkov>=3.2.0
+
+# cluster/BUILD.bazel or tools/BUILD.bazel
+py_test(
+    name = "checkov_terraform",
+    srcs = ["//tools:run_checkov.py"],
+    data = glob(["terraform/**/*.tf"]),
+    deps = ["@pypi//checkov"],
+    args = [
+        "--directory", "cluster/terraform",
+        "--framework", "terraform",
+        "--skip-check", "CKV_TF_1",  # Skip module source checks if needed
+    ],
+)
+
+py_test(
+    name = "checkov_k8s",
+    srcs = ["//tools:run_checkov.py"],
+    data = glob(["k8s/**/*.yaml"]),
+    deps = ["@pypi//checkov"],
+    args = [
+        "--directory", "k8s",
+        "--framework", "kubernetes",
+    ],
+)
+```
+
+**Benefits**:
+
+- Hermetic Python environment
+- Cached results
+- Can run separate checks for terraform vs k8s
+
+**Considerations**:
+
+- Checkov has many dependencies, may increase lock file size
+- Some checks may need network access for external policies
+
 ## Recommended End State
 
 ### CI Jobs (Simplified)
@@ -270,15 +422,13 @@ py_test(
 ```yaml
 jobs:
   pre-commit:
-    # Fast, change-aware checks
-    # Only installs: opentofu, tflint, flux (for cluster hooks)
+    # Full validation with --all-files
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
       - run: pip install pre-commit ansible-core
-      - run: nix profile install nixpkgs#opentofu nixpkgs#tflint nixpkgs#fluxcd
-      - run: pre-commit run --from-ref origin/${{ github.base_ref }} --to-ref HEAD
+      - run: pre-commit run --all-files
 
   bazel:
     # Comprehensive build, lint, test
@@ -300,8 +450,8 @@ jobs:
 
 - Conflict marker check (trivial, no deps)
 - YAML/TOML syntax (trivial)
-- Terraform validation (until rules_tf proven)
-- Flux validation (needs flux CLI)
+- `terraform_fmt` (trivial, fast)
+- `terraform_validate` (needs network for providers)
 - Ansible playbook syntax (fast)
 
 ### What Moves to Bazel
@@ -310,28 +460,26 @@ jobs:
 - All JS/TS linting (already done)
 - Rust linting (already done)
 - gitstatusd (http_archive)
-- Terraform validation (Phase 3, rules_tf)
-- Kubernetes validation (Phase 4, optional)
+- tflint (Phase 3, rules_tf)
+- Kubernetes validation - kustomize (Phase 4, rules_kustomize)
+- Kubernetes validation - kubeconform/flux (Phase 4, http_archive + sh_test)
 - Ansible-lint (Phase 5)
+- Checkov (Phase 6)
 
 ## Open Questions for Discussion
 
-1. **rules_tf fit**: Does your terraform structure (layers, modules, provider aliases) work with rules_tf? Need to prototype.
+1. **rules_tf provider validation**: Can we use tfmirror.dev as network mirror? Requires either patching rules_tf or custom wrapper with `TF_CLI_CONFIG_FILE`.
 
-2. **Flux CLI in Bazel**: The flux validation script needs the flux CLI. Should this stay in pre-commit or attempt hermetic Bazel integration?
-
-3. **Change-aware pre-commit**: Is `--from-ref`/`--to-ref` acceptable, or do you want `--all-files` to catch issues in unchanged files affected by changed dependencies?
-
-4. **Checkov**: Currently runs via `nix-shell`. Move to Bazel (py_test with checkov dep) or keep as-is?
-
-5. **ansible-galaxy**: The ansible-lint job needs galaxy dependencies. How should Bazel handle this? (Network access in test? Pre-fetch? Skip?)
+2. **ansible-galaxy**: The ansible-lint job needs galaxy dependencies. How should Bazel handle this? (Network access in test? Pre-fetch? Skip?)
 
 ## Next Steps
 
-1. **Immediate**: Fix CI with `bazelbuild/setup-bazelisk` + optimize pre-commit with `--from-ref`
+1. **Immediate**: Fix CI with `bazelbuild/setup-bazelisk`
 2. **Short-term**: Add gitstatusd via http_archive, remove wget from CI
-3. **Medium-term**: Prototype rules_tf for cluster/terraform
-4. **Evaluate**: Decide if K8s validation is worth Bazelifying vs. keeping in pre-commit
+3. **Phase 3**: Keep rules_tf for tflint, explore tfmirror.dev for terraform validate
+4. **Phase 4**: Add rules_kustomize + http_archive for kubeconform/flux
+5. **Phase 5**: Evaluate ansible-lint in Bazel (galaxy dependency challenge)
+6. **Phase 6**: Add checkov as Python dependency
 
 ## References
 
