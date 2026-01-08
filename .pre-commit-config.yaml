@@ -92,6 +92,8 @@ repos:
       - id: prettier
         types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json, html]
         exclude: "node_modules/|.pnpm/|bazel-|.git/"
+        additional_dependencies:
+          - prettier-plugin-svelte@3.4.1
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2
