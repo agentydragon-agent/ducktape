@@ -1,17 +1,16 @@
 // Prettier configuration
 // https://prettier.io/docs/en/options.html
 //
-// Svelte plugin: enabled locally, disabled in CI.
-//
-// In CI (GitHub Actions), Prettier 3.x can't resolve plugins because it looks
-// relative to the config file, not from pre-commit's isolated node environment.
+// TODO: Re-enable prettier-plugin-svelte once Prettier 3.x plugin resolution is fixed.
+// Currently disabled because Prettier 3.x resolves plugins relative to the config file,
+// not from where prettier is installed. This breaks both pre-commit CI and Bazel.
 // See: https://github.com/prettier/prettier/issues/15696
 //
-// CI svelte formatting is handled by Bazel: bazel build --config=lint //...
+// Svelte files are excluded from prettier formatting. For svelte formatting options:
+// - Use your IDE's svelte extension (e.g., Svelte for VS Code)
+// - Run: pnpm exec prettier --plugin prettier-plugin-svelte --write "**/*.svelte"
 
-const isCI = process.env.CI || process.env.GITHUB_ACTIONS;
-
-const config = {
+module.exports = {
   printWidth: 120,
   tabWidth: 2,
   useTabs: false,
@@ -20,22 +19,3 @@ const config = {
   trailingComma: "es5",
   bracketSpacing: true,
 };
-
-// Only load svelte plugin and overrides when not in CI
-if (!isCI) {
-  try {
-    config.plugins = [require.resolve("prettier-plugin-svelte")];
-    config.overrides = [
-      {
-        files: "*.svelte",
-        options: {
-          parser: "svelte",
-        },
-      },
-    ];
-  } catch {
-    // Plugin not installed locally - skip silently
-  }
-}
-
-module.exports = config;
