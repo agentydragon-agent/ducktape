@@ -31,9 +31,6 @@ use_repo(tf, "tf_toolchains")
 
 register_toolchains("@tf_toolchains//:all")
 
-# Kubernetes kustomize validation (k8s/)
-bazel_dep(name = "rules_kustomize", version = "0.5.2")
-
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.2.6")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
@@ -265,25 +262,8 @@ use_repo(
 extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
 use_repo(extra_deps, "xml_conduit")
 
-# ─ Kubernetes validation tools (cluster/k8s) ─────────────────────────────────
-# Downloaded via http_archive for use in validation tests
+# ─ External binaries via http_archive ────────────────────────────────────────
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-# Kustomize - Kubernetes native configuration management
-http_archive(
-    name = "kustomize",
-    build_file_content = 'exports_files(["kustomize"])',
-    sha256 = "6703a3a70a0c47cf0b37694030b54f1175a9dfeb17b3818b623ed58b9dbc2a77",
-    urls = ["https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz"],
-)
-
-# Flux CLI - GitOps toolkit
-http_archive(
-    name = "flux",
-    build_file_content = 'exports_files(["flux"])',
-    sha256 = "7b70b75af20e28fc30ee66cf5372ec8d51dd466fd2ee21aa42690984de70b09b",
-    urls = ["https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_amd64.tar.gz"],
-)
 
 # gitstatusd - Git status daemon for wt tests
 http_archive(
