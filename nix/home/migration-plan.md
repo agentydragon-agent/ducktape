@@ -96,17 +96,21 @@ After deployment, verify:
 #### Still to Migrate (wyrm-specific)
 
 1. **cli role** → home.nix:
+
    - Dotfiles management (rcup)
    - Shell configuration
    - Build dependencies
 
 2. **dev-env role** → home.nix:
+
    - Development environment setup
 
 3. **dev-ml role** → home.nix:
+
    - ML packages (already partially in home.nix)
 
 4. **k3s-client role** → home.nix or configuration.nix:
+
    - Kubeconfig setup
 
 5. **Wyrm-specific tasks**:

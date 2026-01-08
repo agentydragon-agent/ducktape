@@ -151,6 +151,7 @@ tool_name = server.exec_tool.name  # type: str, no string literals
 **Trade-offs:**
 
 - ✅ **Pros:**
+
   - Clean mypy validation (no type: ignore needed)
   - Typed access to tool metadata (name, schema, etc.)
   - IDE autocomplete works
@@ -213,6 +214,7 @@ tool_name = tools.exec.name  # type: str
 **Trade-offs:**
 
 - ✅ **Pros:**
+
   - No subclassing needed
   - Clean separation of server and tool metadata
   - Easy to understand and test
@@ -291,6 +293,7 @@ data = await session.read_resource(uri)
 **Trade-offs:**
 
 - ✅ **Pros:**
+
   - Single source of truth (class definition)
   - Works in both production and test contexts
   - Class-level constants (no instance needed for tests)
@@ -388,6 +391,7 @@ result = make_tool_call(
 **Trade-offs:**
 
 - ✅ **Pros:**
+
   - Centralized composition specifications
   - Mount prefixes flow from recipe to callsites
   - Typed, structured "standard compositions"
@@ -764,6 +768,7 @@ def test_greeter_tool():
 ### Adopt These Patterns
 
 1. **Server Subclasses with Class Constants (Patterns A + C)**
+
    - Define typed subclasses for each MCP server type
    - Add **class-level constants** for tool names and resource URIs (for construction contexts)
    - Add **instance-level attributes** for typed tool access (for production code)
@@ -789,11 +794,13 @@ def test_greeter_tool():
      ```
 
 2. **Why Both Class Constants and Instance Attributes?**
+
    - **Class constants:** Required for test mock construction, policy eval, and prompt templates (no server instance available)
    - **Instance attributes:** Optional for production code with server instances (enables typed refactoring)
    - **Recommendation:** Always define class constants. Instance attributes optional but useful for tools.
 
 3. **Compositor Recipes (Pattern D)**
+
    - Define recipe classes with `ServerMount` specifications
    - Centralize mount prefixes (no more `_shared/constants.py`)
    - **Example:**
@@ -807,6 +814,7 @@ def test_greeter_tool():
      ```
 
 4. **Tool Call Factory**
+
    - Keep the simple signature using class constants (works everywhere)
    - **Example:**
 
@@ -834,16 +842,19 @@ def test_greeter_tool():
 ### Key Design Decisions
 
 1. **Mount prefixes live in recipes** (not server classes)
+
    - Same server class can be mounted at different prefixes
    - Recipes document standard composition patterns
    - Eliminates "constant grab-bags"
 
 2. **Tool names and resource URIs live on server classes**
+
    - **Class-level constants** for universal access (production + tests)
    - **Instance-level attributes** optionally for production code (typed refactoring)
    - Tests use class constants (no server instance needed)
 
 3. **Keep it simple**
+
    - Production code doesn't need server instances just to get tool names
    - Class constants work everywhere (tests, policy eval, prompts, production)
    - Instance attributes optional enhancement when you already have a server
@@ -863,18 +874,22 @@ def test_greeter_tool():
 ### Migration Path
 
 1. **Phase 1:** Implement server subclasses with typed tool attributes
+
    - Start with 2-3 core servers (runtime, ui, loop)
    - Validate mypy passes without `type: ignore`
 
 2. **Phase 2:** Define compositor recipes
+
    - Create `AgentCompositorRecipe`, `PropsCompositorRecipe`, etc.
    - Migrate mount prefix constants to recipes
 
 3. **Phase 3:** Implement tool call factory
+
    - Update test helpers to use typed references
    - Eliminate string literals in tool call construction
 
 4. **Phase 4:** Add resource URI constants
+
    - Centralize URIs on server classes
    - Remove repeated `"resource://..."` literals
 
