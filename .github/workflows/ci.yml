@@ -3,8 +3,7 @@
 # Jobs:
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
 # - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
-# - props-frontend-build: Frontend-specific build + svelte-check
-# - visual-regression: Puppeteer visual tests
+# - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 #
 # Linting via Bazel aspects (run in both pre-commit and bazel-build):
@@ -171,45 +170,6 @@ jobs:
             echo "✅ All playbooks passed ansible-lint" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  props-frontend-build:
-    name: Props frontend build (Bazel)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Cache Bazel repository
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          # Unified cache key includes all dependency files
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
-          restore-keys: |
-            bazel-${{ runner.os }}-
-
-      - name: Build and test frontend
-        run: |
-          bazel build //props/frontend:bundle
-          # Type checking: svelte-check
-          bazel test //props/frontend:svelte_check_test
-          # Note: ESLint and Prettier are now run via aspects in bazel-build job
-
-      - name: Generate build summary
-        if: always()
-        run: |
-          echo "### Frontend Build Results" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Frontend build and type checking successful" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Frontend build or type checking failed" >> $GITHUB_STEP_SUMMARY
           fi
 
   visual-regression:
