@@ -75,7 +75,7 @@ nix/home/claude-code/commands/followups.md
 prompts/scans/useless-comments-and-docs.md
 props/core/src/props_core/.claude/commands/extract-principles.md
 props/core/src/props_core/docs/prompts/code_health_audit_fullprops.md
-props/core/src/props_core/props/self-describing-names.md
+props/standards/self-describing-names.md
 sandboxed_jupyter/docs/TODO-SANDBOX.md
 sandboxed_jupyter/docs/TODO.md
 tana/src/tana/export/headless_autoexport/README
