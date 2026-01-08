@@ -53,12 +53,23 @@ This document outlines a roadmap to consolidate CI tooling around Bazel while ma
 
 ### In Progress
 
-- Update CI workflow with `bazelbuild/setup-bazelisk`
-- Add checkov as Python dependency
+- Create k8s validation BUILD.bazel using the http_archive binaries
+
+### Completed (This Session)
+
+- **CI workflow simplified** - Replaced `setup-nix-direnv` with `bazelbuild/setup-bazelisk@v3` for
+  `props-frontend-build`, `visual-regression`, and `bazel-build` jobs. Nix kept only for pre-commit
+  (needs opentofu, tflint, fluxcd for cluster hooks).
+
+### Decisions Made
+
+- **Checkov stays in pre-commit** - Like prettier, checkov works well via `nix-shell -p checkov` in
+  pre-commit. Adding to Bazel would require managing a large dependency tree for minimal benefit.
+- **Prettier stays in pre-commit** - The `prettier-mirrors` pre-commit hook handles caching well
+  and avoids Bazel's JS toolchain complexity.
 
 ### Remaining
 
-- Create k8s validation BUILD.bazel using the http_archive binaries
 - Evaluate ansible-lint in Bazel (galaxy dependency challenge)
 
 ## Phase 1: Immediate Fixes
