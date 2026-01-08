@@ -11,16 +11,7 @@
 
 const isCI = process.env.CI || process.env.GITHUB_ACTIONS;
 
-let plugins = [];
-if (!isCI) {
-  try {
-    plugins = [require.resolve("prettier-plugin-svelte")];
-  } catch {
-    // Plugin not installed locally - skip silently
-  }
-}
-
-module.exports = {
+const config = {
   printWidth: 120,
   tabWidth: 2,
   useTabs: false,
@@ -28,13 +19,23 @@ module.exports = {
   singleQuote: false,
   trailingComma: "es5",
   bracketSpacing: true,
-  plugins,
-  overrides: [
-    {
-      files: "*.svelte",
-      options: {
-        parser: "svelte",
-      },
-    },
-  ],
 };
+
+// Only load svelte plugin and overrides when not in CI
+if (!isCI) {
+  try {
+    config.plugins = [require.resolve("prettier-plugin-svelte")];
+    config.overrides = [
+      {
+        files: "*.svelte",
+        options: {
+          parser: "svelte",
+        },
+      },
+    ];
+  } catch {
+    // Plugin not installed locally - skip silently
+  }
+}
+
+module.exports = config;
