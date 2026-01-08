@@ -1,24 +1,24 @@
 // Prettier configuration
 // https://prettier.io/docs/en/options.html
 //
-// Svelte plugin is NOT configured here - svelte formatting is handled only by Bazel.
+// Svelte plugin: enabled locally, disabled in CI.
 //
-// Why: Prettier 3.x resolves plugins relative to the config file, not from where
-// prettier is installed. This breaks pre-commit's isolated node environment.
-// Even try/catch with require.resolve() doesn't work because require.resolve()
-// succeeds (finding the package) but prettier then fails to load it.
+// In CI (GitHub Actions), Prettier 3.x can't resolve plugins because it looks
+// relative to the config file, not from pre-commit's isolated node environment.
+// See: https://github.com/prettier/prettier/issues/15696
 //
-// Approaches tried that all fail:
-// - mirrors-prettier with additional_dependencies: [prettier-plugin-svelte]
-// - jvllmr/pre-commit-prettier fork (designed for plugin support)
-// - .cjs file with require.resolve() in try/catch
-// - npx --package=prettier-plugin-svelte
-//
-// All produce: "Cannot find package 'prettier-plugin-svelte' imported from .../noop.js"
-//
-// Root cause: https://github.com/prettier/prettier/issues/15696
-//
-// For svelte formatting, use: bazel build --config=lint //...
+// CI svelte formatting is handled by Bazel: bazel build --config=lint //...
+
+const isCI = process.env.CI || process.env.GITHUB_ACTIONS;
+
+let plugins = [];
+if (!isCI) {
+  try {
+    plugins = [require.resolve("prettier-plugin-svelte")];
+  } catch {
+    // Plugin not installed locally - skip silently
+  }
+}
 
 module.exports = {
   printWidth: 120,
@@ -28,4 +28,13 @@ module.exports = {
   singleQuote: false,
   trailingComma: "es5",
   bracketSpacing: true,
+  plugins,
+  overrides: [
+    {
+      files: "*.svelte",
+      options: {
+        parser: "svelte",
+      },
+    },
+  ],
 };
