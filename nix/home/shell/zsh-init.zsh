@@ -20,7 +20,7 @@ zstyle ':completion:*' matcher-list ''
 
 # Custom keybindings for zsh-autosuggestions
 accept_or_end() {
-	if (($ + widgets[autosuggest - accept])) && [[ -n "$POSTDISPLAY" ]]; then
+	if (( ${+widgets[autosuggest-accept]} )) && [[ -n "$POSTDISPLAY" ]]; then
 		zle autosuggest-accept
 		zle reset-prompt
 		return
@@ -31,4 +31,5 @@ zle -N accept-or-end accept_or_end
 bindkey -M emacs '^E' accept-or-end
 bindkey -M viins '^E' accept-or-end
 ZSH_AUTOSUGGEST_ACCEPT_WIDGETS+=(accept-or-end)
-(($ + widgets[autosuggest - accept - word])) && bindkey '^F' autosuggest-accept-word
+# Ctrl+F: Accept suggestion word-by-word (forward-word is in ZSH_AUTOSUGGEST_PARTIAL_ACCEPT_WIDGETS)
+bindkey '^F' forward-word
