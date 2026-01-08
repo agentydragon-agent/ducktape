@@ -176,7 +176,8 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-nix-direnv
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
 
       - name: Cache Bazel repository
         uses: actions/cache@v4
@@ -214,7 +215,8 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-nix-direnv
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
 
       - name: Cache Bazel repository
         uses: actions/cache@v4
@@ -278,7 +280,14 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-nix-direnv
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Configure build environment
+        run: |
+          # Force Bazel to use system GCC instead of any hermetic toolchain
+          # This avoids glibc mismatch issues with rustc and proc-macros
+          echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
 
       - name: Install system dependencies for native Python packages
         run: |
