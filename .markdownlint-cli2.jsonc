@@ -1,8 +1,8 @@
 {
-  // Only lint cluster/ for now - extend gradually or migrate to remark-lint
+  // Only lint cluster/ and website/ for now - extend gradually or migrate to remark-lint
   // TODO: Extend markdownlint coverage to more directories, or migrate to
   // remark-lint via eslint-plugin-mdx for glob-based rule overrides
-  "globs": ["cluster/**/*.md"],
+  "globs": ["cluster/**/*.md", "website/**/*.md"],
   "ignores": [
     // Vendored terraform providers
     "**/.terraform/**"
@@ -13,5 +13,15 @@
     "extends": "markdownlint/style/prettier",
     // AGENTS.md and CLAUDE.md start with @-transclusion, not a heading
     "MD041": false
-  }
+  },
+  // Per-directory overrides
+  "overrides": [
+    {
+      "files": ["website/**/*.md"],
+      "config": {
+        // Website posts use inline HTML for styling (images, embeds, etc.)
+        "MD033": false
+      }
+    }
+  ]
 }
