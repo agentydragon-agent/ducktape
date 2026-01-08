@@ -71,11 +71,16 @@ repos:
       - id: buildifier
       - id: buildifier-lint
 
+  # Nix formatter - requires alejandra in PATH
+  # Dev: via .envrc (nix -p alejandra)
+  # CI: via cachix/install-nix-action + nix profile install
+  # Claude Web: via session hook nix_setup
+  # TODO: Switch to nixfmt (RFC style) once it has better tooling support
   - repo: local
     hooks:
       - id: alejandra
         name: alejandra (nix formatter)
-        entry: direnv exec . alejandra --quiet
+        entry: alejandra --quiet
         language: system
         files: \.nix$
 
