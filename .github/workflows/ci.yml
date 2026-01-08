@@ -2,11 +2,14 @@
 #
 # Jobs:
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
-# - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
+# - bazel-build: Build all targets (populates shared disk-cache)
+# - bazel-lint: Python/JS linting via aspects (parallel, after build)
+# - bazel-test: Run all tests (parallel, after build)
+# - bazel-rust-check: Rust clippy/rustfmt (parallel, after build)
 # - visual-regression: Playwright visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 #
-# Linting via Bazel aspects (run in both pre-commit and bazel-build):
+# Linting via Bazel aspects (run in both pre-commit and bazel-lint):
 # - Python: ruff (lint), mypy (types), ruff format (formatting)
 # - JS/TS: ESLint (lint), prettier (formatting)
 # - Rust: clippy (lint), rustfmt (formatting)
@@ -236,9 +239,103 @@ jobs:
             echo "❌ Visual regression tests failed" >> $GITHUB_STEP_SUMMARY
           fi
 
+  # Build job - populates shared disk-cache for parallel jobs
   bazel-build:
-    name: Bazel build and test
+    name: Bazel build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false # Keep setup-bazel cache working
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.16.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-build
+          repository-cache: true
+
+      - name: Build all targets
+        run: |
+          # -k: Keep going after errors to provide complete information
+          # --sandbox_debug: Show verbose sandbox messages for debugging failures
+          bazel build //... -k --sandbox_debug
+
+      - name: Generate build summary
+        if: always()
+        run: |
+          echo "### Bazel Build Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All targets built successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Build failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Lint job - runs after build, shares disk-cache
+  bazel-lint:
+    name: Bazel lint (Python/JS)
+    runs-on: ubuntu-latest
+    needs: bazel-build
+    timeout-minutes: 20
+    steps:
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.16.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-build
+          repository-cache: true
+
+      - name: Run linters
+        run: |
+          # Python: ruff (lint) + mypy (types)
+          bazel build --config=check //... -k --sandbox_debug
+          # Python + JS/TS: ruff + ESLint
+          bazel build --config=lint //... -k --sandbox_debug
+
+      - name: Generate lint summary
+        if: always()
+        run: |
+          echo "### Bazel Lint Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All lint checks passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Checks run**:" >> $GITHUB_STEP_SUMMARY
+            echo "- Python: ruff (lint), mypy (types)" >> $GITHUB_STEP_SUMMARY
+            echo "- JS/TS: ESLint (lint)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Lint checks failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Test job - runs after build, shares disk-cache
+  bazel-test:
+    name: Bazel test
+    runs-on: ubuntu-latest
+    needs: bazel-build
     timeout-minutes: 30
     # PostgreSQL service for tests that need it
     services:
@@ -265,7 +362,64 @@ jobs:
       - name: Free up disk space
         uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: false # Keep setup-bazel cache working
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.16.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-build
+          repository-cache: true
+
+      - name: Install system dependencies for native Python packages
+        run: |
+          sudo apt-get update
+          # libdbus-1-dev: required for dbus-python
+          # libgirepository-2.0-dev: required for PyGObject (girepository-2.0 API)
+          # libcairo2-dev: required for pycairo (PyGObject dependency)
+          sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
+
+      - name: Install gitstatusd for wt tests
+        run: |
+          wget -qO- \
+            https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz \
+            | tar xz -C /tmp
+          sudo install -m 755 /tmp/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
+
+      - name: Run tests
+        run: |
+          bazel test //... --test_output=errors -k --sandbox_debug
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "### Bazel Test Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Tests failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Rust check job - runs after build, shares disk-cache
+  bazel-rust-check:
+    name: Bazel Rust check
+    runs-on: ubuntu-latest
+    needs: bazel-build
+    timeout-minutes: 20
+    steps:
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
           android: true
           dotnet: true
           haskell: true
@@ -289,48 +443,21 @@ jobs:
           # This avoids glibc mismatch issues with rustc and proc-macros
           echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
 
-      - name: Install system dependencies for native Python packages
+      - name: Run Rust checks
         run: |
-          sudo apt-get update
-          # libdbus-1-dev: required for dbus-python
-          # libgirepository-2.0-dev: required for PyGObject (girepository-2.0 API)
-          # libcairo2-dev: required for pycairo (PyGObject dependency)
-          sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
+          # Rust: clippy (lint) + rustfmt (format check)
+          bazel build --config=rust-check //... -k --sandbox_debug
 
-      - name: Install gitstatusd for wt tests
-        run: |
-          wget -qO- \
-            https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz \
-            | tar xz -C /tmp
-          sudo install -m 755 /tmp/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
-
-      - name: Build, lint, and test
-        run: |
-          # -k: Keep going after errors to provide complete information
-          # --sandbox_debug: Show verbose sandbox messages for debugging failures
-          export BAZEL_OPTS="-k --sandbox_debug"
-
-          bazel build //... $BAZEL_OPTS
-          # Comprehensive linting via aspects:
-          # - Python: ruff (lint) + mypy (types)
-          # - JS/TS: ESLint (lint)
-          # - Rust: clippy (lint) + rustfmt (format check)
-          bazel build --config=check //... $BAZEL_OPTS        # Python: ruff + mypy
-          bazel build --config=lint //... $BAZEL_OPTS         # Python + JS/TS: ruff + ESLint
-          bazel build --config=rust-check //... $BAZEL_OPTS   # Rust: clippy + rustfmt
-          bazel test //... --test_output=errors $BAZEL_OPTS
-
-      - name: Generate test summary
+      - name: Generate Rust check summary
         if: always()
         run: |
-          echo "### Bazel Build & Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Bazel Rust Check Results" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ All targets built, linted, and tested" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Rust checks passed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Checks run**:" >> $GITHUB_STEP_SUMMARY
-            echo "- Python: ruff (lint), mypy (types)" >> $GITHUB_STEP_SUMMARY
-            echo "- JS/TS: ESLint (lint)" >> $GITHUB_STEP_SUMMARY
-            echo "- Rust: clippy (lint), rustfmt (format)" >> $GITHUB_STEP_SUMMARY
+            echo "- clippy (lint)" >> $GITHUB_STEP_SUMMARY
+            echo "- rustfmt (format)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Build, lint, or tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Rust checks failed" >> $GITHUB_STEP_SUMMARY
           fi
