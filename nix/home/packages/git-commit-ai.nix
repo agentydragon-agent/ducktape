@@ -5,18 +5,18 @@
   pkgs,
   git-commit-ai-wheel,
 }: let
-  python = pkgs.python312;
-
+  # Use system default Python (3.13 in nixpkgs 25.11)
+  # Wheel is py3-none-any so compatible with any Python 3.x
   compact-json = pkgs.callPackage ./compact-json.nix {};
 
-  git-commit-ai = python.pkgs.buildPythonApplication {
+  git-commit-ai = pkgs.python3Packages.buildPythonApplication {
     pname = "git-commit-ai";
     version = "latest";
     format = "wheel";
 
     src = git-commit-ai-wheel;
 
-    propagatedBuildInputs = with python.pkgs; [
+    propagatedBuildInputs = with pkgs.python3Packages; [
       # Core dependencies
       aiodocker
       anyio

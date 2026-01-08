@@ -85,7 +85,7 @@ py_wheel(
     entry_points = {
         "console_scripts": ["git-commit-ai = git_commit_ai.cli:main"],
     },
-    python_requires = ">=3.12",
+    python_requires = ">=3.13",
     requires = [
         "aiodocker",
         "anyio",
