@@ -39,8 +39,12 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.16.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-pre-commit
+          repository-cache: true
 
       # Cluster validation tools - use official actions where available
       - name: Setup OpenTofu
@@ -210,18 +214,12 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Cache Bazel repository
-        uses: actions/cache@v4
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.16.0
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'pnpm-lock.yaml') }}
-          restore-keys: |
-            bazel-${{ runner.os }}-
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-visual
+          repository-cache: true
 
       - name: Run visual regression tests
         run: |
@@ -277,8 +275,12 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.16.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-build
+          repository-cache: true
 
       - name: Configure build environment
         run: |
@@ -301,21 +303,10 @@ jobs:
             | tar xz -C /tmp
           sudo install -m 755 /tmp/gitstatusd-linux-x86_64 /usr/local/bin/gitstatusd
 
-      - name: Cache Bazel repository
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          # Unified cache key includes all dependency files
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'pnpm-lock.yaml') }}
-          restore-keys: |
-            bazel-${{ runner.os }}-
-
       - name: Build, lint, and test
         run: |
           # -k: Keep going after errors to provide complete information
-          export BAZEL_OPTS="--experimental_repository_cache_hardlinks -k"
+          export BAZEL_OPTS="-k"
 
           bazel build //... $BAZEL_OPTS
           # Comprehensive linting via aspects:
