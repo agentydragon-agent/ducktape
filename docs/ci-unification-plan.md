@@ -34,6 +34,33 @@ This document outlines a roadmap to consolidate CI tooling around Bazel while ma
 3. **Bazelify what makes sense** - Cluster validation tools
 4. **Simplify the CI workflow** - Fewer moving parts
 
+## Progress (Updated 2026-01-08)
+
+### Completed
+
+- **rules_tf integration** - Added to MODULE.bazel (v0.0.10) with OpenTofu 1.11.2, tflint 0.53.0
+- **tfmirror.dev validation** - Tested and working! Terraform validate works via network mirror
+- **tofu_validate.sh wrapper** - Created `cluster/scripts/tofu_validate.sh` using tfmirror.dev
+- **Terraform BUILD.bazel** - Added `cluster/terraform/00-persistent-auth/BUILD.bazel` with:
+  - `tf_module` for tflint (hermetic)
+  - `sh_test :validate` for terraform validate (with tfmirror.dev)
+- **rules_kustomize** - Added to MODULE.bazel (v0.5.2)
+- **http_archive binaries** - Added to MODULE.bazel:
+  - `@kustomize//:kustomize` (v5.5.0)
+  - `@kubeconform//:kubeconform` (v0.6.7)
+  - `@flux//:flux` (v2.4.0)
+  - `@gitstatusd//:gitstatusd-linux-x86_64` (v1.5.4)
+
+### In Progress
+
+- Update CI workflow with `bazelbuild/setup-bazelisk`
+- Add checkov as Python dependency
+
+### Remaining
+
+- Create k8s validation BUILD.bazel using the http_archive binaries
+- Evaluate ansible-lint in Bazel (galaxy dependency challenge)
+
 ## Phase 1: Immediate Fixes
 
 ### 1.1 Switch to `bazelbuild/setup-bazelisk`
@@ -468,18 +495,19 @@ jobs:
 
 ## Open Questions for Discussion
 
-1. **rules_tf provider validation**: Can we use tfmirror.dev as network mirror? Requires either patching rules_tf or custom wrapper with `TF_CLI_CONFIG_FILE`.
+1. ~~**rules_tf provider validation**: Can we use tfmirror.dev as network mirror?~~ **RESOLVED**: Yes! Created `tofu_validate.sh` wrapper that sets `TF_CLI_CONFIG_FILE` to use tfmirror.dev. Test passes: `bazel test //cluster/terraform/00-persistent-auth:validate`
 
 2. **ansible-galaxy**: The ansible-lint job needs galaxy dependencies. How should Bazel handle this? (Network access in test? Pre-fetch? Skip?)
 
 ## Next Steps
 
-1. **Immediate**: Fix CI with `bazelbuild/setup-bazelisk`
-2. **Short-term**: Add gitstatusd via http_archive, remove wget from CI
-3. **Phase 3**: Keep rules_tf for tflint, explore tfmirror.dev for terraform validate
-4. **Phase 4**: Add rules_kustomize + http_archive for kubeconform/flux
-5. **Phase 5**: Evaluate ansible-lint in Bazel (galaxy dependency challenge)
-6. **Phase 6**: Add checkov as Python dependency
+1. ~~**Immediate**: Fix CI with `bazelbuild/setup-bazelisk`~~ (in progress)
+2. ~~**Short-term**: Add gitstatusd via http_archive~~ (DONE - added to MODULE.bazel)
+3. ~~**Phase 3**: Keep rules_tf for tflint, explore tfmirror.dev for terraform validate~~ (DONE - working!)
+4. ~~**Phase 4**: Add rules_kustomize + http_archive for kubeconform/flux~~ (DONE - binaries added)
+5. **Phase 4 continued**: Create k8s validation BUILD.bazel with sh_test wrappers
+6. **Phase 5**: Evaluate ansible-lint in Bazel (galaxy dependency challenge)
+7. **Phase 6**: Add checkov as Python dependency
 
 ## References
 
