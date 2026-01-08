@@ -6,16 +6,30 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import traceback
 from datetime import datetime
 from pathlib import Path
 
-from claude_web_hooks import bazel_proxy_setup, bazelisk_setup, cluster_tools
+from claude_web_hooks import bazel_proxy_setup, bazelisk_setup, cluster_tools, nix_setup
+from claude_web_hooks.streaming import run_streaming
 
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"
+
+
+def get_nix_tools_status() -> str:
+    """Get status of nix-installed tools for pre-commit hooks."""
+    tools = ["alejandra"]
+    available = [t for t in tools if shutil.which(t)]
+    missing = [t for t in tools if t not in available]
+    if missing and not available:
+        return f"missing ({', '.join(missing)})"
+    if missing:
+        return f"partial ({', '.join(available)}; missing: {', '.join(missing)})"
+    return f"installed ({', '.join(available)})"
 
 
 def format_environment_summary() -> str:
@@ -307,6 +321,18 @@ def main() -> int:
                     verbose.info("  %s: installed", tool)
                 else:
                     verbose.warning("  %s: failed to install", tool)
+
+        # Install nix + alejandra for nix file formatting (pre-commit hook)
+        # TODO: Switch to nixfmt (RFC style) once it has better pre-built binary support
+        nix_files_exist = any(project_dir.rglob("*.nix"))
+        if nix_files_exist:
+            verbose.info("Installing nix + alejandra for .nix formatting...")
+            try:
+                nix_store_bin = nix_setup.install_nix(project_dir, run_streaming)
+                nix_setup.install_tools(nix_store_bin, ["alejandra"], run_streaming)
+                verbose.info("alejandra installed successfully")
+            except Exception as e:
+                verbose.warning("Failed to install nix/alejandra: %s", e)
     else:
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
@@ -325,6 +351,10 @@ def main() -> int:
         env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
         if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
             env_content += f'\nexport NODE_EXTRA_CA_CERTS="{bazel_proxy_setup.BAZEL_COMBINED_CA}"\n'
+        # Add nix profile to PATH for alejandra and other nix-installed tools
+        nix_profile_bin = Path.home() / ".nix-profile" / "bin"
+        if nix_profile_bin.exists():
+            env_content += f'\nexport PATH="{nix_profile_bin}:$PATH"\n'
         Path(env_file).write_text(env_content)
         verbose.info("Wrote PATH exports to %s", env_file)
     else:
@@ -366,6 +396,9 @@ def main() -> int:
     # Show cluster tools status if cluster/ exists
     if project_dir_str and (Path(project_dir_str) / "cluster").is_dir():
         log.info("Cluster tools: %s", cluster_tools.get_status())
+    # Show nix tools status if .nix files exist
+    if project_dir_str and any(Path(project_dir_str).rglob("*.nix")):
+        log.info("Nix tools: %s", get_nix_tools_status())
 
     # Emit context for Claude Code
     emit_session_context(had_warnings=loggers.counter.warning_count > 0, had_errors=loggers.counter.error_count > 0)
