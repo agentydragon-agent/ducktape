@@ -84,19 +84,18 @@ repos:
         language: system
         files: \.nix$
 
-  # Prettier - using language: node so pre-commit manages the node environment
-  # This ensures prettier + plugins are installed in an isolated environment
+  # Prettier - using npx for reliable plugin resolution
+  # pre-commit's node environment doesn't work because prettier resolves plugins
+  # relative to the config file, not the pre-commit environment. npx downloads
+  # both packages to the same temp location so resolution works.
   - repo: local
     hooks:
       - id: prettier
         name: prettier
-        entry: prettier --write --ignore-unknown
-        language: node
+        entry: npx --yes --package=prettier@3.4.2 --package=prettier-plugin-svelte@3.4.1 -- prettier --write --ignore-unknown
+        language: system
         types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json, html]
         exclude: "node_modules/|.pnpm/|bazel-|.git/"
-        additional_dependencies:
-          - prettier@3.4.2
-          - prettier-plugin-svelte@3.4.1
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2
