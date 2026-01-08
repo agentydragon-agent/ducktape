@@ -60,10 +60,3 @@ CERTEOF
 # Note: Commit sealed secrets manually after terraform apply:
 # git add k8s/applications/nix-cache/jwt-token-sealed.yaml
 # git commit -m "chore: update Attic JWT token sealed secret"
-
-# Output for verification
-output "attic_jwt_token_base64" {
-  value       = local.attic_jwt_token_base64
-  description = "Attic JWT token (base64-encoded) for HTTP API authentication"
-  sensitive   = true
-}

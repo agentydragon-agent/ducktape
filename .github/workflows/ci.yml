@@ -314,11 +314,8 @@ jobs:
 
       - name: Build, lint, and test
         run: |
-          # Limit resource usage to reduce disk space consumption
-          # --jobs=2: Limit parallel builds to reduce peak memory/disk usage
-          # --repository_cache: Cap external repository cache at 2GB
           # -k: Keep going after errors to provide complete information
-          export BAZEL_OPTS="--jobs=2 --experimental_repository_cache_hardlinks -k"
+          export BAZEL_OPTS="--experimental_repository_cache_hardlinks -k"
 
           bazel build //... $BAZEL_OPTS
           # Comprehensive linting via aspects:
