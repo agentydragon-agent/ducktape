@@ -13,15 +13,6 @@
     "extends": "markdownlint/style/prettier",
     // AGENTS.md and CLAUDE.md start with @-transclusion, not a heading
     "MD041": false
-  },
-  // Per-directory overrides
-  "overrides": [
-    {
-      "files": ["website/**/*.md"],
-      "config": {
-        // Website posts use inline HTML for styling (images, embeds, etc.)
-        "MD033": false
-      }
-    }
-  ]
+  }
+  // Note: website/ has its own .markdownlint-cli2.jsonc with relaxed rules for blog posts
 }

@@ -119,7 +119,7 @@ Comprehensive list of all valid input combinations for Claude tools and their co
 
 - [x] Various MCP tools ✅ (existing test for mcp\_\_...)
 
-## Notes:
+## Notes
 
 - Bash tool with timeout exceeded does not generate PostToolUse hook invocation
 - Interrupted Bash tool calls do not generate PostToolUse hook invocation

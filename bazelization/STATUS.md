@@ -349,16 +349,17 @@ claude_web_hooks/
 ```
 
 **Files created:**
-| Path | Purpose |
-|------|---------|
-| `~/.cache/bazel-proxy/bazelisk` | Bazelisk binary |
-| `~/.cache/bazel-proxy/bin/bazel` | Wrapper that sets proxy env vars |
-| `~/.cache/bazel-proxy/upstream_proxy` | Upstream proxy URL (refreshable) |
-| `~/.cache/bazel-proxy/proxy.pid` | Proxy daemon PID |
-| `~/.cache/bazel-proxy/cacerts.jks` | Java truststore with proxy CA |
-| `~/.cache/bazel-proxy/combined_ca.pem` | System CAs + proxy CA |
-| `~/.cache/bazel-proxy/bazelrc` | Bazel proxy configuration |
-| `~/.bazelrc` | try-import for proxy bazelrc |
+
+| Path                                   | Purpose                          |
+| -------------------------------------- | -------------------------------- |
+| `~/.cache/bazel-proxy/bazelisk`        | Bazelisk binary                  |
+| `~/.cache/bazel-proxy/bin/bazel`       | Wrapper that sets proxy env vars |
+| `~/.cache/bazel-proxy/upstream_proxy`  | Upstream proxy URL (refreshable) |
+| `~/.cache/bazel-proxy/proxy.pid`       | Proxy daemon PID                 |
+| `~/.cache/bazel-proxy/cacerts.jks`     | Java truststore with proxy CA    |
+| `~/.cache/bazel-proxy/combined_ca.pem` | System CAs + proxy CA            |
+| `~/.cache/bazel-proxy/bazelrc`         | Bazel proxy configuration        |
+| `~/.bazelrc`                           | try-import for proxy bazelrc     |
 
 **Flow:**
 
@@ -430,7 +431,7 @@ Ruff is managed via `rules_multitool` with a custom lockfile:
 
 **To update ruff:**
 
-1. Check latest release at https://github.com/astral-sh/ruff/releases
+1. Check latest release at <https://github.com/astral-sh/ruff/releases>
 2. Update URLs and sha256 hashes in `tools/multitool/lockfile.json`
 3. Test with `bazel lint //...`
 

@@ -97,12 +97,13 @@ repos:
         types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json, html]
         exclude: "node_modules/|.pnpm/|bazel-|.git/"
 
-  # Markdown linting
+  # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.17.2
     hooks:
       - id: markdownlint-cli2
         args: [--fix]
+        files: ^(cluster|website)/.*\.md$
 
   # Svelte/TypeScript checks for MiniCodex UI
   - repo: local

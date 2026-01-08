@@ -28,7 +28,7 @@
 ### 1. Vite (Current Choice)
 
 **Bazel Integration**: Via npm package, no native Bazel rules  
-**Repository**: https://github.com/vitejs/vite
+**Repository**: <https://github.com/vitejs/vite>
 
 #### Strengths
 
@@ -62,7 +62,7 @@ Vite uses **esbuild for development** (fast rebuilds, ES module handling) and **
 
 **Bazel Integration**: [aspect-build/rules_esbuild](https://github.com/aspect-build/rules_esbuild)  
 **Written in**: Go  
-**Repository**: https://github.com/evanw/esbuild
+**Repository**: <https://github.com/evanw/esbuild>
 
 #### Strengths
 
@@ -113,7 +113,7 @@ Use `esbuild-svelte` plugin:
 ### 3. Rollup
 
 **Bazel Integration**: [aspect-build/rules_rollup](https://github.com/aspect-build/rules_rollup)  
-**Repository**: https://github.com/rollup/rollup
+**Repository**: <https://github.com/rollup/rollup>
 
 #### Strengths
 
@@ -146,7 +146,7 @@ Typically paired with esbuild for dev, Rollup for prod—exactly like Vite.
 ### 4. webpack
 
 **Bazel Integration**: [aspect-build/rules_webpack](https://github.com/aspect-build/rules_webpack) (early development)  
-**Repository**: https://github.com/webpack/webpack
+**Repository**: <https://github.com/webpack/webpack>
 
 #### Strengths
 
@@ -176,7 +176,7 @@ Typically paired with esbuild for dev, Rollup for prod—exactly like Vite.
 ### 5. Parcel
 
 **Bazel Integration**: Custom rules only; no official integration  
-**Repository**: https://github.com/parcel-bundler/parcel
+**Repository**: <https://github.com/parcel-bundler/parcel>
 
 #### Strengths
 
@@ -202,7 +202,7 @@ Parcel's zero-config approach works against Bazel's explicit model. The unmainta
 ### 6. swc
 
 **Bazel Integration**: Minimal; mainly via Rspack  
-**Repository**: https://github.com/swc-project/swc
+**Repository**: <https://github.com/swc-project/swc>
 
 #### Key Points
 
@@ -224,7 +224,7 @@ swc is valuable as a **transpiler component** inside other bundlers, but not as 
 ### 7. Rspack
 
 **Bazel Integration**: Not directly; webpack-compatible  
-**Repository**: https://github.com/web-infra-dev/rspack
+**Repository**: <https://github.com/web-infra-dev/rspack>
 
 #### Overview
 
@@ -254,7 +254,7 @@ Would need to use rules_webpack if targeting Bazel, since Rspack is webpack-comp
 ### 8. Turbopack
 
 **Bazel Integration**: Architectural inspiration only; no direct rules  
-**Repository**: https://github.com/vercel/turbo (includes Turbopack)
+**Repository**: <https://github.com/vercel/turbo> (includes Turbopack)
 
 #### Overview
 
@@ -494,22 +494,22 @@ Use hermetic, Bazel-native rules (rules_esbuild, rules_rollup) rather than relyi
 
 Example implementations and documentation:
 
-- **rules_esbuild**: https://github.com/aspect-build/rules_esbuild
+- **rules_esbuild**: <https://github.com/aspect-build/rules_esbuild>
   - `/examples/`: CSS, splitting, macros, plugins, targets
   - `/docs/rules.md`: API documentation
-- **rules_rollup**: https://github.com/aspect-build/rules_rollup
+- **rules_rollup**: <https://github.com/aspect-build/rules_rollup>
   - `/example/`: Example project
   - `/docs/rollup.md`: API documentation
 
-- **rules_webpack**: https://github.com/aspect-build/rules_webpack
+- **rules_webpack**: <https://github.com/aspect-build/rules_webpack>
   - Early development; API may change
   - `/docs/rules.md`: webpack_bundle, webpack_devserver
 
-- **Svelte + Bazel Example**: https://github.com/thelgevold/svelte-bazel-example
+- **Svelte + Bazel Example**: <https://github.com/thelgevold/svelte-bazel-example>
   - Uses rules_rollup with Rollup for bundling
   - Custom Svelte build rules
 
-- **esbuild-svelte Plugin**: https://github.com/EMH333/esbuild-svelte
+- **esbuild-svelte Plugin**: <https://github.com/EMH333/esbuild-svelte>
   - Compiles .svelte files for esbuild
   - Caching support for watch mode
 
