@@ -105,10 +105,6 @@ def emit_session_context(had_warnings: bool, had_errors: bool) -> None:
             "  - No overlay filesystem (use vfs for containers)",
             "  - Network via proxy only (no direct DNS)",
             "",
-            "Available skill: github-actions-web",
-            "  Run CI workflows locally with: act + podman",
-            "  See .claude/skills/github-actions-web/SKILL.md",
-            "",
             f"Full log: {LOG_FILE}",
             "=" * 60,
         ]
