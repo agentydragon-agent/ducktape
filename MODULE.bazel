@@ -276,14 +276,6 @@ http_archive(
     urls = ["https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz"],
 )
 
-# Kubeconform - Kubernetes manifest validator
-http_archive(
-    name = "kubeconform",
-    build_file_content = 'exports_files(["kubeconform"])',
-    sha256 = "95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73",
-    urls = ["https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz"],
-)
-
 # Flux CLI - GitOps toolkit
 http_archive(
     name = "flux",
