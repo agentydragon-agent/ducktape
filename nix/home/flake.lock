@@ -56,7 +56,7 @@
     "git-commit-ai-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-2AtLsa+niO6Msrada6agFPoWSLUePoXfQ4EZ8d9vG2Y=",
+        "narHash": "sha256-Llmqtq6LA7+bOJW6QQlQkISnHtU+BJvGM2lFocp/bes=",
         "type": "file",
         "url": "https://github.com/agentydragon/ducktape/releases/download/git-commit-ai-latest/git_commit_ai-latest-py3-none-any.whl"
       },

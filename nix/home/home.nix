@@ -67,7 +67,7 @@ let
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
-  zshInit = builtins.readFile ./shell/zsh-init.sh;
+  zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
   # git-commit-ai - AI-powered commit message generator
   git-commit-ai = pkgs.callPackage ./packages/git-commit-ai.nix {
