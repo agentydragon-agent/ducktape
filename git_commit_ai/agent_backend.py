@@ -24,7 +24,7 @@ from git_commit_ai.git_ro.server import (
 from mcp_infra.bootstrap import TypedBootstrapBuilder
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
-from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.enhanced.simple import SimpleFastMCP
 from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
@@ -155,7 +155,7 @@ class SubmitState:
 
 
 def make_submit_server(state: SubmitState):
-    m = EnhancedFastMCP("Submit Commit Message Server", instructions="Submit commit message (subject/body) and finish")
+    m = SimpleFastMCP("Submit Commit Message Server", instructions="Submit commit message (subject/body) and finish")
 
     @m.flat_model()
     def submit_commit_message(payload: CommitMessage) -> SimpleOk:
@@ -169,7 +169,7 @@ class CommitCompositor(Compositor):
     """Compositor with git_ro and submit_commit_message servers pre-mounted."""
 
     git_ro: Mounted[GitRoServer]
-    submit: Mounted[EnhancedFastMCP]
+    submit: Mounted[SimpleFastMCP]
 
     def __init__(self, repo: pygit2.Repository, submit_state: SubmitState):
         super().__init__()

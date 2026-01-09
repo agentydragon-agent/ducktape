@@ -27,7 +27,7 @@ from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 from pygit2.enums import BranchType, FileStatus
 
-from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.enhanced.simple import SimpleFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -141,10 +141,10 @@ class LogEntriesPage(BaseModel):
     next_offset: int | None = None
 
 
-class GitRoServer(EnhancedFastMCP):
+class GitRoServer(SimpleFastMCP):
     """Git read-only MCP server with typed tool access.
 
-    Subclasses EnhancedFastMCP and adds typed tool attributes for accessing
+    Subclasses SimpleFastMCP and adds typed tool attributes for accessing
     tool names. This is the single source of truth - no string literals elsewhere.
     """
 

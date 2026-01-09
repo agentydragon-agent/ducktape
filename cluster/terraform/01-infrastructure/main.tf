@@ -79,9 +79,8 @@ provider "proxmox" {
   # NOTE: SSH address uses proxmox_node_name (atlas) not proxmox_api_host (FQDN)
   # because the FQDN routes through VPS nginx, but SSH needs direct Tailscale access
   ssh {
-    agent       = false
-    private_key = file(pathexpand("~/.ssh/id_ed25519"))
-    username    = "root"
+    agent    = true
+    username = "root"
     node {
       name    = var.proxmox_node_name
       address = var.proxmox_node_name # Direct Tailscale access, not FQDN
