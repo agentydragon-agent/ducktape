@@ -47,6 +47,21 @@ const scenarios = [
   { component: 'CopyButton', scenario: 'CustomLabel' },
   { component: 'CopyButton', scenario: 'CustomSuccessMessage' },
   { component: 'CopyButton', scenario: 'LongText' },
+  // FileViewer: shows code with TPs/FPs/critique markers and issue comments
+  { component: 'FileViewer', scenario: 'WithTpAndFp' },
+  { component: 'FileViewer', scenario: 'WithCritiqueIssues' },
+  { component: 'FileViewer', scenario: 'TpOnly' },
+  { component: 'FileViewer', scenario: 'Empty' },
+  // FileTree: directory tree with TP/FP counts
+  { component: 'FileTree', scenario: 'Default' },
+  { component: 'FileTree', scenario: 'WithSelection' },
+  // IssueComment: individual issue cards (TP, FP, critique)
+  { component: 'IssueComment', scenario: 'TpCollapsed' },
+  { component: 'IssueComment', scenario: 'TpExpanded' },
+  { component: 'IssueComment', scenario: 'FpCollapsed' },
+  { component: 'IssueComment', scenario: 'FpExpanded' },
+  { component: 'IssueComment', scenario: 'CritiqueCollapsed' },
+  { component: 'IssueComment', scenario: 'CritiqueExpanded' },
 ];
 
 const CONTENT_TYPES = {
@@ -173,11 +188,20 @@ async function runVisualTests() {
   // - --disable-font-subpixel-positioning: Prevent subpixel font positioning differences
   // - --disable-lcd-text: Disable LCD text rendering (subpixel anti-aliasing)
   // - --force-color-profile=srgb: Force consistent color profile across systems
+  // Use TEST_TMPDIR if available (Bazel test sandbox), or process.cwd() as fallback
+  // This fixes "Permission denied" errors writing to /tmp in containerized environments
+  const userDataDir = join(process.env.TEST_TMPDIR || process.cwd(), 'chrome-user-data');
+  mkdirSync(userDataDir, { recursive: true });
+
   const launchOptions = {
     headless: true,
+    userDataDir, // Use Bazel-writable directory for Chrome data
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--single-process',
       '--font-render-hinting=none',
       '--disable-font-subpixel-positioning',
       '--disable-lcd-text',
@@ -217,7 +241,7 @@ async function runVisualTests() {
       const name = `${component}-${scenario}`;
       console.log(`Testing: ${name}`);
 
-      const url = `http://localhost:${port}/?component=${component}&scenario=${scenario}`;
+      const url = `http://127.0.0.1:${port}/?component=${component}&scenario=${scenario}`;
       await page.goto(url, { waitUntil: 'networkidle0' });
 
       // Wait for component to render
