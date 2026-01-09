@@ -17,7 +17,7 @@ When run, `/init` outputs the agent's system prompt to stdout.
 
 ## Package Structure
 
-Agent packages in `props/core/src/props_core/agent_defs/`:
+Agent packages in `props/core/agent_defs/`:
 
 ```
 agent_defs/
@@ -126,6 +126,6 @@ Track costs across agent sub-trees:
 
 ## References
 
-- Agent packages: `props/core/src/props_core/agent_defs/`
+- Agent packages: `props/core/agent_defs/`
 - Agent runtime utilities: `agent_runtimes/` (critic_util, grader_util, etc.)
 - Package building: `agent_pkg/host/src/agent_pkg_host/builder.py`

@@ -1,12 +1,12 @@
 # Agent-Facing Documentation
 
-This directory (`props/core/src/props_core/docs/`) is the **single source of truth** for agent-facing documentation.
+This directory (`props/core/docs/`) is the **single source of truth** for agent-facing documentation.
 
 ## SSOT Principle
 
 When writing documentation that agents see at runtime:
 
-1. **Write it ONCE here** — in `props/core/src/props_core/docs/`
+1. **Write it ONCE here** — in `props/core/docs/`
 2. **Reference or transclude** into other locations (developer docs, AGENTS.md files)
 3. **Do NOT duplicate** content between agent docs and other locations
 
