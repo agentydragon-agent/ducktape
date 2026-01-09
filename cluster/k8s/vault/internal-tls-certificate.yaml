@@ -38,6 +38,10 @@ spec:
     - instance-0.vault.svc
     - instance-1.vault.svc
     - instance-2.vault.svc
+    # Short names for Raft retry_join (instance.yaml uses these)
+    - instance-0.vault
+    - instance-1.vault
+    - instance-2.vault
     # Localhost for local connections
     - localhost
   ipAddresses:
