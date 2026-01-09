@@ -13,6 +13,11 @@ const __dirname = dirname(__filename);
 // Update mode: set UPDATE_BASELINES=1 to overwrite existing baselines
 const UPDATE_BASELINES = process.env.UPDATE_BASELINES === '1';
 
+// Output directory for test artifacts (diffs, actual screenshots)
+// Use TEST_UNDECLARED_OUTPUTS_DIR for Bazel tests (preserved after test completion)
+// Fall back to local diffs/ directory for manual runs
+const OUTPUT_DIR = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, 'diffs');
+
 // Component scenarios to test (mirrors harness.ts)
 const scenarios = [
   { component: 'BackButton', scenario: 'Default' },
@@ -77,10 +82,9 @@ function compareBaseline(name, screenshot) {
   // Use same naming convention as Playwright for compatibility with existing baselines
   const baselineDir = join(__dirname, 'visual-regression.spec.ts-snapshots');
   const baselinePath = join(baselineDir, `${name}-chromium-linux.png`);
-  const diffDir = join(__dirname, 'diffs');
 
-  if (!existsSync(diffDir)) {
-    mkdirSync(diffDir, { recursive: true });
+  if (!existsSync(OUTPUT_DIR)) {
+    mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
   // Update mode: always overwrite baselines
@@ -109,7 +113,7 @@ function compareBaseline(name, screenshot) {
     console.error(
       `  ✗ Dimensions differ: baseline=${baseline.width}x${baseline.height}, actual=${actual.width}x${actual.height}`
     );
-    writeFileSync(join(diffDir, `${name}-actual.png`), screenshot);
+    writeFileSync(join(OUTPUT_DIR, `${name}-actual.png`), screenshot);
     return { passed: false, reason: 'dimensions' };
   }
 
@@ -119,8 +123,8 @@ function compareBaseline(name, screenshot) {
   });
 
   if (numDiffPixels > 0) {
-    writeFileSync(join(diffDir, `${name}-actual.png`), screenshot);
-    writeFileSync(join(diffDir, `${name}-diff.png`), PNG.sync.write(diff));
+    writeFileSync(join(OUTPUT_DIR, `${name}-actual.png`), screenshot);
+    writeFileSync(join(OUTPUT_DIR, `${name}-diff.png`), PNG.sync.write(diff));
     console.error(`  ✗ ${numDiffPixels} pixels differ`);
     return { passed: false, reason: 'pixels', diffCount: numDiffPixels };
   }
