@@ -1,4 +1,0 @@
-build/
-logs/
-.devenv/
-.devenv.flake.nix

@@ -1,9 +1,0 @@
-[project]
-name = "cli-util"
-version = "0.1.0"
-description = "CLI utilities - async decorators and logging configuration"
-requires-python = ">=3.13"
-dependencies = [
-    "typer>=0.12",
-    "structlog",
-]

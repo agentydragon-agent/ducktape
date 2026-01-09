@@ -4,10 +4,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agent_core_testing.steps import MakeCall
+from agent_core_testing.responses import DecoratorMock
 from agent_server.mcp.approval_policy.engine import CreateProposalArgs
-from agent_server.testing.steps import UiEndTurnCall
-from mcp_infra.constants import POLICY_PROPOSER_MOUNT_PREFIX
+from agent_server.mcp.ui.server import EndTurnInput
+from mcp_infra.constants import POLICY_PROPOSER_MOUNT_PREFIX, UI_MOUNT_PREFIX
+from mcp_infra.naming import build_mcp_function
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
@@ -18,20 +19,31 @@ else:
     Page = playwright.Page
 
 
-async def test_policy_proposal_reject_updates_ui(
-    e2e_page, run_server, responses_factory, policy_allow_all: str, make_step_runner
-):
+class ProposalUiMock(DecoratorMock):
+    """Mock with policy proposer and UI helpers."""
+
+    def create_proposal(self, content: str):
+        """Create policy proposal tool call."""
+        return self.tool_call(
+            build_mcp_function(POLICY_PROPOSER_MOUNT_PREFIX, "create_proposal"), CreateProposalArgs(content=content)
+        )
+
+    def end_turn(self):
+        """Create end_turn tool call."""
+        return self.tool_call(build_mcp_function(UI_MOUNT_PREFIX, "end_turn"), EndTurnInput())
+
+
+async def test_policy_proposal_reject_updates_ui(e2e_page, run_server, policy_allow_all: str):
     """E2E: a policy proposal appears; rejecting it removes it from Open Proposals without reload."""
 
     # Mock the agent to create a proposal via tool call, then end turn
-    # Tool name is stable: derived from function name "create_proposal"
-    runner = make_step_runner(
-        steps=[
-            MakeCall(POLICY_PROPOSER_MOUNT_PREFIX, "create_proposal", CreateProposalArgs(content=policy_allow_all)),
-            UiEndTurnCall(),
-        ]
-    )
-    s = run_server(lambda model: runner)
+    @ProposalUiMock.mock()
+    def mock(m: ProposalUiMock):
+        yield
+        yield m.create_proposal(policy_allow_all)
+        yield m.end_turn()
+
+    s = run_server(lambda model: mock)
 
     e2e_page.goto(s.base_url)
     e2e_page.create_agent_via_ui()

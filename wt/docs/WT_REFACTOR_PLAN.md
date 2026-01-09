@@ -8,7 +8,6 @@
 ## Outstanding Work
 
 - Completed
-
   - GitHub PR list construction now uses Pydantic field names (`head_ref_name`, `merged_at` ISO) — `src/wt/server/github_client.py`
   - `PRService` catches `GitHubUnavailableError`; uses `asyncio.get_running_loop` — `src/wt/server/pr_service.py`
   - GitHub refresh watcher stop is non-blocking via `asyncio.to_thread` — `src/wt/server/github_refresh.py`

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from sysrw.templates import iter_templates, validate_template_text
 
 

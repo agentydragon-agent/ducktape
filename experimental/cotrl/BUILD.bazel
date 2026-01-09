@@ -22,7 +22,6 @@ py_binary(
     deps = [
         ":cotrl",
         "@pypi//aiofiles",
-        "@pypi//types_aiofiles",
     ],
 )
 

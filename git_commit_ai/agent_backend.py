@@ -25,9 +25,9 @@ from mcp_infra.bootstrap import TypedBootstrapBuilder
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.types import SimpleOk
 from openai_utils.client_factory import build_client
 from openai_utils.model import FunctionCallItem, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel

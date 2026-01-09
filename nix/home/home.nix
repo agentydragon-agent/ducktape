@@ -68,8 +68,11 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  # git-commit-ai - AI-powered commit message generator
-  git-commit-ai = pkgs.callPackage ./packages/git-commit-ai.nix {};
+  # ducktape - CLI tools collection (git-commit-ai, difftree)
+  ducktape = pkgs.callPackage ./packages/ducktape.nix {};
+
+  # gnome-terminal-profile-switcher - Switch GNOME Terminal profiles
+  gnome-terminal-profile-switcher = pkgs.callPackage ./packages/gnome-terminal-profile-switcher.nix {};
 in {
   imports = [
     # TODO: Re-enable google-drive-service once the git repo is accessible
@@ -300,7 +303,8 @@ in {
       zsh
       atuin
       opencode # AI coding agent for the terminal
-      git-commit-ai # AI-powered commit message generator
+      ducktape # CLI tools: git-commit-ai, difftree
+      gnome-terminal-profile-switcher # Switch GNOME Terminal profiles
 
       # Tools from GitHub releases / binary downloads
       gh

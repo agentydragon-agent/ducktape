@@ -3,14 +3,19 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files([
     "devenv.nix",
-    "pyproject.toml",
 ])
 
 py_library(
     name = "wt",
-    srcs = glob(["src/wt/**/*.py"]),
-    data = glob(["src/wt/shell/*.sh"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
+    data = glob(["shell/*.sh"]),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//click",
@@ -30,15 +35,15 @@ py_library(
 
 py_binary(
     name = "wt-cli",
-    srcs = ["src/wt/cli.py"],
-    main = "src/wt/cli.py",
+    srcs = ["cli.py"],
+    main = "cli.py",
     deps = [":wt"],
 )
 
 py_binary(
     name = "wt-install",
-    srcs = ["src/wt/shell/install.py"],
-    main = "src/wt/shell/install.py",
+    srcs = ["shell/install.py"],
+    main = "shell/install.py",
     deps = [":wt"],
 )
 

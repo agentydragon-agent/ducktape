@@ -11,6 +11,7 @@ py_library(
     imports = ["src"],
     visibility = ["//visibility:public"],
     deps = [
+        "//mcp_infra",
         "//props/core:props_core",
         "@pypi//fastapi",
         "@pypi//pydantic",

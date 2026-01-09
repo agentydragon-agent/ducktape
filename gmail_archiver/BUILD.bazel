@@ -1,0 +1,86 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+py_library(
+    name = "gmail_archiver",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            "tests/**",
+        ],
+    ),
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//email_reply_parser",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth_httplib2",
+        "@pypi//google_auth_oauthlib",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//python_dateutil",
+        "@pypi//pyyaml",
+        "@pypi//rich",
+        "@pypi//tenacity",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "gmail-archiver",
+    srcs = ["__main__.py"],
+    imports = [".."],
+    main = "__main__.py",
+    deps = [":gmail_archiver"],
+)
+
+py_test(
+    name = "gmail_archiver_tests",
+    srcs = glob(["tests/**/*.py"]),
+    imports = [".."],
+    main = "tests/__init__.py",
+    deps = [
+        ":gmail_archiver",
+        "@pypi//pytest",
+    ],
+)
+
+ruff_test(
+    name = "ruff",
+    srcs = [":gmail_archiver"],
+)
+
+py_package(
+    name = "gmail_archiver_pkg",
+    packages = ["gmail_archiver"],
+    deps = [":gmail_archiver"],
+)
+
+py_wheel(
+    name = "gmail_archiver_wheel",
+    distribution = "gmail_archiver",
+    entry_points = {
+        "console_scripts": ["gmail-archiver = gmail_archiver.__main__:app"],
+    },
+    python_requires = ">=3.12",
+    requires = [
+        "beautifulsoup4",
+        "email-reply-parser",
+        "google-api-python-client",
+        "google-auth-httplib2",
+        "google-auth-oauthlib",
+        "openai",
+        "pydantic>=2.0",
+        "pydantic-settings",
+        "python-dateutil",
+        "pyyaml",
+        "rich",
+        "tenacity",
+        "typer",
+    ],
+    version = "0.1.0",
+    deps = [":gmail_archiver_pkg"],
+)

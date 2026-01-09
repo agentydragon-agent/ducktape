@@ -352,7 +352,7 @@ class GitRoServer(EnhancedFastMCP):
                     try:
                         tree_entry = cur[part]
                     except KeyError:
-                        entries_here = sorted(e.name for e in cur)
+                        entries_here = sorted(e.name for e in cur if e.name is not None)
                         at_root = not traversed
                         location = "repository root" if at_root else f"'{'/'.join(traversed)}'"
                         raise FileNotFoundError(

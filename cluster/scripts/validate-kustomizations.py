@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """
 Parallel kustomize validation script
 Validates all kustomizations quickly and quietly (unless errors occur)
@@ -11,11 +15,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:
-    print("PyYAML required: pip install PyYAML", file=sys.stderr)
-    sys.exit(1)
+import yaml
 
 
 async def validate_kustomization(kustomization_path: Path) -> tuple[Path, bool, str]:

@@ -35,8 +35,8 @@ from agent_server.policy_eval.runner import run_policy_source
 from mcp_infra.constants import RUNTIME_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.naming import build_mcp_function
-from mcp_infra.types import SimpleOk
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 logger = logging.getLogger(__name__)

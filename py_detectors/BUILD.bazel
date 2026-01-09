@@ -3,12 +3,16 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "py_detectors",
-    srcs = glob(["src/py_detectors/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",
@@ -17,15 +21,15 @@ py_library(
 
 py_binary(
     name = "py-detectors",
-    srcs = ["src/py_detectors/__main__.py"],
-    main = "src/py_detectors/__main__.py",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
     deps = [":py_detectors"],
 )
 
 py_binary(
     name = "py-detectors-custom",
-    srcs = ["src/py_detectors/cli_custom.py"],
-    main = "src/py_detectors/cli_custom.py",
+    srcs = ["cli_custom.py"],
+    main = "cli_custom.py",
     deps = [":py_detectors"],
 )
 

@@ -1,13 +1,11 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
-    name = "agent_pkg_runtime",
-    srcs = glob(["src/agent_pkg_runtime/**/*.py"]),
-    data = glob(["src/agent_pkg_runtime/**/*.md"]),
-    imports = ["src"],
+    name = "runtime",
+    srcs = glob(["**/*.py"]),
+    data = glob(["**/*.md"]),
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//mcp_utils",
@@ -18,5 +16,5 @@ py_library(
 
 ruff_test(
     name = "ruff",
-    srcs = [":agent_pkg_runtime"],
+    srcs = [":runtime"],
 )

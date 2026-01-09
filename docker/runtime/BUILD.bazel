@@ -11,7 +11,7 @@ py_binary(
     deps = [
         "//adgn",
         "//agent_core",
-        "//agent_pkg/runtime:agent_pkg_runtime",
+        "//agent_pkg/runtime",
         "//agent_server",
         "//cli_util",
         "//mcp_infra",

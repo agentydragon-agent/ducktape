@@ -14,8 +14,8 @@ import typer
 from rich.console import Console
 from sqlalchemy import text
 
-from agent_pkg_runtime.mcp import mcp_client_from_env
-from agent_pkg_runtime.output import render_agent_prompt
+from agent_pkg.runtime.mcp import mcp_client_from_env
+from agent_pkg.runtime.output import render_agent_prompt
 from cli_util.decorators import async_run
 from props_core.agent_helpers import get_current_agent_run, get_current_agent_run_id
 from props_core.agent_types import AgentType

@@ -27,18 +27,23 @@ Regenerate TypeScript types from backend API schema:
 pnpm generate  # Requires backend running at http://localhost:8000
 ```
 
-## Storybook & Visual Testing
+## Visual Regression Testing
 
-Storybook for component development, Playwright for visual regression testing.
+Puppeteer-based visual regression testing via Bazel.
 
 ```bash
-# Run Storybook (http://localhost:6006)
-pnpm storybook
+# Run visual tests (via Bazel)
+bazel test //props/frontend:visual_test
 
-# Visual regression tests
-pnpm test:visual         # Compare against baselines
-pnpm test:visual:update  # Update baselines after intentional changes
-pnpm test:visual:ui      # Interactive UI mode
+# Update baselines after intentional UI changes:
+# 1. Build the test harness
+cd props/frontend && node tests/harness/esbuild.config.mjs tests/harness/dist
+
+# 2. Run with UPDATE_BASELINES=1 to overwrite baselines
+UPDATE_BASELINES=1 HARNESS_PATH=tests/harness/dist/harness.js node tests/visual-regression.spec.js
+
+# 3. Verify the new baselines pass
+bazel test //props/frontend:visual_test --nocache_test_results
 ```
 
-Add stories in `src/**/*.stories.ts` (see existing examples). Baselines are stored in `tests/visual-regression.spec.ts-snapshots/` (committed to git).
+Baselines are stored in `tests/visual-regression.spec.ts-snapshots/` (committed to git). Add test scenarios in `tests/harness/harness.ts`.

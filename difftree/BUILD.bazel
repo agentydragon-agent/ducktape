@@ -1,12 +1,16 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "difftree",
-    srcs = glob(["src/difftree/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//click",
@@ -17,8 +21,8 @@ py_library(
 
 py_binary(
     name = "difftree_bin",
-    srcs = ["src/difftree/__main__.py"],
-    main = "src/difftree/__main__.py",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
     deps = [":difftree"],
 )
 

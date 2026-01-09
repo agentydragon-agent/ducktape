@@ -24,7 +24,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from agent_pkg_runtime.output import render_agent_prompt
+from agent_pkg.runtime.output import render_agent_prompt
 from props_core.agent_helpers import get_current_agent_run
 from props_core.agent_types import GraderTypeConfig, SnapshotGraderTypeConfig
 from props_core.db.models import (

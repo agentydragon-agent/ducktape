@@ -65,7 +65,7 @@ The same pre-commit hooks should work across three environments:
 
 ### Session Start Hook (Claude Code on Web)
 
-The session start hook (`claude_web_hooks/src/claude_web_hooks/session_start.py`) configures the Claude Code on web environment.
+The session start hook (`claude_web_hooks/session_start.py`) configures the Claude Code on web environment.
 
 **Current capabilities:**
 

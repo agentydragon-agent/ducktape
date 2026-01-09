@@ -25,8 +25,8 @@ Usage:
     with get_session() as session:
         snapshots = session.query(Snapshot).filter_by(split='train').all()
 
-    # MCP HTTP client (from agent_pkg_runtime.mcp)
-    from agent_pkg_runtime.mcp import mcp_client_from_env
+    # MCP HTTP client (from agent_pkg.runtime.mcp)
+    from agent_pkg.runtime.mcp import mcp_client_from_env
 
     async with mcp_client_from_env() as (client, _):
         result = await client.call_tool("tool_name", {"arg": "value"})

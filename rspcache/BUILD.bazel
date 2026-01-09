@@ -3,12 +3,16 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "rspcache",
-    srcs = glob(["src/rspcache/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            "admin_ui/**",
+            "docker/**",
+        ],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//openai_utils",
@@ -27,8 +31,9 @@ py_library(
 
 py_binary(
     name = "rspcache_cli",
-    srcs = ["src/rspcache/cli.py"],
-    main = "src/rspcache/cli.py",
+    srcs = ["cli.py"],
+    imports = [".."],
+    main = "cli.py",
     deps = [":rspcache"],
 )
 

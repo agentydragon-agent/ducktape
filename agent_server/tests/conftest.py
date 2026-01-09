@@ -39,12 +39,12 @@ from agent_server.testing.approval_policy_testdata import fetch_policy, make_pol
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.testing.simple_servers import SendMessageInput
-from mcp_infra.types import McpServerSpecs
 from openai_utils.model import OpenAIModelProto
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

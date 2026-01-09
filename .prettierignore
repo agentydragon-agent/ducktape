@@ -16,12 +16,12 @@ gatelet/gatelet/server/templates/**
 inventree_utils/labels/**
 
 # Tana export references - generated content, should not be formatted
-tana/src/tana/export/references/**
+tana/export/references/**
 
 # Tana testdata - exclude non-JSON fixtures (JSON should be formatted)
-tana/tests/tana/testdata/**/*.md
-tana/tests/tana/testdata/**/*.tanapaste
-tana/tests/tana/testdata/**/*.txt
+tana/tests/testdata/**/*.md
+tana/tests/testdata/**/*.tanapaste
+tana/tests/testdata/**/*.txt
 
 # SvelteKit generated files
 **/.svelte-kit/**

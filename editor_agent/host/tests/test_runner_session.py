@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from editor_agent.runner import editor_docker_session, writeback_success
-from editor_agent.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
+from editor_agent.host.runner import editor_docker_session, writeback_success
+from editor_agent.host.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
 
 
 @pytest.mark.requires_docker

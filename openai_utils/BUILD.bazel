@@ -1,14 +1,17 @@
-"""OpenAI utilities package."""
-
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "openai_utils",
-    srcs = glob(["src/openai_utils/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "openai_api_examples/**",
+            "tests/**",
+        ],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//httpx",

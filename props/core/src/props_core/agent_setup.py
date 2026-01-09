@@ -39,7 +39,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
 
 from agent_core.handler import BaseHandler
-from agent_pkg_host.builder import ensure_image_from_archive
+from agent_pkg.host.builder import ensure_image_from_archive
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from net_util.docker import get_docker_network_gateway_async

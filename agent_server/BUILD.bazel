@@ -15,7 +15,7 @@ py_library(
         ],
     ),
     data = glob(["**/*.j2.md"]),  # Include Jinja2 templates
-    imports = ["."],
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",
@@ -65,7 +65,7 @@ py_test(
         ["tests/**/*.py"],
         exclude = ["tests/e2e/**/*.py"],
     ),
-    imports = ["."],
+    imports = [".."],
     main = "tests/pytest_runner.py",
     deps = [
         ":agent_server",
@@ -81,8 +81,11 @@ py_test(
 
 py_test(
     name = "test_agent_server_e2e",
-    srcs = glob(["tests/e2e/**/*.py"]) + ["tests/conftest.py", "tests/pytest_runner_e2e.py"],
-    imports = ["."],
+    srcs = glob(["tests/e2e/**/*.py"]) + [
+        "tests/conftest.py",
+        "tests/pytest_runner_e2e.py",
+    ],
+    imports = [".."],
     main = "tests/pytest_runner_e2e.py",
     tags = ["manual"],  # Don't run by default; requires Playwright browsers
     deps = [

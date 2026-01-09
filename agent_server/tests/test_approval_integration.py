@@ -6,9 +6,9 @@ import pytest
 from fastmcp.client import Client
 
 from agent_core.agent import Agent
-from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
+from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core_testing.steps import AssistantMessage, EchoCall
+from agent_core_testing.responses import EchoMock
 from agent_server.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
 from agent_server.policies.policy_types import ApprovalDecision
 from agent_server.testing.approval_policy_testdata import make_policy
@@ -18,7 +18,7 @@ from openai_utils.model import SystemMessage
 
 @pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
-    responses_factory, echo_spec, make_policy_gateway_compositor, make_approval_policy_server, make_step_runner
+    echo_spec, make_policy_gateway_compositor, make_approval_policy_server
 ) -> None:
     """Test that the approval system is properly wired and blocks tool calls via middleware."""
 
@@ -28,15 +28,19 @@ async def test_approval_system_wired_and_blocks_on_ask(
     )
 
     # Model tries to call the tool once (needs approval) then finishes with text
-    runner = make_step_runner(steps=[EchoCall("test"), AssistantMessage("done")])
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield m.echo_call("test")
+        yield m.assistant_text("done")
 
     # Use make_policy_gateway_compositor with custom policy engine
     servers = dict(echo_spec)
     async with make_policy_gateway_compositor(servers, policy_engine=engine) as comp, Client(comp) as mcp_client:
         agent = await Agent.create(
             mcp_client=mcp_client,
-            client=runner,
-            handlers=[FinishOnTextMessageHandler(), BaseHandler()],
+            client=mock,
+            handlers=[FinishOnTextMessageHandler()],
             tool_policy=AllowAnyToolOrTextMessage(),
         )
         agent.process_message(SystemMessage.text("test"))

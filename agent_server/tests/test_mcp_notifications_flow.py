@@ -12,10 +12,10 @@ from agent_core_testing.openai_mock import make_mock
 from agent_core_testing.responses import ResponsesFactory
 from agent_server.notifications.handler import NotificationsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
-from mcp_infra.types import SimpleOk
 from mcp_infra.urls import parse_any_url
 
 # Note: build_mcp_function still needed for ToolStub construction (line 66) and direct call_tool (line 159)

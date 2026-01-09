@@ -1,0 +1,70 @@
+# Build and release ducktape wheel
+#
+# Builds the wheel on push to devel/main, uploads to GitHub Releases
+# with a fixed filename so Nix flake can fetch latest.
+name: ducktape Release
+
+on:
+  push:
+    branches: [devel, main]
+    paths:
+      - "difftree/**"
+      - "git_commit_ai/**"
+      - "agent_core/**"
+      - "mcp_infra/**"
+      - "openai_utils/**"
+      - "cli_util/**"
+      - "mcp_utils/**"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write # Needed for creating releases
+
+jobs:
+  build-and-release:
+    name: Build wheel and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-wheel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: |
+            bazel-wheel-${{ runner.os }}-
+
+      - name: Build wheel
+        run: bazel build //:ducktape_wheel
+
+      - name: Prepare wheel with fixed filename
+        run: |
+          mkdir -p dist
+          # Copy wheel with fixed name for stable URL
+          cp bazel-bin/ducktape-*.whl dist/ducktape-latest-py3-none-any.whl
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ducktape-latest
+          name: ducktape (latest)
+          body: |
+            Latest build of ducktape wheel containing:
+            - `git-commit-ai` - AI-powered commit message generator
+            - `difftree` - Tree-style visualization of diffs
+
+            Built from: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+
+            Install via Nix home-manager or:
+            ```bash
+            pip install https://github.com/${{ github.repository }}/releases/download/ducktape-latest/ducktape-latest-py3-none-any.whl
+            ```
+          files: dist/ducktape-latest-py3-none-any.whl
+          prerelease: true
+          make_latest: false

@@ -1,0 +1,63 @@
+# Build and release gnome-terminal-profile-switcher wheel
+#
+# Builds the wheel on push to devel/main, uploads to GitHub Releases.
+# Note: Package requires system libraries but wheel build doesn't execute code.
+name: gnome-terminal-profile-switcher Release
+
+on:
+  push:
+    branches: [devel, main]
+    paths:
+      - "gnome_terminal_profile_switcher/**"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write # Needed for creating releases
+
+jobs:
+  build-and-release:
+    name: Build wheel and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-wheel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: |
+            bazel-wheel-${{ runner.os }}-
+
+      - name: Build wheel
+        run: bazel build //gnome_terminal_profile_switcher:gnome_terminal_profile_switcher_wheel
+
+      - name: Prepare wheel with fixed filename
+        run: |
+          mkdir -p dist
+          cp bazel-bin/gnome_terminal_profile_switcher/gnome_terminal_profile_switcher-*.whl dist/gnome_terminal_profile_switcher-latest-py3-none-any.whl
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gnome-terminal-profile-switcher-latest
+          name: gnome-terminal-profile-switcher (latest)
+          body: |
+            Latest build of gnome-terminal-profile-switcher wheel.
+
+            Built from: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+
+            **Note**: Requires system libraries (libgirepository1.0-dev, libdbus-1-dev).
+
+            Install via Nix home-manager or:
+            ```bash
+            pip install https://github.com/${{ github.repository }}/releases/download/gnome-terminal-profile-switcher-latest/gnome_terminal_profile_switcher-latest-py3-none-any.whl
+            ```
+          files: dist/gnome_terminal_profile_switcher-latest-py3-none-any.whl
+          prerelease: true
+          make_latest: false

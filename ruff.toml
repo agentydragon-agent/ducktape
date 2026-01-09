@@ -93,8 +93,7 @@ known-first-party = [
     "adgn_mcp_starter",
     "agent_core",
     "agent_core_testing",
-    "agent_pkg_host",
-    "agent_pkg_runtime",
+    "agent_pkg",
     "agent_server",
     "claude_history",
     "claude_hooks",
@@ -148,7 +147,7 @@ split-on-trailing-comma = false
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
 "gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
-"rspcache/src/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
+"rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.

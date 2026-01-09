@@ -5,20 +5,27 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files([
-    "devenv.nix",
-    "pyproject.toml",
-])
+exports_files(["devenv.nix"])
 
 py_library(
     name = "ember",
-    srcs = glob(["src/ember/**/*.py"]),
-    data = glob([
-        "src/ember/**/*.md",
-        "src/ember/**/*.j2",
-        "src/ember/resources/**/*",
-    ]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            "tests/**",
+        ],
+    ),
+    data = glob(
+        [
+            "**/*.md",
+            "**/*.j2",
+            "resources/**/*",
+        ],
+        exclude = [
+            "tests/**",
+        ],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",
@@ -42,8 +49,8 @@ py_library(
 
 py_binary(
     name = "emberd",
-    srcs = ["src/ember/__main__.py"],
-    main = "src/ember/__main__.py",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
     deps = [":ember"],
 )
 
@@ -57,8 +64,8 @@ py_binary(
 
 py_binary(
     name = "ember-python",
-    srcs = ["src/ember/runtime/python_session.py"],
-    main = "src/ember/runtime/python_session.py",
+    srcs = ["runtime/python_session.py"],
+    main = "runtime/python_session.py",
     deps = [":ember"],
 )
 

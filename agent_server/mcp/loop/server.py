@@ -5,7 +5,7 @@ from typing import Final
 from fastmcp.tools import FunctionTool
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.types import SimpleOk
+from mcp_infra.mcp_types import SimpleOk
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Mount prefix constant (used in compositor mount configuration)

@@ -3,12 +3,13 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "net_util",
-    srcs = glob(["src/net_util/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [".*/**"],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//aiodocker",

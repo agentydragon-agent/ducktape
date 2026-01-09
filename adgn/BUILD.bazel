@@ -5,25 +5,30 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files([
     "devenv.nix",
-    "pyproject.toml",
 ])
 
 py_library(
     name = "adgn",
-    srcs = glob(["src/adgn/**/*.py"]),
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
     data = glob([
-        "src/adgn/**/*.md",
-        "src/adgn/**/*.j2",
-        "src/adgn/**/*.json",
-        "src/adgn/**/*.js",
+        "**/*.md",
+        "**/*.j2",
+        "**/*.json",
+        "**/*.js",
     ]),
-    imports = ["src"],
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",
         "//agent_core_testing",
-        "//agent_pkg/host:agent_pkg_host",
-        "//agent_pkg/runtime:agent_pkg_runtime",
+        "//agent_pkg/host",
+        "//agent_pkg/runtime",
         "//cli_util",
         "//mcp_infra",
         "//net_util",
@@ -66,22 +71,22 @@ py_library(
 # CLI entry points
 py_binary(
     name = "adgn_agent",
-    srcs = ["src/adgn/agent/cli.py"],
-    main = "src/adgn/agent/cli.py",
+    srcs = ["agent/cli.py"],
+    main = "agent/cli.py",
     deps = [":adgn"],
 )
 
 py_binary(
     name = "adgn_trivial_patterns",
-    srcs = ["src/adgn/tools/trivial_patterns.py"],
-    main = "src/adgn/tools/trivial_patterns.py",
+    srcs = ["tools/trivial_patterns.py"],
+    main = "tools/trivial_patterns.py",
     deps = [":adgn"],
 )
 
 py_binary(
     name = "adgn_mcp_gitea_mirror",
-    srcs = ["src/adgn/mcp/gitea_mirror/launcher.py"],
-    main = "src/adgn/mcp/gitea_mirror/launcher.py",
+    srcs = ["mcp/gitea_mirror/launcher.py"],
+    main = "mcp/gitea_mirror/launcher.py",
     deps = [":adgn"],
 )
 

@@ -287,7 +287,7 @@ These are application/example scripts, not build tooling:
 
 ## Notes
 
-- **SessionStart hook** (`claude_web_hooks/src/claude_web_hooks/session_start.py`) currently:
+- **SessionStart hook** (`claude_web_hooks/session_start.py`) currently:
 
   - Installs bazelisk (✅)
   - Sets up Bazel proxy for TLS-inspecting proxy (✅)

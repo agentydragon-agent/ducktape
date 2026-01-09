@@ -16,13 +16,13 @@ TOFU_BIN="$(cd "$(dirname "$TOFU_BIN_ARG")" && pwd)/$(basename "$TOFU_BIN_ARG")"
 
 # Verify tofu binary exists
 if [[ ! -x "$TOFU_BIN" ]]; then
-    echo "Error: tofu binary not found or not executable: $TOFU_BIN" >&2
-    exit 1
+  echo "Error: tofu binary not found or not executable: $TOFU_BIN" >&2
+  exit 1
 fi
 
 # Create a temporary .tofurc with tfmirror.dev as network mirror
 TOFU_CONFIG="$(mktemp)"
-cat > "$TOFU_CONFIG" <<'EOF'
+cat >"$TOFU_CONFIG" <<'EOF'
 provider_installation {
   network_mirror {
     url = "https://tfmirror.dev/"
@@ -35,7 +35,7 @@ export TF_CLI_CONFIG_FILE="$TOFU_CONFIG"
 
 # Cleanup on exit
 cleanup() {
-    rm -f "$TOFU_CONFIG"
+  rm -f "$TOFU_CONFIG"
 }
 trap cleanup EXIT
 

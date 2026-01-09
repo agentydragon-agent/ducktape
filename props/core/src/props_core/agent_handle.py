@@ -34,7 +34,7 @@ from uuid import UUID
 from agent_core.agent import Agent, AgentResult, Message
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_pkg_host.init_runner import run_init_script
+from agent_pkg.host.init_runner import run_init_script
 from openai_utils.model import SystemMessage
 from openai_utils.types import ReasoningSummary
 from props_core.db.models import AgentDefinition

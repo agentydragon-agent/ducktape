@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """
 GitOps Dependency Validation Script
 Validates Flux kustomization dependencies are correctly ordered and logical

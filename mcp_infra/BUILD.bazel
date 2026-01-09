@@ -1,16 +1,20 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "mcp_infra",
-    srcs = glob(["src/mcp_infra/**/*.py"]),
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
     data = glob([
-        "src/mcp_infra/**/*.j2",
-        "src/mcp_infra/**/*.md",
+        "**/*.j2",
+        "**/*.md",
     ]),
-    imports = ["src"],
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",

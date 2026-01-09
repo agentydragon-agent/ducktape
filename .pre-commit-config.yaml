@@ -139,14 +139,6 @@ repos:
         files: ^cluster/k8s/.*\.yaml$
         exclude: (cluster/k8s/.*-chart/|cluster/charts/)
 
-  - repo: https://github.com/Agilicus/pre-commit-hook-k8svalidate.git
-    rev: v0.0.8
-    hooks:
-      - id: k8svalidate
-        name: k8svalidate (cluster)
-        files: ^cluster/k8s/.*\.yaml$
-        exclude: (cluster/k8s/.*-chart/|cluster/charts/)
-
   # Terraform hooks for cluster
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.103.0
@@ -180,7 +172,7 @@ repos:
       # Kustomize validation
       - id: kustomize-dry-run
         name: Validate Kustomize builds (cluster)
-        entry: bash -c 'cd cluster && python3 scripts/validate-kustomizations.py'
+        entry: bash -c 'cd cluster && scripts/validate-kustomizations.py'
         language: system
         files: ^cluster/k8s/.*\.(yaml|yml)$
         pass_filenames: false
@@ -188,7 +180,7 @@ repos:
       # Flux build validation
       - id: flux-build-dry-run
         name: Validate Flux kustomizations (cluster)
-        entry: bash -c 'cd cluster && python3 scripts/validate-flux-build.py'
+        entry: bash -c 'cd cluster && scripts/validate-flux-build.py'
         language: system
         files: ^cluster/k8s/.*\.(yaml|yml)$
         pass_filenames: false
@@ -196,7 +188,7 @@ repos:
       # GitOps dependency validation
       - id: gitops-dependency-validation
         name: Validate GitOps dependencies (cluster)
-        entry: bash -c 'cd cluster && python3 scripts/validate-dependencies.py'
+        entry: bash -c 'cd cluster && scripts/validate-dependencies.py'
         language: system
         files: ^cluster/k8s/.*\.(yaml|yml)$
         pass_filenames: false

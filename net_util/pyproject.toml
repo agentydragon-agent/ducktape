@@ -1,9 +1,0 @@
-[project]
-name = "net-util"
-version = "0.1.0"
-description = "Network utilities - port discovery and Docker network helpers"
-requires-python = ">=3.13"
-dependencies = [
-    "tenacity>=8.2.0",
-    "aiodocker>=0.22.0",
-]

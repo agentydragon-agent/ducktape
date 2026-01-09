@@ -1,0 +1,5 @@
+inbox/
+to_filter_emails/
+examples/
+examples_raw/
+*filters*.yaml

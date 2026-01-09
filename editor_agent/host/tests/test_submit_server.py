@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 from fastmcp.exceptions import ToolError
 
-from editor_agent.submit_server import EditorSubmitServer, SubmitFailureInput, SubmitStateSuccess, SubmitSuccessInput
+from editor_agent.host.submit_server import (
+    EditorSubmitServer,
+    SubmitFailureInput,
+    SubmitStateSuccess,
+    SubmitSuccessInput,
+)
 
 
 async def test_resource_returns_original_content():

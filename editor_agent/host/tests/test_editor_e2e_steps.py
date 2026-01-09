@@ -1,42 +1,38 @@
 from __future__ import annotations
 
 import pytest
+from hamcrest import assert_that
 
-from agent_core_testing.steps import AssertDockerExecThenCall, DockerExecCall, Step
-from editor_agent.agent_runner import run_editor_docker_agent
-from editor_agent.submit_server import SubmitStateSuccess
-
-
-def _make_editor_steps(filename: str) -> list[Step]:
-    """Step sequence: edit file in container, then submit."""
-    return [
-        # First call: edit the file
-        DockerExecCall(cmd=["sh", "-c", f"echo 'modified content' > /workspace/{filename}"], timeout_ms=5000),
-        # Second call: assert edit succeeded, then submit
-        AssertDockerExecThenCall(
-            expected_output="",
-            next_cmd=["editor-submit", "submit-success", "--message", "done", "--file", f"/workspace/{filename}"],
-            timeout_ms=5000,
-        ),
-    ]
+from agent_core_testing.responses import DecoratorMock, PlayGen
+from agent_core_testing.steps import exited_successfully
+from editor_agent.host.agent_runner import run_editor_docker_agent
+from editor_agent.host.submit_server import SubmitStateSuccess
 
 
 @pytest.mark.requires_docker
-async def test_editor_step_sequence(make_step_runner, tmp_path, async_docker_client, editor_image_id):
+async def test_editor_step_sequence(tmp_path, async_docker_client, editor_image_id):
     """Test editor flow: init, edit file, submit-success, and writeback to host file."""
     fname = "file.txt"
     target = tmp_path / fname
     target.write_text("hello", encoding="utf-8")
 
-    steps = _make_editor_steps(fname)
-    runner = make_step_runner(steps=steps)
+    @DecoratorMock.mock()
+    def mock(m: DecoratorMock) -> PlayGen:
+        yield None  # First request
+        # Edit the file
+        result = yield from m.docker_exec_roundtrip(["sh", "-c", f"echo 'modified content' > /workspace/{fname}"])
+        assert_that(result, exited_successfully())
+        # Submit success
+        yield from m.docker_exec_roundtrip(
+            ["editor-submit", "submit-success", "--message", "done", "--file", f"/workspace/{fname}"]
+        )
 
     result = await run_editor_docker_agent(
         file_path=target,
         prompt="test prompt",
         docker_client=async_docker_client,
-        model_client=runner,
-        max_turns=len(steps),
+        model_client=mock,
+        max_turns=10,
         image_id=editor_image_id,
     )
 

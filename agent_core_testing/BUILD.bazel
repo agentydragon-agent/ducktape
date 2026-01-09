@@ -5,8 +5,11 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "agent_core_testing",
-    srcs = glob(["src/agent_core_testing/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [".*/**"],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",

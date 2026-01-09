@@ -3,6 +3,7 @@ load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@proxy_config//:proxy_env.bzl", "PROXY_ENV")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
 
 package(default_visibility = ["//visibility:public"])
@@ -38,49 +39,10 @@ js_library(
     ],
 )
 
-# All pyproject.toml files that contribute to requirements_bazel.txt
-# NOTE: homeassistant/iaqi excluded - it has no pyproject.toml and uses separate @pypi_homeassistant lock
+# Single consolidated pyproject.toml for all Python dependencies
+# Per-package pyproject.toml files are no longer used - all deps are in root pyproject.toml
 _PYPROJECT_SRCS = [
-    "//adgn:pyproject.toml",
-    "//agent_core:pyproject.toml",
-    "//agent_core_testing:pyproject.toml",
-    "//agent_pkg/host:pyproject.toml",
-    "//agent_pkg/runtime:pyproject.toml",
-    "//agent_server:pyproject.toml",
-    "//claude/claude_hooks:pyproject.toml",
-    "//claude/claude_optimizer:pyproject.toml",
-    "//cli_util:pyproject.toml",
-    "//difftree:pyproject.toml",
-    "//editor_agent/host:pyproject.toml",
-    "//editor_agent/runtime:pyproject.toml",
-    "//ember:pyproject.toml",
-    "//experimental/claude-history:pyproject.toml",
-    "//finance:pyproject.toml",
-    "//experimental/cotrl:pyproject.toml",
-    "//experimental/dbus_fast_example:pyproject.toml",
-    "//gatelet:pyproject.toml",
-    "//git_commit_ai:pyproject.toml",
-    "//gmail-archiver:pyproject.toml",
-    "//gnome-terminal-profile-switcher:pyproject.toml",
-    "//inop:pyproject.toml",
-    "//inventree_utils:pyproject.toml",
-    "//llm/ducktape_llm_common:pyproject.toml",
-    "//llm/html:pyproject.toml",
-    "//llm/mcp/habitify:pyproject.toml",
-    "//mcp_infra:pyproject.toml",
-    "//mcp_starter:pyproject.toml",
-    "//mcp_utils:pyproject.toml",
-    "//net_util:pyproject.toml",
-    "//openai_utils:pyproject.toml",
-    "//props/backend:pyproject.toml",
-    "//props/core:pyproject.toml",
-    "//py_detectors:pyproject.toml",
-    "//rspcache:pyproject.toml",
-    "//sandboxed_jupyter:pyproject.toml",
-    "//sysrw:pyproject.toml",
-    "//tana:pyproject.toml",
-    "//tools/yamllint:pyproject.toml",
-    "//wt:pyproject.toml",
+    "//:pyproject.toml",
 ]
 
 # Generate requirements_bazel.txt from all pyproject.toml files
@@ -132,3 +94,57 @@ buildifier(
 # NOTE: Alejandra (Nix formatter) handled via pre-commit, not Bazel
 # Nix formatters don't integrate well with aspect_rules_lint's unified format workflow
 # See .pre-commit-config.yaml for alejandra configuration
+
+# Ducktape wheel - bundles CLI tools for distribution
+py_package(
+    name = "ducktape_pkg",
+    packages = [
+        "agent_core",
+        "cli_util",
+        "difftree",
+        "git_commit_ai",
+        "mcp_infra",
+        "mcp_utils",
+        "openai_utils",
+    ],
+    deps = [
+        "//difftree",
+        "//git_commit_ai:git_commit_ai_lib",
+    ],
+)
+
+py_wheel(
+    name = "ducktape_wheel",
+    distribution = "ducktape",
+    entry_points = {
+        "console_scripts": [
+            "git-commit-ai = git_commit_ai.cli:main",
+            "difftree = difftree.__main__:main",
+        ],
+    },
+    python_requires = ">=3.13",
+    requires = [
+        # git_commit_ai deps
+        "aiodocker",
+        "anyio",
+        "compact-json",
+        "fastmcp>=2.0",
+        "httpx",
+        "jinja2",
+        "mako>=1.3",
+        "mcp",
+        "openai",
+        "pydantic>=2.0",
+        "pyhamcrest",
+        "pygit2>=1.14",
+        "rich",
+        "structlog",
+        "tenacity",
+        "typer",
+        # difftree deps
+        "click>=8.0",
+        "unidiff>=0.7.0",
+    ],
+    version = "0.1.0",
+    deps = [":ducktape_pkg"],
+)

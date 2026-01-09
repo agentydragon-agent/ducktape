@@ -10,6 +10,9 @@ import { readFile } from 'fs/promises';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Update mode: set UPDATE_BASELINES=1 to overwrite existing baselines
+const UPDATE_BASELINES = process.env.UPDATE_BASELINES === '1';
+
 // Component scenarios to test (mirrors harness.ts)
 const scenarios = [
   { component: 'BackButton', scenario: 'Default' },
@@ -78,6 +81,16 @@ function compareBaseline(name, screenshot) {
 
   if (!existsSync(diffDir)) {
     mkdirSync(diffDir, { recursive: true });
+  }
+
+  // Update mode: always overwrite baselines
+  if (UPDATE_BASELINES) {
+    console.log(`  Updating baseline: ${name}`);
+    if (!existsSync(baselineDir)) {
+      mkdirSync(baselineDir, { recursive: true });
+    }
+    writeFileSync(baselinePath, screenshot);
+    return { passed: true, updated: true };
   }
 
   if (!existsSync(baselinePath)) {
@@ -153,6 +166,7 @@ async function runVisualTests() {
   let passed = 0;
   let failed = 0;
   let created = 0;
+  let updated = 0;
 
   try {
     const page = await browser.newPage();
@@ -179,7 +193,10 @@ async function runVisualTests() {
 
       const result = compareBaseline(name, screenshot);
 
-      if (result.created) {
+      if (result.updated) {
+        updated++;
+        console.log(`  ✓ Baseline updated`);
+      } else if (result.created) {
         created++;
         console.log(`  ✓ Baseline created`);
       } else if (result.passed) {
@@ -196,7 +213,11 @@ async function runVisualTests() {
 
   console.log('');
   console.log('='.repeat(50));
-  console.log(`Results: ${passed} passed, ${failed} failed, ${created} baselines created`);
+  if (UPDATE_BASELINES) {
+    console.log(`Results: ${updated} baselines updated`);
+  } else {
+    console.log(`Results: ${passed} passed, ${failed} failed, ${created} baselines created`);
+  }
   console.log('='.repeat(50));
 
   process.exit(failed > 0 ? 1 : 0);

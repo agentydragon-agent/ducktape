@@ -5,9 +5,15 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "agent_core",
-    srcs = glob(["src/agent_core/**/*.py"]),
-    data = ["src/agent_core/compaction_prompt.md"],
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
+    data = ["compaction_prompt.md"],
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//openai_utils",

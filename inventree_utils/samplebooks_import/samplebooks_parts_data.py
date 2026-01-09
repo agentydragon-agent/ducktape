@@ -44,7 +44,7 @@ def crunch(factory, *items):
     return result
 
 
-ureg = pint.UnitRegistry()
+ureg: pint.UnitRegistry = pint.UnitRegistry()
 ohm = ureg.ohm
 pf = ureg.pF
 

@@ -15,8 +15,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from agent_core_testing.openai_mock import FakeOpenAIModel
+from agent_core_testing.responses import DecoratorMock
 from agent_core_testing.steps import Step
-from openai_utils.model import ResponsesResult
+from mcp_infra.exec.models import BaseExecResult
+from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
@@ -55,6 +57,17 @@ pytest_plugins = [
     "agent_core_testing.responses",  # make_step_runner, responses_factory, etc.
     "mcp_infra.testing.fixtures",  # async_docker_client, make_compositor, etc.
 ]
+
+
+class PropsMock(DecoratorMock):
+    """Mock with props-specific helpers (psql, etc.)."""
+
+    def psql_roundtrip(
+        self, query: str, *, timeout_ms: int = 5000
+    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
+        """Execute psql query via docker exec and return result."""
+        return self.docker_exec_roundtrip(["psql", "-c", query], timeout_ms=timeout_ms)
+
 
 # Props-specific constants
 EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])

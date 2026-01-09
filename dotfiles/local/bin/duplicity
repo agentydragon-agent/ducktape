@@ -5,27 +5,27 @@ if [ $# -lt 1 ]; then
 	exit
 fi
 
-soubory="";
+soubory=""
 
 exmd5ka=""
 last=""
 first=false
 
 find $1 -type f -exec md5sum "{}" \; | sort | while read line; do
-	name=`echo $line | cut -d ' ' -f 2-`
-	md5=`echo $line | cut -d ' ' -f 1`
+	name=$(echo $line | cut -d ' ' -f 2-)
+	md5=$(echo $line | cut -d ' ' -f 1)
 	if [ "$exmd5ka" == "$md5" ]; then
 		if [ ! "$last" == "" ]; then
 			if $first; then
-				echo;
+				echo
 			fi
 			first=true
-			echo -n "$last";
+			echo -n "$last"
 			last=""
 		fi
-		echo -n " $name";
+		echo -n " $name"
 	else
-		last="$name";
+		last="$name"
 	fi
 	exmd5ka=$md5
 done

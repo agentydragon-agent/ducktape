@@ -2,12 +2,16 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "claude_web_hooks",
-    srcs = glob(["src/claude_web_hooks/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
+    imports = [".."],
     visibility = ["//visibility:public"],
     # No external deps - this runs before package installation in session hooks
 )

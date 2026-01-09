@@ -2,7 +2,7 @@
 set -e
 
 ###
-REPO="/srv/git/inventree-utils.git"    # The bare repo path
+REPO="/srv/git/inventree-utils.git" # The bare repo path
 BRANCH="main"
 SUBDIR="rai_plugin"
 DEPLOY_TO="/srv/inventree/data/plugins/rai_plugin"
@@ -11,20 +11,20 @@ NEW_REV=""
 
 # 1) Parse all pushed refs; pick final newrev for the BRANCH we're interested in
 while read oldrev newrev ref; do
-    if [ "$ref" = "refs/heads/$BRANCH" ]; then
-        NEW_REV="$newrev"
-    fi
+	if [ "$ref" = "refs/heads/$BRANCH" ]; then
+		NEW_REV="$newrev"
+	fi
 done
 
 # If no new commit for BRANCH, exit
 if [ -z "$NEW_REV" ]; then
-    exit 0
+	exit 0
 fi
 
 # If the branch was deleted (all zeros), skip
 if [ "$NEW_REV" = "0000000000000000000000000000000000000000" ]; then
-    echo "Branch '$BRANCH' deleted, skipping deploy."
-    exit 0
+	echo "Branch '$BRANCH' deleted, skipping deploy."
+	exit 0
 fi
 
 echo "Deploying '$BRANCH' at commit $NEW_REV"

@@ -1,19 +1,20 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
     name = "tana",
-    srcs = glob(["src/tana/**/*.py"]),
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["tests/**"],
+    ),
     data = glob([
-        "src/tana/export/references/**/*",
-        "src/tana/export/headless_autoexport/**/*",
-        "src/tana/export/assets/**/*",
-        "src/tana/export/*.md",
-        "src/tana/export/*.txt",
+        "export/references/**/*",
+        "export/headless_autoexport/**/*",
+        "export/assets/**/*",
+        "export/*.md",
+        "export/*.txt",
     ]),
-    imports = ["src"],
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//playwright",
@@ -23,36 +24,41 @@ py_library(
 
 py_binary(
     name = "tana-export",
-    srcs = ["src/tana/export/cli.py"],
-    main = "src/tana/export/cli.py",
+    srcs = ["export/cli.py"],
+    imports = [".."],
+    main = "export/cli.py",
     deps = [":tana"],
 )
 
 py_binary(
     name = "tana-export-convert",
-    srcs = ["src/tana/export/convert.py"],
-    main = "src/tana/export/convert.py",
+    srcs = ["export/convert.py"],
+    imports = [".."],
+    main = "export/convert.py",
     deps = [":tana"],
 )
 
 py_binary(
     name = "tana-export-searches",
-    srcs = ["src/tana/export/materialize_searches.py"],
-    main = "src/tana/export/materialize_searches.py",
+    srcs = ["export/materialize_searches.py"],
+    imports = [".."],
+    main = "export/materialize_searches.py",
     deps = [":tana"],
 )
 
 py_binary(
     name = "tana-export-issues",
-    srcs = ["src/tana/export/tana_issues_to_tanapaste.py"],
-    main = "src/tana/export/tana_issues_to_tanapaste.py",
+    srcs = ["export/tana_issues_to_tanapaste.py"],
+    imports = [".."],
+    main = "export/tana_issues_to_tanapaste.py",
     deps = [":tana"],
 )
 
 py_test(
     name = "test_tana",
     srcs = glob(["tests/**/*.py"]),
-    main = "tests/tana/test_convert.py",
+    imports = [".."],
+    main = "tests/test_convert.py",
     deps = [
         ":tana",
         "@pypi//pytest",

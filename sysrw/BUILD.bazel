@@ -7,9 +7,15 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "sysrw",
-    srcs = glob(["src/sysrw/**/*.py"]),
-    data = glob(["src/sysrw/**/*.j2"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
+    data = glob(["**/*.j2"]),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//openai_utils",
