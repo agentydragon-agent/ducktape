@@ -103,6 +103,9 @@ py_package(
         "cli_util",
         "difftree",
         "git_commit_ai",
+        "gmail_archiver",
+        "gmail_archiver.cli",
+        "gmail_archiver.planners",
         "mcp_infra",
         "mcp_utils",
         "openai_utils",
@@ -110,6 +113,7 @@ py_package(
     deps = [
         "//difftree",
         "//git_commit_ai:git_commit_ai_lib",
+        "//gmail_archiver",
     ],
 )
 
@@ -120,6 +124,7 @@ py_wheel(
         "console_scripts": [
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.__main__:main",
+            "gmail-archiver = gmail_archiver.__main__:app",
         ],
     },
     python_requires = ">=3.13",
@@ -144,6 +149,15 @@ py_wheel(
         # difftree deps
         "click>=8.0",
         "unidiff>=0.7.0",
+        # gmail_archiver deps
+        "beautifulsoup4",
+        "email-reply-parser",
+        "google-api-python-client",
+        "google-auth-httplib2",
+        "google-auth-oauthlib",
+        "pydantic-settings",
+        "python-dateutil",
+        "pyyaml",
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],

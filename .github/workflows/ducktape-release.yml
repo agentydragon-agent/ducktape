@@ -10,6 +10,7 @@ on:
     paths:
       - "difftree/**"
       - "git_commit_ai/**"
+      - "gmail_archiver/**"
       - "agent_core/**"
       - "mcp_infra/**"
       - "openai_utils/**"
@@ -57,6 +58,7 @@ jobs:
             Latest build of ducktape wheel containing:
             - `git-commit-ai` - AI-powered commit message generator
             - `difftree` - Tree-style visualization of diffs
+            - `gmail-archiver` - Gmail email auto-archiving tool
 
             Built from: ${{ github.sha }}
             Branch: ${{ github.ref_name }}
