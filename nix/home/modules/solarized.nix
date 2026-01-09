@@ -21,9 +21,7 @@ in {
     ]
     ++ lib.optionals enableGui [
       gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
-
-      # GNOME terminal profile switcher - standalone derivation
-      (pkgs.callPackage ../../../gnome-terminal-profile-switcher {})
+      # TODO: Add gnome-terminal-profile-switcher once wheel is published to GitHub Releases
     ];
 
   # Bat theme environment variables for light/dark mode switching

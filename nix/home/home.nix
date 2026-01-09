@@ -70,9 +70,6 @@ let
 
   # ducktape - CLI tools collection (git-commit-ai, difftree)
   ducktape = pkgs.callPackage ./packages/ducktape.nix {};
-
-  # gnome-terminal-profile-switcher - Switch GNOME Terminal profiles
-  gnome-terminal-profile-switcher = pkgs.callPackage ./packages/gnome-terminal-profile-switcher.nix {};
 in {
   imports = [
     # TODO: Re-enable google-drive-service once the git repo is accessible
@@ -304,7 +301,6 @@ in {
       atuin
       opencode # AI coding agent for the terminal
       ducktape # CLI tools: git-commit-ai, difftree
-      gnome-terminal-profile-switcher # Switch GNOME Terminal profiles
 
       # Tools from GitHub releases / binary downloads
       gh
@@ -316,10 +312,15 @@ in {
       nodePackages.pnpm
       bun
 
-      # Rust dev
+      # Rust toolchain - all from Nix to ensure consistent glibc
+      # This allows removing CC=/usr/bin/gcc from .envrc since Nix gcc matches Nix glibc
       rustc
       cargo
+      clippy
+      rustfmt
+      rust-analyzer
       sccache
+      gcc # C compiler from Nix - matches Nix glibc for native extension builds
       # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
 
       # Development languages/compilers

@@ -162,6 +162,8 @@ js_test(
     timeout = "long",
     data = [
         "tests/harness/index.html",
+        "tests/harness/test-fonts.css",
+        "tests/fonts/Inter.woff2",
         ":harness_bundle",
         ":harness_js",
         ":node_modules/pixelmatch",
