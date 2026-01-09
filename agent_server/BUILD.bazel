@@ -55,10 +55,14 @@ py_binary(
 py_test(
     name = "test_agent_server",
     srcs = glob(["tests/**/*.py"]),
-    imports = ["."],
-    main = "tests/test_default_approval_policy.py",
+    imports = [
+        ".",
+        "src",
+    ],
+    main = "tests/pytest_runner.py",
     deps = [
         ":agent_server",
+        "//agent_server/testing",
         "@pypi//docker",
         "@pypi//playwright",
         "@pypi//pyhamcrest",

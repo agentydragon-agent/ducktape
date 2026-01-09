@@ -117,3 +117,41 @@ async def typed_git_ro_conflict(repo_with_conflict: pygit2.Repository, make_type
     server = GitRoServer(repo_with_conflict)
     async with make_typed_mcp(server) as (client, _session):
         yield client
+
+
+@pytest.fixture
+def repo_with_new_file(tmp_path: Path) -> pygit2.Repository:
+    """Repo with a newly added file (staged but not in any commit).
+
+    Creates:
+      - One commit with README.md
+      - A new file 'src/newfile.py' staged but not committed
+
+    This tests the case where HEAD:path fails but :path works.
+    """
+    repo_path = tmp_path / "repo_new_file"
+    repo_path.mkdir(parents=True, exist_ok=True)
+    repo = pygit2.init_repository(str(repo_path), bare=False)
+    _ensure_identity(repo)
+
+    # Create initial commit
+    (repo_path / "README.md").write_text("hello\n", encoding="utf-8")
+    _commit_all(repo, "initial")
+
+    # Add new file in a subdirectory (staged only, not committed)
+    src_dir = repo_path / "src"
+    src_dir.mkdir()
+    (src_dir / "newfile.py").write_text("# new file content\nprint('hello')\n", encoding="utf-8")
+    idx = repo.index
+    idx.add("src/newfile.py")
+    idx.write()
+
+    return repo
+
+
+@pytest.fixture
+async def typed_git_ro_new_file(repo_with_new_file: pygit2.Repository, make_typed_mcp):
+    """TypedClient for repo with newly added file."""
+    server = GitRoServer(repo_with_new_file)
+    async with make_typed_mcp(server) as (client, _session):
+        yield client

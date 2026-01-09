@@ -7,6 +7,15 @@
         "hooks": [
           {
             "type": "command",
+            "command": "PYTHONPATH=claude_web_hooks/src python3 -m claude_web_hooks.cli_direnv"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
             "command": "PYTHONPATH=claude_web_hooks/src python3 -m claude_web_hooks.session_start"
           }
         ]

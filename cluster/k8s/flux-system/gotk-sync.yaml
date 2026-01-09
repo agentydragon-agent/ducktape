@@ -12,6 +12,8 @@ spec:
   secretRef:
     name: flux-system
   url: ssh://git@github.com/agentydragon/ducktape.git
+  sparseCheckout:
+    - cluster/
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

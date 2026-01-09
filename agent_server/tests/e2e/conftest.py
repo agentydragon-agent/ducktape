@@ -8,8 +8,8 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from agent_server.server.app import create_app
+from agent_server.testing.helpers import ServerHandle, start_uvicorn_app
 from agent_server.types import AgentID
-from tests.helpers import ServerHandle, start_uvicorn_app
 
 # Auto-apply e2e marker to all tests in this directory
 pytestmark = [pytest.mark.e2e]

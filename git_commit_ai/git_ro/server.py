@@ -303,9 +303,13 @@ class GitRoServer(EnhancedFastMCP):
 
             Supports:
             - REV:path - blob from commit tree (e.g., HEAD:src/main.py)
-            - :path - blob from index stage 0
+            - :path - blob from index stage 0 (staged content)
             - :N:path - blob from index stage N (1=base, 2=ours, 3=theirs in merge conflicts)
             - raw OID - any object by SHA
+
+            For newly added files (not yet in any commit), use :path to read from the
+            index. HEAD:path will fail since the file doesn't exist in the commit tree.
+            All paths must be relative to repository root (e.g., 'src/foo.py' not 'foo.py').
             """
             objspec = input.object
 
@@ -343,8 +347,20 @@ class GitRoServer(EnhancedFastMCP):
                 root_obj = state.revparse_single(rev)
                 tree = root_obj.tree if isinstance(root_obj, pygit2.Commit) else root_obj.peel(pygit2.Tree)
                 cur: pygit2.Tree = tree
+                traversed: list[str] = []
                 for part in filter(None, path.split("/")):
-                    tree_entry = cur[part]
+                    try:
+                        tree_entry = cur[part]
+                    except KeyError:
+                        entries_here = sorted(e.name for e in cur)
+                        at_root = not traversed
+                        location = "repository root" if at_root else f"'{'/'.join(traversed)}'"
+                        raise FileNotFoundError(
+                            f"'{part}' not found at {location}. "
+                            f"Path must be relative to repository root. "
+                            f"Entries at {location}: {entries_here}"
+                        ) from None
+                    traversed.append(part)
                     if tree_entry.filemode == pygit2.GIT_FILEMODE_TREE:
                         cur = state[tree_entry.id].peel(pygit2.Tree)
                     else:

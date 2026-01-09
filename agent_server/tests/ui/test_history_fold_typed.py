@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from agent_server.server.reducer import fold_events_to_ui_state
+from agent_server.testing.typed_asserts import assert_typed_items_have, is_assistant_markdown, is_user_message
 from mcp_infra.prefix import MCPMountPrefix
-from tests.ui.typed_asserts import assert_typed_items_have, is_assistant_markdown, is_user_message
 
 
 def test_fold_events_typed_ui_message(make_user_text_event, make_tool_call_event, make_function_output_event) -> None:

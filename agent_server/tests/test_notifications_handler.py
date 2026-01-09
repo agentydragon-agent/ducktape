@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from agent_core.loop_control import InjectItems, NoAction
 from agent_server.notifications.handler import NotificationsHandler
+from agent_server.testing.helpers import strip_system_notification_wrapper
 from mcp_infra.notifications.types import NotificationsBatch, ResourcesServerNotice
 from openai_utils.text_extraction import extract_input_text_content
-from tests.helpers import strip_system_notification_wrapper
 
 
 class _FakeBuffer:

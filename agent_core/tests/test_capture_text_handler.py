@@ -8,8 +8,8 @@ from agent_core.agent import Agent
 from agent_core.events import AssistantText
 from agent_core.handler import CaptureTextHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core_testing.steps import AssistantMessage, EchoCall, Step
-from openai_utils.model import UserMessage
+from agent_core_testing.responses import EchoMock
+from openai_utils.model import OpenAIModelProto, UserMessage
 
 
 @pytest.fixture
@@ -19,14 +19,13 @@ def capture_handler():
 
 
 @pytest.fixture
-def make_agent_with_capture(mcp_client_echo, recording_handler, capture_handler, make_step_runner):
+def make_agent_with_capture(mcp_client_echo, recording_handler, capture_handler):
     """Factory for creating agents with CaptureTextHandler."""
 
-    async def _make(steps: list[Step]):
-        runner = make_step_runner(steps=steps)
+    async def _make(client: OpenAIModelProto):
         return await Agent.create(
             mcp_client=mcp_client_echo,
-            client=runner,
+            client=client,
             handlers=[capture_handler, recording_handler],
             tool_policy=AllowAnyToolOrTextMessage(),
         )
@@ -36,7 +35,13 @@ def make_agent_with_capture(mcp_client_echo, recording_handler, capture_handler,
 
 async def test_capture_text_basic(make_agent_with_capture, capture_handler) -> None:
     """Test that CaptureTextHandler captures assistant text."""
-    agent = await make_agent_with_capture(steps=[AssistantMessage("Hello, world!")])
+
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield m.assistant_text("Hello, world!")
+
+    agent = await make_agent_with_capture(mock)
     agent.process_message(UserMessage.text("greet me"))
 
     await agent.run()
@@ -48,7 +53,14 @@ async def test_capture_text_basic(make_agent_with_capture, capture_handler) -> N
 
 async def test_capture_text_after_tool_call(make_agent_with_capture, capture_handler) -> None:
     """Test capture after agent makes a tool call then responds."""
-    agent = await make_agent_with_capture(steps=[EchoCall("testing"), AssistantMessage("Tool call completed.")])
+
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield from m.echo_roundtrip("testing")
+        yield m.assistant_text("Tool call completed.")
+
+    agent = await make_agent_with_capture(mock)
     agent.process_message(UserMessage.text("use echo then respond"))
 
     await agent.run()
@@ -58,9 +70,14 @@ async def test_capture_text_after_tool_call(make_agent_with_capture, capture_han
 
 async def test_capture_text_multiple_runs(make_agent_with_capture, capture_handler) -> None:
     """Test capture across multiple agent runs (conversational pattern)."""
-    agent = await make_agent_with_capture(
-        steps=[AssistantMessage("First response"), AssistantMessage("Second response")]
-    )
+
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield m.assistant_text("First response")
+        yield m.assistant_text("Second response")
+
+    agent = await make_agent_with_capture(mock)
 
     # First run
     agent.process_message(UserMessage.text("first question"))

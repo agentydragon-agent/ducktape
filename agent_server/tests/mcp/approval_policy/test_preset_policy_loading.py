@@ -12,8 +12,8 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 
 from agent_server.presets import create_agent_from_preset, discover_presets
+from agent_server.testing.approval_policy_testdata import fetch_policy
 from mcp_utils.resources import extract_single_text_content
-from tests.testdata.approval_policy import fetch_policy
 
 
 class TestPresetPolicyDiscovery:

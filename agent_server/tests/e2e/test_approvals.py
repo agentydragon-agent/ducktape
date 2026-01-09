@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from agent_core_testing.steps import EchoCall
-from agent_server.testing.steps import UiEndTurnCall
+from agent_core_testing.responses import EchoMock
+from agent_core_testing.steps import EmptyArgs
+from mcp_infra.constants import UI_MOUNT_PREFIX
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
@@ -17,7 +18,7 @@ else:
 
 
 @pytest.mark.timeout(10)
-def test_approvals_delivery_and_user_approve(e2e_page, run_server, responses_factory, make_step_runner):
+def test_approvals_delivery_and_user_approve(e2e_page, run_server):
     """Agent attempts a tool call → policy asks → UI shows pending → user approves → tool runs.
 
     Flow:
@@ -30,9 +31,15 @@ def test_approvals_delivery_and_user_approve(e2e_page, run_server, responses_fac
     Ideally, we'd use MCP tools to attach the echo server, but that's not yet available via UI.
     """
 
-    runner = make_step_runner(steps=[EchoCall("hello"), UiEndTurnCall()])
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        # First turn: receive request, return echo tool call
+        _ = yield
+        # Second turn: receive request with echo output, return end_turn
+        _ = yield m.echo_call("hello")
+        yield m.mcp_tool_call(UI_MOUNT_PREFIX, "end_turn", EmptyArgs())
 
-    s = run_server(lambda model: runner)
+    s = run_server(lambda model: mock)
 
     e2e_page.goto(s.base_url)
     e2e_page.create_agent_via_ui()

@@ -3,10 +3,10 @@
 import pytest
 
 from agent_server.policies.policy_types import ApprovalDecision
+from agent_server.testing.fixtures import make_policy_request
 from mcp_infra.constants import RESOURCES_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
-from tests.conftest import make_policy_request
 
 
 def _make_policy_for_decision(decision_enum: str) -> str:

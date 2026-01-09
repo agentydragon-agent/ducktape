@@ -9,7 +9,7 @@ import pytest
 from fastmcp.client import Client
 
 from agent_server.mcp.approval_policy.engine import PolicyEngine
-from tests.testdata.approval_policy import fetch_policy
+from agent_server.testing.approval_policy_testdata import fetch_policy
 
 
 @pytest.fixture

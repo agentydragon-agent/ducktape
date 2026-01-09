@@ -39,4 +39,9 @@
   home.sessionVariables = lib.mkIf (builtins.pathExists "/mnt/tankshare") {
     UV_CACHE_DIR = "/mnt/tankshare/shared/uv-cache";
   };
+
+  # Bazel output directory on HDD (avoids filling up root SSD)
+  home.file.".bazelrc".text = ''
+    startup --output_user_root=/wyrmhdd/bazel
+  '';
 }

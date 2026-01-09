@@ -34,7 +34,7 @@ class NotificationsMixin(FastMCP):
 
     def __init__(
         self,
-        name: str,
+        name: str | None = None,
         *,
         instructions: str | None = None,
         lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None = None,

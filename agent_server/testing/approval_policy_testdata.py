@@ -13,7 +13,12 @@ from agent_server.policies.policy_types import ApprovalDecision
 
 def fetch_policy(name: str) -> str:
     """Return policy Python source from a file named "<name>.py" in this package."""
-    return cast(str, files(__name__).joinpath(f"{name}.py").read_text(encoding="utf-8"))
+    return cast(
+        str,
+        files(__name__.replace(".approval_policy_testdata", ".testdata.approval_policy"))
+        .joinpath(f"{name}.py")
+        .read_text(encoding="utf-8"),
+    )
 
 
 def make_policy(

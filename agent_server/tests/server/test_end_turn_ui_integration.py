@@ -6,7 +6,7 @@ from agent_server.server.bus import ServerBus, UiEndTurn
 from agent_server.server.protocol import UiEndTurnEvt
 from agent_server.server.reducer import Reducer
 from agent_server.server.state import new_state
-from tests.ui.typed_asserts import assert_empty, assert_items_count, is_end_turn_item, is_tool_item
+from agent_server.testing.typed_asserts import assert_empty, assert_items_count, is_end_turn_item, is_tool_item
 
 
 def test_end_turn_tool_filtering(make_tool_call, make_function_output):

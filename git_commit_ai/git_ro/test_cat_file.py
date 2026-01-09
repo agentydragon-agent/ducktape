@@ -101,3 +101,35 @@ async def test_conflict_stage0_not_found(typed_git_ro_conflict) -> None:
         await typed_git_ro_conflict.cat_file(
             CatFileInput(object=":0:conflict.txt", slice=TextSlice(offset_chars=0, max_chars=100))
         )
+
+
+async def test_new_file_read_from_index(typed_git_ro_new_file) -> None:
+    """Read newly added file (not in any commit) via :path."""
+    result = await typed_git_ro_new_file.cat_file(
+        CatFileInput(object=":src/newfile.py", slice=TextSlice(offset_chars=0, max_chars=1000))
+    )
+    assert isinstance(result, TextPage)
+    assert "new file content" in result.body
+    assert "print('hello')" in result.body
+
+
+async def test_new_file_not_in_commit_tree(typed_git_ro_new_file) -> None:
+    """HEAD:path fails for newly added file not yet committed."""
+    with pytest.raises(FileNotFoundError, match="not found at repository root"):
+        await typed_git_ro_new_file.cat_file(
+            CatFileInput(object="HEAD:src/newfile.py", slice=TextSlice(offset_chars=0, max_chars=100))
+        )
+
+
+async def test_path_error_shows_available_entries(typed_git_ro_new_file) -> None:
+    """Error message shows available entries when path component not found."""
+    with pytest.raises(FileNotFoundError, match=r"Entries at repository root:.*README.md"):
+        await typed_git_ro_new_file.cat_file(
+            CatFileInput(object="HEAD:nonexistent/file.py", slice=TextSlice(offset_chars=0, max_chars=100))
+        )
+
+
+async def test_bare_filename_error_message(typed_git_ro) -> None:
+    """Helpful error when using bare filename instead of full path."""
+    with pytest.raises(FileNotFoundError, match="Path must be relative to repository root"):
+        await typed_git_ro.cat_file(CatFileInput(object="HEAD:README", slice=TextSlice(offset_chars=0, max_chars=100)))

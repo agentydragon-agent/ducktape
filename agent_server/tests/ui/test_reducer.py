@@ -6,8 +6,7 @@ from agent_server.server.bus import MimeType
 from agent_server.server.protocol import UiMessageEvt, UiMessagePayload, UserText
 from agent_server.server.reducer import Reducer
 from agent_server.server.state import ExecContent, JsonContent, ToolItem
-from mcp_infra.exec.models import BaseExecResult, Exited
-from tests.ui.typed_asserts import (
+from agent_server.testing.typed_asserts import (
     assert_typed_items_have_one,
     is_assistant_markdown,
     is_exec_content,
@@ -15,6 +14,7 @@ from tests.ui.typed_asserts import (
     is_tool_item,
     is_user_message,
 )
+from mcp_infra.exec.models import BaseExecResult, Exited
 
 
 def test_user_text_appends_user_message(fresh_ui_state):

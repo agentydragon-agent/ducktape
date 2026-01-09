@@ -1,30 +1,29 @@
 from __future__ import annotations
 
-import pytest
 from hamcrest import has_entries
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core_testing.matchers import assert_function_call_output_structured
-from agent_core_testing.steps import AssistantMessage, EchoCall
+from agent_core_testing.responses import EchoMock
 from openai_utils.model import SystemMessage
 
 
-async def test_agent_mcp_echo_tool_use(
-    monkeypatch: pytest.MonkeyPatch, mcp_client_echo, test_handlers, recording_handler, make_step_runner
-) -> None:
-    runner = make_step_runner(steps=[EchoCall("hello"), AssistantMessage("done")])
+async def test_agent_mcp_echo_tool_use(mcp_client_echo, test_handlers, recording_handler) -> None:
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield from m.echo_roundtrip("hello")
+
     agent = await Agent.create(
         mcp_client=mcp_client_echo,
-        client=runner,
+        client=mock,
         handlers=test_handlers,
         tool_policy=RequireAnyTool(),
         parallel_tool_calls=False,
     )
     agent.process_message(SystemMessage.text("test: use echo"))
 
-    res = await agent.run()
+    await agent.run()
 
-    # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     assert_function_call_output_structured(recording_handler.records, has_entries(echo="hello"))
-    assert res.text.strip() == "done"

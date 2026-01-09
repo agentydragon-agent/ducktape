@@ -11,9 +11,9 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core_testing.steps import AssistantMessage, EchoCall
 from agent_server.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
 from agent_server.policies.policy_types import ApprovalDecision
+from agent_server.testing.approval_policy_testdata import make_policy
 from mcp_infra.resource_utils import read_text_json_typed
 from openai_utils.model import SystemMessage
-from tests.testdata.approval_policy import make_policy
 
 
 @pytest.mark.requires_docker

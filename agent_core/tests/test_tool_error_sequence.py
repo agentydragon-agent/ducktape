@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-import pytest
 from hamcrest import has_entries
 
+from agent_core.agent import Agent
+from agent_core.handler import FinishOnTextMessageHandler
+from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core_testing.fixtures import FAIL_TOOL_NAME
 from agent_core_testing.matchers import assert_function_call_output_structured
+from agent_core_testing.responses import DecoratorMock
+from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.model import UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
@@ -16,14 +21,7 @@ class FailInput(OpenAIStrictModeBaseModel):
 
 
 async def test_app_level_error_payload_surfaced_in_structured_content(
-    monkeypatch: pytest.MonkeyPatch,
-    responses_factory,
-    compositor,
-    compositor_client,
-    error_payload_server,
-    test_handlers,
-    recording_handler,
-    make_test_agent,
+    compositor, compositor_client, error_payload_server, recording_handler
 ) -> None:
     """Test that application-level error payloads are surfaced in structuredContent.
 
@@ -32,15 +30,19 @@ async def test_app_level_error_payload_surfaced_in_structured_content(
     """
     mounted = await compositor.mount_inproc(MCPMountPrefix("editor"), error_payload_server)
 
-    agent, _client = await make_test_agent(
-        compositor_client,
-        [
-            responses_factory.make_mcp_tool_call(mounted.prefix, FAIL_TOOL_NAME, FailInput(x=1)),
-            responses_factory.make_assistant_message("done"),
-        ],
-        handlers=test_handlers,
+    @DecoratorMock.mock()
+    def mock(m: DecoratorMock):
+        yield
+        yield m.tool_call(build_mcp_function(mounted.prefix, FAIL_TOOL_NAME), FailInput(x=1))
+        yield m.assistant_text("done")
+
+    agent = await Agent.create(
+        mcp_client=compositor_client,
+        client=mock,
+        handlers=[FinishOnTextMessageHandler(), recording_handler],
+        tool_policy=AllowAnyToolOrTextMessage(),
     )
+    agent.process_message(UserMessage.text("fail"))
     await agent.run()
 
-    # Verify the application-level error payload is in structuredContent
     assert_function_call_output_structured(recording_handler.records, has_entries(ok=False, error="boom"))

@@ -1,33 +1,26 @@
 from __future__ import annotations
 
-import pytest
+from agent_core.agent import Agent
+from agent_core.loop_control import RequireAnyTool
+from agent_core_testing.responses import EchoMock
+from openai_utils.model import UserMessage
 
-from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 
+async def test_agent_mcp_echo_tool_use(mcp_client_echo, test_handlers, recording_handler) -> None:
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield from m.echo_roundtrip("hello")
+        yield m.assistant_text("done")
 
-async def test_agent_mcp_echo_tool_use(
-    monkeypatch: pytest.MonkeyPatch,
-    responses_factory,
-    mcp_client_echo,
-    test_handlers,
-    recording_handler,
-    make_test_agent,
-) -> None:
-    agent, _client = await make_test_agent(
-        mcp_client_echo,
-        [
-            responses_factory.make_mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text="hello")),
-            responses_factory.make_assistant_message("done"),
-        ],
-        handlers=test_handlers,
-        parallel_tool_calls=False,
+    agent = await Agent.create(
+        mcp_client=mcp_client_echo, client=mock, handlers=test_handlers, tool_policy=RequireAnyTool()
     )
+    agent.process_message(UserMessage.text("say hello"))
 
     res = await agent.run()
 
-    # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     outputs = [r for r in recording_handler.records if r.type == "function_call_output"]
     assert outputs, "No tool outputs captured"
-    first = outputs[0]
-    assert first.result.structuredContent == {"echo": "hello"}
+    assert outputs[0].result.structuredContent == {"echo": "hello"}
     assert res.text.strip() == "done"

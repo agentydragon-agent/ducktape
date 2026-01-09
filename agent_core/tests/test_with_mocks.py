@@ -7,7 +7,7 @@ from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core_testing.matchers import assert_function_call_output_structured
 from agent_core_testing.openai_mock import LIVE
-from agent_core_testing.steps import AssistantMessage, EchoCall
+from agent_core_testing.responses import EchoMock
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 
 
@@ -15,15 +15,21 @@ from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
     "client_mode", [pytest.param("mock", id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_openai_api)]
 )
 async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
-    responses_factory, live_openai, client_mode, mcp_client_echo, test_handlers, recording_handler, make_step_runner
+    responses_factory, live_openai, client_mode, mcp_client_echo, test_handlers, recording_handler
 ) -> None:
     # Responses sequence:
     # 1) Model asks to call echo.echo with {"text": "hi"}
     # 2) Model returns a final assistant message "done"
     client: OpenAIModelProto
     if client_mode is not LIVE:
-        runner = make_step_runner(steps=[EchoCall("hi"), AssistantMessage("done")])
-        client = runner  # _StepRunner implements OpenAIModelProto directly
+
+        @EchoMock.mock()
+        def mock(m: EchoMock):
+            yield
+            yield from m.echo_roundtrip("hi")
+            yield m.assistant_text("done")
+
+        client = mock
     else:
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 

@@ -3,12 +3,12 @@
 from hamcrest import all_of, assert_that, has_length, has_properties, has_property, instance_of
 from pydantic import BaseModel
 
-from agent_core_testing.matchers import has_json_arguments, has_json_output
+from agent_core_testing.matchers import has_json_arguments
 from agent_core_testing.responses import ResponsesFactory
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
-from openai_utils.model import FunctionCallItem, FunctionCallOutputItem
+from openai_utils.model import FunctionCallItem
 
 
 class SampleInput(BaseModel):
@@ -74,36 +74,6 @@ def test_responses_factory_mcp_tool_call_item(responses_factory: ResponsesFactor
             instance_of(FunctionCallItem),
             has_properties(name="runtime_exec"),
             has_json_arguments({"text": "echo", "count": 1}),
-        ),
-    )
-
-
-def test_responses_factory_make_mcp_tool_call_with_output(responses_factory: ResponsesFactory):
-    result = responses_factory.make_mcp_tool_call_with_output(
-        ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, SampleInput(text="hello"), {"echo": "hello"}
-    )
-
-    assert_that(result.output, has_length(2))
-    call_item, output_item = result.output
-
-    # Type narrowing for mypy
-    assert isinstance(call_item, FunctionCallItem)
-    assert isinstance(output_item, FunctionCallOutputItem)
-
-    assert_that(
-        call_item,
-        all_of(
-            instance_of(FunctionCallItem),
-            has_properties(name="echo_echo"),
-            has_property("call_id"),  # auto-generated
-        ),
-    )
-    assert_that(
-        output_item,
-        all_of(
-            instance_of(FunctionCallOutputItem),
-            has_properties(call_id=call_item.call_id),  # output matches call
-            has_json_output({"_meta": None, "content": [], "structuredContent": {"echo": "hello"}, "isError": False}),
         ),
     )
 

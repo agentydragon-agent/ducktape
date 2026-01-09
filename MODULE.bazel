@@ -22,9 +22,10 @@ bazel_dep(name = "rules_pkg", version = "1.0.1")
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 oci.pull(
     name = "python_slim",
+    digest = "sha256:1f3781f578e17958f55ada96c0a827bf279a11e10d6a458ecb8bde667afbb669",
     image = "docker.io/library/python",
     platforms = ["linux/amd64"],
-    tag = "3.12-slim",
+    tag = "3.13-slim",
 )
 use_repo(oci, "python_slim", "python_slim_linux_amd64")
 
