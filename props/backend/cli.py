@@ -9,10 +9,12 @@ from typing import Annotated
 import typer
 import uvicorn
 
-app = typer.Typer(help="Props dashboard backend")
+from props.backend.app import app as fastapi_app
+
+cli = typer.Typer(help="Props dashboard backend")
 
 
-@app.command()
+@cli.command()
 def serve(
     host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Port to bind to")] = 8000,
@@ -25,12 +27,12 @@ def serve(
     if static_dir:
         os.environ["PROPS_DASHBOARD_STATIC_DIR"] = str(static_dir.absolute())
 
-    uvicorn.run("props_backend.app:app", host=host, port=port, reload=reload, reload_dirs=reload_dir)
+    uvicorn.run(fastapi_app, host=host, port=port, reload=reload, reload_dirs=reload_dir)
 
 
 def main() -> None:
     """Main entry point."""
-    app()
+    cli()
 
 
 if __name__ == "__main__":

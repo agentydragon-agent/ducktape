@@ -16,6 +16,7 @@ py_library(
         "docs/**/*.md",
         "docs/**/*.j2",
         "agent_defs/**/*",
+        "noop_classifier/**/*.md",
     ]),
     imports = ["../.."],
     visibility = ["//visibility:public"],

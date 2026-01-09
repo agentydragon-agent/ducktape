@@ -10,9 +10,9 @@ as they finish, providing automatic load balancing.
 from __future__ import annotations
 
 import asyncio
+import importlib.resources
 import json
 import logging
-from pathlib import Path
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -37,9 +37,8 @@ CLASSIFIER_MOUNT_PREFIX = MCPMountPrefix("classifier")
 # System Prompt
 # =============================================================================
 
-# Load from prompt.md at module import time
-_PROMPT_PATH = Path(__file__).parent / "prompt.md"
-SYSTEM_PROMPT = _PROMPT_PATH.read_text()
+# Load from prompt.md at module import time (using importlib.resources for Bazel compatibility)
+SYSTEM_PROMPT = importlib.resources.files("props.core.noop_classifier").joinpath("prompt.md").read_text()
 
 
 # =============================================================================

@@ -67,9 +67,9 @@ if (!skipBackend) {
     console.warn(`${C.dim}Backend may fail. Run from props/ direnv shell.${C.reset}`);
   }
 
-  // Backend CLI is in runfiles at props/backend/props_backend_cli
+  // Backend CLI is in runfiles at props/backend/backend_cli
   // From props/frontend (chdir location), go up to runfiles root then down to backend
-  const backendBin = resolve(__dirname, '..', 'backend', 'props_backend_cli');
+  const backendBin = resolve(__dirname, '..', 'backend', 'backend_cli');
 
   backendProcess = spawn(backendBin, ['--host', '127.0.0.1', '--port', String(BACKEND_PORT)], {
     stdio: ['ignore', 'pipe', 'pipe'],
