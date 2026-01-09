@@ -27,9 +27,9 @@
         state: present
       tags: [repositories]
 
-    - name: Enable snippets content type on local datastore for Terraform cloud-init
+    - name: Configure local datastore content types for Terraform
       ansible.builtin.command:
-        cmd: pvesm set local --content backup,iso,vztmpl,snippets
+        cmd: pvesm set local --content backup,iso,vztmpl,snippets,images,import
       register: datastore_result
       changed_when: datastore_result.rc == 0
       failed_when: datastore_result.rc != 0 and 'already exists' not in datastore_result.stderr

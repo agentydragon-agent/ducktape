@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 # TODO LATER: Evaluate and implement layered approach once stable core components are identified
 resources:
+  - flux-system/gotk-sync.yaml
   - core/flux-kustomization.yaml
   - storage/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml

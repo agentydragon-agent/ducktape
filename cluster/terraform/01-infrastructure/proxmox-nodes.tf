@@ -35,7 +35,7 @@ data "talos_image_factory_urls" "proxmox" {
 # Download shared disk image - one image for all nodes (network via cloud-init)
 resource "proxmox_virtual_environment_download_file" "talos_disk" {
   content_type = "import"
-  datastore_id = "local"
+  datastore_id = "local" # dir storage, configured via ansible for images content
   node_name    = var.proxmox_node_name
   # Replace any .raw.xz or .raw.zst extension with .qcow2 for Proxmox import
   url       = replace(replace(data.talos_image_factory_urls.proxmox.urls.disk_image, ".raw.xz", ".qcow2"), ".raw.zst", ".qcow2")
