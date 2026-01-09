@@ -1,3 +1,18 @@
+/**
+ * Visual regression tests for UI components
+ *
+ * Stability measures for consistent CI/local rendering:
+ * - Hermetic font (Inter) bundled in tests/fonts/, forced via test-fonts.css
+ * - CSS animations/transitions disabled via test-fonts.css
+ * - Fixed viewport with explicit deviceScaleFactor: 1
+ * - Forced media features: prefers-color-scheme=light, prefers-reduced-motion=reduce
+ * - Chrome flags: font-render-hinting=none, disable-font-subpixel-positioning,
+ *   disable-lcd-text, force-color-profile=srgb
+ * - Hermetic Chromium via rules_playwright (same version in CI and local)
+ *
+ * To update baselines: UPDATE_BASELINES=1 bazel test //props/frontend:visual_test
+ */
+
 import puppeteer from 'puppeteer';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { PNG } from 'pngjs';
@@ -151,9 +166,23 @@ async function runVisualTests() {
 
   // Use PUPPETEER_EXECUTABLE_PATH if set (for Bazel-managed or system Chrome)
   // Playwright browser directories have structure: dir/chrome-linux/headless_shell
+  //
+  // Chrome args for consistent rendering across environments:
+  // - --no-sandbox, --disable-setuid-sandbox: Required for CI/container environments
+  // - --font-render-hinting=none: Disable font hinting for consistent glyph shapes
+  // - --disable-font-subpixel-positioning: Prevent subpixel font positioning differences
+  // - --disable-lcd-text: Disable LCD text rendering (subpixel anti-aliasing)
+  // - --force-color-profile=srgb: Force consistent color profile across systems
   const launchOptions = {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--font-render-hinting=none',
+      '--disable-font-subpixel-positioning',
+      '--disable-lcd-text',
+      '--force-color-profile=srgb',
+    ],
   };
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     let execPath = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -174,7 +203,15 @@ async function runVisualTests() {
 
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: 800, height: 600 });
+
+    // Fixed viewport with explicit device scale factor for consistent rendering
+    await page.setViewport({ width: 800, height: 600, deviceScaleFactor: 1 });
+
+    // Force consistent media features across environments
+    await page.emulateMediaFeatures([
+      { name: 'prefers-color-scheme', value: 'light' },
+      { name: 'prefers-reduced-motion', value: 'reduce' },
+    ]);
 
     for (const { component, scenario } of scenarios) {
       const name = `${component}-${scenario}`;
