@@ -1,6 +1,9 @@
 # Agent Packages as OCI Images
 
-## Status: Draft
+## Status: Phase 1-3 Implemented
+
+Registry infrastructure, schema migration, and Bazel build targets in place.
+Testing and Phase 4 cleanup pending.
 
 ## Problem
 
@@ -80,10 +83,25 @@ We provide recipes in agent prompts. No special tooling.
 
 ## Current Progress
 
-- `props/core/src/props_core/agent_defs/critic/BUILD.bazel` - Bazel OCI build for critic agent
-- Uses `py_binary` with `pkg_tar(include_runfiles=True)` to bundle Python deps
-- Layers onto `python:3.12-slim` base
-- Works: `bazelisk run //props/core/src/props_core/agent_defs/critic:load`
+### Implemented
+
+- `props/devenv.nix` - Registry service (port 5050) and proxy (port 5051)
+- `props/core/registry/` - Proxy for ACL enforcement and metadata tracking
+- `props/core/db/models.py` - `image_ref` column on `AgentRun`
+- `props/core/db/migrations/` - Schema migration for `image_ref`
+- `props/core/agent_setup.py` - `resolve_image_id()` supports both image_ref and legacy definition_id
+- `props/core/agent_defs/critic/BUILD.bazel` - `oci_push` target to local registry
+- `props/core/agent_defs/AGENTS.md` - Documentation for OCI image workflow
+
+### Build Commands
+
+```bash
+# Load critic image into local Docker
+bazel run //props/core/agent_defs/critic:load
+
+# Push critic image to local registry (requires `devenv up`)
+bazel run //props/core/agent_defs/critic:push
+```
 
 ## OCI Distribution Protocol
 
@@ -173,40 +191,46 @@ curl -X PUT http://registry:5000/v2/critic/manifests/my-variant \
 
 ## Migration Plan
 
-### Phase 1: Registry Infrastructure
+### Phase 1: Registry Infrastructure ✓
 
-- [ ] Add registry to devenv.nix (like postgres)
-- [ ] Configure credentials/ACL if needed
+- [x] Add registry to devenv.nix (like postgres)
+- [x] Configure proxy for ACL enforcement
 - [ ] Test Bazel push to local registry
 
-### Phase 2: Schema Migration
+### Phase 2: Schema Migration ✓
 
-- [ ] Add `image_ref` column to `agent_runs`
-- [ ] Migrate existing `agent_definition_id` references
-- [ ] Update agent launch code to use `image_ref`
+- [x] Add `image_ref` column to `agent_runs`
+- [x] Make `agent_definition_id` nullable (backwards compat)
+- [x] Update agent launch code to use `image_ref`
 
-### Phase 3: Agent Updates
+### Phase 3: Agent Updates ✓
 
-- [ ] Update critic agent to push to registry (not just local Docker)
+- [x] Update critic agent BUILD.bazel with push target
 - [ ] Update PO/PI agents to use registry protocol
-- [ ] Update all agent_defs/\*.md documentation
+- [x] Update agent_defs documentation
 - [ ] Add recipes for layering in agent prompts
 
-### Phase 4: Cleanup
+### Phase 4: Cleanup (Future)
 
 - [ ] Remove tarball-based agent packaging code
 - [ ] Remove `agent_definitions` table (if no longer needed)
 - [ ] Update AGENTS.md files across the repo
 
-## Files to Update
+## Files Updated
 
-When implementing, these will need changes:
+Implemented files:
 
-- `props/devenv.nix` - add registry service
-- `props/core/src/props_core/db/models.py` - schema changes
-- `props/core/src/props_core/agent_helpers.py` - launch logic
-- `props/core/src/props_core/agent_defs/*/` - all agent definitions
-- `props/core/src/props_core/docs/authoring_agents.md.j2` - new authoring guide
+- `props/devenv.nix` - registry service ✓
+- `props/core/registry/` - proxy module ✓
+- `props/core/db/models.py` - schema changes ✓
+- `props/core/db/migrations/` - migration ✓
+- `props/core/agent_setup.py` - launch logic ✓
+- `props/core/agent_defs/critic/BUILD.bazel` - OCI build ✓
+- `props/core/agent_defs/AGENTS.md` - documentation ✓
+
+Remaining:
+
+- `props/core/agent_defs/*/` - other agent definitions
 - Various AGENTS.md files with agent packaging instructions
 
 ## Future Considerations

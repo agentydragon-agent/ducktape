@@ -16,6 +16,14 @@
     database = "eval_results";
   };
   passwordFile = ".devenv/state/pg_password";
+
+  # OCI Registry configuration (for agent packages as images)
+  registryConfig = {
+    host = "127.0.0.1";
+    port = "5050"; # Host-mapped port
+    containerName = "props-registry";
+    containerPort = "5000"; # Internal container port
+  };
 in {
   # Python/uv managed by root devenv.nix - this file only handles props-specific infra
 
@@ -49,6 +57,36 @@ in {
       -v props_eval_results_data:/var/lib/postgresql/data \
       postgres:16 \
       -c max_connections=200
+  '';
+
+  # OCI Registry Docker container (for agent packages as images)
+  # Network: props_default (shared with postgres and agent containers)
+  # Container name: props-registry (accessible from other containers on props_default network)
+  # Host access: localhost:5050
+  processes.registry.exec = ''
+    # Stop and remove existing container if present
+    docker rm -f ${registryConfig.containerName} 2>/dev/null || true
+
+    # Run registry container
+    docker run --rm \
+      --name ${registryConfig.containerName} \
+      --network props_default \
+      -p ${registryConfig.port}:${registryConfig.containerPort} \
+      -v props_registry_data:/var/lib/registry \
+      registry:2
+  '';
+
+  # Registry proxy for ACL enforcement and metadata tracking
+  # Agents connect to the proxy (port 5051), which forwards to registry (port 5050)
+  # Proxy enforces namespace isolation and records image refs in database
+  processes.registry_proxy.exec = ''
+    echo "Waiting for postgres..."
+    until pg_isready -q; do sleep 1; done
+    echo "Waiting for registry..."
+    until curl -s http://localhost:${registryConfig.port}/v2/ > /dev/null; do sleep 1; done
+
+    export PROPS_REGISTRY_UPSTREAM_URL="http://localhost:${registryConfig.port}"
+    uvicorn props.core.registry.proxy:app --host 0.0.0.0 --port 5051 --log-level warning
   '';
 
   # Periodic database backup (every 6 hours, keeps 7 days)
@@ -96,6 +134,15 @@ in {
     # Project-specific: container routing (for Docker network communication)
     PROPS_DB_CONTAINER_NAME = pgConfig.containerName;
     PROPS_DB_CONTAINER_PORT = pgConfig.containerPort;
+
+    # OCI Registry configuration
+    # Host-side access (for bazel push, local development)
+    PROPS_REGISTRY_HOST = registryConfig.host;
+    PROPS_REGISTRY_PORT = registryConfig.port;
+    PROPS_REGISTRY_PROXY_PORT = "5051"; # Proxy port for agent access with ACL
+    # Container-side access (for agents pulling images from within Docker network)
+    PROPS_REGISTRY_CONTAINER_NAME = registryConfig.containerName;
+    PROPS_REGISTRY_CONTAINER_PORT = registryConfig.containerPort;
   };
 
   # On shell entry
@@ -124,13 +171,15 @@ in {
 
     echo ""
     echo "Props dev environment ready"
-    echo "  devenv up                          → starts postgres + periodic backup"
+    echo "  devenv up                          → starts postgres, registry, periodic backup"
     echo "  bazelisk run //props/frontend:dev  → frontend + backend (from direnv shell)"
     echo ""
     echo "Database backup commands:"
     echo "  props db backup        → create manual backup"
     echo "  props db restore FILE  → restore from backup"
     echo "  props db list-backups  → list available backups"
+    echo ""
+    echo "Registry: http://localhost:${registryConfig.port} (direct), http://localhost:5051 (proxy with ACL)"
     echo ""
   '';
 }

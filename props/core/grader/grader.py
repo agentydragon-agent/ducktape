@@ -56,6 +56,8 @@ class GraderAgentEnvironment(AgentEnvironment):
         critic_run_id: UUID,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
+        *,
+        image_ref: str | None = None,
     ):
         # Store params needed by _make_mcp_server
         self._grader_run_id = grader_run_id
@@ -69,6 +71,7 @@ class GraderAgentEnvironment(AgentEnvironment):
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_ref=image_ref,
             container_name=f"grader-{short_uuid(grader_run_id)}",
             labels={"adgn.project": "props", "adgn.role": "grader", "adgn.agent_run_id": str(grader_run_id)},
             auto_remove=True,

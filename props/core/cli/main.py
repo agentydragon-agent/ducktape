@@ -274,12 +274,16 @@ async def prompt_improve_cmd(
 
         # Build index: agent_definition_id -> set of ExampleSpec for examples that have grader runs
         # NOTE: Originally indexed by prompt_sha256, but prompts were replaced by agent_definitions
+        # Runs with image_ref (no definition_id) are grouped under the image_ref as key
         definition_to_examples: dict[str, set[ExampleSpec]] = {}
         for cr in critic_runs:
             critic_config = cr.critic_config()
             example_spec = critic_config.example
             snapshot_slug = example_spec.snapshot_slug
-            definition_id = cr.agent_definition_id
+            # Use definition_id if available, otherwise use image_ref as fallback
+            key = cr.agent_definition_id or cr.image_ref
+            if key is None:
+                continue  # Skip runs with neither definition_id nor image_ref
 
             # Check if this snapshot is in TRAIN split
             snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
@@ -296,9 +300,9 @@ async def prompt_improve_cmd(
                 .first()
             )
             if has_grader:
-                if definition_id not in definition_to_examples:
-                    definition_to_examples[definition_id] = set()
-                definition_to_examples[definition_id].add(example_spec)
+                if key not in definition_to_examples:
+                    definition_to_examples[key] = set()
+                definition_to_examples[key].add(example_spec)
 
         # Filter to definitions with enough examples
         definition_example_counts = [

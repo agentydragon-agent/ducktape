@@ -33,6 +33,8 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//canonicaljson",
         "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//jinja2",
         "@pypi//plotext",
         "@pypi//psycopg",

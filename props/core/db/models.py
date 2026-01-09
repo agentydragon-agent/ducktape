@@ -1376,13 +1376,21 @@ class AgentRun(Base):
     - status: Current run status (in_progress, completed, etc.)
     - completion_summary: Markdown summary from agent (when status='completed')
       or error message (when status='reported_failure')
+
+    Image reference:
+    - image_ref: OCI image reference (e.g., "registry:5000/critic:v2" or "sha256:abc...")
+    - When set, the agent container uses this image directly (no Dockerfile build)
+    - agent_definition_id is deprecated; use image_ref for new runs
     """
 
     __tablename__ = "agent_runs"
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    agent_definition_id: Mapped[DefinitionId] = mapped_column(
-        String, ForeignKey("agent_definitions.id"), nullable=False
+    agent_definition_id: Mapped[DefinitionId | None] = mapped_column(
+        String, ForeignKey("agent_definitions.id"), nullable=True, comment="Deprecated: use image_ref instead"
+    )
+    image_ref: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="OCI image reference (tag or digest). Takes precedence over agent_definition_id."
     )
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id"), nullable=True, index=True

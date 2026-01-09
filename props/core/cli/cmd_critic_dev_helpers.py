@@ -27,7 +27,7 @@ class CriticRunSummary:
 
     run_id: UUID
     snapshot_slug: SnapshotSlug
-    definition_id: DefinitionId
+    definition_id: DefinitionId | None  # None for image_ref-based runs
     status: str
     tool_count: int
 

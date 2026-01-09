@@ -49,6 +49,8 @@ class SnapshotGraderAgentEnvironment(AgentEnvironment):
         grader_run_id: UUID,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
+        *,
+        image_ref: str | None = None,
     ):
         self._snapshot_slug = snapshot_slug
         self._grader_run_id = grader_run_id
@@ -59,6 +61,7 @@ class SnapshotGraderAgentEnvironment(AgentEnvironment):
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_ref=image_ref,
             container_name=f"snapshot-grader-{short_uuid(grader_run_id)}",
             labels={
                 "adgn.project": "props",

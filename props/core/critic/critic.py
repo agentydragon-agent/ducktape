@@ -63,6 +63,7 @@ class CriticAgentEnvironment(AgentEnvironment):
         workspace_manager: WorkspaceManager,
         *,
         definition_id: DefinitionId = CRITIC_AGENT_DEFINITION_ID,
+        image_ref: str | None = None,
         container_name: str | None = None,
     ):
         # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)
@@ -76,6 +77,7 @@ class CriticAgentEnvironment(AgentEnvironment):
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_ref=image_ref,
             container_name=name,
             labels={
                 "adgn.project": "props",

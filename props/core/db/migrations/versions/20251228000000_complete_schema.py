@@ -1027,7 +1027,11 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     op.create_table(
         "agent_runs",
         sa.Column("agent_run_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("agent_definition_id", sa.Text(), nullable=False),
+        # agent_definition_id: Deprecated - use image_ref instead. Nullable for new image-based runs.
+        sa.Column("agent_definition_id", sa.Text(), nullable=True),
+        # image_ref: OCI image reference (e.g., "registry:5000/critic:v2" or "sha256:abc...")
+        # When set, container uses this image directly (no Dockerfile build at launch)
+        sa.Column("image_ref", sa.Text(), nullable=True),
         sa.Column("parent_agent_run_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("model", sa.Text(), nullable=False),
         sa.Column("type_config", postgresql.JSONB(), nullable=False),
@@ -1057,6 +1061,12 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         "COMMENT ON TABLE agent_runs IS 'Unified table for all agent runs (critics, graders, optimizers, freeform)'"
     )
     op.execute(
+        "COMMENT ON COLUMN agent_runs.agent_definition_id IS 'Deprecated: use image_ref instead. FK to agent_definitions for tarball-based packages.'"
+    )
+    op.execute(
+        "COMMENT ON COLUMN agent_runs.image_ref IS 'OCI image reference (tag or digest). Takes precedence over agent_definition_id.'"
+    )
+    op.execute(
         "COMMENT ON COLUMN agent_runs.parent_agent_run_id IS 'Parent agent that spawned this sub-agent (NULL for top-level)'"
     )
     op.execute(
@@ -1068,6 +1078,12 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     op.execute(
         "COMMENT ON COLUMN agent_runs.completion_summary IS 'Markdown summary from agent when status=completed, or error message when status=reported_failure'"
     )
+
+    # Constraint: at least one of agent_definition_id or image_ref must be set
+    op.execute("""
+        ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_has_image_source
+        CHECK (agent_definition_id IS NOT NULL OR image_ref IS NOT NULL)
+    """)
 
     # Add FK from agent_definitions to agent_runs (circular reference)
     op.create_foreign_key(

@@ -74,10 +74,11 @@ class AgentRunView:
     """Unified view of an agent run from memory or DB."""
 
     agent_run_id: UUID
-    definition_id: DefinitionId
+    definition_id: DefinitionId | None  # None for image_ref-based runs
     model: str
     status: AgentRunStatus
     created_at: datetime
+    image_ref: str | None = None  # OCI image reference (alternative to definition_id)
     # Only set for active runs
     handle: AgentHandle | None = None
 
@@ -131,6 +132,7 @@ class AgentRegistry:
         definition_id: DefinitionId,
         example: ExampleSpec,
         client: OpenAIModelProto,
+        image_ref: str | None = None,
         parent_run_id: UUID | None = None,
         verbose: bool = False,
         max_lines: int = DEFAULT_MAX_LINES,
@@ -140,9 +142,10 @@ class AgentRegistry:
         """Run a critic agent. Acquires semaphore slot.
 
         Args:
-            definition_id: Agent definition ID to load (e.g., "critic", "critic-v1")
+            definition_id: Agent definition ID (for tracking; used to build image if image_ref not set)
             example: Example specification (snapshot + scope)
             client: OpenAI-compatible model client
+            image_ref: OCI image reference (takes precedence over definition_id for image)
             parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
             verbose: Whether to enable verbose display
             max_lines: Max lines per event in verbose display
@@ -157,6 +160,7 @@ class AgentRegistry:
                 definition_id=definition_id,
                 example=example,
                 client=client,
+                image_ref=image_ref,
                 parent_run_id=parent_run_id,
                 verbose=verbose,
                 max_lines=max_lines,
@@ -170,6 +174,7 @@ class AgentRegistry:
         definition_id: DefinitionId,
         example: ExampleSpec,
         client: OpenAIModelProto,
+        image_ref: str | None,
         parent_run_id: UUID | None,
         verbose: bool,
         max_lines: int,
@@ -189,7 +194,8 @@ class AgentRegistry:
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
-                agent_definition_id=definition_id,
+                agent_definition_id=definition_id if image_ref is None else None,
+                image_ref=image_ref,
                 parent_agent_run_id=parent_run_id,
                 model=client.model,
                 type_config=type_config,
@@ -206,6 +212,7 @@ class AgentRegistry:
             agent_run_id=agent_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
+            image_ref=image_ref,
         )
 
         agent_status: AgentRunStatus
