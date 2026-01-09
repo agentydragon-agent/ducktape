@@ -9,7 +9,7 @@
   # Fetch wheel directly with fetchurl
   wheelSrc = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-latest/ducktape-latest-py3-none-any.whl";
-    hash = "sha256-+d8Rkdmm0ioZ6Qr1rOSAQZ/CxlL2gBJLASvqoLB2X7c=";
+    hash = "sha256-Ne5BEV/7mvXPuucLcYQY47ZsWVGUmuF7q7HSNj2JKns=";
   };
 
   ducktape = pkgs.python3Packages.buildPythonApplication {
