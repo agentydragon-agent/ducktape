@@ -1,4 +1,6 @@
-exclude: ".*/fixtures/.*|.*/third_party/.*|.*/vendor/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|^k8s-old/|^cluster/flux-system/flux-system/|.*/node_modules/.*|^claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\\.md$|^tana/tests/tana/testdata/.*\\.(md|tanapaste|txt)$"
+# Global exclusions - files that should never be checked by any hook
+# Note: Hook-specific exclusions go in individual hook configs
+exclude: ".*/fixtures/.*|.*/third_party/.*|.*/vendor/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|^k8s-old/|^cluster/flux-system/flux-system/|.*/node_modules/.*|^claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\\.md$|^tana/tests/tana/testdata/.*\\.(md|tanapaste|txt)$|^llm/instruct-logseq/.*|^agent_server/docs/scaffold_reflection\\.md$|^claude-commands-old/.*\\.md$|^claude-commands/TODO\\.md$|^claude/claude_optimizer/README\\.md$|^cluster/docs/(agents|operations|plan|secrets|troubleshooting)\\.md$|^finance/reconcile/README\\.md$|^llm/claude-instructions/.*\\.md$|^mcp_infra/docs/eliminating-class-constants-analysis\\.md$|^nix/home/(README\\.md|claude-code/commands/.*\\.md)$|^prompts/scans/useless-comments-and-docs\\.md$|^props/core/src/props_core/(\\.claude/commands/.*\\.md|docs/prompts/.*\\.md|props/self-describing-names\\.md)$|^sandboxed_jupyter/docs/TODO.*\\.md$|^website/posts/.*\\.markdown$"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -69,68 +71,59 @@ repos:
       - id: buildifier
       - id: buildifier-lint
 
+  # Nix formatter - requires alejandra in PATH
+  # Dev: via .envrc (nix -p alejandra)
+  # CI: via cachix/install-nix-action + nix profile install
+  # Claude Web: via session hook nix_setup
+  # TODO: Switch to nixfmt (RFC style) once it has better tooling support
   - repo: local
     hooks:
       - id: alejandra
         name: alejandra (nix formatter)
-        entry: direnv exec . alejandra --quiet
+        entry: alejandra --quiet
         language: system
         files: \.nix$
 
-  # Prettier: Workspace-level code formatting
-  # Uses .gitignore and .prettierignore for exclusions
-  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
-  - repo: local
+  # Prettier - using mirrors-prettier
+  #
+  # Svelte files excluded due to Prettier 3.x plugin resolution limitation.
+  # Prettier 3.x resolves plugins relative to the config file, not from where
+  # prettier is installed. This breaks pre-commit's isolated node environment.
+  #
+  # Approaches tried that all fail with the same error:
+  # - mirrors-prettier with additional_dependencies: [prettier-plugin-svelte]
+  # - jvllmr/pre-commit-prettier fork (designed for plugin support)
+  # - .prettierrc.cjs with require.resolve("prettier-plugin-svelte")
+  # - npx --package=prettier-plugin-svelte (plugin installed but not found)
+  #
+  # Error: "Cannot find package 'prettier-plugin-svelte' imported from .../noop.js"
+  #
+  # Root cause: https://github.com/prettier/prettier/issues/15696
+  # The plugin is installed in pre-commit's temp node_modules, but prettier
+  # looks for it relative to the config file (workspace root) where it doesn't exist.
+  #
+  # Svelte formatting is handled by Bazel: bazel build --config=lint //...
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
-        name: prettier
-        language: system
-        entry: pnpm exec prettier --write --ignore-unknown
-        types_or: [javascript, jsx, ts, tsx, css, svelte, markdown, yaml, json]
+        additional_dependencies:
+          - prettier@3.4.2
+        types_or: [javascript, jsx, ts, tsx, css, markdown, yaml, json, html]
+        exclude: "node_modules/|.pnpm/|bazel-|.git/"
 
-  # Markdownlint: Structural markdown linting (heading hierarchy, duplicate headings, etc.)
-  # Formatting rules disabled via "extends": "markdownlint/style/prettier" in config
-  # Note: Using local hook because pre-commit's node env has glibc compatibility issues with devenv
-  # TODO: Expand markdownlint coverage to rest of repo (currently cluster/ only)
-  #       Update .markdownlint-cli2.jsonc globs and remove files: filter here
-  - repo: local
+  # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.17.2
     hooks:
       - id: markdownlint-cli2
-        name: markdownlint-cli2
-        language: system
-        entry: markdownlint-cli2
-        types: [markdown]
-        files: ^cluster/
+        args: [--fix]
+        files: ^(cluster|website)/.*\.md$
 
-  # Svelte/TypeScript checks for MiniCodex UI
-  - repo: local
-    hooks:
-      # ESLint: Import ordering, code quality
-      - id: eslint
-        name: eslint (MiniCodex UI)
-        language: system
-        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run lint -- --fix'
-        files: ^adgn/src/adgn/agent/web/src/.*\.(ts|svelte)$
-        pass_filenames: false
-
-      # Svelte-check: Type checking
-      - id: svelte-check
-        name: svelte-check (MiniCodex UI)
-        language: system
-        entry: bash -c 'cd adgn/src/adgn/agent/web && npm run check'
-        files: ^adgn/src/adgn/agent/web/
-        pass_filenames: false
-
-  # Svelte/TypeScript checks for Props Frontend
-  - repo: local
-    hooks:
-      # ESLint: Import ordering, code quality
-      - id: eslint-props
-        name: eslint (Props Frontend)
-        language: system
-        entry: bash -c 'cd props/frontend && pnpm run lint:fix'
-        files: ^props/frontend/src/.*\.(ts|svelte)$
-        pass_filenames: false
+  # NOTE: ESLint and svelte-check are handled by Bazel:
+  # - ESLint: bazel build --config=lint //...
+  # - svelte-check: bazel test //props/frontend:svelte_check_test
+  #                 bazel test //agent_server/src/agent_server/web:svelte_check_test
 
   # ============================================================================
   # CLUSTER-SPECIFIC HOOKS (scoped to cluster/ directory)
@@ -172,17 +165,18 @@ repos:
         args:
           - --args=--config=__GIT_WORKING_DIR__/cluster/.tflint.hcl
 
+  # Checkov security analysis (official pre-commit hook)
+  - repo: https://github.com/bridgecrewio/checkov.git
+    rev: 3.2.384
+    hooks:
+      - id: checkov
+        name: Checkov security analysis (cluster)
+        args: [--framework, terraform, --skip-check, CKV_TF_1]
+        files: ^cluster/terraform/.*\.tf$
+
   # Cluster-specific local hooks
   - repo: local
     hooks:
-      # Checkov security analysis
-      - id: checkov-cluster
-        name: Checkov security analysis (cluster)
-        entry: nix-shell -p checkov --run 'checkov --framework terraform --skip-check CKV_TF_1'
-        language: system
-        files: ^cluster/terraform/.*\.tf$
-        pass_filenames: false
-
       # Kustomize validation
       - id: kustomize-dry-run
         name: Validate Kustomize builds (cluster)

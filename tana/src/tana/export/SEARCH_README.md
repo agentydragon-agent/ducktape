@@ -63,11 +63,13 @@ Materialized results: 28
 The implementation consists of:
 
 1. **Search Parser** (`tana/query/search_parser.py`)
+
    - Extracts search expressions from metadata
    - Parses boolean logic and search criteria
    - Handles nested view definitions
 
 2. **Search Evaluator** (`tana/query/search_evaluator.py`)
+
    - Executes parsed expressions
    - Resolves PARENT references
    - Applies boolean operators

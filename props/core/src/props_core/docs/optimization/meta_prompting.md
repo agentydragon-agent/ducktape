@@ -12,11 +12,13 @@ A "conductor" LLM orchestrates specialized "expert" LLMs:
 You're the **meta-agent** designing expert prompts (the critic). The pattern maps to our workflow:
 
 1. **Decomposition:** Break critic improvement into phases:
+
    - Diagnostic (what's failing?)
    - Hypothesis (why is it failing?)
    - Refinement (how to fix it?)
 
 2. **Expert perspectives:** Adopt different "lenses":
+
    - Dead code expert
    - Duplication expert
    - Architecture expert

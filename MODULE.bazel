@@ -10,10 +10,26 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
 
 # NOTE: Using newer version with archive_override for ape module to use native ELF
 # instead of APE binaries (which require binfmt_misc not available in containers).
-bazel_dep(name = "aspect_rules_lint", version = "1.3.5")
+bazel_dep(name = "aspect_rules_lint", version = "1.13.0")
 bazel_dep(name = "rules_multirun", version = "0.9.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.3.0")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
+
+# Terraform/OpenTofu validation (cluster/)
+bazel_dep(name = "rules_tf", version = "0.0.10")
+
+tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+tf.download(
+    # Mirror for provider downloads (empty dict uses defaults)
+    mirror = {},
+    tfdoc_version = "0.19.0",
+    tflint_version = "0.53.0",
+    use_tofu = True,
+    version = "1.11.2",  # OpenTofu version (latest as of 2025-12)
+)
+use_repo(tf, "tf_toolchains")
+
+register_toolchains("@tf_toolchains//:all")
 
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.2.6")
@@ -33,6 +49,17 @@ use_repo(oci, "python_slim", "python_slim_linux_amd64")
 bazel_dep(name = "aspect_rules_js", version = "2.4.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.0")
 bazel_dep(name = "rules_nodejs", version = "6.3.4")
+
+# Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
+bazel_dep(name = "rules_playwright", version = "0.5.3")
+
+playwright = use_extension("@rules_playwright//playwright:extensions.bzl", "playwright")
+playwright.repo(
+    name = "playwright_browsers",
+    # Use Playwright 1.50.x for Chromium compatibility with Puppeteer 23.x
+    playwright_version = "1.50.1",
+)
+use_repo(playwright, "playwright_browsers")
 
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
@@ -234,3 +261,14 @@ use_repo(
 # ─ one-off override for xml-conduit ─────────────────────────────────────────
 extra_deps = use_extension("//:xml_conduit_deps.bzl", "xml_conduit_deps")
 use_repo(extra_deps, "xml_conduit")
+
+# ─ External binaries via http_archive ────────────────────────────────────────
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+# gitstatusd - Git status daemon for wt tests
+http_archive(
+    name = "gitstatusd",
+    build_file_content = 'exports_files(["gitstatusd-linux-x86_64"])',
+    sha256 = "9633816e7832109e530c9e2532b11a1edae08136d63aa7e40246c0339b7db304",
+    urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
+)

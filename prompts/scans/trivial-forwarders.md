@@ -250,10 +250,12 @@ for func in all_functions:
 **Verification for each candidate**:
 
 1. **Check call count**: Functions called 1-2 times are high priority candidates
+
    - **CRITICAL**: Check if method is actually called from external code, not just by other methods in same class
    - Example: `close()` might only be called by `__aexit__()` internally, but that's protocol conformance
 
 2. **Check interface/protocol conformance** (MOST IMPORTANT - prevents false positives):
+
    - **Python protocols**: Check if method is called by dunder methods:
 
      ```python
@@ -285,6 +287,7 @@ for func in all_functions:
    - **If method is required by protocol/interface → KEEP** (even if trivial forwarder)
 
 3. **Check architectural role**:
+
    - Method overriding abstract method? → Keep (interface requirement)
    - Public method in facade class AND actually called externally? → Keep (API design)
    - Public method in facade class but NO external callers? → Consider removing

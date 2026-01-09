@@ -270,6 +270,7 @@ terraform destroy --auto-approve
 **Pattern Structure:**
 
 1. **Provider Blueprint** (`authentik-blueprint-{app}-provider`)
+
    - Lives in `terraform/03-configuration/authentik-blueprints/`
    - Creates OIDC application in Authentik (authentik namespace)
    - Generates client ID and client secret

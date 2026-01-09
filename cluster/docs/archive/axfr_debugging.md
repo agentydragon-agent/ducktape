@@ -435,22 +435,26 @@ But pod IPs work because:
 **Possible Solutions:**
 
 1. **Use MetalLB BGP mode instead of L2**
+
    - BGP works at L3 (routing), compatible with Tailscale
    - Requires BGP router capability
    - More complex setup
    - Best for production
 
 2. **Direct routing without MetalLB VIP**
+
    - Configure VPS PowerDNS to use node IP (10.0.1.x) + NodePort
    - Bypasses MetalLB entirely
    - Less elegant but simpler
 
 3. **Pod-to-pod networking**
+
    - Expose PowerDNS with ClusterIP
    - Create pod in cluster that proxies to VPS
    - Uses pod networking (which works with Tailscale)
 
 4. **Headscale/Tailscale exit node on worker node**
+
    - Run Tailscale on worker node (not controlplane)
    - Worker has direct L2 access to MetalLB VIP
    - May work if MetalLB speaker on same node

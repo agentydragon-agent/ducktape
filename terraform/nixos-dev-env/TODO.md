@@ -13,6 +13,7 @@
 ### API Key Provisioning with Spend Limits (Future)
 
 - [ ] **OpenAI API Key Provisioning**
+
   - [ ] Add `skyscrapr/openai` provider configuration
   - [ ] Create OpenAI project resource for the VM user
   - [ ] Create service account for the VM

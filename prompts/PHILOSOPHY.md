@@ -163,6 +163,7 @@ Prompts are instructions to agents/LLMs, so address the reader directly:
 Automated scans should be **required as the first step** when:
 
 1. **High-recall discovery is possible**
+
    - Tool can find most or all instances of the pattern (even with false positives)
    - Agent gets a comprehensive list of candidates to review
    - **Example**: `grep "cast("` finds ALL cast() calls (100% recall, high precision)
@@ -170,6 +171,7 @@ Automated scans should be **required as the first step** when:
    - **Language**: "MANDATORY Step 0: Run scan to find ALL candidates"
 
 2. **Prevents "I checked a few files" laziness**
+
    - Without mandatory scan, agent might check 3-5 files and stop
    - Mandatory scan forces agent to see the full scope (e.g., "found 47 instances")
    - Agent must at least acknowledge all candidates, can't pretend they don't exist
@@ -190,12 +192,14 @@ Automated scans should be **required as the first step** when:
 Automated scans should be **suggested but not required** when:
 
 1. **Helpful but agent likely won't skip**
+
    - Grep patterns make search faster but agent would search anyway
    - Saves time but not essential to prevent laziness
    - **Example**: Grep for `asyncio.gather()` to find TaskGroup opportunities
    - **Language**: "Recommended: run grep patterns below", "Consider using"
 
 2. **High false positive rate reduces value**
+
    - Automation finds many candidates, most are legitimate
    - Reviewing all candidates might take longer than targeted manual reading
    - **Example**: Dict literals (many are at legitimate I/O boundaries)
@@ -212,6 +216,7 @@ Automated scans should be **suggested but not required** when:
 Automated scans should be **mentioned as hints only** when:
 
 1. **Doesn't provide concrete candidates to force review**
+
    - Tool output doesn't give agent specific instances to examine
    - Agent must read code to understand context anyway
    - **Example**: Short variable names (need context to judge if vague)

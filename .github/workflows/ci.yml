@@ -3,8 +3,7 @@
 # Jobs:
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
 # - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
-# - props-frontend-build: Frontend-specific build + svelte-check
-# - visual-regression: Playwright visual tests
+# - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 #
 # Linting via Bazel aspects (run in both pre-commit and bazel-build):
@@ -17,6 +16,7 @@ name: CI
 
 on:
   push:
+    branches: [main, master, devel]
   pull_request:
 
 # Cancel outdated workflow runs when new commits are pushed
@@ -39,6 +39,57 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      # Cluster validation tools - use official actions where available
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.53.0
+
+      - name: Setup Flux CLI
+        uses: fluxcd/flux2/action@main
+
+      - name: Install cluster validation tools
+        run: |
+          # Tools without official actions - download binaries
+          # kubeconform: Kubernetes manifest validation
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kubeconform /usr/local/bin/
+
+          # kustomize: Kubernetes configuration management
+          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kustomize /usr/local/bin/
+
+          # kubeseal: Sealed Secrets CLI (for validate-sealed-secrets hook)
+          curl -sL https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kubeseal /usr/local/bin/
+
+          # helm: Kubernetes package manager (for helm-template-dry-run hook)
+          curl -sL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/
+
+      # Nix + alejandra for .nix file formatting
+      # TODO: Switch to nixfmt (RFC style) once it has better CI action support
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Install alejandra (nix formatter)
+        run: nix profile install nixpkgs#alejandra
+
+      - name: Configure OpenTofu for pre-commit
+        run: |
+          # Set PCT_TFPATH so terraform hooks find opentofu
+          echo "PCT_TFPATH=$(which tofu)" >> $GITHUB_ENV
+
       - name: Cache Ansible Galaxy downloads
         uses: actions/cache@v4
         with:
@@ -51,8 +102,10 @@ jobs:
         run: |
           pip install "ansible-core>=2.18"
           cd ansible
-          ansible-galaxy role install -r requirements.yaml
-          ansible-galaxy collection install -r requirements.yaml
+          # Use --ignore-errors and || true to continue even when Ansible Galaxy API is down
+          # CI should not fail due to transient Galaxy API issues (HTTP 503)
+          ansible-galaxy role install -r requirements.yaml --ignore-errors || true
+          ansible-galaxy collection install -r requirements.yaml --ignore-errors || true
 
       - name: Cache pre-commit environments
         uses: actions/cache@v4
@@ -64,6 +117,9 @@ jobs:
 
       - name: Install and run pre-commit
         run: |
+          # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
+          # isolated node environments (markdownlint-cli2 hook uses npm)
+          unset NODE_OPTIONS
           # Version synced with flake.nix (nixpkgs.pre-commit)
           # Update both when bumping pre-commit version
           pip install pre-commit==4.0.1
@@ -146,49 +202,16 @@ jobs:
             echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
           fi
 
-  props-frontend-build:
-    name: Props frontend build (Bazel)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Cache Bazel repository
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          # Unified cache key includes all dependency files
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
-          restore-keys: |
-            bazel-${{ runner.os }}-
-
-      - name: Build and test frontend
-        run: |
-          bazel build //props/frontend:bundle //props/frontend:storybook
-          # Type checking: svelte-check
-          bazel test //props/frontend:svelte_check_test
-          # Note: ESLint and Prettier are now run via aspects in bazel-build job
-
-      - name: Generate build summary
-        if: always()
-        run: |
-          echo "### Frontend Build Results" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ Frontend build and type checking successful" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Frontend build or type checking failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
   visual-regression:
-    name: Visual regression tests (Bazel + Playwright)
+    name: Visual regression tests (Bazel + Puppeteer)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
 
       - name: Cache Bazel repository
         uses: actions/cache@v4
@@ -201,7 +224,9 @@ jobs:
             bazel-${{ runner.os }}-
 
       - name: Run visual regression tests
-        run: bazel test //props/frontend:visual_test --test_output=errors
+        run: |
+          # Chromium is provided hermetically by rules_playwright
+          bazel test //props/frontend:visual_test --test_output=errors
 
       - name: Generate test summary
         if: always()
@@ -252,6 +277,15 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Configure build environment
+        run: |
+          # Force Bazel to use system GCC instead of any hermetic toolchain
+          # This avoids glibc mismatch issues with rustc and proc-macros
+          echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
+
       - name: Install system dependencies for native Python packages
         run: |
           sudo apt-get update
@@ -283,7 +317,8 @@ jobs:
           # Limit resource usage to reduce disk space consumption
           # --jobs=2: Limit parallel builds to reduce peak memory/disk usage
           # --repository_cache: Cap external repository cache at 2GB
-          export BAZEL_OPTS="--jobs=2 --experimental_repository_cache_hardlinks"
+          # -k: Keep going after errors to provide complete information
+          export BAZEL_OPTS="--jobs=2 --experimental_repository_cache_hardlinks -k"
 
           bazel build //... $BAZEL_OPTS
           # Comprehensive linting via aspects:

@@ -406,6 +406,7 @@ rg --type py 'def \w+\([^)]*\bid\b[^)]*\bid\b'
 **Vague name detection requires semantic analysis** (automation recall ~30-40%):
 
 1. **Read model definitions** - Generic containers with generic fields:
+
    - `Response.id`, `Data.key`, `Result.name` → likely vague
    - `User.id`, `CacheEntry.key`, `Product.name` → likely fine
 

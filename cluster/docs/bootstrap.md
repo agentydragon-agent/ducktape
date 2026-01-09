@@ -29,10 +29,12 @@ Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
 ### Required Credentials
 
 1. **Hetzner Cloud API Token** (`HCLOUD_TOKEN` env var)
+
    - Create at: Hetzner Cloud Console → Security → API Tokens
    - Permissions: Read/Write
 
 2. **Proxmox API Token** (managed in 00-persistent-auth layer)
+
    - User: `terraform@pve`
    - Created automatically by persistent auth terraform
 

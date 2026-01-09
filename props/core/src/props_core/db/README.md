@@ -37,6 +37,7 @@ We maintain **TWO separate databases** to ensure tests never affect production d
    ```
 
    This automatically:
+
    - Creates the `eval_results` database
    - Runs Alembic migrations to create schema
    - Sets up the `agent_base` role and RLS policies

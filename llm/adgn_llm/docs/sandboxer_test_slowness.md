@@ -29,6 +29,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
 ## What’s slow (by component)
 
 1. Session‑scoped control venv bootstrap (tests/mcp/sandboxed_jupyter_mcp/conftest.py)
+
    - Fixture: `_bootstrap_control_venv_and_require_tools(scope="session", autouse=True)`
    - Actions on cold start:
      - python3 -m venv <tmp>/control_venv
@@ -37,6 +38,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
    - Evidence: test logs repeatedly show pip upgrading to pip 25.2 and installing dozens of packages during setup, adding ~10–20s cold start overhead.
 
 2. Jupyter server startup
+
    - Fixture: launch_jupyter_server
    - Waits up to 30s for the port to become ready (tight .1–.5s polling loop) before yielding to tests.
    - On cold starts, we observed ~20s before server responded on loopback.
@@ -60,6 +62,7 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
 ## Recommendations (to reduce wall‑clock time)
 
 1. Pre‑warm the control venv (dev + CI)
+
    - Create once and reuse via SJ_TEST_CONTROL_BIN to avoid per‑session install:
 
      ```bash
@@ -74,10 +77,12 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
    - In conftest.py, `_bootstrap_control_venv_and_require_tools` already respects `PATH`; add a fast path that uses `SJ_TEST_CONTROL_BIN` if set and valid to skip install.
 
 2. Reduce Jupyter startup time where acceptable
+
    - If specific tests don’t need collaboration/ydoc, run a leaner server (fewer extensions) to shorten cold start.
    - Consider marking server‑heavy tests as slower and running them in a separate CI job (parallelize).
 
 3. Fail faster on known failure paths
+
    - Lower initialize/tool call timeouts in tests that are expected to fail quickly or parametrize separate “smoke” cases with shorter timeouts.
    - Example: use init_timeout=10s for smoke, call_timeout=15–30s, unless a test explicitly needs more.
 
@@ -87,33 +92,40 @@ When a subset is run, these durations are reproducible. Running non‑sandbox su
 ## Actionable TODOs (make it fast and explicit)
 
 - Control venv prewarm and reuse
+
   - [ ] Teach `tests/mcp/sandboxed_jupyter_mcp/conftest.py::_bootstrap_control_venv_and_require_tools` to honor `SJ_TEST_CONTROL_BIN` if set and points to a bin dir containing jupyter and jupyter-mcp-server; skip creation/install.
     - Acceptance: cold local run with SJ_TEST_CONTROL_BIN set does not run pip and suite setup < 2s.
   - [ ] Provide a simple helper (make target or script) to create .tmp/control_venv and export SJ_TEST_CONTROL_BIN; document the exact commands below.
     - Acceptance: helper finishes < 1 min on warm cache and is documented where devs look.
 
 - CI pip/wheel cache
+
   - [ ] Configure pip cache in CI for the control venv install step (e.g., set PIP_CACHE_DIR and/or use pip --cache-dir).
     - Acceptance: repeat CI installs reuse cache and reduce cold-start install time by ≥50%.
 
 - Shorter timeouts for smoke paths
+
   - [ ] Parameterize init_timeout/call_timeout via fixtures; mark “smoke” tests with shorter defaults (init ≤ 10s, call ≤ 30s) and allow overrides per test.
     - Acceptance: failing smoke tests finish in ≤ 30s wall time.
 
 - Lean Jupyter server for non-collab tests
+
   - [ ] Extend launch_jupyter_server to support a “lean” mode without collaboration/ydoc when not needed; mark collab-required tests with @pytest.mark.collab to keep full stack there.
     - Acceptance: lean tests reach ready state in ≤ 5s on warm start locally.
 
 - Labeling/gating
+
   - [ ] Mark heavy tests with @pytest.mark.sandboxer and/or @pytest.mark.slow; keep a small @pytest.mark.smoke subset runnable by default.
   - [ ] Maintain the suite-level --run-sandboxer opt-in, and run smoke by default without it; ensure -rs is recommended so skip reasons are visible.
     - Acceptance: pytest -m "not slow" -k sandboxed_jupyter_mcp completes within target local time budget.
 
 - Parallelize in CI
+
   - [ ] Move sandboxed_jupyter_mcp into its own CI job (optional or triggered-by-changes/nightly) so it doesn’t gate normal PR runs.
     - Acceptance: main CI pipeline excludes sandboxer by default; dedicated job runs in parallel.
 
 - Fix functional failures (removes timeout inflation from retries)
+
   - [ ] `test_sandboxer_compose.py::test_fs_write_paths_expand_to_params_and_dirs` — implement/fix param expansion for `WP_*`; add targeted unit coverage for compose output.
   - [ ] `test_sandboxer_compose.py::test_fs_read_paths_expand_to_params_and_dirs` — implement/fix param expansion for `RP_*`.
   - [ ] `test_sandboxer_narrow.py::test_sandboxer_yes_hello_world_narrow` — investigate policy deny (exit 250); ensure seatbelt.trace.log populated; fix policy or expectations so echo=0.

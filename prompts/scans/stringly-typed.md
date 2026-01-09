@@ -143,6 +143,7 @@ cat string_literals_scan.json | jq '.literal_histogram["completed"]'
 **Automated Preprocessing AFTER Step 0** (discovers candidates, NOT definitive):
 
 1. **String Literal Repetition Counter** (AST-based)
+
    - **Now automated by scan_string_literals.py** - run this tool instead
    - Walk AST extracting Constant nodes with string values
    - Filter: 3-30 chars, alphanumeric (skip URLs/paths/messages)
@@ -150,11 +151,13 @@ cat string_literals_scan.json | jq '.literal_histogram["completed"]'
    - Strong LLM can build from description
 
 2. **String Comparison Detector** (AST-based)
+
    - Find Compare nodes with Eq operator + string literals
    - Group by compared values
    - Shows which strings are used in conditionals
 
 3. **Categorical Field Analyzer** (AST-based)
+
    - Find AnnAssign nodes where field name contains: "status", "type", "kind", "mode", "state", "level"
    - Check if annotated as `str`
    - These fields are prime enum candidates
@@ -192,6 +195,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
 1. **Check external API/SDK types FIRST** (Highest Priority):
 
    **If parsing external API responses** (OpenAI, Anthropic, GitHub, etc.):
+
    - **CRITICAL**: Check if official SDK exists and provides typed models
    - Use SDK types instead of defining your own string-typed versions
    - Common SDKs with good types:
@@ -244,6 +248,7 @@ rg --type py "(status|type|kind|mode|state)\s*=\s*\"([^\"]+)\"" -o | sort | uniq
    ```
 
    **Special case - Internal/Extended formats**:
+
    - If parsing data that's _based on_ external API but with extensions (e.g., Claude Code history logs)
    - Check if structure matches SDK types closely
    - If mostly matches: Consider using SDK types as base, extend if needed

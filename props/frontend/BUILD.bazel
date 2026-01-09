@@ -136,14 +136,23 @@ js_binary(
     entry_point = "tests/harness/esbuild.config.mjs",
 )
 
-# Test harness bundle
+# Test harness bundle (JS + CSS from Tailwind)
 js_run_binary(
     name = "harness_bundle",
     srcs = _HARNESS_SRCS + ["tests/harness/esbuild.config.mjs"],
-    outs = ["tests/harness/dist/harness.js"],
+    outs = [
+        "tests/harness/dist/harness.css",
+        "tests/harness/dist/harness.js",
+    ],
     args = ["tests/harness/dist"],
     chdir = package_name(),
     tool = ":build_harness",
+)
+
+# Filegroup for just the JS file (used by visual_test env var)
+filegroup(
+    name = "harness_js",
+    srcs = ["tests/harness/dist/harness.js"],
 )
 
 # Visual regression test with Puppeteer
@@ -154,13 +163,19 @@ js_test(
     data = [
         "tests/harness/index.html",
         ":harness_bundle",
+        ":harness_js",
         ":node_modules/pixelmatch",
         ":node_modules/pngjs",
         ":node_modules/puppeteer",
+        # Hermetic Chromium from rules_playwright
+        "@playwright_browsers//:chromium-headless-shell",
     ] + glob(["tests/visual-regression.spec.ts-snapshots/**/*"]),
     entry_point = "tests/visual-regression.spec.js",
     env = {
-        "HARNESS_PATH": "$(rootpath :harness_bundle)",
+        # Reference the JS file via filegroup (harness_bundle outputs both .js and .css)
+        "HARNESS_PATH": "$(rootpath :harness_js)",
+        # Point Puppeteer to the Bazel-managed Chromium
+        "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     tags = [
         "no-sandbox",

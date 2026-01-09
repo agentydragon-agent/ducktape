@@ -12,6 +12,7 @@
 ### End-to-End Testing
 
 - [ ] **Subprocess hook invocation tests**: Create end-to-end tests that invoke hook as subprocess and feed it JSON
+
   - Test actual hook execution pipeline from command line
   - Verify proper error handling and exit codes
   - Test various JSON input scenarios (valid, invalid, malformed)

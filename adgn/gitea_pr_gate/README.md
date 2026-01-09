@@ -41,9 +41,11 @@ Per-user PR quota (policy server)
 FastAPI server
 
 - Install deps:
+
   - `pip install fastapi uvicorn httpx structlog prometheus_client`
 
 - Environment variables:
+
   - `GITEA_BASE_URL` (default `http://127.0.0.1:3000/`)
   - `GITEA_ADMIN_TOKEN` (optional, recommended for private repos; scope: read repository)
   - `PRQ_DEFAULT_MAX` (default `3`)

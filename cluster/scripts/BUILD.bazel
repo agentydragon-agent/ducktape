@@ -1,0 +1,9 @@
+# Cluster validation scripts
+
+package(default_visibility = ["//cluster:__subpackages__"])
+
+exports_files([
+    "tofu_validate.sh",
+    "validate-flux-build.py",
+    "validate-kustomizations.py",
+])

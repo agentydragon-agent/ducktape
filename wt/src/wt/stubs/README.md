@@ -23,6 +23,7 @@ How to regenerate pygit2 stubs
    This overwrites ./stubs/pygit2/`__init__`.pyi with a fresh export from your local pygit2 installation.
 
 3. Optional: Trim or augment
+
    - If mypy reports missing attributes we actually use, you can add them to the generated .pyi files.
    - Keep edits minimal and add a short inline comment like # wt: added for X.Y usage
 
