@@ -13,8 +13,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from props_core.db.sync.loader import discover_snapshots
-from props_core.ids import SnapshotSlug
+from props.core.db.sync.loader import discover_snapshots
+from props.core.ids import SnapshotSlug
 
 
 def test_load_git_fixtures(test_specimens_base: Path) -> None:

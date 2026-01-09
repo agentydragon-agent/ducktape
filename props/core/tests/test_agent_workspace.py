@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from props_core.agent_workspace import WorkspaceManager
+from props.core.agent_workspace import WorkspaceManager
 
 
 class TestWorkspaceManager:

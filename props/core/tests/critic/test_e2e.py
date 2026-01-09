@@ -20,9 +20,9 @@ from hamcrest import assert_that
 from agent_core.events import ApiRequest, SystemText, ToolCall
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully
-from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
-from props_core.db.models import AgentRun, AgentRunStatus, Event
-from props_core.db.session import get_session
+from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.db.models import AgentRun, AgentRunStatus, Event
+from props.core.db.session import get_session
 
 from ..conftest import PropsMock
 

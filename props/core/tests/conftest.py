@@ -19,13 +19,13 @@ from agent_core_testing.responses import DecoratorMock
 from agent_core_testing.steps import Step
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult
-from props_core.agent_registry import AgentRegistry
-from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
-from props_core.agent_workspace import WorkspaceManager
-from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID, GRADER_AGENT_DEFINITION_ID
-from props_core.db.config import DatabaseConfig, get_database_config
-from props_core.db.examples import Example
-from props_core.db.models import (
+from props.core.agent_registry import AgentRegistry
+from props.core.agent_types import CriticTypeConfig, GraderTypeConfig
+from props.core.agent_workspace import WorkspaceManager
+from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID, GRADER_AGENT_DEFINITION_ID
+from props.core.db.config import DatabaseConfig, get_database_config
+from props.core.db.examples import Example
+from props.core.db.models import (
     AgentRun,
     AgentRunStatus,
     CanonicalIssuesSnapshot,
@@ -38,18 +38,18 @@ from props_core.db.models import (
     Snapshot,
     TruePositiveOccurrenceORM,
 )
-from props_core.db.session import dispose_db, get_session, init_db, recreate_database
-from props_core.db.setup import ensure_database_exists
-from props_core.db.snapshots import DBLocationAnchor
-from props_core.db.sync.sync import sync_all
-from props_core.ids import SnapshotSlug
-from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
-from props_core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
-from props_core.prompt_improve.improve_agent import run_improvement_agent
-from props_core.prompt_improve.reminder_handler import TerminationSuccess
-from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
-from props_core.prompt_optimize.target_metric import TargetMetric
-from props_core.rationale import Rationale
+from props.core.db.session import dispose_db, get_session, init_db, recreate_database
+from props.core.db.setup import ensure_database_exists
+from props.core.db.snapshots import DBLocationAnchor
+from props.core.db.sync.sync import sync_all
+from props.core.ids import SnapshotSlug
+from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
+from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
+from props.core.prompt_improve.improve_agent import run_improvement_agent
+from props.core.prompt_improve.reminder_handler import TerminationSuccess
+from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
+from props.core.prompt_optimize.target_metric import TargetMetric
+from props.core.rationale import Rationale
 
 # Register shared fixtures from other packages
 pytest_plugins = [

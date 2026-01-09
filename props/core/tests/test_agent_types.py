@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from props_core.agent_types import (
+from props.core.agent_types import (
     AgentConfig,
     AgentType,
     CriticTypeConfig,
@@ -15,9 +15,9 @@ from props_core.agent_types import (
     PromptOptimizerTypeConfig,
     TypeConfig,
 )
-from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
-from props_core.ids import SnapshotSlug
-from props_core.models.examples import WholeSnapshotExample
+from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.ids import SnapshotSlug
+from props.core.models.examples import WholeSnapshotExample
 
 
 @pytest.fixture

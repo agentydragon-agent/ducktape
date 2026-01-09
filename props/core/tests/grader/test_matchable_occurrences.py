@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from props_core.db.session import get_session
+from props.core.db.session import get_session
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

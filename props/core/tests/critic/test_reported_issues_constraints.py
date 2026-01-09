@@ -13,11 +13,11 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from props_core.db.examples import Example
-from props_core.db.models import ReportedIssue, ReportedIssueOccurrence
-from props_core.db.session import get_session
-from props_core.db.snapshots import DBLocationAnchor
-from props_core.ids import SnapshotSlug
+from props.core.db.examples import Example
+from props.core.db.models import ReportedIssue, ReportedIssueOccurrence
+from props.core.db.session import get_session
+from props.core.db.snapshots import DBLocationAnchor
+from props.core.ids import SnapshotSlug
 from tests.conftest import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

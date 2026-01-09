@@ -4,11 +4,11 @@ from uuid import uuid4
 
 from sqlalchemy import text
 
-from props_core.db.config import DatabaseConfig
-from props_core.db.examples import Example
-from props_core.db.models import AgentRunStatus, GradingEdge, TruePositive
-from props_core.db.session import get_session
-from props_core.ids import SnapshotSlug
+from props.core.db.config import DatabaseConfig
+from props.core.db.examples import Example
+from props.core.db.models import AgentRunStatus, GradingEdge, TruePositive
+from props.core.db.session import get_session
+from props.core.ids import SnapshotSlug
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT, make_critic_run, make_grader_run, make_reported_issues
 
 

@@ -13,13 +13,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from props_core.agent_pkg_utils import (
+from props.core.agent_pkg_utils import (
     DOCKERFILE_FILE,
     AgentPkgValidationError,
     pack_agent_pkg,
     validate_packed_agent_pkg,
 )
-from props_core.cli.cmd_agent_pkg import app
+from props.core.cli.cmd_agent_pkg import app
 
 
 @pytest.fixture

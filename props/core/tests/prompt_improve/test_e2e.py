@@ -17,12 +17,12 @@ from hamcrest import all_of, assert_that
 
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully, stdout_contains
-from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
-from props_core.db.examples import Example
-from props_core.db.models import AgentRun
-from props_core.db.session import get_session
-from props_core.prompt_improve.improve_agent import run_improvement_agent
-from props_core.prompt_improve.reminder_handler import BlockingStatus
+from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.db.examples import Example
+from props.core.db.models import AgentRun
+from props.core.db.session import get_session
+from props.core.prompt_improve.improve_agent import run_improvement_agent
+from props.core.prompt_improve.reminder_handler import BlockingStatus
 
 from ..conftest import PropsMock
 
@@ -40,7 +40,7 @@ Be thorough and systematic in your analysis."""
 # Define the init script content
 INIT_SCRIPT = """#!/usr/bin/env python3
 import sys
-from props_core.db.session import get_session
+from props.core.db.session import get_session
 from sqlalchemy import text
 
 with get_session() as session:
