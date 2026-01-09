@@ -4,20 +4,20 @@
 
 ### Medium Priority
 
-- [ ] **NOTE: FileLocationInfo should stay in props_core**
-  - FileLocationInfo is correctly defined in props_core (domain model layer)
-  - Backend routes import from props_core - this is correct architecture
+- [ ] **NOTE: FileLocationInfo should stay in props.core**
+  - FileLocationInfo is correctly defined in props.core (domain model layer)
+  - Backend routes import from props.core - this is correct architecture
   - No changes needed
 
 ### Low Priority
 
-- [ ] **Make export.py functions public** (src/props_core/db/sync/export.py)
+- [ ] **Make export.py functions public** (props/core/db/sync/export.py)
 
   - Remove leading underscore from `_format_files`, `_format_line_ranges`
   - Add to `__all__` export list
   - Document as canonical serialization API for reuse
 
-- [ ] **Audit JSONB columns for Pydantic conversion** (src/props_core/db/models.py)
+- [ ] **Audit JSONB columns for Pydantic conversion** (props/core/db/models.py)
 
   - Review `Mapped[dict[str, Any]]` JSONB columns (lines 174,181,190,198)
   - Convert to `MappedPydanticJSONB[ModelType]` where structure is known and stable

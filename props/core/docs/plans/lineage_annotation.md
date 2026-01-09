@@ -212,5 +212,5 @@ Continue using only occurrence-level notes with inline text
 
 ## References
 
-- Current LineRange: props/core/src/props_core/models/issue.py
-- Occurrence schema: props/core/src/props_core/models/issue.py
+- Current LineRange: props/core/models/issue.py
+- Occurrence schema: props/core/models/issue.py

@@ -20,12 +20,11 @@ The API will be available at `http://localhost:8000`.
 
 ```
 backend/
-├── src/props_backend/
-│   ├── app.py           # FastAPI app, lifespan
-│   ├── routes/
-│   │   ├── runs.py      # Runs API + WebSocket
-│   │   └── stats.py     # Stats API
-│   └── models.py        # Pydantic models
+├── __init__.py          # Package root
+├── app.py               # FastAPI app, lifespan
+├── routes/
+│   ├── runs.py          # Runs API + WebSocket
+│   └── stats.py         # Stats API
 ├── TODO.md              # Implementation tasks
 ├── SPEC.md              # Feature specification
 └── AGENTS.md            # Agent instructions
@@ -47,15 +46,15 @@ cd frontend && pnpm generate
 
 ## Key Dependencies
 
-- **Backend:** FastAPI, SQLAlchemy, props_core.db, props_core.agent_registry
+- **Backend:** FastAPI, SQLAlchemy, props.core.db, props.core.agent_registry
 - **Frontend:** Svelte 5, Tailwind, openapi-fetch
 
 ## Props Integration
 
-Backend imports from `props_core` package:
+Backend imports from `props.core` package:
 
-- `props_core.agent_registry.AgentRegistry` - Run critic/grader agents
-- `props_core.db.models` - ORM models, views
-- `props_core.db.config` - Database connection
+- `props.core.agent_registry.AgentRegistry` - Run critic/grader agents
+- `props.core.db.models` - ORM models, views
+- `props.core.db.config` - Database connection
 
 Shared database is managed by props devenv (PostgreSQL container).

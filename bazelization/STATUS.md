@@ -127,7 +127,7 @@ Run `bazel run //bazelization:audit` to get updated counts.
 | `properties-critic` | `docker/llm/properties-critic/`            | ❌ Deleted  | Orphaned, never used                             |
 | `openai_utils`      | `openai_utils/docker/`                     | ❌ Deleted  | Probe module never implemented                   |
 | `claude_optimizer`  | `claude/claude_optimizer/docker/`          | Pending     | 8 variant images                                 |
-| `props agents`      | `props/core/src/props_core/agent_defs/`    | Pending     | 9 agent images                                   |
+| `props agents`      | `props/core/agent_defs/`                   | Pending     | 9 agent images                                   |
 | `molecule`          | `ansible/molecule/github_release_plugins/` | Skip        | Ansible testing                                  |
 
 **Migration notes:**

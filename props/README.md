@@ -8,14 +8,15 @@ High-level architecture and shared infrastructure for the props evaluation syste
 props/
 ├── .envrc                    # Single devenv entry point (shared by all)
 ├── devenv.nix                # Manages postgres, backend, frontend processes
-├── core/                     # Core Python library (props_core)
-│   ├── pyproject.toml        # Package: props-core
-│   ├── src/props_core/       # The Python package
-│   └── tests/                # Tests for props_core
+├── core/                     # Core Python library (props.core)
+│   ├── __init__.py           # Python package root
+│   ├── db/                   # Database models and migrations
+│   ├── cli/                  # CLI commands
+│   └── tests/                # Tests for props.core
 ├── backend/                  # FastAPI dashboard backend
-│   ├── pyproject.toml        # Package: props-backend
-│   ├── src/props_backend/
-│   └── tests/
+│   ├── __init__.py           # Python package root
+│   ├── routes/               # API endpoints
+│   └── tests/                # Tests for props.backend
 └── frontend/                 # Svelte UI
     ├── package.json
     └── src/

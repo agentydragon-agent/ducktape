@@ -73,8 +73,8 @@ nix/home/claude-code/commands/analyze-permissions.md
 nix/home/claude-code/commands/dump.md
 nix/home/claude-code/commands/followups.md
 prompts/scans/useless-comments-and-docs.md
-props/core/src/props_core/.claude/commands/extract-principles.md
-props/core/src/props_core/docs/prompts/code_health_audit_fullprops.md
+props/core/.claude/commands/extract-principles.md
+props/core/docs/prompts/code_health_audit_fullprops.md
 props/standards/self-describing-names.md
 sandboxed_jupyter/docs/TODO-SANDBOX.md
 sandboxed_jupyter/docs/TODO.md
