@@ -31,12 +31,12 @@ js_binary(
     data = _SRCS + [
         "dev.mjs",
         ":node_modules",
-        "//props/backend:props_backend_cli",
+        "//props/backend:backend_cli",
     ],
     entry_point = "dev.mjs",
     # Backend binary path is relative to runfiles root (props/backend/props_backend_cli)
     # From chdir=props/frontend, go up twice to reach runfiles root
-    no_copy_to_bin = ["//props/backend:props_backend_cli"],
+    no_copy_to_bin = ["//props/backend:backend_cli"],
 )
 
 # OpenAPI TypeScript generator binary

@@ -13,13 +13,13 @@ Migrate all Bazelized Python packages from `src/` layout to flat layout and remo
 
 ### Needs migration (src/ layout)
 
-- [ ] agent_core
+- [x] agent_core
 - [x] claude_web_hooks
 - [x] difftree
 - [x] ember
 - [x] openai_utils
 - [x] py_detectors
-- [ ] sysrw
+- [x] sysrw
 - [x] wt
 
 ### Already flat layout

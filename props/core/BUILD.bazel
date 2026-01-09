@@ -3,17 +3,21 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
-
 py_library(
-    name = "props_core",
-    srcs = glob(["src/props_core/**/*.py"]),
+    name = "core",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            ".*/**",
+            "tests/**",
+        ],
+    ),
     data = glob([
-        "src/props_core/docs/**/*.md",
-        "src/props_core/docs/**/*.j2",
-        "src/props_core/agent_defs/**/*",
+        "docs/**/*.md",
+        "docs/**/*.j2",
+        "agent_defs/**/*",
     ]),
-    imports = ["src"],
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",
@@ -46,17 +50,17 @@ py_library(
 
 py_binary(
     name = "props",
-    srcs = ["src/props_core/cli/main.py"],
-    main = "src/props_core/cli/main.py",
-    deps = [":props_core"],
+    srcs = ["cli/main.py"],
+    main = "cli/main.py",
+    deps = [":core"],
 )
 
 py_test(
-    name = "test_props_core",
+    name = "test_core",
     srcs = glob(["tests/**/*.py"]),
     main = "tests/test_agent_types.py",
     deps = [
-        ":props_core",
+        ":core",
         "//agent_core_testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -69,5 +73,5 @@ py_test(
 
 ruff_test(
     name = "ruff",
-    srcs = [":props_core"],
+    srcs = [":core"],
 )

@@ -38,14 +38,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from agent_core.events import ToolCall
-from props_core.agent_types import PromptOptimizerTypeConfig
-from props_core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
-from props_core.db.config import DatabaseConfig
-from props_core.db.examples import Example
-from props_core.db.models import AgentRun, AgentRunStatus, Event, FalsePositive, Snapshot, TruePositive
-from props_core.db.session import get_session
-from props_core.db.temp_user_manager import TempUserCredentials, TempUserManager
-from props_core.prompt_optimize.target_metric import TargetMetric
+from props.core.agent_types import PromptOptimizerTypeConfig
+from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
+from props.core.db.config import DatabaseConfig
+from props.core.db.examples import Example
+from props.core.db.models import AgentRun, AgentRunStatus, Event, FalsePositive, Snapshot, TruePositive
+from props.core.db.session import get_session
+from props.core.db.temp_user_manager import TempUserCredentials, TempUserManager
+from props.core.prompt_optimize.target_metric import TargetMetric
 from tests.conftest import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

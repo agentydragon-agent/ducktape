@@ -20,9 +20,9 @@ from hamcrest import all_of, assert_that
 from agent_core_testing.openai_mock import CapturingOpenAIModel
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully, stdout_contains
-from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
-from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge
-from props_core.db.session import get_session
+from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.db.models import AgentRun, AgentRunStatus, GradingEdge
+from props.core.db.session import get_session
 
 from ..conftest import PropsMock
 

@@ -3,11 +3,11 @@
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
-from props_core.db.examples import Example
-from props_core.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
-from props_core.models.examples import ExampleKind, SingleFileSetExample
-from props_core.splits import Split
+from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.db.examples import Example
+from props.core.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
+from props.core.models.examples import ExampleKind, SingleFileSetExample
+from props.core.splits import Split
 from tests.conftest import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     make_critic_run,

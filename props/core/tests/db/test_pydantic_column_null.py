@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from props_core.db.models import PydanticColumn
-from props_core.db.session import get_session
+from props.core.db.models import PydanticColumn
+from props.core.db.session import get_session
 
 
 class Base(DeclarativeBase):

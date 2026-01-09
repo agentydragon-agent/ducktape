@@ -13,12 +13,12 @@ import pytest
 from fastmcp.exceptions import ToolError
 from sqlalchemy import text
 
-from props_core.critic.submit_server import CriticSubmitInput
-from props_core.db.examples import Example
-from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
-from props_core.db.session import get_session
-from props_core.db.snapshots import DBLocationAnchor
-from props_core.ids import SnapshotSlug
+from props.core.critic.submit_server import CriticSubmitInput
+from props.core.db.examples import Example
+from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
+from props.core.db.session import get_session
+from props.core.db.snapshots import DBLocationAnchor
+from props.core.ids import SnapshotSlug
 from tests.conftest import make_critic_run
 from tests.critic.conftest import insert_issue, insert_occurrence
 
