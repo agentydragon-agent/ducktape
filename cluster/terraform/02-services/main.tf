@@ -30,6 +30,21 @@ provider "flux" {
 # See: terraform/gitops/secrets/ for Vault secret management
 
 # FLUX BOOTSTRAP: Initialize GitOps engine
+#
+# This resource creates initial GitRepository and Kustomization resources for Flux.
+# After bootstrap, the authoritative configuration lives in:
+#   k8s/flux-system/gotk-sync.yaml
+#
+# The gotk-sync.yaml file is included in k8s/kustomization.yaml and gets applied
+# by Flux after bootstrap. It specifies additional config like sparseCheckout
+# (required to keep artifact under tofu-controller's 4MB gRPC limit).
+#
+# KEEP IN SYNC: These settings must match gotk-sync.yaml:
+#   - Git URL: provider.git.url ↔ spec.url
+#   - Branch: provider.git.branch ↔ spec.ref.branch
+#   - Path: path ↔ spec.path (in Kustomization)
+#
+# sparseCheckout is configured only in gotk-sync.yaml (spec.sparseCheckout)
 resource "flux_bootstrap_git" "cluster" {
   path = "cluster/k8s"
 }
