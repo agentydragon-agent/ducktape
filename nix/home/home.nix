@@ -233,6 +233,9 @@ in {
     pinentry.package = pkgs.pinentry-gtk2; # GUI pinentry for GNOME
   };
 
+  # SSH Agent - holds decrypted SSH keys in memory
+  services.ssh-agent.enable = true;
+
   # Readline configuration (migrated from dotfiles/inputrc)
   programs.readline = {
     enable = true;
