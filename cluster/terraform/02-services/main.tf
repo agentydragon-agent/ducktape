@@ -31,22 +31,32 @@ provider "flux" {
 
 # FLUX BOOTSTRAP: Initialize GitOps engine
 #
-# This resource creates initial GitRepository and Kustomization resources for Flux.
-# After bootstrap, the authoritative configuration lives in:
-#   k8s/flux-system/gotk-sync.yaml
+# kustomization_override adds sparseCheckout to GitRepository - required because:
+# 1. The ducktape repo is ~14MB, exceeding tofu-controller's 4MB gRPC limit
+# 2. flux_bootstrap_git doesn't natively support sparseCheckout
+# 3. Without this, terraform generates gotk-sync.yaml without sparseCheckout
 #
-# The gotk-sync.yaml file is included in k8s/kustomization.yaml and gets applied
-# by Flux after bootstrap. It specifies additional config like sparseCheckout
-# (required to keep artifact under tofu-controller's 4MB gRPC limit).
-#
-# KEEP IN SYNC: These settings must match gotk-sync.yaml:
-#   - Git URL: provider.git.url ↔ spec.url
-#   - Branch: provider.git.branch ↔ spec.ref.branch
-#   - Path: path ↔ spec.path (in Kustomization)
-#
-# sparseCheckout is configured only in gotk-sync.yaml (spec.sparseCheckout)
+# The patch adds sparseCheckout: ["cluster/"] to only fetch the cluster/ directory,
+# reducing the artifact size to ~200KB.
 resource "flux_bootstrap_git" "cluster" {
   path = "cluster/k8s"
+
+  kustomization_override = <<-EOT
+    apiVersion: kustomize.config.k8s.io/v1beta1
+    kind: Kustomization
+    resources:
+      - gotk-components.yaml
+      - gotk-sync.yaml
+    patches:
+      - target:
+          kind: GitRepository
+          name: flux-system
+        patch: |
+          - op: add
+            path: /spec/sparseCheckout
+            value:
+              - cluster/
+  EOT
 }
 
 # NOTE: Service configuration moved to Layer 3 after services are deployed

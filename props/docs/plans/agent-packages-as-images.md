@@ -23,33 +23,91 @@ Agent packages ARE OCI images directly. No Dockerfile build step at launch time.
 
 **Decision: Devenv-managed local registry** (like we do for postgres).
 
-- Standard Docker registry, managed by devenv/process-compose
-- Agents access via network with credentials
+- Standard Docker registry container on shared Docker network
+- Managed by devenv/process-compose alongside postgres
 - For production: can swap to remote registry (GHCR, etc.) via config
 
 ### Agent Interface
 
-**Decision: Direct registry access via standard OCI Distribution Protocol.**
+**Decision: Direct registry access via standard OCI Distribution Protocol, through an immutable proxy.**
 
 Agents use standard tools (curl, Python requests, crane) to interact with the registry.
 No custom MCP wrapper needed - the OCI protocol is simple enough.
 
-For multi-agent safety and metadata tracking, we use a proxy between agents and the registry:
+A proxy sits between agents and the registry (see Architecture section for network details).
 
-```
-Agent ──(token)──> Proxy ──> Registry
-                     │
-                     └──> PostgreSQL (agent_definitions)
-```
+All services (postgres, registry, proxy) run as Docker containers. Agents access the proxy at `http://registry-proxy:5050`.
+
+**Security requirement:** Agent containers must NOT have direct access to the registry. They can only reach the registry through the proxy. This ensures ACL and audit controls cannot be bypassed.
+
+**Host access:** The host machine pushes builtin images through the proxy (not direct to registry). This ensures the proxy writes all `agent_definitions` rows.
+
+The proxy has two modes:
+
+- **Agent mode** (default): digest-only pushes, no tags, validates agent auth against postgres
+- **Admin mode**: allows tag pushes (e.g., `critic:builtin`), validates admin user against postgres
+
+Both modes use the same postgres-based auth - admin is just another user with elevated permissions.
+
+Bazel `oci_push` goes through proxy with admin auth → proxy writes `agent_definitions` row → forwards to registry.
+
+Host normally accesses registry through the proxy with admin auth. Direct registry access (`localhost:5000`) is available for low-level debugging if needed.
+
+### Immutable, Digest-Only References
+
+**Decision: Agents can only push manifests by digest, not by tag.**
+
+This enforces immutability:
+
+- **Allowed:** `PUT /v2/<name>/manifests/sha256:abc123...`
+- **Blocked:** `PUT /v2/<name>/manifests/latest`, `PUT /v2/<name>/manifests/v2`
+
+Benefits:
+
+- No naming conflicts or "who owns this tag?" questions
+- No ACL complexity around tag overwrites
+- Content-addressed everything - push content, get hash, done
+- Every `agent_run` points to exactly the image that ran
+
+Tags (like `critic:builtin`) are set administratively for built-in images, not by agents.
+
+### Proxy Responsibilities
 
 The proxy:
 
-- Validates agent's existing auth token
-- On push: writes/updates `agent_definitions` row in DB with image ref
-- Enforces ACL (no overwrites of others' tags, no deletes, naming conventions)
+- Validates credentials against postgres (both agent temp users and admin)
+- Determines caller type from username pattern:
+  - Admin: `postgres` user
+  - Agent: `agent_{run_id}` pattern → query postgres for agent type
+- Enforces ACL based on caller type
+- Writes `agent_definitions` row on every manifest push
 - Passes valid requests through to registry
 
-This keeps the registry dumb (just blob storage) while DB remains source of truth for definitions.
+**ACL by caller type:**
+
+| Caller                | Read | Push by digest | Push by tag | Delete |
+| --------------------- | ---- | -------------- | ----------- | ------ |
+| Admin (postgres user) | ✓    | ✓              | ✓           | ✗      |
+| PO/PI agent           | ✓    | ✓              | ✗           | ✗      |
+| Critic/grader agent   | ✗    | ✗              | ✗           | ✗      |
+
+**Proxy routing rules (after ACL check):**
+
+| Method   | Path                                     | Action                                              |
+| -------- | ---------------------------------------- | --------------------------------------------------- |
+| `GET`    | `*`                                      | Pass through                                        |
+| `POST`   | `/v2/<name>/blobs/uploads/`              | Pass through                                        |
+| `PATCH`  | `<upload-url>`                           | Pass through                                        |
+| `PUT`    | `/v2/<name>/blobs/uploads/<uuid>?digest` | Pass through                                        |
+| `PUT`    | `/v2/<name>/manifests/<digest>`          | Write `agent_definitions`, pass through             |
+| `PUT`    | `/v2/<name>/manifests/<tag>`             | Admin only: write `agent_definitions`, pass through |
+| `DELETE` | `*`                                      | **Block** (all callers)                             |
+
+Digest detection: references matching `^sha256:[a-f0-9]{64}$` (or other hash algos) are digests.
+
+**Agent type inference:** The `<name>` in the URL path is the repository name, which maps directly to `agent_type_enum` (e.g., `critic`, `grader`, `prompt-optimizer`). The proxy uses this to populate `agent_definitions.agent_type`.
+
+This keeps the registry dumb (just blob storage) while postgres is source of truth for definitions/audit.
 
 ### Image Size
 
@@ -70,24 +128,136 @@ Agents are expected to understand OCI/Docker layering. They can:
 
 We provide recipes in agent prompts. No special tooling.
 
+### Naming Convention
+
+**Decision: Repository names (`<name>`) are agent types.**
+
+- `critic` - critic agents
+- `grader` - grader agents
+- `prompt-optimizer` - prompt optimizer agents
+
+Built-in (Bazel-built) images use the `builtin` tag:
+
+- `critic:builtin` - the default critic image
+- `grader:builtin` - the default grader image
+
+These tags are set administratively when Bazel pushes to the registry, not by agents.
+
 ### API Changes
 
-**`agent_definition_id` → `image_ref` (container tag or digest)**
+**`agent_definition_id` → `image_digest` (immutable content address)**
 
-- `agent_run` table: `agent_definition_id` becomes `image_ref` (e.g., `registry:5000/critic:v2` or `sha256:abc...`)
+- `agent_run` table: `agent_definition_id` becomes `image_digest` (e.g., `sha256:abc123...`)
 - Agent definitions as a separate concept go away - an agent IS its image
-- Tags for human-readable versions, digests for immutable references
+- Digests only - no mutable tag references in run records
+- Tags exist only for human convenience (e.g., finding `critic:builtin`)
+
+**Launch flow:**
+
+1. Caller specifies tag (e.g., `critic:builtin`) or digest
+2. If tag: resolve to digest via proxy `HEAD /v2/critic/manifests/builtin` (admin auth)
+3. Store digest in `agent_runs.image_digest`
+4. Pull image by digest via proxy, run container
+
+Launch infrastructure runs on host and uses the proxy with admin credentials.
+
+**Field naming:**
+
+- DB column: `image_digest` (varchar, e.g., `sha256:abc123...`)
+- Python: `image_digest: str` parameter in launch APIs
+- The old `DefinitionId` type becomes unnecessary
 
 ## Current Progress
 
-- `props/core/src/props_core/agent_defs/critic/BUILD.bazel` - Bazel OCI build for critic agent
+- `props/core/agent_defs/critic/BUILD.bazel` - Bazel OCI build for critic agent
 - Uses `py_binary` with `pkg_tar(include_runfiles=True)` to bundle Python deps
 - Layers onto `python:3.12-slim` base
-- Works: `bazelisk run //props/core/src/props_core/agent_defs/critic:load`
+- Works: `bazelisk run //props/core/agent_defs/critic:load`
+
+## Built-in Image Publishing
+
+Built-in agent images (critic, grader, etc.) are built by Bazel and pushed to the registry with `builtin` tag.
+
+### rules_oci Targets
+
+rules_oci provides `oci_push` for pushing to registries:
+
+```starlark
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+
+oci_image(
+    name = "critic_image",
+    base = "@python_3_12_slim",
+    tars = [":critic_layer"],
+)
+
+oci_push(
+    name = "critic_push",
+    image = ":critic_image",
+    repository = "localhost:5050/critic",  # Proxy URL (not registry direct)
+    remote_tags = ["builtin"],              # Tag to apply
+)
+```
+
+Run with: `bazelisk run //props/core/agent_defs/critic:critic_push`
+
+### Push Workflow
+
+Built-in images push through the proxy with admin auth:
+
+```
+Bazel ──(oci_push)──> Proxy :5050 ──> Registry :5000
+                         │
+                         └── writes agent_definitions row
+                         └── critic:builtin (digest: sha256:abc...)
+                         └── grader:builtin (digest: sha256:def...)
+```
+
+**Steps:**
+
+1. Configure docker credentials for proxy (uses existing postgres admin user):
+
+   ```bash
+   # In devenv activation or one-time setup
+   docker login localhost:5050 -u "$PGUSER" -p "$PGPASSWORD"
+   ```
+
+2. Run Bazel push:
+
+   ```bash
+   bazelisk run //props/core/agent_defs/critic:critic_push
+   ```
+
+3. Proxy receives push with admin auth:
+   - Validates credentials against postgres (admin user has elevated permissions)
+   - Computes manifest digest from request body
+   - Writes `agent_definitions` row: `(digest=sha256:abc..., agent_type=critic, created_by_agent_run_id=NULL)`
+   - Forwards request to registry (registry stores the tag→digest mapping)
+
+**BUILD.bazel target:**
+
+```starlark
+oci_push(
+    name = "critic_push",
+    image = ":critic_image",
+    repository = "localhost:5050/critic",  # proxy URL, not registry
+    remote_tags = ["builtin"],
+)
+```
+
+This is administrative - happens at build/deploy time, not by agents at runtime.
+
+### Registry Configuration
+
+`oci_push` targets point to the proxy URL (`localhost:5050`), not the registry directly.
+
+For local devenv, hardcoding `localhost:5050` in BUILD.bazel is fine. For CI/CD, use Bazel flags or stamp variables.
 
 ## OCI Distribution Protocol
 
 HTTP-based REST API. Agents can use curl, Python, or tools like `crane`.
+
+Repository names (`<name>`) are agent types: `critic`, `grader`, `prompt-optimizer`.
 
 ### Pull (read)
 
@@ -107,43 +277,73 @@ POST /v2/<name>/blobs/uploads/           # Start upload, get upload URL
 PATCH <upload-url>                       # Stream blob data
 PUT <upload-url>?digest=sha256:...       # Finish upload
 
-# 2. Upload manifest (references the layers)
-PUT /v2/<name>/manifests/<tag>           # Push manifest with tag
+# 2. Upload manifest BY DIGEST (not tag - proxy blocks tag writes)
+PUT /v2/<name>/manifests/sha256:...      # Push manifest by digest
 ```
 
 ### Example: Layer on Existing Image
 
-Using `crane` (recommended CLI tool):
+Agents use Python (aiodocker or httpx/requests) to interact with the registry.
 
-```bash
-# 1. Pull base image manifest
-crane manifest registry:5000/critic:base
+```python
+import hashlib
+import httpx
 
-# 2. Create new layer (tar of files to add)
-tar -cf layer.tar /path/to/new/files
+PROXY = "http://registry-proxy:5050"
 
-# 3. Append layer and push as new tag
-crane append -b registry:5000/critic:base \
-  -t registry:5000/critic:my-variant \
-  -f layer.tar
+# 1. Get base image manifest
+resp = httpx.get(
+    f"{PROXY}/v2/critic/manifests/builtin",
+    headers={"Accept": "application/vnd.oci.image.manifest.v1+json"}
+)
+base_manifest = resp.json()
+
+# 2. Upload new layer blob
+layer_data = create_tar_layer(files_to_add)
+layer_digest = f"sha256:{hashlib.sha256(layer_data).hexdigest()}"
+
+# Start upload
+upload_resp = httpx.post(f"{PROXY}/v2/critic/blobs/uploads/")
+upload_url = upload_resp.headers["Location"]
+
+# Finish upload with digest
+httpx.put(f"{upload_url}?digest={layer_digest}", content=layer_data)
+
+# 3. Create new manifest referencing base layers + new layer
+new_manifest = {
+    **base_manifest,
+    "layers": base_manifest["layers"] + [{"digest": layer_digest, ...}]
+}
+manifest_bytes = json.dumps(new_manifest).encode()
+manifest_digest = f"sha256:{hashlib.sha256(manifest_bytes).hexdigest()}"
+
+# 4. Push manifest BY DIGEST
+httpx.put(
+    f"{PROXY}/v2/critic/manifests/{manifest_digest}",
+    content=manifest_bytes,
+    headers={"Content-Type": "application/vnd.oci.image.manifest.v1+json"}
+)
+
+# manifest_digest is what gets recorded in agent_run.image_digest
 ```
 
-Using curl (more verbose but no dependencies):
+Using curl (for reference/debugging):
 
 ```bash
-# Get manifest
+# Get manifest of builtin image
 curl -H "Accept: application/vnd.oci.image.manifest.v1+json" \
-  http://registry:5000/v2/critic/manifests/base
+  http://registry-proxy:5050/v2/critic/manifests/builtin
 
 # Start blob upload
-curl -X POST http://registry:5000/v2/critic/blobs/uploads/
+curl -X POST http://registry-proxy:5050/v2/critic/blobs/uploads/
 
 # Upload blob (monolithic)
-curl -X PUT "http://registry:5000/v2/critic/blobs/uploads/<uuid>?digest=sha256:..." \
+curl -X PUT "http://registry-proxy:5050/v2/critic/blobs/uploads/<uuid>?digest=sha256:..." \
   --data-binary @layer.tar
 
-# Push manifest
-curl -X PUT http://registry:5000/v2/critic/manifests/my-variant \
+# Push manifest BY DIGEST (compute sha256 of manifest.json first)
+MANIFEST_DIGEST=$(sha256sum manifest.json | cut -d' ' -f1)
+curl -X PUT "http://registry-proxy:5050/v2/critic/manifests/sha256:$MANIFEST_DIGEST" \
   -H "Content-Type: application/vnd.oci.image.manifest.v1+json" \
   -d @manifest.json
 ```
@@ -151,63 +351,235 @@ curl -X PUT http://registry:5000/v2/critic/manifests/my-variant \
 ### Tools
 
 - **aiodocker** (Python, already a props dep) - async Docker/registry API, natural for agents
-- **crane** (Go, single binary) - most ergonomic for scripting, bundle in base images
-- **skopeo** - copy between registries, inspect without pulling
-- **curl/Python requests** - no dependencies, verbose but works
+- **Python requests/httpx** - direct HTTP to OCI endpoints, no extra dependencies
+- **curl** - available in containers, verbose but works
+
+Note: crane/skopeo are useful for local dev/debugging but won't be bundled in agent containers.
 
 ## Architecture
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Bazel builds   │────>│     Registry     │<────│     Agents      │
-│  base images    │     │  (devenv-managed │     │  (push layers,  │
-└─────────────────┘     │   like postgres) │     │   create tags)  │
-                        └────────┬─────────┘     └─────────────────┘
-                                 │
-                                 v
-                        ┌──────────────────┐
-                        │    Agent Run     │
-                        │   (image_ref)    │
-                        └──────────────────┘
-```
+### Docker Networks
+
+Two Docker networks provide isolation:
+
+**`props-internal`** - Contains: registry, proxy, postgres
+
+- Registry (:5000) only reachable from this network (and host via port mapping)
+- Agents cannot access this network
+
+**`props-agents`** - Contains: proxy, postgres, agent containers
+
+- Agents can reach proxy (registry-proxy:5050) and postgres (props-postgres:5432)
+- Agents cannot reach registry directly
+
+The proxy container is attached to both networks, bridging them.
+
+### Host Access
+
+- **Proxy** (`localhost:5050`): Primary access point. Admin auth for all operations (push builtins, pull images for launch)
+- **Registry** (`localhost:5000`): Direct access available for debugging/inspection if needed, but normal workflow uses proxy
+
+### Agent Workflows
+
+**PO/PI agents (registry access via proxy):**
+
+1. Pull `critic:builtin` via proxy (`registry-proxy:5050`)
+2. Create new layer with modified prompt/code
+3. Push manifest by digest (proxy writes `agent_definitions` row)
+4. New digest returned, recorded in `agent_run.image_digest`
+
+**Critic/grader agents (no registry access):**
+
+- Launch infrastructure (host) pulls image via proxy with admin auth
+- Agent container runs with pre-pulled image
+- No proxy access granted to critic/grader containers
 
 ## Migration Plan
 
-### Phase 1: Registry Infrastructure
+### Phase 1: Devenv Infrastructure
 
-- [ ] Add registry to devenv.nix (like postgres)
-- [ ] Configure credentials/ACL if needed
-- [ ] Test Bazel push to local registry
+Update `props/devenv.nix` to manage all three services:
 
-### Phase 2: Schema Migration
+- [ ] Create two Docker networks:
+  - `props-internal`: registry + proxy + postgres (not accessible to agents)
+  - `props-agents`: proxy + postgres + agent containers
+- [ ] Add registry container on `props-internal` only (agents cannot reach it directly)
+- [ ] Add registry proxy container on both networks (bridges agents to registry)
+- [ ] Ensure postgres, registry, and proxy all start together via process-compose
+- [ ] Agent containers join `props-agents` network, can only reach `registry-proxy:5050`
 
-- [ ] Add `image_ref` column to `agent_runs`
-- [ ] Migrate existing `agent_definition_id` references
-- [ ] Update agent launch code to use `image_ref`
+### Phase 2: Registry Proxy Implementation
 
-### Phase 3: Agent Updates
+Implement `props/registry_proxy/` - FastAPI service built as Bazel OCI image.
 
-- [ ] Update critic agent to push to registry (not just local Docker)
-- [ ] Update PO/PI agents to use registry protocol
-- [ ] Update all agent_defs/\*.md documentation
-- [ ] Add recipes for layering in agent prompts
+**Bootstrap sequence (chicken-and-egg):**
 
-### Phase 4: Cleanup
+The proxy image must exist before the proxy can enforce pushes. Bootstrap:
 
-- [ ] Remove tarball-based agent packaging code
-- [ ] Remove `agent_definitions` table (if no longer needed)
-- [ ] Update AGENTS.md files across the repo
+1. Build proxy image locally: `bazelisk run //props/registry_proxy:load`
+2. Push directly to registry (bypassing proxy): `docker tag ... && docker push localhost:5000/registry-proxy:builtin`
+3. Start proxy container (now it can enforce all subsequent pushes)
+4. Future proxy updates: push through proxy with admin auth like any other builtin
+
+After initial bootstrap, all pushes (including proxy updates) go through the proxy.
+
+**Implementation:**
+
+- [ ] Create `props/registry_proxy/BUILD.bazel` with `oci_image` target
+- [ ] Add bootstrap script for initial proxy push (direct to registry)
+- [ ] Devenv pulls and runs proxy container from registry
+
+The proxy:
+
+- [ ] Proxies OCI Distribution Protocol requests to the registry
+- [ ] Two auth modes (both validated against postgres):
+  - **Agent auth**: agent temp users, digest-only pushes
+  - **Admin auth**: postgres admin user, allows tag pushes for builtins
+- [ ] Enforces ACL (agent mode):
+  - Only prompt-optimizer and prompt-improver agents can read/upload images
+  - Critic/grader never touch registry - launch infrastructure (`agent_setup.py`) pulls for them
+  - No DELETE operations (block all)
+  - No tag writes (block `PUT /v2/<name>/manifests/<tag>`, allow only `PUT /v2/<name>/manifests/sha256:...`)
+- [ ] Writes `agent_definitions` row on every manifest push (both agent and admin modes)
+- [ ] Returns appropriate errors for blocked operations
+
+### Phase 3: Schema and API Migration
+
+Update agent definition references to use docker digests. DB drop-recreate is acceptable (no backward compatibility needed).
+
+- [ ] Rename `agent_runs.agent_definition_id` → `agent_runs.image_digest`
+- [ ] Redefine `agent_definitions` table (same concept, new structure):
+  ```sql
+  CREATE TABLE agent_definitions (
+    digest VARCHAR PRIMARY KEY,            -- sha256:... (immutable identifier)
+    agent_type agent_type_enum NOT NULL,   -- keeps existing enum (critic, grader, etc.)
+    created_by_agent_run_id UUID,          -- which agent created this (nullable for builtin)
+    base_digest VARCHAR,                   -- parent image digest if layered
+    created_at TIMESTAMP DEFAULT NOW()
+    -- removed: id (text), archive (bytea)
+  );
+  ```
+- [ ] `agent_runs.image_digest` is FK to `agent_definitions.digest`
+- [ ] Keep `agent_type_enum` - unchanged
+- [ ] Keep `type_config->>'agent_type'` in agent_runs - unchanged (used by RLS)
+- [ ] Update RLS policies that reference `agent_definitions.id` to use `.digest`
+- [ ] Update agent-launching MCP APIs (that PO/PI have access to) to:
+  - Accept image digest parameter for launching agents
+  - Record digest in `agent_runs.image_digest`
+- [ ] Update agent launch code (`props/core/agent_setup.py`) to pull by digest
+
+### Phase 4: Documentation Updates
+
+Update all agent-related documentation:
+
+- [ ] Update `props/core/docs/authoring_agents.md.j2`:
+  - New flow: pull builtin by tag → layer → push by digest
+  - How to use Python/httpx for layering
+  - How image digests are recorded in agent_runs
+  - ACL: only PO/PI can read/write images
+- [ ] Update `props/core/agent_defs/*/agent.md` - per-agent specifics
+- [ ] Update `props/core/docs/agent_infrastructure.md` - infrastructure overview
+- [ ] Add layering recipes and examples to agent prompts
+
+### Phase 5: Migrate Other Packages
+
+**`agent_pkg/host/`:**
+
+- [ ] Update `builder.py` to pull via proxy instead of `docker buildx build`
+- [ ] Remove `ensure_image_from_archive()` (no more tarball builds)
+- [ ] Update `init_runner.py` to work with proxy-pulled images
+
+**`editor_agent/`:**
+
+- [ ] Create Bazel `oci_image` + `oci_push` targets for editor agent
+- [ ] Push to registry via proxy as `editor:builtin`
+- [ ] Update `agent_runner.py` to pull via proxy
+
+### Phase 6: Cleanup
+
+Remove legacy tarball-based agent packaging:
+
+**Database:**
+
+- [ ] Redefine `agent_definitions` table (digest-based, see Phase 3)
+- [ ] Change `agent_runs.agent_definition_id` → `agent_runs.image_digest` (FK to agent_definitions.digest)
+
+**Core library (`props/core/`):**
+
+- [ ] `db/agent_definition_ids.py` - remove or repurpose (constants become image refs)
+- [ ] `agent_registry.py` - update `definition_id` params to `image_digest`
+- [ ] `agent_setup.py` - remove tarball extraction, add proxy-based pull
+- [ ] `agent_pkg_utils.py` - remove `pack_agent_pkg`, `unpack_agent_pkg` if no longer needed
+- [ ] `cli/cmd_agent_pkg.py` - remove tarball CLI commands (`fetch`, `create`)
+- [ ] `db/sync/sync.py` - remove agent_definitions sync logic
+
+**Agent definitions (`props/core/agent_defs/`):**
+
+- [ ] Remove `Dockerfile` from each agent_def (images built by Bazel)
+- [ ] Keep `agent.md` files (documentation)
+- [ ] Add `oci_push` targets to each agent_def's BUILD.bazel
+- [ ] Update `props/core/BUILD.bazel` data glob (remove Dockerfiles from glob)
+
+**Documentation:**
+
+- [ ] `docs/authoring_agents.md.j2` - rewrite for OCI image workflow
+- [ ] `docs/db/agent_definitions.md.j2` - remove or rewrite
+
+**Note:** Registry GC deferred - not critical for MVP
 
 ## Files to Update
 
-When implementing, these will need changes:
+### New Files
 
-- `props/devenv.nix` - add registry service
-- `props/core/src/props_core/db/models.py` - schema changes
-- `props/core/src/props_core/agent_helpers.py` - launch logic
-- `props/core/src/props_core/agent_defs/*/` - all agent definitions
-- `props/core/src/props_core/docs/authoring_agents.md.j2` - new authoring guide
-- Various AGENTS.md files with agent packaging instructions
+| File                    | Purpose                                  |
+| ----------------------- | ---------------------------------------- |
+| `props/registry_proxy/` | New proxy service (FastAPI, BUILD.bazel) |
+
+### Modified Files
+
+| File                                             | Changes                                         |
+| ------------------------------------------------ | ----------------------------------------------- |
+| `props/devenv.nix`                               | Add registry, proxy containers, Docker network  |
+| `props/core/db/models.py`                        | `image_digest` column, remove agent_definitions |
+| `props/core/agent_setup.py`                      | Pull via proxy instead of tarball extraction    |
+| `props/core/agent_registry.py`                   | `definition_id` → `image_digest` params         |
+| `props/core/prompt_optimize/prompt_optimizer.py` | MCP tools to launch agents by digest            |
+| `props/core/prompt_improve/improve_agent.py`     | MCP tools to launch agents by digest            |
+| `props/core/agent_defs/*/BUILD.bazel`            | Add `oci_push` targets                          |
+| `props/core/BUILD.bazel`                         | Update data glob for agent_defs                 |
+| `props/core/docs/authoring_agents.md.j2`         | Rewrite for OCI image workflow                  |
+
+### Files to Remove
+
+| File                                         | Reason                               |
+| -------------------------------------------- | ------------------------------------ |
+| `props/core/db/agent_definition_ids.py`      | Constants replaced by image refs     |
+| `props/core/agent_pkg_utils.py`              | Tarball pack/unpack no longer needed |
+| `props/core/cli/cmd_agent_pkg.py`            | Tarball CLI no longer needed         |
+| `props/core/agent_defs/*/Dockerfile`         | Images built by Bazel                |
+| `props/core/docs/db/agent_definitions.md.j2` | Table removed                        |
+
+### Other Packages to Migrate
+
+**`agent_pkg/` (agent package infrastructure):**
+| File | Changes |
+|------|---------|
+| `agent_pkg/host/builder.py` | Replace `docker buildx build` with proxy-based pull |
+| `agent_pkg/host/init_runner.py` | Pull by digest via proxy instead of local image tag |
+
+The `ensure_image_from_archive()` function becomes unnecessary - images are pre-built and pulled via proxy.
+
+**`editor_agent/` (editor agent):**
+| File | Changes |
+|------|---------|
+| `editor_agent/` | Migrate from Dockerfile in repo to Bazel OCI image |
+| `editor_agent/host/agent_runner.py` | Use proxy-based pull instead of local build |
+
+Editor agent currently builds from a local Dockerfile. Needs:
+
+- Bazel `oci_image` + `oci_push` targets
+- Push via proxy as `editor:builtin`
+- Update runner to pull via proxy
 
 ## Future Considerations
 
@@ -240,4 +612,4 @@ Revisit if extraction latency becomes a bottleneck.
 - [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec) - Registry API (push/pull)
 - [crane](https://github.com/google/go-containerregistry/tree/main/cmd/crane) - CLI for registry operations
 - [Docker Registry](https://docs.docker.com/registry/) - Reference registry implementation
-- Current implementation: `props/core/src/props_core/agent_defs/critic/BUILD.bazel`
+- Current implementation: `props/core/agent_defs/critic/BUILD.bazel`
