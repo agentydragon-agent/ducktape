@@ -7,7 +7,7 @@ from typing import Any
 
 from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
-from agent_server.types import AgentID
+from agent_server.agent_types import AgentID
 from openai_utils.model import ReasoningItem
 
 from . import Persistence

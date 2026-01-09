@@ -18,7 +18,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 if TYPE_CHECKING:
-    from agent_server.types import AgentID
+    from agent_server.agent_types import AgentID
 
 logger = logging.getLogger(__name__)
 

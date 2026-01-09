@@ -56,7 +56,6 @@ pytest_plugins = (
     "mcp_infra.testing.fixtures",  # Shared mcp_infra fixtures
     "agent_core_testing.fixtures",  # Core agent fixtures (make_test_agent, etc.)
     "agent_core_testing.responses",  # make_step_runner, responses_factory, etc.
-    "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
 
 
@@ -112,7 +111,7 @@ def test_agent_id(request: pytest.FixtureRequest) -> str:
 
 
 @pytest.fixture
-def mock_registry(sqlite_persistence):
+async def mock_registry(sqlite_persistence):
     """Create mock infrastructure registry using real persistence.
 
     Used by mcp_bridge and mcp/agents tests. Mocks agent container tracking
@@ -592,7 +591,7 @@ async def _create_test_policy_engine(sqlite_persistence, async_docker_client) ->
 
 
 @pytest.fixture
-def _setup_policy_gateway_compositor(sqlite_persistence, async_docker_client, test_agent_id):
+async def _setup_policy_gateway_compositor(sqlite_persistence, async_docker_client, test_agent_id):
     """Fixture factory for AgentContainerCompositor with policy gateway middleware."""
 
     @asynccontextmanager
@@ -616,7 +615,7 @@ def _setup_policy_gateway_compositor(sqlite_persistence, async_docker_client, te
 
 
 @pytest.fixture
-def make_policy_gateway_client(_setup_policy_gateway_compositor):
+async def make_policy_gateway_client(_setup_policy_gateway_compositor):
     """Async helper to open an AgentContainerCompositor with policy gateway, yielding just the client."""
 
     @asynccontextmanager
@@ -628,7 +627,7 @@ def make_policy_gateway_client(_setup_policy_gateway_compositor):
 
 
 @pytest.fixture
-def make_policy_gateway_compositor(_setup_policy_gateway_compositor):
+async def make_policy_gateway_compositor(_setup_policy_gateway_compositor):
     """Async helper factory yielding typed AgentContainerCompositor."""
 
     @asynccontextmanager

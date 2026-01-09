@@ -8,8 +8,8 @@ from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from agent_core.events import EventType as Event
+from agent_server.agent_types import AgentID
 from agent_server.models.proposal_status import ProposalStatus
-from agent_server.types import AgentID
 
 
 class AgentMetadata(BaseModel):

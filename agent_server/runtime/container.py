@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
+from agent_server.agent_types import AgentID
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.mcp.chat.server import attach_persisted_chat_servers
@@ -31,7 +32,6 @@ from agent_server.runtime.images import resolve_runtime_image
 from agent_server.server.bus import ServerBus
 from agent_server.server.runtime import AgentSession, UiEventHandler
 from agent_server.server.system_message import get_ui_system_message
-from agent_server.types import AgentID
 from mcp_infra.compositor.clients import CompositorMetaClient
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.container_session import ContainerOptions

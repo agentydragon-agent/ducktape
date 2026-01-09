@@ -19,7 +19,7 @@ from mcp_infra.resource_utils import read_text_json_typed
 
 
 @pytest.fixture
-def agents_server(mock_registry):
+async def agents_server(mock_registry):
     """Create agents MCP server with mock registry."""
     return AgentsManagementServer(mock_registry)
 

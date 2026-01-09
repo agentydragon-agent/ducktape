@@ -124,7 +124,7 @@ def make_token_router(user_app, agent_app_factory):
 
 
 @pytest.fixture
-def registry(sqlite_persistence):
+async def registry(sqlite_persistence):
     """InfrastructureRegistry with real persistence and mock Docker clients."""
     return InfrastructureRegistry(
         persistence=sqlite_persistence,
@@ -330,15 +330,15 @@ class TestAgentControlServer:
 class TestInfrastructureRegistry:
     """Tests for InfrastructureRegistry agent lifecycle management."""
 
-    def test_get_agent_returns_none_for_unknown(self, registry):
+    async def test_get_agent_returns_none_for_unknown(self, registry):
         """get_agent returns None for unknown agent."""
         assert registry.get_agent("unknown-id") is None
 
-    def test_list_agents_empty_initially(self, registry):
+    async def test_list_agents_empty_initially(self, registry):
         """list_agents returns empty list initially."""
         assert registry.list_agents() == []
 
-    def test_is_external_false_for_unknown(self, registry):
+    async def test_is_external_false_for_unknown(self, registry):
         """is_external returns False for unknown agent."""
         assert registry.is_external("unknown-id") is False
 

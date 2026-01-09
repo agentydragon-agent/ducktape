@@ -5,7 +5,9 @@ metadata:
   name: "instance"
   namespace: "vault"
 spec:
-  size: 3 # HA cluster with 3 replicas for failover
+  # HA cluster with 3 replicas for failover
+  # Bank-Vaults operator handles Raft cluster formation automatically
+  size: 3
   image: "hashicorp/vault:1.17.2"
 
   # Bank-Vaults automatically handles initialization and unsealing
@@ -31,7 +33,9 @@ spec:
     - name: vault-raft
       mountPath: /vault/file
 
-  # Raft HA configuration with retry_join for automatic cluster formation
+  # Raft HA configuration - Bank-Vaults handles cluster formation automatically
+  # For fresh bootstrap, Bank-Vaults initializes instance-0 as leader, then joins instance-1 and instance-2
+  # retry_join is not needed - Bank-Vaults manages the join process via operator
   # References:
   # - https://github.com/bank-vaults/vault-operator/blob/main/deploy/examples/cr-raft.yaml
   # - https://banzaicloud.com/docs/bank-vaults/operator/
@@ -39,15 +43,6 @@ spec:
     storage:
       raft:
         path: "/vault/file"
-        # retry_join enables nodes to discover and join the Raft cluster
-        # All nodes are listed so any can become leader and others will join
-        retry_join:
-          - leader_api_addr: "https://instance-0.vault:8200"
-            leader_ca_cert_file: "/vault/tls/ca.crt"
-          - leader_api_addr: "https://instance-1.vault:8200"
-            leader_ca_cert_file: "/vault/tls/ca.crt"
-          - leader_api_addr: "https://instance-2.vault:8200"
-            leader_ca_cert_file: "/vault/tls/ca.crt"
     listener:
       tcp:
         address: "0.0.0.0:8200"

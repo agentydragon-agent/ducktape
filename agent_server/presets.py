@@ -16,8 +16,8 @@ from agent_server.persist import AgentMetadata
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from agent_server.agent_types import AgentID
     from agent_server.persist.sqlite import SQLitePersistence
-    from agent_server.types import AgentID
 
 
 def _xdg_presets_dir() -> Path:

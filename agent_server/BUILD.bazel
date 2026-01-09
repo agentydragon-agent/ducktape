@@ -7,8 +7,15 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "agent_server",
-    srcs = glob(["src/agent_server/**/*.py"]),
-    imports = ["src"],
+    srcs = glob(
+        ["**/*.py"],
+        exclude = [
+            "tests/**",
+            "testing/**",
+        ],
+    ),
+    data = glob(["**/*.j2.md"]),  # Include Jinja2 templates
+    imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",
@@ -33,33 +40,51 @@ py_library(
 
 py_binary(
     name = "adgn-agent-serve",
-    srcs = ["src/agent_server/cli.py"],
-    main = "src/agent_server/cli.py",
+    srcs = ["cli.py"],
+    main = "cli.py",
     deps = [":agent_server"],
 )
 
 py_binary(
     name = "agent-server-matrix-bot",
-    srcs = ["src/agent_server/matrix_bot.py"],
-    main = "src/agent_server/matrix_bot.py",
+    srcs = ["matrix_bot.py"],
+    main = "matrix_bot.py",
     deps = [":agent_server"],
 )
 
 py_binary(
     name = "agent-server-generate-frontend-code",
-    srcs = ["src/agent_server/scripts/generate_frontend_code.py"],
-    main = "src/agent_server/scripts/generate_frontend_code.py",
+    srcs = ["scripts/generate_frontend_code.py"],
+    main = "scripts/generate_frontend_code.py",
     deps = [":agent_server"],
 )
 
 py_test(
     name = "test_agent_server",
-    srcs = glob(["tests/**/*.py"]),
-    imports = [
-        ".",
-        "src",
-    ],
+    srcs = glob(
+        ["tests/**/*.py"],
+        exclude = ["tests/e2e/**/*.py"],
+    ),
+    imports = ["."],
     main = "tests/pytest_runner.py",
+    deps = [
+        ":agent_server",
+        "//agent_server/testing",
+        "@pypi//docker",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_timeout",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_agent_server_e2e",
+    srcs = glob(["tests/e2e/**/*.py"]) + ["tests/conftest.py", "tests/pytest_runner_e2e.py"],
+    imports = ["."],
+    main = "tests/pytest_runner_e2e.py",
+    tags = ["manual"],  # Don't run by default; requires Playwright browsers
     deps = [
         ":agent_server",
         "//agent_server/testing",

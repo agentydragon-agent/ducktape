@@ -13,7 +13,7 @@ from agent_server.testing.approval_policy_testdata import fetch_policy
 
 
 @pytest.fixture
-def policy_engine(sqlite_persistence, async_docker_client) -> PolicyEngine:
+async def policy_engine(sqlite_persistence, async_docker_client) -> PolicyEngine:
     """PolicyEngine instance for validation tests."""
     return PolicyEngine(
         agent_id="testagent",

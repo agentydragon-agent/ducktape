@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from agent_core.handler import BaseHandler
+from agent_server.agent_types import AgentID
 from agent_server.notifications.handler import NotificationsHandler
 from agent_server.persist import Persistence
 from agent_server.persist.handler import RunPersistenceHandler
 from agent_server.server.bus import ServerBus
 from agent_server.server.mode_handler import ServerModeHandler
 from agent_server.server.runtime import UiEventHandler
-from agent_server.types import AgentID
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.notifications.types import NotificationsBatch
