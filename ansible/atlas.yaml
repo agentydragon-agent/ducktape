@@ -150,3 +150,50 @@
       tags: [nix]
       vars:
         nix_trusted_users: "root {{ my_user }}"
+
+    # GPU Passthrough Configuration
+    - name: Configure GRUB for IOMMU
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+        line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet amd_iommu=on iommu=pt"'
+        backup: true
+      notify: update grub
+      tags: [gpu_passthrough, iommu]
+
+    - name: Add VFIO modules to /etc/modules
+      ansible.builtin.lineinfile:
+        path: /etc/modules
+        line: "{{ item }}"
+        create: true
+      loop:
+        - vfio
+        - vfio_iommu_type1
+        - vfio_pci
+        - vfio_virqfd
+      tags: [gpu_passthrough, vfio]
+
+    - name: Blacklist NVIDIA drivers on host
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/blacklist-nvidia.conf
+        content: |
+          blacklist nouveau
+          blacklist nvidia
+          blacklist nvidiafb
+          blacklist nvidia_drm
+        mode: "0644"
+      tags: [gpu_passthrough, nvidia]
+
+    - name: Update initramfs after module changes
+      ansible.builtin.command:
+        cmd: update-initramfs -u
+      register: initramfs_result
+      changed_when: initramfs_result.rc == 0
+      tags: [gpu_passthrough]
+
+  handlers:
+    - name: update grub
+      ansible.builtin.command:
+        cmd: update-grub
+      register: grub_result
+      changed_when: grub_result.rc == 0
