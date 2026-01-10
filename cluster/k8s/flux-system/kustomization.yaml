@@ -5,9 +5,10 @@ resources:
   - gotk-sync.yaml
 patches:
   - target:
-      kind: Deployment
-      name: source-controller
+      kind: GitRepository
+      name: flux-system
     patch: |
       - op: add
-        path: /spec/template/spec/containers/0/args/-
-        value: --artifact-max-size=20971520
+        path: /spec/sparseCheckout
+        value:
+          - cluster/
