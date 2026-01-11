@@ -50,7 +50,7 @@ from props.core.agent_types import (
     TypeConfig,
 )
 from props.core.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
-from props.core.ids import DefinitionId, SnapshotSlug, _SnapshotSlugBase
+from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.models.snapshot import BundleFilter, Source
 from props.core.splits import Split
@@ -1051,7 +1051,7 @@ class OccurrenceCredit(Base):
     Detailed view with one row per (grader_run, occurrence), fully denormalized for filtering/grouping:
     - Run identification (grader_run_id, graded_at)
     - Snapshot/Example context (snapshot_slug, split, files_hash, example_kind)
-    - Critique provenance (critic_run_id, critic_definition_id)
+    - Critique provenance (critic_run_id, critic_image_digest)
     - Models (critic_model, grader_model)
     - Occurrence details (tp_id, occurrence_id, found_credit, matched_by_json, grader_rationale)
 
@@ -1078,7 +1078,7 @@ class OccurrenceCredit(Base):
 
     # Critique provenance
     critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, nullable=False)
+    critic_image_digest: Mapped[str] = mapped_column(String, nullable=False)
 
     # Models
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
@@ -1118,7 +1118,7 @@ class RecallByRun(Base):
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Critic-specific columns
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, nullable=False)
+    critic_image_digest: Mapped[str] = mapped_column(String, nullable=False)
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
     critic_status: Mapped[AgentRunStatus] = mapped_column(nullable=False)
 
@@ -1145,7 +1145,7 @@ class RecallByDefinitionExample(Base):
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     # Composite primary key
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
+    critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
@@ -1185,7 +1185,7 @@ class RecallByDefinitionSplitKind(Base):
     # Composite primary key (matches view GROUP BY)
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
+    critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Example and run counts
@@ -1248,7 +1248,7 @@ class RecallByExample(Base):
 class WinningDefinition(BaseModel):
     """A definition that achieved best score on an example."""
 
-    definition_id: DefinitionId
+    image_digest: str
     credit_stats: StatsWithCI
     n_runs: int
 
@@ -1263,7 +1263,7 @@ class ParetoFrontierByExample(Base):
 
     For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
     - recall_denominator: ground truth count (denominator for recall)
-    - winning_definitions: list of {definition_id, credit_stats, n_runs} for all definitions at best score
+    - winning_definitions: list of {image_digest, credit_stats, n_runs} for all definitions at best score
 
     All entries in winning_definitions have the same credit_stats.mean (the best score).
     Consumer can compute recall as best_mean_credit / recall_denominator.
@@ -1291,7 +1291,7 @@ class ParetoFrontierByExample(Base):
     # Ground truth count for this example
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # JSONB array of {definition_id, credit_stats, n_runs} objects
+    # JSONB array of {image_digest, credit_stats, n_runs} objects
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)
 
     @property
@@ -1300,9 +1300,9 @@ class ParetoFrontierByExample(Base):
         return _WinningDefinitionListAdapter.validate_python(self._winning_definitions_raw)
 
     @property
-    def winning_definition_ids(self) -> list[str]:
-        """Convenience: get just the definition IDs."""
-        return [w.definition_id for w in self.winning_definitions]
+    def winning_image_digests(self) -> list[str]:
+        """Convenience: get just the image digests."""
+        return [w.image_digest for w in self.winning_definitions]
 
     @property
     def best_mean_credit(self) -> float:
@@ -1337,7 +1337,7 @@ class OccurrenceStatistics(Base):
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Critic-specific
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
+    critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Grader-specific

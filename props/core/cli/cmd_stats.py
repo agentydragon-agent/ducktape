@@ -500,7 +500,7 @@ def cmd_stats_critic_leaderboard(
             )
 
             columns: list[ColumnDef[Any, Any]] = [
-                ColumnDef("Definition", lambda r: r.critic_definition_id, width=20),
+                ColumnDef("Definition", lambda r: r.critic_image_digest, width=20),
                 ColumnDef("Example Kind", lambda r: r.example_kind, width=15),
                 *_DIMENSION_COLUMNS,
                 *_OCCURRENCE_COLUMNS,
@@ -729,7 +729,7 @@ def cmd_stats(ctx: typer.Context) -> None:
 
             for recall_row in results:
                 # Use ExampleSpec directly as key (frozen, hashable)
-                sample_results_by_split[split][recall_row.example][recall_row.critic_definition_id] = recall_row.recall
+                sample_results_by_split[split][recall_row.example][recall_row.critic_image_digest] = recall_row.recall
 
             # Get TP counts per sample (constant per example, not per prompt/run)
             tp_count_results = (
@@ -835,9 +835,9 @@ def cmd_stats(ctx: typer.Context) -> None:
     # Group by definition_id and build stats dict
     definition_stats: dict[str, dict[tuple[Split, ExampleKind], RecallByDefinitionSplitKind]] = {}
     for row in agg_results:
-        if row.critic_definition_id not in definition_stats:
-            definition_stats[row.critic_definition_id] = {}
-        definition_stats[row.critic_definition_id][(row.split, row.example_kind)] = row
+        if row.critic_image_digest not in definition_stats:
+            definition_stats[row.critic_image_digest] = {}
+        definition_stats[row.critic_image_digest][(row.split, row.example_kind)] = row
 
     # Get definition metadata (created_at) from agent_definitions table
     definition_metadata: dict[str, AgentDefinition] = {}

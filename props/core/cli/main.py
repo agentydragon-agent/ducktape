@@ -229,10 +229,10 @@ async def prompt_improve_cmd(
     console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
 
     # Helper function for Pareto selection
-    def select_pareto_examples(session, agent_definition_id_param: DefinitionId, limit: int) -> list[ExampleSpec]:
+    def select_pareto_examples(session, agent_definition_id_param: str, limit: int) -> list[ExampleSpec]:
         """Select Pareto-optimal training examples for an agent definition."""
         # Query occurrence-weighted recall per example using helper
-        results = query_recall_by_example(session, split=Split.TRAIN, critic_definition_id=agent_definition_id_param)
+        results = query_recall_by_example(session, split=Split.TRAIN, critic_image_digest=agent_definition_id_param)
 
         if not results:
             raise ValueError(f"No grader runs found for definition {short_sha(agent_definition_id_param)}")
@@ -319,7 +319,7 @@ async def prompt_improve_cmd(
             .filter(
                 RecallByDefinitionSplitKind.split == Split.VALID,
                 RecallByDefinitionSplitKind.example_kind == ExampleKind.WHOLE_SNAPSHOT,
-                RecallByDefinitionSplitKind.critic_definition_id.in_(eligible_definition_ids),
+                RecallByDefinitionSplitKind.critic_image_digest.in_(eligible_definition_ids),
             )
             .all()
         )
@@ -341,7 +341,7 @@ async def prompt_improve_cmd(
             return -1.0
 
         best = max(eligible_stats, key=get_lcb)
-        definition_id = best.critic_definition_id
+        definition_id = best.critic_image_digest
 
         example_count = next(count for d, count in definition_example_counts if d == definition_id)
         console.print(f"[green]✓[/green] Selected best definition: {definition_id} ({example_count} training examples)")

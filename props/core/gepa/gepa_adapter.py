@@ -234,7 +234,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             if critic_run is None:
                 raise ValueError(f"AgentRun {critic_run_id} not found")
             critic_status = critic_run.status
-            critic_definition_id = critic_run.image_digest
+            critic_image_digest = critic_run.image_digest
             critic_model = critic_run.model
 
         # Build trajectory if requested
@@ -256,7 +256,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             recall_row = (
                 session.query(RecallByDefinitionExample)
                 .filter(
-                    RecallByDefinitionExample.critic_definition_id == critic_definition_id,
+                    RecallByDefinitionExample.critic_image_digest == critic_image_digest,
                     RecallByDefinitionExample.critic_model == critic_model,
                     RecallByDefinitionExample.snapshot_slug == example.snapshot_slug,
                     RecallByDefinitionExample.example_kind == example.example_kind,

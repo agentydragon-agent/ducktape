@@ -94,7 +94,7 @@ def get_overview() -> OverviewResponse:
 
         by_def: dict[str, dict[tuple[Split, ExampleKind], RecallByDefinitionSplitKind]] = defaultdict(dict)
         for row in agg_results:
-            by_def[row.critic_definition_id][(row.split, row.example_kind)] = row
+            by_def[row.critic_image_digest][(row.split, row.example_kind)] = row
 
         def build_stats(def_id: str) -> SplitStats:
             result: SplitStats = defaultdict(dict)
@@ -164,7 +164,7 @@ def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailRespon
         # Get aggregate stats
         agg_results = (
             session.query(RecallByDefinitionSplitKind)
-            .filter(RecallByDefinitionSplitKind.critic_definition_id == definition_id)
+            .filter(RecallByDefinitionSplitKind.critic_image_digest == definition_id)
             .filter(RecallByDefinitionSplitKind.split.in_([Split.TRAIN, Split.VALID]))
             .all()
         )
@@ -178,7 +178,7 @@ def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailRespon
         # Get per-example breakdown
         example_results = (
             session.query(RecallByDefinitionExample)
-            .filter(RecallByDefinitionExample.critic_definition_id == definition_id)
+            .filter(RecallByDefinitionExample.critic_image_digest == definition_id)
             .filter(RecallByDefinitionExample.split.in_([Split.TRAIN, Split.VALID]))
             .order_by(
                 RecallByDefinitionExample.split,
@@ -297,14 +297,14 @@ def get_example_detail(
         example_stats_rows = (
             session.query(RecallByDefinitionExample)
             .filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind, files_hash=files_hash)
-            .order_by(RecallByDefinitionExample.critic_definition_id)
+            .order_by(RecallByDefinitionExample.critic_image_digest)
             .all()
         )
 
         # Convert to DefinitionStatsForExample
         definitions = [
             DefinitionStatsForExample(
-                definition_id=r.critic_definition_id,
+                definition_id=r.critic_image_digest,
                 model=r.critic_model,
                 n_runs=r.n_runs,
                 status_counts=Counter(r.status_counts or {}),

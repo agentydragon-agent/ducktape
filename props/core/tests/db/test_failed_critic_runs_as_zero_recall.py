@@ -194,7 +194,7 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
 
     result = (
         synced_test_session.query(RecallByDefinitionSplitKind)
-        .filter_by(critic_definition_id=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
+        .filter_by(critic_image_digest=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
         .one()
     )
 
@@ -233,7 +233,7 @@ def test_aggregated_view_counts_total_and_failed_runs(synced_test_session: Sessi
 
     result = (
         synced_test_session.query(RecallByDefinitionSplitKind)
-        .filter_by(critic_definition_id=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
+        .filter_by(critic_image_digest=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
         .one()
     )
 
@@ -258,7 +258,7 @@ def test_aggregated_view_counts_zero_when_no_failures(synced_test_session: Sessi
 
     result = (
         synced_test_session.query(RecallByDefinitionSplitKind)
-        .filter_by(critic_definition_id=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
+        .filter_by(critic_image_digest=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
         .one()
     )
 

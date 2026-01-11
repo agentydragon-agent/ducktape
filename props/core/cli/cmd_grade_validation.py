@@ -32,7 +32,6 @@ from props.core.db.models import (
 )
 from props.core.db.session import get_session
 from props.core.display import short_uuid
-from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.splits import Split
 
@@ -111,18 +110,16 @@ async def cmd_grade_validation(
                 key=lambda r: r.recall_stats.lcb95 if r.recall_stats and r.recall_stats.lcb95 else -1.0,
                 reverse=True,
             )
-            ordered_definition_ids = [DefinitionId(r.critic_definition_id) for r in valid_stats_sorted]
+            ordered_definition_ids = [r.critic_image_digest for r in valid_stats_sorted]
 
             # Also get any critic definitions not yet evaluated (not in perf stats)
             all_critic_defs = (
                 session.query(AgentDefinition).filter(AgentDefinition.agent_type == AgentType.CRITIC).all()
             )
-            unevaluated_defs = [
-                DefinitionId(d.digest) for d in all_critic_defs if d.digest not in ordered_definition_ids
-            ]
+            unevaluated_defs = [d.digest for d in all_critic_defs if d.digest not in ordered_definition_ids]
 
             # Combine: evaluated definitions first (in priority order), then unevaluated
-            all_definition_ids: list[DefinitionId] = ordered_definition_ids + unevaluated_defs
+            all_definition_ids: list[str] = ordered_definition_ids + unevaluated_defs
 
             if not all_definition_ids:
                 raise typer.BadParameter("No critic definitions found in database - run 'props db sync' first")
@@ -132,7 +129,7 @@ async def cmd_grade_validation(
             # Build work items grouped by definition
             # Each definition gets a list of ValidationWorkItem
             # parent_agent_run_id is None if critic needs to run, otherwise UUID if grader needs to run
-            work_items_by_definition: dict[DefinitionId, list[ValidationWorkItem]] = defaultdict(list)
+            work_items_by_definition: dict[str, list[ValidationWorkItem]] = defaultdict(list)
 
             for example in validation_examples:
                 example_spec = example.to_example_spec()
@@ -199,7 +196,7 @@ async def cmd_grade_validation(
 
         async def process_one(
             example: ExampleSpec,
-            definition_id: DefinitionId,
+            definition_id: str,
             critic_run_id_or_none: UUID | None,
             worker_id: int,
             item_index: int,
@@ -303,7 +300,7 @@ async def cmd_grade_validation(
 
         # Build queue of (definition_id, ValidationWorkItem) tuples
         # Ordered by definition priority (same order as stats table: valid LCB desc, train LCB desc, created_at desc)
-        work_queue: asyncio.Queue[tuple[DefinitionId, ValidationWorkItem]] = asyncio.Queue()
+        work_queue: asyncio.Queue[tuple[str, ValidationWorkItem]] = asyncio.Queue()
         total_items = 0
         for definition_id in all_definition_ids:
             items = work_items_by_definition.get(definition_id, [])

@@ -475,14 +475,14 @@ class PromptEvalServer(EnhancedFastMCP):
                         "IMPORTANT: Check n_examples >= 5 before trusting metrics (small samples have high variance). "
                         "Use UCB/LCB bounds to quantify uncertainty. "
                         f"Example: SELECT recall_stats, n_examples FROM recall_by_definition_split_kind "
-                        f"WHERE critic_definition_id='...' AND split='valid' AND example_kind='{ExampleKind.WHOLE_SNAPSHOT}'; "
+                        f"WHERE critic_image_digest ='...' AND split='valid' AND example_kind='{ExampleKind.WHOLE_SNAPSHOT}'; "
                         f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
                     )
                 else:
                     # TRAIN split or per-file examples: use aggregate views
                     query_advice = (
                         f"{_VIEW_BASED_METRICS_ADVICE} "
-                        "Example: SELECT recall_stats FROM recall_by_definition_split_kind WHERE critic_definition_id='...' AND split='train'; "
+                        "Example: SELECT recall_stats FROM recall_by_definition_split_kind WHERE critic_image_digest ='...' AND split='train'; "
                         f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
                     )
 
