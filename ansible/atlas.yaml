@@ -191,6 +191,33 @@
       changed_when: initramfs_result.rc == 0
       tags: [gpu_passthrough]
 
+    # WiFi Configuration
+    - name: Install MediaTek WiFi firmware packages
+      ansible.builtin.apt:
+        name:
+          - firmware-misc-nonfree
+          - wireless-tools
+          - wpasupplicant
+          - iw
+        state: present
+        update_cache: true
+      tags: [wifi, network]
+
+    - name: Add MediaTek WiFi module to /etc/modules
+      ansible.builtin.lineinfile:
+        path: /etc/modules
+        line: mt7921e
+        create: true
+      tags: [wifi, network]
+
+    - name: Load MediaTek WiFi module immediately
+      ansible.builtin.command:
+        cmd: modprobe mt7921e
+      register: modprobe_result
+      failed_when: modprobe_result.rc != 0 and "Module mt7921e already in kernel" not in modprobe_result.stderr
+      changed_when: modprobe_result.rc == 0
+      tags: [wifi, network]
+
   handlers:
     - name: update grub
       ansible.builtin.command:
