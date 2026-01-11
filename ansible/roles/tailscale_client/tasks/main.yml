@@ -1,12 +1,14 @@
 ---
 # Install and configure tailscale client
 
+# Debian/Ubuntu installation tasks - skipped on NixOS (uses services.tailscale.enable)
 - name: Add tailscale apt key
   ansible.builtin.apt_key:
     url: https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg
     keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
     state: present
   become: true
+  when: ansible_os_family == "Debian"
   tags: [tailscale, install]
 
 - name: Add tailscale repository
@@ -17,6 +19,7 @@
     state: present
     filename: tailscale
   become: true
+  when: ansible_os_family == "Debian"
   tags: [tailscale, install]
 
 - name: Install tailscale
@@ -25,6 +28,7 @@
     state: present
     update_cache: true
   become: true
+  when: ansible_os_family == "Debian"
   tags: [tailscale, install]
 
 - name: Start and enable tailscaled service
@@ -33,6 +37,7 @@
     state: started
     enabled: true
   become: true
+  when: ansible_os_family == "Debian"
   tags: [tailscale, install]
 
 - name: Check current tailscale status
@@ -124,7 +129,7 @@
   become: true
   register: tailscale_client_wg_stop_cmd
   changed_when: tailscale_client_wg_stop_cmd.rc == 0
-  failed_when: tailscale_client_wg_stop_cmd.rc not in [0]
+  failed_when: false  # Service may not exist
   when: tailscale_client_registration_required | default(true)
   tags: [tailscale, migrate]
 
@@ -134,7 +139,7 @@
     state: stopped
     enabled: false
   become: true
-  failed_when: false
+  failed_when: false  # Service may not exist
   when: tailscale_client_registration_required | default(true)
   tags: [tailscale, migrate]
 

@@ -41,17 +41,19 @@
     enable = true;
     powerOnBoot = true;
   };
-  services.blueman.enable = true;
+  # Services (tailscale enabled via dev-workstation.nix)
+  services = {
+    blueman.enable = true;
+    fwupd.enable = true; # Firmware updates
+    printing.enable = true;
+    openssh.enable = true;
+  };
 
-  # Firmware updates
-  services.fwupd.enable = true;
+  # WWAN/5G modem support (Foxconn DP25-42843-47)
+  networking.modemmanager.enable = true;
+  programs.nm-applet.enable = true;
+
   hardware.enableAllFirmware = true;
-
-  # Printing
-  services.printing.enable = true;
-
-  # SSH
-  services.openssh.enable = true;
 
   # System packages
   environment.systemPackages = with pkgs; [

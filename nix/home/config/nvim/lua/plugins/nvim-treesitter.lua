@@ -9,16 +9,16 @@ local M = {
 	--end,
 	event = { "BufReadPost", "BufNewFile" },
 	config = function()
-		-- Setup folding
+		-- Setup folding using treesitter
 		-- (Start with all folds open, but allow closing them)
-		-- https://chatgpt.com/c/6829a714-cd44-8011-9607-bbcd1386db22
 		vim.opt.foldmethod = "expr"
-		vim.opt.foldexpr = "nvim_treesitter#foldexpr()"
+		vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
 		vim.opt.foldlevelstart = 99
 		vim.opt.foldlevel = 99
 
-		require("nvim-treesitter.configs").setup({
-			-- List of parser name to always have installed, or "all"
+		-- nvim-treesitter 1.0+ removed require("nvim-treesitter.configs")
+		-- Now uses require("nvim-treesitter").setup() directly
+		require("nvim-treesitter").setup({
 			ensure_installed = {
 				"bash",
 				"bibtex",
@@ -54,7 +54,7 @@ local M = {
 				"jsdoc",
 				"json",
 				"jsonnet",
-				-- "latex",  -- TODO: needs tree-sitter CLI, but not installed via Ansible
+				"latex",
 				"lua",
 				"luadoc",
 				"make",
@@ -77,15 +77,11 @@ local M = {
 				"vimdoc",
 				"xml",
 			},
-			-- Install parsers asynchronously (only applied to `ensure_installed`)
-			sync_install = false,
-			-- Automatically install missing parsers when entering buffer
-			-- Recommendation: set to false if you don't have `tree-sitter`
-			-- CLI installed locally
 			auto_install = true,
-			highlight = { enable = true },
-			indent = { enable = true },
 		})
+
+		-- Highlighting and indentation are now enabled by default in Neovim 0.10+
+		-- via vim.treesitter.start() which is called automatically
 	end,
 }
 return { M }
