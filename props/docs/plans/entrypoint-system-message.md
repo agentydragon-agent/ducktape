@@ -291,6 +291,27 @@ class PropertiesDockerCompositor(Compositor):
 
 **Recommendation**: Option A (clean break) - simpler, clearer, fewer edge cases
 
+## Key Challenge: Container Lifecycle
+
+**Problem**: Docker containers must have a running PID 1 process to stay alive for `docker exec` calls. This creates a timing challenge:
+
+1. **Container must stay alive**: Entrypoint must `exec` into `sleep infinity` to keep container running for MCP tool calls
+2. **Need to capture output**: We need to know when entrypoint has finished printing system message before it execs into sleep
+3. **Race condition**: If we check logs too early, might get partial system message; if we wait too long, we waste time
+
+**Current approach avoids this**: Container starts with `sleep infinity` immediately, then we explicitly call `/init` via MCP exec and capture its output synchronously.
+
+**Proposed approach requires signaling**: Entrypoint prints system message, then execs into sleep. We need a mechanism to know when it's done printing:
+
+- **Option 1**: Poll container status until "running" + wait for logs to stabilize (check if log size unchanged for N ms)
+- **Option 2**: Entrypoint prints marker after system message: `\n---END-SYSTEM-MESSAGE---\n`, we wait for marker
+- **Option 3**: Use health check or custom signaling mechanism (file creation, HTTP endpoint)
+- **Option 4**: Fixed delay after container reaches "running" state (crude but simple)
+
+**Trade-off**: Added complexity vs. benefits (remove init_runner.py, no circular dependency for MCP server initialization). Current approach works and is already implemented.
+
+**Status**: This plan is **exploratory**. The synchronization challenge may not justify the refactor.
+
 ## Edge Cases to Handle
 
 1. **Entrypoint Failure**: Container exits instead of staying running
@@ -332,12 +353,13 @@ class PropertiesDockerCompositor(Compositor):
 4. **Convert remaining agents** in batch
 5. **Remove old code** (Phase 4)
 
-## Open Questions
+## Design Decisions Made
 
-1. **Should we validate system message format?** (e.g., must be non-empty, max length)
-2. **How to handle entrypoint that needs env vars?** (Already supported via ContainerOptions)
-3. **Should entrypoint output to stderr be considered an error?** (Probably yes for system message, but might want startup logs)
-4. **Do we need a marker to distinguish entrypoint output from sleep's output?** (No - exec replaces the process, so logs only contain entrypoint output)
+1. **No validation of system message format** - Keep it simple, no format restrictions
+2. **Env vars passed on container creation** - Already supported via `ContainerOptions.environment`
+3. **Stderr output is not an error** - Only non-zero exit code indicates failure, stderr can contain debug logs
+4. **10 second timeout** - More than enough for system message generation
+5. **No shell script wrapper needed** - Can set entrypoint directly in `oci_image()` to Python script/CLI
 
 ## Implementation Complexity
 
