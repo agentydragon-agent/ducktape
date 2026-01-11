@@ -1,6 +1,30 @@
 # {{ ansible_managed }}
 # Passwordless sudo for read-only system inspection commands
+#
+# KEEP IN SYNC with: nix/lib/inspection-commands.nix
+#
+# Categories:
+#   - Any args: command allows any flags (truly read-only commands)
+#   - Exact: only specific subcommands allowed
+#   - Wildcard: safe prefix + variable trailing argument
+#   - Log viewing: path-restricted log access
 
-{% for command in system_inspection_nopasswd_commands %}
-{{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ command }}
+# Commands where any arguments are safe
+{% for cmd in system_inspection_sudo_any_args %}
+{{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }}
+{% endfor %}
+
+# Commands restricted to specific safe subcommands (exact match)
+{% for cmd in system_inspection_sudo_exact_subcommands %}
+{{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }}
+{% endfor %}
+
+# Commands with safe prefix + variable trailing argument
+{% for cmd in system_inspection_sudo_wildcard_subcommands %}
+{{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }} *
+{% endfor %}
+
+# Log viewing with path restrictions
+{% for cmd in system_inspection_log_viewing %}
+{{ system_inspection_nopasswd_user }} ALL=(ALL) NOPASSWD: {{ cmd }}
 {% endfor %}

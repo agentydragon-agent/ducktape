@@ -116,6 +116,13 @@
         enableGui = false;
         enableKube = false;
       };
+
+      # Dell Rugged 12 tablet
+      rugged = mkHome {
+        hostname = "rugged";
+        enableGui = true;
+        enableKube = false; # TODO: set true and provision kubeconfig when needed
+      };
     };
   };
 }

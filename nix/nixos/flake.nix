@@ -1,5 +1,5 @@
 {
-  description = "NixOS configurations for agentydragon's VMs";
+  description = "NixOS configurations for agentydragon's machines";
 
   inputs = {
     # NixOS 25.11 stable release
@@ -26,12 +26,14 @@
   } @ inputs: let
     system = "x86_64-linux";
 
-    # Helper to create NixOS configuration for a VM
-    # When running on the VM with --impure, also imports /etc/nixos/hardware-configuration.nix
-    mkNixosVm = {
+    # Helper to create NixOS configuration
+    mkNixos = {
       hostname,
-      username ? "user",
+      username ? "agentydragon",
       homeManagerHost ? hostname,
+      # For VMs: pass ./modules/vm-hardware.nix
+      # For physical machines: null (uses hosts/${hostname}/hardware-configuration.nix)
+      hardwareModule ? null,
       extraModules ? [],
     }:
       nixpkgs.lib.nixosSystem {
@@ -40,30 +42,43 @@
         modules =
           [
             ./modules/base.nix
-            ./modules/vm-hardware.nix
-            ./hosts/${hostname}.nix
+            ./hosts/${hostname}
             home-manager.nixosModules.home-manager
             {
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               # Home-manager config will be applied separately via flake
             }
-            # Import hardware-configuration.nix from the VM if it exists (requires --impure)
-            # This provides the actual disk UUIDs and partition layout
-            (
-              if builtins.pathExists /etc/nixos/hardware-configuration.nix
-              then /etc/nixos/hardware-configuration.nix
-              else {}
-            )
           ]
+          ++ (
+            if hardwareModule != null
+            then [
+              hardwareModule
+              # For VMs: also try to import hardware-configuration.nix from /etc/nixos (requires --impure)
+              (
+                if builtins.pathExists /etc/nixos/hardware-configuration.nix
+                then /etc/nixos/hardware-configuration.nix
+                else {}
+              )
+            ]
+            else []
+          )
           ++ extraModules;
       };
   in {
     nixosConfigurations = {
-      wyrm2 = mkNixosVm {
+      wyrm2 = mkNixos {
         hostname = "wyrm2";
         username = "user";
         homeManagerHost = "nixos-vm";
+        hardwareModule = ./modules/vm-hardware.nix;
+      };
+
+      rugged = mkNixos {
+        hostname = "rugged";
+        username = "agentydragon";
+        homeManagerHost = "rugged";
+        # Physical machine - hardware config is in hosts/rugged/
       };
     };
   };

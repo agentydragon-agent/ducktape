@@ -1,0 +1,104 @@
+# Pre-commit checks reusable workflow
+#
+# Runs safety checks + Bazel aspects (lint, typecheck, format)
+name: Pre-commit checks
+
+on:
+  workflow_call:
+
+jobs:
+  pre-commit:
+    name: Pre-commit checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-python-env
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      # Cluster validation tools - use official actions where available
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.53.0
+
+      - name: Setup Flux CLI
+        uses: fluxcd/flux2/action@main
+
+      - name: Install cluster validation tools
+        run: |
+          # Tools without official actions - download binaries
+          # kubeconform: Kubernetes manifest validation
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kubeconform /usr/local/bin/
+
+          # kustomize: Kubernetes configuration management
+          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kustomize /usr/local/bin/
+
+          # kubeseal: Sealed Secrets CLI (for validate-sealed-secrets hook)
+          curl -sL https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/kubeseal /usr/local/bin/
+
+          # helm: Kubernetes package manager (for helm-template-dry-run hook)
+          curl -sL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/
+
+      # Nix + alejandra for .nix file formatting
+      # TODO: Switch to nixfmt (RFC style) once it has better CI action support
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Install alejandra (nix formatter)
+        run: nix profile install nixpkgs#alejandra
+
+      - name: Configure OpenTofu for pre-commit
+        run: |
+          # Set PCT_TFPATH so terraform hooks find opentofu
+          echo "PCT_TFPATH=$(which tofu)" >> $GITHUB_ENV
+
+      - name: Cache Ansible Galaxy downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.HOME }}/.ansible
+          key: ansible-galaxy-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: |
+            ansible-galaxy-${{ runner.os }}-
+
+      - name: Bootstrap Ansible Galaxy dependencies
+        run: |
+          pip install "ansible-core>=2.18"
+          cd ansible
+          # Use --ignore-errors and || true to continue even when Ansible Galaxy API is down
+          # CI should not fail due to transient Galaxy API issues (HTTP 503)
+          ansible-galaxy role install -r requirements.yaml --ignore-errors || true
+          ansible-galaxy collection install -r requirements.yaml --ignore-errors || true
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Install and run pre-commit
+        run: |
+          # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
+          # isolated node environments (markdownlint-cli2 hook uses npm)
+          unset NODE_OPTIONS
+          # Version synced with flake.nix (nixpkgs.pre-commit)
+          # Update both when bumping pre-commit version
+          pip install pre-commit==4.0.1
+          pre-commit run --all-files --show-diff-on-failure

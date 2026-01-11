@@ -11,6 +11,8 @@ all:
       ansible_become_pass_ask: true
       # ansible_host: 10.0.167.15
       # ansible_user: agentydragon
+    rugged:
+      ansible_connection: local_cached_sudo
     atlas:
       ansible_host: 10.0.182.102 # on home network
       ansible_user: root

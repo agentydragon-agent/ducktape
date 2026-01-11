@@ -1,5 +1,0 @@
-#!/bin/sh
-# Machine-specific environment for wyrm - AI experimentation VM
-# This file is sourced by ~/.profile on wyrm only
-
-# No machine-specific overrides at the moment.

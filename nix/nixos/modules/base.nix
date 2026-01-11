@@ -15,9 +15,6 @@
   networking.hostName = hostname;
   networking.networkmanager.enable = true;
 
-  # Time zone
-  time.timeZone = "UTC";
-
   # Nix settings - enable flakes
   nix = {
     settings = {
@@ -30,14 +27,12 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  # User - password should be set after first boot or via initialHashedPassword
+  # User - password should be set after first boot with `passwd`
   users.users.${username} = {
     isNormalUser = true;
     home = "/home/${username}";
     description = username;
     extraGroups = ["wheel" "networkmanager" "video" "audio"];
-    # Empty password initially - set with `passwd` after first login
-    initialHashedPassword = "";
   };
 
   # Sudo requires password by default (security)

@@ -212,32 +212,25 @@ Headscale uses the standard Tailscale IP ranges (100.64.0.0/10). Here's the orga
 
 ### Adding a Device
 
-1. **Deploy tailscale client to the device:**
+The `tailscale_client` Ansible role handles installation, configuration, and automatic registration:
 
-   ```bash
-   cd ansible
-   ansible-playbook <hostname>.yaml --tags tailscale
-   ```
+```bash
+cd ansible
+ansible-playbook <hostname>.yaml --tags tailscale
+```
 
-2. **The client will attempt to register and show a registration key. Check pending registrations:**
+The role will:
+1. Install Tailscale client
+2. Configure it to use the headscale server
+3. Automatically register the device using a pre-auth key from headscale
 
-   ```bash
-   ssh vps "headscale nodes list"
-   ```
+**Verify the device is connected:**
 
-3. **Register the device:**
-
-   ```bash
-   ssh vps "headscale nodes register --user agentydragon --key <registration-key>"
-   ```
-
-4. **Verify the device is connected:**
-
-   ```bash
-   ssh vps "headscale nodes list"
-   # On the device:
-   tailscale status
-   ```
+```bash
+ssh vps "headscale nodes list"
+# On the device:
+tailscale status
+```
 
 ### Useful Commands
 
@@ -261,8 +254,6 @@ sudo tailscale up --login-server=https://your-vps:8080
 
 Headscale provides automatic hostname resolution:
 
-- `atlas.your-vps-domain` resolves to `100.64.1.30`
-- `agentydragon.your-vps-domain` resolves to `100.64.10.11`
+- `atlas.vps` resolves to `100.64.1.30`
+- `agentydragon.vps` resolves to `100.64.10.11`
 - etc.
-
-This enables direct hostname usage in configurations without maintaining `/etc/hosts` files.

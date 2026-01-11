@@ -1,0 +1,50 @@
+# Nix flake evaluation reusable workflow
+#
+# Verify NixOS and home-manager configurations evaluate
+name: Nix flake evaluation
+
+on:
+  workflow_call:
+
+jobs:
+  nix-flake-check:
+    name: Nix flake evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Evaluate NixOS configurations
+        run: |
+          cd nix/nixos
+          # Auto-discover all hosts from flake
+          nix flake show --json | jq -r '.nixosConfigurations | keys[]' | while read host; do
+            echo "Checking nixosConfigurations.$host..."
+            nix eval .#nixosConfigurations.$host.config.system.build.toplevel --no-build
+          done
+
+      - name: Evaluate home-manager configurations
+        run: |
+          cd nix/home
+          # Auto-discover all hosts from flake (--impure needed for nixGL)
+          nix flake show --json --impure | jq -r '.homeConfigurations | keys[]' | while read host; do
+            echo "Checking homeConfigurations.$host..."
+            nix eval --impure .#homeConfigurations.$host.activationPackage --no-build
+          done
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "### Nix Flake Evaluation Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All NixOS and home-manager configurations evaluate successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some Nix configurations failed to evaluate" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -3,124 +3,185 @@
 system_inspection_nopasswd_user: "{{ my_user }}"
 
 # List of read-only system inspection commands that NEED passwordless sudo
-# KEEP IN SYNC - BEGIN: Update Claude Code permissions in:
-#   nix/home/claude-code.nix (simpleInspectionCommands, specificSubcommands)
 #
-# IMPORTANT:
-# - Only include commands that cannot cause irreversible operations
-# - Only include commands that actually NEED sudo (not user-accessible commands)
-# - YES: dmidecode (needs root), docker ps (needs sudo/group), fdisk -l (needs root)
-# - NO: lspci (user can run), df (user can run), ps (user can run)
-system_inspection_nopasswd_commands:
+# KEEP IN SYNC with: nix/lib/inspection-commands.nix
+#
+# Structure matches Nix SSOT:
+#   - sudo_any_args: Commands where any flags are safe (read-only)
+#   - sudo_exact_subcommands: Commands restricted to specific safe subcommands
+#   - sudo_wildcard_subcommands: Commands with safe prefix + variable trailing arg
+#   - log_viewing: Commands for viewing log files (path-restricted)
+#
+# NOTE: Commands like hostnamectl, timedatectl have destructive flags.
+# Only safe read-only subcommands are allowed.
+
+# Commands where any arguments are safe (truly read-only)
+system_inspection_sudo_any_args:
   # Hardware information (needs sudo for full access)
-  - /usr/sbin/dmidecode
-  - /usr/sbin/hwinfo
-  - /usr/bin/inxi
-  - /usr/bin/acpi
-  - /usr/bin/acpitool
-  - /usr/sbin/biosdecode
-  - /usr/sbin/ownership
-  - /usr/sbin/vpddecode
-  - /usr/sbin/sensors-detect
-  - /usr/bin/ipmitool
-  - /usr/sbin/ipmi-sensors
-  - /usr/sbin/fwupdmgr
-  - /usr/bin/nvidia-smi
-  - /usr/bin/nvidia-settings
+  - lshw
+  - dmidecode
+  - hwinfo
+  - biosdecode
+  - ownership
+  - vpddecode
+  - inxi
+  - acpi
+  - ipmi-sensors
   # System information
-  - /usr/bin/uname
-  - /usr/bin/hostnamectl
-  - /usr/bin/timedatectl
-  - /usr/bin/localectl
-  - /usr/bin/loginctl
-  - /usr/bin/bootctl
+  - uname
   # Process information (sudo for all processes)
-  - /usr/bin/iotop
-  - /usr/bin/pidstat
+  - iotop
+  - pidstat
   # Memory information
-  - /usr/bin/slabtop
-  - /proc/meminfo
+  - slabtop
   # Disk information
-  - /usr/sbin/fdisk -l
-  - /usr/sbin/parted -l
-  - /usr/sbin/blkid
-  - /usr/sbin/smartctl -a *
-  - /usr/sbin/smartctl -H *
-  - /usr/sbin/smartctl -i *
-  - /usr/sbin/smartctl -l *
-  - /usr/sbin/nvme list
-  - /usr/sbin/nvme smart-log *
-  - /usr/sbin/nvme id-ctrl *
-  - /usr/sbin/nvme id-ns *
-  # Network information (sudo for full interface stats)
-  - /usr/bin/ip addr show
-  - /usr/bin/ip -s addr show
-  - /usr/bin/ip route show
-  - /usr/bin/ip -s route show
-  - /usr/bin/ip link show
-  - /usr/bin/ip -s link show
-  - /usr/bin/ip neighbor show
-  - /usr/bin/ip netns list
-  # Service information
-  - /usr/bin/systemctl status *
-  - /usr/bin/systemctl list-units
-  - /usr/bin/systemctl list-unit-files
-  - /usr/bin/systemctl list-timers
-  - /usr/bin/systemctl list-sockets
-  - /usr/bin/systemctl show *
-  - /usr/bin/journalctl
-  # File system information
-  - /usr/bin/findmnt
-  - /usr/sbin/zfs list
-  - /usr/sbin/zpool status
-  - /usr/sbin/zpool list
-  - /usr/sbin/btrfs filesystem show
-  - /usr/sbin/btrfs device stats
-  - /usr/sbin/lvdisplay
-  - /usr/sbin/vgdisplay
-  - /usr/sbin/pvdisplay
-  # Package information
-  - /usr/bin/apt list
-  - /usr/bin/dpkg -l
-  - /usr/bin/snap list
-  - /usr/bin/flatpak list
-  # Kernel and module information
-  - /usr/sbin/modinfo *
-  - /usr/bin/dmesg
-  - /usr/sbin/sysctl -a
-  - /usr/sbin/sysctl -n *
-  - /usr/sbin/sysctl -N
+  - blkid
+  # File system information - display commands only
+  - lvdisplay
+  - vgdisplay
+  - pvdisplay
+  # Kernel information
+  - modinfo
+  # NOTE: dmesg and journalctl have destructive flags (-c clears buffer, --vacuum-* deletes logs)
+  # On NixOS: grant access via systemd-journal group + kernel.dmesg_restrict=0
+  # On non-NixOS: these are included below with restrictions if needed
   # Security information
-  - /usr/bin/lastlog
-  - /usr/sbin/aa-status
-  - /usr/sbin/sestatus
-  - /usr/bin/firewall-cmd --list-all
-  - /usr/sbin/iptables -L
-  - /usr/sbin/iptables -S
-  - /usr/sbin/ip6tables -L
-  - /usr/sbin/ip6tables -S
-  - /usr/sbin/nft list ruleset
-  # Container/VM information
-  - /usr/bin/docker ps
-  - /usr/bin/docker images
-  - /usr/bin/docker info
-  - /usr/bin/docker version
-  - /usr/bin/podman ps
-  - /usr/bin/podman images
-  - /usr/bin/virsh list
-  - /usr/bin/qm list
-  - /usr/bin/pvesh get /nodes
+  - aa-status
+  - sestatus
   # Performance monitoring
-  - /usr/bin/iostat
-  - /usr/bin/mpstat
-  - /usr/bin/sar
-  - /usr/bin/perf stat
-  - /usr/bin/perf top
-  # Log viewing
-  - /usr/bin/tail -f /var/log/*
-  - /usr/bin/head /var/log/*
-  - /usr/bin/cat /var/log/*
-  - /usr/bin/less /var/log/*
-  - /usr/bin/zcat /var/log/*.gz
-  - /usr/bin/bzcat /var/log/*.bz2
-# KEEP IN SYNC - END
+  - iostat
+  - mpstat
+  - sar
+
+# Commands restricted to specific safe subcommands (exact match)
+# Format: "command subcommand" or "command" for no-args
+system_inspection_sudo_exact_subcommands:
+  # GPU information - ONLY query subcommands
+  - nvidia-smi
+  - nvidia-smi -q
+  - nvidia-smi -L
+  - nvidia-smi pmon
+  - nvidia-smi dmon
+  # ACPI information - ONLY query flags (not -W which modifies wakeup)
+  - acpitool
+  - acpitool -B
+  - acpitool -a
+  - acpitool -t
+  - acpitool -f
+  - acpitool -e
+  # Last login information - ONLY no-args (avoids -C clear flag)
+  - lastlog
+  # System information - ONLY read-only subcommands
+  - hostnamectl status
+  - timedatectl status
+  - timedatectl show
+  - timedatectl timesync-status
+  - localectl status
+  - loginctl list-sessions
+  - loginctl list-users
+  - bootctl status
+  - bootctl list
+  # Firmware - ONLY query subcommands
+  - fwupdmgr get-devices
+  - fwupdmgr get-updates
+  - fwupdmgr get-history
+  - fwupdmgr get-plugins
+  - fwupdmgr security
+  # IPMI - ONLY read-only subcommands
+  - ipmitool sensor list
+  - ipmitool sdr list
+  - ipmitool fru print
+  - ipmitool mc info
+  - ipmitool lan print
+  - ipmitool chassis status
+  # Disk partitioning - ONLY read-only list modes
+  - fdisk -l
+  - parted -l
+  # NVMe info - ONLY read operations
+  - nvme list
+  # Network information - ONLY show/list operations
+  - ip addr show
+  - ip -s addr show
+  - ip route show
+  - ip -s route show
+  - ip link show
+  - ip -s link show
+  - ip neighbor show
+  - ip netns list
+  # Service information - ONLY safe subcommands
+  - systemctl list-units
+  - systemctl list-unit-files
+  - systemctl list-timers
+  - systemctl list-sockets
+  # File systems - ONLY read commands
+  - zfs list
+  - zpool status
+  - zpool list
+  - btrfs filesystem show
+  - btrfs device stats
+  # Package managers - ONLY list modes
+  - apt list
+  - dpkg -l
+  - snap list
+  - flatpak list
+  # System control - ONLY read modes
+  - sysctl -a
+  - sysctl -N
+  # Firewall - ONLY list/show modes
+  - firewall-cmd --list-all
+  - iptables -L
+  - iptables -S
+  - ip6tables -L
+  - ip6tables -S
+  - nft list ruleset
+  # Container/VM - ONLY read-only info
+  - docker ps
+  - docker images
+  - docker info
+  - docker version
+  - podman ps
+  - podman images
+  - virsh list
+  - qm list
+
+# Commands with safe prefix + variable trailing argument (wildcard match)
+# Format: "command prefix" - will be expanded to "command prefix *"
+system_inspection_sudo_wildcard_subcommands:
+  # Session/user info - needs session/user ID
+  - loginctl show-session
+  - loginctl show-user
+  - loginctl session-status
+  - loginctl user-status
+  # SMART disk info - needs device path
+  - smartctl -a
+  - smartctl -H
+  - smartctl -i
+  - smartctl -l
+  # NVMe info - needs device path
+  - nvme smart-log
+  - nvme id-ctrl
+  - nvme id-ns
+  # Service status - needs service name
+  - systemctl status
+  - systemctl show
+  # System control - read specific variable
+  - sysctl -n
+  # Proxmox - needs path argument
+  - pvesh get
+  # Performance monitoring - needs args
+  - perf stat
+  - perf top
+
+# Log viewing commands with path restrictions
+# These are separate because Claude Code cannot express path restrictions
+system_inspection_log_viewing:
+  - tail -f /var/log/*
+  - head /var/log/*
+  - cat /var/log/*
+  - less /var/log/*
+  - zcat /var/log/*.gz
+  - bzcat /var/log/*.bz2
+
+# Combined list for backward compatibility with existing templates
+# This will be generated by the tasks from the above lists
+system_inspection_nopasswd_commands: []

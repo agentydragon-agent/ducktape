@@ -1,8 +1,0 @@
-DOTFILES_DIRS=/home/agentydragon/code/ducktape/dotfiles
-# Stopgap trying to prevent non-RCM dotfiles (unfortunately mkrc ignores)
-EXCLUDE="
-    README.md
-    .config/cronomix/**
-    .config/OrcaSlicer/**
-"
-HOSTNAME=gpd

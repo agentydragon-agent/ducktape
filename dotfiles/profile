@@ -59,12 +59,4 @@ add_path "$PNPM_HOME"
 # tidy-up: drop helper function
 unset -f add_path 2>/dev/null
 
-# The following environment variables are now managed by Nix home-manager
-# (see ~/code/ducktape/nix/home/home.nix under home.sessionVariables):
-# - BASIC_MEMORY_HOME, DEFAULT_CHARSET, AIDER_MODEL, GCC_COLORS
-# - MC_SKIN, EDITOR
-# - LESS, PYTHONSTARTUP
-# - GOPATH, PNPM_HOME
-#
 # Note: NVM_DIR and BUN_INSTALL were removed - Node.js is now managed via Nix (nodejs_22 package)
-# The AIDER_OPENAI_API_KEY fallback logic is in ~/code/ducktape/nix/home/shell/common-init.sh

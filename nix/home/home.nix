@@ -76,7 +76,9 @@ in {
     # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
     # ./packages/google-drive-service.nix
     ./codex
+    ./crush
     ./modules/solarized.nix
+    ./scripts
     ./terminals
     ./claude-code
     ./modules/gnome-workspace-shortcuts.nix
@@ -95,6 +97,20 @@ in {
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
+
+  # XDG user directories - minimal setup, most point to $HOME
+  xdg.userDirs = {
+    enable = true;
+    createDirectories = false; # Don't create directories, just set the config
+    desktop = "$HOME";
+    documents = "$HOME";
+    download = "$HOME/downloads";
+    music = "$HOME";
+    pictures = "$HOME";
+    publicShare = "$HOME";
+    templates = "$HOME";
+    videos = "$HOME";
+  };
 
   # Google Drive service - disabled by default, enabled per-host
   # TODO: Re-enable when google-drive-service module is re-enabled (see imports above)
@@ -870,6 +886,18 @@ in {
 
   # Create Worthy config directory
   home.file.".config/worthy/.keep".text = "";
+
+  # Cargo configuration - use sccache for compilation caching
+  home.file.".cargo/config.toml".text = ''
+    [build]
+    rustc-wrapper = "sccache"
+  '';
+
+  # Ansible configuration
+  home.file.".ansible.cfg".text = ''
+    [defaults]
+    collections_path = ~/.ansible/collections
+  '';
 
   # Warn if legacy .npm-global directory exists (should be removed in favor of pnpm)
   home.activation.warnLegacyNpmGlobal = lib.hm.dag.entryAfter ["writeBoundary"] ''

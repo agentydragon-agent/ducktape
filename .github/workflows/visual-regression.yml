@@ -1,0 +1,80 @@
+# Visual regression tests reusable workflow
+#
+# Puppeteer visual tests with hermetic Chromium via rules_playwright
+name: Visual regression tests
+
+on:
+  workflow_call:
+
+jobs:
+  visual-regression:
+    name: Visual regression tests (Bazel + Puppeteer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt', 'props/frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            bazel-${{ runner.os }}-
+
+      - name: Run visual regression tests
+        id: visual_test
+        continue-on-error: true
+        run: |
+          bazel test //props/frontend:visual_test --test_output=errors
+
+      - name: Extract visual regression artifacts
+        if: always()
+        run: |
+          # Bazel stores undeclared test outputs in a zip file
+          OUTPUT_ZIP="bazel-testlogs/props/frontend/visual_test/test.outputs/outputs.zip"
+          ARTIFACT_DIR="visual-regression-artifacts"
+
+          mkdir -p "$ARTIFACT_DIR"
+
+          if [ -f "$OUTPUT_ZIP" ]; then
+            echo "Extracting test outputs from $OUTPUT_ZIP"
+            unzip -o "$OUTPUT_ZIP" -d "$ARTIFACT_DIR"
+            echo "Extracted files:"
+            ls -la "$ARTIFACT_DIR"
+          else
+            echo "No test outputs found at $OUTPUT_ZIP"
+            # Check if there are any outputs in the test directory
+            find bazel-testlogs -name "*.png" -o -name "outputs.zip" 2>/dev/null || true
+          fi
+
+      - name: Upload visual regression artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-screenshots
+          path: visual-regression-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "### Visual Regression Results" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.visual_test.outcome }}" = "success" ]; then
+            echo "✅ All visual tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Visual regression tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "📦 Screenshots and diffs are available in the workflow artifacts" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if visual tests failed
+        if: steps.visual_test.outcome == 'failure'
+        run: exit 1
