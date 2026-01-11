@@ -192,15 +192,14 @@
       tags: [gpu_passthrough]
 
     # WiFi Configuration
-    - name: Install MediaTek WiFi firmware packages
+    # Note: pve-firmware is already installed by Proxmox and contains MediaTek firmware
+    - name: Install wireless tools
       ansible.builtin.apt:
         name:
-          - firmware-misc-nonfree
           - wireless-tools
           - wpasupplicant
           - iw
         state: present
-        update_cache: true
       tags: [wifi, network]
 
     - name: Add MediaTek WiFi module to /etc/modules
