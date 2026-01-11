@@ -42,20 +42,20 @@ Note: `--impure` is required for nixGL (GPU driver detection).
 
 ### NixOS System Configs (`nix/nixos`)
 
-| Host | Type | Description |
-|------|------|-------------|
+| Host     | Type     | Description           |
+| -------- | -------- | --------------------- |
 | `rugged` | Physical | Dell Rugged 12 tablet |
-| `wyrm2` | VM | Dev workstation VM |
+| `wyrm2`  | VM       | Dev workstation VM    |
 
 ### Home-Manager Configs (`nix/home`)
 
-| Host | OS | Description |
-|------|-----|-------------|
-| `agentydragon` | Pop!_OS | ThinkPad X1 Extreme |
-| `gpd` | Pop!_OS | GPD Win Max 2 |
-| `rugged` | NixOS | Dell Rugged 12 tablet |
-| `nixos-vm` | NixOS | NixOS VM (wyrm2) |
-| `vps` | Debian | VPS server (no GUI) |
+| Host           | OS       | Description           |
+| -------------- | -------- | --------------------- |
+| `agentydragon` | Pop!\_OS | ThinkPad X1 Extreme   |
+| `gpd`          | Pop!\_OS | GPD Win Max 2         |
+| `rugged`       | NixOS    | Dell Rugged 12 tablet |
+| `nixos-vm`     | NixOS    | NixOS VM (wyrm2)      |
+| `vps`          | Debian   | VPS server (no GUI)   |
 
 ## Common Commands
 
