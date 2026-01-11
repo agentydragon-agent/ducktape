@@ -7,30 +7,14 @@ Build targets:
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary")
 
-py_binary(
-    name = "improvement_init",
-    srcs = ["init.py"],
-    main = "init.py",
-    deps = [
-        "//props/core",
-    ],
-)
-
+# Package props CLI and dependencies for runtime
 pkg_tar(
     name = "app_tar",
-    srcs = [":improvement_init"],
+    srcs = ["//props/core:props"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
-)
-
-pkg_tar(
-    name = "init_tar",
-    srcs = ["init"],
-    mode = "0755",
-    package_dir = "/",
 )
 
 pkg_tar(
@@ -49,7 +33,7 @@ oci_image(
     },
     tars = [
         ":app_tar",
-        ":init_tar",
+        "//props/core/agent_defs:critic_dev_init_tar",
         ":agent_md_tar",
     ],
     workdir = "/workspace",

@@ -1,0 +1,23 @@
+"""Shared init scripts for agent OCI images."""
+
+load(":init_tar.bzl", "init_script_tar")
+
+# Shared init script for critic-dev agents (7 agents)
+# Used by: dead_code, improvement, prompt_optimizer, contract_truthfulness,
+#          flag_propagation, high_recall_critic, verbose_docs
+init_script_tar(
+    name = "critic_dev_init_tar",
+    script = "init",
+)
+
+# Init script for critic agent
+init_script_tar(
+    name = "critic_agent_init_tar",
+    script = "critic_init",
+)
+
+# Init script for grader agent
+init_script_tar(
+    name = "grader_agent_init_tar",
+    script = "grader_init",
+)

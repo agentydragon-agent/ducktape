@@ -7,30 +7,14 @@ Build targets:
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary")
 
-py_binary(
-    name = "grader_init",
-    srcs = ["init.py"],
-    main = "init.py",
-    deps = [
-        "//props/core",
-    ],
-)
-
+# Package props CLI and dependencies for runtime
 pkg_tar(
     name = "app_tar",
-    srcs = [":grader_init"],
+    srcs = ["//props/core:props"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
-)
-
-pkg_tar(
-    name = "init_tar",
-    srcs = ["init"],
-    mode = "0755",
-    package_dir = "/",
 )
 
 oci_image(
@@ -43,7 +27,7 @@ oci_image(
     },
     tars = [
         ":app_tar",
-        ":init_tar",
+        "//props/core/agent_defs:grader_agent_init_tar",
     ],
     workdir = "/workspace",
 )
@@ -54,8 +38,6 @@ oci_load(
     repo_tags = ["grader-agent:latest"],
 )
 
-# Push to local registry (localhost:5050, running via devenv)
-# Usage: bazel run //props/core/agent_defs/grader:push
 oci_push(
     name = "push",
     image = ":image",

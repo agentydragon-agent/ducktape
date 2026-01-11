@@ -1,6 +1,7 @@
 # Terraform validation for 00-persistent-auth layer
 # Uses rules_tf for hermetic linting and sh_test with tfmirror.dev for validation
 
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
 package(default_visibility = ["//cluster:__subpackages__"])

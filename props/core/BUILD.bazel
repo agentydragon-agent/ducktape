@@ -54,6 +54,7 @@ py_binary(
     name = "props",
     srcs = ["cli/main.py"],
     main = "cli/main.py",
+    visibility = ["//visibility:public"],
     deps = [":core"],
 )
 

@@ -7,40 +7,14 @@ Build targets:
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary")
 
-py_binary(
-    name = "critic_init",
-    srcs = ["init.py"],
-    main = "init.py",
-    deps = [
-        "//props/core",
-        "@pypi//mypy",
-        "@pypi//ruff",
-        "@pypi//vulture",
-    ],
-)
-
+# Package props CLI and dependencies for runtime
 pkg_tar(
     name = "app_tar",
-    srcs = [":critic_init"],
+    srcs = ["//props/core:props"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
-)
-
-# TODO: Add system tools (ripgrep, postgresql-client) once we have a custom base image.
-# These are documented as available to agents in various prompts but currently missing
-# from the python_slim base. Options:
-# 1. Push custom base image to a real registry (Docker Hub, GHCR)
-# 2. Use Bazel pkg rules to install apt packages (complex)
-# 3. Use oci_from_tarball if it becomes available in rules_oci
-
-pkg_tar(
-    name = "init_tar",
-    srcs = ["init"],
-    mode = "0755",
-    package_dir = "/",
 )
 
 oci_image(
@@ -53,7 +27,7 @@ oci_image(
     },
     tars = [
         ":app_tar",
-        ":init_tar",
+        "//props/core/agent_defs:critic_agent_init_tar",
     ],
     workdir = "/workspace",
 )
@@ -64,8 +38,6 @@ oci_load(
     repo_tags = ["critic-agent:latest"],
 )
 
-# Push to local registry (localhost:5050, running via devenv)
-# Usage: bazel run //props/core/agent_defs/critic:push
 oci_push(
     name = "push",
     image = ":image",
