@@ -220,6 +220,7 @@ ansible-playbook <hostname>.yaml --tags tailscale
 ```
 
 The role will:
+
 1. Install Tailscale client
 2. Configure it to use the headscale server
 3. Automatically register the device using a pre-auth key from headscale

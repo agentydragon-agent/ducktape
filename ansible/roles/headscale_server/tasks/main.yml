@@ -127,3 +127,26 @@
       Headscale health endpoint did not return HTTP 200 after the configured retries.
       Last response: {{ headscale_server_health }}
   tags: [headscale, service]
+
+# Static IP assignments for split-horizon DNS
+# Headscale doesn't support static IP assignment via API, so we modify the DB directly.
+# This is idempotent and only restarts Headscale if the IP actually changes.
+- name: Set static Tailnet IP for atlas (100.64.1.30)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    current_ip=$(sqlite3 /var/lib/headscale/db.sqlite \
+      "SELECT ipv4 FROM nodes WHERE given_name = 'atlas'")
+    if [ "$current_ip" != "100.64.1.30" ]; then
+      sqlite3 /var/lib/headscale/db.sqlite \
+        "UPDATE nodes SET ipv4 = '100.64.1.30' WHERE given_name = 'atlas'"
+      echo "changed"
+    else
+      echo "ok"
+    fi
+  args:
+    executable: /bin/bash
+  register: headscale_atlas_ip_result
+  changed_when: "'changed' in headscale_atlas_ip_result.stdout"
+  failed_when: headscale_atlas_ip_result.rc != 0
+  notify: Restart Headscale
+  tags: [headscale, atlas-ip]
