@@ -14,7 +14,7 @@ all:
     rugged:
       ansible_connection: local # _cached_sudo
     atlas:
-      ansible_host: 10.0.182.102 # on home network
+      ansible_host: atlas.vps # on tailnet
       ansible_user: root
 
 k3s_nodes:
