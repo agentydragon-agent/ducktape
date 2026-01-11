@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /app/high_recall_critic_init

@@ -19,6 +19,7 @@ from props.core.db.config import DatabaseConfig
 from props.core.display import short_uuid
 from props.core.grader.submit_server import GraderSubmitServer
 from props.core.ids import SnapshotSlug
+from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 
 
 class SnapshotGraderAgentEnvironment(AgentEnvironment):
@@ -49,9 +50,15 @@ class SnapshotGraderAgentEnvironment(AgentEnvironment):
         grader_run_id: UUID,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
+        *,
+        image_digest: str,
     ):
         self._snapshot_slug = snapshot_slug
         self._grader_run_id = grader_run_id
+
+        # Construct full OCI reference from digest
+        # Format: localhost:5050/grader@sha256:abc...
+        image_ref = f"{REGISTRY_HOST}:{REGISTRY_PORT}/grader@{image_digest}"
 
         super().__init__(
             definition_id=GRADER_AGENT_DEFINITION_ID,
@@ -59,6 +66,7 @@ class SnapshotGraderAgentEnvironment(AgentEnvironment):
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_ref=image_ref,
             container_name=f"snapshot-grader-{short_uuid(grader_run_id)}",
             labels={
                 "adgn.project": "props",

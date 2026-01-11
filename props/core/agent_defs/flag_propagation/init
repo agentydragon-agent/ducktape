@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /app/flag_propagation_init

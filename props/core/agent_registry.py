@@ -537,6 +537,7 @@ class AgentRegistry:
         verbose: bool = False,
         max_lines: int = DEFAULT_MAX_LINES,
         max_turns: int = 200,
+        image_ref: str = "latest",
     ) -> UUID:
         """Run a snapshot grader daemon. Blocks until shutdown or context exhausted.
 
@@ -549,20 +550,37 @@ class AgentRegistry:
             verbose: Whether to enable verbose display
             max_lines: Max lines per event in verbose display
             max_turns: Max turns per wake cycle (resets after each sleep)
+            image_ref: OCI image reference (tag or digest) for grader agent
 
         Returns:
             Daemon run ID (query DB for status)
         """
         async with self._semaphore:
             return await self._run_snapshot_grader_impl(
-                snapshot_slug=snapshot_slug, client=client, verbose=verbose, max_lines=max_lines, max_turns=max_turns
+                snapshot_slug=snapshot_slug,
+                client=client,
+                verbose=verbose,
+                max_lines=max_lines,
+                max_turns=max_turns,
+                image_ref=image_ref,
             )
 
     async def _run_snapshot_grader_impl(
-        self, *, snapshot_slug: SnapshotSlug, client: OpenAIModelProto, verbose: bool, max_lines: int, max_turns: int
+        self,
+        *,
+        snapshot_slug: SnapshotSlug,
+        client: OpenAIModelProto,
+        verbose: bool,
+        max_lines: int,
+        max_turns: int,
+        image_ref: str,
     ) -> UUID:
         """Internal snapshot grader daemon execution."""
         grader_run_id = uuid4()
+
+        # Resolve image reference to digest
+        image_digest = resolve_image_ref(AgentType.GRADER, image_ref)
+        logger.info(f"Resolved grader image {image_ref} → {image_digest}")
 
         # Verify snapshot exists
         with get_session() as session:
@@ -576,7 +594,7 @@ class AgentRegistry:
             session.add(
                 AgentRun(
                     agent_run_id=grader_run_id,
-                    image_digest=GRADER_AGENT_DEFINITION_ID,
+                    image_digest=image_digest,
                     parent_agent_run_id=None,
                     model=client.model,
                     type_config=type_config,
@@ -593,6 +611,7 @@ class AgentRegistry:
             grader_run_id=grader_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
+            image_digest=image_digest,
         )
 
         agent_status: AgentRunStatus = AgentRunStatus.IN_PROGRESS

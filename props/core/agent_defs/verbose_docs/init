@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /app/verbose_docs_init

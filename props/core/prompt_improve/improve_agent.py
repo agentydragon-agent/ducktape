@@ -22,19 +22,21 @@ from openai_utils.types import ReasoningSummary
 from props.core.agent_handle import AgentHandle
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_setup import AgentEnvironment
-from props.core.agent_types import ImprovementTypeConfig
+from props.core.agent_types import AgentType, ImprovementTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.db.agent_definition_ids import IMPROVEMENT_AGENT_DEFINITION_ID
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
+from props.core.oci_utils import resolve_image_ref
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleSpec
 from props.core.prompt_improve.reminder_handler import ImprovementReminderHandler, TerminationSuccess
 from props.core.prompt_improve.token_budget_handler import TokenBudgetHandler
 from props.core.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
 from props.core.prompt_optimize.target_metric import TargetMetric
+from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,8 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         workspace_manager: WorkspaceManager,
         registry: AgentRegistry,
         verbose: bool = False,
+        *,
+        image_digest: str,
     ):
         type_config = ImprovementTypeConfig(
             baseline_definition_ids=baseline_definition_ids,
@@ -92,12 +96,17 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         self._verbose = verbose
         self.agent_state = PromptOptimizerState()
 
+        # Construct full OCI reference from digest
+        # Format: localhost:5050/improvement@sha256:abc...
+        image_ref = f"{REGISTRY_HOST}:{REGISTRY_PORT}/improvement@{image_digest}"
+
         super().__init__(
             definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
             agent_run_id=improvement_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image_ref=image_ref,
             container_name=f"improve-{short_uuid(improvement_run_id)}",
             labels={"adgn.project": "props", "adgn.role": "improve", "adgn.agent_run_id": str(improvement_run_id)},
             auto_remove=True,
@@ -135,6 +144,7 @@ async def run_improvement_agent(
     grader_client: OpenAIModelProto,
     output_dir: Path | None = None,
     verbose: bool = False,
+    image_ref: str = "latest",
 ) -> ImprovementResult:
     if not examples:
         raise ValueError("examples must not be empty")
@@ -152,6 +162,10 @@ async def run_improvement_agent(
     )
     logger.info(f"Output directory: {output_dir}")
 
+    # Resolve image reference to digest
+    image_digest = resolve_image_ref(AgentType.IMPROVEMENT, image_ref)
+    logger.info(f"Resolved improvement image {image_ref} → {image_digest}")
+
     type_config = ImprovementTypeConfig(
         baseline_definition_ids=baseline_definition_ids,
         allowed_examples=examples,
@@ -163,7 +177,7 @@ async def run_improvement_agent(
     with get_session() as session:
         agent_run = AgentRun(
             agent_run_id=run_id,
-            image_digest=IMPROVEMENT_AGENT_DEFINITION_ID,
+            image_digest=image_digest,
             model=model,
             type_config=type_config,
             status=AgentRunStatus.IN_PROGRESS,
@@ -185,6 +199,7 @@ async def run_improvement_agent(
         workspace_manager=workspace_manager,
         registry=registry,
         verbose=verbose,
+        image_digest=image_digest,
     )
 
     try:
