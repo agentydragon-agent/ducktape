@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import secrets
 from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack, suppress
@@ -49,15 +48,13 @@ from props.core.db.config import DatabaseConfig
 from props.core.db.temp_user_manager import TempUserManager
 from props.core.db_event_handler import DatabaseEventHandler
 from props.core.docker_env import DOCKER_MOUNT_PREFIX, PROPS_NETWORK_NAME, PropertiesDockerCompositor
-from props.core.ids import DefinitionId
 from props.core.registry.images import _resolve_image_ref
 
 
-def _make_container_name(definition_id: DefinitionId, agent_run_id: UUID) -> str:
-    def_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", definition_id) or "agent"
-    def_part = def_slug[:20]
+def _make_container_name(agent_run_id: UUID) -> str:
+    """Generate container name from agent run ID only."""
     run_part = str(agent_run_id).split("-")[0]
-    return f"{def_part}-{run_part}"
+    return f"agent-{run_part}"
 
 
 if TYPE_CHECKING:
@@ -236,7 +233,6 @@ class AgentEnvironment(ABC):
             docker_client=self._docker_client,
             image_id=self._image_id,
             db_conn=container_db,
-            definition_id=self._definition_id,
             agent_run_id=self._agent_run_id,
             container_name=self._container_name,
             labels=self._labels,
@@ -322,19 +318,13 @@ class _AgentDockerCompositor(PropertiesDockerCompositor):
         image_id: str,
         db_conn,
         *,
-        definition_id: DefinitionId,
         agent_run_id: UUID,
         container_name: str | None,
         labels: dict[str, str],
         auto_remove: bool,
     ):
-        merged_labels = {
-            "adgn.project": "props",
-            "adgn.role": definition_id,
-            "adgn.agent_run_id": str(agent_run_id),
-            **labels,
-        }
-        name = container_name or _make_container_name(definition_id, agent_run_id)
+        merged_labels = {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id), **labels}
+        name = container_name or _make_container_name(agent_run_id)
         super().__init__(
             workspace_root,
             docker_client,

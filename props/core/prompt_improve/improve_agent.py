@@ -31,7 +31,7 @@ from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleSpec
-from props.core.oci_utils import resolve_image_ref
+from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 from props.core.prompt_improve.reminder_handler import ImprovementReminderHandler, TerminationSuccess
 from props.core.prompt_improve.token_budget_handler import TokenBudgetHandler
 from props.core.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
@@ -138,8 +138,10 @@ async def run_improvement_agent(
     grader_client: OpenAIModelProto,
     output_dir: Path | None = None,
     verbose: bool = False,
-    image_ref: str = "latest",
 ) -> ImprovementResult:
+    """Run improvement agent to optimize prompts.
+
+    Always uses builtin improvement image for consistency."""
     if not examples:
         raise ValueError("examples must not be empty")
 
@@ -156,9 +158,10 @@ async def run_improvement_agent(
     )
     logger.info(f"Output directory: {output_dir}")
 
-    # Resolve image reference to digest
-    image_digest = resolve_image_ref(AgentType.IMPROVEMENT, image_ref)
-    logger.info(f"Resolved improvement image {image_ref} → {image_digest}")
+    # Always use builtin improvement image
+    image_digest = resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
+    image = build_oci_reference(AgentType.IMPROVEMENT, image_digest)
+    logger.info(f"Using builtin improvement image: {image_digest}")
 
     type_config = ImprovementTypeConfig(
         baseline_definition_ids=baseline_definition_ids,
@@ -193,7 +196,7 @@ async def run_improvement_agent(
         workspace_manager=workspace_manager,
         registry=registry,
         verbose=verbose,
-        image_digest=image_digest,
+        image=image,
     )
 
     try:

@@ -62,7 +62,7 @@ from props.core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props.core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
-from props.core.oci_utils import resolve_image_ref
+from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 
 if TYPE_CHECKING:
     pass
@@ -129,7 +129,7 @@ class AgentRegistry:
     async def run_critic(
         self,
         *,
-        image_ref: str = "builtin",
+        image_ref: str,
         example: ExampleSpec,
         client: OpenAIModelProto,
         parent_run_id: UUID | None = None,
@@ -141,7 +141,7 @@ class AgentRegistry:
         """Run a critic agent. Acquires semaphore slot.
 
         Args:
-            image_ref: Image reference (tag or digest, e.g., "builtin", "sha256:abc...")
+            image_ref: Image reference (tag or digest) - REQUIRED for explicit version control
             example: Example specification (snapshot + scope)
             client: OpenAI-compatible model client
             parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
@@ -181,8 +181,9 @@ class AgentRegistry:
         snapshot_slug = example.snapshot_slug
         agent_run_id = uuid4()
 
-        # Resolve image reference to digest
+        # Resolve image reference to digest, then build full OCI reference
         image_digest = resolve_image_ref(AgentType.CRITIC, image_ref)
+        image = build_oci_reference(AgentType.CRITIC, image_digest)
         logger.info(f"Resolved critic image {image_ref} → {image_digest}")
 
         # Phase 1: Write initial AgentRun to DB
@@ -211,7 +212,7 @@ class AgentRegistry:
             agent_run_id=agent_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
-            image_digest=image_digest,
+            image=image,
         )
 
         agent_status: AgentRunStatus
@@ -308,7 +309,6 @@ class AgentRegistry:
         critic_run_id: UUID,
         client: OpenAIModelProto,
         parent_run_id: UUID | None = None,
-        image_ref: str = "builtin",
         verbose: bool = False,
         max_lines: int = DEFAULT_MAX_LINES,
         max_turns: int = 200,
@@ -316,11 +316,12 @@ class AgentRegistry:
     ) -> UUID:
         """Run a grader on a critic run. Acquires semaphore slot.
 
+        Always uses builtin grader image for evaluation consistency.
+
         Args:
             critic_run_id: ID of the critic run to grade
             client: OpenAI-compatible model client
             parent_run_id: Optional parent agent run ID
-            image_ref: Image reference (tag or digest, e.g., "builtin", "sha256:abc...")
             verbose: Whether to enable verbose display
             max_lines: Max lines per event in verbose display
             max_turns: Maximum agent turns before timeout
@@ -334,7 +335,6 @@ class AgentRegistry:
                 critic_run_id=critic_run_id,
                 client=client,
                 parent_run_id=parent_run_id,
-                image_ref=image_ref,
                 verbose=verbose,
                 max_lines=max_lines,
                 max_turns=max_turns,
@@ -347,7 +347,6 @@ class AgentRegistry:
         critic_run_id: UUID,
         client: OpenAIModelProto,
         parent_run_id: UUID | None,
-        image_ref: str,
         verbose: bool,
         max_lines: int,
         max_turns: int,
@@ -356,9 +355,10 @@ class AgentRegistry:
         """Internal grader execution (semaphore already acquired)."""
         grader_run_id = uuid4()
 
-        # Resolve image reference to digest
-        image_digest = resolve_image_ref(AgentType.GRADER, image_ref)
-        logger.info(f"Resolved grader image {image_ref} → {image_digest}")
+        # Always use builtin grader image
+        image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
+        image = build_oci_reference(AgentType.GRADER, image_digest)
+        logger.info(f"Using builtin grader image: {image_digest}")
 
         # Load critic run and prepare canonical issues
         with get_session() as session:
@@ -443,7 +443,7 @@ class AgentRegistry:
             critic_run_id=critic_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
-            image_digest=image_digest,
+            image=image,
         )
 
         agent_status: AgentRunStatus
@@ -537,12 +537,13 @@ class AgentRegistry:
         verbose: bool = False,
         max_lines: int = DEFAULT_MAX_LINES,
         max_turns: int = 200,
-        image_ref: str = "latest",
     ) -> UUID:
         """Run a snapshot grader daemon. Blocks until shutdown or context exhausted.
 
         The daemon grades ALL critiques for the snapshot, sleeping when no drift
         and waking on pg_notify when GT changes or new critiques arrive.
+
+        Always uses builtin grader image for evaluation consistency.
 
         Args:
             snapshot_slug: Snapshot this daemon is responsible for
@@ -550,37 +551,25 @@ class AgentRegistry:
             verbose: Whether to enable verbose display
             max_lines: Max lines per event in verbose display
             max_turns: Max turns per wake cycle (resets after each sleep)
-            image_ref: OCI image reference (tag or digest) for grader agent
 
         Returns:
             Daemon run ID (query DB for status)
         """
         async with self._semaphore:
             return await self._run_snapshot_grader_impl(
-                snapshot_slug=snapshot_slug,
-                client=client,
-                verbose=verbose,
-                max_lines=max_lines,
-                max_turns=max_turns,
-                image_ref=image_ref,
+                snapshot_slug=snapshot_slug, client=client, verbose=verbose, max_lines=max_lines, max_turns=max_turns
             )
 
     async def _run_snapshot_grader_impl(
-        self,
-        *,
-        snapshot_slug: SnapshotSlug,
-        client: OpenAIModelProto,
-        verbose: bool,
-        max_lines: int,
-        max_turns: int,
-        image_ref: str,
+        self, *, snapshot_slug: SnapshotSlug, client: OpenAIModelProto, verbose: bool, max_lines: int, max_turns: int
     ) -> UUID:
         """Internal snapshot grader daemon execution."""
         grader_run_id = uuid4()
 
-        # Resolve image reference to digest
-        image_digest = resolve_image_ref(AgentType.GRADER, image_ref)
-        logger.info(f"Resolved grader image {image_ref} → {image_digest}")
+        # Always use builtin grader image
+        image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
+        image = build_oci_reference(AgentType.GRADER, image_digest)
+        logger.info(f"Using builtin grader image: {image_digest}")
 
         # Verify snapshot exists
         with get_session() as session:
@@ -611,7 +600,7 @@ class AgentRegistry:
             grader_run_id=grader_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
-            image_digest=image_digest,
+            image=image,
         )
 
         agent_status: AgentRunStatus = AgentRunStatus.IN_PROGRESS
