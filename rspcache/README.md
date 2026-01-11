@@ -46,7 +46,7 @@ rspcache keys revoke --name ember        # Revoke token
 ```bash
 cd adgn/rspcache_admin_ui
 npm install
-npm run build      # Build to adgn/src/adgn/rspcache/admin_ui_dist/
+npm run build      # Build to rspcache/admin_ui/dist/
 npm run typegen    # Regenerate API types
 ```
 

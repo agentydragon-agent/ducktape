@@ -147,14 +147,14 @@ another batch will be sent to you. Continue until all batches are complete.
 
 ### Files to Create/Modify
 
-1. **`src/adgn/props/cli/cmd_classify_noops.py`**
+1. **`props/core/cli/cmd_classify_noops.py`**
 
    - Main CLI command
    - Batch processing logic
    - Worker pool management
    - Error handling
 
-2. **`src/adgn/props/noop_classifier/`**
+2. **`props/core/noop_classifier/`**
    - Pydantic models (Classification, SubmitResult)
    - ClassifierServer (MCP server)
    - Classifier agent implementation

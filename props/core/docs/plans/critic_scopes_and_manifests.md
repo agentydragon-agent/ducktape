@@ -39,7 +39,7 @@ split: train
 bundle:
   source_commit: b729b362de957d127d1e8ac17d8811665ce805fe
   include: [adgn/, wt/]
-  exclude: [adgn/src/adgn/agent/web/]
+  exclude: [adgn/agent/web/]
 ```
 
 ## Adding New Snapshots

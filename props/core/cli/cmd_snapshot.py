@@ -248,7 +248,7 @@ def snapshot_capture_ducktape(
     if include is None:
         include = ["adgn/"]
     if exclude is None:
-        exclude = ["adgn/src/adgn/props/"]
+        exclude = ["props/"]
 
     # Get current commit SHA using pygit2
     # Discover repository from current directory (should be within ducktape repo)

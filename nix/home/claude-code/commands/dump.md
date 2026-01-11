@@ -134,7 +134,7 @@ fd -e md . | grep -iE "(session|tombstone|notes|dump)"
 
 1. If a recent dump file exists with similar scope → update it (don't create duplicates)
 2. If project has a `docs/` directory → place there
-3. If working on a specific component (e.g., `adgn/src/adgn/props/`) → place near that component
+3. If working on a specific component (e.g., `props/core/`) → place near that component
 4. Otherwise → place in project root
 
 **File naming:**

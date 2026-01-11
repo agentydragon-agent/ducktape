@@ -16,7 +16,7 @@ exclude = [
     "**/examples",
     "**/third_party",
     "k8s-old",
-    "tana/src/tana/export/references",
+    "tana/export/references",
 ]
 
 [format]
@@ -151,14 +151,14 @@ split-on-trailing-comma = false
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
-"py_detectors/src/py_detectors/det_*.py" = ["N802"]
+"py_detectors/det_*.py" = ["N802"]
 # Test fixtures are intentionally bad code for detector testing
 "py_detectors/tests/fixtures/**" = ["ALL"]
 # Vendored third-party code - don't lint
 "**/third_party/**" = ["ALL"]
-"adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
+"adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]
 # Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
-"props/src/props/db/sync/sync.py" = ["PLC0415"]
+"props/core/db/sync/sync.py" = ["PLC0415"]
 # sys.path manipulation must happen before pytest import
 "agent_server/tests/pytest_runner.py" = ["E402"]

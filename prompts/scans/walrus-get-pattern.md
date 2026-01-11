@@ -83,7 +83,7 @@ if (p := child_env.get(key)):
 
 ### Example 2: None check (good candidate)
 
-**File**: `adgn/src/adgn/mcp/compositor/server.py:196`
+**File**: `mcp_infra/compositor/server.py:196`
 
 ```python
 # Before
@@ -180,7 +180,7 @@ configs = [cfg for p in paths if (cfg := parse_config(p)) is not None]
 
 ### Example 4: Multi-use variable (skip)
 
-**File**: `adgn/src/adgn/rspcache/models.py:56`
+**File**: `rspcache/models.py:56`
 
 ```python
 # Keep as-is - variable used in multiple branches

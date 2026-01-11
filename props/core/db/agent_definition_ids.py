@@ -1,7 +1,7 @@
 """Constants for agent definition IDs.
 
 These are the canonical IDs for built-in agent definitions that are synced from git.
-The actual definitions live in src/adgn/props/agent_defs/<id>/.
+The actual definitions live in props/core/agent_defs/<id>/.
 """
 
 from props.core.ids import DefinitionId

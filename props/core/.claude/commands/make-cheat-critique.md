@@ -32,8 +32,8 @@ Generate a **new, independent critique** of the specimen code as if written by a
 
 **Schema**: Read `CriticSubmitPayload`, `ReportedIssue`, `Occurrence`, and `LineRange` from:
 
-- `src/adgn/props/critic.py`
-- `src/adgn/props/models/issue.py`
+- `props/core/critic/critic.py`
+- `props/core/critic/models.py`
 
 ## Task
 

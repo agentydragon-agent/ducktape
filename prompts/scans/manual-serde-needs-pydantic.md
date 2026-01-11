@@ -378,7 +378,7 @@ Strong coding LLM can build this from description. Use output as discovery only 
 
 ## Examples from This Codebase
 
-### adgn/src/adgn/agent/persist/sqlite.py
+### agent_server/persist/sqlite.py
 
 ```python
 # Current pattern:

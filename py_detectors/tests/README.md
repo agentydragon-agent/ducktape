@@ -1,7 +1,7 @@
 # Detectors test fixtures
 
 This directory contains fixtures and tests for the standalone detectors under
-`src/adgn/props/detectors`.
+`py_detectors/`.
 
 Philosophy
 

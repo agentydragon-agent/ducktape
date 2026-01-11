@@ -80,7 +80,7 @@ deny = ["adgn/**", "agent_server/**"]
 # agent_server can import from agent_pkg but not adgn internals
 [[python.dependency_rules]]
 path = "agent_server/**"
-deny = ["adgn/src/adgn/props/**"]  # Example: props is adgn-internal
+deny = ["props/**"]  # Example: props is a separate package
 ```
 
 Explicit, documented, enforced at build time.

@@ -189,7 +189,7 @@ CREATE INDEX idx_messages_in_reply_to ON messages(in_reply_to);
 **Schema Registry** (Python):
 
 ```python
-# src/adgn/props/messages/schemas.py
+# props/core/messages/schemas.py
 from enum import StrEnum
 from pydantic import BaseModel
 
@@ -502,7 +502,7 @@ async def start_agent_loop(agent_id: UUID):
 ### SQLAlchemy Models (DRY via Mixin)
 
 ```python
-# src/adgn/props/db/models.py
+# props/core/db/models.py
 
 class Agent(Base):
     """Hub table for all agents."""
@@ -666,7 +666,7 @@ async def drop_agent_role(agent_id: UUID):
   CREATE INDEX idx_messages_in_reply_to ON messages(in_reply_to);
   ```
 
-- Create `src/adgn/props/messages/schemas.py`:
+- Create `props/core/messages/schemas.py`:
   - `MessageSchema` StrEnum
   - Pydantic models (`PlaintextMessage`, `StructuredCritique`, `StructuredGrade`)
   - `SCHEMA_MODELS` registry
@@ -675,7 +675,7 @@ async def drop_agent_role(agent_id: UUID):
 
 ### Milestone 2: Messages MCP Server (Day 1 AM, ~2h)
 
-- Create `src/adgn/mcp/messages/server.py`
+- Create `mcp_infra/messages/server.py`
 - Implement `upsert_message` tool:
   - Pydantic I/O: `UpsertMessageInput` (schema_type, content, in_reply_to) → `UpsertMessageOutput` (message_id)
   - Schema validation via `SCHEMA_MODELS` registry
@@ -727,7 +727,7 @@ async def drop_agent_role(agent_id: UUID):
 ### Milestone 5: Subagents Server Scaffolding (Day 2 AM, ~2h)
 
 - Capability registry (in-memory)
-- `src/adgn/mcp/subagents/server.py`, `models.py`
+- `mcp_infra/subagents/server.py`, `models.py`
 - `running_agents` registry
 
 ### Milestone 6: `run_subagent` MVP (Day 2, ~6h)

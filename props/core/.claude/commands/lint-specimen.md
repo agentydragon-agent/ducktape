@@ -84,7 +84,7 @@ Example:
 props snapshot exec ducktape/2025-11-20-repo -- cat adgn/tests/agent/test_foo.py
 
 # Check if file exists
-props snapshot exec ducktape/2025-11-20-repo -- test -f adgn/src/adgn/agent/bar.py && echo "exists"
+props snapshot exec ducktape/2025-11-20-repo -- test -f adgn/agent/bar.py && echo "exists"
 
 # List files matching pattern
 props snapshot exec ducktape/2025-11-20-repo -- find adgn -name "*.py" -type f

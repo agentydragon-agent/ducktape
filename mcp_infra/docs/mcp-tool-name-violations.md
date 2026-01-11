@@ -61,7 +61,7 @@ FAIL_TEST_TOOL_NAME = "fail"      # Line 33
 
 ## Category 2: Production Code Tool Name Constants
 
-### File: `src/adgn/mcp/testing/simple_servers.py:22`
+### File: `mcp_infra/testing/simple_servers.py:22`
 
 ```python
 ECHO_TOOL_NAME = "echo"
@@ -71,7 +71,7 @@ ECHO_TOOL_NAME = "echo"
 **Should be:** Remove constant, use `EchoServer().echo_tool.name`
 **Priority:** LOW (test infrastructure)
 
-### File: `props/src/props/critic/critic.py:68`
+### File: `props/core/critic/critic.py:68`
 
 ```python
 UPSERT_ISSUE_TOOL_NAME = "upsert_issue"
@@ -81,7 +81,7 @@ UPSERT_ISSUE_TOOL_NAME = "upsert_issue"
 **Should be:** Access via critic submit server instance
 **Priority:** HIGH (production code)
 
-### File: `props/src/props/grader/grader.py:76`
+### File: `props/core/grader/grader.py:76`
 
 ```python
 SUBMIT_RESULT_TOOL_NAME = "submit_result"
@@ -91,7 +91,7 @@ SUBMIT_RESULT_TOOL_NAME = "submit_result"
 **Should be:** Access via grader submit server instance
 **Priority:** HIGH (production code)
 
-### File: `props/src/props/lint_issue.py:514`
+### File: `props/core/lint_issue.py:514`
 
 ```python
 DOCKER_EXEC_TOOL_NAME = "exec"
@@ -169,7 +169,7 @@ build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.END_TURN)
 
 ### Production Code Uses (Should Fix)
 
-**File: `props/src/props/lint_issue.py:261,376,461`**
+**File: `props/core/lint_issue.py:261,376,461`**
 
 ```python
 docker_tool_name = build_mcp_function(DOCKER_SERVER_NAME, DOCKER_EXEC_TOOL_NAME)
@@ -179,7 +179,7 @@ submit_tool_name = build_mcp_function("lint_submit", "submit_result")
 **Should be:** Use server instances from recipe
 **Priority:** MEDIUM (will be fixed by Phase 2 recipes)
 
-**File: `props/src/props/grader/grader.py:530`**
+**File: `props/core/grader/grader.py:530`**
 
 ```python
 build_mcp_function(GRADER_SUBMIT_MOUNT_PREFIX, "submit_result")
@@ -198,16 +198,16 @@ build_mcp_function(GRADER_SUBMIT_MOUNT_PREFIX, "submit_result")
 
 ### 🔴 HIGH PRIORITY (Must Fix for Phase 2 DoD)
 
-1. `props/src/props/critic/critic.py:68` - UPSERT_ISSUE_TOOL_NAME constant
-2. `props/src/props/grader/grader.py:76` - SUBMIT_RESULT_TOOL_NAME constant
-3. `props/src/props/lint_issue.py:514` - DOCKER_EXEC_TOOL_NAME constant
+1. `props/core/critic/critic.py:68` - UPSERT_ISSUE_TOOL_NAME constant
+2. `props/core/grader/grader.py:76` - SUBMIT_RESULT_TOOL_NAME constant
+3. `props/core/lint_issue.py:514` - DOCKER_EXEC_TOOL_NAME constant
 
 **Fix:** Remove constants, access via server instances from recipes
 
 ### 🟡 MEDIUM PRIORITY (Will be Fixed by Phase 2 Recipes)
 
-4. `props/src/props/lint_issue.py:261,376,461` - `build_mcp_function()` calls
-5. `props/src/props/grader/grader.py:530` - `build_mcp_function()` call
+4. `props/core/lint_issue.py:261,376,461` - `build_mcp_function()` calls
+5. `props/core/grader/grader.py:530` - `build_mcp_function()` call
 
 **Fix:** Recipes will provide server instances, eliminating need for name construction
 
@@ -216,7 +216,7 @@ build_mcp_function(GRADER_SUBMIT_MOUNT_PREFIX, "submit_result")
 6. `tests/support/steps.py` - 8 step classes using constants (Phase 3 work)
 7. `tests/support/test_mcp_factory_methods.py` - EXEC_TEST_TOOL_NAME usage
 8. `tests/agent/test_tool_error_sequence.py` - FAIL_TEST_TOOL_NAME usage
-9. `src/adgn/mcp/testing/simple_servers.py:22` - ECHO_TOOL_NAME (test helper)
+9. `mcp_infra/testing/simple_servers.py:22` - ECHO_TOOL_NAME (test helper)
 10. Direct `call_tool()` in tests (~10 occurrences) - acceptable pattern
 
 ### ✅ ACCEPTABLE (No Changes Needed)

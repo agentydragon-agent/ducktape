@@ -22,7 +22,7 @@ uv run ruff check .
 uv run mypy
 ```
 
-Key layout (`src/tana/`):
+Key layout (`tana/`):
 
 - `domain/` — data models, constants, and type definitions.
 - `graph/` — `TanaGraph` workspace representation and structural helpers.

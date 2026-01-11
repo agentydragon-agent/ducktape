@@ -983,7 +983,7 @@ CRITIC_BASED_DETECTORS = {
 def sync_agent_definitions_to_db(session: Session, *, use_staged: bool = False) -> SyncStats:
     """Sync repo-tracked agent definitions from agent_defs/ to database.
 
-    Reads agent definitions from src/adgn/props/agent_defs/ directory.
+    Reads agent definitions from props/core/agent_defs/ directory.
     Each subdirectory is an agent type (e.g., critic/, grader/).
     Definition ID is the directory name.
 

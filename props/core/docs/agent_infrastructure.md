@@ -5,7 +5,7 @@ This document covers implementation details for agent infrastructure. For agent-
 ## Directory Structure
 
 ```
-src/adgn/props/
+props/core/
 ├── agent_defs/              # Agent definitions (SSOT for agents)
 │   ├── common/              # Shared docs, helpers, init scripts
 │   ├── critic/              # Critic agent definition

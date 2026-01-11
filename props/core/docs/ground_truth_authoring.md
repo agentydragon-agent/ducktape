@@ -191,7 +191,7 @@ should_flag: true
 occurrences:
   - occurrence_id: occ-0
     files:
-      adgn/src/adgn/agent/agent.py:
+      adgn/agent/agent.py:
         - start_line: 358
           end_line: 358
           note: "Variable assignment"
@@ -200,9 +200,9 @@ occurrences:
           note: "Immediate use in conditional - could be combined with := above"
     note: Variable cid assigned then used in conditional check
     critic_scopes_expected_to_recall:
-      - [adgn/src/adgn/agent/agent.py]
+      - [adgn/agent/agent.py]
     graders_match_only_if_reported_on:
-      - adgn/src/adgn/agent/agent.py
+      - adgn/agent/agent.py
 ```
 
 ## Best Practices

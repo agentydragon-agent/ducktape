@@ -51,7 +51,7 @@
 
 **Goal:** Move resource URIs from `constants.py` to typed server attributes (parallel to tool access)
 
-**Implementation reference:** `src/adgn/mcp/exec/docker/server.py`
+**Implementation reference:** `mcp_infra/exec/docker/server.py`
 
 - Use `_resource` suffix to distinguish from function names
 - Cast to `FunctionResource` (static URI) or `FunctionResourceTemplate` (parameterized)

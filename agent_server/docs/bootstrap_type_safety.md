@@ -16,10 +16,10 @@ All bootstrap handlers have been migrated to the new pattern:
 
 **Files refactored:**
 
-- `src/adgn/agent/bootstrap.py` - Core infrastructure
-- `src/adgn/props/lint_issue.py` - LinterController split
-- `src/adgn/git_commit_ai/minicodex_backend.py` - CommitController refactored
-- `src/adgn/props/lint_issue.py` - BootstrapInspectHandler updated
+- `agent_core/bootstrap.py` - Core infrastructure
+- `props/core/lint_issue.py` - LinterController split
+- `adgn/gitea_pr_gate/minicodex_backend.py` - CommitController refactored
+- `props/core/lint_issue.py` - BootstrapInspectHandler updated
 
 ## Current State (Post-Refactoring)
 
@@ -287,7 +287,7 @@ All plans still require server name string literals when creating stubs. This is
 ### Helper Functions (Low Priority)
 
 **Status**: Optional, add as patterns emerge
-**Location**: `src/adgn/agent/bootstrap.py:238` (TODO comment)
+**Location**: `agent_core/bootstrap.py:238` (TODO comment)
 **Current helpers**: `builder.read_resource()` (method), `docker_exec_call()` (standalone function)
 **Recommendation**: Add more (e.g., `git_diff_call()`, `git_status_call()`) only when repetition justifies it. Scope appropriately (per-module or conftest, not global). Consider moving standalone helpers to methods on `TypedBootstrapBuilder` for consistency.
 
@@ -308,9 +308,9 @@ All plans still require server name string literals when creating stubs. This is
 
 ## References
 
-- **Existing patterns**: `src/adgn/mcp/stubs/server_stubs.py` (ServerStub base class)
-- **Similar approach**: `src/adgn/mcp/stubs/typed_stubs.py` (TypedClient with **getattr**)
+- **Existing patterns**: `mcp_infra/stubs/server_stubs.py` (ServerStub base class)
+- **Similar approach**: `mcp_infra/stubs/typed_stubs.py` (TypedClient with **getattr**)
 - **Bootstrap refactoring**: Recent work eliminating inheritance, adding TypedBootstrapBuilder
-- **MCP tool naming**: `src/adgn/mcp/_shared/naming.py` (build_mcp_function convention)
+- **MCP tool naming**: `mcp_infra/naming.py` (build_mcp_function convention)
 - **Integration tests**: `tests/agent/test_bootstrap_integration.py` (6 test cases)
 - **Documentation**: `AGENTS.md` (Bootstrap Handlers section)

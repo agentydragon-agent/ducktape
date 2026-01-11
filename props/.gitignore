@@ -1,5 +1,5 @@
 # Prompt evaluation runs
-src/props/runs/
+core/runs/
 
 # Bootstrap output dumps from e2e tests
 tests/bootstrap_dumps/
@@ -8,5 +8,5 @@ tests/bootstrap_dumps/
 db_backups/
 
 # GEPA outputs and logs
-src/props/gepa/**/*.log
-src/props/gepa/gepa_output/
+core/gepa/**/*.log
+core/gepa/gepa_output/

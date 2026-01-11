@@ -441,7 +441,7 @@ Backend‑agnostic logical schema for nodes, events, and edges that all realizat
 
 Phase 1 — journaling and objects
 
-- Add Pydantic models under `src/adgn/agent/journal/models.py` for events and objects. Include `to_canonical_json()` and `content_hash()` helpers (use JCS or `orjson` sorted keys).
+- Add Pydantic models under `adgn/agent/journal/models.py` for events and objects. Include `to_canonical_json()` and `content_hash()` helpers (use JCS or `orjson` sorted keys).
 - Implement a `JournalWriter` that writes `events/*`, `objects/*`, and `runs/*` (batching related events per commit) and a `GitSidecar` for add/commit/tag.
 
 Phase 2 — policy workflows

@@ -16,8 +16,8 @@ tests/
 .direnv/
 .ruff_cache/
 
-# Exclude specimens (snapshots/issues) - mounted as volumes at runtime
-src/adgn/props/specimens/
+# Exclude specimens (snapshots/issues) - in separate repo, mounted at runtime
+# (specimens repo is external, not in adgn package)
 
 # Exclude log files
 **/*.log

@@ -124,7 +124,7 @@ async def test_foo(echo_with_metadata):
 
 ### Current Usage
 
-**Initialization order** (from `src/adgn/git_commit_ai/agent_backend.py:218-232`):
+**Initialization order** (from `adgn/gitea_pr_gate/agent_backend.py:218-232`):
 
 ```python
 async with Compositor() as comp:
@@ -141,7 +141,7 @@ async with Compositor() as comp:
     agent = await Agent.create(..., handlers=[bootstrap])
 ```
 
-**Helper pattern using string literals** (from `src/adgn/git_commit_ai/agent_backend.py:56-57`):
+**Helper pattern using string literals** (from `adgn/gitea_pr_gate/agent_backend.py:56-57`):
 
 ```python
 def make_commit_bootstrap_calls(
@@ -173,7 +173,7 @@ The initialization order is:
 **Current state (string literals - DoD violation):**
 
 ```python
-# From src/adgn/git_commit_ai/agent_backend.py:54-68
+# From adgn/gitea_pr_gate/agent_backend.py:54-68
 def make_commit_bootstrap_calls(
     builder: TypedBootstrapBuilder,
     server: str,
@@ -247,7 +247,7 @@ exec_tool_name = exec_tools[0]  # Hope we got the right one!
 
 ### Current Usage
 
-**Templates rendered INSIDE async functions** (from `props/src/props/critic/critic.py:456-468`):
+**Templates rendered INSIDE async functions** (from `props/core/critic/critic.py:456-468`):
 
 ```python
 async def _build_critic_instructions() -> str:
@@ -264,7 +264,7 @@ async def _build_critic_instructions() -> str:
 agent = await Agent.create(..., dynamic_instructions=_build_critic_instructions)
 ```
 
-**Template rendering helper** (from `props/src/props/prompts/util.py:64-67`):
+**Template rendering helper** (from `props/core/prompts/util.py:64-67`):
 
 ```python
 def render_prompt_template(name: str, **ctx: object) -> str:
@@ -431,7 +431,7 @@ class EchoCall:
 
 **User confirmed:** Policy evaluation runs in Docker, constructs tool patterns to match against. Cannot easily get server instances.
 
-**From `src/adgn/mcp/approval_policy/instructions.j2.md:28-64`:**
+**From `mcp_infra/approval_policy/instructions.j2.md:28-64`:**
 
 ```markdown
 Read the current approval policy from: {{ TRUSTED_POLICY_URL }}

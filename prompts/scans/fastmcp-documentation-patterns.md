@@ -111,7 +111,7 @@ Field descriptions extend this with field-level documentation.
 
 ```bash
 # Find response models without Field descriptions in MCP servers
-rg --type py "class.*Response.*BaseModel" adgn/src/adgn/mcp/ -A10 | rg -v "Field\(description="
+rg --type py "class.*Response.*BaseModel" mcp_infra/ adgn/mcp/ -A10 | rg -v "Field\(description="
 ```
 
 ## Pattern 2: Redundant Schema Documentation in Docstrings
@@ -277,13 +277,13 @@ rg --type py '@(mcp|server)\.resource' -B 2 -A 10 --line-number
 
 ```bash
 # Find response models without Field descriptions
-rg --type py "class.*Response.*BaseModel" -A10 adgn/src/adgn/mcp/
+rg --type py "class.*Response.*BaseModel" -A10 mcp_infra/ adgn/mcp/
 
 # Find tools with redundant schema documentation
-rg --type py -B2 -A15 "@server\.(flat_model|tool)" adgn/src/adgn/mcp/ | rg "Returns:"
+rg --type py -B2 -A15 "@server\.(flat_model|tool)" mcp_infra/ adgn/mcp/ | rg "Returns:"
 
 # Find MCP server implementations
-fd -e py "server\.py$" adgn/src/adgn/mcp/
+fd -e py "server\.py$" mcp_infra/ adgn/mcp/
 ```
 
 **Manual review focus**:
