@@ -276,7 +276,6 @@ def main() -> int:
 
     if os.environ.get("CLAUDE_CODE_REMOTE") != "true":
         log.info("Not remote environment, skipping setup")
-        emit_session_context(had_warnings=False, had_errors=False)
         return 0
 
     # Full environment dump goes to file only (too verbose for stdout)
