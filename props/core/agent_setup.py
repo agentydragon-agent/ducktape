@@ -103,15 +103,14 @@ async def build_props_handlers(
 
 
 class AgentEnvironment(ABC):
-    """Base class for definition-based agent environments with HTTP MCP server.
+    """Base class for agent environments with HTTP MCP server.
 
     Manages complete agent lifecycle:
-    1. Builds Docker image from definition archive
+    1. Pulls OCI image from registry
     2. Creates temporary database user with scoped access
     3. Starts HTTP MCP server with agent-specific tools (via _make_mcp_server)
     4. Creates Docker container with:
        - docker_exec tool available
-       - Unpacked definition mounted at /workspace
        - Database credentials in PG* env vars
        - MCP server URL/token in env vars
     5. Cleans up in reverse order on exit
@@ -120,7 +119,7 @@ class AgentEnvironment(ABC):
     props.agent_helpers. No bind mounts for snapshots - agents extract them
     directly from the database.
 
-    Agent package structure (in Docker image, built from archive):
+    Agent image structure (OCI image):
     - /init: Bootstrap script executed before agent sampling (outputs system prompt)
     - /agent.md: Agent-specific prompt portion (optional, used by some /init scripts)
 
@@ -132,13 +131,13 @@ class AgentEnvironment(ABC):
 
     Example subclass:
         class CriticAgentEnvironment(AgentEnvironment):
-            def __init__(self, docker_client, agent_run_id, db_config, workspace_manager):
+            def __init__(self, docker_client, agent_run_id, db_config, workspace_manager, image):
                 super().__init__(
-                    definition_id="critic",
                     agent_run_id=agent_run_id,
                     docker_client=docker_client,
                     db_config=db_config,
                     workspace_manager=workspace_manager,
+                    image=image,  # Full OCI ref from AgentRegistry
                 )
 
             def _make_mcp_server(self, auth) -> FastMCP:
@@ -149,7 +148,6 @@ class AgentEnvironment(ABC):
             # Use AgentHandle.create() to run agent with init script
             handle = await AgentHandle.create(
                 agent_run_id=agent_run_id,
-                definition_id=definition_id,
                 compositor=compositor,
                 ...
             )
@@ -158,23 +156,21 @@ class AgentEnvironment(ABC):
 
     def __init__(
         self,
-        definition_id: DefinitionId,
         agent_run_id: UUID,
         docker_client: aiodocker.Docker,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
         *,
-        image_ref: str | None = None,
+        image: str,
         container_name: str | None = None,
         labels: dict[str, str] | None = None,
         auto_remove: bool = False,
     ):
-        self._definition_id = definition_id
         self._agent_run_id = agent_run_id
         self._docker_client = docker_client
         self._db_config = db_config
         self._workspace_manager = workspace_manager
-        self._image_ref = image_ref  # OCI image ref (takes precedence over definition_id)
+        self._image = image  # Full OCI reference (host:port/repo@digest)
         self._container_name = container_name
         self._labels = labels or {}
         self._auto_remove = auto_remove
@@ -183,11 +179,6 @@ class AgentEnvironment(ABC):
         self._exit_stack: AsyncExitStack | None = None
         self._compositor: PropertiesDockerCompositor | None = None
         self._image_id: str | None = None
-
-    @property
-    def definition_id(self) -> str:
-        """Agent definition ID."""
-        return self._definition_id
 
     @property
     def agent_run_id(self) -> UUID:
@@ -226,10 +217,8 @@ class AgentEnvironment(ABC):
             PropertiesDockerCompositor with docker_exec tool available
         """
         # Resolve image from OCI reference
-        if self._image_ref is None:
-            raise ValueError("image_ref is required (tarball definitions no longer supported)")
-        self._image_id = await _resolve_image_ref(self._docker_client, self._image_ref)
-        logger.info(f"Using image {self._image_id[:19]} from image_ref {self._image_ref}")
+        self._image_id = await _resolve_image_ref(self._docker_client, self._image)
+        logger.info(f"Using image {self._image_id[:19]} from {self._image}")
 
         self._user_manager = TempUserManager(self._db_config.admin, self._agent_run_id)
         temp_creds = await self._user_manager.__aenter__()

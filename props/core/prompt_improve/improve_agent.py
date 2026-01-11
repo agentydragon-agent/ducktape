@@ -29,14 +29,13 @@ from props.core.db.agent_definition_ids import IMPROVEMENT_AGENT_DEFINITION_ID
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
-from props.core.oci_utils import resolve_image_ref
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleSpec
+from props.core.oci_utils import resolve_image_ref
 from props.core.prompt_improve.reminder_handler import ImprovementReminderHandler, TerminationSuccess
 from props.core.prompt_improve.token_budget_handler import TokenBudgetHandler
 from props.core.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
 from props.core.prompt_optimize.target_metric import TargetMetric
-from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +78,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         registry: AgentRegistry,
         verbose: bool = False,
         *,
-        image_digest: str,
+        image: str,
     ):
         type_config = ImprovementTypeConfig(
             baseline_definition_ids=baseline_definition_ids,
@@ -96,17 +95,12 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         self._verbose = verbose
         self.agent_state = PromptOptimizerState()
 
-        # Construct full OCI reference from digest
-        # Format: localhost:5050/improvement@sha256:abc...
-        image_ref = f"{REGISTRY_HOST}:{REGISTRY_PORT}/improvement@{image_digest}"
-
         super().__init__(
-            definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
             agent_run_id=improvement_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
-            image_ref=image_ref,
+            image=image,
             container_name=f"improve-{short_uuid(improvement_run_id)}",
             labels={"adgn.project": "props", "adgn.role": "improve", "adgn.agent_run_id": str(improvement_run_id)},
             auto_remove=True,

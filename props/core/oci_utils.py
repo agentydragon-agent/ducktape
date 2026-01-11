@@ -9,21 +9,15 @@ import re
 import requests
 
 from props.core.agent_types import AgentType
+from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 
 logger = logging.getLogger(__name__)
 
 # Proxy URL for registry operations
 DEFAULT_PROXY_URL = os.environ.get("PROPS_REGISTRY_PROXY_URL", "http://localhost:5050")
 
-# Mapping from AgentType to repository name
-AGENT_TYPE_TO_REPOSITORY = {
-    AgentType.CRITIC: "critic",
-    AgentType.GRADER: "grader",
-    AgentType.SNAPSHOT_GRADER: "grader",  # Snapshot grader uses same image as grader
-    AgentType.PROMPT_OPTIMIZER: "prompt-optimizer",
-    AgentType.IMPROVEMENT: "improvement",
-    AgentType.FREEFORM: "freeform",
-}
+# Builtin image tag - used by all Bazel oci_push targets
+BUILTIN_TAG = "latest"
 
 
 def is_digest(ref: str) -> bool:
@@ -42,8 +36,8 @@ def resolve_image_ref(agent_type: AgentType, ref: str, *, proxy_url: str | None 
     """Resolve image reference to digest.
 
     Args:
-        agent_type: Agent type (determines repository name)
-        ref: Tag or digest (e.g., "builtin", "sha256:abc...")
+        agent_type: Agent type (determines repository name via str(agent_type))
+        ref: Tag or digest (e.g., "latest", "sha256:abc...")
         proxy_url: Registry proxy URL (defaults to PROPS_REGISTRY_PROXY_URL env var or localhost:5050)
 
     Returns:
@@ -57,10 +51,8 @@ def resolve_image_ref(agent_type: AgentType, ref: str, *, proxy_url: str | None 
         logger.debug(f"Reference {ref} is already a digest, returning as-is")
         return ref
 
-    # Map agent type to repository name
-    repository = AGENT_TYPE_TO_REPOSITORY.get(agent_type)
-    if repository is None:
-        raise ValueError(f"Unknown agent type: {agent_type}")
+    # Repository name is just the string representation of agent type
+    repository = str(agent_type)
 
     # Resolve tag via proxy HEAD request (admin auth)
     proxy = proxy_url or DEFAULT_PROXY_URL
@@ -98,3 +90,21 @@ def resolve_image_ref(agent_type: AgentType, ref: str, *, proxy_url: str | None 
 
     logger.info(f"Resolved {repository}:{ref} → {digest}")
     return str(digest)  # Cast to satisfy mypy (already checked non-None above)
+
+
+def build_oci_reference(agent_type: AgentType, digest: str) -> str:
+    """Build full OCI reference from agent type and digest.
+
+    Args:
+        agent_type: Agent type (determines repository name via str(agent_type))
+        digest: Manifest digest (sha256:...)
+
+    Returns:
+        Full OCI reference (host:port/repository@digest)
+
+    Example:
+        >>> build_oci_reference(AgentType.CRITIC, "sha256:abc...")
+        "localhost:5050/critic@sha256:abc..."
+    """
+    repository = str(agent_type)
+    return f"{REGISTRY_HOST}:{REGISTRY_PORT}/{repository}@{digest}"

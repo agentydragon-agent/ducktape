@@ -12,12 +12,10 @@ from fastmcp.server.auth import AuthProvider
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from props.core.agent_setup import AgentEnvironment
 from props.core.agent_workspace import WorkspaceManager
-from props.core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from props.core.db.config import DatabaseConfig
 from props.core.display import short_uuid
 from props.core.grader.submit_server import GraderSubmitServer
 from props.core.ids import SnapshotSlug
-from props.core.registry.images import REGISTRY_HOST, REGISTRY_PORT
 
 
 class GraderAgentEnvironment(AgentEnvironment):
@@ -46,7 +44,7 @@ class GraderAgentEnvironment(AgentEnvironment):
             critic_run_id=critic_run_id,
             db_config=db_config,
             workspace_manager=workspace_manager,
-            image_digest="sha256:abc...",  # OCI image digest
+            image="localhost:5050/grader@sha256:abc...",  # Full OCI reference
         ) as compositor:
             # Run grader agent
             ...
@@ -61,7 +59,7 @@ class GraderAgentEnvironment(AgentEnvironment):
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
         *,
-        image_digest: str,
+        image: str,
     ):
         # Store params needed by _make_mcp_server
         self._grader_run_id = grader_run_id
@@ -69,17 +67,12 @@ class GraderAgentEnvironment(AgentEnvironment):
         # Store snapshot_slug for reference (init script fetches it from DB)
         self._snapshot_slug = snapshot_slug
 
-        # Construct full OCI reference from digest
-        # Format: localhost:5050/grader@sha256:abc...
-        image_ref = f"{REGISTRY_HOST}:{REGISTRY_PORT}/grader@{image_digest}"
-
         super().__init__(
-            definition_id=GRADER_AGENT_DEFINITION_ID,
             agent_run_id=grader_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
-            image_ref=image_ref,
+            image=image,
             container_name=f"grader-{short_uuid(grader_run_id)}",
             labels={"adgn.project": "props", "adgn.role": "grader", "adgn.agent_run_id": str(grader_run_id)},
             auto_remove=True,
