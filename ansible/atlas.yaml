@@ -218,6 +218,12 @@
       changed_when: modprobe_result.rc == 0
       tags: [wifi, network]
 
+    # TODO: Manage Proxmox VM configurations in Ansible
+    # Currently VM configs live only in /etc/pve/qemu-server/*.conf
+    # Key VM to manage:
+    # - VM 100 (wyrm): vga=virtio-gl, hostpci0=01:00 (NVIDIA 5090), 32 cores, 64GB RAM
+    # Consider using community.general.proxmox_kvm module or templating .conf files
+
   handlers:
     - name: update grub
       ansible.builtin.command:
