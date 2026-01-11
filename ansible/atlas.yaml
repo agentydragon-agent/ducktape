@@ -191,31 +191,15 @@
       changed_when: initramfs_result.rc == 0
       tags: [gpu_passthrough]
 
-    # WiFi Configuration
-    # Note: pve-firmware is already installed by Proxmox and contains MediaTek firmware
-    - name: Install wireless tools
-      ansible.builtin.apt:
-        name:
-          - wireless-tools
-          - wpasupplicant
-          - iw
-        state: present
-      tags: [wifi, network]
-
-    - name: Add MediaTek WiFi module to /etc/modules
-      ansible.builtin.lineinfile:
-        path: /etc/modules
-        line: mt7921e
-        create: true
-      tags: [wifi, network]
-
-    - name: Load MediaTek WiFi module immediately
-      ansible.builtin.command:
-        cmd: modprobe mt7921e
-      register: modprobe_result
-      failed_when: modprobe_result.rc != 0 and "Module mt7921e already in kernel" not in modprobe_result.stderr
-      changed_when: modprobe_result.rc == 0
-      tags: [wifi, network]
+    # TODO: WiFi Configuration - MediaTek MT7927 (14c3:7927)
+    # The atlas host has a MediaTek MT7927 WiFi 7 card, but it's not supported
+    # by the mt7921e driver in kernel 6.8.12. The driver only supports MT7961/MT7922.
+    # Solutions:
+    # 1. Wait for Proxmox kernel update to 6.10+ which should include MT7927 support
+    # 2. Try force-binding: echo "14c3 7927" > /sys/bus/pci/drivers/mt7921e/new_id
+    # 3. Install newer mainline kernel with MT7927 support
+    # Required packages when driver support is available:
+    # - wireless-tools, wpasupplicant, iw (pve-firmware already has MediaTek firmware)
 
     # TODO: Manage Proxmox VM configurations in Ansible
     # Currently VM configs live only in /etc/pve/qemu-server/*.conf
