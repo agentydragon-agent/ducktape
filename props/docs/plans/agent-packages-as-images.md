@@ -375,6 +375,258 @@ Revisit if extraction latency becomes a bottleneck.
 1. **Manifest digest as identifier**: Store OCI manifest digest (sha256 of manifest JSON), not Docker Image ID (sha256 of config blob). Manifest digest is the standard OCI identifier for registry operations.
 2. **Network isolation enforced**: Two Docker networks prevent ACL bypass (agents can't reach registry directly)
 3. **Postgres validates all auth**: No hardcoded credentials, all validated against DB via connection testing
-4. **Tags for convenience, digests for immutability**: Launch by tag (e.g., `critic:builtin`), store digest in DB
+4. **Tags for convenience, digests for immutability**: Launch by tag (e.g., `critic:latest`), store digest in DB
 5. **Proxy auto-builds**: No manual setup required for devenv
 6. **AgentType enum for type safety**: `resolve_image_ref()` takes typed enum, not strings
+
+## Design: ID Types and Resolution
+
+### Builtin Image Tag
+
+**Constant:** `BUILTIN_TAG = "latest"`
+
+All built-in images pushed from Bazel targets use the `latest` tag. This is the single source of truth for "official" agent images.
+
+### ID Types
+
+| ID Type             | Format                       | Where It Lives                        | Purpose                   |
+| ------------------- | ---------------------------- | ------------------------------------- | ------------------------- |
+| **Tag**             | `"latest"`, custom tags      | User input (critic only), Bazel       | Human-friendly references |
+| **Digest**          | `"sha256:abc123..."`         | Database (`agent_runs.image_digest`)  | Immutable content address |
+| **Full OCI Ref**    | `"host:port/repo@digest"`    | Runtime only (passed to Docker)       | Container execution       |
+| **Repository Name** | `"critic"`, `"grader"`, etc. | Derived from `AgentType` via `str(x)` | Registry namespace        |
+| ~~definition_id~~   | ~~"critic"~~                 | **DEPRECATED** - remove               | Replaced by `AgentType`   |
+| ~~image_digest~~    | ~~passed to environment~~    | **DEPRECATED** - pass full ref        | Use `image` parameter     |
+
+### Repository Name Mapping
+
+**Trivial mapping:** `repository = str(agent_type)` (lowercase string from enum)
+
+```python
+AgentType.CRITIC → "critic"
+AgentType.GRADER → "grader"
+AgentType.PROMPT_OPTIMIZER → "prompt_optimizer"
+AgentType.IMPROVEMENT → "improvement"
+```
+
+No lookup table needed - the enum value IS the repository name.
+
+### Layer Separation
+
+#### Layer 1: High-Level API (AgentRegistry)
+
+**Responsibilities:**
+
+- Knows agent types, tags, resolution semantics
+- Decides which agents allow custom images vs builtin-only
+- Resolves tags → digests
+- Constructs full OCI references
+- Stores digests in database
+
+**Critic launch** (custom image allowed):
+
+```python
+async def run_critic(
+    self,
+    *,
+    snapshot_slug: SnapshotSlug,
+    client: OpenAIModelProto,
+    image_ref: str,  # REQUIRED - must be explicit
+) -> UUID:
+    # 1. Resolve tag → digest
+    image_digest = resolve_image_ref(AgentType.CRITIC, image_ref)
+
+    # 2. Build full OCI reference
+    full_image = build_oci_reference(AgentType.CRITIC, image_digest)
+
+    # 3. Store digest in DB
+    session.add(AgentRun(image_digest=image_digest, ...))
+
+    # 4. Pass full reference to environment
+    env = CriticAgentEnvironment(
+        ...,
+        image=full_image,  # Full URI
+    )
+```
+
+**Grader/optimizer/improver launch** (builtin-only):
+
+```python
+async def run_grader(
+    self,
+    *,
+    critic_run_id: UUID,
+    client: OpenAIModelProto,
+    # NO image_ref parameter - always uses builtin
+) -> UUID:
+    # Always resolve from builtin tag
+    image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
+    full_image = build_oci_reference(AgentType.GRADER, image_digest)
+
+    env = GraderAgentEnvironment(..., image=full_image)
+```
+
+**Why this split?**
+
+- Critic agents benefit from custom prompts/images (experimentation)
+- Grader/optimizer/improver are infrastructure - should be stable and consistent
+- Prevents accidental image mismatches in evaluation pipeline
+
+#### Layer 2: Agent Environment (Container Management)
+
+**Responsibilities:**
+
+- Docker container lifecycle
+- Type-specific MCP server creation (via `_make_mcp_server()`)
+- Container configuration (labels, mounts, etc.)
+
+**Does NOT know:**
+
+- Agent types (beyond what's needed for MCP server)
+- Tag resolution
+- Registry host/port
+- Image URI construction
+
+```python
+class AgentEnvironment(ABC):
+    def __init__(
+        self,
+        agent_run_id: UUID,
+        docker_client: aiodocker.Docker,
+        db_config: DatabaseConfig,
+        workspace_manager: WorkspaceManager,
+        *,
+        image: str,  # Full OCI reference - ONLY identifier
+        container_name: str | None = None,
+        labels: dict[str, str] | None = None,
+        auto_remove: bool = False,
+    ):
+        # No definition_id, no digest, no agent_type
+        self._image = image
+        # ... rest
+
+    @abstractmethod
+    def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
+        """Subclasses provide type-specific MCP server."""
+        pass
+```
+
+**Subclass example:**
+
+```python
+class CriticAgentEnvironment(AgentEnvironment):
+    def __init__(
+        self,
+        critic_run_id: UUID,
+        snapshot_slug: SnapshotSlug,
+        docker_client: aiodocker.Docker,
+        db_config: DatabaseConfig,
+        workspace_manager: WorkspaceManager,
+        *,
+        image: str,  # Pre-resolved full reference
+    ):
+        self._snapshot_slug = snapshot_slug
+
+        super().__init__(
+            agent_run_id=critic_run_id,
+            docker_client=docker_client,
+            db_config=db_config,
+            workspace_manager=workspace_manager,
+            image=image,  # Just pass through
+            container_name=f"critic-{short_uuid(critic_run_id)}",
+            labels={"adgn.role": "critic", ...},
+        )
+
+    def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
+        return CriticSubmitServer(
+            critic_run_id=self._agent_run_id,
+            snapshot_slug=self._snapshot_slug,
+            auth=auth,
+        )
+```
+
+**Key insight:** Agent environments still have type-specific behavior (MCP servers), but they don't handle image resolution/construction - that's the API layer's job.
+
+#### Layer 3: Resolution Utilities (OCI Utils)
+
+**Centralized** construction and resolution:
+
+```python
+# props/core/oci_utils.py
+
+# Builtin image tag constant
+BUILTIN_TAG = "latest"
+
+def resolve_image_ref(agent_type: AgentType, ref: str) -> str:
+    """Resolve tag or digest to canonical digest.
+
+    Args:
+        agent_type: Type of agent (for repo name)
+        ref: Tag like "latest" or digest "sha256:..."
+
+    Returns:
+        Canonical digest "sha256:..."
+    """
+    if is_digest(ref):
+        return ref
+
+    repository = str(agent_type)  # Trivial mapping!
+    # HEAD request to resolve tag...
+    return digest
+
+def build_oci_reference(agent_type: AgentType, digest: str) -> str:
+    """Build full OCI reference from agent type and digest.
+
+    Args:
+        agent_type: Type of agent
+        digest: Manifest digest "sha256:..."
+
+    Returns:
+        Full reference "localhost:5050/critic@sha256:..."
+    """
+    repository = str(agent_type)
+    return f"{REGISTRY_HOST}:{REGISTRY_PORT}/{repository}@{digest}"
+```
+
+### Resolution Flow
+
+```
+User/API Layer (AgentRegistry):
+  agent_type=CRITIC, ref="latest" (or custom for critic)
+          ↓
+[resolve_image_ref(CRITIC, "latest")]
+          ↓
+      digest="sha256:abc..."
+          ↓
+    [Store in DB: agent_runs.image_digest]
+          ↓
+[build_oci_reference(CRITIC, digest)]
+          ↓
+full_ref="localhost:5050/critic@sha256:abc..."
+          ↓
+  [Pass to Environment]
+          ↓
+    CriticAgentEnvironment(image=full_ref)
+          ↓
+    Docker pull/run
+```
+
+### DRY Guarantees
+
+1. **URI construction:** ONE function (`build_oci_reference()`)
+2. **Tag resolution:** ONE function (`resolve_image_ref()`)
+3. **Repository mapping:** ONE expression (`str(agent_type)`)
+4. **Builtin tag:** ONE constant (`BUILTIN_TAG`)
+5. **Registry host/port:** ONE place (`REGISTRY_HOST`, `REGISTRY_PORT` in `registry/images.py`)
+
+### Image Reference Policy
+
+| Agent Type       | Custom Image Allowed? | Default              | Rationale                          |
+| ---------------- | --------------------- | -------------------- | ---------------------------------- |
+| Critic           | ✅ Yes (required arg) | User must specify    | Experimentation on prompts         |
+| Grader           | ❌ No                 | Always `BUILTIN_TAG` | Evaluation infrastructure (stable) |
+| Prompt Optimizer | ❌ No                 | Always `BUILTIN_TAG` | Infrastructure agent (stable)      |
+| Improvement      | ❌ No                 | Always `BUILTIN_TAG` | Infrastructure agent (stable)      |
+| Snapshot Grader  | ❌ No                 | Always `BUILTIN_TAG` | Long-running daemon (stable)       |
+
+**Critic special case:** Researchers want to test modified prompts/code, so custom images are useful. All other agents are infrastructure that should stay consistent.
