@@ -1242,7 +1242,7 @@
     },
     "@@rules_go~//go:extensions.bzl%go_sdk": {
       "os:linux,arch:amd64": {
-        "bzlTransitiveDigest": "+pCqD1XiW1BtL02KKnGTMsE76pwa2L3Oht+judxN6EU=",
+        "bzlTransitiveDigest": "/+G45nwSwfZdSU9QcOqk4o5DwylcmO+nenmiUhlLJ/4=",
         "usagesDigest": "ou6iSUcUrWTQlaX5sESCdXNLwXwRYBV7qwLifS09hZo=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
