@@ -498,7 +498,7 @@ async def _execute_git_commit(message: str, *, amend: bool = False, verbose: boo
     if verbose:
         cmd.append("-v")
     cmd.extend(passthru)
-    commit_proc = await asyncio.create_subprocess_exec(*cmd)
+    commit_proc = await asyncio.create_subprocess_exec(*cmd, cwd=_get_working_directory())
     code = await commit_proc.wait()
     if code != 0:
         raise SystemExit(code)
