@@ -504,22 +504,16 @@ async def _execute_git_commit(message: str, *, amend: bool = False, verbose: boo
         raise SystemExit(code)
 
 
-async def _commit_immediately(msg: str, *, amend: bool = False, verbose: bool = False, passthru: list[str]) -> None:
-    await _execute_git_commit(msg, amend=amend, verbose=verbose, passthru=passthru)
-
-
 async def _run_editor_flow(
     repo: pygit2.Repository,
     msg: str,
     previous_message: str | None,
     user_context: str | None,
     *,
-    amend: bool,
     verbose: bool,
-    passthru: list[str],
     cached: bool,
     elapsed_s: float,
-) -> None:
+) -> str:
     editor_content = render_editor_content(
         repo,
         msg,
@@ -533,8 +527,7 @@ async def _run_editor_flow(
     commit_message = await run_editor(repo, editor_content)
     if commit_message is None:
         raise SystemExit(1)
-
-    await _execute_git_commit(commit_message, amend=amend, verbose=verbose, passthru=passthru)
+    return commit_message
 
 
 @dataclass
@@ -655,20 +648,17 @@ async def async_main(argv: list[str] | None = None):
 
     elapsed_s = time.monotonic() - start_monotonic_s
 
-    if args.accept_ai:
-        await _commit_immediately(msg, amend=args.amend, verbose=args.verbose, passthru=passthru)
-    else:
-        await _run_editor_flow(
+    if not args.accept_ai:
+        msg = await _run_editor_flow(
             repo,
             msg,
             previous_message,
             args.user_context,
-            amend=args.amend,
             verbose=args.verbose,
-            passthru=passthru,
             cached=cached,
             elapsed_s=elapsed_s,
         )
+    await _execute_git_commit(msg, amend=args.amend, verbose=args.verbose, passthru=passthru)
 
 
 def main():
