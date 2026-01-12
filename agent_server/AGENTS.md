@@ -23,13 +23,34 @@ managed via the approval policy server.
   hosted on the `policy_reader` server
 - Policy source is evaluated in a sandboxed container via `policy_eval.runner` (network disabled,
   read-only rootfs, memory/CPU limited)
-- See `docker/AGENTS.md` for image build and environment variables
 
 ### Testing Policy Decisions (Advisory)
 
 - Optional: expose `policy_reader.decide` to agent/human tokens for testing
 - Advisory only: does not create approval items or alter enforcement
 - Suggested UI affordance: "Test decision" action next to tool payload inspectors
+
+## Runtime Image
+
+Build and load the runtime image:
+
+```bash
+bazel run //agent_server:load
+```
+
+This loads `adgn-runtime:latest` into the local Docker daemon.
+
+### Environment Variables
+
+Override the runtime image:
+
+- `ADGN_RUNTIME_IMAGE` — defaults to `adgn-runtime:latest`
+
+Policy evaluation resource limits:
+
+- `ADGN_POLICY_EVAL_TIMEOUT_SECS`
+- `ADGN_POLICY_EVAL_MEM`
+- `ADGN_POLICY_EVAL_NANO_CPUS`
 
 ## Development
 
