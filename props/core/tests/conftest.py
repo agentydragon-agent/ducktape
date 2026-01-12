@@ -22,7 +22,7 @@ from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResu
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import CriticTypeConfig, GraderTypeConfig
 from props.core.agent_workspace import WorkspaceManager
-from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID, GRADER_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF, GRADER_IMAGE_REF
 from props.core.db.config import DatabaseConfig, get_database_config
 from props.core.db.examples import Example
 from props.core.db.models import (
@@ -303,7 +303,7 @@ def make_critic_run(
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     completion_summary: str | None = None,
     agent_run_id: UUID | None = None,
-    image_digest: str = CRITIC_AGENT_DEFINITION_ID,
+    image_digest: str = CRITIC_IMAGE_REF,
 ) -> AgentRun:
     """Build AgentRun for critic from Example (preferred pattern).
 
@@ -315,7 +315,7 @@ def make_critic_run(
         status: Run status (default: COMPLETED)
         completion_summary: Markdown summary (auto-provided for COMPLETED status if None)
         agent_run_id: Optional agent run ID (defaults to uuid4())
-        image_digest: Image digest (default: CRITIC_AGENT_DEFINITION_ID)
+        image_digest: Image digest (default: CRITIC_IMAGE_REF)
 
     Returns:
         AgentRun ORM model (not yet added to session)
@@ -361,7 +361,7 @@ def make_grader_run(
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     agent_run_id: UUID | None = None,
-    image_digest: str = GRADER_AGENT_DEFINITION_ID,
+    image_digest: str = GRADER_IMAGE_REF,
 ) -> AgentRun:
     """Build AgentRun for grader from critic AgentRun (derives graded_agent_run_id).
 
@@ -371,7 +371,7 @@ def make_grader_run(
         model: Model name (default: "test-model")
         status: Run status (default: COMPLETED)
         agent_run_id: Optional agent run ID (defaults to uuid4())
-        image_digest: Image digest (default: GRADER_AGENT_DEFINITION_ID)
+        image_digest: Image digest (default: GRADER_IMAGE_REF)
 
     Returns:
         AgentRun ORM model (not yet added to session)
@@ -1124,7 +1124,7 @@ def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async
     async def _run(
         steps: list[Step],
         *,
-        definition_id: str = CRITIC_AGENT_DEFINITION_ID,
+        definition_id: str = CRITIC_IMAGE_REF,
         example: ExampleSpec | None = None,
         max_turns: int = 100,
     ) -> tuple[UUID, AgentRunStatus, object]:
@@ -1259,7 +1259,7 @@ def run_improvement_agent_with_steps(
         baseline_definition_ids: list[str] | None = None,
     ):
         if baseline_definition_ids is None:
-            baseline_definition_ids = [CRITIC_AGENT_DEFINITION_ID]
+            baseline_definition_ids = [CRITIC_IMAGE_REF]
 
         runner = make_step_runner(steps=steps)
 

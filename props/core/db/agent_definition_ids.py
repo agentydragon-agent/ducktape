@@ -1,15 +1,13 @@
-"""Constants for agent definition IDs.
+"""Constants for agent image references.
 
-These are the canonical IDs for built-in agent definitions that are synced from git.
-The actual definitions live in props/core/agent_defs/<id>/.
+These are short-name references for built-in agents that resolve to OCI image digests.
+The actual agent definitions live in props/core/agent_defs/<name>/.
 """
 
-from props.core.ids import DefinitionId
-
 # Core evaluation agents
-CRITIC_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("critic")
-GRADER_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("grader")
+CRITIC_IMAGE_REF: str = "critic"
+GRADER_IMAGE_REF: str = "grader"
 
 # Optimization agents
-PROMPT_OPTIMIZER_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("prompt_optimizer")
-IMPROVEMENT_AGENT_DEFINITION_ID: DefinitionId = DefinitionId("improvement")
+PROMPT_OPTIMIZER_IMAGE_REF: str = "prompt_optimizer"
+IMPROVEMENT_IMAGE_REF: str = "improvement"

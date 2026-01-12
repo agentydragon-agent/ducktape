@@ -49,7 +49,7 @@ from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.critic import CriticAgentEnvironment
 from props.core.critic.exceptions import CriticExecutionError
-from props.core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import GRADER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
 from props.core.db.session import get_session
@@ -60,7 +60,7 @@ from props.core.grader.drift_handler import format_notifications
 from props.core.grader.grader import GraderAgentEnvironment
 from props.core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props.core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
-from props.core.ids import DefinitionId, SnapshotSlug
+from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 
@@ -75,7 +75,7 @@ class AgentRunView:
     """Unified view of an agent run from memory or DB."""
 
     agent_run_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     model: str
     status: AgentRunStatus
     created_at: datetime
@@ -249,7 +249,7 @@ class AgentRegistry:
             # Create AgentHandle
             handle = await AgentHandle.create(
                 agent_run_id=agent_run_id,
-                definition_id=DefinitionId("critic"),  # Fixed for critic agents
+                image_digest=image_digest,
                 model_client=client,
                 mcp_client=mcp_client,
                 compositor=comp,
@@ -484,7 +484,7 @@ class AgentRegistry:
             # Create AgentHandle
             agent_handle = await AgentHandle.create(
                 agent_run_id=grader_run_id,
-                definition_id=GRADER_AGENT_DEFINITION_ID,
+                image_digest=GRADER_IMAGE_REF,
                 model_client=client,
                 mcp_client=mcp_client,
                 compositor=compositor,
@@ -637,7 +637,7 @@ class AgentRegistry:
             # Create AgentHandle
             agent_handle = await AgentHandle.create(
                 agent_run_id=grader_run_id,
-                definition_id=GRADER_AGENT_DEFINITION_ID,
+                image_digest=GRADER_IMAGE_REF,
                 model_client=client,
                 mcp_client=mcp_client,
                 compositor=compositor,
@@ -707,7 +707,7 @@ class AgentRegistry:
             active = self._active[run_id]
             return AgentRunView(
                 agent_run_id=run_id,
-                definition_id=active.handle.definition_id,
+                image_digest=active.handle.image_digest,
                 model=active.handle.agent.model,
                 status=AgentRunStatus.IN_PROGRESS,
                 created_at=datetime.now(),
@@ -720,7 +720,7 @@ class AgentRegistry:
                 return None
             return AgentRunView(
                 agent_run_id=db_run.agent_run_id,
-                definition_id=DefinitionId(db_run.image_digest),
+                image_digest=db_run.image_digest,
                 model=db_run.model,
                 status=db_run.status,
                 created_at=db_run.created_at,
@@ -734,7 +734,7 @@ class AgentRegistry:
             result.append(
                 AgentRunView(
                     agent_run_id=run_id,
-                    definition_id=active.handle.definition_id,
+                    image_digest=active.handle.image_digest,
                     model=active.handle.agent.model,
                     status=AgentRunStatus.IN_PROGRESS,
                     created_at=datetime.now(),
@@ -750,7 +750,7 @@ class AgentRegistry:
             return [
                 AgentRunView(
                     agent_run_id=r.agent_run_id,
-                    definition_id=DefinitionId(r.image_digest),
+                    image_digest=r.image_digest,
                     model=r.model,
                     status=r.status,
                     created_at=r.created_at,

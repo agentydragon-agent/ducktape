@@ -1,7 +1,7 @@
-"""Agent handle - wraps Agent with definition-based image and system prompt.
+"""Agent handle - wraps Agent with image digest and system prompt from /init.
 
 AgentHandle provides a similar interface to Agent (process_message, run) but manages:
-- Loading agent definition from database
+- Container lifecycle with OCI image
 - Running init script and using its output as system prompt
 - System message injection
 
@@ -9,7 +9,7 @@ Usage:
     async with AgentEnvironment(...) as comp:
         handle = await AgentHandle.create(
             agent_run_id=run_id,
-            definition_id="critic",
+            image_digest="sha256:abc123...",
             model_client=openai_client,
             mcp_client=mcp_client,
             compositor=comp,
@@ -18,7 +18,7 @@ Usage:
         handle.process_message(UserMessage.text("Review this code"))
         result = await handle.run()
 
-Note: The Docker image is built from the definition archive by AgentEnvironment.
+Note: image_digest must be a canonical OCI digest (sha256:...).
 The /init script output becomes the system prompt.
 """
 
@@ -38,7 +38,6 @@ from agent_pkg.host.init_runner import run_init_script
 from openai_utils.model import SystemMessage
 from openai_utils.types import ReasoningSummary
 from props.core.db_event_handler import DatabaseEventHandler
-from props.core.ids import DefinitionId
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -65,7 +64,7 @@ class AgentHandle:
     """
 
     agent_run_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     agent: Agent
     compositor: PropertiesDockerCompositor
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -97,7 +96,7 @@ class AgentHandle:
         cls,
         *,
         agent_run_id: UUID,
-        definition_id: DefinitionId,
+        image_digest: str,
         model_client: OpenAIModelProto,
         mcp_client: Client,
         compositor: PropertiesDockerCompositor,
@@ -110,7 +109,7 @@ class AgentHandle:
 
         Args:
             agent_run_id: UUID for this agent run (used for DB tracking)
-            definition_id: ID of the agent definition (for logging/tracking)
+            image_digest: Canonical OCI image digest (sha256:...)
             model_client: OpenAI-compatible model client
             mcp_client: FastMCP client connected to compositor
             compositor: MCP compositor with mounted Docker runtime server (has .runtime attribute)
@@ -143,4 +142,4 @@ class AgentHandle:
         logger.debug(f"Init script returned {len(system_prompt)} bytes")
         agent.process_message(SystemMessage.text(system_prompt))
 
-        return cls(agent_run_id=agent_run_id, definition_id=definition_id, agent=agent, compositor=compositor)
+        return cls(agent_run_id=agent_run_id, image_digest=image_digest, agent=agent, compositor=compositor)

@@ -15,7 +15,7 @@ from props.core.agent_types import (
     PromptOptimizerTypeConfig,
     TypeConfig,
 )
-from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
 
@@ -186,13 +186,13 @@ class TestAgentConfig:
     def test_basic_construction_with_critic(self) -> None:
         """AgentConfig accepts all required fields with CriticTypeConfig."""
         config = AgentConfig(
-            definition_id=CRITIC_AGENT_DEFINITION_ID,
+            image_ref=CRITIC_IMAGE_REF,
             model="claude-sonnet-4-20250514",
             type_config=CriticTypeConfig(
                 example=WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))
             ),
         )
-        assert config.definition_id == CRITIC_AGENT_DEFINITION_ID
+        assert config.definition_id == CRITIC_IMAGE_REF
         assert config.model == "claude-sonnet-4-20250514"
         assert config.parent_agent_run_id is None
         assert isinstance(config.type_config, CriticTypeConfig)
@@ -208,14 +208,14 @@ class TestAgentConfig:
     )
     def test_agent_type_property_delegates_to_type_config(self, type_config: TypeConfig) -> None:
         """agent_type property delegates to type_config.agent_type."""
-        config = AgentConfig(definition_id="test", model="claude-sonnet-4-20250514", type_config=type_config)
+        config = AgentConfig(image_ref="test", model="claude-sonnet-4-20250514", type_config=type_config)
         assert config.agent_type == type_config.agent_type
 
     def test_parent_agent_run_id_accepts_uuid(self) -> None:
         """parent_agent_run_id accepts UUID for sub-agents."""
         parent_id = UUID("550e8400-e29b-41d4-a716-446655440000")
         config = AgentConfig(
-            definition_id="freeform",
+            image_ref="freeform",
             model="claude-sonnet-4-20250514",
             parent_agent_run_id=parent_id,
             type_config=FreeformTypeConfig(),
@@ -225,7 +225,7 @@ class TestAgentConfig:
     def test_parent_agent_run_id_coerced_from_string(self) -> None:
         """parent_agent_run_id is coerced from string to UUID."""
         config = AgentConfig(
-            definition_id="freeform",
+            image_ref="freeform",
             model="claude-sonnet-4-20250514",
             parent_agent_run_id="550e8400-e29b-41d4-a716-446655440000",  # type: ignore[arg-type]
             type_config=FreeformTypeConfig(),
@@ -235,7 +235,7 @@ class TestAgentConfig:
     def test_json_serialization_roundtrip(self) -> None:
         """AgentConfig can be serialized to JSON and back."""
         original = AgentConfig(
-            definition_id=CRITIC_AGENT_DEFINITION_ID,
+            image_ref=CRITIC_IMAGE_REF,
             model="claude-sonnet-4-20250514",
             parent_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
             type_config=CriticTypeConfig(
@@ -259,7 +259,7 @@ class TestAgentConfig:
         """model is required."""
         with pytest.raises(ValidationError):
             AgentConfig(
-                definition_id="test",  # type: ignore[call-arg]
+                image_ref="test",  # type: ignore[call-arg]
                 type_config=FreeformTypeConfig(),
             )
 
@@ -267,6 +267,6 @@ class TestAgentConfig:
         """type_config is required."""
         with pytest.raises(ValidationError):
             AgentConfig(
-                definition_id="test",  # type: ignore[call-arg]
+                image_ref="test",  # type: ignore[call-arg]
                 model="claude-sonnet-4-20250514",
             )

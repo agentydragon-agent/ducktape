@@ -20,7 +20,7 @@ from hamcrest import all_of, assert_that
 from agent_core_testing.openai_mock import CapturingOpenAIModel
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully, stdout_contains
-from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props.core.db.session import get_session
 
@@ -43,7 +43,7 @@ async def zero_issue_critic_run(test_registry, all_files_scope):
     """Create a zero-issue critic run for grader testing."""
     mock = make_critic_mock_zero_issues()
     critic_run_id = await test_registry.run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID, example=all_files_scope, client=mock, max_turns=100
+        definition_id=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
     )
     assert critic_run_id is not None
     return critic_run_id
@@ -144,7 +144,7 @@ async def critic_run_with_issue(test_registry, all_files_scope):
     """Create a critic run with one reported issue for grader testing."""
     mock = make_critic_mock_with_issue()
     critic_run_id = await test_registry.run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID, example=all_files_scope, client=mock, max_turns=100
+        definition_id=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
     )
     assert critic_run_id is not None
 

@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 
 from agent_core.events import ToolCall
 from props.core.agent_types import PromptOptimizerTypeConfig
-from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.examples import Example
 from props.core.db.models import AgentRun, AgentRunStatus, Event, FalsePositive, Snapshot, TruePositive
@@ -76,7 +76,7 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
         )
         agent_run = AgentRun(
             agent_run_id=run_id,
-            image_digest=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
+            image_digest=PROMPT_OPTIMIZER_IMAGE_REF,
             model="test-model",
             status=AgentRunStatus.COMPLETED,
             type_config=type_config.model_dump(),

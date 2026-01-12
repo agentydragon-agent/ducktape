@@ -12,7 +12,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
 from props.core.prompt_optimize.target_metric import TargetMetric
 
@@ -152,13 +151,13 @@ TypeConfig = Annotated[
 class AgentConfig(BaseModel):
     """Full agent configuration for creating agent runs.
 
-    Combines shared fields (definition, model, parent) with type-specific config.
+    Combines shared fields (image ref, model, parent) with type-specific config.
     The type_config is stored as JSONB in the database and determines what
     MCP server, handlers, and mounts are used for the agent.
 
     Usage:
         config = AgentConfig(
-            definition_id="critic",
+            image_ref="critic",
             model="claude-sonnet-4-20250514",
             parent_agent_run_id=None,
             type_config=CriticTypeConfig(snapshot_slug="snap-123", scope_hash="abc"),
@@ -167,7 +166,7 @@ class AgentConfig(BaseModel):
         assert config.agent_type == AgentType.CRITIC
     """
 
-    definition_id: DefinitionId = Field(description="Agent definition ID (references agent_definitions.id)")
+    image_ref: str = Field(description="Image reference (short name or digest) - resolved to image_digest")
     model: str = Field(description="LLM model to use (e.g., 'claude-sonnet-4-20250514')")
     parent_agent_run_id: UUID | None = Field(
         default=None, description="Parent agent run ID for sub-agents (FK to agent_runs)"

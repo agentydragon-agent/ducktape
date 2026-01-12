@@ -20,7 +20,7 @@ from hamcrest import assert_that
 from agent_core.events import ApiRequest, SystemText, ToolCall
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully
-from props.core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.db.models import AgentRun, AgentRunStatus, Event
 from props.core.db.session import get_session
 
@@ -44,7 +44,7 @@ async def test_critic_http_mode_zero_issues(test_registry, test_snapshot, all_fi
     """Test critic successfully submits zero issues using HTTP MCP mode."""
     mock = make_critic_mock_zero_issues()
     critic_run_id = await test_registry.run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID, example=all_files_scope, client=mock, max_turns=100
+        definition_id=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
     )
 
     assert critic_run_id is not None
@@ -78,7 +78,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(test_registry, all_f
     """Verify critic doesn't get stuck in infinite loop when finding zero issues."""
     mock = make_critic_mock_zero_issues()
     critic_run_id = await test_registry.run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID, example=all_files_scope, client=mock, max_turns=100
+        definition_id=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
     )
 
     assert critic_run_id is not None
@@ -110,7 +110,7 @@ async def test_critic_http_mode_submit_with_issues(test_registry, test_snapshot,
     """Test critic HTTP mode with actual issue submission."""
     mock = make_critic_mock_with_issues()
     critic_run_id = await test_registry.run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID, example=all_files_scope, client=mock, max_turns=100
+        definition_id=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
     )
 
     assert critic_run_id is not None
@@ -146,7 +146,7 @@ async def test_critic_zero_issues(test_registry, test_snapshot, all_files_scope)
     """Test run_critic with AgentHandle-based flow."""
     mock = make_critic_mock_zero_issues()
     critic_run_id = await test_registry.run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID, example=all_files_scope, client=mock, max_turns=100
+        definition_id=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=100
     )
 
     assert critic_run_id is not None
@@ -157,5 +157,5 @@ async def test_critic_zero_issues(test_registry, test_snapshot, all_files_scope)
         assert run is not None
         assert run.critic_config().example.snapshot_slug == test_snapshot
         assert run.status == AgentRunStatus.COMPLETED
-        assert run.agent_definition_id == CRITIC_AGENT_DEFINITION_ID
+        assert run.agent_definition_id == CRITIC_IMAGE_REF
         assert len(run.reported_issues) == 0

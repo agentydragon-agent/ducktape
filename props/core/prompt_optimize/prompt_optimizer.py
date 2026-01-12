@@ -27,7 +27,7 @@ from props.core.agent_types import AgentType, PromptOptimizerTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.exceptions import CriticExecutionError
-from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.examples import Example
 from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingEdge, Snapshot
@@ -636,7 +636,7 @@ Prioritize recall.
             # Create AgentHandle - reads system prompt from container via MCP, runs init
             handle = await AgentHandle.create(
                 agent_run_id=agent_run_id,
-                definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
+                image_digest=PROMPT_OPTIMIZER_IMAGE_REF,
                 model_client=optimizer_client,
                 mcp_client=mcp_client,
                 compositor=comp,

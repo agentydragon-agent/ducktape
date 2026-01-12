@@ -20,7 +20,7 @@ from props.core.agent_types import AgentType
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli import common_options as opt
 from props.core.cli.resources import get_database_config
-from props.core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import GRADER_IMAGE_REF
 from props.core.db.examples import Example
 from props.core.db.models import (
     AgentDefinition,
@@ -161,7 +161,7 @@ async def cmd_grade_validation(
                     successful_grader_exists = (
                         session.query(AgentRun)
                         .filter(
-                            AgentRun.image_digest == GRADER_AGENT_DEFINITION_ID,
+                            AgentRun.image_digest == GRADER_IMAGE_REF,
                             AgentRun.type_config["graded_agent_run_id"].astext == str(critic_run.agent_run_id),
                             AgentRun.status == AgentRunStatus.COMPLETED,
                         )

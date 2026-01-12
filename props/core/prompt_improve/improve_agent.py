@@ -25,7 +25,7 @@ from props.core.agent_setup import AgentEnvironment
 from props.core.agent_types import AgentType, ImprovementTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
-from props.core.db.agent_definition_ids import IMPROVEMENT_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import IMPROVEMENT_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
@@ -225,7 +225,7 @@ async def run_improvement_agent(
                 # Create AgentHandle - reads system prompt from container via MCP, runs init
                 handle = await AgentHandle.create(
                     agent_run_id=run_id,
-                    definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
+                    image_digest=IMPROVEMENT_IMAGE_REF,
                     model_client=client,
                     mcp_client=mcp_client,
                     compositor=comp,
