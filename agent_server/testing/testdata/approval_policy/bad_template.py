@@ -2,19 +2,12 @@ from mcp_infra.constants import SEATBELT_EXEC_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.naming import build_mcp_function, tool_matches
 
 from agent_server.approvals import WellKnownTools
-from agent_server.policies.policy_types import (
-    ApprovalDecision,
-    PolicyRequest,
-    PolicyResponse,
-)
+from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from agent_server.policies.scaffold import run_with_tests
 
 TEST_CASES = [
     (
-        PolicyRequest(
-            name=build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE),
-            arguments="{}",
-        ),
+        PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE), arguments="{}"),
         ApprovalDecision.ASK,
     )
 ]
