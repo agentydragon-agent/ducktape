@@ -139,151 +139,200 @@ auth = (username, password)
 
 ### 3. Code Changes Required
 
-#### a. Docker Client Abstraction
+#### a. Use Environment Variables for All Configuration
 
-Add podman socket support:
-
-```python
-# props/core/docker_client.py (new file)
-import os
-from pathlib import Path
-import aiodocker
-
-def get_docker_client() -> aiodocker.Docker:
-    """Get Docker/Podman client based on environment."""
-    # Check for podman socket
-    podman_socket = Path("/run/user") / str(os.getuid()) / "podman/podman.sock"
-    if podman_socket.exists():
-        return aiodocker.Docker(url=f"unix://{podman_socket}")
-
-    # Check for Docker socket
-    docker_socket = Path("/var/run/docker.sock")
-    if docker_socket.exists():
-        return aiodocker.Docker(url=f"unix://{docker_socket}")
-
-    raise RuntimeError("Neither Docker nor Podman socket found")
-```
-
-#### b. Network Configuration
-
-Create config that adapts based on environment:
-
-```python
-# props/core/config.py additions
-from dataclasses import dataclass
-
-@dataclass
-class RuntimeConfig:
-    """Runtime environment configuration."""
-
-    # Network mode
-    use_network_isolation: bool = True  # False for host networking
-
-    # Service addresses
-    postgres_host: str = "props-postgres"  # Or "127.0.0.1"
-    postgres_port: int = 5432  # Or 5433
-    registry_host: str = "props-registry"  # Or "127.0.0.1"
-    registry_port: int = 5000  # Or 5050
-    proxy_host: str = "registry-proxy"  # Or "127.0.0.1"
-    proxy_port: int = 5050  # Or 5051
-
-    @classmethod
-    def from_environment(cls) -> "RuntimeConfig":
-        """Detect runtime environment and return appropriate config."""
-        # Detect podman vs Docker
-        use_podman = Path("/run/user").exists() and not Path("/var/run/docker.sock").exists()
-
-        if use_podman or os.getenv("PROPS_USE_HOST_NETWORK"):
-            return cls(
-                use_network_isolation=False,
-                postgres_host="127.0.0.1",
-                postgres_port=5433,
-                registry_host="127.0.0.1",
-                registry_port=5050,
-                proxy_host="127.0.0.1",
-                proxy_port=5051,
-            )
-        else:
-            # Docker with network isolation (current setup)
-            return cls(
-                use_network_isolation=True,
-                postgres_host="props-postgres",
-                postgres_port=5432,
-                registry_host="props-registry",
-                registry_port=5000,
-                proxy_host="registry-proxy",
-                proxy_port=5050,
-            )
-```
-
-#### c. AgentEnvironment Updates
-
-Update container creation to use runtime config:
+All configuration comes from environment variables - no Python-level detection or branching:
 
 ```python
 # props/core/agent_setup.py
-from props.core.config import RuntimeConfig
+import os
 
 class AgentEnvironment(ABC):
-    def __init__(
-        self,
-        runtime_config: RuntimeConfig = RuntimeConfig.from_environment(),
-        ...
-    ):
-        self._runtime_config = runtime_config
+    def __init__(self, ...):
+        # Read from environment (set by devenv or Claude Code hook)
+        self._postgres_host = os.environ.get("PROPS_POSTGRES_HOST", "props-postgres")
+        self._postgres_port = os.environ.get("PROPS_POSTGRES_PORT", "5432")
+        self._registry_proxy_host = os.environ.get("PROPS_REGISTRY_PROXY_HOST", "registry-proxy")
+        self._registry_proxy_port = os.environ.get("PROPS_REGISTRY_PROXY_PORT", "5050")
+        self._docker_network = os.environ.get("PROPS_DOCKER_NETWORK", "props-agents")
         ...
 
     async def _create_container(self, ...):
         config = {
             "Image": self._image,
             "Env": [
-                f"PGHOST={self._runtime_config.postgres_host}",
-                f"PGPORT={self._runtime_config.postgres_port}",
+                f"PGHOST={self._postgres_host}",
+                f"PGPORT={self._postgres_port}",
+                f"MCP_SERVER_URL=http://{mcp_host}:{mcp_port}",
                 ...
             ],
             "HostConfig": {
-                "NetworkMode": "host" if not self._runtime_config.use_network_isolation else self._network,
+                "NetworkMode": self._docker_network,  # "host" or "props-agents"
             }
         }
 
-        # Add VFS driver if using host networking (likely podman)
-        if not self._runtime_config.use_network_isolation:
+        # Add VFS driver if requested (for gVisor/podman)
+        if os.environ.get("PROPS_USE_VFS_DRIVER") == "1":
             config["HostConfig"]["StorageOpt"] = {"driver": "vfs"}
 
         return await self._docker_client.containers.create(config=config)
 ```
 
-### 4. Test Configuration
+#### b. Docker Client Socket Detection
 
-Update pytest fixtures to support both modes:
+Detect podman vs Docker socket automatically:
 
 ```python
-# props/core/tests/conftest.py additions
+# mcp_infra/docker/client.py (or similar)
+import os
+from pathlib import Path
+import aiodocker
 
-@pytest.fixture
-def runtime_config():
-    """Provide runtime config for tests."""
-    return RuntimeConfig.from_environment()
+def get_docker_socket() -> str:
+    """Get Docker/Podman socket path."""
+    # Explicit override
+    if socket := os.environ.get("DOCKER_HOST"):
+        return socket
 
-@pytest_asyncio.fixture
-async def test_registry(synced_test_db, async_docker_client, test_workspace_manager, runtime_config):
-    """Provide AgentRegistry for tests, handling cleanup."""
-    registry = AgentRegistry(
-        docker_client=async_docker_client,
-        db_config=synced_test_db,
-        workspace_manager=test_workspace_manager,
-        runtime_config=runtime_config,  # Pass config
-    )
-    yield registry
-    await registry.close()
+    # Check for podman socket (rootless)
+    podman_socket = Path("/run/user") / str(os.getuid()) / "podman/podman.sock"
+    if podman_socket.exists():
+        return f"unix://{podman_socket}"
+
+    # Check for Docker socket
+    docker_socket = Path("/var/run/docker.sock")
+    if docker_socket.exists():
+        return f"unix://{docker_socket}"
+
+    raise RuntimeError("Neither Docker nor Podman socket found")
 ```
 
-### 5. Process-Compose Configuration for Podman
+#### c. Registry Client Configuration
 
-Create alternative devenv config for podman environments:
+Registry client reads proxy address from environment:
+
+```python
+# props/core/oci_utils.py
+import os
+
+REGISTRY_PROXY_HOST = os.environ.get("PROPS_REGISTRY_PROXY_HOST", "registry-proxy")
+REGISTRY_PROXY_PORT = os.environ.get("PROPS_REGISTRY_PROXY_PORT", "5050")
+
+def build_oci_reference(agent_type: AgentType, digest: str) -> str:
+    """Build full OCI reference from agent type and digest."""
+    repository = str(agent_type)
+    return f"{REGISTRY_PROXY_HOST}:{REGISTRY_PROXY_PORT}/{repository}@{digest}"
+```
+
+### 4. Bazel Test Environment Variables
+
+Tests run with `bazel test`, which needs environment variables configured:
+
+```python
+# props/core/BUILD.bazel (or test-specific BUILD files)
+py_test(
+    name = "test_e2e_critic",
+    srcs = ["tests/critic/test_e2e.py"],
+    env = {
+        # Inherit from parent environment (set by devenv or CI)
+        "PROPS_POSTGRES_HOST": "$(PROPS_POSTGRES_HOST)",
+        "PROPS_POSTGRES_PORT": "$(PROPS_POSTGRES_PORT)",
+        "PROPS_REGISTRY_PROXY_HOST": "$(PROPS_REGISTRY_PROXY_HOST)",
+        "PROPS_REGISTRY_PROXY_PORT": "$(PROPS_REGISTRY_PROXY_PORT)",
+        "PROPS_DOCKER_NETWORK": "$(PROPS_DOCKER_NETWORK)",
+        "PROPS_USE_VFS_DRIVER": "$(PROPS_USE_VFS_DRIVER)",
+    },
+    deps = [...],
+)
+```
+
+**Alternative: Use `--test_env` flag:**
 
 ```bash
-# props/devenv-podman.sh (startup script for podman environment)
+# Pass environment explicitly to all tests
+bazel test //props/... \
+  --test_env=PROPS_POSTGRES_HOST=127.0.0.1 \
+  --test_env=PROPS_POSTGRES_PORT=5433 \
+  --test_env=PROPS_DOCKER_NETWORK=host \
+  --test_env=PROPS_USE_VFS_DRIVER=1
+```
+
+**Or: Use `.bazelrc` for consistent configuration:**
+
+```bash
+# .bazelrc
+test:podman --test_env=PROPS_POSTGRES_HOST=127.0.0.1
+test:podman --test_env=PROPS_POSTGRES_PORT=5433
+test:podman --test_env=PROPS_REGISTRY_PROXY_HOST=127.0.0.1
+test:podman --test_env=PROPS_REGISTRY_PROXY_PORT=5051
+test:podman --test_env=PROPS_DOCKER_NETWORK=host
+test:podman --test_env=PROPS_USE_VFS_DRIVER=1
+
+# Then run: bazel test --config=podman //props/...
+```
+
+### 5. DevEnv Configuration
+
+#### a. Docker Mode (devenv.nix - current)
+
+Current devenv sets environment for Docker + network isolation:
+
+```nix
+# props/devenv.nix
+{
+  env = {
+    # Standard PostgreSQL client variables
+    PGHOST = "127.0.0.1";
+    PGPORT = "5433";
+    PGUSER = "postgres";
+    PGDATABASE = "eval_results";
+
+    # Props-specific: Service addresses for agent containers
+    PROPS_POSTGRES_HOST = "props-postgres";  # Container name
+    PROPS_POSTGRES_PORT = "5432";  # Internal port
+    PROPS_REGISTRY_PROXY_HOST = "registry-proxy";
+    PROPS_REGISTRY_PROXY_PORT = "5050";
+    PROPS_DOCKER_NETWORK = "props-agents";
+    # PROPS_USE_VFS_DRIVER not set (defaults to overlay)
+  };
+}
+```
+
+#### b. Claude Code Web Hook (Podman Mode)
+
+Claude Code web startup hook sets environment for podman + host networking:
+
+```bash
+# claude_web_hooks/session_start.py additions
+def setup_props_environment():
+    """Set environment variables for props testing with podman."""
+    env_file = os.environ.get("CLAUDE_ENV_FILE")
+    if not env_file:
+        return
+
+    # Podman + host networking configuration
+    env_content = f"""
+# Props e2e test configuration (podman + host networking)
+export PROPS_POSTGRES_HOST=127.0.0.1
+export PROPS_POSTGRES_PORT=5433
+export PROPS_REGISTRY_PROXY_HOST=127.0.0.1
+export PROPS_REGISTRY_PROXY_PORT=5051
+export PROPS_DOCKER_NETWORK=host
+export PROPS_USE_VFS_DRIVER=1
+"""
+
+    with open(env_file, "a") as f:
+        f.write(env_content)
+
+# Call from main()
+if project_dir_str and (Path(project_dir_str) / "props").is_dir():
+    setup_props_environment()
+```
+
+#### c. Startup Script for Podman Infrastructure
+
+```bash
+# props/devenv-podman.sh
 #!/bin/bash
 set -euo pipefail
 
@@ -349,34 +398,49 @@ echo "PostgreSQL: 127.0.0.1:5433"
 echo "Registry: 127.0.0.1:5050"
 echo "Proxy: 127.0.0.1:5051"
 echo ""
-echo "Environment variables:"
-echo "export PGHOST=127.0.0.1"
-echo "export PGPORT=5433"
-echo "export PGUSER=postgres"
-echo "export PGPASSWORD='$PG_PASSWORD'"
-echo "export PGDATABASE=eval_results"
-echo "export PROPS_USE_HOST_NETWORK=1"
+echo "Environment variables have been set by Claude Code web hook"
 ```
 
 ### 6. Running Tests
 
+#### With Bazel (Docker + devenv)
+
 ```bash
-# Start infrastructure (podman version)
+# Start infrastructure with devenv
+cd props
+devenv up
+
+# Run all e2e tests (uses env vars from devenv.nix)
+bazel test //props/core/tests/...
+
+# Run specific test
+bazel test //props/core/tests/critic:test_e2e
+```
+
+#### With Bazel (Podman + Claude Code web)
+
+```bash
+# Start infrastructure (one-time setup)
 ./props/devenv-podman.sh &
 
-# Set environment
-export PROPS_USE_HOST_NETWORK=1
-export PGHOST=127.0.0.1
-export PGPORT=5433
-export PGUSER=postgres
-export PGPASSWORD=$(cat .devenv/state/pg_password)
-export PGDATABASE=eval_results
+# Environment variables already set by Claude Code web hook
+# Just run tests directly
+bazel test //props/core/tests/...
 
-# Run database migrations
+# Or use explicit config
+bazel test --config=podman //props/core/tests/...
+```
+
+#### With pytest (if needed for debugging)
+
+```bash
+# Bazel runs pytest internally, but you can also run pytest directly
 cd props
-alembic upgrade head
 
-# Run e2e tests
+# Docker mode
+pytest core/tests/critic/test_e2e.py -m requires_docker
+
+# Podman mode (env vars from hook)
 pytest core/tests/critic/test_e2e.py -m requires_docker
 ```
 
@@ -452,13 +516,37 @@ async def test_proxy_acl_denies_critic_push():
 
 Tests don't verify that critics **cannot bypass** the proxy (network isolation), just that the proxy **correctly enforces** ACL when used.
 
+## Environment Variables Summary
+
+All configuration is controlled via environment variables (no Python-level branching):
+
+| Variable                    | Docker Mode                  | Podman Mode     | Purpose                                  |
+| --------------------------- | ---------------------------- | --------------- | ---------------------------------------- |
+| `PROPS_POSTGRES_HOST`       | `props-postgres` (container) | `127.0.0.1`     | Postgres host for agent containers       |
+| `PROPS_POSTGRES_PORT`       | `5432` (internal)            | `5433`          | Postgres port for agent containers       |
+| `PROPS_REGISTRY_PROXY_HOST` | `registry-proxy` (container) | `127.0.0.1`     | Registry proxy host for agents           |
+| `PROPS_REGISTRY_PROXY_PORT` | `5050`                       | `5051`          | Registry proxy port for agents           |
+| `PROPS_DOCKER_NETWORK`      | `props-agents`               | `host`          | Docker network mode for agent containers |
+| `PROPS_USE_VFS_DRIVER`      | (not set)                    | `1`             | Use VFS instead of overlay               |
+| `DOCKER_HOST`               | (auto)                       | (auto or set)   | Docker/Podman socket path                |
+| `PGHOST`, `PGPORT`, etc.    | `127.0.0.1:5433`             | `127.0.0.1:5433 | Host-side postgres access (both modes)`  |
+
+**Configuration Sources:**
+
+- **Docker mode**: Set by `props/devenv.nix`
+- **Podman mode**: Set by Claude Code web hook (`claude_web_hooks/session_start.py`)
+- **Tests**: Inherit from environment (via Bazel `--test_env` or `.bazelrc`)
+
 ## Summary
 
-This proposal enables e2e testing in podman + host networking environments by:
+This proposal enables e2e testing in both Docker and podman environments by:
 
-1. Using localhost addresses for all services
-2. Detecting runtime environment and adapting configuration
-3. Accepting that network isolation isn't enforced (tests verify ACL logic only)
-4. Keeping production Docker setup unchanged
+1. **Environment variable configuration** - All hosts/ports configurable via env vars
+2. **No Python-level branching** - Code reads from environment, works in both modes
+3. **Bazel test integration** - Tests inherit environment via `--test_env` flags
+4. **Claude Code web hook** - Sets podman-specific env vars automatically
+5. **DevEnv compatibility** - Existing Docker setup continues working unchanged
 
-**Result**: Full e2e test coverage in Claude Code web environment without requiring overlay filesystem or Docker network isolation.
+**Key insight**: Same Python code works in both modes because all configuration comes from environment variables. No need for separate fixtures, RuntimeConfig classes, or conditional logic.
+
+**Result**: Full e2e test coverage in Claude Code web environment (podman + host networking) and production environment (Docker + network isolation) using the same test code.
