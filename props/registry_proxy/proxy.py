@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import os
 import re
@@ -202,13 +203,74 @@ def _check_permission(auth: AuthContext, operation: str, path: str, method: str)
     # Default: allow (e.g., catalog, version check)
 
 
-async def _record_manifest_push(session: Session, repository: str, digest: str, auth: AuthContext) -> None:
+async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | None:
+    """Extract base image digest from OCI manifest.
+
+    Attempts to determine the parent/base image digest by:
+    1. Fetching the image config blob from the manifest
+    2. Looking for org.opencontainers.image.base.digest annotation
+    3. Returning None if not found or on error
+
+    Args:
+        manifest_body: Raw manifest JSON bytes
+        repository: Repository name for fetching config blob
+
+    Returns:
+        Base image digest (sha256:...) if found, None otherwise
+    """
+    try:
+        manifest = json.loads(manifest_body)
+
+        # Extract config digest from manifest
+        config_descriptor = manifest.get("config")
+        if not config_descriptor:
+            return None
+
+        config_digest = config_descriptor.get("digest")
+        if not config_digest:
+            return None
+
+        # Fetch config blob from upstream registry
+        config_url = f"{UPSTREAM_REGISTRY_URL}/v2/{repository}/blobs/{config_digest}"
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(config_url, timeout=5.0)
+                if response.status_code != 200:
+                    logger.warning(f"Failed to fetch config blob {config_digest}: HTTP {response.status_code}")
+                    return None
+
+                config = response.json()
+
+                # Look for base image digest in annotations
+                # Standard OCI annotation: org.opencontainers.image.base.digest
+                config_annotations = config.get("config", {}).get("Labels", {})
+                base_digest = config_annotations.get("org.opencontainers.image.base.digest")
+
+                if base_digest:
+                    logger.info(f"Extracted base_digest from annotation: {base_digest}")
+                    return base_digest
+
+                return None
+
+            except (httpx.RequestError, json.JSONDecodeError) as e:
+                logger.warning(f"Error fetching/parsing config blob: {e}")
+                return None
+
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.warning(f"Error parsing manifest for base_digest extraction: {e}")
+        return None
+
+
+async def _record_manifest_push(
+    session: Session, repository: str, digest: str, manifest_body: bytes, auth: AuthContext
+) -> None:
     """Record a manifest push to agent_definitions table.
 
     Args:
         session: Database session
         repository: Repository name (e.g., "critic")
         digest: Manifest digest (sha256:...)
+        manifest_body: Raw manifest JSON bytes
         auth: Caller authentication context
     """
     # Map repository name to agent_type enum (repository names match enum values)
@@ -226,18 +288,24 @@ async def _record_manifest_push(session: Session, repository: str, digest: str, 
         logger.info(f"Agent definition {digest} already exists, skipping")
         return
 
+    # Extract base image digest from manifest
+    base_digest = await _extract_base_digest(manifest_body, repository)
+
     # Create new agent definition
     definition = AgentDefinition(
         digest=digest,
         agent_type=agent_type,
         created_by_agent_run_id=auth.agent_run_id,  # None for admin pushes
-        base_digest=None,  # TODO: Extract from manifest if available
+        base_digest=base_digest,
     )
 
     session.add(definition)
     session.commit()
 
-    logger.info(f"Recorded agent definition: {repository}@{digest} (type={agent_type}, created_by={auth.agent_run_id})")
+    logger.info(
+        f"Recorded agent definition: {repository}@{digest} "
+        f"(type={agent_type}, created_by={auth.agent_run_id}, base={base_digest or 'none'})"
+    )
 
 
 # FastAPI app
@@ -293,7 +361,7 @@ async def proxy(request: Request, path: str, auth: Annotated[AuthContext, Depend
             if match:
                 repository = match.group(1)
                 with get_session_context() as session:
-                    await _record_manifest_push(session, repository, manifest_digest, auth)
+                    await _record_manifest_push(session, repository, manifest_digest, body, auth)
 
         # Return upstream response
         return Response(
