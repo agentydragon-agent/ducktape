@@ -3,6 +3,11 @@ set -euo pipefail
 
 # Podman infrastructure startup script for props e2e testing
 # Uses host networking (no Docker network isolation)
+#
+# CRITICAL: All podman run commands MUST include:
+#   --annotation run.oci.keep_original_groups=1
+# This bypasses /proc/self/setgroups which is unavailable in gVisor.
+# Without this annotation, containers will fail to start.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="$SCRIPT_DIR/.devenv/state"
@@ -29,7 +34,7 @@ echo "Starting PostgreSQL on 127.0.0.1:5433..."
 podman run -d --rm \
   --replace \
   --network=host \
-  --userns=host \
+  --annotation run.oci.keep_original_groups=1 \
   --name props-postgres \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" \
@@ -58,7 +63,7 @@ echo "Starting OCI Registry on 127.0.0.1:5050..."
 podman run -d --rm \
   --replace \
   --network=host \
-  --userns=host \
+  --annotation run.oci.keep_original_groups=1 \
   --name props-registry \
   -e REGISTRY_HTTP_ADDR=:5050 \
   -v props_registry_data:/var/lib/registry \
@@ -94,7 +99,7 @@ echo "Starting Registry Proxy on 127.0.0.1:5051..."
 podman run -d --rm \
   --replace \
   --network=host \
-  --userns=host \
+  --annotation run.oci.keep_original_groups=1 \
   --name props-registry-proxy \
   -e PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050 \
   -e PGHOST=127.0.0.1 \

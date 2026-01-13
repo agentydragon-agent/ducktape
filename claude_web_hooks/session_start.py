@@ -203,20 +203,38 @@ class LogLevelCounter(logging.Handler):
 
 
 def setup_podman_storage(log: logging.Logger) -> None:
-    """Configure podman to use VFS storage driver (required for gVisor).
+    """Configure podman for gVisor compatibility.
 
-    Podman's storage driver must be configured before creating any containers.
-    This writes ~/.config/containers/storage.conf with driver = "vfs".
+    gVisor sandbox has restrictions that require specific podman configuration:
+    1. VFS storage driver (no overlay filesystem support)
+    2. System-level config (/etc/containers) since running as root
+    3. Explicit runroot and graphroot paths
+    4. Host user namespace (userns = "host")
     """
-    storage_conf = Path.home() / ".config/containers/storage.conf"
+    # Storage configuration (system-level since running as root)
+    storage_conf = Path("/etc/containers/storage.conf")
     storage_conf.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write minimal storage.conf with VFS driver
     storage_conf.write_text("""[storage]
 driver = "vfs"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
 """)
 
-    log.info("Configured podman storage driver: vfs")
+    # Container runtime configuration
+    containers_conf = Path("/etc/containers/containers.conf")
+    containers_conf.write_text("""[containers]
+# Host user namespace for gVisor compatibility
+userns = "host"
+
+[engine]
+network_backend = "cni"
+""")
+
+    # Ensure storage directories exist
+    Path("/run/containers/storage").mkdir(parents=True, exist_ok=True)
+    Path("/var/lib/containers/storage").mkdir(parents=True, exist_ok=True)
+
+    log.info("Configured podman for gVisor: VFS storage, host userns")
 
 
 def setup_props_environment(log: logging.Logger) -> None:
@@ -242,6 +260,48 @@ export PROPS_DOCKER_NETWORK=host
         f.write(env_content)
 
     log.info("Configured props environment variables for podman + host networking")
+
+
+def emit_podman_guidance() -> None:
+    """Emit podman usage guidance for gVisor sandbox (visible to agent)."""
+    guidance = """
+Podman Usage in gVisor Sandbox
+===============================
+
+Podman is configured with gVisor-specific workarounds. All containers MUST use:
+
+  --annotation run.oci.keep_original_groups=1
+
+This bypasses /proc/self/setgroups which is unavailable in gVisor.
+
+Required Flags for ALL Container Runs:
+--------------------------------------
+podman run --annotation run.oci.keep_original_groups=1 [other-flags] image
+
+Example (simple):
+  podman run --rm --network=host \\
+    --annotation run.oci.keep_original_groups=1 \\
+    alpine echo "Hello"
+
+Example (postgres):
+  podman run -d --rm --network=host \\
+    --annotation run.oci.keep_original_groups=1 \\
+    --name postgres -e POSTGRES_PASSWORD=pass \\
+    docker.io/library/postgres:16 postgres -p 5433
+
+Configuration Applied:
+---------------------
+- Storage: VFS (/etc/containers/storage.conf)
+- User namespace: host (userns = "host")
+- Networking: host networking recommended (--network=host)
+- Image names: use fully qualified names (docker.io/library/...)
+
+Without --annotation run.oci.keep_original_groups=1, containers will fail with:
+  "crun: error opening file `/proc/self/setgroups`: No such file or directory"
+
+"""
+    print(guidance)
+    sys.stdout.flush()
 
 
 class SessionLoggers:
@@ -381,6 +441,8 @@ def main() -> int:
             verbose.info("Configuring podman and props environment for e2e testing...")
             setup_podman_storage(verbose)
             setup_props_environment(verbose)
+            # Emit usage guidance visible to agent
+            emit_podman_guidance()
     else:
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
