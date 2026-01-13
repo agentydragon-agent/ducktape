@@ -18,9 +18,9 @@ echo "=== Props Infrastructure Startup (Podman + Host Networking) ==="
 # Generate PostgreSQL password if not exists
 mkdir -p "$STATE_DIR"
 if [[ ! -f "$PASSWORD_FILE" ]]; then
-    echo "Generating PostgreSQL password..."
-    openssl rand -base64 24 > "$PASSWORD_FILE"
-    chmod 600 "$PASSWORD_FILE"
+  echo "Generating PostgreSQL password..."
+  openssl rand -base64 24 >"$PASSWORD_FILE"
+  chmod 600 "$PASSWORD_FILE"
 fi
 PG_PASSWORD=$(cat "$PASSWORD_FILE")
 echo "PostgreSQL password loaded from $PASSWORD_FILE"
@@ -47,15 +47,15 @@ podman run -d --rm \
 echo "Waiting for PostgreSQL to be ready..."
 export PGPASSWORD="$PG_PASSWORD"
 for i in {1..30}; do
-    if psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -c '\q' 2>/dev/null; then
-        echo "PostgreSQL is ready"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        echo "ERROR: PostgreSQL failed to start within 30 seconds"
-        exit 1
-    fi
-    sleep 1
+  if psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -c '\q' 2>/dev/null; then
+    echo "PostgreSQL is ready"
+    break
+  fi
+  if [ $i -eq 30 ]; then
+    echo "ERROR: PostgreSQL failed to start within 30 seconds"
+    exit 1
+  fi
+  sleep 1
 done
 
 # Start OCI Registry (port 5050)
@@ -72,26 +72,26 @@ podman run -d --rm \
 # Wait for Registry
 echo "Waiting for OCI Registry to be ready..."
 for i in {1..30}; do
-    if curl -sf http://127.0.0.1:5050/v2/ >/dev/null 2>&1; then
-        echo "OCI Registry is ready"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        echo "ERROR: Registry failed to start within 30 seconds"
-        exit 1
-    fi
-    sleep 1
+  if curl -sf http://127.0.0.1:5050/v2/ >/dev/null 2>&1; then
+    echo "OCI Registry is ready"
+    break
+  fi
+  if [ $i -eq 30 ]; then
+    echo "ERROR: Registry failed to start within 30 seconds"
+    exit 1
+  fi
+  sleep 1
 done
 
 # Build registry proxy image if needed
 echo "Checking registry proxy image..."
-if ! podman image inspect props-registry-proxy:latest >/dev/null 2>&1; then
-    echo "Building registry proxy image..."
-    cd "$SCRIPT_DIR/.." && bazelisk run //props/registry_proxy:load || {
-        echo "ERROR: Failed to build proxy image"
-        echo "  Try manually: cd $(pwd) && bazelisk run //props/registry_proxy:load"
-        exit 1
-    }
+if ! podman image inspect localhost/props-registry-proxy:latest >/dev/null 2>&1; then
+  echo "Building registry proxy image..."
+  cd "$SCRIPT_DIR/.." && bazelisk run //props/registry_proxy:load || {
+    echo "ERROR: Failed to build proxy image"
+    echo "  Try manually: cd $(pwd) && bazelisk run //props/registry_proxy:load"
+    exit 1
+  }
 fi
 
 # Start Registry Proxy (port 5051)
@@ -107,21 +107,22 @@ podman run -d --rm \
   -e PGUSER=postgres \
   -e PGPASSWORD="$PG_PASSWORD" \
   -e PGDATABASE=eval_results \
-  props-registry-proxy:latest
+  localhost/props-registry-proxy:latest
 
 # Wait for Proxy
 echo "Waiting for Registry Proxy to be ready..."
 for i in {1..30}; do
-    if curl -sf http://127.0.0.1:5051/v2/ >/dev/null 2>&1; then
-        echo "Registry Proxy is ready"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        echo "ERROR: Proxy failed to start within 30 seconds"
-        echo "Check logs: podman logs props-registry-proxy"
-        exit 1
-    fi
-    sleep 1
+  # Proxy returns 401 for unauthenticated requests, which is expected
+  if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5051/v2/ 2>/dev/null | grep -qE "^(200|401)$"; then
+    echo "Registry Proxy is ready"
+    break
+  fi
+  if [ $i -eq 30 ]; then
+    echo "ERROR: Proxy failed to start within 30 seconds"
+    echo "Check logs: podman logs props-registry-proxy"
+    exit 1
+  fi
+  sleep 1
 done
 
 echo ""

@@ -29,7 +29,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from props.core.db.models import AgentDefinition, AgentRun, AgentType
-from props.core.db.session import get_session_context
+from props.core.db.session import get_session
 from props.core.oci_utils import is_digest
 
 logger = logging.getLogger(__name__)
@@ -135,7 +135,7 @@ def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthConte
 
     # For agents, look up run in database to determine type
     assert auth.agent_run_id is not None
-    with get_session_context() as session:
+    with get_session() as session:
         agent_run = session.get(AgentRun, auth.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
@@ -406,7 +406,7 @@ async def proxy(request: Request, path: str, auth: Annotated[AuthContext, Depend
         # Record manifest push if successful
         if manifest_push_match and upstream_response.status_code in (200, 201):
             repository = manifest_push_match.group(1)
-            with get_session_context() as session:
+            with get_session() as session:
                 await _record_manifest_push(session, repository, manifest_digest, body, auth)
 
         # Return upstream response

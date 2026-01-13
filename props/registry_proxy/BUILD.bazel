@@ -10,6 +10,7 @@ Build targets:
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props/core/agent_defs:init_tar.bzl", "init_script_tar")
 
 py_library(
     name = "proxy_lib",
@@ -43,30 +44,27 @@ pkg_tar(
     strip_prefix = ".",
 )
 
+init_script_tar(
+    name = "init_tar",
+    script = "init",
+)
+
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    cmd = [
-        "props.registry_proxy.proxy:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "5051",
-        "--log-level",
-        "info",
-    ],
-    entrypoint = [
-        "python",
-        "-m",
-        "uvicorn",
-    ],
+    entrypoint = ["/init"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
         "PROPS_REGISTRY_UPSTREAM_URL": "http://props-registry:5000",
+        "PORT": "5051",
+        "LOG_LEVEL": "info",
     },
     exposed_ports = ["5051/tcp"],
-    tars = [":app_tar"],
+    tars = [
+        ":app_tar",
+        ":init_tar",
+    ],
 )
 
 oci_load(
