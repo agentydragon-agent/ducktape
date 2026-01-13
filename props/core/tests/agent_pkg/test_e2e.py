@@ -77,54 +77,102 @@ def make_po_builder_mock(random_token: str) -> PropsMock:
         assert_that(result, stdout_contains("MANIFEST_DIGEST=sha256:"))
         assert_that(result, stdout_contains("LAYERS="))
 
-        # Step 2: Create custom agent.md content with random token
-        # (In full implementation, this would be embedded in the OCI layer)
-        # For this test, the manifest push itself is sufficient to trigger proxy
-
-        # Step 3: Create new layer blob with the custom agent.md
-        # In a real implementation, this would:
-        # - Create a tar with agent.md
-        # - POST blob to /v2/critic/blobs/uploads/
-        # - PUT the tar content
-        # - Get the digest
-        # For this test, we'll simulate by creating a simple manifest modification
-
-        # Step 4: Push modified manifest by digest
-        # This is the key step - pushing by digest triggers proxy to write agent_definitions
-        push_script = textwrap.dedent("""
+        # Step 2-4: Create OCI layer with custom agent.md and push to registry
+        # This is the full workflow: create tar, upload blob, create manifest, push manifest
+        create_and_push_script = textwrap.dedent(f"""
             import os
             import json
             import hashlib
+            import tarfile
+            import gzip
+            import tempfile
             import requests
             from requests.auth import HTTPBasicAuth
+            from io import BytesIO
 
             auth = HTTPBasicAuth(os.environ['PGUSER'], os.environ['PGPASSWORD'])
             proxy_host = os.environ.get('PROPS_REGISTRY_PROXY_HOST', '127.0.0.1')
             proxy_port = os.environ.get('PROPS_REGISTRY_PROXY_PORT', '5051')
-            proxy_url = f"http://{proxy_host}:{proxy_port}"
+            proxy_url = f"http://{{proxy_host}}:{{proxy_port}}"
 
-            # Create a modified manifest (simplified for test)
-            # In real impl would include new layer blob
-            manifest = {
+            # Step 2a: Create agent.md with random token
+            agent_md_content = '''# Custom Critic Variant - {random_token}
+
+You are a test custom critic with unique token: {random_token}
+
+When reviewing code:
+1. Always report exactly zero issues
+2. Use message "Custom critic {random_token} completed review"
+
+## Available Commands
+- `critique submit <count> <message>`: Submit your critique
+'''
+
+            # Step 2b: Create tar.gz layer containing agent.md
+            tar_buffer = BytesIO()
+            with gzip.open(tar_buffer, 'wb') as gz:
+                with tarfile.open(fileobj=gz, mode='w') as tar:
+                    # Add agent.md to tar
+                    info = tarfile.TarInfo(name='agent.md')
+                    info.size = len(agent_md_content.encode('utf-8'))
+                    tar.addfile(info, BytesIO(agent_md_content.encode('utf-8')))
+
+            layer_blob = tar_buffer.getvalue()
+            layer_digest = "sha256:" + hashlib.sha256(layer_blob).hexdigest()
+            layer_size = len(layer_blob)
+
+            print(f"LAYER_DIGEST={{layer_digest}}")
+            print(f"LAYER_SIZE={{layer_size}}")
+
+            # Step 3: Upload blob to registry via OCI Distribution API
+            # POST to start upload
+            upload_url = f"{{proxy_url}}/v2/critic/blobs/uploads/"
+            resp = requests.post(upload_url, auth=auth, timeout=10)
+            resp.raise_for_status()
+
+            # Extract upload location from response
+            upload_location = resp.headers.get('Location')
+            if not upload_location.startswith('http'):
+                # Relative URL, make absolute
+                upload_location = f"{{proxy_url}}{{upload_location}}"
+
+            print(f"UPLOAD_LOCATION={{upload_location}}")
+
+            # PUT the blob content
+            put_url = f"{{upload_location}}&digest={{layer_digest}}"
+            headers = {{"Content-Type": "application/octet-stream"}}
+            resp = requests.put(put_url, data=layer_blob, headers=headers, auth=auth, timeout=30)
+            resp.raise_for_status()
+
+            print(f"BLOB_UPLOADED={{resp.status_code}}")
+
+            # Step 4: Create and push manifest referencing the new layer
+            # In reality we'd pull the base manifest and add our layer
+            # For this test, we'll create a minimal valid manifest
+            manifest = {{
                 "schemaVersion": 2,
                 "mediaType": "application/vnd.oci.image.manifest.v1+json",
-                "config": {
+                "config": {{
                     "mediaType": "application/vnd.oci.image.config.v1+json",
-                    "digest": "sha256:abc123",
-                    "size": 1234
-                },
+                    "digest": "sha256:abc123placeholder",
+                    "size": 123
+                }},
                 "layers": [
-                    {
+                    {{
                         "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
-                        "digest": "sha256:base_layer",
-                        "size": 5678
-                    }
+                        "digest": layer_digest,
+                        "size": layer_size,
+                        "annotations": {{
+                            "dev.props.layer_type": "agent_definition"
+                        }}
+                    }}
                 ],
-                "annotations": {
-                    "org.opencontainers.image.created": "2024-01-01T00:00:00Z",
-                    "dev.props.custom_agent": "true"
-                }
-            }
+                "annotations": {{
+                    "org.opencontainers.image.created": "2026-01-13T00:00:00Z",
+                    "dev.props.custom_agent": "true",
+                    "dev.props.random_token": "{random_token}"
+                }}
+            }}
 
             # Calculate manifest digest
             manifest_json = json.dumps(manifest, separators=(',', ':'), sort_keys=True)
@@ -132,13 +180,11 @@ def make_po_builder_mock(random_token: str) -> PropsMock:
 
             # Push manifest by digest (not by tag!)
             # This triggers proxy to write agent_definitions row
-            push_url = f"http://{proxy_host}:{proxy_port}/v2/critic/manifests/{manifest_digest}"
-            headers = {
-                "Content-Type": "application/vnd.oci.image.manifest.v1+json"
-            }
+            manifest_url = f"{{proxy_url}}/v2/critic/manifests/{{manifest_digest}}"
+            headers = {{"Content-Type": "application/vnd.oci.image.manifest.v1+json"}}
 
             resp = requests.put(
-                push_url,
+                manifest_url,
                 data=manifest_json,
                 headers=headers,
                 auth=auth,
@@ -146,18 +192,21 @@ def make_po_builder_mock(random_token: str) -> PropsMock:
             )
             resp.raise_for_status()
 
-            print(f"PUSHED_DIGEST={manifest_digest}")
-            print(f"STATUS={resp.status_code}")
+            print(f"MANIFEST_DIGEST={{manifest_digest}}")
+            print(f"STATUS={{resp.status_code}}")
         """)
 
-        result = yield from m.docker_exec_roundtrip(["python3", "-c", push_script])
+        result = yield from m.docker_exec_roundtrip(["python3", "-c", create_and_push_script])
         assert_that(result, exited_successfully())
-        assert_that(result, stdout_contains("PUSHED_DIGEST=sha256:"))
+        assert_that(result, stdout_contains("LAYER_DIGEST=sha256:"))
+        assert_that(result, stdout_contains("BLOB_UPLOADED=201"))
+        assert_that(result, stdout_contains("MANIFEST_DIGEST=sha256:"))
         assert_that(result, stdout_contains("STATUS=2"))  # 200 or 201
 
-        # Wait for and verify the custom critic run completed (populated by test harness)
-        # The test will launch the custom critic and store its run_id in custom_critic_run_id_holder
-        # For now, complete the builder agent - the verification happens in the test function
+        # Proxy has now created agent_definitions row automatically
+        # Test harness will verify the custom critic can be launched separately
+
+        # Complete the builder agent
         yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
 
     return mock
