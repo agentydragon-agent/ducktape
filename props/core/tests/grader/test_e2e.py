@@ -23,8 +23,7 @@ from agent_core_testing.steps import exited_successfully, stdout_contains
 from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props.core.db.session import get_session
-
-from ..conftest import PropsMock
+from props.core.tests.conftest import PropsMock
 
 
 def make_critic_mock_zero_issues() -> PropsMock:

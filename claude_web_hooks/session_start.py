@@ -457,6 +457,10 @@ def main() -> int:
     verbose.info("Configuring bazel availability for bash sessions...")
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
+        # Read existing content (may include props environment from setup_props_environment)
+        env_path = Path(env_file)
+        existing_content = env_path.read_text() if env_path.exists() else ""
+
         env_content = bazelisk_setup.get_env_script()
         env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
         if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
@@ -465,7 +469,10 @@ def main() -> int:
         nix_profile_bin = Path.home() / ".nix-profile" / "bin"
         if nix_profile_bin.exists():
             env_content += f'\nexport PATH="{nix_profile_bin}:$PATH"\n'
-        Path(env_file).write_text(env_content)
+
+        # Append to existing content (preserves props environment variables)
+        full_content = existing_content + env_content
+        env_path.write_text(full_content)
         verbose.info("Wrote PATH exports to %s", env_file)
     else:
         # Fallback: symlink bazel to ~/.local/bin

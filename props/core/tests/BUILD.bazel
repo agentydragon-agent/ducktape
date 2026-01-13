@@ -1,0 +1,27 @@
+"""Shared test fixtures for props tests."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+    ],
+    data = glob(["fixtures/**/*"]),
+    imports = ["../../.."],
+    visibility = ["//props/core/tests:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_core_testing",
+        "//mcp_infra",
+        "//openai_utils",
+        "//props/core",
+        "@pypi//psycopg2_binary",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)

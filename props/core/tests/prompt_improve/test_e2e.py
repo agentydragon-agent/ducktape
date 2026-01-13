@@ -23,8 +23,7 @@ from props.core.db.models import AgentRun
 from props.core.db.session import get_session
 from props.core.prompt_improve.improve_agent import run_improvement_agent
 from props.core.prompt_improve.reminder_handler import BlockingStatus
-
-from ..conftest import PropsMock
+from props.core.tests.conftest import PropsMock
 
 # Define the improved agent.md content used across tests
 # Note: The improvement agent creates a package with Dockerfile + init + agent.md

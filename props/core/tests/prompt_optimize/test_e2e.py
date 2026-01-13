@@ -31,8 +31,7 @@ from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
-
-from ..conftest import PropsMock
+from props.core.tests.conftest import PropsMock
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

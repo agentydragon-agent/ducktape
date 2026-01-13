@@ -1,6 +1,6 @@
 """Props core package."""
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
@@ -58,21 +58,8 @@ py_binary(
     deps = [":core"],
 )
 
-py_test(
-    name = "test_core",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/test_agent_types.py",
-    deps = [
-        ":core",
-        "//agent_core_testing",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_env",
-        "@pypi//pytest_mock",
-        "@pypi//pytest_timeout",
-        "@pypi//pytest_xdist",
-    ],
-)
+# Tests are now defined in props/core/tests/*/BUILD.bazel
+# Individual test targets allow better granularity and parallel execution
 
 ruff_test(
     name = "ruff",
