@@ -172,15 +172,35 @@ CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
 def _check_permission(auth: AuthContext, operation: str, path: str, method: str) -> None:
     """Check if caller has permission for this operation.
 
+    Uses default-deny: operations must be explicitly allowed.
     Raises HTTPException if permission denied.
     """
-    # Read operations
-    if method in {"GET", "HEAD"}:
-        if auth.caller_type not in CAN_READ:
-            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
+    # Delete always forbidden
+    if method == "DELETE":
+        raise HTTPException(status_code=403, detail="DELETE operations are forbidden")
+
+    # API version check (GET /v2/) - allow all callers
+    if method in {"GET", "HEAD"} and path.strip("/") == "v2":
         return
 
-    # Manifest push
+    # Read operations: manifests, blobs, tags
+    if method in {"GET", "HEAD"}:
+        # Allow reading manifests, blobs, tags, catalog
+        allowed_read_patterns = [
+            "/v2/",  # Version check
+            "/manifests/",  # Read manifests
+            "/blobs/",  # Read blobs
+            "/tags/list",  # List tags
+            "/_catalog",  # List repositories
+        ]
+        if any(pattern in path for pattern in allowed_read_patterns):
+            if auth.caller_type not in CAN_READ:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
+            return
+        # Unrecognized read operation - deny
+        raise HTTPException(status_code=403, detail=f"Unrecognized read operation: {method} {path}")
+
+    # Manifest push (PUT to /manifests/)
     if method == "PUT" and "/manifests/" in path:
         if auth.caller_type not in CAN_PUSH:
             raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
@@ -196,11 +216,8 @@ def _check_permission(auth: AuthContext, operation: str, path: str, method: str)
             raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
         return
 
-    # Delete always forbidden
-    if method == "DELETE":
-        raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to delete")
-
-    # Default: allow (e.g., catalog, version check)
+    # Default: deny any unrecognized operations
+    raise HTTPException(status_code=403, detail=f"Operation not allowed: {method} {path}")
 
 
 async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | None:
