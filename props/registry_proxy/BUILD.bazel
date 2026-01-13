@@ -43,27 +43,30 @@ pkg_tar(
     strip_prefix = ".",
 )
 
-pkg_tar(
-    name = "entrypoint_tar",
-    srcs = ["entrypoint.sh"],
-    mode = "0755",
-    package_dir = "/",
-)
-
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    entrypoint = ["/entrypoint.sh"],
+    cmd = [
+        "props.registry_proxy.proxy:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5051",
+        "--log-level",
+        "info",
+    ],
+    entrypoint = [
+        "python",
+        "-m",
+        "uvicorn",
+    ],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
         "PROPS_REGISTRY_UPSTREAM_URL": "http://props-registry:5000",
     },
     exposed_ports = ["5051/tcp"],
-    tars = [
-        ":app_tar",
-        ":entrypoint_tar",
-    ],
+    tars = [":app_tar"],
 )
 
 oci_load(
