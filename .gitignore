@@ -3,7 +3,7 @@
 .DS_Store
 
 # Build tools and dependencies
-**/bazel-*
+/bazel-*
 **/node_modules/
 **/.aspect/
 

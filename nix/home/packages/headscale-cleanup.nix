@@ -8,13 +8,13 @@
   pkgs,
 }: let
   # 8-char commit SHA from GitHub release tag
-  shortSha = "54678f87";
+  shortSha = "6de4aa95";
 
   # Fetch wheel directly with fetchurl
   wheelSrc = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-${shortSha}/headscale_cleanup.whl";
     # After updating shortSha, set to lib.fakeHash and rebuild to get new hash
-    hash = lib.fakeHash;
+    hash = "sha256-Wcz5SA/6yW1RM/uWQwvrk4e39GCVpY0kgusc6mUcuAc=";
   };
 in
   pkgs.python3Packages.buildPythonApplication {

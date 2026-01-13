@@ -10,13 +10,13 @@
   compact-json = pkgs.callPackage ./compact-json.nix {};
 
   # 8-char commit SHA from GitHub release tag
-  shortSha = "54678f87";
+  shortSha = "6de4aa95";
 
   # Fetch wheel directly with fetchurl
   wheelSrc = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-${shortSha}/ducktape.whl";
     # After updating shortSha, set to lib.fakeHash and rebuild to get new hash
-    hash = lib.fakeHash;
+    hash = "sha256-7iBxPWvUccBxylUAK7y5/sisqwHwQoinbBVCCOnVfc8=";
   };
 
   ducktape = pkgs.python3Packages.buildPythonApplication {

@@ -1,0 +1,43 @@
+# Bazel build + test + lint reusable workflow
+#
+# Runs comprehensive Bazel-based checks:
+# - Lint + typecheck via aspects (ruff, mypy, eslint)
+# - All tests
+# - Rust clippy (optional, for finance/)
+name: Bazel Build
+
+on:
+  workflow_call:
+
+jobs:
+  bazel-build:
+    name: Build, Test, Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-
+
+      # Lint + typecheck (Python ruff + mypy, JS/TS eslint)
+      - name: Lint and typecheck
+        run: bazel build --config=check //...
+
+      # All tests
+      - name: Run tests
+        run: bazel test //...
+
+      # Rust lint (separate because finance/ is optional)
+      - name: Rust lint
+        run: bazel build --config=rust-check //finance/... || true
