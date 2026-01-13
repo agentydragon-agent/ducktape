@@ -172,7 +172,7 @@ CAN_PUSH_TAGS = {CallerType.ADMIN}  # Only admin can push by tag
 def _check_permission(auth: AuthContext, operation: str, path: str, method: str) -> None:
     """Check if caller has permission for this operation.
 
-    Uses default-deny: operations must be explicitly allowed.
+    Uses default-deny with explicit path validation using regex patterns.
     Raises HTTPException if permission denied.
     """
     # Delete always forbidden
@@ -180,41 +180,70 @@ def _check_permission(auth: AuthContext, operation: str, path: str, method: str)
         raise HTTPException(status_code=403, detail="DELETE operations are forbidden")
 
     # API version check (GET /v2/) - allow all callers
-    if method in {"GET", "HEAD"} and path.strip("/") == "v2":
+    if method in {"GET", "HEAD"} and re.fullmatch(r"v2/?", path):
         return
 
-    # Read operations: manifests, blobs, tags
+    # Read operations: validate full path structure
     if method in {"GET", "HEAD"}:
-        # Allow reading manifests, blobs, tags, catalog
-        allowed_read_patterns = [
-            "/v2/",  # Version check
-            "/manifests/",  # Read manifests
-            "/blobs/",  # Read blobs
-            "/tags/list",  # List tags
-            "/_catalog",  # List repositories
-        ]
-        if any(pattern in path for pattern in allowed_read_patterns):
+        # Catalog endpoint: /v2/_catalog
+        if re.fullmatch(r"v2/_catalog", path):
             if auth.caller_type not in CAN_READ:
                 raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
             return
+
+        # Tag list: /v2/<repo>/tags/list
+        if re.fullmatch(r"v2/[^/]+/tags/list", path):
+            if auth.caller_type not in CAN_READ:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
+            return
+
+        # Manifest read: /v2/<repo>/manifests/<ref>
+        if re.fullmatch(r"v2/[^/]+/manifests/[^/]+", path):
+            if auth.caller_type not in CAN_READ:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
+            return
+
+        # Blob read: /v2/<repo>/blobs/<digest>
+        if re.fullmatch(r"v2/[^/]+/blobs/[^/]+", path):
+            if auth.caller_type not in CAN_READ:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to read")
+            return
+
         # Unrecognized read operation - deny
         raise HTTPException(status_code=403, detail=f"Unrecognized read operation: {method} {path}")
 
-    # Manifest push (PUT to /manifests/)
-    if method == "PUT" and "/manifests/" in path:
-        if auth.caller_type not in CAN_PUSH:
-            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
-        # Check if pushing by tag (requires additional permission)
-        ref = path.split("/manifests/")[-1].split("?")[0]
-        if not is_digest(ref) and auth.caller_type not in CAN_PUSH_TAGS:
-            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push by tag")
-        return
+    # Manifest push: PUT /v2/<repo>/manifests/<ref>
+    if method == "PUT":
+        match = re.fullmatch(r"v2/([^/]+)/manifests/([^/]+)", path)
+        if match:
+            if auth.caller_type not in CAN_PUSH:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
+            # Check if pushing by tag (requires additional permission)
+            ref = match.group(2)
+            if not is_digest(ref) and auth.caller_type not in CAN_PUSH_TAGS:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push by tag")
+            return
 
-    # Blob upload operations (POST, PATCH, PUT to /blobs/)
-    if "/blobs/" in path and method in ("POST", "PATCH", "PUT"):
-        if auth.caller_type not in CAN_PUSH:
-            raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
-        return
+    # Blob upload operations: POST to start upload, PATCH/PUT to continue/complete
+    if method in ("POST", "PATCH", "PUT"):
+        # POST /v2/<repo>/blobs/uploads/ - start upload
+        if method == "POST" and re.fullmatch(r"v2/[^/]+/blobs/uploads/?", path):
+            if auth.caller_type not in CAN_PUSH:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
+            return
+
+        # PATCH /v2/<repo>/blobs/uploads/<uuid> - continue upload
+        if method == "PATCH" and re.fullmatch(r"v2/[^/]+/blobs/uploads/[^/]+", path):
+            if auth.caller_type not in CAN_PUSH:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
+            return
+
+        # PUT /v2/<repo>/blobs/uploads/<uuid>?digest=... - complete upload
+        # Note: query params are in request.url.query, not path, so just validate path structure
+        if method == "PUT" and re.fullmatch(r"v2/[^/]+/blobs/uploads/[^/]+", path):
+            if auth.caller_type not in CAN_PUSH:
+                raise HTTPException(status_code=403, detail=f"{auth.caller_type} not allowed to push")
+            return
 
     # Default: deny any unrecognized operations
     raise HTTPException(status_code=403, detail=f"Operation not allowed: {method} {path}")
@@ -355,10 +384,13 @@ async def proxy(request: Request, path: str, auth: Annotated[AuthContext, Depend
         body = await request.body()
 
         # Special handling for manifest pushes: record in database
-        is_manifest_push = request.method == "PUT" and "/v2/" in path and "/manifests/" in path
-        manifest_digest = None
+        # Validate path structure: PUT /v2/<repo>/manifests/<ref>
+        manifest_push_match = None
+        if request.method == "PUT":
+            manifest_push_match = re.fullmatch(r"v2/([^/]+)/manifests/([^/]+)", path)
 
-        if is_manifest_push:
+        manifest_digest = None
+        if manifest_push_match:
             # Compute manifest digest from body
             manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
 
@@ -372,13 +404,10 @@ async def proxy(request: Request, path: str, auth: Annotated[AuthContext, Depend
             raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
         # Record manifest push if successful
-        if is_manifest_push and upstream_response.status_code in (200, 201):
-            # Extract repository name from path (/v2/<repo>/manifests/<ref>)
-            match = re.match(r"^v2/([^/]+)/manifests/", path)
-            if match:
-                repository = match.group(1)
-                with get_session_context() as session:
-                    await _record_manifest_push(session, repository, manifest_digest, body, auth)
+        if manifest_push_match and upstream_response.status_code in (200, 201):
+            repository = manifest_push_match.group(1)
+            with get_session_context() as session:
+                await _record_manifest_push(session, repository, manifest_digest, body, auth)
 
         # Return upstream response
         return Response(
