@@ -42,12 +42,12 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["flag-propagation-agent:latest"],
+    repo_tags = ["critic-agent:flag-propagation"],
 )
 
 oci_push(
     name = "push",
     image = ":image",
-    remote_tags = ["latest"],
-    repository = "localhost:5050/flag-propagation",
+    remote_tags = ["flag-propagation"],
+    repository = "localhost:5050/critic",
 )

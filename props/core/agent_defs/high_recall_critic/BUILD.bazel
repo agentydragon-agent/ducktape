@@ -42,12 +42,12 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["high-recall-critic-agent:latest"],
+    repo_tags = ["critic-agent:high-recall"],
 )
 
 oci_push(
     name = "push",
     image = ":image",
-    remote_tags = ["latest"],
-    repository = "localhost:5050/high-recall-critic",
+    remote_tags = ["high-recall"],
+    repository = "localhost:5050/critic",
 )

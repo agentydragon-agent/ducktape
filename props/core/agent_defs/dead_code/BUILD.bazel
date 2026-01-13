@@ -42,12 +42,12 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["dead-code-agent:latest"],
+    repo_tags = ["critic-agent:dead-code"],
 )
 
 oci_push(
     name = "push",
     image = ":image",
-    remote_tags = ["latest"],
-    repository = "localhost:5050/dead-code",
+    remote_tags = ["dead-code"],
+    repository = "localhost:5050/critic",
 )

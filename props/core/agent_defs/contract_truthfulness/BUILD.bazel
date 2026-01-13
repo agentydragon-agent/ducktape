@@ -42,12 +42,12 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["contract-truthfulness-agent:latest"],
+    repo_tags = ["critic-agent:contract-truthfulness"],
 )
 
 oci_push(
     name = "push",
     image = ":image",
-    remote_tags = ["latest"],
-    repository = "localhost:5050/contract-truthfulness",
+    remote_tags = ["contract-truthfulness"],
+    repository = "localhost:5050/critic",
 )
