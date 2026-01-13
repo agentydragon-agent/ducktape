@@ -202,6 +202,48 @@ class LogLevelCounter(logging.Handler):
             self.error_count += 1
 
 
+def setup_podman_storage(log: logging.Logger) -> None:
+    """Configure podman to use VFS storage driver (required for gVisor).
+
+    Podman's storage driver must be configured before creating any containers.
+    This writes ~/.config/containers/storage.conf with driver = "vfs".
+    """
+    storage_conf = Path.home() / ".config/containers/storage.conf"
+    storage_conf.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write minimal storage.conf with VFS driver
+    storage_conf.write_text("""[storage]
+driver = "vfs"
+""")
+
+    log.info("Configured podman storage driver: vfs")
+
+
+def setup_props_environment(log: logging.Logger) -> None:
+    """Set environment variables for props e2e testing with podman + host networking."""
+    env_file_str = os.environ.get("CLAUDE_ENV_FILE")
+    if not env_file_str:
+        log.warning("CLAUDE_ENV_FILE not set, cannot configure props environment")
+        return
+
+    # Podman + host networking configuration
+    env_content = """
+# Props e2e test configuration (podman + host networking)
+export PGHOST=127.0.0.1
+export PGPORT=5433
+export AGENT_PGHOST=127.0.0.1
+export PROPS_REGISTRY_PROXY_HOST=127.0.0.1
+export PROPS_REGISTRY_PROXY_PORT=5051
+export PROPS_DOCKER_NETWORK=host
+"""
+
+    env_file = Path(env_file_str)
+    with env_file.open("a") as f:
+        f.write(env_content)
+
+    log.info("Configured props environment variables for podman + host networking")
+
+
 class SessionLoggers:
     """Container for stdout (compact) and file-only (verbose) loggers."""
 
@@ -332,6 +374,13 @@ def main() -> int:
                 verbose.info("alejandra installed successfully")
             except Exception as e:
                 verbose.warning("Failed to install nix/alejandra: %s", e)
+
+        # Configure podman and props environment if props directory exists
+        props_dir = project_dir / "props"
+        if props_dir.is_dir():
+            verbose.info("Configuring podman and props environment for e2e testing...")
+            setup_podman_storage(verbose)
+            setup_props_environment(verbose)
     else:
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
