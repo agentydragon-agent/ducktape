@@ -150,8 +150,10 @@ import os
 class AgentEnvironment(ABC):
     def __init__(self, ...):
         # Read from environment (set by devenv or Claude Code hook)
-        self._postgres_host = os.environ.get("PROPS_POSTGRES_HOST", "props-postgres")
-        self._postgres_port = os.environ.get("PROPS_POSTGRES_PORT", "5432")
+        # Agent container's postgres host (differs between Docker/podman)
+        self._agent_pghost = os.environ.get("AGENT_PGHOST", "props-postgres")
+        # Port is same for both host and agents
+        self._pgport = os.environ.get("PGPORT", "5432")
         self._registry_proxy_host = os.environ.get("PROPS_REGISTRY_PROXY_HOST", "registry-proxy")
         self._registry_proxy_port = os.environ.get("PROPS_REGISTRY_PROXY_PORT", "5050")
         self._docker_network = os.environ.get("PROPS_DOCKER_NETWORK", "props-agents")
@@ -161,8 +163,8 @@ class AgentEnvironment(ABC):
         config = {
             "Image": self._image,
             "Env": [
-                f"PGHOST={self._postgres_host}",
-                f"PGPORT={self._postgres_port}",
+                f"PGHOST={self._agent_pghost}",  # Agent's postgres host
+                f"PGPORT={self._pgport}",  # Same port for all
                 f"MCP_SERVER_URL=http://{mcp_host}:{mcp_port}",
                 ...
             ],
@@ -235,8 +237,9 @@ py_test(
     srcs = ["tests/critic/test_e2e.py"],
     env = {
         # Inherit from parent environment (set by devenv or CI)
-        "PROPS_POSTGRES_HOST": "$(PROPS_POSTGRES_HOST)",
-        "PROPS_POSTGRES_PORT": "$(PROPS_POSTGRES_PORT)",
+        "PGHOST": "$(PGHOST)",  # Host-side postgres access
+        "PGPORT": "$(PGPORT)",  # Same port for both host and agents
+        "AGENT_PGHOST": "$(AGENT_PGHOST)",  # Agent container's postgres host
         "PROPS_REGISTRY_PROXY_HOST": "$(PROPS_REGISTRY_PROXY_HOST)",
         "PROPS_REGISTRY_PROXY_PORT": "$(PROPS_REGISTRY_PROXY_PORT)",
         "PROPS_DOCKER_NETWORK": "$(PROPS_DOCKER_NETWORK)",
@@ -251,8 +254,9 @@ py_test(
 ```bash
 # Pass environment explicitly to all tests
 bazel test //props/... \
-  --test_env=PROPS_POSTGRES_HOST=127.0.0.1 \
-  --test_env=PROPS_POSTGRES_PORT=5433 \
+  --test_env=PGHOST=127.0.0.1 \
+  --test_env=PGPORT=5433 \
+  --test_env=AGENT_PGHOST=127.0.0.1 \
   --test_env=PROPS_DOCKER_NETWORK=host \
   --test_env=PROPS_USE_VFS_DRIVER=1
 ```
@@ -261,8 +265,9 @@ bazel test //props/... \
 
 ```bash
 # .bazelrc
-test:podman --test_env=PROPS_POSTGRES_HOST=127.0.0.1
-test:podman --test_env=PROPS_POSTGRES_PORT=5433
+test:podman --test_env=PGHOST=127.0.0.1
+test:podman --test_env=PGPORT=5433
+test:podman --test_env=AGENT_PGHOST=127.0.0.1
 test:podman --test_env=PROPS_REGISTRY_PROXY_HOST=127.0.0.1
 test:podman --test_env=PROPS_REGISTRY_PROXY_PORT=5051
 test:podman --test_env=PROPS_DOCKER_NETWORK=host
@@ -281,17 +286,21 @@ Current devenv sets environment for Docker + network isolation:
 # props/devenv.nix
 {
   env = {
-    # Standard PostgreSQL client variables
+    # PostgreSQL client variables (host-side access)
     PGHOST = "127.0.0.1";
     PGPORT = "5433";
     PGUSER = "postgres";
     PGDATABASE = "eval_results";
 
-    # Props-specific: Service addresses for agent containers
-    PROPS_POSTGRES_HOST = "props-postgres";  # Container name
-    PROPS_POSTGRES_PORT = "5432";  # Internal port
+    # Agent container configuration
+    AGENT_PGHOST = "props-postgres";  # Container name (differs from PGHOST)
+    # PGPORT = "5433" (same port for both host and agents)
+
+    # Registry proxy
     PROPS_REGISTRY_PROXY_HOST = "registry-proxy";
     PROPS_REGISTRY_PROXY_PORT = "5050";
+
+    # Docker networking
     PROPS_DOCKER_NETWORK = "props-agents";
     # PROPS_USE_VFS_DRIVER not set (defaults to overlay)
   };
@@ -313,8 +322,9 @@ def setup_props_environment():
     # Podman + host networking configuration
     env_content = f"""
 # Props e2e test configuration (podman + host networking)
-export PROPS_POSTGRES_HOST=127.0.0.1
-export PROPS_POSTGRES_PORT=5433
+export PGHOST=127.0.0.1
+export PGPORT=5433
+export AGENT_PGHOST=127.0.0.1  # Same as PGHOST in host networking mode
 export PROPS_REGISTRY_PROXY_HOST=127.0.0.1
 export PROPS_REGISTRY_PROXY_PORT=5051
 export PROPS_DOCKER_NETWORK=host
@@ -520,16 +530,18 @@ Tests don't verify that critics **cannot bypass** the proxy (network isolation),
 
 All configuration is controlled via environment variables (no Python-level branching):
 
-| Variable                    | Docker Mode                  | Podman Mode     | Purpose                                  |
-| --------------------------- | ---------------------------- | --------------- | ---------------------------------------- |
-| `PROPS_POSTGRES_HOST`       | `props-postgres` (container) | `127.0.0.1`     | Postgres host for agent containers       |
-| `PROPS_POSTGRES_PORT`       | `5432` (internal)            | `5433`          | Postgres port for agent containers       |
-| `PROPS_REGISTRY_PROXY_HOST` | `registry-proxy` (container) | `127.0.0.1`     | Registry proxy host for agents           |
-| `PROPS_REGISTRY_PROXY_PORT` | `5050`                       | `5051`          | Registry proxy port for agents           |
-| `PROPS_DOCKER_NETWORK`      | `props-agents`               | `host`          | Docker network mode for agent containers |
-| `PROPS_USE_VFS_DRIVER`      | (not set)                    | `1`             | Use VFS instead of overlay               |
-| `DOCKER_HOST`               | (auto)                       | (auto or set)   | Docker/Podman socket path                |
-| `PGHOST`, `PGPORT`, etc.    | `127.0.0.1:5433`             | `127.0.0.1:5433 | Host-side postgres access (both modes)`  |
+| Variable                    | Docker Mode                  | Podman Mode | Purpose                                                 |
+| --------------------------- | ---------------------------- | ----------- | ------------------------------------------------------- |
+| `PGHOST`                    | `127.0.0.1`                  | `127.0.0.1` | Host-side postgres access (both modes)                  |
+| `PGPORT`                    | `5433`                       | `5433`      | Postgres port (same for host and agents)                |
+| `AGENT_PGHOST`              | `props-postgres` (container) | `127.0.0.1` | Postgres host for agent containers (differs from PGHOST |
+| `PROPS_REGISTRY_PROXY_HOST` | `registry-proxy` (container) | `127.0.0.1` | Registry proxy host for agents                          |
+| `PROPS_REGISTRY_PROXY_PORT` | `5050`                       | `5051`      | Registry proxy port for agents                          |
+| `PROPS_DOCKER_NETWORK`      | `props-agents`               | `host`      | Docker network mode for agent containers                |
+| `PROPS_USE_VFS_DRIVER`      | (not set)                    | `1`         | Use VFS instead of overlay                              |
+| `DOCKER_HOST`               | (auto)                       | (auto)      | Docker/Podman socket path (auto-detected)               |
+
+**Key insight**: Only `AGENT_PGHOST` differs between Docker and podman modes (container name vs localhost). The port (`PGPORT`) is the same for both host-side and agent-side access.
 
 **Configuration Sources:**
 

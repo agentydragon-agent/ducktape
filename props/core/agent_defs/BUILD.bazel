@@ -1,5 +1,6 @@
-"""Shared init scripts for agent OCI images."""
+"""Shared init scripts and critic variants."""
 
+load(":critic.bzl", "critic_variant")
 load(":init_tar.bzl", "init_script_tar")
 
 # Shared init script for critic-dev agents (7 agents)
@@ -20,4 +21,29 @@ init_script_tar(
 init_script_tar(
     name = "grader_agent_init_tar",
     script = "grader_init",
+)
+
+# Critic variant OCI images
+# Targets: :contract_truthfulness, :contract_truthfulness_load, :contract_truthfulness_push
+critic_variant(
+    name = "contract_truthfulness",
+    agent_md = "contract_truthfulness.md",
+)
+
+# Targets: :dead_code, :dead_code_load, :dead_code_push
+critic_variant(
+    name = "dead_code",
+    agent_md = "dead_code.md",
+)
+
+# Targets: :flag_propagation, :flag_propagation_load, :flag_propagation_push
+critic_variant(
+    name = "flag_propagation",
+    agent_md = "flag_propagation.md",
+)
+
+# Targets: :high_recall, :high_recall_load, :high_recall_push
+critic_variant(
+    name = "high_recall",
+    agent_md = "high_recall_critic.md",
 )
