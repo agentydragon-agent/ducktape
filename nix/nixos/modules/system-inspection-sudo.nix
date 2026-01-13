@@ -26,24 +26,28 @@
   # For exact subcommands: flatten { cmd, args = [list] } into individual rules
   # Includes logViewingCommands (same structure, separate in SSOT because Claude Code omits them)
   # Empty string arg ("") means command with no arguments
-  exactRules =
-    lib.flatten (map (entry:
-      map (arg: {
-        command = "${bin}/${entry.cmd}${if arg == "" then " \"\"" else " ${arg}"}";
-        options = ["NOPASSWD"];
-      })
-      entry.args
+  exactRules = lib.flatten (map (
+      entry:
+        map (arg: {
+          command = "${bin}/${entry.cmd}${
+            if arg == ""
+            then " \"\""
+            else " ${arg}"
+          }";
+          options = ["NOPASSWD"];
+        })
+        entry.args
     )
     (inspectionCommands.sudoExactSubcommands ++ inspectionCommands.logViewingCommands));
 
   # For wildcard subcommands: flatten { cmd, prefixes = [list] } into rules with wildcard
-  wildcardRules =
-    lib.flatten (map (entry:
-      map (prefix: {
-        command = "${bin}/${entry.cmd} ${prefix} *";
-        options = ["NOPASSWD"];
-      })
-      entry.prefixes
+  wildcardRules = lib.flatten (map (
+      entry:
+        map (prefix: {
+          command = "${bin}/${entry.cmd} ${prefix} *";
+          options = ["NOPASSWD"];
+        })
+        entry.prefixes
     )
     inspectionCommands.sudoWildcardSubcommands);
 

@@ -37,7 +37,6 @@ For each gathered issue:
 2. I will decide the disposition:
 
    If it's a true positive (should be in canon):
-
    - Create a new YAML issue file in `issues/`.
    - Choose filename sequentially (iss-###.yaml) and preserve ordering.
    - Set `should_flag: true`.
@@ -46,7 +45,6 @@ For each gathered issue:
    - For multi-file issues: specify `critic_scopes_expected_to_recall` (required).
 
    If it's a canonical negative (false positive):
-
    - Create as `should_flag: false` with clear rationale and localized anchors.
 
    If it's a duplicate or invalid: mark it as such and do not add to canon.

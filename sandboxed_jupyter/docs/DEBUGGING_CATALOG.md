@@ -114,7 +114,6 @@ Use these to triage sandbox issues, MCP stdio protocol, kernel behavior, and Jup
 ## Kernel-side probes (via MCP tool)
 
 - Inspect environment and paths from inside the kernel
-
   - cell_source:
 
     ```python

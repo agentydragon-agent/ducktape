@@ -5,7 +5,6 @@ Service that lets LLMs access real-time and historical information relevant to t
 ### Core Components
 
 1. **Server** - FastAPI-based web service that:
-
    - Receives and stores webhooks in PostgreSQL
    - Provides browsable interface optimized for LLMs
    - Retrieves and presents Home Assistant data
@@ -160,12 +159,10 @@ Designed for current LLM constraints (as of May 2025), particularly OpenAI sched
 Gatelet supports multiple authentication methods:
 
 1. **Key in Path** - Simple authentication by including key in URL path
-
    - Usage model: User provides direct URL with embedded key (<http://server/k/SECRET_KEY/>)
    - Example: `/k/{key}/`
 
 2. **Challenge-Response** - Secure authentication using nonce challenges
-
    - Usage model: User provides base URL and secret key separately
    - LLM visits base URL, receives challenge, computes answer with Python
    - Server presents multiple link options (no URL computation needed)
@@ -218,18 +215,15 @@ Gatelet supports multiple authentication methods:
 The project is implemented in phases:
 
 1. **Phase 1** – Webhooks with Key‑in‑Path Authentication _(completed)_
-
    - Basic FastAPI server and PostgreSQL schema
    - Webhook receiving and storage
    - Key‑in‑path authentication
 
 2. **Phase 2** – Challenge‑Response Authentication _(completed)_
-
    - Nonce‑based login flow for LLMs
    - Session management with automatic extension
 
 3. **Phase 3** – Home Assistant Integration _(in progress)_
-
    - Basic entity state listing implemented
    - Historical and trend views pending
 

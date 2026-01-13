@@ -129,16 +129,13 @@ rg --type py "def test_\w+\(self" -A 20 | grep "self\.\w+ ="
 For each `class Test*:` found:
 
 1. **Check for class-level pytest fixtures** (decorated with `@pytest.fixture`)
-
    - If found: Class provides value, KEEP IT
 
 2. **Check for setup/teardown methods**
-
    - `setup_method`, `teardown_method`, `setup_class`, `teardown_class`
    - If found: Class provides value, KEEP IT
 
 3. **Check for shared state via `self.`**
-
    - Look for `self.attribute = value` patterns
    - If found and used across multiple tests: Class provides value, KEEP IT
 

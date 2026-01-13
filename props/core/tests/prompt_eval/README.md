@@ -14,26 +14,22 @@ This directory contains integration tests for the prompt evaluation and optimiza
 Tests the complete prompt optimizer integration:
 
 1. **MCP Server Registration** (`test_prompt_eval_mcp_tools_basic`)
-
    - Verifies that `run_critic` and `run_grader` tools are properly registered
    - Smoke test that doesn't require full execution
 
 2. **Critic Run Database Integration** (`test_critic_run_writes_to_database`)
-
    - Tests `CriticRun._write_to_db()` writes to PostgreSQL
    - Verifies critic_runs table entries
    - Verifies critique creation
    - Tests RLS allows agent_user to read train split
 
 3. **Grader Run Database Integration** (`test_grader_run_writes_to_database`)
-
    - Tests `GraderRun._write_to_db()` writes to PostgreSQL
    - Verifies grader_runs table entries
    - Verifies grading metrics storage
    - Tests RLS allows agent_user to read train split
 
 4. **RLS Security** (`test_rls_blocks_test_split_for_agent_user`)
-
    - Verifies agent_user CANNOT see test split data
    - Tests Row-Level Security policies work correctly
 

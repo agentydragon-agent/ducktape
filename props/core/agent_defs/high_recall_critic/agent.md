@@ -142,24 +142,19 @@ After tool passes, skim these high-value areas:
 ## Do NOT Flag (Known Acceptable Patterns)
 
 1. **Intentional duplication for different purposes**
-
    - LLM-facing code vs UI-facing code may look duplicated but serve distinct needs
    - Two layers doing similar things is acceptable if they have different responsibilities
 
 2. **Defensive reads before permission gates**
-
    - Re-reading a file after user confirmation is intentional (file may have changed)
 
 3. **Personal project shortcuts**
-
    - Flags named `--yolo`, partial token logging, etc. are acceptable in this context
 
 4. **Consistent style preferences**
-
    - If the codebase consistently uses a pattern (e.g., nested if vs combined conditions), don't flag as "should refactor"
 
 5. **CLI-controlled parameters**
-
    - Parameters controlled by CLI (not untrusted input) don't need path traversal protection
 
 6. **Visual consistency duplication**

@@ -149,7 +149,7 @@ ducktape/
 
 - `requirements_bazel.txt` is the single source of truth for Python dependencies
 - All Python packages have `BUILD.bazel` files defining targets
-- Linting via `ruff_test` targets (aspect_rules_lint)
+- Linting via Bazel aspects (`--config=check` runs ruff + mypy + eslint)
 - Python 3.12+ is the target runtime version
 
 **Development workflow:**
@@ -158,7 +158,7 @@ ducktape/
 # Build all targets
 bazel build //...
 
-# Run all tests (includes ruff lint tests)
+# Run all tests
 bazel test //...
 
 # Format code (ruff, prettier, shfmt, buildifier)

@@ -5,16 +5,14 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from pydantic import BaseModel
 from rich.console import Console
 
 from gmail_archiver.gmail_api_models import GmailMessageWithHeaders
+from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
-
-if TYPE_CHECKING:
-    from gmail_archiver.inbox import GmailInbox
 
 # Shared label constant for general inbox cleanup (used by multiple planners)
 LABEL_AUTO_CLEANED = "gmail-archiver/inbox-auto-cleaned"

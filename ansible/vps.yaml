@@ -43,16 +43,18 @@
     - name: Apply PowerDNS role
       ansible.builtin.include_role:
         name: powerdns
+      vars:
+        powerdns_state: absent
       tags: [powerdns]
 
-    # Configure systemd-resolved with split DNS for PowerDNS and Tailscale
+    # Configure systemd-resolved for public DNS
     - name: Ensure systemd-resolved is enabled
       ansible.builtin.systemd:
         name: systemd-resolved
         state: started
         enabled: true
       become: true
-      tags: [dns, powerdns]
+      tags: [dns]
 
     - name: Create systemd-resolved config directory
       ansible.builtin.file:
@@ -62,9 +64,9 @@
         group: root
         mode: "0755"
       become: true
-      tags: [dns, powerdns]
+      tags: [dns]
 
-    - name: Configure systemd-resolved with split DNS
+    - name: Configure systemd-resolved with public DNS
       ansible.builtin.copy:
         dest: /etc/systemd/resolved.conf.d/10-split-dns.conf
         content: |
@@ -84,32 +86,23 @@
         mode: "0644"
       become: true
       notify: Restart systemd-resolved
-      tags: [dns, powerdns]
+      tags: [dns]
 
-    - name: Remove overly broad PowerDNS network configuration
+    - name: Remove legacy PowerDNS network configuration
       ansible.builtin.file:
         path: /etc/systemd/network/10-powerdns.network
         state: absent
       become: true
-      tags: [dns, powerdns]
+      tags: [dns]
 
-    - name: Configure PowerDNS forwarding in systemd-resolved directly
-      ansible.builtin.copy:
-        dest: /etc/systemd/resolved.conf.d/10-powerdns-domains.conf
-        content: |
-          [Resolve]
-          # Forward queries for our authoritative domains to PowerDNS
-          # This will be used in addition to the global DNS servers
-          DNS={{ ansible_default_ipv4.address }}#powerdns
-          Domains=~agentydragon.com ~adgn.link ~k3s.agentydragon.com
-        owner: root
-        group: root
-        mode: "0644"
+    - name: Remove PowerDNS forwarding from systemd-resolved
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d/10-powerdns-domains.conf
+        state: absent
       become: true
       notify:
-        - Restart systemd-networkd
         - Restart systemd-resolved
-      tags: [dns, powerdns]
+      tags: [dns]
 
     - name: Ensure /etc/resolv.conf is symlinked to systemd-resolved
       ansible.builtin.file:
@@ -118,7 +111,7 @@
         state: link
         force: true
       become: true
-      tags: [dns, powerdns]
+      tags: [dns]
     # Needs to run before Docker, which tries to install gnupg2
     - name: Update everything
       become: true
@@ -179,16 +172,6 @@
         letsencrypt_cert_name: "atlas.agentydragon.com"
         letsencrypt_domains:
           - "atlas.agentydragon.com"
-
-    - name: "Let's Encrypt | *.k3s.agentydragon.com (wildcard)"
-      ansible.builtin.import_role:
-        name: letsencrypt_dns
-      vars:
-        letsencrypt_dns_cert_name: "k3s-wildcard"
-        letsencrypt_dns_domains:
-          - "*.k3s.agentydragon.com"
-        letsencrypt_dns_provider: "powerdns"
-      tags: [letsencrypt, k3s-wildcard]
 
     - name: Apply headscale role
       ansible.builtin.include_role:
@@ -410,7 +393,7 @@
         state: restarted
         daemon_reload: true
       become: true
-      tags: [dns, powerdns]
+      tags: [dns]
 
     - name: Restart systemd-networkd
       ansible.builtin.systemd:
@@ -418,7 +401,7 @@
         state: restarted
         daemon_reload: true
       become: true
-      tags: [dns, powerdns]
+      tags: [dns]
 
     # Only triggers if nginx config files changed.
     - name: Reload nginx

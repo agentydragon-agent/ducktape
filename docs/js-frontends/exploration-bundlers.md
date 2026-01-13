@@ -290,31 +290,26 @@ Playwright's test framework uses JavaScript object identity to track execution c
 ### Potential Solutions
 
 1. **Flatten workspace** (aspect_rules_js supported):
-
    - Single `package.json` at root, no workspace members
    - Single node_modules tree
    - **Trade-off**: Module resolution from subdirectories becomes complex (need NODE_PATH hacks)
 
 2. **Use hardlinks instead of symlinks**:
-
    - pnpm's `dependenciesMeta[].injected` option or `hoist=false + hard-link` mode
    - **Status**: Not confirmed to fix Playwright identity issue; mainly a deduplication strategy
 
 3. **Monolithic test runner** (no per-workspace test):
-
    - Keep Playwright tests only in root or single location
    - All tests share same node_modules instance
    - **Trade-off**: Less modular testing; harder to organize
 
 4. **Build bundled test file**:
-
    - Compile/bundle test files with esbuild/Rollup before running
    - Single module instance in bundle
    - **Pro**: Works; honest solution
    - **Con**: Extra build step; breaks dev workflow
 
 5. **Use different test framework**:
-
    - Vitest, Jest, etc. may not have same module identity requirements
    - **Status**: Vitest already in agent_server/web; no Playwright identity issues reported
 
@@ -503,17 +498,14 @@ Example implementations and documentation:
   - `/examples/`: CSS, splitting, macros, plugins, targets
   - `/docs/rules.md`: API documentation
 - **rules_rollup**: <https://github.com/aspect-build/rules_rollup>
-
   - `/example/`: Example project
   - `/docs/rollup.md`: API documentation
 
 - **rules_webpack**: <https://github.com/aspect-build/rules_webpack>
-
   - Early development; API may change
   - `/docs/rules.md`: webpack_bundle, webpack_devserver
 
 - **Svelte + Bazel Example**: <https://github.com/thelgevold/svelte-bazel-example>
-
   - Uses rules_rollup with Rollup for bundling
   - Custom Svelte build rules
 
@@ -526,7 +518,6 @@ Example implementations and documentation:
 ## Next Steps
 
 1. **Decide on primary bundler** based on priority:
-
    - Hermetic builds + Playwright robustness → esbuild
    - SvelteKit + DX → Vite (accept workarounds)
    - Flexibility + React ecosystem → webpack (but pay config cost)
@@ -536,7 +527,6 @@ Example implementations and documentation:
 3. **Document bundler-specific patterns** in each frontend's AGENTS.md once chosen
 
 4. **Plan Playwright testing strategy**:
-
    - esbuild path: Run Playwright outside Bazel or via single-instance approach
    - Vite path: Use Vitest for Bazel tests, Playwright for CI-only integration tests
 

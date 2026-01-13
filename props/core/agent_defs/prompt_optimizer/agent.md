@@ -83,17 +83,14 @@ props agent-pkg create /workspace/my_critic/
 ## Workflow
 
 1. **Study subjective standards (REQUIRED):**
-
    - Query TPs/FPs to learn the labeler's preferences
    - Study rationales — what types of issues matter?
 
 2. **Diagnose failures:**
-
    - Read execution traces from `events` table
    - Identify patterns: wrong files read? missed analysis steps? false positives?
 
 3. **Iterate:**
-
    - Modify definition (prompt, tools, Dockerfile — whatever addresses the failure)
    - Test on small TRAIN sample, verify improvement
 

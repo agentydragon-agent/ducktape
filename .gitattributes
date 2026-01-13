@@ -4,3 +4,6 @@
 
 # Claude Code testdata - extracted from Claude Code binary, should not be modified
 claude/claude_hooks/claude_hooks/testdata/claude_tools/** rules-lint-ignored=true
+
+# Third-party code - don't reformat external code
+**/third_party/** rules-lint-ignored=true

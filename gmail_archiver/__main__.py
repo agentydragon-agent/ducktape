@@ -16,25 +16,26 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
-from .cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
-from .cli.filters import filters_app
-from .cli.labels import labels_app
-from .event_classifier import EmailTemplateExtractor
-from .gmail_api_models import SystemLabel
-from .inbox import GmailInbox
-from .models import Email
-from .plan import Plan, Planner
-from .plan_display import display_plan, summarize_plan
-from .planners.aliexpress import AliExpressPlanner
-from .planners.anthem_eob import AnthemEobPlanner
-from .planners.anthem_reimbursement import AnthemReimbursementPlanner
-from .planners.anthropic import AnthropicReceiptPlanner
-from .planners.dbsa import DbsaEventPlanner
-from .planners.doordash import DoorDashPlanner
-from .planners.one_medical import OneMedicalPlanner
-from .planners.spruce import SprucePlanner
-from .planners.square import SquarePlanner
-from .planners.usps import UspsPlanner
+from gmail_archiver.cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
+from gmail_archiver.cli.filters import filters_app
+from gmail_archiver.cli.labels import labels_app
+from gmail_archiver.dirs import get_cache_dir
+from gmail_archiver.event_classifier import EmailTemplateExtractor
+from gmail_archiver.gmail_api_models import SystemLabel
+from gmail_archiver.inbox import GmailInbox
+from gmail_archiver.models import Email
+from gmail_archiver.plan import Plan, Planner
+from gmail_archiver.plan_display import display_plan, summarize_plan
+from gmail_archiver.planners.aliexpress import AliExpressPlanner
+from gmail_archiver.planners.anthem_eob import AnthemEobPlanner
+from gmail_archiver.planners.anthem_reimbursement import AnthemReimbursementPlanner
+from gmail_archiver.planners.anthropic import AnthropicReceiptPlanner
+from gmail_archiver.planners.dbsa import DbsaEventPlanner
+from gmail_archiver.planners.doordash import DoorDashPlanner
+from gmail_archiver.planners.one_medical import OneMedicalPlanner
+from gmail_archiver.planners.spruce import SprucePlanner
+from gmail_archiver.planners.square import SquarePlanner
+from gmail_archiver.planners.usps import UspsPlanner
 
 app = typer.Typer(help="Archive old Gmail emails based on extracted dates")
 app.add_typer(filters_app, name="filters")
@@ -58,7 +59,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
     console.print("[bold]Gmail Email Archiver[/bold] - Inbox Auto-Cleaner")
     console.print(f"Dry run: {dry_run}, Archive label: gmail-archiver/inbox-auto-cleaned\n")
 
-    inbox = GmailInbox(client, console)
+    inbox = GmailInbox(client, console, cache_dir=get_cache_dir())
 
     extractor = EmailTemplateExtractor()
     planners: list[Planner] = [

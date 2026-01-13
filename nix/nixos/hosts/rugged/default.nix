@@ -11,7 +11,6 @@
 # TODO: Consider moving some packages from home-manager to system level (zsh, compilers like rustc/go/gcc)
 # TODO: SSH authorized_keys - add keys to users.users.agentydragon.openssh.authorizedKeys.keys
 # TODO: Improved OSK extension - waiting for GNOME 49 support (currently only 43-44)
-# TODO: logind - services.logind settings for lid close behavior, power button action (HandleLidSwitch, HandlePowerKey)
 # TODO: auto-cpufreq - services.auto-cpufreq for dynamic CPU governor (power saving on battery, performance on AC)
 # TODO: zram - consider zramSwap.enable for memory compression (swap file already exists at /swap/swapfile)
 # TODO: PipeWire - explicit audio config (services.pipewire with pulse/alsa/jack support)
@@ -41,12 +40,23 @@
     enable = true;
     powerOnBoot = true;
   };
+  # IIO sensor proxy for accelerometer (auto screen rotation)
+  hardware.sensor.iio.enable = true;
+
   # Services (tailscale enabled via dev-workstation.nix)
   services = {
     blueman.enable = true;
     fwupd.enable = true; # Firmware updates
     printing.enable = true;
     openssh.enable = true;
+    thermald.enable = true; # Intel thermal management
+    upower.enable = true; # Battery status (dual battery support)
+    logind.settings.Login = {
+      HandleLidSwitch = "suspend";
+      HandleLidSwitchExternalPower = "lock";
+      HandlePowerKey = "suspend";
+      HandlePowerKeyLongPress = "poweroff";
+    };
   };
 
   # WWAN/5G modem support (Foxconn DP25-42843-47)
@@ -62,6 +72,9 @@
 
   # Zsh as default shell
   programs.zsh.enable = true;
+
+  # nix-ld: Run dynamically linked binaries (Bazel downloads Python, Rust toolchains, etc.)
+  programs.nix-ld.enable = true;
 
   # User configuration
   users.users.${username} = {

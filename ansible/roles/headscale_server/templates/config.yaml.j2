@@ -60,6 +60,12 @@ dns:
       - 1.1.1.1
       - 8.8.8.8
   search_domains: []
+  # Split-horizon DNS: Tailnet clients resolve atlas.agentydragon.com directly
+  # to Atlas's Tailnet IP, bypassing the VPS proxy when on Tailnet.
+  extra_records:
+    - name: "atlas.agentydragon.com"
+      type: "A"
+      value: "100.64.1.30"
 
 unix_socket: /var/lib/headscale/headscale.sock
 unix_socket_permission: "0770"

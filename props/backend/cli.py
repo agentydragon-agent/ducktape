@@ -9,9 +9,11 @@ from typing import Annotated
 import typer
 import uvicorn
 
+from cli_util.logging import LogLevel, make_logging_callback
 from props.backend.app import app as fastapi_app
 
 cli = typer.Typer(help="Props dashboard backend")
+cli.callback()(make_logging_callback(default_level=LogLevel.INFO))
 
 
 @cli.command()

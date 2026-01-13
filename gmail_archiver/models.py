@@ -1,7 +1,5 @@
 """Models for Gmail data structures."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.message import EmailMessage
@@ -9,12 +7,10 @@ from email.parser import BytesParser
 from email.policy import default
 from email.utils import parsedate_to_datetime
 from functools import cached_property
-from typing import TYPE_CHECKING
+from typing import Self
 
+from gmail_archiver.gmail_api_models import GmailMessageMinimal
 from gmail_archiver.html_utils import html_to_text
-
-if TYPE_CHECKING:
-    from gmail_archiver.gmail_api_models import GmailMessageMinimal
 
 
 def parse_email_date(date_str: str | None) -> datetime | None:
@@ -89,7 +85,7 @@ class Email:
         return ""
 
     @classmethod
-    def from_gmail_response(cls, raw_bytes: bytes, metadata: GmailMessageMinimal) -> Email:
+    def from_gmail_response(cls, raw_bytes: bytes, metadata: GmailMessageMinimal) -> Self:
         """Create Email from raw bytes and Gmail API metadata."""
         return cls(
             id=metadata.id,

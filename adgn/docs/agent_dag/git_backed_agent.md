@@ -267,13 +267,11 @@ Guidelines
 Three viable realizations:
 
 1. Pure git (recommended for adgn initial rollout)
-
    - Use the layout above, content‑addressed `objects/`, JSON events under `events/`, periodic `runs/*` transcripts.
    - Benefits: zero extra infra, great PR UX, easy forks, deterministic reconstruction. Combine with `gitea_pr_gate/` to cap agent‑authored PRs.
    - Caveats: consider Git LFS for very large payloads.
 
 2. Git + LFS or git‑annex for large objects
-
    - Same structure, but store `objects/streams/*` and large `tool-results/*` in LFS to keep repo lean. Keeps PR UX intact.
 
 3. Git pointers + external object store
@@ -394,7 +392,6 @@ Alternate implementation plan (graph)
 If you want both “mutable code with PRs” and “agent state” in one system with branching/merging semantics, these databases provide Git‑style workflows without building a custom VCS:
 
 - Dolt (SQL with Git semantics)
-
   - What: MySQL‑compatible DB with branches, commits, diffs, push/pull, and PR‑like flows.
   - Mapping: tables for `nodes` and `edges` (graph projection), plus a `files` table for code (`path TEXT PRIMARY KEY, content TEXT, meta JSON`). Use Dolt branches/merges for proposals and state evolution.
   - Pros: One store for code and state; branch/merge feels like Git; easy time travel (`dolt checkout <commit>`); SQL queries for analytics.
@@ -402,7 +399,6 @@ If you want both “mutable code with PRs” and “agent state” in one system
   - Activation: runtime updates the MCP resource for the active policy (`resource://approval-policy/policy.py`).
 
 - TerminusDB (versioned document/graph)
-
   - What: Document graph DB with built‑in versioning, commits, branch, diff, and WOQL/GraphQL APIs.
   - Mapping: store graph nodes/edges as documents; store code as documents keyed by path with content; use branches for proposals and forks.
   - Pros: Native graph + versioning; first‑class diff/branch/merge; good fit for time travel queries.

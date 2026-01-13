@@ -113,7 +113,7 @@ py_package(
     deps = [
         "//difftree",
         "//git_commit_ai:git_commit_ai_lib",
-        "//gmail_archiver",
+        "//gmail_archiver:gmail_archiver_lib",
     ],
 )
 

@@ -208,19 +208,15 @@ scratch:
 ## Investigation Timeline
 
 1. **Initial approach**: Custom blueprint ConfigMap mounted to Authentik
-
    - **Issue**: Blueprint discovery ran before provider creation (timing)
 
 2. **Terraform import block**: Tried to import and manage embedded outpost
-
    - **Issue**: Import block syntax caused "configuration is invalid"
 
 3. **Terraform restful_operation**: Used terraform-provider-restful
-
    - **Issue**: Provider security config incorrect, then unsupported arguments
 
 4. **Terraform null_resource + wget**: Simple provisioner approach
-
    - **Issue**: BusyBox wget doesn't support `--method=PATCH`
 
 5. **Terraform null_resource + curl**: Changed to curl

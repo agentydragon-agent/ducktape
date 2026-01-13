@@ -16,7 +16,6 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
 - Sidecar client: the runtime (or any observer) must create a dedicated FastMCP client to the human chat server and subscribe directly; these notifications do **not** traverse the Compositor.
 
 - Resource
-
   - URI: `ui://chat/inbox`
   - Body (JSON, `application/json`):
 
@@ -45,7 +44,6 @@ Expose chat via a resource + notifications so both the orchestrator and the Huma
   - Semantics: append‑only; `id` monotonic (snowflake/ULID). Agent‑authored messages appear in the resource but DO NOT produce notifications (no self‑echo).
 
 - Notifications
-
   - Emit `notifications/resources/updated` with `params.uri = "ui://chat/inbox"` for each batch of new user messages. No orchestrator‑added fields are required; server MAY include a small `messages[]` batch for automation efficiency.
   - Dual subscribers:
     - Orchestrator: pinned subscription (for agent context injection; no skipping; uses watermark/read_since).
@@ -128,14 +126,12 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
 ## Message identity and high‑water marks
 
 - Message identity
-
   - Each message has an `id` that is a precise, monotonically increasing identifier. Acceptable shapes:
     - ISO‑8601 timestamp with microseconds (e.g., `2025-10-09T12:34:56.123456Z`) with a per‑process sequence tie‑breaker when needed, or
     - A ULID/Snowflake that is time‑ordered.
   - In examples, `id` may equal the precise timestamp. Clients treat `id` as an opaque, ordered token.
 
 - High‑water mark (HWM) options
-
   - Client‑managed: use `ui.chat_read_since({after_id})` where the client stores `after_id`. Simple and stateless on the server; duplicates are avoided if the client persists the HWM.
   - Server‑managed per‑session (auth‑derived): not used in this design. The server remains stateless for watermarking; the orchestrator maintains last delivered id.
   - Recommendation: keep server stateless; orchestrator uses `read_since` for exactly‑once delivery; Human UI may simply subscribe and call `resources/read` or use `read_since` for incremental pagination.
@@ -146,12 +142,10 @@ These flows illustrate end‑to‑end behavior for both V1 (bus‑only) and the 
 ### Subscriber identity
 
 - Deriving identity
-
   - Use the MCP session’s authentication context (e.g., a participant/bearer token) as the default subscriber identity. This avoids passing `subscriber` everywhere and keeps HWMs tied to a real client principal.
   - Tools accept an optional `subscriber` parameter to override the default (for administrative reads or backfills).
 
 - Recommended assignments
-
   - Orchestrator: use a dedicated, stable token if needed for server access control; watermarking does not rely on server‑managed identity.
   - Human UI: use a separate token (e.g., `subscriber = human`). Multiple human clients can either share a token (shared view) or use distinct tokens (independent views per device/tab).
 

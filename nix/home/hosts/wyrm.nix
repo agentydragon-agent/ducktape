@@ -10,6 +10,7 @@
 }: {
   imports = [
     ../home.nix
+    ../opencode
   ];
 
   # Wyrm-specific configuration (VM/desktop with full GUI)

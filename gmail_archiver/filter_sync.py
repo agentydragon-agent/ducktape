@@ -1,10 +1,9 @@
 """Filter comparison and synchronization logic."""
 
-from __future__ import annotations
-
 import contextlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Self
 
 from gmail_archiver.filter_planner import criteria_to_gmail_query
 from gmail_archiver.gmail_api_models import (
@@ -202,7 +201,7 @@ class LabelMaps:
     by_name: dict[str, str]
 
     @classmethod
-    def from_labels(cls, labels: list[GmailLabel]) -> LabelMaps:
+    def from_labels(cls, labels: list[GmailLabel]) -> Self:
         return cls(by_id={label.id: label.name for label in labels}, by_name={label.name: label.id for label in labels})
 
     def ensure_label(self, name: str, get_or_create_fn: Callable[[str], str]) -> str:

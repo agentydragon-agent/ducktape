@@ -336,25 +336,21 @@ except Exception:
 For each swallowed error:
 
 1. **Identify the error type**:
-
    - Infrastructure failure? → Let it crash
    - User error? → Handle gracefully
    - Transient failure? → Consider retry logic
 
 2. **Determine if system can continue**:
-
    - No → Remove catch, let it propagate
    - Yes with degraded state → Re-evaluate if degraded state is acceptable
    - Yes with full functionality → Handle specifically
 
 3. **Choose appropriate fix**:
-
    - **Best**: Remove try-except entirely
    - **Good**: Catch specific exceptions, re-raise others
    - **Acceptable**: Catch, send error to user, then re-raise
 
 4. **Update return types**:
-
    - Remove `| None` if errors now propagate
    - Add exception documentation to docstring
 

@@ -15,6 +15,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//cli_util",
         "//mcp_infra",
         "//props/core",
         "@pypi//fastapi",

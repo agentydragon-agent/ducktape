@@ -266,7 +266,6 @@ rg --type py 'def \w+\(.*: dict\['
 ### Fix Strategy
 
 1. **Identify boundaries**: Find where data enters/exits system
-
    - HTTP requests/responses
    - File reads/writes
    - Database queries/results
@@ -285,7 +284,6 @@ rg --type py 'def \w+\(.*: dict\['
    ```
 
 3. **Update internal functions**:
-
    - Change `def func(data: dict[str, Any])` → `def func(data: MyModel)`
    - Change `data["field"]` → `data.field`
    - Remove manual validation/parsing code
@@ -461,12 +459,10 @@ rg --type py -A10 '@model_validator.*mode="before"'
 **Manual review for each match:**
 
 1. **Union with weak types** (`BaseModel | dict`):
-
    - Is this at I/O boundary deserializing external data? → Might be OK
    - Is this internal code where callers control the type? → **FIX CALLERS**
 
 2. **isinstance(x, BaseModel)** checks:
-
    - Why is this needed? Usually means callers pass wrong types
    - Fix callers to pass proper Pydantic models
    - After fix, this check becomes unnecessary
@@ -478,7 +474,6 @@ rg --type py -A10 '@model_validator.*mode="before"'
 ## Fix Strategy
 
 1. **For serialization (model_dump)**:
-
    - If field names match: Just use `model_dump(mode="json")`
    - If enum needs `.value`: Use `@field_serializer`
    - If fields need different names: Rename DB columns or use separate DB model class

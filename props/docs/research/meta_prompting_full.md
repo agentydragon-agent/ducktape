@@ -48,19 +48,16 @@ Final Response
 ### Conductor Responsibilities
 
 1. **Task Decomposition:**
-
    - Break complex problems into manageable subtasks
    - Identify which expert(s) should handle each subtask
    - Determine task dependencies and ordering
 
 2. **Expert Selection:**
-
    - Route subtasks to appropriate experts based on capabilities
    - Handle cases where multiple experts could contribute
    - Retry with different experts if initial attempts fail
 
 3. **Context Management:**
-
    - Maintain conversation state across expert calls
    - Provide relevant context to each expert
    - Track partial results and dependencies
@@ -163,13 +160,11 @@ Backend Conductor (web architecture, APIs, databases)
 **How meta-prompting applies to this project:**
 
 1. **Decomposition guidance:** Teach the prompt optimizer to break down critic improvement into subtasks:
-
    - Diagnostic phase (what's failing?)
    - Hypothesis phase (why is it failing?)
    - Refinement phase (how to fix it?)
 
 2. **Specialized analysis:** Encourage the optimizer to adopt expert "lenses":
-
    - Dead code expert perspective
    - Duplication expert perspective
    - Architecture expert perspective

@@ -95,6 +95,7 @@ known-first-party = [
     "agent_core_testing",
     "agent_pkg",
     "agent_server",
+    "props",
     "claude_history",
     "claude_hooks",
     "claude_optimizer",

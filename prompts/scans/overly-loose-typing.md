@@ -324,20 +324,17 @@ for func in all_functions:
 **Verification for each candidate**:
 
 1. **For `Any` parameters**:
-
    - Read function body: Does it immediately check `isinstance()`?
    - If yes → We know the actual type, should use union
    - If no → Investigate what this parameter actually is
 
 2. **For `dict[str, Any]` returns**:
-
    - Trace back to source: Is this from `model.model_dump()`?
    - If yes → Should return the Pydantic model type
    - If from external API → Check if we have a Pydantic model for it
    - If truly dynamic → Keep `dict[str, Any]` but document why
 
 3. **For unions with loose types**:
-
    - Why does function accept multiple types?
    - Read library documentation / API specs
    - Is this handling multiple data sources? (Should be separate functions)

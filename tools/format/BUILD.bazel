@@ -1,29 +1,69 @@
 # Formatters for bazel run //tools/format
 #
 # Usage:
-#   bazel run //tools/format          # Format all files
-#   bazel run //tools/format.check    # Check formatting (no changes)
+#   bazel run //tools/format -- file1.py file2.js  # Format specific files
+#   bazel run //tools/format                        # Format all tracked files
 
 load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
 
 package(default_visibility = ["//visibility:public"])
 
-# Multi-formatter target combining all formatters
-# Run with: bazel run //tools/format
-# Check with: bazel run //tools/format.check
-format_multirun(
+# Custom formatter that handles filenames with special characters correctly.
+# Unlike rules_lint's format.sh, this doesn't use `find` which breaks on filenames
+# containing dashes that look like predicates (e.g., "-recipe-").
+py_binary(
     name = "format",
-    # JavaScript/TypeScript/CSS/HTML (uses prettier from tools/lint)
+    srcs = ["format.py"],
+    data = [
+        "//tools/lint:prettier",
+        "@aspect_rules_lint//format:ruff",
+        "@aspect_rules_lint//format:shfmt",
+        "@buildifier_prebuilt//buildifier",
+    ],
+    env = {
+        "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
+        "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
+        "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
+        "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
+    },
+    main = "format.py",
+    deps = [
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Check-only mode - same script with FMT_CHECK=1
+py_binary(
+    name = "format.check",
+    srcs = ["format.py"],
+    data = [
+        "//tools/lint:prettier",
+        "@aspect_rules_lint//format:ruff",
+        "@aspect_rules_lint//format:shfmt",
+        "@buildifier_prebuilt//buildifier",
+    ],
+    env = {
+        "BUILDIFIER_BIN": "$(rlocationpath @buildifier_prebuilt//buildifier:buildifier)",
+        "PRETTIER_BIN": "$(rlocationpath //tools/lint:prettier)",
+        "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
+        "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
+        "FMT_CHECK": "1",
+    },
+    main = "format.py",
+    deps = [
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Keep the old format_multirun as format_old for comparison/fallback
+format_multirun(
+    name = "format_old",
     css = "//tools/lint:prettier",
     html = "//tools/lint:prettier",
     javascript = "//tools/lint:prettier",
     markdown = "//tools/lint:prettier",
-    # Python (uses ruff format from multitool)
     python = "@aspect_rules_lint//format:ruff",
-    # Rust (uses rustfmt from rules_rust)
     rust = "@rules_rust//:rustfmt",
-    # Shell scripts (uses shfmt from multitool)
     shell = "@aspect_rules_lint//format:shfmt",
-    # Starlark BUILD files (uses buildifier from buildifier_prebuilt)
     starlark = "//tools/lint:buildifier",
 )

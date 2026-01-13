@@ -1,9 +1,7 @@
 """Thin CLI layer - just argument parsing and handler coordination (async Typer commands)."""
 
 import asyncio
-import functools
 import inspect
-import logging
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -13,6 +11,9 @@ import click
 import typer
 from colorama import init
 from typer.main import get_command
+
+from cli_util.decorators import async_run
+from cli_util.logging import LogLevel, configure_logging
 
 from .client.cd_utils import emit_cd_command
 from .client.handlers import (
@@ -34,16 +35,6 @@ from .shared.configuration import Configuration, load_config
 from .shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
 
 COPY_MAX_ARGS = 2
-
-
-def async_command(func):
-    """Decorator to run async command functions with asyncio.run()."""
-
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        return asyncio.run(func(*args, **kwargs))
-
-    return wrapper
 
 
 def show_help() -> None:
@@ -146,9 +137,7 @@ def _create_cli_dependencies(verbose: bool = False):
     """Create common CLI dependencies."""
     config = load_config()
     formatter = ViewFormatter(daemon_log_path=config.daemon_log_file)
-    # Route verbose flag into logging: show INFO logs when verbose, else WARNING
-    logging_level = logging.INFO if verbose else logging.WARNING
-    logging.basicConfig(level=logging_level)
+    configure_logging(log_level=LogLevel.INFO if verbose else LogLevel.WARNING)
     daemon_client = WtClient(config, verbose=verbose)
     plugin_manager = get_manager(config)
     return config, formatter, daemon_client, plugin_manager
@@ -294,7 +283,7 @@ async def _async_sh_main(dispatch_ctx: ShellDispatchContext, filtered_args):
     "sh",
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True, "help_option_names": ["-h", "--help"]},
 )
-@async_command
+@async_run
 async def cmd_sh(ctx: typer.Context):
     """Primary dispatcher for shell function integration.
 

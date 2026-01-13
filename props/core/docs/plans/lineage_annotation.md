@@ -77,7 +77,6 @@ Support multiple formats for line ranges in YAML:
 **Two levels of notes:**
 
 1. **LineRange.note** (new): Inline annotation for a specific code location
-
    - Short, contextual comment about what's at that location
    - Example: "main validation logic", "error handling", "config parsing"
    - Keep brief - just enough to distinguish this location from others
@@ -144,17 +143,14 @@ occurrences:
 ### 6. Implementation Tasks
 
 1. **Pydantic schema** (models/issue.py):
-
    - Add `note: str | None` field to `LineRange`
    - Update tests to cover annotated line ranges
 
 2. **YAML parsing**:
-
    - Ensure object-form line ranges parse correctly
    - Test mixed formats (integers, arrays, objects)
 
 3. **Validation**:
-
    - Ensure line notes are preserved through load/dump cycles
    - Verify backward compatibility with existing specimens
 
@@ -196,12 +192,10 @@ Continue using only occurrence-level notes with inline text
 ## Open Questions
 
 1. **Character limit for line notes?**
-
    - Recommendation: Keep them brief (< 100 chars), but don't enforce hard limit
    - Longer explanations should go in occurrence note or rationale
 
 2. **Should line notes support markdown?**
-
    - Initial answer: Plain text only for simplicity
    - Can be enhanced later if needed
 

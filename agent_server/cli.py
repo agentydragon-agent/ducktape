@@ -13,7 +13,7 @@ from typer.main import get_command
 from agent_server.mcp_bridge.auth import TokensConfig
 from agent_server.server.app import create_app
 from cli_util.decorators import async_run
-from cli_util.logging_callback import make_logging_callback
+from cli_util.logging import make_logging_callback
 from mcp_infra.config_loader import build_mcp_config
 from net_util.net import pick_free_port
 
@@ -35,7 +35,7 @@ MCP_CONFIGS_OPT = typer.Option(
 app = typer.Typer(help="Agent Server CLI — serve the local UI server.", no_args_is_help=True)
 
 # Configure logging via shared callback (default: INFO level)
-app.callback()(make_logging_callback(default_level="INFO"))
+app.callback()(make_logging_callback())
 
 
 def _print_enabled(servers: list[str]) -> None:

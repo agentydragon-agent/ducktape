@@ -4,6 +4,8 @@
   lib,
   enableGui,
   enableKube,
+  isNixOS,
+  enableHeavyPackages,
   nix-colors,
   solarizedLight,
   solarizedDark,
@@ -29,7 +31,19 @@
 #   - neovim (Nix: unstable version)
 #   - Node.js (Nix: nodejs_22)
 #   - Rust (Nix: rustc/cargo packages)
+# Note for NixOS systems with enableHeavyPackages:
+# Heavy packages (gimp, krita, freecad, inkscape, etc.) should be installed
+# via NixOS system configuration using the module at nix/nixos/heavy-packages-module.nix
+# See heavy-packages.nix for the complete list.
 let
+  # Import the single source of truth for heavy packages
+  heavyPkgs = import ./heavy-packages.nix;
+
+  # Install heavy packages via home-manager only if:
+  # 1. Heavy packages are enabled for this host
+  # 2. This is NOT a NixOS system (NixOS uses system packages)
+  installHeavyViaHomeManager = enableHeavyPackages && !isNixOS;
+
   gnomeNvim = pkgs.vimUtils.buildVimPlugin {
     pname = "gnome.nvim";
     version = "2024-11-26";
@@ -70,6 +84,9 @@ let
 
   # ducktape - CLI tools collection (git-commit-ai, difftree)
   ducktape = pkgs.callPackage ./packages/ducktape.nix {};
+
+  # headscale-cleanup - Headscale node management tool
+  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {};
 in {
   imports = [
     # TODO: Re-enable google-drive-service once the git repo is accessible
@@ -320,6 +337,7 @@ in {
       atuin
       opencode # AI coding agent for the terminal
       ducktape # CLI tools: git-commit-ai, difftree
+      headscale-cleanup # Headscale node management
 
       # Tools from GitHub releases / binary downloads
       gh
@@ -448,40 +466,28 @@ in {
     ]
     ++ lib.optionals enableGui [
       # GUI applications (migrated from Ansible)
-      discord
-      element-desktop
+      # Note: discord and element-desktop moved to heavy packages
 
       # Development & utilities
-      vscode
       flameshot
-      wireshark
       xclip # X11 clipboard utility
 
-      # Media players
+      # Media players (lightweight alternatives)
       mplayer
-      vlc
       mpv
 
-      # Creative/CAD
-      freecad
-      openscad
-      xournalpp
-      geeqie # Image viewer
-
-      # Graphics/Audio editing
-      gimp
-      krita
-      audacity
+      # Image viewer
+      geeqie
 
       # System utilities
       scrcpy # Android screen mirroring
       virt-viewer # SPICE/VNC viewer for virtual machines (Proxmox viewer)
-      transmission_4-gtk # BitTorrent client (v4, v3 removed in nixpkgs)
 
       # GNOME utilities
       gnome-tweaks
       dconf-editor
     ]
+    ++ lib.optionals installHeavyViaHomeManager (heavyPkgs.heavyPackages pkgs)
     ++ [
       # CLI utilities (no GUI needed)
       yt-dlp # YouTube downloader
@@ -637,6 +643,7 @@ in {
     ".." = "cd ..";
     suspend = "systemctl suspend";
     npm = "pnpm";
+    bazel = "bazelisk"; # Use bazelisk to auto-download correct Bazel version per .bazelversion
     npx = "echo '❌ No you idiot, use pnpm dlx' && false";
     gmrc = "glab mr create --fill --remove-source-branch --yes";
     vimdiff = "nvim -d";

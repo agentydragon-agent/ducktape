@@ -1,8 +1,4 @@
-from agent_server.policies.policy_types import (
-    ApprovalDecision,
-    PolicyRequest,
-    PolicyResponse,
-)
+from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 
 
 def decide(req: PolicyRequest) -> PolicyResponse:
