@@ -2,7 +2,9 @@
 
 Agent images are **OCI container images** stored in a local Docker registry.
 
-**Only requirement:** The image must have an executable `/init` entrypoint that produces a system message. Everything else is optional.
+**The only requirement:** An executable `/init` that outputs a system message to stdout. Everything else is optional.
+
+You can use any base image, any language, any structure. The init script can be a shell script, Python, compiled binary, whatever works. As long as `/init` exists, is executable, and prints the system message, it's a valid agent image.
 
 ## How Agent Images Work
 
@@ -22,7 +24,7 @@ The container receives these resources:
 |----------|---------------|
 | MCP servers | `MCP_SERVER_URL`, `MCP_SERVER_TOKEN` env vars |
 | PostgreSQL | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` env vars |
-| Source code | Init can fetch via `props snapshot fetch <slug>` to `/snapshots/{slug}/` |
+| Source code | Built-in images use `props snapshot fetch <slug>` (if your image has props CLI) |
 | Working dir | `/workspace/` (writable) |
 | Registry (PO/PI only) | `registry-proxy:5050` via postgres credentials |
 
@@ -34,7 +36,7 @@ The container receives these resources:
 
 ## Available Base Images
 
-The system provides base images in the registry:
+The system provides these built-in images in the registry:
 
 - `critic:latest` — default critic
 - `critic:high-recall` — high recall variant
@@ -44,17 +46,21 @@ The system provides base images in the registry:
 - `grader:latest` — grader agent
 - `prompt-optimizer:latest` — prompt optimizer agent
 
-PO/PI agents work with these as standard OCI images.
+PO/PI agents can pull these as starting points, or create entirely custom images from any base (as long as `/init` exists).
 
 ## Creating Custom Images (PO/PI Agents)
 
-PO/PI agents create new images by manipulating OCI layers and manifests. The workflow:
+PO/PI agents create new images by manipulating OCI layers and manifests.
+
+**Common workflow** (modifying an existing image):
 
 1. Pull base image manifest
 2. Create new layer (tar of files to add/modify)
 3. Push new layer as blob
 4. Construct new manifest referencing base layers + new layer
 5. Push new manifest by digest
+
+This approach works for modifying built-in images (e.g., changing `agent.md` in a critic variant). For completely custom images, you could also build from scratch using any tooling, as long as the result has an executable `/init`.
 
 ### Authentication
 
@@ -185,34 +191,34 @@ print(f"Created image: critic@{manifest_digest}")
 
 ## Base Image Structure
 
-Built-in images contain:
+**The only requirement:** An executable `/init` that outputs a system message to stdout. Everything else is up to you.
 
-**Python environment:** Complete Python installation with `props` CLI and dependencies at `/app/`.
+**How built-in images work** (these are patterns, not requirements):
 
-**Init entrypoint:** The `/init` script produces the agent's system message. Typically invokes `python -m props.critic_agent init` or similar.
+The built-in `critic`, `grader`, and `prompt-optimizer` images use these patterns:
 
-**Agent-specific prompt:** `agent.md` file contains agent-specific instructions. To modify agent behavior, create a new layer with a modified `agent.md`.
+- **Python environment:** `props` CLI at `/app/` with all dependencies
+- **Init script:** Invokes `python -m props.critic_agent init` (or similar)
+- **Prompt file:** `agent.md` contains agent-specific instructions
+- **Jinja2 rendering:** Init renders prompts with helpers like {% raw %}`{{ include_file("/agent.md") }}`{% endraw %}, {% raw %}`{{ describe_relation("table") }}`{% endraw %}
 
-**Jinja2 templating:** Init scripts render prompts with these helpers:
-{% raw %}
-- `{{ include_doc("package/path") }}` — package documentation
-- `{{ include_file("/path") }}` — filesystem files
-- `{{ describe_relation("name") }}` — database schema (psql \d+ output)
-- `{{ run_command("cmd") }}` — shell command output
-{% endraw %}
+**To create a variant of a built-in image:** Add a layer with modified `/agent.md`. The init script will read your version when rendering the prompt.
 
-**Common pattern:** To create a variant, add a layer with modified `/agent.md` — the init script will use your version.
+**To create a completely custom image:** Just ensure `/init` exists and outputs the system message. Use any language, any structure, any files you need.
 
 ## Filesystem Layout
 
-```
-/init                          # Executable bootstrap (required, produces system message)
-/workspace/                    # Working directory (empty at start, writable)
-/snapshots/{slug}/             # Source code (if init fetches it via props snapshot fetch)
-/app/                          # Application code (props CLI, Python packages)
-```
+**Required:**
+- `/init` — executable that produces system message
 
-The exact layout depends on your image build.
+**Provided by runtime:**
+- `/workspace/` — working directory (empty at start, writable)
+
+**Optional** (depends on your image):
+- `/snapshots/{slug}/` — source code (if init fetches via `props snapshot fetch`)
+- `/app/`, `/agent.md`, etc. — whatever your image includes
+
+Built-in images put the `props` CLI at `/app/` and agent prompts at `/agent.md`, but this is just one approach.
 
 ## Registry Architecture
 
@@ -228,9 +234,7 @@ The exact layout depends on your image build.
 
 ## Best Practices
 
-1. Init fails fast — exit non-zero on any precondition failure
-2. Print context in init — what agent needs goes into transcript
-3. Use OCI layering — reuse base images, add small layers for changes
-4. Push by digest — immutable content addressing prevents conflicts
-5. Annotate base images — use `org.opencontainers.image.base.digest` annotation to track parent images
-6. Verify before submit — tools can validate work
+1. **Init fails fast** — exit non-zero if prerequisites aren't met (missing files, DB connection fails, etc.)
+2. **Print complete context** — include everything the agent needs in the system message (task description, available tools, schemas, examples)
+3. **Use OCI layering** — reuse base images, add small layers for changes (more efficient than copying entire images)
+4. **Push by digest** — immutable content addressing prevents conflicts (PO/PI agents can only push by digest anyway)
