@@ -315,22 +315,18 @@ class PropertiesDockerCompositor(Compositor):
 ## Edge Cases to Handle
 
 1. **Entrypoint Failure**: Container exits instead of staying running
-
    - Detect via container status check
    - Include logs in error message
 
 2. **Empty System Message**: Entrypoint produces no output
-
    - Validate non-empty before proceeding
    - Fail fast with clear error
 
 3. **Stderr Output**: Entrypoint writes errors to stderr
-
    - Log stderr separately for debugging
    - Only use stdout as system message
 
 4. **Slow Entrypoint**: Takes >10s to generate system message
-
    - Make timeout configurable
    - Consider if some agents need longer generation time
 

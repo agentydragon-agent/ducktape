@@ -370,6 +370,55 @@ Revisit if extraction latency becomes a bottleneck.
 - ❌ Common base image for Python packages (reduce duplication)
 - ❌ Documentation updates (authoring_agents.md.j2)
 
+### E2E Testing Requirements
+
+**Test: PO/PI Agent Creates Custom Critic** (props/core/tests/agent_pkg/test_e2e.py)
+
+This test must exercise the complete agent-creates-agent workflow using only affordances available to real PO/PI agents:
+
+1. **Pull existing agent definition**
+   - PO/PI agent pulls existing critic manifest via proxy HTTP API
+   - Uses Python `requests` library with Basic auth
+   - Gets manifest from `GET /v2/critic/manifests/latest`
+
+2. **Create custom variant**
+   - Generate unique random token (prevents cross-test interference - each run creates different agent.md)
+   - Create modified agent.md containing the random token
+   - Create new OCI layer with the custom content
+   - Compute manifest digest
+
+3. **Push via proxy**
+   - Push manifest by digest via `PUT /v2/critic/manifests/{digest}`
+   - **Proxy automatically creates `agent_definitions` row** (agent doesn't create it manually)
+   - Agent uses actual CLI commands (python -c '...', curl) in container via `docker_exec_roundtrip()`
+
+4. **Launch custom agent**
+   - Test harness triggers new critic run with custom digest
+   - Uses standard test method: `test_registry.run_critic(definition_id=custom_digest)`
+
+5. **Verify custom agent.md was used**
+   - Custom critic mock checks system message contains the random token
+   - This verifies the new agent.md content was actually loaded
+   - Custom critic submits zero-issues critique
+
+6. **Verify output**
+   - Test checks custom critic completed successfully
+   - (Future) PO/PI agent uses psql to read custom critic's output
+
+**Key Requirements:**
+
+- Test must ONLY use affordances available to PO/PI agents (CLI/Python commands in container)
+- Mock drives sequence of commands via coroutine steps
+- Random token ensures each test run uses different agent.md (no cross-test interference)
+- Proxy creates `agent_definitions` automatically (agent doesn't call DB directly)
+- Verifies full Docker interaction, registry flow, agent definition creation, and launching
+
+**Test for ACL Enforcement** (test_critic_cannot_push_images)
+
+- Critic agent attempts to push manifest to proxy
+- Should receive 403 Forbidden (critics have no registry write access)
+- Verifies no `agent_definitions` rows were created
+
 ### Key Design Decisions
 
 1. **Manifest digest as identifier**: Store OCI manifest digest (sha256 of manifest JSON), not Docker Image ID (sha256 of config blob). Manifest digest is the standard OCI identifier for registry operations.

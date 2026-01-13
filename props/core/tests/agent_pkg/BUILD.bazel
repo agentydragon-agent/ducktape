@@ -1,0 +1,33 @@
+"""Agent package e2e tests."""
+
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_e2e",
+    srcs = [
+        "__init__.py",
+        "test_e2e.py",
+    ],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+        "AGENT_PGHOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_PORT": "5051",
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../../.."],
+    tags = [
+        "requires_docker",
+        "requires_postgres",
+    ],
+    deps = [
+        "//agent_core",
+        "//agent_core_testing",
+        "//props/core",
+        "//props/core/tests:conftest",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
