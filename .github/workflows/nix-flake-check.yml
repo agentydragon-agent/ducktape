@@ -24,8 +24,8 @@ jobs:
       - name: Evaluate NixOS configurations
         run: |
           cd nix/nixos
-          # Auto-discover all hosts from flake
-          nix flake show --json | jq -r '.nixosConfigurations | keys[]' | while read host; do
+          # Auto-discover all hosts from flake using nix eval (more reliable than flake show)
+          for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
             echo "Checking nixosConfigurations.$host..."
             nix eval .#nixosConfigurations.$host.config.system.build.toplevel
           done
@@ -34,7 +34,8 @@ jobs:
         run: |
           cd nix/home
           # Auto-discover all hosts from flake (--impure needed for nixGL)
-          nix flake show --json --impure | jq -r '.homeConfigurations | keys[]' | while read host; do
+          # Use nix eval instead of flake show (flake show doesn't enumerate impure configs properly)
+          for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do
             echo "Checking homeConfigurations.$host..."
             nix eval --impure .#homeConfigurations.$host.activationPackage
           done
