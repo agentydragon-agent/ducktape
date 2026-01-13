@@ -1,14 +1,14 @@
-# Agent Package Authoring Guide
+# Agent Image Authoring Guide
 
-Agent packages are stored as **tarballs (Docker build contexts)** in the database.
+Agent images are **OCI container images** stored in a local Docker registry.
 
-**Only requirement:** The tarball must contain a `Dockerfile` that produces an image with `/init` (executable). Everything else is optional.
+**Only requirement:** The image must have an executable `/init` entrypoint that produces a system message. Everything else is optional.
 
-## How Agent Packages Work
+## How Agent Images Work
 
 When an agent runs:
 
-1. **Docker container starts** from the package's image
+1. **Docker container starts** from the OCI image
 2. **`/init` executes** and its stdout becomes the agent's **system message**
 3. **Agent loop begins** — the LLM receives the system message and starts processing
 
@@ -24,38 +24,143 @@ The container receives these resources:
 | PostgreSQL | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` env vars |
 | Source code | Init can fetch via `props snapshot fetch <slug>` to `/snapshots/{slug}/` |
 | Working dir | `/workspace/` (writable) |
+| Registry (PO/PI only) | `registry-proxy:5050` via postgres credentials |
 
 **Database user pattern:** `agent_{run_id}` — RLS policies automatically scope queries to your agent's data.
 
+**Registry access:** PO/PI agents can pull/push images via the registry proxy using their postgres credentials (`agent_{run_id}` / password). Critic/grader agents have no registry access.
+
 **MCP connection:** HTTP-based. The agent framework handles MCP communication; your init script just prints the system message.
 
-## Common Workflow
+## Building Agent Images with Bazel
 
+Built-in agent images are built using Bazel with `rules_oci`. Example structure:
+
+```starlark
+# props/core/agent_defs/critic/BUILD.bazel
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# Package props CLI and dependencies for runtime
+pkg_tar(
+    name = "app_tar",
+    srcs = ["//props/core:props"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+)
+
+pkg_tar(
+    name = "agent_md_tar",
+    srcs = ["agent.md"],
+    package_dir = "/",
+)
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    entrypoint = ["/init"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [
+        ":app_tar",
+        "//props/core/agent_defs:critic_dev_init_tar",
+        ":agent_md_tar",
+    ],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["critic-agent:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/critic",
+)
+```
+
+**Build and push:**
 ```bash
-# Fetch package by ID
-props agent-pkg fetch <pkg-id> /workspace/my_pkg/
+# Build the image
+bazelisk build //props/core/agent_defs/critic:image
 
-# Modify files as needed (Dockerfile, packages, etc.)
+# Load into local Docker (for testing)
+bazelisk run //props/core/agent_defs/critic:load
 
-# Pack and insert new package
-props agent-pkg create /workspace/my_pkg/
+# Push to registry (requires admin credentials)
+docker login localhost:5050 -u "$PGUSER" -p "$PGPASSWORD"
+bazelisk run //props/core/agent_defs/critic:push
 ```
 
-## Dockerfile
+## Image Variants
 
-The Dockerfile creates the `/init` script. Example:
+Critic variants (specialized prompts/behavior) are stored as **tags** on the base `critic` repository:
 
-```dockerfile
-RUN printf '#!/bin/sh\nexec props critic-agent init\n' > /init && chmod +x /init
+- `critic:latest` — default critic
+- `critic:high-recall` — high recall variant
+- `critic:contract-truthfulness` — contract checker
+- `critic:dead-code` — dead code detector
+- `critic:flag-propagation` — flag propagation analyzer
+
+Each variant has its own BUILD.bazel with `remote_tags` specifying the variant name.
+
+## Creating Custom Images (PO/PI Agents)
+
+PO/PI agents can create new images programmatically by pulling existing images, creating new layers, and pushing back to the registry.
+
+**Authentication:** Use postgres credentials provided in environment:
+```python
+import httpx
+
+# Credentials from environment (agent_{run_id})
+username = os.environ["PGUSER"]  # "agent_<uuid>"
+password = os.environ["PGPASSWORD"]
+
+# Registry proxy endpoint
+registry_url = "http://registry-proxy:5050"
+auth = (username, password)  # Basic auth
+
+# Example: Pull manifest
+response = httpx.get(
+    f"{registry_url}/v2/critic/manifests/latest",
+    auth=auth,
+    headers={"Accept": "application/vnd.oci.image.manifest.v1+json"}
+)
+manifest = response.json()
 ```
 
-**Init requirements:** Exit non-zero if RLS context is NULL, paths don't exist, or DB fails. Output must stay under `mcp_infra.exec.models.MAX_BYTES_CAP`.
+**Push by digest only:** Agents can only push manifests by digest (sha256:...), not by tag. Tags are admin-only.
 
-## Base Package Patterns
+```python
+# Push new manifest (by digest)
+manifest_json = json.dumps(new_manifest)
+manifest_digest = f"sha256:{hashlib.sha256(manifest_json.encode()).hexdigest()}"
 
-The built-in props packages use these patterns (none are required for custom packages):
+response = httpx.put(
+    f"{registry_url}/v2/critic/manifests/{manifest_digest}",
+    auth=auth,
+    headers={"Content-Type": "application/vnd.oci.image.manifest.v1+json"},
+    content=manifest_json
+)
+```
 
-**Python packages:** Bundled in tarball, pip-installed in Dockerfile. Provide CLI tools and documentation.
+See [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec) for full protocol details.
+
+## Base Image Patterns
+
+The built-in props images use these patterns (none are required for custom images):
+
+**Python packages:** Bundled via `pkg_tar` with `include_runfiles=True`, includes all dependencies.
+
+**Init scripts:** The `/init` entrypoint is typically a shell script that invokes `python -m props.critic_agent` or similar.
 
 **Jinja2 templating:** Init scripts use `render_agent_prompt()` to include docs:
 {% raw %}
@@ -65,7 +170,7 @@ The built-in props packages use these patterns (none are required for custom pac
 - `{{ run_command("cmd") }}` — shell command output
 {% endraw %}
 
-**`agent.md` file:** Some packages include an `agent.md` for agent-specific advice, rendered via {% raw %}`{{ include_file("/agent.md") }}`{% endraw %}. Edit this to change just the advice portion without touching the Dockerfile.
+**`agent.md` file:** Some images include an `agent.md` for agent-specific advice, rendered via {% raw %}`{{ include_file("/agent.md") }}`{% endraw %}. Edit this to change just the advice portion without rebuilding the entire image.
 
 ## Filesystem Layout
 
@@ -73,32 +178,28 @@ The built-in props packages use these patterns (none are required for custom pac
 /init                          # Executable bootstrap (required, produces system message)
 /workspace/                    # Working directory (empty at start, writable)
 /snapshots/{slug}/             # Source code (if init fetches it via props snapshot fetch)
+/app/                          # Application code (props CLI, Python packages)
 ```
 
-Any other files depend on your Dockerfile.
+The exact layout depends on your image build.
 
-## Package Helpers
+## Registry Architecture
 
-```python
-from props_core.agent_pkg_utils import pack_agent_pkg, unpack_agent_pkg
+**Registry proxy** (`registry-proxy:5050`) enforces ACL and authentication:
 
-# Pack directory into tarball (validates Dockerfile exists)
-archive = pack_agent_pkg(my_dir)
+| Caller Type | Read | Push by Digest | Push by Tag | Delete |
+|------------|------|----------------|-------------|--------|
+| Admin      | ✓    | ✓              | ✓           | ✗      |
+| PO/PI      | ✓    | ✓              | ✗           | ✗      |
+| Critic/Grader | ✗ | ✗              | ✗           | ✗      |
 
-# Unpack tarball to directory
-unpack_agent_pkg(archive, target_dir)
-```
-
-Or use the CLI:
-```bash
-props agent-pkg fetch <id> /workspace/my_pkg/   # unpack
-props agent-pkg create /workspace/my_pkg/       # pack and insert
-```
+**Network isolation:** Agents cannot reach the registry directly (`:5000`), only through the proxy. This prevents ACL bypass.
 
 ## Best Practices
 
 1. Init fails fast — exit non-zero on any precondition failure
 2. Print context in init — what agent needs goes into transcript
-3. Custom tools for structured work — don't parse raw output
-4. Don't duplicate docs — init prints context once
-5. Verify before submit — tools can validate work
+3. Use OCI layering — reuse base images, add small layers for changes
+4. Push by digest — immutable content addressing prevents conflicts
+5. Annotate base images — use `org.opencontainers.image.base.digest` annotation to track parent images
+6. Verify before submit — tools can validate work
