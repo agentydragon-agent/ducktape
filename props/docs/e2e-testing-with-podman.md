@@ -173,12 +173,10 @@ class AgentEnvironment(ABC):
             }
         }
 
-        # Add VFS driver if requested (for gVisor/podman)
-        if os.environ.get("PROPS_USE_VFS_DRIVER") == "1":
-            config["HostConfig"]["StorageOpt"] = {"driver": "vfs"}
-
         return await self._docker_client.containers.create(config=config)
 ```
+
+**Note**: Storage driver (VFS vs overlay) is configured at the podman level in `~/.config/containers/storage.conf`, not per-container.
 
 #### b. Docker Client Socket Detection
 
@@ -243,7 +241,6 @@ py_test(
         "PROPS_REGISTRY_PROXY_HOST": "$(PROPS_REGISTRY_PROXY_HOST)",
         "PROPS_REGISTRY_PROXY_PORT": "$(PROPS_REGISTRY_PROXY_PORT)",
         "PROPS_DOCKER_NETWORK": "$(PROPS_DOCKER_NETWORK)",
-        "PROPS_USE_VFS_DRIVER": "$(PROPS_USE_VFS_DRIVER)",
     },
     deps = [...],
 )
@@ -257,8 +254,7 @@ bazel test //props/... \
   --test_env=PGHOST=127.0.0.1 \
   --test_env=PGPORT=5433 \
   --test_env=AGENT_PGHOST=127.0.0.1 \
-  --test_env=PROPS_DOCKER_NETWORK=host \
-  --test_env=PROPS_USE_VFS_DRIVER=1
+  --test_env=PROPS_DOCKER_NETWORK=host
 ```
 
 **Or: Use `.bazelrc` for consistent configuration:**
@@ -271,7 +267,6 @@ test:podman --test_env=AGENT_PGHOST=127.0.0.1
 test:podman --test_env=PROPS_REGISTRY_PROXY_HOST=127.0.0.1
 test:podman --test_env=PROPS_REGISTRY_PROXY_PORT=5051
 test:podman --test_env=PROPS_DOCKER_NETWORK=host
-test:podman --test_env=PROPS_USE_VFS_DRIVER=1
 
 # Then run: bazel test --config=podman //props/...
 ```
@@ -302,17 +297,33 @@ Current devenv sets environment for Docker + network isolation:
 
     # Docker networking
     PROPS_DOCKER_NETWORK = "props-agents";
-    # PROPS_USE_VFS_DRIVER not set (defaults to overlay)
   };
 }
 ```
 
+**Note**: Docker uses overlay storage driver by default (no configuration needed).
+
 #### b. Claude Code Web Hook (Podman Mode)
 
-Claude Code web startup hook sets environment for podman + host networking:
+Claude Code web startup hook configures podman and sets environment variables:
 
-```bash
+```python
 # claude_web_hooks/session_start.py additions
+import subprocess
+from pathlib import Path
+
+def setup_podman_storage():
+    """Configure podman to use VFS storage driver (required for gVisor)."""
+    storage_conf = Path.home() / ".config/containers/storage.conf"
+    storage_conf.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write minimal storage.conf with VFS driver
+    storage_conf.write_text("""[storage]
+driver = "vfs"
+""")
+
+    log.info("Configured podman storage driver: vfs")
+
 def setup_props_environment():
     """Set environment variables for props testing with podman."""
     env_file = os.environ.get("CLAUDE_ENV_FILE")
@@ -320,7 +331,7 @@ def setup_props_environment():
         return
 
     # Podman + host networking configuration
-    env_content = f"""
+    env_content = """
 # Props e2e test configuration (podman + host networking)
 export PGHOST=127.0.0.1
 export PGPORT=5433
@@ -328,7 +339,6 @@ export AGENT_PGHOST=127.0.0.1  # Same as PGHOST in host networking mode
 export PROPS_REGISTRY_PROXY_HOST=127.0.0.1
 export PROPS_REGISTRY_PROXY_PORT=5051
 export PROPS_DOCKER_NETWORK=host
-export PROPS_USE_VFS_DRIVER=1
 """
 
     with open(env_file, "a") as f:
@@ -336,8 +346,11 @@ export PROPS_USE_VFS_DRIVER=1
 
 # Call from main()
 if project_dir_str and (Path(project_dir_str) / "props").is_dir():
+    setup_podman_storage()
     setup_props_environment()
 ```
+
+**Note**: Podman storage driver must be configured before creating any containers. The hook writes `~/.config/containers/storage.conf` with `driver = "vfs"` for gVisor compatibility.
 
 #### c. Startup Script for Podman Infrastructure
 
@@ -538,15 +551,18 @@ All configuration is controlled via environment variables (no Python-level branc
 | `PROPS_REGISTRY_PROXY_HOST` | `registry-proxy` (container) | `127.0.0.1` | Registry proxy host for agents                          |
 | `PROPS_REGISTRY_PROXY_PORT` | `5050`                       | `5051`      | Registry proxy port for agents                          |
 | `PROPS_DOCKER_NETWORK`      | `props-agents`               | `host`      | Docker network mode for agent containers                |
-| `PROPS_USE_VFS_DRIVER`      | (not set)                    | `1`         | Use VFS instead of overlay                              |
 | `DOCKER_HOST`               | (auto)                       | (auto)      | Docker/Podman socket path (auto-detected)               |
 
-**Key insight**: Only `AGENT_PGHOST` differs between Docker and podman modes (container name vs localhost). The port (`PGPORT`) is the same for both host-side and agent-side access.
+**Key insights**:
+
+- Only `AGENT_PGHOST` differs between Docker and podman modes (container name vs localhost)
+- The port (`PGPORT`) is the same for both host-side and agent-side access
+- Storage driver (VFS vs overlay) is configured at the podman/Docker level, not via environment variables
 
 **Configuration Sources:**
 
-- **Docker mode**: Set by `props/devenv.nix`
-- **Podman mode**: Set by Claude Code web hook (`claude_web_hooks/session_start.py`)
+- **Docker mode**: Environment variables set by `props/devenv.nix`
+- **Podman mode**: Environment variables set by Claude Code web hook; storage driver configured in `~/.config/containers/storage.conf`
 - **Tests**: Inherit from environment (via Bazel `--test_env` or `.bazelrc`)
 
 ## Summary
