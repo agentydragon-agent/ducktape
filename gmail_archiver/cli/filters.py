@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from gmail_archiver.cli.common import DryRunOption, TokenFileOption, get_client
+from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.filter_planner import GmailFilterPlanner
 from gmail_archiver.filter_sync import (
     FilterDiff,
@@ -348,7 +349,7 @@ def apply(
     planner = GmailFilterPlanner(target_filter, label_maps.by_id, additional_query=query)
     console.print(f"Filter: {planner.name}")
 
-    inbox = GmailInbox(client, console)
+    inbox = GmailInbox(client, console, cache_dir=get_cache_dir())
     plan = planner.plan(inbox)
 
     for msg in plan.messages:

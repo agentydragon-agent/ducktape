@@ -1,32 +1,40 @@
+"""Logging configuration and Typer callback for CLI applications."""
+
 from __future__ import annotations
 
 import logging
 import os
+from enum import StrEnum
 from logging.config import dictConfig
 from pathlib import Path
+from typing import Annotated
 
 import structlog
+import typer
 from structlog.typing import Processor
 
-# Valid log levels (single source of truth)
-VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+class LogLevel(StrEnum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
 
 
-def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") -> None:
+def configure_logging(log_output: str = "stderr", log_level: str | LogLevel = LogLevel.WARNING) -> None:
     """Single source of truth for logging configuration.
 
     - Routes ALL logs through stdlib logging (structlog uses stdlib LoggerFactory)
     - Configurable output destination and level
     - No prints; no library-specific handlers
-
-    Args:
-        log_output: Where to send logs ('stderr', 'stdout', 'none', or file path).
-        log_level: Log level (one of VALID_LOG_LEVELS).
     """
-    # Validate log level
-    log_level_upper = log_level.upper()
-    if log_level_upper not in VALID_LOG_LEVELS:
-        raise ValueError(f"Invalid log level: {log_level}. Must be one of {', '.join(VALID_LOG_LEVELS)}")
+    # Normalize and validate log level
+    log_level_upper = log_level.upper() if isinstance(log_level, str) else log_level
+    try:
+        log_level_enum = LogLevel(log_level_upper)
+    except ValueError:
+        raise ValueError(f"Invalid log level: {log_level}. Must be one of {', '.join(LogLevel)}") from None
 
     # Determine handler configuration based on log_output
     if log_output == "none":
@@ -37,7 +45,7 @@ def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") ->
         handlers_config = {
             "console": {
                 "class": "logging.StreamHandler",
-                "level": log_level_upper,
+                "level": log_level_enum,
                 "formatter": "console",
                 "stream": stream,
             }
@@ -48,7 +56,7 @@ def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") ->
         handlers_config = {
             "file": {
                 "class": "logging.FileHandler",
-                "level": log_level_upper,
+                "level": log_level_enum,
                 "formatter": "file",
                 "filename": str(Path(log_output).resolve()),
                 "encoding": "utf-8",
@@ -65,7 +73,7 @@ def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") ->
                 "file": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
             },
             "handlers": handlers_config,
-            "root": {"level": log_level_upper, "handlers": root_handlers},
+            "root": {"level": log_level_enum, "handlers": root_handlers},
         }
     )
 
@@ -82,3 +90,35 @@ def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") ->
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=False,
     )
+
+
+def make_logging_callback(default_level: LogLevel = LogLevel.INFO):
+    """Create a Typer callback for logging configuration.
+
+    Usage:
+        app = typer.Typer()
+        app.callback()(make_logging_callback(default_level=LogLevel.INFO))
+    """
+
+    def _callback(
+        log_output: Annotated[
+            str,
+            typer.Option(
+                "--log-output",
+                envvar="ADGN_LOG_OUTPUT",
+                help="Where to send logs: 'stderr' (default), 'stdout', 'none', or a file path",
+            ),
+        ] = "stderr",
+        log_level: Annotated[
+            str,
+            typer.Option(
+                "--log-level",
+                envvar="ADGN_LOG_LEVEL",
+                help=f"Log level: {', '.join(LogLevel)} (default: {default_level})",
+            ),
+        ] = default_level,
+    ) -> None:
+        """Configure logging for all subcommands."""
+        configure_logging(log_output=log_output, log_level=log_level)
+
+    return _callback

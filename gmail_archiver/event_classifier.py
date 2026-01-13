@@ -1,7 +1,5 @@
 """Email template recognizer and structured data extractor using OpenAI API."""
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -9,25 +7,17 @@ import os
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
 import openai
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from pydantic_core import core_schema
 
-if TYPE_CHECKING:
-    from gmail_archiver.models import Email
+from gmail_archiver.dirs import get_cache_dir
+from gmail_archiver.models import Email
 
 logger = logging.getLogger(__name__)
-
-
-def get_xdg_cache_dir() -> Path:
-    """Get XDG cache directory for gmail-archiver."""
-    cache_base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    cache_dir = cache_base / "gmail-archiver"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
 
 
 class OpenAICompatibleSchema(GenerateJsonSchema):
@@ -76,10 +66,10 @@ class EmailTemplateExtraction(BaseModel):
 
 
 class TemplateExtractionCache:
-    """Cache for template extractions using XDG cache directory."""
+    """Cache for template extractions."""
 
     def __init__(self):
-        self.cache_dir = get_xdg_cache_dir() / "template-extractions"
+        self.cache_dir = get_cache_dir() / "template-extractions"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_cache_path(self, message_id: str) -> Path:

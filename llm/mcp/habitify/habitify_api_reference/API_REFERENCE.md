@@ -331,13 +331,11 @@ A goal object typically includes:
 The Habitify API supports several types of goals and measurement units:
 
 1. **Repetition Goals**
-
    - `unit_type`: "rep"
    - `value`: Number of repetitions (e.g., 1, 5, 10)
    - Example: "Do 10 pushups daily"
 
 2. **Time-based Goals**
-
    - `unit_type`: "min" or "hr"
    - `value`: Duration in minutes or hours
    - Example: "Meditate for 20 minutes daily"

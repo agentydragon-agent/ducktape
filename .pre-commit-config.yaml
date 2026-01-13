@@ -50,25 +50,22 @@ repos:
         exclude: "^ansible/k8s/.*" # Exclude k8s files
         pass_filenames: true
 
-  # Ruff = linter + import sorter + formatter
+  # Ruff linter (formatting handled by bazel-format below)
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.6
     hooks:
       - id: ruff-check
         args: [--fix, --config, ruff.toml]
         files: "\\.py$"
-      - id: ruff-format
-        args: [--config, ruff.toml]
-        files: "\\.py$"
 
   # TODO: Check if Bazel mypy (bazelisk build --config=check //...) can replace
   # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
   # correctly and uses a single mypy.ini config.
 
+  # Buildifier linting (formatting handled by bazel-format below)
   - repo: https://github.com/keith/pre-commit-buildifier
     rev: 6.4.0
     hooks:
-      - id: buildifier
       - id: buildifier-lint
 
   # Nix formatter - requires alejandra in PATH
@@ -84,32 +81,16 @@ repos:
         language: system
         files: \.nix$
 
-  # Prettier - using mirrors-prettier
-  #
-  # Svelte files excluded due to Prettier 3.x plugin resolution limitation.
-  # Prettier 3.x resolves plugins relative to the config file, not from where
-  # prettier is installed. This breaks pre-commit's isolated node environment.
-  #
-  # Approaches tried that all fail with the same error:
-  # - mirrors-prettier with additional_dependencies: [prettier-plugin-svelte]
-  # - jvllmr/pre-commit-prettier fork (designed for plugin support)
-  # - .prettierrc.cjs with require.resolve("prettier-plugin-svelte")
-  # - npx --package=prettier-plugin-svelte (plugin installed but not found)
-  #
-  # Error: "Cannot find package 'prettier-plugin-svelte' imported from .../noop.js"
-  #
-  # Root cause: https://github.com/prettier/prettier/issues/15696
-  # The plugin is installed in pre-commit's temp node_modules, but prettier
-  # looks for it relative to the config file (workspace root) where it doesn't exist.
-  #
-  # Svelte formatting is handled by Bazel: bazel build --config=lint //...
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v4.0.0-alpha.8
-    hooks:
-      - id: prettier
-        additional_dependencies:
-          - prettier@3.4.2
-        types_or: [javascript, jsx, ts, tsx, css, markdown, yaml, json, html]
+      # Unified formatter via Bazel (prettier, ruff, buildifier, shfmt, rustfmt)
+      # Single source of truth - eliminates version mismatches between pre-commit and Bazel
+      - id: bazel-format
+        name: bazel format
+        entry: bazelisk run //tools/format --
+        language: system
+        pass_filenames: true
+        # Use files regex since pre-commit doesn't have starlark type
+        # Covers: JS/TS, CSS, Markdown, YAML, JSON, HTML, Python, Shell, Starlark
+        files: "\\.(js|jsx|ts|tsx|css|md|yaml|yml|json|html|py|sh|bash)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$"
         exclude: "node_modules/|.pnpm/|bazel-|.git/"
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)

@@ -306,7 +306,6 @@ fd -e py "server\.py$" mcp_infra/ adgn/mcp/
 2. **Remove redundant "Returns:" sections** from tool docstrings
 
 3. **Enhance field descriptions** with:
-
    - Expected formats (ISO 8601, URL, path patterns)
    - Usage context (how to use this value)
    - Relationships to other fields

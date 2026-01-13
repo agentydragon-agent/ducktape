@@ -42,7 +42,7 @@
       hostname,
       enableGui ? true,
       enableKube ? true,
-      isNixOS ? false,           # Whether this is a NixOS system (uses system packages for heavy apps)
+      isNixOS ? false, # Whether this is a NixOS system (uses system packages for heavy apps)
       enableHeavyPackages ? true, # Whether to install heavy creative/CAD packages
       extraModules ? [],
     }: let
@@ -118,8 +118,8 @@
         hostname = "nixos-vm";
         enableGui = true;
         enableKube = false;
-        isNixOS = true;  # NixOS system
-        enableHeavyPackages = false;  # Lightweight VM - no heavy packages
+        isNixOS = true; # NixOS system
+        enableHeavyPackages = false; # Lightweight VM - no heavy packages
       };
 
       # VPS server (minimal, no GUI)
@@ -128,7 +128,7 @@
         enableGui = false;
         enableKube = false;
         isNixOS = false;
-        enableHeavyPackages = false;  # Server doesn't need creative apps
+        enableHeavyPackages = false; # Server doesn't need creative apps
       };
 
       # Dell Rugged 12 tablet
@@ -136,7 +136,7 @@
         hostname = "rugged";
         enableGui = true;
         enableKube = false; # TODO: set true and provision kubeconfig when needed
-        isNixOS = true;  # NixOS system - heavy packages via system config
+        isNixOS = true; # NixOS system - heavy packages via system config
         enableHeavyPackages = true;
       };
 
@@ -146,7 +146,7 @@
         enableGui = true;
         enableKube = false;
         isNixOS = false;
-        enableHeavyPackages = false;  # Minimal Proxmox host - no creative apps
+        enableHeavyPackages = false; # Minimal Proxmox host - no creative apps
       };
     };
   };

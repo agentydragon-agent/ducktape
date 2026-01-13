@@ -4,7 +4,7 @@
 set -euo pipefail
 
 # Query all dependencies of the claude_web_hooks target
-deps=$(bazel query 'deps(//claude_web_hooks:claude_web_hooks)' 2>/dev/null)
+deps=$(bazelisk query 'deps(//claude_web_hooks:claude_web_hooks)' 2>/dev/null)
 
 # Check for any @pypi// dependencies
 pypi_deps=$(echo "$deps" | grep -E '^@pypi//' || true)

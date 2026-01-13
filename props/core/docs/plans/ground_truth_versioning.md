@@ -382,14 +382,12 @@ This is clean because Option 3 already has the hash, which is the stable identif
 **Start with Option 3 (Content-Based Versioning):**
 
 1. **Phase 1 (MVP)**: Implement hash + `is_current` flag
-
    - Add columns to specimens and evaluation_runs
    - Update sync logic to mark stale runs
    - Update default queries to filter `is_current = true`
    - Backfill hashes for existing data
 
 2. **Phase 2 (If needed)**: Add version metadata
-
    - Migrate to explicit specimen_versions table
    - Preserve hash as stable identifier
    - Add change summaries, parent links as needed
@@ -440,19 +438,15 @@ This is clean because Option 3 already has the hash, which is the stable identif
 ## Open Questions
 
 1. **Hash collision handling**: Should we add a secondary check (compare actual issues) if hash matches but content differs?
-
    - Proposal: Log a warning, keep both hashes, let user manually resolve
 
 2. **Cascade on specimen deletion**: Should deleting a specimen delete all runs, or soft-delete?
-
    - Proposal: Hard delete (specimen is the entity boundary)
 
 3. **UI affordances**: How should we surface "stale run" warnings in the UI?
-
    - Proposal: Badge on run cards, filter toggle in list views
 
 4. **Performance**: With 1000s of runs per specimen, does `is_current` index cover slow queries?
-
    - Proposal: Monitor, consider partitioning by specimen_id if needed
 
 5. **Cross-specimen queries**: Should aggregate functions (e.g., "average precision across all specimens") mix ground truth versions?

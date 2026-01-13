@@ -22,17 +22,14 @@ Reorganize specimen issues to follow CLAUDE.md rules: group by logical problems,
 Analyzes specimen issues and reorganizes them according to CLAUDE.md principles:
 
 1. **Groups by LOGICAL PROBLEM** (not location)
-
    - One issue type = one issue file (with N occurrences)
    - Example: "trivial aliases" across all files, not "problems in app.py"
 
 2. **Splits mixed-problem issues**
-
    - If one file contains: type safety + dead code + useless comments
    - Creates 3 separate issues, each grouping that problem type across ALL locations
 
 3. **Merges duplicate logical issues**
-
    - Example: Separate issues for "imports not at top" → one issue with all occurrences
 
 4. **Removes subjective phrasing**

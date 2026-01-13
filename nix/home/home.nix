@@ -35,11 +35,10 @@
 # Heavy packages (gimp, krita, freecad, inkscape, etc.) should be installed
 # via NixOS system configuration using the module at nix/nixos/heavy-packages-module.nix
 # See heavy-packages.nix for the complete list.
-
 let
   # Import the single source of truth for heavy packages
   heavyPkgs = import ./heavy-packages.nix;
-  
+
   # Install heavy packages via home-manager only if:
   # 1. Heavy packages are enabled for this host
   # 2. This is NOT a NixOS system (NixOS uses system packages)
@@ -85,6 +84,9 @@ let
 
   # ducktape - CLI tools collection (git-commit-ai, difftree)
   ducktape = pkgs.callPackage ./packages/ducktape.nix {};
+
+  # headscale-cleanup - Headscale node management tool
+  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {};
 in {
   imports = [
     # TODO: Re-enable google-drive-service once the git repo is accessible
@@ -335,6 +337,7 @@ in {
       atuin
       opencode # AI coding agent for the terminal
       ducktape # CLI tools: git-commit-ai, difftree
+      headscale-cleanup # Headscale node management
 
       # Tools from GitHub releases / binary downloads
       gh
@@ -464,7 +467,7 @@ in {
     ++ lib.optionals enableGui [
       # GUI applications (migrated from Ansible)
       # Note: discord and element-desktop moved to heavy packages
-      
+
       # Development & utilities
       flameshot
       xclip # X11 clipboard utility
@@ -640,6 +643,7 @@ in {
     ".." = "cd ..";
     suspend = "systemctl suspend";
     npm = "pnpm";
+    bazel = "bazelisk"; # Use bazelisk to auto-download correct Bazel version per .bazelversion
     npx = "echo '❌ No you idiot, use pnpm dlx' && false";
     gmrc = "glab mr create --fill --remove-source-branch --yes";
     vimdiff = "nvim -d";

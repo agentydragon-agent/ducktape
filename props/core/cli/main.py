@@ -22,7 +22,7 @@ from sqlalchemy import func
 from typer_di import TyperDI
 
 from cli_util.decorators import async_run
-from cli_util.logging_callback import make_logging_callback
+from cli_util.logging import LogLevel, make_logging_callback
 from openai_utils.client_factory import build_client
 from props.core.agent_helpers import get_current_agent_run
 
@@ -88,7 +88,7 @@ app.add_typer(critic_dev_app, name="critic-dev")
 
 # Configure logging via shared callback (default: WARNING level for props)
 # Then add database initialization on top
-_logging_callback = make_logging_callback(default_level="WARNING")
+_logging_callback = make_logging_callback(default_level=LogLevel.WARNING)
 
 
 @app.callback()

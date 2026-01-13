@@ -11,7 +11,7 @@ This repository uses **Bazel** as the primary build system. Install the git pre-
 pre-commit install
 ```
 
-This installs the pre-commit framework which runs ruff, buildifier, prettier, eslint and other linters on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`).
+This installs the pre-commit framework which runs ruff, buildifier, prettier and other linters on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`). For ESLint and mypy, run `bazel build --config=check //...`.
 
 ## License
 

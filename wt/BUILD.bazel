@@ -18,6 +18,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "//cli_util",
         "@pypi//click",
         "@pypi//colorama",
         "@pypi//pluggy",

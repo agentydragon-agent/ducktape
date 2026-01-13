@@ -17,7 +17,7 @@ import typer
 
 from agent_pkg.host.builder import ensure_image
 from cli_util.decorators import async_run
-from cli_util.logging_callback import make_logging_callback
+from cli_util.logging import make_logging_callback
 from editor_agent.host.agent_runner import run_editor_docker_agent
 from editor_agent.host.runner import DEFAULT_NETWORK
 from editor_agent.host.submit_server import SubmitStateFailure, SubmitStatePending, SubmitStateSuccess
@@ -35,7 +35,7 @@ _ENV_NETWORK = os.getenv("ADGN_EDITOR_DOCKER_NETWORK", DEFAULT_NETWORK)
 app = typer.Typer(help="Docker-based file editor with LLM agent.", invoke_without_command=True, no_args_is_help=True)
 
 # Configure logging via shared callback (default: INFO level)
-app.callback()(make_logging_callback(default_level="INFO"))
+app.callback()(make_logging_callback())
 
 MODEL_OPT = typer.Option(DEFAULT_MODEL, "--model", help="Model name (OPENAI_MODEL)")
 NETWORK_OPT = typer.Option(_ENV_NETWORK, "--network", help="Docker network (ADGN_EDITOR_DOCKER_NETWORK)")

@@ -11,7 +11,6 @@ The `openai_client_param` fixture pattern is implemented in `tests/support/respo
 ## Remaining Work
 
 - [ ] `wt/tests/e2e/test_github_pr_display_real.py` (real_github)
-
   - Current: `@pytest.mark.real_github` (GitHub network)
   - Target: analogous single-param fixture pattern for the GitHub client (separate from OpenAI)
   - Expectations: `github_client_param` fixture that accepts a behavior function or LIVE; mock behavior returns canned payloads

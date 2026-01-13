@@ -296,7 +296,6 @@ rg --type ts --type tsx 'export const \w+ = \([^)]*\) => \w+\('
 ### Recommended Workflow
 
 1. **Run high-recall retrievers** to gather ALL candidates:
-
    - TypeScript export aliases
    - Python import aliases
    - Python constant aliases
@@ -305,14 +304,12 @@ rg --type ts --type tsx 'export const \w+ = \([^)]*\) => \w+\('
    - (Function forwarders covered by `trivial-forwarders.md`)
 
 2. **For each candidate, analyze**:
-
    - **Usage count**: Is the old name still used? (grep/ripgrep)
    - **Comment context**: Is there explicit backward compat documentation?
    - **Architectural role**: Is this a temporary shim or permanent API design?
    - **External API**: Would removing break external callers?
 
 3. **Categorize findings**:
-
    - **High confidence removals**: TODO comments, explicit "deprecated", low usage
    - **Medium confidence**: Backward compat comments, naming suggests old→new
    - **Keep for now**: No clear signal, might be architectural, high external usage

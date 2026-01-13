@@ -1,0 +1,98 @@
+# Reusable workflow for building and releasing Python wheels
+#
+# Creates a GitHub release with commit SHA in tag/filename for content-addressable URLs.
+# Automatically cleans up old releases (keeps last 10).
+name: Python Wheel Release
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        description: "Package name for release tag prefix (e.g., 'ducktape')"
+        required: true
+        type: string
+      wheel_name:
+        description: "Wheel filename prefix (e.g., 'ducktape' or 'headscale_cleanup')"
+        required: true
+        type: string
+      bazel_target:
+        description: "Bazel target to build (e.g., '//:ducktape_wheel')"
+        required: true
+        type: string
+      wheel_path:
+        description: "Path to wheel in bazel-bin (e.g., 'bazel-bin' or 'bazel-bin/headscale_cleanup')"
+        required: true
+        type: string
+      release_body:
+        description: "Release body description (markdown)"
+        required: true
+        type: string
+      apt_packages:
+        description: "Space-separated list of apt packages to install (optional)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  build-and-release:
+    name: Build wheel and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      - name: Install system dependencies
+        if: inputs.apt_packages != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.apt_packages }}
+
+      - name: Cache Bazel repository
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-wheel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: |
+            bazel-wheel-${{ runner.os }}-
+
+      - name: Build wheel
+        run: bazel build ${{ inputs.bazel_target }}
+
+      - name: Prepare wheel
+        run: |
+          mkdir -p dist
+          cp ${{ inputs.wheel_path }}/${{ inputs.wheel_name }}-*.whl dist/${{ inputs.wheel_name }}.whl
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.package_name }}-${{ env.SHORT_SHA }}
+          name: ${{ inputs.package_name }} (${{ env.SHORT_SHA }})
+          body: |
+            ${{ inputs.release_body }}
+
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+
+            Install:
+            ```bash
+            pip install https://github.com/${{ github.repository }}/releases/download/${{ inputs.package_name }}-${{ env.SHORT_SHA }}/${{ inputs.wheel_name }}.whl
+            ```
+          files: dist/${{ inputs.wheel_name }}.whl
+
+      - name: Cleanup old releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Keep last 10 releases with this package prefix
+          gh release list --limit 100 \
+            | grep "^${{ inputs.package_name }}-" \
+            | tail -n +11 \
+            | cut -f1 \
+            | xargs -r -I{} gh release delete {} --yes --cleanup-tag

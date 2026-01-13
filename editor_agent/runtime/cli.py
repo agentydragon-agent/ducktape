@@ -11,9 +11,11 @@ import typer
 from agent_pkg.runtime.mcp import mcp_client_from_env, read_text_resource
 from agent_pkg.runtime.output import render_agent_prompt
 from cli_util.decorators import async_run
+from cli_util.logging import LogLevel, make_logging_callback
 from editor_agent.runtime import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
 
 submit_app = typer.Typer(name="editor-submit", help="Editor submit helper for MCP communication")
+submit_app.callback()(make_logging_callback(default_level=LogLevel.WARNING))
 
 
 async def _get_filename() -> str:

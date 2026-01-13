@@ -5,17 +5,14 @@ from collections import defaultdict
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from rich.console import Console
 from rich.table import Table
 
-from gmail_archiver.gmail_api_models import SystemLabel
+from gmail_archiver.gmail_api_models import GmailMessageWithHeaders, SystemLabel
+from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan import Plan, PlannedAction
-
-if TYPE_CHECKING:
-    from gmail_archiver.gmail_api_models import GmailMessageWithHeaders
-    from gmail_archiver.inbox import GmailInbox
 
 
 @runtime_checkable

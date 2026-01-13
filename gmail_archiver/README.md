@@ -134,30 +134,25 @@ See root `AGENTS.md` for Bazel basics (build, test, lint, adding dependencies).
 ## Architecture
 
 - **Planners** (`gmail_archiver/planners/`): Category-specific cleanup logic
-
   - Each planner contains a parser (extracts dates/amounts) and planning logic (decides what to archive)
   - Examples: Anthropic receipts, USPS deliveries, Square receipts, insurance EOBs, etc.
 
 - **Core** (`gmail_archiver/core.py`): Planning and execution abstractions
-
   - `Plan`: Represents planned actions (add/remove labels) for a set of emails
   - `Planner`: Protocol for implementing cleanup categories
   - `display_plan()` and `summarize_plan()`: View layer for showing plans
 
 - **Inbox** (`gmail_archiver/inbox.py`): Cached Gmail access interface
-
-  - Wraps Gmail API client with XDG caching
+  - Wraps Gmail API client with caching
   - Planners use this to fetch messages
 
 - **Gmail Client** (`gmail_archiver/gmail_client.py`): Wrapper around Google Gmail API
-
   - List messages by label or query
   - Fetch message contents
   - Add/remove labels
   - Create labels
 
 - **Filter Models** (`gmail_archiver/gmail_yaml_filters_models.py`): Pydantic V2 models for filter YAML
-
   - Compatible with [gmail-yaml-filters](https://github.com/mesozoic/gmail-yaml-filters) format
   - Used for parsing and generating filter YAML files
   - Provides type safety and validation for filter configurations

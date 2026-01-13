@@ -324,34 +324,29 @@ This allows:
 ### ✅ Completed
 
 1. **Phase 1**: Core framework + config system ✅
-
    - CLI with `cl2` command
    - Pydantic-based configuration models
    - Hook handler infrastructure
 
 2. **Phase 2**: Python predicate access control ✅
-
    - Unrestricted Python eval for predicates
    - Session management with per-session files
    - Built-in predicates (Edit, Write, etc.)
    - "Most restrictive wins" rule evaluation
 
 3. **Phase 3**: Python hard blocks ✅
-
    - AST analyzer for bare except
    - Blocks hasattr/getattr/setattr usage
    - Detects barrel **init**.py patterns
    - Integrates with pre-hook blocking
 
 4. **Phase 4**: Selective autofix by hook type ✅
-
    - Full autofix for Write tool
    - Formatting-only for Edit/MultiEdit
    - Ruff integration with critical rules
    - FYI pattern for post-hook notifications
 
 5. **Phase 5**: Session tracking ✅
-
    - Per-session file storage
    - Session commands: allow, deny, forbid, list
    - Directory-based session inference

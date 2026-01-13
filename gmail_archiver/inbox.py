@@ -5,7 +5,6 @@ from pathlib import Path
 
 from rich.console import Console
 
-from gmail_archiver.event_classifier import get_xdg_cache_dir
 from gmail_archiver.gmail_api_models import GmailMessageWithHeaders
 from gmail_archiver.gmail_client import GmailClient
 from gmail_archiver.models import Email
@@ -21,12 +20,10 @@ class GmailInbox:
     Planners use this interface to fetch messages without worrying about caching.
     """
 
-    def __init__(
-        self, client: GmailClient, console: Console, cache_dir: Path | None = None, show_progress: bool = True
-    ):
+    def __init__(self, client: GmailClient, console: Console, cache_dir: Path, show_progress: bool = True):
         self.client = client
         self.console = console
-        self.cache_dir = cache_dir or get_xdg_cache_dir()
+        self.cache_dir = cache_dir
         self._full_cache: dict[str, Email] = {}
         self._metadata_cache: dict[str, GmailMessageWithHeaders] = {}
         self.show_progress = show_progress

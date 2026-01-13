@@ -50,7 +50,6 @@ per-node image downloads.
 Cleaned up duplicated Proxmox access configuration:
 
 - **Deleted old monolithic terraform** (via `git rm`):
-
   - `terraform/main.tf`
   - `terraform/variables.tf`
   - `terraform/outputs.tf`
@@ -58,7 +57,6 @@ Cleaned up duplicated Proxmox access configuration:
   - `terraform/modules/` (pve-auth, infrastructure, gitops, dns)
 
 - **Fixed SSH reference** in `terraform/00-persistent-auth/main.tf:56`:
-
   - Changed from `local.proxmox_host` to `local.proxmox_ssh_target`
 
 - **Updated cleanup script** `terraform/01-infrastructure/scripts/cleanup-proxmox-volumes.py:74-75`:

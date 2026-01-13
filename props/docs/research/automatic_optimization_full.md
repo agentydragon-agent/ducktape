@@ -15,13 +15,11 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 **Workflow:**
 
 1. **Generation:** LLM generates N candidate prompts given:
-
    - Task description
    - Few input-output examples
    - Instruction template (e.g., "Write a prompt that solves this task")
 
 2. **Evaluation:** Test each candidate on held-out evaluation set
-
    - Run task with each candidate prompt
    - Measure task-specific metric (accuracy, F1, etc.)
 
@@ -55,7 +53,6 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
 1. **Initial prompts:** Start with hand-written baseline prompts
 
 2. **Feedback loop:**
-
    - Evaluate current prompts on training examples
    - Compute performance metrics (accuracy, recall, etc.)
    - Feed performance back to LLM as natural language:
@@ -69,7 +66,6 @@ Automatic prompt optimization uses LLMs to iteratively improve prompts through g
      ```
 
 3. **Iterative refinement:** LLM proposes new prompts based on:
-
    - What worked well in previous prompts
    - What failed in previous prompts
    - Patterns in successful vs failed prompts

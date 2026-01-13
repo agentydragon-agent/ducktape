@@ -5,26 +5,21 @@ Goal: A small, composable set of flags that cover the core axes (FS, NET, ENV), 
 ## Minimal flags
 
 - `--profile <name>`
-
   - Presets: `safest`, `safest+openai`, `research-online`, `offline`, `dev-local`
   - Sets sensible defaults for FS/NET/ENV (below). CLI overrides profile.
 
 - `--fs-write <roots>`
-
   - Comma list of write roots: `workspace`, `run-root`, `tmp`
   - Example: `--fs-write workspace,run-root`
 
 - `--net <mode>`
-
   - `none` | `loopback` | `allowlist:<domains>` | `proxy:<host>:<port>` | `all`
 
 - `--env-allow <vars>`
-
   - Comma list of env vars to pass through (exact names). Everything else is stripped by default (deny-globs: `*TOKEN,*SECRET,AWS_*,GCP_*,AZURE_*,SSH_*`).
   - Example: `--env-allow OPENAI_API_KEY,HTTP_PROXY,HTTPS_PROXY`
 
 - `--home <mode>`
-
   - `run-root` (default) | `inherit`
 
 - `--policy-dump`
@@ -39,23 +34,19 @@ Notes:
 ## Profile defaults
 
 - `safest`
-
   - `--fs-write workspace,run-root`
   - `--net loopback`
   - `--env-allow PATH,LANG,PYTHONPATH`
   - HOME=RUN_ROOT
 
 - `safest+openai`
-
   - Inherits `safest` + `--net allowlist:openai.com,api.openai.com` (or `--net proxy:127.0.0.1:7890`)
   - `--env-allow OPENAI_API_KEY`
 
 - `research-online`
-
   - Inherits `safest` + `--net all`
 
 - `offline`
-
   - Inherits `safest` + `--net none`
 
 - `dev-local`

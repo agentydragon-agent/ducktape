@@ -67,7 +67,6 @@ vulture /workspace/path/to/file.py --min-confidence 80 2>/dev/null
 ```
 
 3. **Report issues immediately** as you find them via critic_submit tools:
-
    - `critic_submit_upsert_issue(id, description)` - one per logical issue type
    - `critic_submit_add_occurrence(id, file, ranges)` - for each location
    - Do NOT wait until you've read all files - report as you go

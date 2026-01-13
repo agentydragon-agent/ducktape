@@ -37,7 +37,6 @@ All places that construct paths in the props codebase, classified by action need
 ### 🔧 NEEDS FIXING - Path Antipatterns
 
 1. **lint_issue.py lines 462-463**
-
    - `Path.cwd() / "logs" / "mini_codex" / "lint_issue"`
    - Action: 🔧 Convert to proper run structure (Task #1)
    - Target: Use LintIssueRun manager → `runs/lint_issue/specimen:{slug}/{issue_id}/{timestamp}/`
@@ -49,22 +48,18 @@ All places that construct paths in the props codebase, classified by action need
 ### ✅ CORRECT - Non-Runs Path Construction
 
 3. **cluster_unknowns.py line 190**
-
    - `out_root / "clusters.json"`
    - Action: ✅ Keep as-is (cluster output structure is defined by RunsContext)
 
 4. **specimens/registry.py** (multiple lines)
-
    - Specimen manifest and source path resolution
    - Action: ✅ Keep as-is (specimen registry, not runs management)
 
 5. **~~bundles/build_bundle.py~~** (DELETED in bundle→plain files migration)
-
    - Bundle creation paths
    - Action: ~~Keep as-is~~ → Removed (migrated to plain files workflow)
 
 6. **cli_app/main.py lines 229, 670**
-
    - `Path(tempfile.gettempdir()) / "adgn_codex_prompts"`
    - Action: ✅ Keep as-is (temporary prompt storage for debugging)
 
