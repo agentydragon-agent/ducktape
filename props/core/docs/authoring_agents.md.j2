@@ -32,145 +32,176 @@ The container receives these resources:
 
 **MCP connection:** HTTP-based. The agent framework handles MCP communication; your init script just prints the system message.
 
-## Building Agent Images with Bazel
+## Available Base Images
 
-Built-in agent images are built using Bazel with `rules_oci`. Example structure:
-
-```starlark
-# props/core/agent_defs/critic/BUILD.bazel
-
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-
-# Package props CLI and dependencies for runtime
-pkg_tar(
-    name = "app_tar",
-    srcs = ["//props/core:props"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
-)
-
-pkg_tar(
-    name = "agent_md_tar",
-    srcs = ["agent.md"],
-    package_dir = "/",
-)
-
-oci_image(
-    name = "image",
-    base = "@python_slim_linux_amd64",
-    entrypoint = ["/init"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
-    tars = [
-        ":app_tar",
-        "//props/core/agent_defs:critic_dev_init_tar",
-        ":agent_md_tar",
-    ],
-    workdir = "/workspace",
-)
-
-oci_load(
-    name = "load",
-    image = ":image",
-    repo_tags = ["critic-agent:latest"],
-)
-
-oci_push(
-    name = "push",
-    image = ":image",
-    remote_tags = ["latest"],
-    repository = "localhost:5050/critic",
-)
-```
-
-**Build and push:**
-```bash
-# Build the image
-bazelisk build //props/core/agent_defs/critic:image
-
-# Load into local Docker (for testing)
-bazelisk run //props/core/agent_defs/critic:load
-
-# Push to registry (requires admin credentials)
-docker login localhost:5050 -u "$PGUSER" -p "$PGPASSWORD"
-bazelisk run //props/core/agent_defs/critic:push
-```
-
-## Image Variants
-
-Critic variants (specialized prompts/behavior) are stored as **tags** on the base `critic` repository:
+The system provides base images in the registry:
 
 - `critic:latest` — default critic
 - `critic:high-recall` — high recall variant
 - `critic:contract-truthfulness` — contract checker
 - `critic:dead-code` — dead code detector
 - `critic:flag-propagation` — flag propagation analyzer
+- `grader:latest` — grader agent
+- `prompt-optimizer:latest` — prompt optimizer agent
 
-Each variant has its own BUILD.bazel with `remote_tags` specifying the variant name.
+PO/PI agents work with these as standard OCI images.
 
 ## Creating Custom Images (PO/PI Agents)
 
-PO/PI agents can create new images programmatically by pulling existing images, creating new layers, and pushing back to the registry.
+PO/PI agents create new images by manipulating OCI layers and manifests. The workflow:
 
-**Authentication:** Use postgres credentials provided in environment:
+1. Pull base image manifest
+2. Create new layer (tar of files to add/modify)
+3. Push new layer as blob
+4. Construct new manifest referencing base layers + new layer
+5. Push new manifest by digest
+
+### Authentication
+
+Use postgres credentials from environment:
+
 ```python
+import os
 import httpx
 
-# Credentials from environment (agent_{run_id})
+# Credentials automatically provided to agent containers
 username = os.environ["PGUSER"]  # "agent_<uuid>"
 password = os.environ["PGPASSWORD"]
-
-# Registry proxy endpoint
 registry_url = "http://registry-proxy:5050"
 auth = (username, password)  # Basic auth
+```
 
-# Example: Pull manifest
+### Pull Base Image Manifest
+
+```python
+# Get manifest for base image
 response = httpx.get(
     f"{registry_url}/v2/critic/manifests/latest",
     auth=auth,
     headers={"Accept": "application/vnd.oci.image.manifest.v1+json"}
 )
-manifest = response.json()
+base_manifest = response.json()
+
+# base_manifest["layers"] contains the layer descriptors
+# base_manifest["config"] contains the image config descriptor
 ```
 
-**Push by digest only:** Agents can only push manifests by digest (sha256:...), not by tag. Tags are admin-only.
+### Create New Layer
+
+OCI layers are tar files. Create a tarball of your changes:
 
 ```python
-# Push new manifest (by digest)
-manifest_json = json.dumps(new_manifest)
+import tarfile
+import io
+
+# Create tar with modified files
+tar_buffer = io.BytesIO()
+with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+    # Add modified prompt file
+    prompt_info = tarfile.TarInfo(name="agent.md")
+    prompt_content = b"Your improved agent prompt here..."
+    prompt_info.size = len(prompt_content)
+    tar.addfile(prompt_info, io.BytesIO(prompt_content))
+
+    # Add any other files...
+
+layer_bytes = tar_buffer.getvalue()
+layer_digest = f"sha256:{hashlib.sha256(layer_bytes).hexdigest()}"
+```
+
+### Push Layer Blob
+
+Upload the layer using OCI blob upload protocol:
+
+```python
+import hashlib
+
+# 1. Start upload
+response = httpx.post(
+    f"{registry_url}/v2/critic/blobs/uploads/",
+    auth=auth
+)
+upload_url = response.headers["Location"]  # Get upload URL
+
+# 2. Upload layer data (monolithic upload)
+response = httpx.put(
+    f"{registry_url}{upload_url}?digest={layer_digest}",
+    auth=auth,
+    headers={"Content-Type": "application/octet-stream"},
+    content=layer_bytes
+)
+# Returns 201 Created on success
+```
+
+### Construct New Manifest
+
+Create manifest referencing base layers + your new layer:
+
+```python
+import json
+
+# Copy base manifest structure
+new_manifest = {
+    "schemaVersion": 2,
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "config": base_manifest["config"],  # Reuse base config
+    "layers": [
+        *base_manifest["layers"],  # All base layers
+        {  # Your new layer
+            "mediaType": "application/vnd.oci.image.layer.v1.tar",
+            "digest": layer_digest,
+            "size": len(layer_bytes)
+        }
+    ]
+}
+```
+
+### Push New Manifest
+
+**Critical:** Agents can only push by digest, not by tag.
+
+```python
+# Compute manifest digest
+manifest_json = json.dumps(new_manifest, separators=(',', ':'))
 manifest_digest = f"sha256:{hashlib.sha256(manifest_json.encode()).hexdigest()}"
 
+# Push by digest only
 response = httpx.put(
     f"{registry_url}/v2/critic/manifests/{manifest_digest}",
     auth=auth,
     headers={"Content-Type": "application/vnd.oci.image.manifest.v1+json"},
     content=manifest_json
 )
+# Returns 201 Created on success
+
+# manifest_digest is now the identifier for your new image
+print(f"Created image: critic@{manifest_digest}")
 ```
 
-See [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec) for full protocol details.
+### References
 
-## Base Image Patterns
+- [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec) - Registry API
+- [OCI Image Spec](https://github.com/opencontainers/image-spec) - Manifest and layer format
 
-The built-in props images use these patterns (none are required for custom images):
+## Base Image Structure
 
-**Python packages:** Bundled via `pkg_tar` with `include_runfiles=True`, includes all dependencies.
+Built-in images contain:
 
-**Init scripts:** The `/init` entrypoint is typically a shell script that invokes `python -m props.critic_agent` or similar.
+**Python environment:** Complete Python installation with `props` CLI and dependencies at `/app/`.
 
-**Jinja2 templating:** Init scripts use `render_agent_prompt()` to include docs:
+**Init entrypoint:** The `/init` script produces the agent's system message. Typically invokes `python -m props.critic_agent init` or similar.
+
+**Agent-specific prompt:** `agent.md` file contains agent-specific instructions. To modify agent behavior, create a new layer with a modified `agent.md`.
+
+**Jinja2 templating:** Init scripts render prompts with these helpers:
 {% raw %}
-- `{{ include_doc("package/path") }}` — from package resources
-- `{{ include_file("/path") }}` — from filesystem
-- `{{ describe_relation("name") }}` — psql \d+ output
+- `{{ include_doc("package/path") }}` — package documentation
+- `{{ include_file("/path") }}` — filesystem files
+- `{{ describe_relation("name") }}` — database schema (psql \d+ output)
 - `{{ run_command("cmd") }}` — shell command output
 {% endraw %}
 
-**`agent.md` file:** Some images include an `agent.md` for agent-specific advice, rendered via {% raw %}`{{ include_file("/agent.md") }}`{% endraw %}. Edit this to change just the advice portion without rebuilding the entire image.
+**Common pattern:** To create a variant, add a layer with modified `/agent.md` — the init script will use your version.
 
 ## Filesystem Layout
 
