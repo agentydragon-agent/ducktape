@@ -19,12 +19,14 @@ import textwrap
 import pytest
 from hamcrest import assert_that
 
-from agent_core_testing.responses import PlayGen
+from agent_core_testing.responses import PlayGen, tool_roundtrip
 from agent_core_testing.steps import exited_successfully, stdout_contains
 from openai_utils.model import ResponsesRequest
 from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF, PROMPT_OPTIMIZER_IMAGE_REF
 from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, AgentType
 from props.core.db.session import get_session
+from props.core.models.examples import ExampleKind, WholeSnapshotExample
+from props.core.prompt_optimize.prompt_optimizer import PromptOptimizerServer, RunCriticInput, RunCriticOutput
 from props.core.tests.conftest import PropsMock
 
 
@@ -203,8 +205,30 @@ When reviewing code:
         assert_that(result, stdout_contains("MANIFEST_DIGEST=sha256:"))
         assert_that(result, stdout_contains("STATUS=2"))  # 200 or 201
 
-        # Proxy has now created agent_definitions row automatically
-        # Test harness will verify the custom critic can be launched separately
+        # Extract manifest digest from output
+        manifest_digest = None
+        for line in result.stdout.split("\n"):
+            if line.startswith("MANIFEST_DIGEST="):
+                manifest_digest = line.split("=", 1)[1]
+                break
+        assert manifest_digest is not None, f"Failed to extract manifest digest from: {result.stdout}"
+
+        # Step 5: Use run_critic MCP tool to launch the custom critic
+        example_spec = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug="test-fixtures")
+
+        run_critic_input = RunCriticInput(definition_id=manifest_digest, example=example_spec, max_turns=200)
+
+        # Yield the MCP tool call
+        call = m.mcp_tool_call(PromptOptimizerServer.PO_MOUNT_PREFIX, "run_critic", run_critic_input)
+        run_critic_output: RunCriticOutput = yield from tool_roundtrip(call, RunCriticOutput)
+        critic_run_id = run_critic_output.critic_run_id
+
+        # Step 6: Use psql to query the custom critic's output
+        query_result = yield from m.psql_roundtrip(
+            f"SELECT status FROM agent_runs WHERE agent_run_id = '{critic_run_id}'"
+        )
+        assert_that(query_result, exited_successfully())
+        assert_that(query_result, stdout_contains("COMPLETED"))
 
         # Complete the builder agent
         yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
@@ -245,10 +269,9 @@ async def test_po_builds_custom_critic(test_registry, test_snapshot, all_files_s
     1. PO agent (has registry access) creates custom critic variant with random token
     2. Pushes manifest by digest via HTTP API
     3. Proxy automatically creates agent_definitions row
-    4. Custom critic is launched with the new agent.md
-    5. Custom critic verifies it got the new agent.md in its system message
-    6. Custom critic submits zero-issues output
-    7. Test verifies the full flow worked
+    4. PO agent uses run_critic MCP tool to launch the custom critic
+    5. PO agent queries critic output via psql
+    6. Test separately verifies custom critic can be launched and uses new agent.md
     """
     # Generate unique random token for this test run (prevents cross-test interference)
     random_token = secrets.token_hex(8)
