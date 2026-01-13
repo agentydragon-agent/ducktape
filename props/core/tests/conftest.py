@@ -1256,10 +1256,10 @@ def run_improvement_agent_with_steps(
         *,
         token_budget: int = 100_000,
         model: str = "gpt-5-nano",
-        baseline_definition_ids: list[str] | None = None,
+        baseline_image_refs: list[str] | None = None,
     ):
-        if baseline_definition_ids is None:
-            baseline_definition_ids = [CRITIC_IMAGE_REF]
+        if baseline_image_refs is None:
+            baseline_image_refs = [CRITIC_IMAGE_REF]
 
         runner = make_step_runner(steps=steps)
 
@@ -1271,7 +1271,7 @@ def run_improvement_agent_with_steps(
         ):
             return await run_improvement_agent(
                 examples=[subtract_file_example],
-                baseline_definition_ids=baseline_definition_ids,
+                baseline_image_refs=baseline_image_refs,
                 token_budget=token_budget,
                 model=model,
                 docker_client=async_docker_client,

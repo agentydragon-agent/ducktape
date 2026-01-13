@@ -55,16 +55,14 @@ app = typer.Typer(name="critic-dev", help=HELP_TEXT, add_completion=False)
 @app.command("run-critic")
 @async_run
 async def run_critic_cmd(
-    definition_id: Annotated[
-        str, typer.Argument(help="Agent package ID (from 'props agent-pkg create', or 'critic' for baseline)")
-    ],
+    image_ref: Annotated[str, typer.Argument(help="Agent image reference (tag or digest, or 'critic' for baseline)")],
     snapshot_slug: Annotated[str, typer.Argument(help="Snapshot identifier (e.g., 'test-fixtures/train1')")],
     files_hash: Annotated[
         str | None, typer.Argument(help="Files hash for file_set example, or omit/empty for whole_snapshot")
     ] = None,
     max_turns: Annotated[int, typer.Option("--max-turns", "-t", help="Maximum agent turns before timeout")] = 200,
 ) -> None:
-    """Run critic on an example using an agent definition.
+    """Run critic on an example using an agent image.
 
     Returns the critic_run_id which can be used with run-grader.
 
@@ -82,7 +80,7 @@ async def run_critic_cmd(
     else:
         example = WholeSnapshotExample(snapshot_slug=snapshot_slug)
 
-    payload = RunCriticInput(definition_id=definition_id, example=example, max_turns=max_turns)
+    payload = RunCriticInput(image_ref=image_ref, example=example, max_turns=max_turns)
 
     async with mcp_client_from_env() as (client, _init_result):
         result = await client.call_tool("run_critic", payload.model_dump())

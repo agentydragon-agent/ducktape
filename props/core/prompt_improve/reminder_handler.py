@@ -48,7 +48,7 @@ TerminationResult = Annotated[TerminationSuccess | BlockingStatus, Field(discrim
 def check_termination_condition(
     session: Session, improvement_run_id: UUID, type_config: ImprovementTypeConfig
 ) -> TerminationResult:
-    baseline_ids = type_config.baseline_definition_ids
+    baseline_ids = type_config.baseline_image_refs
     allowed_examples = type_config.allowed_examples
     n_examples = len(allowed_examples)
 
@@ -277,8 +277,8 @@ def check_termination_condition(
 
 class ImprovementReminderHandler(BaseHandler):
     def __init__(self, improvement_run_id: UUID, type_config: ImprovementTypeConfig, db_config: DatabaseConfig):
-        if not type_config.baseline_definition_ids:
-            raise ValueError("baseline_definition_ids must not be empty")
+        if not type_config.baseline_image_refs:
+            raise ValueError("baseline_image_refs must not be empty")
         if not type_config.allowed_examples:
             raise ValueError("allowed_examples must not be empty")
 

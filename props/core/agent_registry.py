@@ -8,7 +8,7 @@ Usage:
     registry = AgentRegistry(docker_client, db_config, workspace_manager)
     async with registry:
         critic_run_id = await registry.run_critic(
-            definition_id="critic",
+            image_ref="critic",
             example=example,
             client=critic_client,
         )

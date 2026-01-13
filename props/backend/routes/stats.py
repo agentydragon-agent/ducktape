@@ -20,7 +20,7 @@ from props.core.db.models import (
     StatsWithCI,
 )
 from props.core.db.session import get_session
-from props.core.ids import DefinitionId, SnapshotSlug
+from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind
 from props.core.splits import Split
 
@@ -28,7 +28,7 @@ router = APIRouter()
 
 
 class DefinitionInfo(BaseModel):
-    definition_id: DefinitionId
+    image_digest: str
     agent_type: AgentType
     created_at: datetime
 
@@ -50,7 +50,7 @@ SplitStats = dict[Split, dict[ExampleKind, SplitScopeStats]]
 
 
 class DefinitionRow(BaseModel):
-    definition_id: DefinitionId
+    image_digest: str
     created_at: datetime
     stats: SplitStats
 
@@ -104,7 +104,7 @@ def get_overview() -> OverviewResponse:
             return dict(result)
 
         rows = [
-            DefinitionRow(definition_id=d.id, created_at=d.created_at, stats=build_stats(d.id)) for d in all_definitions
+            DefinitionRow(image_digest=d.id, created_at=d.created_at, stats=build_stats(d.id)) for d in all_definitions
         ]
 
         # Convert example_counts to nested dict
@@ -125,7 +125,7 @@ def list_definitions(agent_type: AgentType | None = None) -> DefinitionsResponse
         definitions = query.order_by(AgentDefinition.created_at.desc()).all()
         return DefinitionsResponse(
             definitions=[
-                DefinitionInfo(definition_id=d.id, agent_type=AgentType(d.agent_type), created_at=d.created_at)
+                DefinitionInfo(image_digest=d.id, agent_type=AgentType(d.agent_type), created_at=d.created_at)
                 for d in definitions
             ]
         )
@@ -144,27 +144,27 @@ class ExampleStats(BaseModel):
 
 
 class DefinitionDetailResponse(BaseModel):
-    definition_id: DefinitionId
+    image_digest: str
     agent_type: AgentType
     created_at: datetime
     stats: SplitStats
     examples: list[ExampleStats]
 
 
-@router.get("/definitions/{definition_id}")
-def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailResponse:
+@router.get("/definitions/{image_digest}")
+def get_definition_detail(image_digest: str) -> DefinitionDetailResponse:
     """Get detailed stats for a single definition including per-example breakdown."""
     with get_session() as session:
-        definition = session.query(AgentDefinition).filter_by(id=definition_id).first()
+        definition = session.query(AgentDefinition).filter_by(id=image_digest).first()
         if not definition:
-            raise HTTPException(status_code=404, detail=f"Definition not found: {definition_id}")
+            raise HTTPException(status_code=404, detail=f"Definition not found: {image_digest}")
 
         example_counts = count_available_examples_by_scope_all(session, [Split.TRAIN, Split.VALID])
 
         # Get aggregate stats
         agg_results = (
             session.query(RecallByDefinitionSplitKind)
-            .filter(RecallByDefinitionSplitKind.critic_image_digest == definition_id)
+            .filter(RecallByDefinitionSplitKind.critic_image_digest == image_digest)
             .filter(RecallByDefinitionSplitKind.split.in_([Split.TRAIN, Split.VALID]))
             .all()
         )
@@ -178,7 +178,7 @@ def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailRespon
         # Get per-example breakdown
         example_results = (
             session.query(RecallByDefinitionExample)
-            .filter(RecallByDefinitionExample.critic_image_digest == definition_id)
+            .filter(RecallByDefinitionExample.critic_image_digest == image_digest)
             .filter(RecallByDefinitionExample.split.in_([Split.TRAIN, Split.VALID]))
             .order_by(
                 RecallByDefinitionExample.split,
@@ -203,7 +203,7 @@ def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailRespon
         ]
 
         return DefinitionDetailResponse(
-            definition_id=definition.id,
+            image_digest=definition.id,
             agent_type=AgentType(definition.agent_type),
             created_at=definition.created_at,
             stats=dict(stats),
@@ -214,7 +214,7 @@ def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailRespon
 class DefinitionStatsForExample(BaseModel):
     """Stats for a single definition on this example."""
 
-    definition_id: DefinitionId
+    image_digest: str
     model: str
     n_runs: int
     status_counts: dict[AgentRunStatus, int]
@@ -304,7 +304,7 @@ def get_example_detail(
         # Convert to DefinitionStatsForExample
         definitions = [
             DefinitionStatsForExample(
-                definition_id=r.critic_image_digest,
+                image_digest=r.critic_image_digest,
                 model=r.critic_model,
                 n_runs=r.n_runs,
                 status_counts=Counter(r.status_counts or {}),

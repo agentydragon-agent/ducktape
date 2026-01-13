@@ -110,37 +110,37 @@ async def cmd_grade_validation(
                 key=lambda r: r.recall_stats.lcb95 if r.recall_stats and r.recall_stats.lcb95 else -1.0,
                 reverse=True,
             )
-            ordered_definition_ids = [r.critic_image_digest for r in valid_stats_sorted]
+            ordered_image_digests = [r.critic_image_digest for r in valid_stats_sorted]
 
             # Also get any critic definitions not yet evaluated (not in perf stats)
             all_critic_defs = (
                 session.query(AgentDefinition).filter(AgentDefinition.agent_type == AgentType.CRITIC).all()
             )
-            unevaluated_defs = [d.digest for d in all_critic_defs if d.digest not in ordered_definition_ids]
+            unevaluated_defs = [d.digest for d in all_critic_defs if d.digest not in ordered_image_digests]
 
             # Combine: evaluated definitions first (in priority order), then unevaluated
-            all_definition_ids: list[str] = ordered_definition_ids + unevaluated_defs
+            all_image_digests: list[str] = ordered_image_digests + unevaluated_defs
 
-            if not all_definition_ids:
+            if not all_image_digests:
                 raise typer.BadParameter("No critic definitions found in database - run 'props db sync' first")
 
-            typer.echo(f"Found {len(all_definition_ids)} critic definitions\n")
+            typer.echo(f"Found {len(all_image_digests)} critic definitions\n")
 
-            # Build work items grouped by definition
-            # Each definition gets a list of ValidationWorkItem
+            # Build work items grouped by image digest
+            # Each image digest gets a list of ValidationWorkItem
             # parent_agent_run_id is None if critic needs to run, otherwise UUID if grader needs to run
-            work_items_by_definition: dict[str, list[ValidationWorkItem]] = defaultdict(list)
+            work_items_by_image: dict[str, list[ValidationWorkItem]] = defaultdict(list)
 
             for example in validation_examples:
                 example_spec = example.to_example_spec()
-                for definition_id in all_definition_ids:
+                for image_digest in all_image_digests:
                     # Check if successful critic run exists for (example, definition)
                     # Query AgentRun by image_digest and type_config fields
                     # Note: type_config['example'] is the full ExampleSpec JSON
                     critic_run = (
                         session.query(AgentRun)
                         .filter(
-                            AgentRun.image_digest == definition_id,
+                            AgentRun.image_digest == image_digest,
                             AgentRun.type_config["example"]["snapshot_slug"].astext == example.snapshot_slug,
                             AgentRun.type_config["example"]["kind"].astext == example.example_kind.value,
                             AgentRun.status == AgentRunStatus.COMPLETED,
@@ -151,7 +151,7 @@ async def cmd_grade_validation(
 
                     if critic_run is None:
                         # No successful critic run exists, need to run critic then grader
-                        work_items_by_definition[definition_id].append(
+                        work_items_by_image[image_digest].append(
                             ValidationWorkItem(example=example_spec, parent_agent_run_id=None)
                         )
                         continue
@@ -170,14 +170,14 @@ async def cmd_grade_validation(
 
                     if not successful_grader_exists:
                         # Critic succeeded, need to run grader
-                        work_items_by_definition[definition_id].append(
+                        work_items_by_image[image_digest].append(
                             ValidationWorkItem(example=example_spec, parent_agent_run_id=critic_run.agent_run_id)
                         )
                     # else: both critic and grader succeeded - nothing to do
 
             # Count work needed (flatten to count)
-            total_pairs = len(validation_examples) * len(all_definition_ids)
-            all_work_items = [item for items in work_items_by_definition.values() for item in items]
+            total_pairs = len(validation_examples) * len(all_image_digests)
+            all_work_items = [item for items in work_items_by_image.values() for item in items]
             need_critic = sum(1 for item in all_work_items if item.parent_agent_run_id is None)
             need_grader_only = sum(1 for item in all_work_items if isinstance(item.parent_agent_run_id, UUID))
             completed = total_pairs - len(all_work_items)
@@ -196,7 +196,7 @@ async def cmd_grade_validation(
 
         async def process_one(
             example: ExampleSpec,
-            definition_id: str,
+            image_digest: str,
             critic_run_id_or_none: UUID | None,
             worker_id: int,
             item_index: int,
@@ -215,11 +215,7 @@ async def cmd_grade_validation(
                 try:
                     # Run critic using registry
                     critic_run_id = await registry.run_critic(
-                        image_ref=definition_id,  # definition_id is actually an image ref
-                        example=example,
-                        client=critic_client,
-                        verbose=verbose,
-                        max_turns=100,
+                        image_ref=image_digest, example=example, client=critic_client, verbose=verbose, max_turns=100
                     )
 
                     # Check if critic succeeded - if not, skip grading
@@ -232,17 +228,17 @@ async def cmd_grade_validation(
                         # Critic failed (max_turns_exceeded or context_length_exceeded)
                         if not verbose:
                             typer.echo(
-                                f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {definition_id}"
+                                f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {image_digest}"
                             )
                         return (status, False, False, None)
 
                     if not verbose:
                         typer.echo(
-                            f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {definition_id} → {short_uuid(critic_run_id)}"
+                            f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {image_digest} → {short_uuid(critic_run_id)}"
                         )
                 except Exception as e:
                     typer.echo(
-                        f"[W{worker_id} {item_index}/{total_items}] ✗ Critic failed {snapshot_slug} x {definition_id}: {e}\n"
+                        f"[W{worker_id} {item_index}/{total_items}] ✗ Critic failed {snapshot_slug} x {image_digest}: {e}\n"
                         f"{traceback.format_exc()}",
                         err=True,
                     )
@@ -298,26 +294,26 @@ async def cmd_grade_validation(
         all_results: list[tuple[str, bool, bool, UUID | None]] = []
         results_lock = asyncio.Lock()
 
-        # Build queue of (definition_id, ValidationWorkItem) tuples
+        # Build queue of (image_digest, ValidationWorkItem) tuples
         # Ordered by definition priority (same order as stats table: valid LCB desc, train LCB desc, created_at desc)
         work_queue: asyncio.Queue[tuple[str, ValidationWorkItem]] = asyncio.Queue()
         total_items = 0
-        for definition_id in all_definition_ids:
-            items = work_items_by_definition.get(definition_id, [])
+        for image_digest in all_image_digests:
+            items = work_items_by_image.get(image_digest, [])
             for item in items:
-                await work_queue.put((definition_id, item))
+                await work_queue.put((image_digest, item))
                 total_items += 1
 
         items_processed = 0
         progress_lock = asyncio.Lock()
 
         async def worker(worker_id: int) -> None:
-            """Worker that grabs (definition, work_item) items from queue and processes them."""
+            """Worker that grabs (image_digest, work_item) items from queue and processes them."""
             nonlocal items_processed
 
             while True:
                 try:
-                    definition_id, work_item = work_queue.get_nowait()
+                    image_digest, work_item = work_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
 
@@ -326,7 +322,7 @@ async def cmd_grade_validation(
                     item_index = items_processed
 
                 result = await process_one(
-                    work_item.example, definition_id, work_item.parent_agent_run_id, worker_id, item_index, total_items
+                    work_item.example, image_digest, work_item.parent_agent_run_id, worker_id, item_index, total_items
                 )
 
                 async with results_lock:

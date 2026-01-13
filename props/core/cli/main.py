@@ -406,7 +406,7 @@ async def prompt_improve_cmd(
     try:
         result = await run_improvement_agent(
             examples=allowed_examples,
-            baseline_definition_ids=[definition_id],
+            baseline_image_refs=[definition_id],
             token_budget=token_budget,
             model=model,
             docker_client=docker_client,

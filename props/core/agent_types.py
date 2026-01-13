@@ -103,14 +103,14 @@ class ImprovementTypeConfig(BaseModel):
     Improvement agents analyze critic/grader runs and propose improved agent definitions.
 
     RLS policies filter data access based on these fields:
-    - Can read agent_definitions matching baseline_definition_ids
+    - Can read agent_definitions matching baseline_image_refs
     - Can read agent_runs/events for runs on allowed_examples
     - Can create new definitions and run evals on allowed_examples
     """
 
     agent_type: Literal[AgentType.IMPROVEMENT] = AgentType.IMPROVEMENT
-    baseline_definition_ids: list[str] = Field(
-        min_length=1, description="One or more agent definition IDs to study and improve"
+    baseline_image_refs: list[str] = Field(
+        min_length=1, description="One or more agent image references to study and improve"
     )
     allowed_examples: list[ExampleSpec] = Field(
         min_length=1, description="Training examples this agent can access (snapshot + scope)"

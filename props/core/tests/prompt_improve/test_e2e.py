@@ -101,7 +101,7 @@ async def test_prompt_improve_e2e_success(
     with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
         result = await run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_definition_ids=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
             model="gpt-5-nano",
             docker_client=async_docker_client,
@@ -144,7 +144,7 @@ async def test_prompt_improve_e2e_multiple_examples(
     with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
         result = await run_improvement_agent(
             examples=allowed_examples,
-            baseline_definition_ids=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
             model="gpt-5-nano",
             docker_client=async_docker_client,
@@ -227,7 +227,7 @@ async def test_cli_leaderboard_in_improvement_agent(
     with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
         result = await run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_definition_ids=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
             model="gpt-5-nano",
             docker_client=async_docker_client,
@@ -259,7 +259,7 @@ async def test_cli_hard_examples_in_improvement_agent(
     with patch("props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination):
         result = await run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_definition_ids=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[CRITIC_IMAGE_REF],
             token_budget=100_000,
             model="gpt-5-nano",
             docker_client=async_docker_client,

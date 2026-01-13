@@ -52,7 +52,7 @@ class TestTypeConfigDiscriminatedUnion:
             (
                 {
                     "agent_type": "improvement",
-                    "baseline_definition_ids": ["critic-v1"],
+                    "baseline_image_refs": ["critic-v1"],
                     "allowed_examples": [{"kind": "whole_snapshot", "snapshot_slug": "test/2025-01-01-00"}],
                     "improvement_model": "test-improvement",
                     "critic_model": "test-critic",
@@ -114,24 +114,24 @@ class TestImprovementTypeConfig:
     def test_valid_construction(self) -> None:
         """ImprovementTypeConfig accepts valid data."""
         config = ImprovementTypeConfig(
-            baseline_definition_ids=["critic-v1"],
+            baseline_image_refs=["critic-v1"],
             allowed_examples=[WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))],
             improvement_model="test-model",
             critic_model="test-critic-model",
             grader_model="test-grader-model",
         )
-        assert config.baseline_definition_ids == ["critic-v1"]
+        assert config.baseline_image_refs == ["critic-v1"]
         assert len(config.allowed_examples) == 1
         assert config.agent_type == AgentType.IMPROVEMENT
         assert config.improvement_model == "test-model"
         assert config.critic_model == "test-critic-model"
         assert config.grader_model == "test-grader-model"
 
-    def test_baseline_definition_ids_required_nonempty(self) -> None:
-        """baseline_definition_ids must have at least one element."""
+    def test_baseline_image_refs_required_nonempty(self) -> None:
+        """baseline_image_refs must have at least one element."""
         with pytest.raises(ValidationError, match="at least 1"):
             ImprovementTypeConfig(
-                baseline_definition_ids=[],
+                baseline_image_refs=[],
                 allowed_examples=[WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))],
                 improvement_model="test-model",
                 critic_model="test-critic-model",
@@ -142,7 +142,7 @@ class TestImprovementTypeConfig:
         """allowed_examples must have at least one element."""
         with pytest.raises(ValidationError, match="at least 1"):
             ImprovementTypeConfig(
-                baseline_definition_ids=["critic-v1"],
+                baseline_image_refs=["critic-v1"],
                 allowed_examples=[],
                 improvement_model="test-model",
                 critic_model="test-critic-model",
@@ -150,25 +150,25 @@ class TestImprovementTypeConfig:
             )
 
     def test_both_fields_required(self) -> None:
-        """Both baseline_definition_ids and allowed_examples are required."""
+        """Both baseline_image_refs and allowed_examples are required."""
         with pytest.raises(ValidationError):
             ImprovementTypeConfig()  # type: ignore[call-arg]
 
-    def test_multiple_definition_ids_allowed(self) -> None:
-        """Multiple baseline definition IDs can be provided."""
+    def test_multiple_image_refs_allowed(self) -> None:
+        """Multiple baseline image refs can be provided."""
         config = ImprovementTypeConfig(
-            baseline_definition_ids=["critic-v1", "critic-v2", "critic-experimental"],
+            baseline_image_refs=["critic-v1", "critic-v2", "critic-experimental"],
             allowed_examples=[WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))],
             improvement_model="test-model",
             critic_model="test-critic-model",
             grader_model="test-grader-model",
         )
-        assert len(config.baseline_definition_ids) == 3
+        assert len(config.baseline_image_refs) == 3
 
     def test_multiple_examples_allowed(self) -> None:
         """Multiple allowed examples can be provided."""
         config = ImprovementTypeConfig(
-            baseline_definition_ids=["critic-v1"],
+            baseline_image_refs=["critic-v1"],
             allowed_examples=[
                 WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00")),
                 WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-02-00")),

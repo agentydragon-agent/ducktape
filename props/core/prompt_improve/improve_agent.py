@@ -68,7 +68,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         self,
         docker_client: aiodocker.Docker,
         improvement_run_id: UUID,
-        baseline_definition_ids: list[str],
+        baseline_image_refs: list[str],
         allowed_examples: list[ExampleSpec],
         improvement_model: str,
         critic_client: OpenAIModelProto,
@@ -81,7 +81,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         image: str,
     ):
         type_config = ImprovementTypeConfig(
-            baseline_definition_ids=baseline_definition_ids,
+            baseline_image_refs=baseline_image_refs,
             allowed_examples=allowed_examples,
             improvement_model=improvement_model,
             critic_model=critic_client.model,
@@ -128,7 +128,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
 
 async def run_improvement_agent(
     examples: list[ExampleSpec],
-    baseline_definition_ids: list[str],
+    baseline_image_refs: list[str],
     token_budget: int,
     model: str,
     docker_client: aiodocker.Docker,
@@ -164,7 +164,7 @@ async def run_improvement_agent(
     logger.info(f"Using builtin improvement image: {image_digest}")
 
     type_config = ImprovementTypeConfig(
-        baseline_definition_ids=baseline_definition_ids,
+        baseline_image_refs=baseline_image_refs,
         allowed_examples=examples,
         improvement_model=model,
         critic_model=critic_client.model,
@@ -187,7 +187,7 @@ async def run_improvement_agent(
     agent_env = ImprovementAgentEnvironment(
         docker_client=docker_client,
         improvement_run_id=run_id,
-        baseline_definition_ids=baseline_definition_ids,
+        baseline_image_refs=baseline_image_refs,
         allowed_examples=examples,
         improvement_model=model,
         critic_client=critic_client,
