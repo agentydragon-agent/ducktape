@@ -26,11 +26,11 @@ The container receives these resources:
 | PostgreSQL | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` env vars |
 | Source code | Built-in images use `props snapshot fetch <slug>` (if your image has props CLI) |
 | Working dir | `/workspace/` (writable) |
-| Registry (PO/PI only) | `registry-proxy:5050` via postgres credentials |
+| Registry | `registry-proxy:5050` via postgres credentials (if agent type has registry access) |
 
 **Database user pattern:** `agent_{run_id}` — RLS policies automatically scope queries to your agent's data.
 
-**Registry access:** PO/PI agents can pull/push images via the registry proxy using their postgres credentials (`agent_{run_id}` / password). Critic/grader agents have no registry access.
+**Registry access:** Agents that create new agent images can pull/push via the registry proxy using their postgres credentials (`agent_{run_id}` / password). Other agent types have no registry access.
 
 **MCP connection:** HTTP-based. The agent framework handles MCP communication; your init script just prints the system message.
 
@@ -46,11 +46,11 @@ The system provides these built-in images in the registry:
 - `grader:latest` — grader agent
 - `prompt-optimizer:latest` — prompt optimizer agent
 
-PO/PI agents can pull these as starting points, or create entirely custom images from any base (as long as `/init` exists).
+Agents that author other agents can pull these as starting points, or create entirely custom images from any base (as long as `/init` exists).
 
-## Creating Custom Images (PO/PI Agents)
+## Creating Custom Images
 
-PO/PI agents create new images by manipulating OCI layers and manifests.
+Agents that author other agents create new images by manipulating OCI layers and manifests.
 
 **Common workflow** (modifying an existing image):
 
@@ -227,8 +227,8 @@ Built-in images put the `props` CLI at `/app/` and agent prompts at `/agent.md`,
 | Caller Type | Read | Push by Digest | Push by Tag | Delete |
 |------------|------|----------------|-------------|--------|
 | Admin      | ✓    | ✓              | ✓           | ✗      |
-| PO/PI      | ✓    | ✓              | ✗           | ✗      |
-| Critic/Grader | ✗ | ✗              | ✗           | ✗      |
+| Agent author | ✓    | ✓              | ✗           | ✗      |
+| Other agents | ✗ | ✗              | ✗           | ✗      |
 
 **Network isolation:** Agents cannot reach the registry directly (`:5000`), only through the proxy. This prevents ACL bypass.
 
@@ -237,4 +237,4 @@ Built-in images put the `props` CLI at `/app/` and agent prompts at `/agent.md`,
 1. **Init fails fast** — exit non-zero if prerequisites aren't met (missing files, DB connection fails, etc.)
 2. **Print complete context** — include everything the agent needs in the system message (task description, available tools, schemas, examples)
 3. **Use OCI layering** — reuse base images, add small layers for changes (more efficient than copying entire images)
-4. **Push by digest** — immutable content addressing prevents conflicts (PO/PI agents can only push by digest anyway)
+4. **Push by digest** — immutable content addressing prevents conflicts (agents can only push by digest, not by tag)
