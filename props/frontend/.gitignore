@@ -6,6 +6,11 @@ storybook-static/
 # Dependencies
 node_modules/
 
+# Generated API schema
+src/lib/api/schema.d.ts
+src/lib/api/schema.json
+openapi.json
+
 # Playwright
 /test-results/
 /playwright-report/
