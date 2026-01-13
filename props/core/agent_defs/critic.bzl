@@ -30,12 +30,21 @@ def critic_variant(name, agent_md):
         strip_prefix = ".",
     )
 
-    # Package variant-specific agent.md
+    # Rename variant-specific agent.md to standard agent.md
+    # Uses genrule + strip_prefix pattern (same as init_script_tar)
+    native.genrule(
+        name = name + "_agent_md_gen",
+        srcs = [agent_md],
+        outs = [name + "_md/agent.md"],
+        cmd = "cp $< $@",
+    )
+
+    # Package renamed agent.md
     pkg_tar(
         name = name + "_agent_md_tar",
-        srcs = [agent_md],
+        srcs = [":" + name + "_agent_md_gen"],
         package_dir = "/",
-        renames = {agent_md: "agent.md"},  # Rename to standard agent.md
+        strip_prefix = name + "_md",
     )
 
     # Build OCI image
