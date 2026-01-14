@@ -47,3 +47,9 @@ critic_variant(
     name = "high_recall",
     agent_md = "high_recall_critic.md",
 )
+
+# Targets: :verbose_docs, :verbose_docs_load, :verbose_docs_push
+critic_variant(
+    name = "verbose_docs",
+    agent_md = "verbose_docs.md",
+)

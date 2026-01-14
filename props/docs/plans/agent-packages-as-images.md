@@ -1,6 +1,6 @@
 # Agent Packages as OCI Images
 
-## Status: ~95% Complete - Minor Gaps Only
+## Status: ~98% Complete - Minor Gaps Only
 
 ## Problem
 
@@ -343,7 +343,7 @@ Revisit if extraction latency becomes a bottleneck.
 - ✅ `build_images` flag removed from sync commands
 - ✅ `is_digest()` deduplicated (moved to oci_utils)
 
-### Remaining Work (~5%)
+### Remaining Work (~2%)
 
 **Critical for Runtime**
 
@@ -366,10 +366,9 @@ Revisit if extraction latency becomes a bottleneck.
 
 **Agent Builds**
 
-- ✅ 8 agent builds complete:
+- ✅ 9 agent builds complete:
   - Core: critic, grader, improvement, prompt_optimizer
-  - Variants: contract_truthfulness, dead_code, flag_propagation, high_recall
-- ❌ verbose_docs build target missing (markdown file exists but no critic_variant() call in BUILD.bazel)
+  - Variants: contract_truthfulness, dead_code, flag_propagation, high_recall, verbose_docs
 
 **Lower Priority**
 
