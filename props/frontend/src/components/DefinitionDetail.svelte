@@ -14,7 +14,7 @@
 
   let copied = $state(false);
 
-  const cliCommand = $derived(`props agent-pkg fetch ${data.definition_id} /workspace/my_pkg/`);
+  const cliCommand = $derived(`props agent-pkg fetch ${data.image_digest} /workspace/my_pkg/`);
 
   async function copyCommand() {
     await navigator.clipboard.writeText(cliCommand);
@@ -43,13 +43,13 @@
       <h2 class="text-lg font-semibold">Definition Detail</h2>
     </div>
     <Breadcrumb
-      items={[{ label: 'Home', href: '/' }, { label: 'Definitions', href: '/' }, { label: data.definition_id }]}
+      items={[{ label: 'Home', href: '/' }, { label: 'Definitions', href: '/' }, { label: data.image_digest }]}
     />
 
     <div class="space-y-3 mt-3">
       <!-- Definition ID and metadata -->
       <div class="flex items-center gap-4 text-sm">
-        <span class="font-mono text-blue-600">{data.definition_id}</span>
+        <span class="font-mono text-blue-600">{data.image_digest}</span>
         <span class="text-gray-400">|</span>
         <span class="text-gray-600">{data.agent_type}</span>
         <span class="text-gray-400">|</span>
@@ -117,5 +117,5 @@
   </div>
 
   <!-- Runs for this definition -->
-  <RunsBrowser initialDefinitionId={data.definition_id} />
+  <RunsBrowser initialDefinitionId={data.image_digest} />
 </div>

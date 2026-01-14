@@ -38,7 +38,7 @@
       const result = await fetchDefinitions('critic');
       definitions = result.definitions;
       if (definitions.length > 0 && !selectedDefinition) {
-        selectedDefinition = definitions[0].definition_id;
+        selectedDefinition = definitions[0].image_digest;
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to load definitions';
@@ -64,7 +64,7 @@
 
     try {
       const result = await triggerValidationRuns({
-        definition_id: selectedDefinition,
+        image_digest: selectedDefinition,
         split: selectedSplit,
         example_kind: selectedKind,
         n_samples: nSamples,
@@ -129,8 +129,8 @@
               class="w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={loading}
             >
-              {#each definitions as def (def.definition_id)}
-                <option value={def.definition_id}>{def.definition_id}</option>
+              {#each definitions as def (def.image_digest)}
+                <option value={def.image_digest}>{def.image_digest}</option>
               {/each}
             </select>
           </div>

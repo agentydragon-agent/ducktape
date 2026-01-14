@@ -154,7 +154,7 @@ export async function fetchRunEvents(runId: string, offset = 0, limit = 100) {
 // Fetch all runs with filters and pagination
 export interface RunsFilters {
   status?: AgentRunStatus;
-  definition_id?: string;
+  image_digest?: string;
   agent_type?: AgentType;
   split?: Split;
   example_kind?: ExampleKind;
@@ -175,8 +175,8 @@ export type DefinitionDetailResponse = components['schemas']['DefinitionDetailRe
 export type ExampleStats = components['schemas']['ExampleStats'];
 
 export async function fetchDefinitionDetail(definitionId: string) {
-  const { data, error } = await api.GET('/api/stats/definitions/{definition_id}', {
-    params: { path: { definition_id: definitionId } },
+  const { data, error } = await api.GET('/api/stats/definitions/{image_digest}', {
+    params: { path: { image_digest: definitionId } },
   });
   if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch definition'));
   return data;

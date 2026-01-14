@@ -20,7 +20,7 @@
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <RunIdLink id={run.agent_run_id} />
-              <DefinitionIdLink id={run.definition_id} />
+              <DefinitionIdLink id={run.image_digest} />
             </div>
             <div class="flex items-center gap-2">
               <span class="text-xs text-gray-500">{run.model}</span>
