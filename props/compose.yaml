@@ -66,12 +66,10 @@ services:
       registry:
         condition: service_started
     healthcheck:
-      # /v2/ returns 401 (requires auth) but that still means the server is up
-      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:5051/v2/ | grep -qE '^(200|401)$'"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5051/v2/')"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 5
 
 volumes:
   props_eval_results_data:
