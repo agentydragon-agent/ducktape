@@ -1,8 +1,7 @@
 import createClient from 'openapi-fetch';
 import type { paths, components } from './schema';
 
-// Create typed API client
-// Run `pnpm generate` with backend running to regenerate types
+// Create typed API client (types from Bazel: //props/frontend:generate_schema)
 export const api = createClient<paths>({ baseUrl: '' });
 
 // Re-export generated types

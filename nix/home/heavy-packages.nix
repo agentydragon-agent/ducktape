@@ -2,7 +2,7 @@
 # These are installed:
 # - Via NixOS system config on NixOS systems (using the module in nix/nixos/)
 # - Via home-manager on non-NixOS systems
-# - Not at all on minimal systems (e.g., atlas, vps)
+# - Not at all on minimal systems (e.g., atlas, vps, agentydragon)
 #
 # This list contains packages that are:
 # - Large in download/install size

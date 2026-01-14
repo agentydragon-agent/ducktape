@@ -1,31 +1,17 @@
 # Props Frontend
 
-SvelteKit-based web interface for viewing Props evaluation results.
+Svelte-based web interface for viewing Props evaluation results.
 
 ## Development
 
-```bash
-# Start all services via devenv (from props/)
-cd props && devenv up
-```
-
-For standalone commands (rarely needed):
+All builds go through Bazel:
 
 ```bash
-pnpm install   # Install dependencies
-pnpm build     # Build for production
-pnpm check     # Type check
-pnpm lint      # Lint
-pnpm format    # Format
+bazel build //props/frontend:bundle    # Production build
+bazel test //props/frontend:visual_test  # Visual regression tests
 ```
 
-## OpenAPI Types
-
-Regenerate TypeScript types from backend API schema:
-
-```bash
-pnpm generate  # Requires backend running at http://localhost:8000
-```
+The `generate_schema` Bazel target regenerates TypeScript types from the backend OpenAPI schema.
 
 ## Visual Regression Testing
 

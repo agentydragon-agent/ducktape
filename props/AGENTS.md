@@ -19,7 +19,6 @@
 Forbidden commands:
 
 - `uvicorn` directly
-- `pnpm dev` for the frontend
 - Starting the postgres container manually
 - Killing service PIDs without checking if they're process-compose managed
 

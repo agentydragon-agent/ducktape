@@ -335,9 +335,6 @@ in {
       yq
       zsh
       atuin
-      opencode # AI coding agent for the terminal
-      ducktape # CLI tools: git-commit-ai, difftree
-      headscale-cleanup # Headscale node management
 
       # Tools from GitHub releases / binary downloads
       gh
@@ -377,9 +374,9 @@ in {
       # Formatters for conform.nvim
       stylua # Lua formatter
 
-      # Machine Learning packages now in python3.withPackages above
-
-      # Kubernetes tools (with helm-diff plugin bundled)
+      # Custom packages from ducktape repo
+      ducktape # CLI tools: git-commit-ai, difftree
+      headscale-cleanup # Headscale node management
     ]
     ++ lib.optionals enableKube [
       kubectl

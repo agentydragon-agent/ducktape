@@ -67,7 +67,8 @@ jobs:
       - name: Prepare wheel
         run: |
           mkdir -p dist
-          cp ${{ inputs.wheel_path }}/${{ inputs.wheel_name }}-*.whl dist/${{ inputs.wheel_name }}.whl
+          # Keep original filename - wheel spec requires proper name format
+          cp ${{ inputs.wheel_path }}/${{ inputs.wheel_name }}-*.whl dist/
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -79,12 +80,7 @@ jobs:
 
             Commit: ${{ github.sha }}
             Branch: ${{ github.ref_name }}
-
-            Install:
-            ```bash
-            pip install https://github.com/${{ github.repository }}/releases/download/${{ inputs.package_name }}-${{ env.SHORT_SHA }}/${{ inputs.wheel_name }}.whl
-            ```
-          files: dist/${{ inputs.wheel_name }}.whl
+          files: dist/*.whl
 
       - name: Cleanup old releases
         env:

@@ -41,8 +41,8 @@ Requires the `props` package (workspace member) for database access.
 # Start all services (from props/)
 cd props && devenv up
 
-# Regenerate API types after schema changes (requires backend running)
-cd frontend && pnpm generate
+# Regenerate API types after schema changes
+bazel build //props/frontend:bundle
 ```
 
 ## Key Dependencies

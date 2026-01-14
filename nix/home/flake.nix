@@ -92,7 +92,7 @@
         enableGui = true;
         enableKube = true;
         isNixOS = false;
-        enableHeavyPackages = true;
+        enableHeavyPackages = false;
       };
 
       # GPD Win Max 2 laptop

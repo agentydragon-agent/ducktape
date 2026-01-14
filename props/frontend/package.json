@@ -3,11 +3,6 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": {
-    "dev": "node dev.mjs",
-    "build": "node esbuild.config.mjs",
-    "generate": "openapi-typescript http://localhost:8000/openapi.json -o src/lib/api/schema.d.ts"
-  },
   "devDependencies": {
     "esbuild": "^0.25.1",
     "esbuild-svelte": "^0.9.4",

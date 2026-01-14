@@ -69,11 +69,10 @@ Changes trigger automatic reload.
 
 ### Regenerating OpenAPI Schema
 
-After backend API changes:
+After backend API changes, rebuild the frontend (Bazel regenerates types automatically):
 
 ```bash
-cd frontend
-pnpm generate  # Requires backend running
+bazel build //props/frontend:bundle
 ```
 
 ## Database Management

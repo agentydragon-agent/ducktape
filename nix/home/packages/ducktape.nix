@@ -12,11 +12,14 @@
   # 8-char commit SHA from GitHub release tag
   shortSha = "6de4aa95";
 
+  # Wheel version from BUILD.bazel py_wheel rule
+  wheelVersion = "0.1.0";
+
   # Fetch wheel directly with fetchurl
   wheelSrc = pkgs.fetchurl {
-    url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-${shortSha}/ducktape.whl";
+    url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-${shortSha}/ducktape-${wheelVersion}-py3-none-any.whl";
     # After updating shortSha, set to lib.fakeHash and rebuild to get new hash
-    hash = "sha256-7iBxPWvUccBxylUAK7y5/sisqwHwQoinbBVCCOnVfc8=";
+    hash = lib.fakeHash;
   };
 
   ducktape = pkgs.python3Packages.buildPythonApplication {
