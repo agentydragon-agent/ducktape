@@ -718,3 +718,7 @@ async def cmd_run(
                 typer.echo(f"Critic run ended with status: {critic_run.status.value}", err=True)
     finally:
         await registry.close()
+
+
+if __name__ == "__main__":
+    app()

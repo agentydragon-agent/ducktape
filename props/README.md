@@ -7,7 +7,7 @@ High-level architecture and shared infrastructure for the props evaluation syste
 ```
 props/
 ├── .envrc                    # Single devenv entry point (shared by all)
-├── devenv.nix                # Manages postgres, backend, frontend processes
+├── devenv.nix                # Manages postgres, registry, proxy processes
 ├── core/                     # Core Python library (props_core)
 │   ├── pyproject.toml        # Package: props-core
 │   ├── src/props_core/       # The Python package
@@ -21,79 +21,63 @@ props/
     └── src/
 ```
 
-## Development Server Management (devenv + process-compose)
-
-The backend, frontend, and PostgreSQL are managed by devenv via process-compose.
-
-### Starting All Services
+## Initial Setup
 
 ```bash
 cd props
-devenv up  # Starts postgres, backend, frontend
+
+# 1. Start infrastructure (postgres, registry, proxy)
+# Devenv manages PostgreSQL, registry, and proxy via process-compose.
+devenv up
+
+# 2. In another terminal, push built-in agent images to registry
+bazelisk run //props/core/agent_defs/critic:push
+bazelisk run //props/core/agent_defs/grader:push
+bazelisk run //props/core/agent_defs/improvement:push
+bazelisk run //props/core/agent_defs/prompt_optimizer:push
+bazelisk run //props/registry_proxy:push
 ```
 
-### Process Management Commands
+## Development
+
+Process management:
 
 ```bash
-# List processes and their status
-process-compose process list
+process-compose process list              # List processes
+process-compose process logs postgres     # View logs
+process-compose process restart registry  # Restart a process
+```
 
-# Get detailed status of a process
-process-compose process get backend
+### Frontend + Backend
 
-# View logs
-process-compose process logs backend
-
-# Restart a process (picks up code changes)
-process-compose process restart backend
-
-# Stop/start a process
-process-compose process stop backend
-process-compose process start backend
+```bash
+bazelisk run //props/frontend:dev  # Starts both frontend and backend with watch
 ```
 
 ### Service URLs
 
-- Backend: <http://localhost:8000>
 - Frontend: <http://localhost:5173>
+- Backend: <http://localhost:8000>
 - PostgreSQL: localhost:5433
-
-### Backend Watch Directories
-
-The devenv backend watches:
-
-- `backend/src` - Backend route handlers
-- `core/src` - Props core package
-
-Changes trigger automatic reload.
-
-### Regenerating OpenAPI Schema
-
-After backend API changes:
-
-```bash
-cd frontend
-pnpm generate  # Requires backend running
-```
+- Registry: localhost:5050 (direct), localhost:5051 (proxy with ACL)
 
 ## Database Management
 
-### psql Access
-
 ```bash
-cd props && direnv exec . psql # Uses PG* environment variables set by devenv
-```
+# psql access (uses PG* environment variables from devenv)
+psql
 
-### Applying Migrations
+# Recreate database from scratch (drops all data, runs migrations, syncs specimens)
+bazelisk run //props/core:props -- db recreate
 
-For applying migrations to an existing database:
-
-```bash
-direnv exec . alembic upgrade head
+# Backup and restore
+bazelisk run //props/core:props -- db backup
+bazelisk run //props/core:props -- db restore <backup_file>
 ```
 
 ## Specimens Dataset
 
 **Specimens data lives in a separate repository**: <https://github.com/agentydragon/specimens>
 
-The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`). The props package loads specimen data from this external location.
+The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`).
+The props package loads specimen data from this external location.
