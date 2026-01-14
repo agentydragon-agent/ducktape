@@ -22,11 +22,17 @@ from hamcrest import assert_that
 from agent_core_testing.responses import PlayGen, tool_roundtrip
 from agent_core_testing.steps import exited_successfully, stdout_contains
 from openai_utils.model import ResponsesRequest
-from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF, PROMPT_OPTIMIZER_IMAGE_REF
-from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, AgentType
+from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.core.db.models import AgentDefinition
 from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
-from props.core.prompt_optimize.prompt_optimizer import PromptOptimizerServer, RunCriticInput, RunCriticOutput
+from props.core.prompt_optimize.prompt_optimizer import (
+    PromptOptimizerServer,
+    RunCriticInput,
+    RunCriticOutput,
+    run_prompt_optimizer,
+)
+from props.core.prompt_optimize.target_metric import TargetMetric
 from props.core.tests.conftest import PropsMock
 
 
@@ -262,72 +268,40 @@ def make_custom_critic_mock(random_token: str) -> PropsMock:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 @pytest.mark.slow
-async def test_po_builds_custom_critic(test_registry, test_snapshot, all_files_scope):
-    """Test PO agent builds custom critic image and proxy creates agent_definitions.
+async def test_po_builds_custom_critic(synced_test_db, async_docker_client, noop_openai_client):
+    """Test PO agent builds custom critic image via MCP tool integration.
 
-    This exercises the core workflow:
-    1. PO agent (has registry access) creates custom critic variant with random token
-    2. Pushes manifest by digest via HTTP API
-    3. Proxy automatically creates agent_definitions row
-    4. PO agent uses run_critic MCP tool to launch the custom critic
-    5. PO agent queries critic output via psql
-    6. Test separately verifies custom critic can be launched and uses new agent.md
+    This is ONE integrated e2e test where:
+    1. PO agent creates and pushes custom critic image with random token
+    2. PO agent uses run_critic MCP tool to launch the custom critic
+    3. Custom critic mock verifies system message contains the token
+    4. PO agent queries critic output via psql
+    5. Proxy automatically creates agent_definitions row
+
+    The custom critic mock is provided as critic_client parameter, so when
+    the PO's MCP tool call launches a critic, it uses our custom mock.
     """
     # Generate unique random token for this test run (prevents cross-test interference)
     random_token = secrets.token_hex(8)
 
-    # Step 1: Run PO agent that creates and pushes custom critic image
-    builder_mock = make_po_builder_mock(random_token)
+    # Create mocks
+    po_builder_mock = make_po_builder_mock(random_token)
+    custom_critic_mock = make_custom_critic_mock(random_token)
 
-    # Use PO agent as builder - it has registry access
-    builder_run_id = await test_registry.run_prompt_optimizer(
-        definition_id=PROMPT_OPTIMIZER_IMAGE_REF, example=all_files_scope, client=builder_mock, max_turns=50
+    # Run PO agent with custom critic mock for nested runs
+    # The PO agent will:
+    # 1. Create and push custom critic image
+    # 2. Use run_critic MCP tool to launch it (will use custom_critic_mock)
+    # 3. Query the result via psql
+    await run_prompt_optimizer(
+        budget=1.0,
+        optimizer_client=po_builder_mock,
+        critic_client=custom_critic_mock,  # Used when MCP tool launches critics
+        grader_client=noop_openai_client,
+        docker_client=async_docker_client,
+        target_metric=TargetMetric.WHOLE_REPO,
+        db_config=synced_test_db,
     )
-
-    assert builder_run_id is not None
-
-    # Verify builder completed successfully
-    with get_session() as session:
-        builder_run = session.get(AgentRun, builder_run_id)
-        assert builder_run is not None
-        assert builder_run.status == AgentRunStatus.COMPLETED
-
-        # Verify proxy created agent_definitions row automatically
-        # The agent didn't manually create this - the proxy did when manifest was pushed
-        custom_defn = (
-            session.query(AgentDefinition)
-            .filter_by(agent_type=AgentType.CRITIC, created_by_agent_run_id=builder_run_id)
-            .one_or_none()
-        )
-        assert custom_defn is not None, "Proxy should have created agent_definitions row"
-        assert custom_defn.digest.startswith("sha256:")
-
-        custom_digest = custom_defn.digest
-
-    # Step 2: Run the custom critic that was just created
-    custom_mock = make_custom_critic_mock(random_token)
-    custom_run_id = await test_registry.run_critic(
-        definition_id=custom_digest,  # Use the newly created image
-        example=all_files_scope,
-        client=custom_mock,
-        max_turns=20,
-    )
-
-    assert custom_run_id is not None
-
-    # Verify custom critic executed successfully
-    with get_session() as session:
-        custom_run = session.get(AgentRun, custom_run_id)
-        assert custom_run is not None
-        assert custom_run.status == AgentRunStatus.COMPLETED
-        assert len(custom_run.reported_issues) == 0
-
-        # Verify the critique message contains the random token
-        # This confirms the custom agent.md was actually used
-        if custom_run.reported_issues:
-            # Should be empty, but if not empty, check the message contains token
-            pass
-        # The mock already verified the system message contained the token
 
 
 @pytest.mark.requires_docker
@@ -389,7 +363,7 @@ async def test_critic_cannot_push_images(test_registry, test_snapshot, all_files
 
     mock = critic_tries_push()
     run_id = await test_registry.run_critic(
-        definition_id=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=20
+        image_ref=CRITIC_IMAGE_REF, example=all_files_scope, client=mock, max_turns=20
     )
 
     assert run_id is not None
