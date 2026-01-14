@@ -1,7 +1,7 @@
 """Allow proxy to create agent_definitions
 
 Revision ID: 20260113_proxy_agent_definitions
-Revises: 20251228000000_complete_schema
+Revises: 20251228000000
 Create Date: 2026-01-13
 
 Updates RLS policy for agent_definitions to allow the proxy (running as admin)
@@ -19,7 +19,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "20260113_proxy_agent_definitions"
-down_revision = "20251228000000_complete_schema"
+down_revision = "20251228000000"
 branch_labels = None
 depends_on = None
 

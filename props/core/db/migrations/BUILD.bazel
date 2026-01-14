@@ -1,0 +1,19 @@
+"""Alembic database migrations."""
+
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_migration_sequence",
+    srcs = ["test_migration_sequence.py"],
+    data = [
+        "env.py",
+        "script.py.mako",
+        "versions/20251228000000_complete_schema.py",
+        "versions/20260113_allow_proxy_create_agent_definitions.py",
+    ],
+    imports = ["../../../.."],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//pytest",
+    ],
+)
