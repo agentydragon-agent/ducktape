@@ -6,7 +6,7 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession]:
     """Get a database session (FastAPI dependency).
 
     Use as: db: AsyncSession = Depends(get_db_session)

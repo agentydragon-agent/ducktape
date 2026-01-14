@@ -12,10 +12,13 @@ filegroup(
 
 py_library(
     name = "editor_agent_host",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = ["tests/**"],
-    ),
+    srcs = [
+        "__init__.py",
+        "agent_runner.py",
+        "cli.py",
+        "runner.py",
+        "submit_server.py",
+    ],
     data = glob(["definition/**/*"]),
     imports = ["../.."],
     visibility = ["//visibility:public"],
@@ -41,12 +44,48 @@ py_binary(
 )
 
 py_test(
-    name = "test_editor_agent",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/test_runner_session.py",
+    name = "test_runner_session",
+    srcs = [
+        "conftest.py",
+        "test_runner_session.py",
+    ],
+    imports = ["../.."],
+    tags = ["requires_docker"],
     deps = [
         ":editor_agent_host",
         "//agent_core_testing",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_editor_e2e_steps",
+    srcs = [
+        "conftest.py",
+        "test_editor_e2e_steps.py",
+    ],
+    imports = ["../.."],
+    tags = ["requires_docker"],
+    deps = [
+        ":editor_agent_host",
+        "//agent_core_testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_submit_server",
+    srcs = [
+        "conftest.py",
+        "test_submit_server.py",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":editor_agent_host",
+        "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

@@ -79,10 +79,7 @@ class Example(Base):
     # Relationships - use string references to avoid circular imports
     # NOTE: examples is a VIEW, so we need explicit primaryjoin (no FK constraint exists)
     snapshot_obj: Mapped[Snapshot] = relationship(
-        "Snapshot",
-        primaryjoin="foreign(Example.snapshot_slug) == Snapshot.slug",
-        back_populates="examples",
-        viewonly=True,
+        "Snapshot", primaryjoin="foreign(Example.snapshot_slug) == Snapshot.slug", viewonly=True
     )
     # Note: AgentRun stores snapshot_slug/example_kind/files_hash in JSONB type_config,
     # so there's no direct FK relationship possible. Query AgentRun via type_config filtering instead.

@@ -1,34 +1,31 @@
 """ADGN - Agent framework and LLM tooling."""
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
-
-exports_files([
-    "devenv.nix",
-])
 
 py_library(
     name = "adgn",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-        ],
-    ),
-    data = glob([
-        "**/*.md",
-        "**/*.j2",
-        "**/*.json",
-        "**/*.js",
-    ]),
+    srcs = [
+        "__init__.py",
+        "agent/cli.py",
+        "gitea_pr_gate/__init__.py",
+        "gitea_pr_gate/policy_common.py",
+        "gitea_pr_gate/policy_server_fastapi.py",
+        "mcp/__init__.py",
+        "mcp/testing/stdio_notifier.py",
+        "testing/__init__.py",
+        "testing/bootstrap.py",
+        "tools/trivial_patterns.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "//adgn/mcp/gitea_mirror",
         "//agent_core",
         "//agent_core_testing",
         "//agent_pkg/host",
         "//agent_pkg/runtime",
+        "//arg0_runner",
         "//cli_util",
         "//mcp_infra",
         "//net_util",
@@ -81,30 +78,6 @@ py_binary(
     srcs = ["tools/trivial_patterns.py"],
     main = "tools/trivial_patterns.py",
     deps = [":adgn"],
-)
-
-py_binary(
-    name = "adgn_mcp_gitea_mirror",
-    srcs = ["mcp/gitea_mirror/launcher.py"],
-    main = "mcp/gitea_mirror/launcher.py",
-    deps = [":adgn"],
-)
-
-py_test(
-    name = "test_adgn",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/util/test_unified_patch.py",
-    deps = [
-        ":adgn",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_env",
-        "@pypi//pytest_mock",
-        "@pypi//pytest_timeout",
-        "@pypi//pytest_xdist",
-        "@pypi//syrupy",
-    ],
 )
 
 ruff_test(

@@ -221,7 +221,7 @@ class AgentEnvironment(ABC):
         temp_creds = await self._user_manager.__aenter__()
         logger.info(f"Created temporary database user: {temp_creds.username}")
 
-        container_db = self._db_config.for_container_user(temp_creds)
+        container_db = self._db_config.for_container_user(temp_creds.username, temp_creds.password)
 
         self._exit_stack = AsyncExitStack()
         await self._exit_stack.__aenter__()

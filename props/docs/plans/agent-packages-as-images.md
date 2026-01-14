@@ -356,7 +356,7 @@ Revisit if extraction latency becomes a bottleneck.
 - ✅ `devenv up` with full stack implemented (devenv.nix lines 44-152: postgres, registry, registry_proxy, pg_backup)
 - ✅ Network isolation verified (registry on props-internal only, agents on props-agents, proxy bridges both)
 - ⚠️ Push targets exist but not CI-tested (8 targets: critic, grader, improvement, prompt_optimizer + 4 critic variants)
-- ✅ E2e tests pass (props/core/tests/agent_pkg/test_e2e.py PASSED in 27.7s)
+- ✅ E2e tests pass (props/core/test_agent_pkg_e2e.py PASSED in 27.7s)
 
 **Agent Registry Access** (for PO/PI agents)
 
@@ -380,7 +380,7 @@ Revisit if extraction latency becomes a bottleneck.
 
 ### E2E Testing Requirements
 
-**Test: PO/PI Agent Creates Custom Critic** (props/core/tests/agent_pkg/test_e2e.py)
+**Test: PO/PI Agent Creates Custom Critic** (props/core/test_agent_pkg_e2e.py)
 
 This test must exercise the complete agent-creates-agent workflow using only affordances available to real PO/PI agents:
 

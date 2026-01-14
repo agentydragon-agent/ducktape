@@ -407,10 +407,10 @@ cd props
 devenv up
 
 # Run all e2e tests (uses env vars from devenv.nix)
-bazel test //props/core/tests/...
+bazel test //props/core/...
 
 # Run specific test
-bazel test //props/core/tests/critic:test_e2e
+bazel test //props/core/critic:test_e2e
 ```
 
 #### With Bazel (Podman + Claude Code web)
@@ -421,10 +421,10 @@ bazel test //props/core/tests/critic:test_e2e
 
 # Environment variables already set by Claude Code web hook
 # Just run tests directly
-bazel test //props/core/tests/...
+bazel test //props/core/...
 
 # Or use explicit config
-bazel test --config=podman //props/core/tests/...
+bazel test --config=podman //props/core/...
 ```
 
 #### With pytest (if needed for debugging)
@@ -434,10 +434,10 @@ bazel test --config=podman //props/core/tests/...
 cd props
 
 # Docker mode
-pytest core/tests/critic/test_e2e.py -m requires_docker
+pytest core/critic/test_e2e.py -m requires_docker
 
 # Podman mode (env vars from hook)
-pytest core/tests/critic/test_e2e.py -m requires_docker
+pytest core/critic/test_e2e.py -m requires_docker
 ```
 
 ## Trade-offs

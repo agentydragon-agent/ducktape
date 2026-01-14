@@ -6,8 +6,8 @@
 
 # Prefer one-line formatting when code fits
 line-length = 120
-# Target Python 3.12+ consistently
-target-version = "py312"
+# Target Python 3.13+ consistently
+target-version = "py313"
 
 # Exclude testdata, fixtures, third-party, examples, and archived code from all ruff operations
 exclude = [
@@ -95,6 +95,7 @@ known-first-party = [
     "agent_core_testing",
     "agent_pkg",
     "agent_server",
+    "arg0_runner",
     "props",
     "claude_history",
     "claude_hooks",

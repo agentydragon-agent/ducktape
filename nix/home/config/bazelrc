@@ -2,9 +2,6 @@
 common --show_progress_rate_limit=0.05
 common --progress_in_terminal_title
 
-# Should show all parallelism.
-common --ui_actions_shown 256
-
 # Imports:
 # build --remote_cache=https://agentydragon-laptop:<PASSWORD>@bazel-cache.agentydragon.com:9090
 # Might not be present on other laptops, don't fail if it isn't.

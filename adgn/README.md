@@ -7,40 +7,22 @@ Local tools and libraries for my dev/worktree/LLM workflows.
 - Arg0 virtual CLI utilities
 - Testing support
 
-## Environment and setup (direnv + devenv)
+## Development
 
-- Requirements: Nix + devenv, direnv; Python 3.13+.
-- First time here: `cd adgn`, `direnv allow`
-  - This loads `.envrc` → devenv, creates a Python venv, and installs `adgn` in editable mode with dev extras.
-- Re-entering later: just `cd adgn`; direnv activates the environment.
-- Verify environment:
-  - `direnv status` shows if `.envrc` is loaded
-  - `echo "$VIRTUAL_ENV"` contains `.../adgn/.devenv/state/venv`
-  - `which python` resolves to `.../adgn/.devenv/state/venv/bin/python`
-- Running commands:
-  - Inside `adgn/`, tools are on PATH (pytest, ruff, pre-commit, wt, rspcache, adgn-agent, ...)
-  - From outside: prefix with `direnv exec adgn <command>`
-- Refresh after edits:
-  - `devenv.nix`/`.envrc` changes → `direnv reload`
-  - `pyproject.toml` dependency changes → `direnv reload` (reinstalls dev extras on entry)
+See the repository root AGENTS.md for the standard Bazel workflow.
 
-Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across packages. The per-package devenv still manages the local venv.
+```bash
+bazel build //adgn/...
+bazel test //adgn/...
+bazel build --config=check //adgn/...  # lint + typecheck
+```
 
-## Quick commands
+### Pytest Markers
 
-- Run all tests (tests live under `adgn/tests`):
-  - Inside `adgn/`.: `pytest tests`
-  - From repo root: `direnv exec adgn pytest adgn/tests`
-- Single test file/case: `direnv exec adgn pytest tests/util/test_unified_patch.py`
-- **Debugging hangs/timeouts**: Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
-- Lint/format: `ruff format .`, `ruff check . --fix`
-- Pre-commit (preferred): `pre-commit install`, `pre-commit run -a`
-- Optional extras (GNOME console script deps): `python -m pip install -e '.[gnome]'`
+See `[tool.pytest.ini_options]` in `pyproject.toml` for markers and timeout settings.
 
-### Pytest Defaults
-
-See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, markers, and timeout settings.
-
+- `live_openai_api` / `live_anthropic_api` — require API keys and network
+- `real_github` — requires network access to GitHub
 - Hermetic git (pytest-env): `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`
 
 ## High-Level Module Map

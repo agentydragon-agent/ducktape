@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).parent
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifespan: startup and shutdown.
 
     - On startup: Initialize database engine, session factory, and templates

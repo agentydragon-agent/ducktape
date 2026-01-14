@@ -56,7 +56,6 @@ from props.core.db.models import (
 from props.core.db.query_builders import query_recall_by_example
 from props.core.db.session import get_session, init_db
 from props.core.display import fmt_pct, short_sha
-from props.core.eval_harness import run_all_evals
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.prompt_improve.improve_agent import (
@@ -67,7 +66,6 @@ from props.core.prompt_improve.improve_agent import (
 from props.core.prompt_improve.reminder_handler import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
-from props.core.runs_context import RunsContext
 from props.core.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -607,16 +605,6 @@ async def cmd_grade_missing(
         typer.echo(f"Completed: {successes} succeeded, {failures} failed")
     finally:
         await registry.close()
-
-
-@app.command("eval-all")
-@async_run
-async def cmd_eval_all() -> None:
-    docker_client = aiodocker.Docker()
-    try:
-        await run_all_evals(client=build_client("gpt-5"), docker_client=docker_client, ctx=RunsContext.from_pkg_dir())
-    finally:
-        await docker_client.close()
 
 
 # GEPA command (optional - requires gepa package)

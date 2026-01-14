@@ -20,7 +20,9 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//props/core",
+        "//props/core:oci_utils",
+        "//props/core/db:models",
+        "//props/core/db:session",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//psycopg",

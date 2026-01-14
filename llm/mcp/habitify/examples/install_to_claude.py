@@ -11,14 +11,14 @@ import sys
 
 # Add the parent directory to the path so we can import the server
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from habitify_mcp_server.config import get_api_base_url, load_api_key
+from habitify.config import get_api_base_url, load_api_key
 
 # Load API key from environment
 api_key = load_api_key(exit_on_missing=True)
 
 # Prepare the installation command
 # Note: We need to use the module name, not the path
-mcp_module = "habitify_mcp_server.server:create_habitify_mcp_server"
+mcp_module = "habitify.server:create_habitify"
 server_name = "Habitify"
 env_vars = [f"HABITIFY_API_KEY={api_key}"]
 

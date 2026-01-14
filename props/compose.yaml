@@ -43,7 +43,7 @@ services:
       - props_registry_data:/var/lib/registry
     networks:
       - props-internal
-      - default  # For host port publishing (internal network blocks it)
+      - default # For host port publishing (internal network blocks it)
 
   registry-proxy:
     image: props-registry-proxy:latest

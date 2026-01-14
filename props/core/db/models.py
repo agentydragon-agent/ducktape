@@ -11,14 +11,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeVar
+from typing import Annotated, Any, ClassVar, Literal, TypeVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
-
-if TYPE_CHECKING:
-    from props.core.db.examples import Example
-
 from sqlalchemy import (
     CheckConstraint,
     Enum,
@@ -352,16 +348,6 @@ class Snapshot(Base):
     )
     false_positives: Mapped[list[FalsePositive]] = relationship(
         back_populates="snapshot_obj", cascade="all, delete-orphan"
-    )
-    # CRITICAL: order_by ensures deterministic ordering for GEPA checkpoint compatibility
-    # GEPA maps Example → DataId via list position, so examples must load in stable order
-    # NOTE: examples is a VIEW, so we need explicit primaryjoin (no FK constraint exists)
-    examples: Mapped[list[Example]] = relationship(
-        "Example",
-        primaryjoin="Snapshot.slug == foreign(Example.snapshot_slug)",
-        back_populates="snapshot_obj",
-        viewonly=True,  # VIEW is read-only
-        order_by="Example.files_hash",
     )
 
     @classmethod

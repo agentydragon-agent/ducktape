@@ -62,11 +62,4 @@ class WholeSnapshotExample(OpenAIStrictModeBaseModel):
 ExampleSpec = Annotated[WholeSnapshotExample | SingleFileSetExample, Field(discriminator="kind")]
 
 
-def example_abbrev(ex: WholeSnapshotExample | SingleFileSetExample) -> str:
-    """Short abbreviation for display (e.g., 'W' or 'F:abc123')."""
-    if isinstance(ex, WholeSnapshotExample):
-        return "W"
-    return f"F:{ex.files_hash[:6]}"
-
-
-__all__ = ["ExampleKind", "ExampleSpec", "SingleFileSetExample", "WholeSnapshotExample", "example_abbrev"]
+__all__ = ["ExampleKind", "ExampleSpec", "SingleFileSetExample", "WholeSnapshotExample"]

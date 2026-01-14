@@ -25,7 +25,6 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from openai_utils.model_metadata import MODEL_METADATA
-from props.core.agent_pkg_utils import MANIFEST_FILE, validate_packed_agent_pkg
 from props.core.db.models import (
     CriticScopeExpectedToRecall,
     FalsePositive,
@@ -43,7 +42,7 @@ from props.core.db.models import (
 from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
 from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
-from props.core.prop_utils import specimens_definitions_root
+from props.core.runs_context import specimens_definitions_root
 
 from ._yaml import load_yaml_issues
 from .loader import discover_snapshots
@@ -73,169 +72,6 @@ def _add_ranges_to_occurrence(
                         note=line_range.note,
                     )
                 )
-
-
-class DirtyRepoError(Exception):
-    """Raised when repo has uncommitted changes in paths needed for packing."""
-
-
-def read_manifest(definition_dir: Path) -> list[str]:
-    """Parse MANIFEST file from definition directory.
-
-    Returns list of git pathspecs (relative to repo root).
-    Lines starting with # are comments. Empty lines are ignored.
-
-    Raises:
-        FileNotFoundError: If MANIFEST file doesn't exist.
-    """
-    manifest_path = definition_dir / MANIFEST_FILE
-    if not manifest_path.exists():
-        raise FileNotFoundError(f"MANIFEST file required: {manifest_path}")
-
-    pathspecs = []
-    for line in manifest_path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        pathspecs.append(stripped)
-    return pathspecs
-
-
-def check_git_clean(repo: pygit2.Repository, pathspecs: list[str]) -> None:
-    """Check that repo is clean for all pathspecs.
-
-    Raises:
-        DirtyRepoError: If any pathspec has uncommitted changes.
-    """
-    # Get status for all files
-    changed_files = []
-    for path, flags in repo.status().items():
-        if flags == pygit2.GIT_STATUS_CURRENT:
-            continue
-        # Check if path matches any pathspec
-        for pathspec in pathspecs:
-            if path.startswith(pathspec + "/") or path == pathspec:
-                changed_files.append(path)
-                break
-
-    if changed_files:
-        raise DirtyRepoError(
-            "Repository has uncommitted changes in paths needed for packing.\n"
-            "Changed files:\n"
-            + "\n".join(f"  {f}" for f in changed_files[:20])
-            + (f"\n  ... and {len(changed_files) - 20} more" if len(changed_files) > 20 else "")
-            + "\n\nCommit or stash changes, or use --use-staged to sync from staged files."
-        )
-
-
-def _collect_tree_entries(
-    repo: pygit2.Repository, tree: pygit2.Tree, prefix: str, pathspec: str
-) -> list[tuple[str, pygit2.Blob]]:
-    """Recursively collect all blob entries under a tree that match pathspec.
-
-    Returns list of (relative_path, blob) tuples.
-    """
-    entries: list[tuple[str, pygit2.Blob]] = []
-    for entry in tree:
-        name = entry.name
-        if name is None:
-            continue
-        entry_path = f"{prefix}{name}" if prefix else name
-
-        # Check if this entry is under the pathspec
-        if not (
-            entry_path.startswith(pathspec + "/") or entry_path == pathspec or pathspec.startswith(entry_path + "/")
-        ):
-            continue
-
-        obj = repo.get(entry.id)
-        if obj is None:
-            continue
-        if isinstance(obj, pygit2.Tree):
-            entries.extend(_collect_tree_entries(repo, obj, entry_path + "/", pathspec))
-        elif isinstance(obj, pygit2.Blob) and (entry_path.startswith(pathspec + "/") or entry_path == pathspec):
-            entries.append((entry_path, obj))
-
-    return entries
-
-
-def pack_repo_definition(definition_dir: Path, *, use_staged: bool = False) -> bytes:
-    """Pack repo-backed definition using MANIFEST and git archive.
-
-    Creates a tar archive containing:
-    - Definition files (Dockerfile, init, agent.md, etc.) at root
-    - External dependencies at their original paths from repo root
-
-    Args:
-        definition_dir: Path to definition directory (e.g., agent_defs/critic/)
-        use_staged: If True, read from staged files (index) instead of HEAD.
-                    Skips the dirty check. Useful for development.
-
-    Returns:
-        Uncompressed tar archive as bytes.
-
-    Raises:
-        FileNotFoundError: If MANIFEST file doesn't exist.
-        DirtyRepoError: If repo has uncommitted changes in needed paths (unless use_staged).
-    """
-    repo = pygit2.Repository(pygit2.discover_repository(str(definition_dir)))
-    repo_root = Path(repo.workdir)
-    def_relative = str(definition_dir.relative_to(repo_root))
-
-    # Read MANIFEST to get external dependencies
-    pathspecs = read_manifest(definition_dir)
-
-    # Build full list of pathspecs: definition dir + external deps
-    all_pathspecs = [def_relative, *pathspecs]
-
-    if use_staged:
-        # Read from index (staged files)
-        repo.index.read()
-        tree_oid = repo.index.write_tree()
-        tree_obj = repo.get(tree_oid)
-        if not isinstance(tree_obj, pygit2.Tree):
-            raise RuntimeError(f"Index tree is not a Tree: {type(tree_obj)}")
-        tree = tree_obj
-    else:
-        # Check git is clean for all paths
-        check_git_clean(repo, all_pathspecs)
-        # Get HEAD tree
-        head_commit = repo.revparse_single("HEAD")
-        tree = head_commit.peel(pygit2.Tree)
-
-    # Create combined tar archive
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as tar:
-        # Add definition files (flattened to root)
-        # TODO: Consider excluding MANIFEST from the packed tar - it's only needed for
-        # packing, not at runtime. Currently included which may confuse agents.
-        def_prefix = def_relative + "/"
-        for entry_path, blob in _collect_tree_entries(repo, tree, "", def_relative):
-            # Strip definition prefix to flatten
-            if entry_path.startswith(def_prefix):
-                arc_name = entry_path[len(def_prefix) :]
-            else:
-                continue  # Skip the directory itself
-
-            info = tarfile.TarInfo(name=arc_name)
-            info.size = blob.size
-            info.mtime = 0  # Deterministic
-            tar.addfile(info, io.BytesIO(blob.data))
-
-        # Add external dependencies (keep original paths)
-        for pathspec in pathspecs:
-            for entry_path, blob in _collect_tree_entries(repo, tree, "", pathspec):
-                info = tarfile.TarInfo(name=entry_path)
-                info.size = blob.size
-                info.mtime = 0  # Deterministic
-                tar.addfile(info, io.BytesIO(blob.data))
-
-    archive = buffer.getvalue()
-
-    # Validate has required files (DB constraint handles size limit)
-    validate_packed_agent_pkg(archive)
-
-    return archive
 
 
 def get_specimens_base_path() -> Path:

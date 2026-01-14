@@ -23,11 +23,11 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 1. **Start PostgreSQL container**:
 
    ```bash
-   cd adgn
-   devenv up
+   cd props
+   docker compose up -d
    ```
 
-   This starts the PostgreSQL container in the background (managed by devenv).
+   This starts the PostgreSQL container in the background.
 
 2. **Initialize database**:
 
@@ -73,8 +73,8 @@ not by different roles or username patterns.
 ## Running Tests
 
 ```bash
-# Run integration tests (these will drop/recreate tables in test database)
-pytest tests/props/db/test_db_integration.py -v
+# Run database tests via Bazel
+bazel test //props/core/db/...
 ```
 
 **Important**: Tests use fixtures that **only affect eval_results_test**. Production data is never touched.

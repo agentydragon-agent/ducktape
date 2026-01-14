@@ -24,7 +24,7 @@ def critic_variant(name, agent_md):
     # Package props CLI and dependencies
     pkg_tar(
         name = name + "_app_tar",
-        srcs = ["//props/core:props"],
+        srcs = ["//props/core/cli:props"],
         include_runfiles = True,
         package_dir = "/app",
         strip_prefix = ".",

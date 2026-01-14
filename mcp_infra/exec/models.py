@@ -20,7 +20,7 @@ def signal_exit_code(sig: int) -> int:
 
 
 @asynccontextmanager
-async def async_timer() -> AsyncGenerator[Callable[[], int], None]:
+async def async_timer() -> AsyncGenerator[Callable[[], int]]:
     """Async context manager for timing operations.
 
     Usage:

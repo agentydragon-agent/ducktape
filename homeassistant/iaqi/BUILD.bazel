@@ -24,8 +24,7 @@ py_test(
     ],
 )
 
-# Lint with ruff (mypy skipped via mypy.ini - homeassistant 2025.12.4 uses Python 3.13 syntax
-# that requires mypy to run under Python 3.13+, but rules_mypy uses older Python)
+# Lint with ruff; mypy runs via --config=typecheck (uses Python 3.13)
 ruff_test(
     name = "ruff",
     srcs = [":indoor_aqi"],

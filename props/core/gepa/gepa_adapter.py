@@ -38,7 +38,7 @@ import json
 import logging
 import pickle
 import tempfile
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -209,10 +209,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             logger.info(f"GEPA proposal logging enabled: {log_file.absolute()}")
         else:
             # No reflection model - GEPA will use default proposal mechanism
-            # Type annotation for the optional callback
-            self.propose_new_texts: (
-                Callable[[dict[str, str], Mapping[str, Sequence[Mapping[str, Any]]], list[str]], dict[str, str]] | None
-            ) = None
+            self.propose_new_texts = None
 
     def _make_evaluation_result(self, example: Example, critic_run_id: UUID, capture_traces: bool) -> EvaluationResult:
         """Build EvaluationResult by querying recall_by_definition_example view.

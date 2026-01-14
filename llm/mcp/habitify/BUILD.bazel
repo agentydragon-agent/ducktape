@@ -4,9 +4,25 @@ load("//tools/lint:linters.bzl", "ruff_test")
 exports_files(["pyproject.toml"])
 
 py_library(
-    name = "habitify_mcp_server",
-    srcs = glob(["habitify_mcp_server/**/*.py"]),
-    imports = ["."],
+    name = "habitify",
+    srcs = [
+        "__init__.py",
+        "__main__.py",
+        "cli.py",
+        "config.py",
+        "constants.py",
+        "context.py",
+        "habitify_client.py",
+        "server.py",
+        "testing_models.py",
+        "tools.py",
+        "types.py",
+        "utils/__init__.py",
+        "utils/cli_utils.py",
+        "utils/date_utils.py",
+        "utils/habit_resolver.py",
+    ],
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//httpx",
@@ -19,41 +35,79 @@ py_library(
 )
 
 py_binary(
-    name = "habitify",
-    srcs = ["habitify_mcp_server/cli.py"],
-    main = "habitify_mcp_server/cli.py",
-    deps = [":habitify_mcp_server"],
+    name = "habitify_cli",
+    srcs = ["cli.py"],
+    imports = [".."],
+    main = "cli.py",
+    deps = [":habitify"],
 )
 
 py_binary(
     name = "run_server",
     srcs = ["examples/run_server.py"],
+    imports = [".."],
     main = "examples/run_server.py",
-    deps = [":habitify_mcp_server"],
+    deps = [":habitify"],
 )
 
 py_binary(
     name = "test_mcp_dev",
     srcs = ["examples/test_mcp_dev.py"],
+    imports = [".."],
     main = "examples/test_mcp_dev.py",
-    deps = [":habitify_mcp_server"],
+    deps = [":habitify"],
 )
 
 py_test(
-    name = "test_habitify",
-    srcs = glob(["habitify_mcp_server/tests/**/*.py"]),
-    imports = ["."],
-    main = "habitify_mcp_server/tests/conftest.py",
+    name = "test_date_objects",
+    srcs = [
+        "conftest.py",
+        "test_date_objects.py",
+    ],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
     deps = [
-        ":habitify_mcp_server",
+        ":habitify",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_date_response_models",
+    srcs = [
+        "conftest.py",
+        "test_date_response_models.py",
+    ],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
+    deps = [
+        ":habitify",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_habitify_client",
+    srcs = [
+        "conftest.py",
+        "test_habitify_client.py",
+    ],
+    data = glob(["api_reference/*.yaml"]),
+    imports = [".."],
+    deps = [
+        ":habitify",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pyyaml",
     ],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":habitify_mcp_server"],
+    srcs = [":habitify"],
 )

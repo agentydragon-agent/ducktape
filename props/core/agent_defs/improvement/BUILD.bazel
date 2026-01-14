@@ -11,7 +11,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 # Package props CLI and dependencies for runtime
 pkg_tar(
     name = "app_tar",
-    srcs = ["//props/core:props"],
+    srcs = ["//props/core/cli:props"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",

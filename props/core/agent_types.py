@@ -154,16 +154,6 @@ class AgentConfig(BaseModel):
     Combines shared fields (image ref, model, parent) with type-specific config.
     The type_config is stored as JSONB in the database and determines what
     MCP server, handlers, and mounts are used for the agent.
-
-    Usage:
-        config = AgentConfig(
-            image_ref="critic",
-            model="claude-sonnet-4-20250514",
-            parent_agent_run_id=None,
-            type_config=CriticTypeConfig(snapshot_slug="snap-123", scope_hash="abc"),
-        )
-        # Access agent type via property
-        assert config.agent_type == AgentType.CRITIC
     """
 
     image_ref: str = Field(description="Image reference (short name or digest) - resolved to image_digest")

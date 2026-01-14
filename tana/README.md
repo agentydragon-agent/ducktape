@@ -4,22 +4,15 @@ Utilities for transforming Tana JSON exports into Markdown or TanaPaste formats 
 materialising saved searches. The package bundles CLI helpers plus a reusable library of
 parsers/renderers under the `tana.export` namespace.
 
-## Getting Started
+## Development
+
+See the repository root AGENTS.md for the standard Bazel workflow.
 
 ```bash
-cd tana
-direnv allow        # loads devenv, creates a uv-managed venv
-uv sync --extra dev # install runtime + dev dependencies
-
-# Run the main conversion CLI
-uv run tana-export-convert --help
-
-# Execute tests
-uv run pytest
-
-# Linting and type checking
-uv run ruff check .
-uv run mypy
+bazel build //tana/...
+bazel test //tana/...
+bazel build --config=check //tana/...  # lint + typecheck
+bazel run //tana:tana-export-convert -- --help
 ```
 
 Key layout (`tana/`):

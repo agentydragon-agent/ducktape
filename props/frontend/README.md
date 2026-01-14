@@ -5,8 +5,11 @@ SvelteKit-based web interface for viewing Props evaluation results.
 ## Development
 
 ```bash
-# Start all services via devenv (from props/)
-cd props && devenv up
+# Start infrastructure (from props/)
+cd props && docker compose up -d
+
+# Run frontend + backend dev servers with watch
+bazelisk run //props/frontend:dev
 ```
 
 For standalone commands (rarely needed):

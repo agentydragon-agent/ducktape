@@ -7,7 +7,6 @@ catching issues like invalid down_revision references that would cause
 
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 

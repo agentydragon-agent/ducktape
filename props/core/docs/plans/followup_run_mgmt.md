@@ -13,8 +13,8 @@
 
 ### Eval Harness
 
-2. **Implement `_load_samples()` in eval_harness.py**
-   - Current: Returns empty list with TODO comment - no evaluation cases defined
+2. **Implement evaluation samples**
+   - Current: No evaluation cases defined
    - Should: Populate with actual IssueEvalSpec instances from git-tracked spec files
    - Specs/test cases stay in git (not database)
    - Needs:

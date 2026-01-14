@@ -170,7 +170,7 @@ class StepRunner(OpenAIModelProto):
 
 
 # Type for generator that yields responses and receives requests
-MockScriptGen = Generator[ResponsesResult | ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest, None]
+MockScriptGen = Generator[ResponsesResult | ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest]
 
 
 class GeneratorRunner(OpenAIModelProto):
@@ -287,7 +287,7 @@ def tool_roundtrip[T: BaseModel](
 
 
 # Type for play() generator function passed to GeneratorMock.mock() decorator
-PlayGen = Generator[ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest, None]
+PlayGen = Generator[ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest]
 
 
 class GeneratorMock(ItemFactory, OpenAIModelProto):

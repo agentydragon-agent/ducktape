@@ -6,8 +6,8 @@ High-level architecture and shared infrastructure for the props evaluation syste
 
 ```
 props/
-├── .envrc                    # Single devenv entry point (shared by all)
-├── devenv.nix                # Devenv config (env vars, packages)
+├── .envrc                    # Devenv entry point for env vars
+├── devenv.nix                # Devenv config: sets PG* env vars for Docker Compose access
 ├── compose.yaml              # Docker Compose for postgres, registry, proxy
 ├── core/                     # Core Python library (props_core)
 │   ├── pyproject.toml        # Package: props-core
@@ -42,11 +42,15 @@ bazelisk run //props/core/agent_defs/prompt_optimizer:push
 
 ## Development
 
+**Build system:** Bazel (see root AGENTS.md). The devenv.nix only sets environment variables for Docker Compose (PGHOST, PGPORT, etc.) - it does not manage Python packages.
+
 ```bash
 docker compose up -d                       # Start infrastructure
 docker compose down                        # Stop infrastructure
 docker compose logs -f postgres            # View logs
 bazelisk run //props/frontend:dev          # Frontend + backend with watch
+bazelisk test //props/...                  # Run all tests
+bazelisk build --config=check //props/...  # Lint + typecheck
 ```
 
 ### Service URLs
