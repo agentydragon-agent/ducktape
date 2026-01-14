@@ -13,7 +13,7 @@ from props.core.models.examples import WholeSnapshotExample
 from props.testing.fixtures import make_critic_run, make_grader_run
 
 
-def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type: ignore[return]
+def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:
     """Create a test critic run with specified number of input issues.
 
     Args:
