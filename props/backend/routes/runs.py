@@ -27,7 +27,6 @@ from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props.core.db.examples import Example
 from props.core.db.models import AgentRun, AgentRunStatus, Event, FileSetMember, GradingEdge, GradingTarget, Snapshot
 from props.core.db.session import get_session
-from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
@@ -52,7 +51,7 @@ class JobStatus(StrEnum):
 
 class ActiveRunInfo(BaseModel):
     agent_run_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     model: str
     status: AgentRunStatus
     created_at: datetime
@@ -63,7 +62,7 @@ class ActiveRunsResponse(BaseModel):
 
 
 class ValidationRunRequest(BaseModel):
-    definition_id: DefinitionId
+    image_digest: str
     example_kind: ExampleKind
     split: Split = Split.VALID
     n_samples: int = Field(ge=1, le=50, default=5)
@@ -82,7 +81,7 @@ class JobInfo(BaseModel):
     """Information about a validation job."""
 
     job_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     example_kind: ExampleKind
     n_samples: int
     status: JobStatus
@@ -171,7 +170,7 @@ class AgentRunDetail(BaseModel):
 
     # Common fields for all agent types
     agent_run_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     parent_agent_run_id: UUID | None
     model: str
     status: AgentRunStatus
@@ -259,7 +258,7 @@ class RunInfo(BaseModel):
     """Run information for list view."""
 
     agent_run_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     type_config: TypeConfig
     model: str
     status: AgentRunStatus
@@ -320,7 +319,7 @@ class ValidationJob:
     """Tracks a validation batch job."""
 
     job_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     example_kind: ExampleKind
     n_samples: int
     critic_model: str
@@ -427,7 +426,7 @@ def list_active_runs(request: Request) -> ActiveRunsResponse:
     result = [
         ActiveRunInfo(
             agent_run_id=r.agent_run_id,
-            definition_id=r.definition_id,
+            image_digest=r.image_digest,
             model=r.model,
             status=r.status,
             created_at=r.created_at,
@@ -450,7 +449,7 @@ def list_active_runs(request: Request) -> ActiveRunsResponse:
                 result.append(
                     ActiveRunInfo(
                         agent_run_id=db_run.agent_run_id,
-                        definition_id=db_run.agent_definition_id,
+                        image_digest=db_run.image_digest,
                         model=db_run.model,
                         status=db_run.status,
                         created_at=db_run.created_at,
@@ -470,7 +469,7 @@ def list_jobs() -> JobsResponse:
 @router.get("")
 def list_runs(
     status: AgentRunStatus | None = None,
-    definition_id: DefinitionId | None = None,
+    image_digest: str | None = None,
     agent_type: AgentType | None = None,
     split: Split | None = None,
     example_kind: ExampleKind | None = None,
@@ -481,7 +480,7 @@ def list_runs(
 
     Query parameters:
     - status: Filter by run status
-    - definition_id: Filter by definition ID
+    - image_digest: Filter by image digest
     - agent_type: Filter by agent type (critic, grader, etc.)
     - split: Filter by data split (train, valid, test)
     - example_kind: Filter by example kind (whole_snapshot, file_set)
@@ -495,8 +494,8 @@ def list_runs(
 
         if status:
             query = query.filter(AgentRun.status == status)
-        if definition_id:
-            query = query.filter(AgentRun.agent_definition_id == definition_id)
+        if image_digest:
+            query = query.filter(AgentRun.image_digest == image_digest)
         if agent_type:
             # agent_type is stored in JSONB type_config
             query = query.filter(AgentRun.type_config["agent_type"].astext == agent_type)
@@ -521,7 +520,7 @@ def list_runs(
             runs=[
                 RunInfo(
                     agent_run_id=r.agent_run_id,
-                    definition_id=r.agent_definition_id,
+                    image_digest=r.image_digest,
                     type_config=r.type_config,
                     model=r.model,
                     status=r.status,
@@ -569,7 +568,7 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
     job_id = uuid4()
     job = ValidationJob(
         job_id=job_id,
-        definition_id=body.definition_id,
+        image_digest=body.image_digest,
         example_kind=body.example_kind,
         n_samples=n_to_sample,
         critic_model=body.critic_model,
@@ -603,7 +602,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
             try:
                 logger.info(f"[Job {job.job_id}] Running critic on {example.snapshot_slug}")
                 critic_run_id = await registry.run_critic(
-                    definition_id=job.definition_id, example=example, client=critic_client, max_turns=100
+                    image_ref=job.image_digest, example=example, client=critic_client, max_turns=100
                 )
 
                 # Check critic status
@@ -769,7 +768,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
         # Return unified AgentRunDetail with nested type-specific details
         return AgentRunDetail(
             agent_run_id=run.agent_run_id,
-            definition_id=run.agent_definition_id,
+            image_digest=run.image_digest,
             parent_agent_run_id=run.parent_agent_run_id,
             model=run.model,
             status=run.status,
@@ -931,7 +930,7 @@ def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
     """Convert AgentRun ORM to RunInfo."""
     return RunInfo(
         agent_run_id=run.agent_run_id,
-        definition_id=run.agent_definition_id,
+        image_digest=run.image_digest,
         type_config=run.type_config,
         model=run.model,
         status=run.status,

@@ -104,7 +104,8 @@ def get_overview() -> OverviewResponse:
             return dict(result)
 
         rows = [
-            DefinitionRow(image_digest=d.id, created_at=d.created_at, stats=build_stats(d.id)) for d in all_definitions
+            DefinitionRow(image_digest=d.digest, created_at=d.created_at, stats=build_stats(d.digest))
+            for d in all_definitions
         ]
 
         # Convert example_counts to nested dict
@@ -125,7 +126,7 @@ def list_definitions(agent_type: AgentType | None = None) -> DefinitionsResponse
         definitions = query.order_by(AgentDefinition.created_at.desc()).all()
         return DefinitionsResponse(
             definitions=[
-                DefinitionInfo(image_digest=d.id, agent_type=AgentType(d.agent_type), created_at=d.created_at)
+                DefinitionInfo(image_digest=d.digest, agent_type=AgentType(d.agent_type), created_at=d.created_at)
                 for d in definitions
             ]
         )
@@ -203,7 +204,7 @@ def get_definition_detail(image_digest: str) -> DefinitionDetailResponse:
         ]
 
         return DefinitionDetailResponse(
-            image_digest=definition.id,
+            image_digest=definition.digest,
             agent_type=AgentType(definition.agent_type),
             created_at=definition.created_at,
             stats=dict(stats),
