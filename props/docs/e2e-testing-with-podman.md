@@ -14,50 +14,23 @@ This enables testing in gVisor sandboxes (Claude Code web environment) without f
 
 ### Current (Docker with Network Isolation)
 
-```
-┌─────────────────────────────────────────────────────┐
-│  props-internal network                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────┐ │
-│  │  PostgreSQL  │  │  Registry    │  │   Proxy   │ │
-│  │  :5432       │  │  :5000       │  │   :5051   │ │
-│  └──────────────┘  └──────────────┘  └───────────┘ │
-│                                          │          │
-└──────────────────────────────────────────┼──────────┘
-                                           │
-┌──────────────────────────────────────────┼──────────┐
-│  props-agents network                    │          │
-│                     ┌────────────────────┘          │
-│  ┌──────────────┐   │   ┌───────────┐              │
-│  │  PostgreSQL  │───┴───│   Proxy   │              │
-│  │              │       │           │              │
-│  └──────────────┘       └───────────┘              │
-│                                                     │
-│  ┌───────────────────────────────────────────────┐ │
-│  │  Agent Containers                             │ │
-│  │  (cannot reach registry:5000 directly)        │ │
-│  └───────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────┘
-```
+Two isolated Docker networks enforce access boundaries:
+
+- **props-internal network**: PostgreSQL (:5432), Registry (:5000), Proxy (:5051) - infrastructure services
+- **props-agents network**: Agent containers plus proxied access to PostgreSQL and Proxy
+
+Network isolation prevents agents from reaching Registry:5000 directly - they must use Proxy:5051 which enforces ACL based on agent type.
 
 ### Adapted (Podman with Host Networking)
 
-```
-┌───────────────────────────────────────────────────────┐
-│  Host Network (all services on 127.0.0.1)             │
-│                                                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │  PostgreSQL  │  │  Registry    │  │   Proxy     │ │
-│  │  127.0.0.1   │  │  127.0.0.1   │  │  127.0.0.1  │ │
-│  │  :5433       │  │  :5050       │  │  :5051      │ │
-│  └──────────────┘  └──────────────┘  └─────────────┘ │
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐ │
-│  │  Agent Containers (host network)                 │ │
-│  │  - Can reach all services via 127.0.0.1          │ │
-│  │  - Tests verify proxy logic, not enforcement     │ │
-│  └──────────────────────────────────────────────────┘ │
-└───────────────────────────────────────────────────────┘
-```
+All services run on host network (127.0.0.1) with distinct ports:
+
+- PostgreSQL: 127.0.0.1:5433
+- Registry: 127.0.0.1:5050
+- Proxy: 127.0.0.1:5051
+- Agent containers: host network mode, can reach all services via localhost
+
+Network isolation not enforced. Tests verify proxy ACL logic works correctly but don't prevent agents from bypassing the proxy.
 
 ## Implementation Strategy
 

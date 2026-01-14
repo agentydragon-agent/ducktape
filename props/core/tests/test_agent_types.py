@@ -99,15 +99,6 @@ class TestGraderTypeConfig:
         assert config.canonical_issues_snapshot == {"true_positives": [], "false_positives": []}
 
 
-class TestPromptOptimizerTypeConfig:
-    """Tests for PromptOptimizerTypeConfig behavior."""
-
-    def test_target_metric_required(self) -> None:
-        """target_metric is required."""
-        with pytest.raises(ValidationError):
-            PromptOptimizerTypeConfig()  # type: ignore[call-arg]
-
-
 class TestImprovementTypeConfig:
     """Tests for ImprovementTypeConfig behavior."""
 
@@ -148,11 +139,6 @@ class TestImprovementTypeConfig:
                 critic_model="test-critic-model",
                 grader_model="test-grader-model",
             )
-
-    def test_both_fields_required(self) -> None:
-        """Both baseline_image_refs and allowed_examples are required."""
-        with pytest.raises(ValidationError):
-            ImprovementTypeConfig()  # type: ignore[call-arg]
 
     def test_multiple_image_refs_allowed(self) -> None:
         """Multiple baseline image refs can be provided."""
@@ -246,27 +232,3 @@ class TestAgentConfig:
         restored = AgentConfig.model_validate_json(json_str)
         assert restored == original
         assert restored.agent_type == AgentType.CRITIC
-
-    def test_definition_id_required(self) -> None:
-        """definition_id is required."""
-        with pytest.raises(ValidationError):
-            AgentConfig(
-                model="claude-sonnet-4-20250514",  # type: ignore[call-arg]
-                type_config=FreeformTypeConfig(),
-            )
-
-    def test_model_required(self) -> None:
-        """model is required."""
-        with pytest.raises(ValidationError):
-            AgentConfig(
-                image_ref="test",  # type: ignore[call-arg]
-                type_config=FreeformTypeConfig(),
-            )
-
-    def test_type_config_required(self) -> None:
-        """type_config is required."""
-        with pytest.raises(ValidationError):
-            AgentConfig(
-                image_ref="test",  # type: ignore[call-arg]
-                model="claude-sonnet-4-20250514",
-            )

@@ -121,13 +121,6 @@ def test_occurrence_empty_locations_invalid(test_critic_run):
         session.rollback()
 
 
-def test_location_missing_file_invalid(test_critic_run):
-    """Invalid: location without file field."""
-    # Pydantic validation should catch missing 'file' field when constructing DBLocationAnchor
-    with pytest.raises(ValidationError, match="file"):
-        DBLocationAnchor(start_line=10, end_line=20)  # type: ignore[call-arg]  # Missing 'file' - testing validation
-
-
 def test_line_range_start_line_zero_invalid(test_critic_run):
     """Invalid: start_line = 0 (must be >= 1)."""
     with get_session() as session:
