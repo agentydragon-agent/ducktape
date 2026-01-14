@@ -140,20 +140,12 @@ def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthConte
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
-        # Extract agent type from type_config JSONB
-        agent_type_str = agent_run.type_config.get("agent_type")
-        if not agent_type_str:
-            raise HTTPException(status_code=500, detail="Agent run missing agent_type in type_config")
-
-        # Map agent type to caller type
-        try:
-            agent_type = AgentType(agent_type_str)
-        except ValueError:
-            raise HTTPException(status_code=500, detail=f"Unknown agent type: {agent_type_str}")
+        # Extract agent type from type_config (now a Pydantic model)
+        agent_type = agent_run.type_config.agent_type
 
         caller_type_map = {
             AgentType.PROMPT_OPTIMIZER: CallerType.PROMPT_OPTIMIZER,
-            AgentType.PROMPT_IMPROVER: CallerType.PROMPT_IMPROVER,
+            AgentType.IMPROVEMENT: CallerType.PROMPT_IMPROVER,
             AgentType.CRITIC: CallerType.CRITIC,
             AgentType.GRADER: CallerType.GRADER,
         }
@@ -290,7 +282,7 @@ async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | N
                 # Look for base image digest in annotations
                 # Standard OCI annotation: org.opencontainers.image.base.digest
                 config_annotations = config.get("config", {}).get("Labels", {})
-                base_digest = config_annotations.get("org.opencontainers.image.base.digest")
+                base_digest: str | None = config_annotations.get("org.opencontainers.image.base.digest")
 
                 if base_digest:
                     logger.info(f"Extracted base_digest from annotation: {base_digest}")
@@ -406,6 +398,7 @@ async def proxy(request: Request, path: str, auth: Annotated[AuthContext, Depend
         # Record manifest push if successful
         if manifest_push_match and upstream_response.status_code in (200, 201):
             repository = manifest_push_match.group(1)
+            assert manifest_digest is not None  # Set on line 387 when manifest_push_match is truthy
             with get_session() as session:
                 await _record_manifest_push(session, repository, manifest_digest, body, auth)
 
