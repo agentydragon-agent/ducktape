@@ -26,12 +26,7 @@ from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.core.db.models import AgentDefinition
 from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
-from props.core.prompt_optimize.prompt_optimizer import (
-    PromptOptimizerServer,
-    RunCriticInput,
-    RunCriticOutput,
-    run_prompt_optimizer,
-)
+from props.core.prompt_optimize.prompt_optimizer import RunCriticInput, RunCriticOutput, run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
 from props.core.tests.conftest import PropsMock
 
@@ -225,7 +220,7 @@ When reviewing code:
         run_critic_input = RunCriticInput(definition_id=manifest_digest, example=example_spec, max_turns=200)
 
         # Yield the MCP tool call
-        call = m.mcp_tool_call(PromptOptimizerServer.PO_MOUNT_PREFIX, "run_critic", run_critic_input)
+        call = m.mcp_tool_call("prompt_eval", "run_critic", run_critic_input)
         run_critic_output: RunCriticOutput = yield from tool_roundtrip(call, RunCriticOutput)
         critic_run_id = run_critic_output.critic_run_id
 
