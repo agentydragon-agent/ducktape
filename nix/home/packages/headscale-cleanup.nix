@@ -12,7 +12,7 @@
 
   # Fetch wheel directly with fetchurl
   wheelSrc = pkgs.fetchurl {
-    url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-${shortSha}/headscale_cleanup.whl";
+    url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-${shortSha}/headscale_cleanup-0.1.0-py3-none-any.whl";
     # After updating shortSha, set to lib.fakeHash and rebuild to get new hash
     hash = "sha256-Wcz5SA/6yW1RM/uWQwvrk4e39GCVpY0kgusc6mUcuAc=";
   };
