@@ -80,7 +80,7 @@ async def run_critic_cmd(
     else:
         example = WholeSnapshotExample(snapshot_slug=snapshot_slug)
 
-    payload = RunCriticInput(image_ref=image_ref, example=example, max_turns=max_turns)
+    payload = RunCriticInput(definition_id=image_ref, example=example, max_turns=max_turns)
 
     async with mcp_client_from_env() as (client, _init_result):
         result = await client.call_tool("run_critic", payload.model_dump())
