@@ -41,6 +41,10 @@ jobs:
           key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
           restore-keys: bazel-${{ runner.os }}-
 
+      # Pull Docker image needed by agent_server tests (removed by free-disk-space)
+      - name: Pull test Docker image
+        run: docker pull python:3.12-slim
+
       # Lint + typecheck (Python ruff + mypy, JS/TS eslint)
       - name: Lint and typecheck
         run: bazel build --config=check //...
