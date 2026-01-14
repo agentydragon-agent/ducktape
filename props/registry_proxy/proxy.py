@@ -44,6 +44,7 @@ PGDATABASE = os.environ.get("PGDATABASE", "eval_results")
 class CallerType(StrEnum):
     """Type of caller accessing the registry."""
 
+    ANONYMOUS = "anonymous"  # No auth - only /v2/ endpoint allowed
     ADMIN = "admin"  # postgres user - full access
     PROMPT_OPTIMIZER = "prompt-optimizer"  # PO agent - can read/push
     PROMPT_IMPROVER = "prompt-improver"  # PI agent - can read/push
@@ -124,7 +125,12 @@ def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthConte
 
     For agents: verifies agent run exists and determines agent type.
     For admin: validates basic auth credentials.
+    No auth: returns anonymous context (only /v2/ allowed).
     """
+    if authorization is None:
+        # Allow anonymous access - permission check will restrict to /v2/ only
+        return AuthContext(caller_type=CallerType.ANONYMOUS, agent_run_id=None)
+
     auth = _parse_auth_header(authorization)
     if auth is None:
         raise HTTPException(status_code=401, detail="Invalid authorization")

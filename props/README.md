@@ -7,7 +7,8 @@ High-level architecture and shared infrastructure for the props evaluation syste
 ```
 props/
 ├── .envrc                    # Single devenv entry point (shared by all)
-├── devenv.nix                # Manages postgres, registry, proxy processes
+├── devenv.nix                # Devenv config (env vars, packages)
+├── compose.yaml              # Docker Compose for postgres, registry, proxy
 ├── core/                     # Core Python library (props_core)
 │   ├── pyproject.toml        # Package: props-core
 │   ├── src/props_core/       # The Python package
@@ -26,32 +27,26 @@ props/
 ```bash
 cd props
 
-# 1. Start infrastructure (postgres, registry, proxy)
-# Devenv manages PostgreSQL, registry, and proxy via process-compose.
-devenv up
+# 1. Build and load proxy image (first time only)
+bazelisk run //props/registry_proxy:load
 
-# 2. In another terminal, push built-in agent images to registry
+# 2. Start infrastructure
+docker compose up -d
+
+# 3. Push built-in agent images to registry
 bazelisk run //props/core/agent_defs/critic:push
 bazelisk run //props/core/agent_defs/grader:push
 bazelisk run //props/core/agent_defs/improvement:push
 bazelisk run //props/core/agent_defs/prompt_optimizer:push
-bazelisk run //props/registry_proxy:push
 ```
 
 ## Development
 
-Process management:
-
 ```bash
-process-compose process list              # List processes
-process-compose process logs postgres     # View logs
-process-compose process restart registry  # Restart a process
-```
-
-### Frontend + Backend
-
-```bash
-bazelisk run //props/frontend:dev  # Starts both frontend and backend with watch
+docker compose up -d                       # Start infrastructure
+docker compose down                        # Stop infrastructure
+docker compose logs -f postgres            # View logs
+bazelisk run //props/frontend:dev          # Frontend + backend with watch
 ```
 
 ### Service URLs
