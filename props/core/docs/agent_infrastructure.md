@@ -6,18 +6,18 @@ This document covers implementation details for agent infrastructure. For agent-
 
 ```
 props/core/
-├── agent_defs/              # Agent definitions (SSOT for agents)
-│   ├── common/              # Shared docs, helpers, init scripts
+├── agent_defs/              # Agent definitions (OCI images)
 │   ├── critic/              # Critic agent definition
 │   ├── grader/              # Grader agent definition
-│   ├── prompt_optimizer/    # Prompt optimizer definition
 │   ├── improvement/         # Improvement agent definition
-│   └── clustering/          # Clustering agent definition
+│   ├── prompt_optimizer/    # Prompt optimizer definition
+│   ├── init                 # Shared init script for critic variants
+│   ├── critic_init          # Critic-specific init script
+│   └── grader_init          # Grader-specific init script
 ├── critic/                  # Critic runtime (MCP server, persistence)
 ├── grader/                  # Grader runtime
 ├── prompt_optimize/         # Optimizer runtime
 ├── prompt_improve/          # Improvement runtime
-├── clustering/              # Clustering runtime
 ├── db/                      # Database layer (ORM, migrations)
 └── cli/                     # CLI commands
 ```

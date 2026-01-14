@@ -1,6 +1,6 @@
 # Agent Packages as OCI Images
 
-## Status: ~98% Complete - Minor Gaps Only
+## Status: ~99% Complete - Only Base Image Optimization Remaining
 
 ## Problem
 
@@ -343,7 +343,7 @@ Revisit if extraction latency becomes a bottleneck.
 - ✅ `build_images` flag removed from sync commands
 - ✅ `is_digest()` deduplicated (moved to oci_utils)
 
-### Remaining Work (~2%)
+### Remaining Work (~1%)
 
 **Critical for Runtime**
 
@@ -373,7 +373,10 @@ Revisit if extraction latency becomes a bottleneck.
 **Lower Priority**
 
 - ❌ Common base image for Python packages (reduce duplication)
-- ⚠️ Documentation updates (authoring_agents.md.j2 status unknown)
+- ✅ Documentation updates complete:
+  - authoring_agents.md.j2: Updated image list (all 9 images with correct names)
+  - agent_defs/AGENTS.md: Fixed agent list, added verbose_docs, corrected file references
+  - agent_infrastructure.md: Removed clustering references, updated structure
 
 ### E2E Testing Requirements
 

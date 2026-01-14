@@ -39,11 +39,13 @@ The container receives these resources:
 The system provides these built-in images in the registry:
 
 - `critic:latest` — default critic
-- `critic:high-recall` — high recall variant
-- `critic:contract-truthfulness` — contract checker
-- `critic:dead-code` — dead code detector
-- `critic:flag-propagation` — flag propagation analyzer
+- `critic:high_recall` — high recall variant
+- `critic:contract_truthfulness` — contract checker
+- `critic:dead_code` — dead code detector
+- `critic:flag_propagation` — flag propagation analyzer
+- `critic:verbose_docs` — verbose documentation detector
 - `grader:latest` — grader agent
+- `improvement:latest` — improvement agent
 - `prompt-optimizer:latest` — prompt optimizer agent
 
 Agents that author other agents can pull these as starting points, or create entirely custom images from any base (as long as `/init` exists).

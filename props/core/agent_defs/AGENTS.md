@@ -8,14 +8,14 @@ This directory contains agent packages deployed as OCI images to containers.
 
 ## Definition Authoring
 
-@../docs/writing_agent_definitions.md.j2
+@../docs/authoring_agents.md.j2
 
 ## Agent Types
 
-**Primary agents:** `critic/`, `grader/`, `clustering/`, `improvement/`, `prompt_optimizer/`
+**Primary agents:** `critic/`, `grader/`, `improvement/`, `prompt_optimizer/`
 
-**Critic-based detectors:** `dead_code/`, `high_recall_critic/`, `flag_propagation/`,
-`contract_truthfulness/` — share the same `critique init` bootstrap.
+**Critic-based detectors:** `contract_truthfulness/`, `dead_code/`, `flag_propagation/`,
+`high_recall_critic/`, `verbose_docs/` — share the same init bootstrap.
 
 ## OCI Image Packaging
 
@@ -30,12 +30,14 @@ devenv up
 # Build and push agent images
 bazel run //props/core/agent_defs/critic:push
 bazel run //props/core/agent_defs/grader:push
+bazel run //props/core/agent_defs/improvement:push
 bazel run //props/core/agent_defs/prompt_optimizer:push
 bazel run //props/registry_proxy:push
 
 # Or load into local Docker for testing
 bazel run //props/core/agent_defs/critic:load
 bazel run //props/core/agent_defs/grader:load
+bazel run //props/core/agent_defs/improvement:load
 bazel run //props/core/agent_defs/prompt_optimizer:load
 bazel run //props/registry_proxy:load
 ```
