@@ -25,9 +25,10 @@ from pathlib import Path
 # Resolve runfiles paths
 from python.runfiles import runfiles
 
-_RUNFILES = runfiles.Create()
-if _RUNFILES is None:
+_RUNFILES_OPT = runfiles.Create()
+if _RUNFILES_OPT is None:
     raise RuntimeError("Could not create runfiles")
+_RUNFILES: runfiles.Runfiles = _RUNFILES_OPT
 
 # Extension -> formatter mapping
 EXTENSION_MAP: dict[str, str] = {
