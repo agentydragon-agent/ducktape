@@ -30,6 +30,9 @@
 in {
   # Python/uv managed by root devenv.nix - this file only handles props-specific infra
 
+  # bazelisk for building/pushing agent images
+  packages = [pkgs.bazelisk];
+
   # Node.js for frontend development
   languages.javascript = {
     enable = true;
@@ -38,8 +41,7 @@ in {
   };
 
   # PostgreSQL Docker container (managed via processes)
-  # Networks: props-internal, props-agents (created in enterShell)
-  # Container name: props-postgres (accessible from both networks)
+  # Networks: default bridge (host port) + props-internal + props-agents
   # Host access: localhost:5433
   processes.postgres.exec = ''
     # Stop and remove existing container if present
@@ -48,51 +50,54 @@ in {
     # Read password from state file
     PG_PASSWORD=$(cat ${passwordFile})
 
-    # Run PostgreSQL container
+    # Run PostgreSQL container on default bridge (for host port binding)
     # max_connections=200: Support higher parallel GEPA evaluation workloads
-    # Connected to both networks for registry proxy and agent access
-    docker run --rm \
+    # Note: --internal networks block host port publishing, so start on default bridge first
+    docker run -d --rm \
       --name ${pgConfig.containerName} \
-      --network props-internal \
       -p ${pgConfig.port}:${pgConfig.containerPort} \
       -e POSTGRES_USER=${pgConfig.adminUser} \
       -e POSTGRES_PASSWORD="$PG_PASSWORD" \
       -e POSTGRES_DB=${pgConfig.database} \
       -v props_eval_results_data:/var/lib/postgresql/data \
       postgres:16 \
-      -c max_connections=200 &
+      -c max_connections=200
 
-    PG_PID=$!
+    # Connect to internal networks for registry proxy and agent access
+    docker network connect props-internal ${pgConfig.containerName}
+    docker network connect props-agents ${pgConfig.containerName}
 
-    # Wait for container to start, then attach to props-agents network
-    sleep 2
-    docker network connect props-agents ${pgConfig.containerName} 2>/dev/null || true
-
-    # Wait for postgres process
-    wait $PG_PID
+    # Follow logs to keep process-compose happy
+    docker logs -f ${pgConfig.containerName}
   '';
 
   # OCI Registry Docker container (for agent packages as images)
-  # Network: props-internal only (agents cannot access directly)
+  # Networks: default bridge (host port access) + props-internal (proxy access)
   # Container name: props-registry
-  # Host access: localhost:5050 (for Bazel push, debugging)
+  # Host access: localhost:5050 (for Bazel push)
   processes.registry.exec = ''
     # Stop and remove existing container if present
     docker rm -f ${registryConfig.registryContainerName} 2>/dev/null || true
 
-    # Run registry container
-    docker run --rm \
+    # Start registry on default bridge (for host port binding), then connect to internal network
+    # Note: --internal networks block host port publishing, so we start on default bridge first
+    docker run -d --rm \
       --name ${registryConfig.registryContainerName} \
-      --network props-internal \
       -p ${registryConfig.registryPort}:${registryConfig.registryContainerPort} \
       -v props_registry_data:/var/lib/registry \
       registry:2
+
+    # Connect to internal network for proxy communication
+    docker network connect props-internal ${registryConfig.registryContainerName}
+
+    # Follow logs to keep process-compose happy
+    docker logs -f ${registryConfig.registryContainerName}
   '';
 
   # Registry proxy for ACL enforcement and metadata tracking
-  # Networks: props-internal (to reach registry), props-agents (for agent access)
+  # Networks: default bridge (host port) + props-internal (registry/postgres) + props-agents (agents)
+  # Host access: localhost:5051 (for debugging)
   # Agents connect to the proxy, which forwards to registry with ACL checks
-  # Proxy enforces namespace isolation and records image refs in database
   processes.registry_proxy.exec = ''
     echo "Waiting for postgres..."
     until pg_isready -q; do sleep 1; done
@@ -109,28 +114,26 @@ in {
     if ! docker image inspect props-registry-proxy:latest >/dev/null 2>&1; then
       echo "Proxy image not found, building..."
       # devenv runs from props/, go up to repo root for Bazel
-      (cd .. && bazel run //props/registry_proxy:load) || {
+      (cd .. && bazelisk run //props/registry_proxy:load) || {
         echo "ERROR: Failed to build proxy image"
-        echo "  Try manually: bazel run //props/registry_proxy:load"
+        echo "  Try manually: bazelisk run //props/registry_proxy:load"
         exit 1
       }
     fi
 
-    # Run proxy container
-    docker run --rm --name ${registryConfig.proxyContainerName} \
-      --network props-internal \
+    # Run proxy on default bridge (for host port binding), then connect to internal networks
+    # Note: --internal networks block host port publishing
+    docker run -d --rm --name ${registryConfig.proxyContainerName} \
       -p ${registryConfig.proxyPort}:${registryConfig.proxyContainerPort} \
       -e PROPS_REGISTRY_UPSTREAM_URL=http://${registryConfig.registryContainerName}:${registryConfig.registryContainerPort} \
       -e PGHOST=${pgConfig.containerName} -e PGPORT=${pgConfig.containerPort} \
       -e PGUSER=${pgConfig.adminUser} -e PGPASSWORD="$PG_PASSWORD" \
       -e PGDATABASE=${pgConfig.database} \
-      props-registry-proxy:latest &
+      props-registry-proxy:latest
 
-    PROXY_PID=$!
-
-    # Wait for container to start, then attach to props-agents network
-    sleep 2
-    docker network connect props-agents ${registryConfig.proxyContainerName} 2>/dev/null || true
+    # Connect to internal networks for registry/postgres access and agent access
+    docker network connect props-internal ${registryConfig.proxyContainerName}
+    docker network connect props-agents ${registryConfig.proxyContainerName}
 
     # Wait for proxy to be healthy (check /v2/ endpoint)
     echo "Waiting for proxy to be ready..."
@@ -147,8 +150,8 @@ in {
       sleep 1
     done
 
-    # Wait for proxy process
-    wait $PROXY_PID
+    # Follow logs to keep process-compose happy
+    docker logs -f ${registryConfig.proxyContainerName}
   '';
 
   # Periodic database backup (every 6 hours, keeps 7 days)
@@ -242,18 +245,10 @@ in {
     fi
 
     echo ""
-    echo "Props dev environment ready"
-    echo "  devenv up                          → starts postgres, registry, proxy + periodic backup"
-    echo "  bazelisk run //props/frontend:dev  → frontend + backend (from direnv shell)"
-    echo ""
-    echo "Database backup commands:"
-    echo "  bazelisk run //props/core:props -- db backup        → create manual backup"
-    echo "  bazelisk run //props/core:props -- db restore FILE  → restore from backup"
-    echo "  bazelisk run //props/core:props -- db list-backups  → list available backups"
-    echo ""
-    echo "Registry:"
-    echo "  Direct: http://localhost:${registryConfig.registryPort} (for Bazel push)"
-    echo "  Proxy:  http://localhost:${registryConfig.proxyPort} (with ACL, for agents)"
-    echo ""
+    echo "Props dev environment"
+    echo "  devenv up    → postgres, registry, proxy"
+    echo "  bazelisk run //props/frontend:dev  → frontend + backend"
+    echo "  bazelisk run //props/core:props -- --help"
+    echo "  Registry: localhost:${registryConfig.registryPort} (direct), localhost:${registryConfig.proxyPort} (proxy)"
   '';
 }
