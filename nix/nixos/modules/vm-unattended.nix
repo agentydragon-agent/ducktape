@@ -20,7 +20,7 @@
   systemd.services."autovt@tty1".enable = false;
 
   # Disable auto-suspend
-  services.xserver.displayManager.gdm.autoSuspend = false;
+  services.displayManager.gdm.autoSuspend = false;
 
   # Disable screen lock
   programs.dconf.profiles.user.databases = [
