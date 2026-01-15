@@ -650,13 +650,7 @@ async def async_main(argv: list[str] | None = None):
 
     if not args.accept_ai:
         msg = await _run_editor_flow(
-            repo,
-            msg,
-            previous_message,
-            args.user_context,
-            verbose=args.verbose,
-            cached=cached,
-            elapsed_s=elapsed_s,
+            repo, msg, previous_message, args.user_context, verbose=args.verbose, cached=cached, elapsed_s=elapsed_s
         )
     await _execute_git_commit(msg, amend=args.amend, verbose=args.verbose, passthru=passthru)
 
