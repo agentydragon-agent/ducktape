@@ -75,6 +75,7 @@ class Handler:
 | **MCP support** | `rmcp` integration (as of 0.16.0) |
 | **Streaming** | Native streaming support |
 | **Cancellation** | `CancelSignal` for early termination |
+| **Parallel tool calls** | `.with_tool_concurrency(n)` for concurrent execution |
 
 ### Hook System Analysis
 
@@ -209,6 +210,86 @@ let response = agent.prompt("Continue").with_history(&mut chat_history).await?;
 - ✅ Tool results
 - ✅ Reasoning/thinking tokens (with cryptographic signature for Anthropic)
 - ❌ Token usage (separate from Message, not persisted)
+
+### Event Storage Strategy
+
+Our current schema stores events **individually** in an `events` table rather than as a single transcript blob:
+
+```sql
+events:
+  id              SERIAL PRIMARY KEY
+  agent_run_id    UUID REFERENCES agent_runs(agent_run_id)
+  sequence_num    INTEGER NOT NULL
+  event_type      VARCHAR NOT NULL  -- discriminator
+  timestamp       TIMESTAMP NOT NULL
+  payload         JSONB NOT NULL    -- typed EventType
+  UNIQUE(agent_run_id, sequence_num)
+```
+
+Event types: `SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | ApiRequest | Response | ReasoningItem`
+
+**Mismatch with Rig:** Rig uses `Vec<Message>` where one `Message` can contain multiple `AssistantContent` items (e.g., multiple tool calls). Our schema stores each as a separate row.
+
+**Solution: Convert on boundaries** - Keep granular events for audit/persistence, rebuild `Vec<Message>` for rig on resume:
+
+```rust
+/// Rebuild rig Messages from stored events for resume
+fn events_to_messages(events: &[Event]) -> Vec<Message> {
+    let mut messages = vec![];
+    let mut current_assistant_content: Vec<AssistantContent> = vec![];
+
+    for event in events {
+        match &event.payload {
+            EventType::UserText { text } => {
+                flush_assistant(&mut messages, &mut current_assistant_content);
+                messages.push(Message::user(text));
+            }
+            EventType::AssistantText { text } => {
+                current_assistant_content.push(AssistantContent::text(text));
+            }
+            EventType::Reasoning { content, signature } => {
+                current_assistant_content.push(AssistantContent::Reasoning(Reasoning {
+                    reasoning: vec![content.clone()],
+                    signature: signature.clone(),
+                    ..Default::default()
+                }));
+            }
+            EventType::ToolCall { name, call_id, args_json } => {
+                current_assistant_content.push(AssistantContent::ToolCall(ToolCall {
+                    id: call_id.clone(),
+                    function: ToolFunction { name: name.clone(), arguments: args_json.clone() },
+                    ..Default::default()
+                }));
+            }
+            EventType::ToolCallOutput { call_id, result } => {
+                // Tool results are user messages in rig's model
+                flush_assistant(&mut messages, &mut current_assistant_content);
+                messages.push(Message::tool_result(call_id, result));
+            }
+            EventType::ApiRequest { .. } | EventType::Response { .. } => {
+                // Metadata events - don't include in transcript for resume
+            }
+        }
+    }
+    flush_assistant(&mut messages, &mut current_assistant_content);
+    messages
+}
+
+fn flush_assistant(messages: &mut Vec<Message>, content: &mut Vec<AssistantContent>) {
+    if !content.is_empty() {
+        messages.push(Message::Assistant {
+            id: None,
+            content: OneOrMany::Many(std::mem::take(content)),
+        });
+    }
+}
+```
+
+**Benefits of this approach:**
+- ✅ Keep granular event storage for audit trail, metrics, debugging
+- ✅ Use rig's `Message` types for provider communication and resume
+- ✅ Parallel tool calls naturally grouped when converting back
+- ✅ Can store additional metadata (ApiRequest, Response) that rig doesn't need
 
 ### Verdict on Rig
 
@@ -550,7 +631,8 @@ pub trait Handler: Send + Sync {
 |------|----------|-----------|
 | 2026-01-15 | Use SQLx over SeaORM | Better raw SQL support, compile-time checks |
 | 2026-01-15 | Use Rig + custom loop (Option B) | Rig's loop is opt-in; Message types have full serde; transcript resume works |
-| 2026-01-15 | Use Rig's Message types for DB | Full serde support, reasoning signatures preserved, easy JSONB storage |
+| 2026-01-15 | Use Rig's Message types for API | Full serde support, reasoning signatures preserved |
+| 2026-01-15 | Keep granular events table | Audit trail, metrics; convert to/from rig Messages on boundaries |
 | | | |
 
 ---
