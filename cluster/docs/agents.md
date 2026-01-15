@@ -20,16 +20,16 @@ environments) where agents can execute arbitrary long-running tasks with full co
 └────────────────────┬────────────────────────────────────┘
                      │ HTTP calls to MCP server
                      ▼
-┌─────────────────────────────────────────────────────────┐
-│ Per-Agent Pod: devbot-desktop                           │
-│                                                         │
+┌────────────────────────────────────────────────────────┐
+│ Per-Agent Pod: devbot-desktop                          │
+│                                                        │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ MCP Server (Sidecar Container)                   │  │
 │  │  - Port 8080                                     │  │
 │  │  - DISPLAY=localhost:0                           │  │
 │  └────────────┬─────────────────────────────────────┘  │
 │               │ X11 (localhost)                        │
-│               ▼                                         │
+│               ▼                                        │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ Desktop Container                                │  │
 │  │  - Ubuntu + Xfce                                 │  │
@@ -37,7 +37,7 @@ environments) where agents can execute arbitrary long-running tasks with full co
 │  │  - VNC :5900                                     │  │
 │  │  - Workspace PVC                                 │  │
 │  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────┘
 
 Resources created per agent:
 1. Agent CRD (defines agent behavior)
@@ -276,9 +276,9 @@ The MCP server runs as a sidecar in the desktop pod (see section 4 below).
 **Architecture:** Both containers in same pod sharing localhost network
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│ Pod: devbot-desktop                                      │
-│                                                          │
+┌────────────────────────────────────────────────────────┐
+│ Pod: devbot-desktop                                    │
+│                                                        │
 │  ┌────────────────────┐  ┌──────────────────────────┐  │
 │  │ MCP Server         │  │ Desktop                  │  │
 │  │                    │  │                          │  │
@@ -286,7 +286,7 @@ The MCP server runs as a sidecar in the desktop pod (see section 4 below).
 │  │ DISPLAY=localhost:0│←→│ VNC Server 5900          │  │
 │  └────────────────────┘  │ /workspace → PVC         │  │
 │                          └──────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────┘
 ```
 
 **Deployment:**

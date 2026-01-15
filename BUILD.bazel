@@ -39,6 +39,19 @@ js_library(
     ],
 )
 
+# Prettier configuration as js_library
+# This makes the config and prettier-plugin-svelte available in runfiles.
+# Without this, prettier finds config in source tree but can't resolve plugins
+# because node_modules doesn't exist in CI. See aspect-build/rules_lint#176.
+js_library(
+    name = "prettierrc",
+    srcs = [".prettierrc.cjs"],
+    deps = [
+        ":node_modules/prettier-plugin-svelte",
+        ":node_modules/svelte",
+    ],
+)
+
 # Single consolidated pyproject.toml for all Python dependencies
 # Per-package pyproject.toml files are no longer used - all deps are in root pyproject.toml
 _PYPROJECT_SRCS = [

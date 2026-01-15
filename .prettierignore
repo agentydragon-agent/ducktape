@@ -23,17 +23,11 @@ tana/testdata/**/*.md
 tana/testdata/**/*.tanapaste
 tana/testdata/**/*.txt
 
-# SvelteKit generated files
-**/.svelte-kit/**
-
 # Logseq export - generated content
 llm/instruct-logseq/**
 
 # Old k8s configs - archived, contains Helm templates that aren't valid YAML
 k8s-old/**
-
-# UV Python installations
-.uv-python/**
 
 # Flux-generated GitOps manifests
 cluster/flux-system/**
@@ -57,19 +51,11 @@ claude-commands-old/ccr-code-work.md
 claude-commands-old/commit.md
 claude-commands-old/rulelint.md
 claude-commands/TODO.md
-claude/claude_optimizer/README.md
-cluster/docs/agents.md
-cluster/docs/operations.md
-cluster/docs/plan.md
-cluster/docs/secrets.md
-cluster/docs/troubleshooting.md
 finance/reconcile/README.md
 llm/claude-instructions/CLAUDE-2025-07-12.md
 llm/claude-instructions/history.md
 mcp_infra/docs/eliminating-class-constants-analysis.md
-nix/home/claude-code/commands/analyze-permissions.md
 nix/home/claude-code/commands/dump.md
-nix/home/claude-code/commands/followups.md
 prompts/scans/useless-comments-and-docs.md
 props/standards/self-describing-names.md
 sandboxed_jupyter/docs/TODO-SANDBOX.md

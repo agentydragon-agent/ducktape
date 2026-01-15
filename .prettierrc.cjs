@@ -1,8 +1,10 @@
 // Prettier configuration
 // https://prettier.io/docs/en/options.html
 //
-// Svelte plugin: Always enabled. Bazel provides the plugin via runfiles (see
-// tools/lint/BUILD.bazel prettier_binary data deps). Local dev uses node_modules.
+// Svelte plugin: Loaded via require() so Bazel can resolve it from runfiles.
+// String-based plugin names fail in CI because prettier finds this config in
+// the source tree but can't resolve plugins without node_modules.
+// See aspect-build/rules_lint#176 and PR #417.
 
 const config = {
   printWidth: 120,
@@ -12,7 +14,7 @@ const config = {
   singleQuote: false,
   trailingComma: "es5",
   bracketSpacing: true,
-  plugins: ["prettier-plugin-svelte"],
+  plugins: [require("prettier-plugin-svelte")],
   overrides: [
     {
       files: "*.svelte",

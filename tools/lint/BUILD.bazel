@@ -65,15 +65,17 @@ eslint_bin.eslint_binary(
 # Set BAZEL_BINDIR to allow running outside Bazel build actions
 # See: https://github.com/aspect-build/rules_js#running-nodejs-programs
 #
-# data: Includes svelte plugin and its peer deps so prettier can find them
-# at runtime in the Bazel runfiles tree.
+# The --config flag points prettier at the config in runfiles rather than the
+# source tree. This ensures plugin resolution works in CI where node_modules
+# doesn't exist. See aspect-build/rules_lint#176 and PR #417.
 prettier_bin.prettier_binary(
     name = "prettier",
-    data = [
-        "//:node_modules/prettier-plugin-svelte",
-        "//:node_modules/svelte",
-    ],
+    data = ["//:prettierrc"],
     env = {"BAZEL_BINDIR": "."},
+    fixed_args = [
+        "--config",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
+    ],
 )
 
 # Buildifier targets for BUILD/Starlark linting
