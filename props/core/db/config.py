@@ -8,10 +8,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from props.core.db.temp_user_manager import TempUserCredentials
 
 
 @dataclass(frozen=True)
@@ -48,17 +44,17 @@ class DbConnectionConfig:
             host=self.host, port=self.port, user=self.user, password=self.password, database=database
         )
 
-    def with_user(self, creds: TempUserCredentials) -> DbConnectionConfig:
+    def with_user(self, username: str, password: str) -> DbConnectionConfig:
         """Return a copy with different user credentials.
 
         For host-side access with temporary credentials:
             async with TempUserManager(config.admin, run_id) as creds:
-                user_config = config.admin.with_user(creds)
+                user_config = config.admin.with_user(creds.username, creds.password)
 
         For container access, use DatabaseConfig.for_container_user() instead.
         """
         return DbConnectionConfig(
-            host=self.host, port=self.port, user=creds.username, password=creds.password, database=self.database
+            host=self.host, port=self.port, user=username, password=password, database=self.database
         )
 
 
@@ -98,7 +94,7 @@ class DatabaseConfig:
         """Construct connection URL (host-side access)."""
         return self.admin.url()
 
-    def for_container_user(self, creds: TempUserCredentials) -> DbConnectionConfig:
+    def for_container_user(self, username: str, password: str) -> DbConnectionConfig:
         """Create container-accessible config with temporary user credentials.
 
         Combines container_name and container_port (for Docker network) with temporary user credentials.
@@ -106,7 +102,7 @@ class DatabaseConfig:
 
         Example:
             async with TempUserManager(config.admin, run_id) as creds:
-                container_config = config.for_container_user(creds)
+                container_config = config.for_container_user(creds.username, creds.password)
                 env.update(container_config.to_env_dict())
 
         Raises:
@@ -118,11 +114,7 @@ class DatabaseConfig:
                 "This config is for agent contexts (already in container)."
             )
         return DbConnectionConfig(
-            host=self.container_name,
-            port=self.container_port,
-            user=creds.username,
-            password=creds.password,
-            database=self.database,
+            host=self.container_name, port=self.container_port, user=username, password=password, database=self.database
         )
 
     def with_database(self, database: str) -> DatabaseConfig:

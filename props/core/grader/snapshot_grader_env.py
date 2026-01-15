@@ -14,7 +14,6 @@ from fastmcp.server.auth import AuthProvider
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from props.core.agent_setup import AgentEnvironment
 from props.core.agent_workspace import WorkspaceManager
-from props.core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from props.core.db.config import DatabaseConfig
 from props.core.display import short_uuid
 from props.core.grader.submit_server import GraderSubmitServer
@@ -49,16 +48,18 @@ class SnapshotGraderAgentEnvironment(AgentEnvironment):
         grader_run_id: UUID,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
+        *,
+        image: str,
     ):
         self._snapshot_slug = snapshot_slug
         self._grader_run_id = grader_run_id
 
         super().__init__(
-            definition_id=GRADER_AGENT_DEFINITION_ID,
             agent_run_id=grader_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image=image,
             container_name=f"snapshot-grader-{short_uuid(grader_run_id)}",
             labels={
                 "adgn.project": "props",

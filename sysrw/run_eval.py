@@ -172,7 +172,7 @@ SAMPLER_MODEL = "gpt-5"
 GRADER_MODEL = "gpt-5"
 
 # Paths
-REWRITE_APPLY = resources.files("adgn.sysrw").joinpath("js/system_rewrite_apply.js")
+REWRITE_APPLY = resources.files("sysrw").joinpath("js/system_rewrite_apply.js")
 
 
 def parse_args():

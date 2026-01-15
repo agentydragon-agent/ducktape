@@ -3,17 +3,34 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "tana",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = ["tests/**"],
-    ),
-    data = glob([
-        "export/references/**/*",
-        "export/headless_autoexport/**/*",
-        "export/assets/**/*",
-        "export/*.md",
-        "export/*.txt",
-    ]),
+    srcs = [
+        "__init__.py",
+        "domain/constants.py",
+        "domain/nodes.py",
+        "domain/search.py",
+        "domain/types.py",
+        "export/__init__.py",
+        "export/cli.py",
+        "export/convert.py",
+        "export/export_node_subset.py",
+        "export/headless_autoexport/record_from_profile.py",
+        "export/materialize_searches.py",
+        "export/sample.py",
+        "export/tana_issues_to_tanapaste.py",
+        "graph/workspace.py",
+        "graph/wrappers.py",
+        "io/json.py",
+        "query/core.py",
+        "query/filters.py",
+        "query/nodes.py",
+        "query/search/evaluator.py",
+        "query/search/materializer.py",
+        "query/search/parser.py",
+        "render/html.py",
+        "render/inline_refs.py",
+        "services/__init__.py",
+        "workspace.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -56,9 +73,10 @@ py_binary(
 
 py_test(
     name = "test_tana",
-    srcs = glob(["tests/**/*.py"]),
+    srcs = ["test_convert.py"],
+    data = glob(["testdata/**/*"]),
     imports = [".."],
-    main = "tests/test_convert.py",
+    main = "test_convert.py",
     deps = [
         ":tana",
         "@pypi//pytest",

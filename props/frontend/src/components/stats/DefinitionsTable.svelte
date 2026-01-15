@@ -40,7 +40,7 @@
     new DataTable({
       data: definitions,
       columns: [
-        { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
+        { id: 'image_digest', key: 'image_digest', name: 'Definition', sortable: true },
         { id: 'created_at', key: 'created_at', name: 'Age', sortable: true },
         // Generate columns for each split/kind combo
         ...splits.flatMap((split) =>
@@ -74,9 +74,9 @@
         <th
           rowspan="3"
           class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 align-bottom"
-          onclick={() => table.toggleSort('definition_id')}
+          onclick={() => table.toggleSort('image_digest')}
         >
-          Definition{getSortIndicator('definition_id')}
+          Definition{getSortIndicator('image_digest')}
         </th>
         <th
           rowspan="3"
@@ -124,10 +124,10 @@
       </tr>
     </thead>
     <tbody>
-      {#each table.rows as def (def.definition_id)}
+      {#each table.rows as def (def.image_digest)}
         <tr class="border-b border-gray-100 hover:bg-gray-50">
           <td class="px-3 py-2 font-mono text-xs">
-            <DefinitionIdLink id={def.definition_id} />
+            <DefinitionIdLink id={def.image_digest} />
           </td>
           <td class="px-3 py-2 text-right text-gray-600">
             {formatTableAge(def.created_at)}
@@ -137,7 +137,7 @@
               {@const stats = getStats(def, split, kind)}
               {@const clickable = onCellClick != null}
               {@const cellClick = clickable
-                ? () => onCellClick({ definitionId: def.definition_id, split, kind })
+                ? () => onCellClick({ definitionId: def.image_digest, split, kind })
                 : undefined}
               {@const clickClass = clickable ? 'cursor-pointer hover:bg-blue-100' : ''}
               {@const clickTitle = clickable ? `View ${split} ${kind} runs` : undefined}

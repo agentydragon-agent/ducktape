@@ -28,7 +28,7 @@ from agent_core.handler import AbortTurnDecision, ContinueDecision
 from agent_server.agent_types import AgentID
 from agent_server.approvals import ApprovalRequest, ApprovalToolCall
 from agent_server.models.proposal_status import ProposalStatus
-from agent_server.persist import ApprovalOutcome, Persistence
+from agent_server.persist.types import ApprovalOutcome, Persistence
 from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from agent_server.policy_eval.container import ContainerPolicyEvaluator
 from agent_server.policy_eval.runner import run_policy_source

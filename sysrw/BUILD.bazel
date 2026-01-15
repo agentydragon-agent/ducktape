@@ -5,14 +5,33 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "sysrw",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-        ],
-    ),
-    data = glob(["**/*.j2"]),
+    srcs = [
+        "__init__.py",
+        "anthropic/__init__.py",
+        "anthropic/text_extraction.py",
+        "anthropic/types.py",
+        "cli.py",
+        "compare_eval_vs_ccr.py",
+        "constants.py",
+        "extract_common.py",
+        "extract_dataset.py",
+        "extract_dataset_ccr.py",
+        "extract_dataset_crush.py",
+        "leaderboard.py",
+        "openai_typing.py",
+        "prompts.py",
+        "run_eval.py",
+        "schemas.py",
+        "templates/__init__.py",
+        "tools/__init__.py",
+        "tools/show_rewritten_crush.py",
+        "translation.py",
+        "validation.py",
+    ],
+    data = glob([
+        "**/*.j2",
+        "js/*.js",
+    ]),
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -28,10 +47,26 @@ py_library(
 )
 
 py_test(
-    name = "test_sysrw",
-    srcs = glob(["tests/**/*.py"]),
-    data = glob(["tests/testdata/*.jsonl"]),
-    main = "tests/test_templates_conformance.py",
+    name = "test_templates_conformance",
+    srcs = [
+        "conftest.py",
+        "test_templates_conformance.py",
+    ],
+    imports = [".."],
+    deps = [
+        ":sysrw",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_loader_min",
+    srcs = [
+        "conftest.py",
+        "test_loader_min.py",
+    ],
+    data = glob(["testdata/*.jsonl"]),
+    imports = [".."],
     deps = [
         ":sysrw",
         "@pypi//pyhamcrest",
@@ -40,9 +75,21 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_check_crush_dataset",
+    srcs = [
+        "conftest.py",
+        "test_check_crush_dataset.py",
+    ],
+    data = glob(["testdata/*.jsonl"]),
+    imports = [".."],
+    deps = [
+        ":sysrw",
+        "@pypi//pytest",
+    ],
+)
+
 ruff_test(
     name = "ruff",
     srcs = [":sysrw"],
 )
-
-# TODO: Consider extracting anthropic submodule to separate Bazel target if reused elsewhere

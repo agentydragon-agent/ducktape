@@ -48,7 +48,7 @@ impl Converter for CurrencyLayerConverter {
                     currency: exchange_rate.to.iso_alpha_code.to_string(),
                 },
                 rate: *exchange_rate
-                    .convert(Money::from_major(1, exchange_rate.from))
+                    .convert(&Money::from_major(1, exchange_rate.from))
                     .unwrap()
                     .amount(),
             })

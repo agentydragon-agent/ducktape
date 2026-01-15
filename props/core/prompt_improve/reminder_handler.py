@@ -48,7 +48,7 @@ TerminationResult = Annotated[TerminationSuccess | BlockingStatus, Field(discrim
 def check_termination_condition(
     session: Session, improvement_run_id: UUID, type_config: ImprovementTypeConfig
 ) -> TerminationResult:
-    baseline_ids = type_config.baseline_definition_ids
+    baseline_ids = type_config.baseline_image_refs
     allowed_examples = type_config.allowed_examples
     n_examples = len(allowed_examples)
 
@@ -61,7 +61,7 @@ def check_termination_condition(
         ),
         baseline_issues AS (
             SELECT
-                oc.critic_definition_id AS agent_definition_id,
+                oc.critic_image_digest AS agent_definition_id,
                 SUM(oc.found_credit) as total_issues
             FROM occurrence_credits oc
             JOIN allowed_examples ae ON (
@@ -69,8 +69,8 @@ def check_termination_condition(
                 AND oc.example_kind::text = ae.example_kind
                 AND COALESCE(oc.files_hash, '') = COALESCE(ae.files_hash, '')
             )
-            WHERE oc.critic_definition_id = ANY(:baseline_ids)
-            GROUP BY oc.critic_definition_id
+            WHERE oc.critic_image_digest = ANY(:baseline_ids)
+            GROUP BY oc.critic_image_digest
         )
         SELECT AVG(total_issues) as avg_issues
         FROM baseline_issues
@@ -105,7 +105,7 @@ def check_termination_condition(
                 unnest(:files_hashes) AS files_hash
         ),
         candidate_defs AS (
-            SELECT id as agent_definition_id
+            SELECT digest as agent_definition_id
             FROM agent_definitions
             WHERE created_by_agent_run_id = :improvement_run_id
         ),
@@ -115,7 +115,7 @@ def check_termination_condition(
                 COUNT(DISTINCT (oc.snapshot_slug, oc.example_kind, COALESCE(oc.files_hash, ''))) as covered_examples,
                 SUM(oc.found_credit) as total_issues
             FROM candidate_defs cd
-            LEFT JOIN occurrence_credits oc ON oc.critic_definition_id = cd.agent_definition_id
+            LEFT JOIN occurrence_credits oc ON oc.critic_image_digest = cd.agent_definition_id
             LEFT JOIN allowed_examples ae ON (
                 oc.snapshot_slug = ae.snapshot_slug
                 AND oc.example_kind::text = ae.example_kind
@@ -181,7 +181,7 @@ def check_termination_condition(
                 example_kind,
                 files_hash
             FROM occurrence_credits
-            WHERE critic_definition_id = ANY(:baseline_ids)
+            WHERE critic_image_digest = ANY(:baseline_ids)
             GROUP BY critic_definition_id, snapshot_slug, example_kind, files_hash
         )
         SELECT COUNT(*) as missing_count
@@ -277,8 +277,8 @@ def check_termination_condition(
 
 class ImprovementReminderHandler(BaseHandler):
     def __init__(self, improvement_run_id: UUID, type_config: ImprovementTypeConfig, db_config: DatabaseConfig):
-        if not type_config.baseline_definition_ids:
-            raise ValueError("baseline_definition_ids must not be empty")
+        if not type_config.baseline_image_refs:
+            raise ValueError("baseline_image_refs must not be empty")
         if not type_config.allowed_examples:
             raise ValueError("allowed_examples must not be empty")
 

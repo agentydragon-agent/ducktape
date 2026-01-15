@@ -12,39 +12,17 @@ A comprehensive shared Python package providing utilities and linters for LLM de
 
 ## Installation
 
-### For Users
+See the repository root AGENTS.md for the standard Bazel workflow.
 
 ```bash
-# Install from source (non-editable)
-pip install /path/to/ducktape_llm_common
+bazel build //llm/ducktape_llm_common/...
+bazel test //llm/ducktape_llm_common/...
+bazel build --config=check //llm/ducktape_llm_common/...  # lint + typecheck
 ```
-
-### For Development
-
-**IMPORTANT**: Install non-editably in your global Python to prevent self-locking issues when claude-linter modifies its own code. Use a virtual environment for editable development.
-
-```bash
-# First, install non-editably in global Python (for stable claude-linter usage)
-pip install /path/to/ducktape_llm_common
-
-# Then create a virtual environment for development
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install editably in venv for development
-pip install -e ".[dev]"
-```
-
-This setup ensures:
-
-- Your global `cl2`/`claude-linter-v2` commands remain stable
-- Development changes only affect the venv
-- You can't accidentally lock yourself out by modifying hook code
 
 ### Requirements
 
 - Python 3.13+
-- See `requirements.txt` for dependencies
 
 ## Quick Start
 
@@ -107,41 +85,13 @@ create_task_graph_template(".")
 ### Running Tests
 
 ```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=ducktape_llm_common
-
-# Run specific test module
-pytest tests/linters/
-pytest tests/utils/
+bazel test //llm/ducktape_llm_common/...
 ```
 
 ### Code Quality
 
 ```bash
-# Format code
-black ducktape_llm_common tests
-
-# Lint code
-ruff check ducktape_llm_common tests
-
-# Type checking
-mypy ducktape_llm_common
-```
-
-### Building and Publishing
-
-```bash
-# Build package
-python -m build
-
-# Install locally for testing
-pip install -e .
-
-# Upload to PyPI (when ready)
-python -m twine upload dist/*
+bazel build --config=check //llm/ducktape_llm_common/...
 ```
 
 ## Contributing

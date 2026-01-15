@@ -89,6 +89,7 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
 
     The wrapper is in ~/.cache/bazel-proxy/bin/bazel and calls the real
     bazelisk at ~/.cache/bazel-proxy/bazelisk.
+    Also creates a bazelisk symlink for pre-commit hooks.
     """
     _ = repo_root  # No longer used - proxy config is handled by module extension
     WRAPPER_DIR.mkdir(parents=True, exist_ok=True)
@@ -109,6 +110,14 @@ exec "{BAZELISK_PATH}" "$@"
     WRAPPER_PATH.write_text(wrapper_content)
     WRAPPER_PATH.chmod(0o755)
     log.info("Installed bazel wrapper at %s", WRAPPER_PATH)
+
+    # Create bazelisk symlink for pre-commit hooks
+    bazelisk_symlink = WRAPPER_DIR / "bazelisk"
+    if bazelisk_symlink.exists() or bazelisk_symlink.is_symlink():
+        bazelisk_symlink.unlink()
+    bazelisk_symlink.symlink_to(WRAPPER_PATH)
+    log.info("Created bazelisk symlink at %s", bazelisk_symlink)
+
     return WRAPPER_PATH
 
 

@@ -18,7 +18,7 @@ from props.core.agent_types import AgentType, CriticTypeConfig
 from props.core.db.models import AgentRun, AgentRunStatus, Event, GradingEdge
 from props.core.db.session import get_session
 from props.core.display import ColumnDef, build_table_from_schema, ellipticize, print_table_with_footer, short_sha
-from props.core.ids import DefinitionId, SnapshotSlug
+from props.core.ids import SnapshotSlug
 
 
 @dataclass
@@ -27,7 +27,7 @@ class CriticRunSummary:
 
     run_id: UUID
     snapshot_slug: SnapshotSlug
-    definition_id: DefinitionId
+    image_digest: str
     status: str
     tool_count: int
 
@@ -103,13 +103,13 @@ def show_run_status(parent_agent_run_id: UUID | None = None) -> None:
         console.print("\n[bold]Definitions with most max_turns_exceeded (top 5):[/bold]")
         mt = func.count().filter(AgentRun.status == AgentRunStatus.MAX_TURNS_EXCEEDED)
         pq = session.query(
-            AgentRun.agent_definition_id.label("definition_id"), mt.label("mt"), func.count().label("total")
+            AgentRun.image_digest.label("image_digest"), mt.label("mt"), func.count().label("total")
         ).filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC)
         if descendant_ids is not None:
             pq = pq.filter(AgentRun.agent_run_id.in_(descendant_ids))
-        pq = pq.group_by(AgentRun.agent_definition_id).order_by(mt.desc()).limit(5)
+        pq = pq.group_by(AgentRun.image_digest).order_by(mt.desc()).limit(5)
         pcols: list[ColumnDef[Any, Any]] = [
-            ColumnDef("Definition", lambda r: r.definition_id, width=20),
+            ColumnDef("Definition", lambda r: r.image_digest, width=20),
             ColumnDef("MaxTurns", lambda r: r.mt, str, justify="right"),
             ColumnDef("Total", lambda r: r.total, str, justify="right"),
             ColumnDef(
@@ -142,21 +142,20 @@ def show_execution_traces(limit: int = 5, parent_agent_run_id: UUID | None = Non
                 snapshot_slug = cr.type_config.example.snapshot_slug
             else:
                 raise ValueError(f"Expected CriticTypeConfig, got {type(cr.type_config)}")
-            definition_id = cr.agent_definition_id
             tool_count = (
                 session.query(Event)
                 .filter(Event.agent_run_id == cr.agent_run_id, Event.event_type == "tool_call")
                 .count()
             )
             summaries.append(
-                CriticRunSummary(cr.agent_run_id, snapshot_slug, definition_id, str(cr.status.value), tool_count)
+                CriticRunSummary(cr.agent_run_id, snapshot_slug, cr.image_digest, str(cr.status.value), tool_count)
             )
 
         console.print(f"\n[bold]Recent critic runs (last {limit}):[/bold]")
         cols: list[ColumnDef[Any, Any]] = [
             ColumnDef("Run", lambda r: str(r.run_id), short_sha, width=8),
             ColumnDef("Snapshot", lambda r: r.snapshot_slug, width=25),
-            ColumnDef("Definition", lambda r: r.definition_id, width=20),
+            ColumnDef("Definition", lambda r: r.image_digest, width=20),
             ColumnDef("Status", lambda r: r.status, width=15),
             ColumnDef("Tools", lambda r: r.tool_count, str, justify="right", width=6),
         ]
@@ -175,7 +174,7 @@ def show_execution_traces(limit: int = 5, parent_agent_run_id: UUID | None = Non
                     .all()
                 )
                 console.print(
-                    f"Snapshot: {s.snapshot_slug} | Definition: {s.definition_id} | Status: {s.status} | Tools: {s.tool_count}\n"
+                    f"Snapshot: {s.snapshot_slug} | Definition: {s.image_digest} | Status: {s.status} | Tools: {s.tool_count}\n"
                 )
                 rows = [(i, t, c) for i, (t, c) in enumerate(filter(None, (_fmt_event(e) for e in events)), 1)]
                 ecols: list[ColumnDef[Any, Any]] = [
@@ -201,9 +200,7 @@ def show_grading_summary(agent_run_id: UUID) -> None:
 
         if agent_type == AgentType.CRITIC:
             cr = run
-            print(
-                f"Critic: {short_sha(str(cr.agent_run_id))} | Definition: {cr.agent_definition_id} | Model: {cr.model}"
-            )
+            print(f"Critic: {short_sha(str(cr.agent_run_id))} | Definition: {cr.image_digest} | Model: {cr.model}")
             if cr.status != AgentRunStatus.COMPLETED:
                 print(f"Status: {cr.status.value.upper()} (did not complete)")
                 return

@@ -23,7 +23,6 @@ from props.core.cli.cmd_critic_dev_helpers import show_execution_traces, show_gr
 from props.core.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.core.db.session import get_session
 from props.core.display import ColumnDef, build_table_from_schema
-from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput, RunGraderInput
 from props.core.splits import Split
@@ -56,16 +55,14 @@ app = typer.Typer(name="critic-dev", help=HELP_TEXT, add_completion=False)
 @app.command("run-critic")
 @async_run
 async def run_critic_cmd(
-    definition_id: Annotated[
-        str, typer.Argument(help="Agent package ID (from 'props agent-pkg create', or 'critic' for baseline)")
-    ],
+    image_ref: Annotated[str, typer.Argument(help="Agent image reference (tag or digest, or 'critic' for baseline)")],
     snapshot_slug: Annotated[str, typer.Argument(help="Snapshot identifier (e.g., 'test-fixtures/train1')")],
     files_hash: Annotated[
         str | None, typer.Argument(help="Files hash for file_set example, or omit/empty for whole_snapshot")
     ] = None,
     max_turns: Annotated[int, typer.Option("--max-turns", "-t", help="Maximum agent turns before timeout")] = 200,
 ) -> None:
-    """Run critic on an example using an agent definition.
+    """Run critic on an example using an agent image.
 
     Returns the critic_run_id which can be used with run-grader.
 
@@ -83,7 +80,7 @@ async def run_critic_cmd(
     else:
         example = WholeSnapshotExample(snapshot_slug=snapshot_slug)
 
-    payload = RunCriticInput(definition_id=definition_id, example=example, max_turns=max_turns)
+    payload = RunCriticInput(definition_id=image_ref, example=example, max_turns=max_turns)
 
     async with mcp_client_from_env() as (client, _init_result):
         result = await client.call_tool("run_critic", payload.model_dump())
@@ -212,7 +209,7 @@ def valid_leaderboard_cmd(
     class ValidationLeaderboardRow:
         """Row from validation leaderboard query."""
 
-        critic_definition_id: DefinitionId
+        critic_image_digest: str
         critic_model: str
         n_runs: int
         sum_credit: float | None
@@ -224,7 +221,7 @@ def valid_leaderboard_cmd(
         raw_results = session.execute(
             text("""
                 SELECT
-                    critic_definition_id,
+                    critic_image_digest,
                     critic_model,
                     COUNT(*) as n_runs,
                     SUM(total_credit) as sum_credit,
@@ -232,7 +229,7 @@ def valid_leaderboard_cmd(
                     AVG(total_credit / NULLIF(n_occurrences, 0)) as mean_recall,
                     STDDEV_SAMP(total_credit / NULLIF(n_occurrences, 0)) as stddev_recall
                 FROM get_validation_full_snapshot_aggregates()
-                GROUP BY critic_definition_id, critic_model
+                GROUP BY critic_image_digest, critic_model
                 ORDER BY mean_recall DESC
                 LIMIT :limit
             """),
@@ -245,7 +242,7 @@ def valid_leaderboard_cmd(
 
         results = [
             ValidationLeaderboardRow(
-                critic_definition_id=DefinitionId(row[0]),
+                critic_image_digest=row[0],
                 critic_model=row[1] or "",
                 n_runs=row[2] or 0,
                 sum_credit=row[3],
@@ -257,7 +254,7 @@ def valid_leaderboard_cmd(
         ]
 
         columns: list[ColumnDef[ValidationLeaderboardRow, Any]] = [
-            ColumnDef("Definition", lambda r: r.critic_definition_id[:20], width=20),
+            ColumnDef("Definition", lambda r: r.critic_image_digest[:20], width=20),
             ColumnDef("Model", lambda r: r.critic_model, fmt_model, width=12),
             ColumnDef("Runs", lambda r: r.n_runs, str, justify="right", width=5),
             ColumnDef("Credit", lambda r: r.sum_credit, lambda v: fmt_float(v, decimals=1), justify="right", width=7),

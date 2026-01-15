@@ -1,5 +1,0 @@
-https://github.com/roman/claude-code.nix/
-
-nix flake including devenv module integration (it's a devenv module)
-also some preset MCP servers (filesystem, git, fetch, sequential-thinking, lsp, ...)
-

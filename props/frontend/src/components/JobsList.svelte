@@ -28,7 +28,7 @@
         <div class="text-xs bg-gray-50 p-2 rounded">
           <div class="flex gap-4 items-center">
             <JobIdLink id={job.job_id} />
-            <span class="font-medium"><DefinitionIdLink id={job.definition_id} /></span>
+            <span class="font-medium"><DefinitionIdLink id={job.image_digest} /></span>
             <span class="text-gray-500">{job.example_kind}</span>
             <span
               class={job.status === 'running'

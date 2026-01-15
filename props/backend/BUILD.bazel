@@ -1,6 +1,6 @@
 """Props backend - FastAPI dashboard server."""
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
@@ -17,7 +17,19 @@ py_library(
     deps = [
         "//cli_util",
         "//mcp_infra",
-        "//props/core",
+        # props.core modules
+        "//props/core:agent_registry",
+        "//props/core:agent_types",
+        "//props/core:agent_workspace",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/cli:resources",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/grader:daemon_manager",
+        "//props/core/models:examples",
+        "//props/core/models:true_positive",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//typer",
@@ -46,18 +58,6 @@ genrule(
     cmd = "$(location :export_schema) > $@",
     tools = [":export_schema"],
     visibility = ["//props/frontend:__pkg__"],
-)
-
-py_test(
-    name = "test_backend",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/test_placeholder.py",
-    deps = [
-        ":backend",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-    ],
 )
 
 ruff_test(

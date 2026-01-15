@@ -13,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from habitify_mcp_server.utils import get_api_key_from_param_or_env
+from habitify.utils import get_api_key_from_param_or_env
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -34,14 +34,14 @@ def parse_args() -> argparse.Namespace:
 SERVER_TEMPLATE = """
 import os
 import logging
-from habitify_mcp_server.server import create_habitify_mcp_server
+from habitify.server import create_habitify
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("habitify-mcp-dev-server")
 
 # Set up the server
-server = create_habitify_mcp_server()
+server = create_habitify()
 
 # Print available tools for reference
 logger.info("Habitify MCP Server ready with these tools:")

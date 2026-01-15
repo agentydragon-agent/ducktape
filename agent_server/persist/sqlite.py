@@ -15,10 +15,8 @@ from pydantic import JsonValue
 from agent_core.events import EventType as Event, ToolCall, ToolCallOutput
 from agent_server.agent_types import AgentID
 from agent_server.models.proposal_status import ProposalStatus
-from agent_server.persist import PolicyProposal
+from agent_server.persist.types import AgentMetadata, AgentRow, ApprovalOutcome, Persistence, PolicyProposal
 from agent_server.runtime.auto_attach import filter_persistable_servers
-
-from . import AgentMetadata, AgentRow, ApprovalOutcome, Persistence
 
 MAX_EVENT_PAYLOAD_BYTES = 10 * 1024 * 1024  # 10 MiB hard limit per event payload
 

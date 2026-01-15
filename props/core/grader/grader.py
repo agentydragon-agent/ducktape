@@ -12,7 +12,6 @@ from fastmcp.server.auth import AuthProvider
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from props.core.agent_setup import AgentEnvironment
 from props.core.agent_workspace import WorkspaceManager
-from props.core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from props.core.db.config import DatabaseConfig
 from props.core.display import short_uuid
 from props.core.grader.submit_server import GraderSubmitServer
@@ -43,6 +42,9 @@ class GraderAgentEnvironment(AgentEnvironment):
             docker_client=docker_client,
             grader_run_id=run_id,
             critic_run_id=critic_run_id,
+            db_config=db_config,
+            workspace_manager=workspace_manager,
+            image="localhost:5050/grader@sha256:abc...",  # Full OCI reference
         ) as compositor:
             # Run grader agent
             ...
@@ -56,6 +58,8 @@ class GraderAgentEnvironment(AgentEnvironment):
         critic_run_id: UUID,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
+        *,
+        image: str,
     ):
         # Store params needed by _make_mcp_server
         self._grader_run_id = grader_run_id
@@ -64,11 +68,11 @@ class GraderAgentEnvironment(AgentEnvironment):
         self._snapshot_slug = snapshot_slug
 
         super().__init__(
-            definition_id=GRADER_AGENT_DEFINITION_ID,
             agent_run_id=grader_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image=image,
             container_name=f"grader-{short_uuid(grader_run_id)}",
             labels={"adgn.project": "props", "adgn.role": "grader", "adgn.agent_run_id": str(grader_run_id)},
             auto_remove=True,

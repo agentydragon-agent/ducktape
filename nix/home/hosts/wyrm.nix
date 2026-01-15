@@ -11,6 +11,7 @@
   imports = [
     ../home.nix
     ../opencode
+    ../modules/popos-bazel.nix
   ];
 
   # Wyrm-specific configuration (VM/desktop with full GUI)
@@ -42,7 +43,8 @@
   };
 
   # Bazel output directory on HDD (avoids filling up root SSD)
-  home.file.".bazelrc".text = ''
+  # Uses lib.mkBefore to prepend to content from popos-bazel.nix module
+  home.file.".bazelrc".text = lib.mkBefore ''
     startup --output_user_root=/wyrmhdd/bazel
   '';
 }

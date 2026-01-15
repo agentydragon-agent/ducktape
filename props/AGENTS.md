@@ -6,7 +6,7 @@
 
 - **Core library:** @core/src/props_core/AGENTS.md
 - **Backend API:** @backend/AGENTS.md
-- **Tests:** @core/tests/AGENTS.md
+- **Tests:** @core/testing/AGENTS.md
 
 ## Service Management Rules
 

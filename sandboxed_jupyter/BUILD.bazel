@@ -7,14 +7,18 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "sandboxed_jupyter",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "examples/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "__init__.py",
+        "_jupyter_shared.py",
+        "cli.py",
+        "jupyter_sandbox_compose.py",
+        "kernel_bootstrap.py",
+        "kernel_exec.py",
+        "kernel_shim.py",
+        "launch.py",
+        "sandboxer.py",
+        "wrapper.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -44,8 +48,17 @@ py_binary(
 
 py_test(
     name = "test_sandboxed_jupyter",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/test_sandboxer_narrow.py",
+    srcs = [
+        "_markers.py",
+        "conftest.py",
+        "policy_fixture.py",
+        "test_exec_allow_all_cli.py",
+        "test_kernel_sandbox_end_to_end.py",
+        "test_sandboxer_narrow.py",
+        "test_wrapper_unsandbox_smoke.py",
+    ],
+    data = glob(["testdata/**"]),
+    main = "test_sandboxer_narrow.py",
     deps = [
         ":sandboxed_jupyter",
         "@pypi//pytest",

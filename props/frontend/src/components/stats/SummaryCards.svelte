@@ -60,7 +60,7 @@
     {#if bestDef}
       <div class="text-2xl font-bold text-green-600">{formatStatsWithCI(bestDef.recall_stats)}</div>
       <div class="text-xs mt-1">
-        <DefinitionIdLink id={bestDef.def.definition_id} />
+        <DefinitionIdLink id={bestDef.def.image_digest} />
       </div>
     {:else}
       <div class="text-2xl font-bold text-gray-400">-</div>

@@ -31,7 +31,7 @@ from props.core.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.core.ids import DefinitionId, SnapshotSlug
+from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 
@@ -464,7 +464,7 @@ class RecallByExampleRow(BaseModel):
     """Single row from recall-by-example query."""
 
     example: ExampleSpec
-    critic_definition_id: DefinitionId
+    critic_image_digest: str
     recall: float
     snapshot_slug: SnapshotSlug  # For backwards compatibility with existing code
 
@@ -472,13 +472,13 @@ class RecallByExampleRow(BaseModel):
 def query_recall_by_example(
     session: Session,
     split: Split | None = None,
-    critic_definition_id: DefinitionId | None = None,
+    critic_image_digest: str | None = None,
     snapshot_slugs: list[SnapshotSlug] | None = None,
 ) -> list[RecallByExampleRow]:
-    """Query occurrence-weighted recall grouped by (example, critic_definition).
+    """Query occurrence-weighted recall grouped by (example, critic_image_digest).
 
     Computes AVG(found_credit) from occurrence_credits view, grouped by
-    (snapshot_slug, example_kind, files_hash, critic_definition_id).
+    (snapshot_slug, example_kind, files_hash, critic_image_digest).
 
     This is the canonical way to compute recall for cross-run aggregation.
     Single-run recall can be computed inline from occurrence_results.
@@ -486,18 +486,18 @@ def query_recall_by_example(
     Args:
         session: SQLAlchemy session
         split: Optional split filter (TRAIN, VALID, TEST)
-        critic_definition_id: Optional definition filter (get recall for specific definition)
+        critic_image_digest: Optional image digest filter (get recall for specific definition)
         snapshot_slugs: Optional list of snapshot slugs to filter
 
     Returns:
-        List of RecallByExampleRow (example, critic_definition_id, recall)
+        List of RecallByExampleRow (example, critic_image_digest, recall)
 
     Example:
         # Get recall for all train examples with a specific definition
         results = query_recall_by_example(
             session,
             split=Split.TRAIN,
-            critic_definition_id="critic/v1"
+            critic_image_digest="sha256:abc123..."
         )
         for row in results:
             print(f"{row.example}: {row.recall * 100:.1f}%")
@@ -507,14 +507,14 @@ def query_recall_by_example(
         OccurrenceCredit.snapshot_slug,
         OccurrenceCredit.example_kind,
         OccurrenceCredit.files_hash,
-        OccurrenceCredit.critic_definition_id,
+        OccurrenceCredit.critic_image_digest,
         func.avg(OccurrenceCredit.found_credit).label("avg_credit_per_occurrence"),
     )
 
     if split is not None:
         query = query.filter(OccurrenceCredit.split == split)
-    if critic_definition_id is not None:
-        query = query.filter(OccurrenceCredit.critic_definition_id == critic_definition_id)
+    if critic_image_digest is not None:
+        query = query.filter(OccurrenceCredit.critic_image_digest == critic_image_digest)
     if snapshot_slugs is not None:
         query = query.filter(OccurrenceCredit.snapshot_slug.in_(snapshot_slugs))
 
@@ -522,7 +522,7 @@ def query_recall_by_example(
         OccurrenceCredit.snapshot_slug,
         OccurrenceCredit.example_kind,
         OccurrenceCredit.files_hash,
-        OccurrenceCredit.critic_definition_id,
+        OccurrenceCredit.critic_image_digest,
     )
 
     results = query.all()
@@ -541,7 +541,7 @@ def query_recall_by_example(
         rows.append(
             RecallByExampleRow(
                 example=example_spec,
-                critic_definition_id=r.critic_definition_id,
+                critic_image_digest=r.critic_image_digest,
                 recall=r.avg_credit_per_occurrence,
                 snapshot_slug=r.snapshot_slug,
             )

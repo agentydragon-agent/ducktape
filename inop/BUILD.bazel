@@ -16,7 +16,8 @@ py_library(
         ["**/*.py"],
         exclude = [
             ".*/**",
-            "tests/**",
+            "conftest.py",
+            "test_*.py",
         ],
     ),
     imports = [".."],
@@ -25,6 +26,9 @@ py_library(
     deps = [
         "//agent_core",
         "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/exec",
         "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//claude_code_sdk",
@@ -42,16 +46,40 @@ py_library(
 )
 
 py_test(
-    name = "test_inop",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/test_optimizer_two_iters.py",
+    name = "test_optimizer_two_iters",
+    srcs = [
+        "conftest.py",
+        "test_optimizer_two_iters.py",
+    ],
+    imports = [".."],
     tags = ["no-mypy"],  # see comment on inop library
     deps = [
         ":inop",
+        "//agent_core_testing",
         "@pypi//aiodocker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_mock",
+    ],
+)
+
+py_test(
+    name = "test_unit",
+    srcs = [
+        "conftest.py",
+        "test_config.py",
+        "test_exclusion_patterns.py",
+        "test_file_truncation.py",
+        "test_types.py",
+    ],
+    imports = [".."],
+    main = "conftest.py",
+    tags = ["no-mypy"],  # see comment on inop library
+    deps = [
+        ":inop",
+        "@pypi//pathspec",
+        "@pypi//pytest",
+        "@pypi//tiktoken",
     ],
 )
 

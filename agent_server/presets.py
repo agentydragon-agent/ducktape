@@ -11,7 +11,7 @@ from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field
 
-from agent_server.persist import AgentMetadata
+from agent_server.persist.types import AgentMetadata
 
 logger = logging.getLogger(__name__)
 

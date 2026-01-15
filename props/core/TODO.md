@@ -10,7 +10,7 @@
 
 ## Testing TODOs
 
-- Add evaluation test cases from actual snapshots (eval_harness.py)
+- Add evaluation test cases from actual snapshots
 
 ## Code Quality/Refactoring TODOs
 

@@ -8,7 +8,7 @@ Usage:
     registry = AgentRegistry(docker_client, db_config, workspace_manager)
     async with registry:
         critic_run_id = await registry.run_critic(
-            definition_id="critic",
+            image_ref="critic",
             example=example,
             client=critic_client,
         )
@@ -49,7 +49,7 @@ from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.critic import CriticAgentEnvironment
 from props.core.critic.exceptions import CriticExecutionError
-from props.core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import GRADER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
 from props.core.db.session import get_session
@@ -60,8 +60,9 @@ from props.core.grader.drift_handler import format_notifications
 from props.core.grader.grader import GraderAgentEnvironment
 from props.core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props.core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
-from props.core.ids import DefinitionId, SnapshotSlug
+from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
+from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 
 if TYPE_CHECKING:
     pass
@@ -74,7 +75,7 @@ class AgentRunView:
     """Unified view of an agent run from memory or DB."""
 
     agent_run_id: UUID
-    definition_id: DefinitionId
+    image_digest: str
     model: str
     status: AgentRunStatus
     created_at: datetime
@@ -128,7 +129,7 @@ class AgentRegistry:
     async def run_critic(
         self,
         *,
-        definition_id: DefinitionId,
+        image_ref: str,
         example: ExampleSpec,
         client: OpenAIModelProto,
         parent_run_id: UUID | None = None,
@@ -140,7 +141,7 @@ class AgentRegistry:
         """Run a critic agent. Acquires semaphore slot.
 
         Args:
-            definition_id: Agent definition ID to load (e.g., "critic", "critic-v1")
+            image_ref: Image reference (tag or digest) - REQUIRED for explicit version control
             example: Example specification (snapshot + scope)
             client: OpenAI-compatible model client
             parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
@@ -154,7 +155,7 @@ class AgentRegistry:
         """
         async with self._semaphore:
             return await self._run_critic_impl(
-                definition_id=definition_id,
+                image_ref=image_ref,
                 example=example,
                 client=client,
                 parent_run_id=parent_run_id,
@@ -167,7 +168,7 @@ class AgentRegistry:
     async def _run_critic_impl(
         self,
         *,
-        definition_id: DefinitionId,
+        image_ref: str,
         example: ExampleSpec,
         client: OpenAIModelProto,
         parent_run_id: UUID | None,
@@ -180,6 +181,11 @@ class AgentRegistry:
         snapshot_slug = example.snapshot_slug
         agent_run_id = uuid4()
 
+        # Resolve image reference to digest, then build full OCI reference
+        image_digest = resolve_image_ref(AgentType.CRITIC, image_ref)
+        image = build_oci_reference(AgentType.CRITIC, image_digest)
+        logger.info(f"Resolved critic image {image_ref} → {image_digest}")
+
         # Phase 1: Write initial AgentRun to DB
         with get_session() as session:
             snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
@@ -189,7 +195,7 @@ class AgentRegistry:
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,
-                agent_definition_id=definition_id,
+                image_digest=image_digest,
                 parent_agent_run_id=parent_run_id,
                 model=client.model,
                 type_config=type_config,
@@ -206,6 +212,7 @@ class AgentRegistry:
             agent_run_id=agent_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
+            image=image,
         )
 
         agent_status: AgentRunStatus
@@ -242,7 +249,7 @@ class AgentRegistry:
             # Create AgentHandle
             handle = await AgentHandle.create(
                 agent_run_id=agent_run_id,
-                definition_id=definition_id,
+                image_digest=image_digest,
                 model_client=client,
                 mcp_client=mcp_client,
                 compositor=comp,
@@ -309,6 +316,8 @@ class AgentRegistry:
     ) -> UUID:
         """Run a grader on a critic run. Acquires semaphore slot.
 
+        Always uses builtin grader image for evaluation consistency.
+
         Args:
             critic_run_id: ID of the critic run to grade
             client: OpenAI-compatible model client
@@ -345,6 +354,11 @@ class AgentRegistry:
     ) -> UUID:
         """Internal grader execution (semaphore already acquired)."""
         grader_run_id = uuid4()
+
+        # Always use builtin grader image
+        image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
+        image = build_oci_reference(AgentType.GRADER, image_digest)
+        logger.info(f"Using builtin grader image: {image_digest}")
 
         # Load critic run and prepare canonical issues
         with get_session() as session:
@@ -411,7 +425,7 @@ class AgentRegistry:
             session.add(
                 AgentRun(
                     agent_run_id=grader_run_id,
-                    agent_definition_id=GRADER_AGENT_DEFINITION_ID,
+                    image_digest=image_digest,
                     parent_agent_run_id=parent_run_id,
                     model=client.model,
                     type_config=type_config,
@@ -429,6 +443,7 @@ class AgentRegistry:
             critic_run_id=critic_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
+            image=image,
         )
 
         agent_status: AgentRunStatus
@@ -469,7 +484,7 @@ class AgentRegistry:
             # Create AgentHandle
             agent_handle = await AgentHandle.create(
                 agent_run_id=grader_run_id,
-                definition_id=GRADER_AGENT_DEFINITION_ID,
+                image_digest=GRADER_IMAGE_REF,
                 model_client=client,
                 mcp_client=mcp_client,
                 compositor=compositor,
@@ -528,6 +543,8 @@ class AgentRegistry:
         The daemon grades ALL critiques for the snapshot, sleeping when no drift
         and waking on pg_notify when GT changes or new critiques arrive.
 
+        Always uses builtin grader image for evaluation consistency.
+
         Args:
             snapshot_slug: Snapshot this daemon is responsible for
             client: OpenAI-compatible model client
@@ -549,6 +566,11 @@ class AgentRegistry:
         """Internal snapshot grader daemon execution."""
         grader_run_id = uuid4()
 
+        # Always use builtin grader image
+        image_digest = resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
+        image = build_oci_reference(AgentType.GRADER, image_digest)
+        logger.info(f"Using builtin grader image: {image_digest}")
+
         # Verify snapshot exists
         with get_session() as session:
             snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
@@ -561,7 +583,7 @@ class AgentRegistry:
             session.add(
                 AgentRun(
                     agent_run_id=grader_run_id,
-                    agent_definition_id=GRADER_AGENT_DEFINITION_ID,
+                    image_digest=image_digest,
                     parent_agent_run_id=None,
                     model=client.model,
                     type_config=type_config,
@@ -578,6 +600,7 @@ class AgentRegistry:
             grader_run_id=grader_run_id,
             db_config=self._db_config,
             workspace_manager=self._workspace_manager,
+            image=image,
         )
 
         agent_status: AgentRunStatus = AgentRunStatus.IN_PROGRESS
@@ -614,7 +637,7 @@ class AgentRegistry:
             # Create AgentHandle
             agent_handle = await AgentHandle.create(
                 agent_run_id=grader_run_id,
-                definition_id=GRADER_AGENT_DEFINITION_ID,
+                image_digest=GRADER_IMAGE_REF,
                 model_client=client,
                 mcp_client=mcp_client,
                 compositor=compositor,
@@ -684,7 +707,7 @@ class AgentRegistry:
             active = self._active[run_id]
             return AgentRunView(
                 agent_run_id=run_id,
-                definition_id=active.handle.definition_id,
+                image_digest=active.handle.image_digest,
                 model=active.handle.agent.model,
                 status=AgentRunStatus.IN_PROGRESS,
                 created_at=datetime.now(),
@@ -697,7 +720,7 @@ class AgentRegistry:
                 return None
             return AgentRunView(
                 agent_run_id=db_run.agent_run_id,
-                definition_id=db_run.agent_definition_id,
+                image_digest=db_run.image_digest,
                 model=db_run.model,
                 status=db_run.status,
                 created_at=db_run.created_at,
@@ -711,7 +734,7 @@ class AgentRegistry:
             result.append(
                 AgentRunView(
                     agent_run_id=run_id,
-                    definition_id=active.handle.definition_id,
+                    image_digest=active.handle.image_digest,
                     model=active.handle.agent.model,
                     status=AgentRunStatus.IN_PROGRESS,
                     created_at=datetime.now(),
@@ -727,7 +750,7 @@ class AgentRegistry:
             return [
                 AgentRunView(
                     agent_run_id=r.agent_run_id,
-                    definition_id=r.agent_definition_id,
+                    image_digest=r.image_digest,
                     model=r.model,
                     status=r.status,
                     created_at=r.created_at,

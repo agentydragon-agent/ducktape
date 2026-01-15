@@ -92,7 +92,7 @@ ORDER BY best_mean_credit ASC
 LIMIT 10;
 
 -- Which definitions win most often on validation?
-SELECT unnest(winning_critic_definition_ids) AS def_id, COUNT(*) AS wins
+SELECT unnest(winning_critic_image_digests) AS def_id, COUNT(*) AS wins
 FROM pareto_frontier_by_example
 WHERE split = 'valid'
 GROUP BY def_id ORDER BY wins DESC;
@@ -130,7 +130,7 @@ You are running in **targeted mode**.
 SELECT (credit_stats).mean AS recall, n_examples,
        (credit_stats).ucb95 AS ucb, (credit_stats).lcb95 AS lcb
 FROM recall_by_definition_split_kind
-WHERE critic_definition_id = '<def_id>' AND split = 'valid';
+WHERE critic_image_digest = '<def_id>' AND split = 'valid';
 
 -- Per-example breakdown
 SELECT snapshot_slug, files_hash, example_kind,
@@ -138,7 +138,7 @@ SELECT snapshot_slug, files_hash, example_kind,
        (credit_stats).lcb95 AS lcb,
        (credit_stats).ucb95 AS ucb
 FROM recall_by_definition_example
-WHERE critic_definition_id = '<def_id>'
+WHERE critic_image_digest = '<def_id>'
   AND split = 'valid'
 ORDER BY (credit_stats).mean DESC;
 ```
@@ -171,7 +171,7 @@ SELECT * FROM events WHERE agent_run_id = '<run_id>' ORDER BY sequence_num;
 ```sql
 -- Query aggregate metrics only (examples table is RLS-blocked)
 SELECT * FROM get_validation_full_snapshot_aggregates()
-WHERE critic_definition_id = '<def_id>';
+WHERE critic_image_digest = '<def_id>';
 
 -- CANNOT query examples table directly
 -- CANNOT inspect ground truth or execution traces
@@ -186,7 +186,7 @@ WHERE s.split = 'valid';
 -- Query metrics via views
 SELECT (credit_stats).mean AS recall
 FROM recall_by_definition_split_kind
-WHERE critic_definition_id = '<def_id>' AND split = 'valid';
+WHERE critic_image_digest = '<def_id>' AND split = 'valid';
 
 -- CANNOT inspect ground truth or execution traces
 ```

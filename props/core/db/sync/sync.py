@@ -6,7 +6,6 @@ Includes model metadata sync (previously in sync_model_metadata.py).
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import io
 import logging
@@ -25,12 +24,8 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from agent_pkg.host.builder import ensure_image_from_archive
 from openai_utils.model_metadata import MODEL_METADATA
-from props.core.agent_pkg_utils import MANIFEST_FILE, validate_packed_agent_pkg
-from props.core.agent_types import AgentType
 from props.core.db.models import (
-    AgentDefinition,
     CriticScopeExpectedToRecall,
     FalsePositive,
     FalsePositiveOccurrenceORM,
@@ -45,16 +40,14 @@ from props.core.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props.core.db.session import get_session
-from props.core.ids import DefinitionId, SnapshotSlug
+from props.core.ids import SnapshotSlug
 from props.core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
-from props.core.prop_utils import specimens_definitions_root
+from props.core.runs_context import specimens_definitions_root
 
 from ._yaml import load_yaml_issues
 from .loader import discover_snapshots
 
 if TYPE_CHECKING:
-    import aiodocker
-
     from props.core.models.true_positive import LineRange
 
 # Agent definitions are stored in the props package under agent_defs/
@@ -79,169 +72,6 @@ def _add_ranges_to_occurrence(
                         note=line_range.note,
                     )
                 )
-
-
-class DirtyRepoError(Exception):
-    """Raised when repo has uncommitted changes in paths needed for packing."""
-
-
-def read_manifest(definition_dir: Path) -> list[str]:
-    """Parse MANIFEST file from definition directory.
-
-    Returns list of git pathspecs (relative to repo root).
-    Lines starting with # are comments. Empty lines are ignored.
-
-    Raises:
-        FileNotFoundError: If MANIFEST file doesn't exist.
-    """
-    manifest_path = definition_dir / MANIFEST_FILE
-    if not manifest_path.exists():
-        raise FileNotFoundError(f"MANIFEST file required: {manifest_path}")
-
-    pathspecs = []
-    for line in manifest_path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        pathspecs.append(stripped)
-    return pathspecs
-
-
-def check_git_clean(repo: pygit2.Repository, pathspecs: list[str]) -> None:
-    """Check that repo is clean for all pathspecs.
-
-    Raises:
-        DirtyRepoError: If any pathspec has uncommitted changes.
-    """
-    # Get status for all files
-    changed_files = []
-    for path, flags in repo.status().items():
-        if flags == pygit2.GIT_STATUS_CURRENT:
-            continue
-        # Check if path matches any pathspec
-        for pathspec in pathspecs:
-            if path.startswith(pathspec + "/") or path == pathspec:
-                changed_files.append(path)
-                break
-
-    if changed_files:
-        raise DirtyRepoError(
-            "Repository has uncommitted changes in paths needed for packing.\n"
-            "Changed files:\n"
-            + "\n".join(f"  {f}" for f in changed_files[:20])
-            + (f"\n  ... and {len(changed_files) - 20} more" if len(changed_files) > 20 else "")
-            + "\n\nCommit or stash changes, or use --use-staged to sync from staged files."
-        )
-
-
-def _collect_tree_entries(
-    repo: pygit2.Repository, tree: pygit2.Tree, prefix: str, pathspec: str
-) -> list[tuple[str, pygit2.Blob]]:
-    """Recursively collect all blob entries under a tree that match pathspec.
-
-    Returns list of (relative_path, blob) tuples.
-    """
-    entries: list[tuple[str, pygit2.Blob]] = []
-    for entry in tree:
-        name = entry.name
-        if name is None:
-            continue
-        entry_path = f"{prefix}{name}" if prefix else name
-
-        # Check if this entry is under the pathspec
-        if not (
-            entry_path.startswith(pathspec + "/") or entry_path == pathspec or pathspec.startswith(entry_path + "/")
-        ):
-            continue
-
-        obj = repo.get(entry.id)
-        if obj is None:
-            continue
-        if isinstance(obj, pygit2.Tree):
-            entries.extend(_collect_tree_entries(repo, obj, entry_path + "/", pathspec))
-        elif isinstance(obj, pygit2.Blob) and (entry_path.startswith(pathspec + "/") or entry_path == pathspec):
-            entries.append((entry_path, obj))
-
-    return entries
-
-
-def pack_repo_definition(definition_dir: Path, *, use_staged: bool = False) -> bytes:
-    """Pack repo-backed definition using MANIFEST and git archive.
-
-    Creates a tar archive containing:
-    - Definition files (Dockerfile, init, agent.md, etc.) at root
-    - External dependencies at their original paths from repo root
-
-    Args:
-        definition_dir: Path to definition directory (e.g., agent_defs/critic/)
-        use_staged: If True, read from staged files (index) instead of HEAD.
-                    Skips the dirty check. Useful for development.
-
-    Returns:
-        Uncompressed tar archive as bytes.
-
-    Raises:
-        FileNotFoundError: If MANIFEST file doesn't exist.
-        DirtyRepoError: If repo has uncommitted changes in needed paths (unless use_staged).
-    """
-    repo = pygit2.Repository(pygit2.discover_repository(str(definition_dir)))
-    repo_root = Path(repo.workdir)
-    def_relative = str(definition_dir.relative_to(repo_root))
-
-    # Read MANIFEST to get external dependencies
-    pathspecs = read_manifest(definition_dir)
-
-    # Build full list of pathspecs: definition dir + external deps
-    all_pathspecs = [def_relative, *pathspecs]
-
-    if use_staged:
-        # Read from index (staged files)
-        repo.index.read()
-        tree_oid = repo.index.write_tree()
-        tree_obj = repo.get(tree_oid)
-        if not isinstance(tree_obj, pygit2.Tree):
-            raise RuntimeError(f"Index tree is not a Tree: {type(tree_obj)}")
-        tree = tree_obj
-    else:
-        # Check git is clean for all paths
-        check_git_clean(repo, all_pathspecs)
-        # Get HEAD tree
-        head_commit = repo.revparse_single("HEAD")
-        tree = head_commit.peel(pygit2.Tree)
-
-    # Create combined tar archive
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as tar:
-        # Add definition files (flattened to root)
-        # TODO: Consider excluding MANIFEST from the packed tar - it's only needed for
-        # packing, not at runtime. Currently included which may confuse agents.
-        def_prefix = def_relative + "/"
-        for entry_path, blob in _collect_tree_entries(repo, tree, "", def_relative):
-            # Strip definition prefix to flatten
-            if entry_path.startswith(def_prefix):
-                arc_name = entry_path[len(def_prefix) :]
-            else:
-                continue  # Skip the directory itself
-
-            info = tarfile.TarInfo(name=arc_name)
-            info.size = blob.size
-            info.mtime = 0  # Deterministic
-            tar.addfile(info, io.BytesIO(blob.data))
-
-        # Add external dependencies (keep original paths)
-        for pathspec in pathspecs:
-            for entry_path, blob in _collect_tree_entries(repo, tree, "", pathspec):
-                info = tarfile.TarInfo(name=entry_path)
-                info.size = blob.size
-                info.mtime = 0  # Deterministic
-                tar.addfile(info, io.BytesIO(blob.data))
-
-    archive = buffer.getvalue()
-
-    # Validate has required files (DB constraint handles size limit)
-    validate_packed_agent_pkg(archive)
-
-    return archive
 
 
 def get_specimens_base_path() -> Path:
@@ -980,124 +810,7 @@ CRITIC_BASED_DETECTORS = {
 }
 
 
-def sync_agent_definitions_to_db(session: Session, *, use_staged: bool = False) -> SyncStats:
-    """Sync repo-tracked agent definitions from agent_defs/ to database.
-
-    Reads agent definitions from props/core/agent_defs/ directory.
-    Each subdirectory is an agent type (e.g., critic/, grader/).
-    Definition ID is the directory name.
-
-    Uses MANIFEST files and git archive to pack only tracked files.
-
-    Args:
-        session: SQLAlchemy session
-        use_staged: If True, read from staged files (index) instead of HEAD.
-                    Skips the dirty check. Useful for development.
-
-    Returns:
-        Statistics about what changed (total, added, updated, deleted)
-
-    Raises:
-        DirtyRepoError: If repo has uncommitted changes (unless use_staged).
-    """
-    if not AGENT_DEFS_PATH.exists():
-        logger.warning(f"Agent definitions directory not found: {AGENT_DEFS_PATH}")
-        return SyncStats(total=0, added=0, updated=0, deleted=0)
-
-    # Find all definition directories (immediate children of agent_defs/, excluding common and __pycache__)
-    definition_dirs = [
-        d
-        for d in AGENT_DEFS_PATH.iterdir()
-        if d.is_dir() and not d.name.startswith(".") and d.name not in ("common", "__pycache__")
-    ]
-
-    # Get existing definitions from DB (only repo-backed ones - no created_by_agent_run_id)
-    existing = {
-        d.id: d for d in session.query(AgentDefinition).filter(AgentDefinition.created_by_agent_run_id.is_(None)).all()
-    }
-    source_ids = {DefinitionId(d.name) for d in definition_dirs}
-    db_ids = set(existing.keys())
-
-    # Track stats
-    added = 0
-    updated = 0
-    deleted = 0
-
-    # Delete orphaned definitions (in DB but not in source)
-    for def_id in db_ids - source_ids:
-        logger.info(f"Deleting orphaned agent definition: {def_id}")
-        session.delete(existing[def_id])
-        deleted += 1
-
-    # Add/update definitions from source
-    for definition_dir in definition_dirs:
-        def_id = DefinitionId(definition_dir.name)
-
-        # Pack archive using MANIFEST + git archive
-        archive = pack_repo_definition(definition_dir, use_staged=use_staged)
-
-        # Critic-based detectors use CRITIC agent_type (run with critic infra)
-        agent_type = AgentType.CRITIC if def_id in CRITIC_BASED_DETECTORS else def_id
-
-        if def_id not in db_ids:
-            # New definition - insert
-            logger.info(f"Adding agent definition: {def_id} (type={agent_type})")
-            definition = AgentDefinition(
-                id=def_id,
-                agent_type=agent_type,
-                archive=archive,
-                created_by_agent_run_id=None,  # Repo-backed
-            )
-            session.add(definition)
-            added += 1
-        else:
-            # Existing repo-backed definition - always update (cheap operation)
-            existing_def = existing[def_id]
-            logger.debug(f"Updating agent definition: {def_id} (type={agent_type})")
-            existing_def.archive = archive
-            existing_def.agent_type = agent_type
-            updated += 1
-
-        # Flush each definition individually to avoid memory issues with large archives
-        session.flush()
-
-    session.commit()
-    total = len(definition_dirs)
-    logger.info(f"Agent definitions synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
-    return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
-
-
-async def build_definition_images(docker: aiodocker.Docker, session: Session) -> int:
-    """Build Docker images for all agent definitions in the database.
-
-    Builds all images in parallel for faster sync.
-
-    Args:
-        docker: Async Docker client
-        session: SQLAlchemy session to query definitions
-
-    Returns:
-        Number of images built
-    """
-    # Fetch all definition data while session is open (avoid detached instance errors)
-    definitions = [(defn.id, defn.archive) for defn in session.query(AgentDefinition).all()]
-
-    if not definitions:
-        logger.info("No agent definitions to build")
-        return 0
-
-    logger.info(f"Building images for {len(definitions)} agent definitions in parallel...")
-
-    async def build_one(def_id: str, archive: bytes) -> tuple[str, str]:
-        image_id = await ensure_image_from_archive(docker, archive)
-        return def_id, image_id
-
-    results = await asyncio.gather(*[build_one(def_id, archive) for def_id, archive in definitions])
-
-    for def_id, image_id in results:
-        logger.info(f"  Built {def_id}: {image_id[:19]}")
-
-    return len(definitions)
+# Agent definition sync removed - definitions are now OCI images managed via registry
 
 
 # ============================================================================
@@ -1107,18 +820,22 @@ async def build_definition_images(docker: aiodocker.Docker, session: Session) ->
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing snapshots, issues, files, file sets, model metadata, and agent definitions."""
+    """Combined result from syncing snapshots, issues, files, file sets, and model metadata.
+
+    Note: Agent definitions are no longer synced - they are OCI images managed via registry.
+    """
 
     snapshot_stats: SyncStats
     issue_stats: SyncStats
     snapshot_file_stats: SyncStats
     file_set_stats: SyncStats
     model_metadata_stats: ModelMetadataSyncStats
-    agent_definition_stats: SyncStats
 
 
-def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
-    """Sync snapshots, issues, files, file sets, model metadata, and agent definitions.
+def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = False) -> FullSyncResult:
+    """Sync snapshots, issues, files, file sets, and model metadata.
+
+    Note: Agent definitions are no longer synced - they are OCI images managed via registry.
 
     Discovers snapshots once and passes data to all sync operations.
     All sync operations happen within the provided database session for consistency.
@@ -1134,6 +851,7 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
     Args:
         session: Active database session
         use_staged: If True, read agent definitions from staged files instead of HEAD.
+        dry_run: If True, rollback all changes instead of committing. Validates constraints.
 
     Returns:
         Combined results from all sync operations
@@ -1171,10 +889,11 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
     model_metadata_stats = sync_model_metadata_with_session(session)
     print(f"  {model_metadata_stats.summary_text}")
 
-    # 6. Sync repo-tracked agent definitions
-    print("Syncing agent definitions...")
-    agent_definition_stats = sync_agent_definitions_to_db(session, use_staged=use_staged)
-    print(f"  {agent_definition_stats.summary_text}")
+    # Note: Agent definitions no longer synced (OCI images managed via registry)
+
+    if dry_run:
+        logger.info("DRY-RUN: Rolling back all changes")
+        session.rollback()
 
     return FullSyncResult(
         snapshot_stats=snapshot_stats,
@@ -1182,5 +901,4 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
         snapshot_file_stats=snapshot_file_stats,
         file_set_stats=file_set_stats,
         model_metadata_stats=model_metadata_stats,
-        agent_definition_stats=agent_definition_stats,
     )

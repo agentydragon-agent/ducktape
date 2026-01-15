@@ -15,7 +15,7 @@ class EarlyBailoutChecker:
         self.tree = tree
         self.errors: list[tuple[int, int, str, type[Any]]] = []
 
-    def run(self) -> Generator[tuple[int, int, str, type[Any]], None, None]:
+    def run(self) -> Generator[tuple[int, int, str, type[Any]]]:
         """Run the checker and yield errors."""
         visitor = EarlyBailoutVisitor()
         visitor.visit(self.tree)

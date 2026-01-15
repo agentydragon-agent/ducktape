@@ -17,14 +17,14 @@ from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import Context
 from fastmcp.tools import FunctionTool
 
-from mcp_infra.container_session import (
+from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.exec.container_session import (
     ContainerOptions,
     make_container_lifespan,
     render_container_result,
     run_session_container,
     session_state_from_ctx,
 )
-from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import BaseExecResult, ExecInput, async_timer
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
 from mcp_infra.mcp_types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo

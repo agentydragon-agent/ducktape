@@ -6,8 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from props.core.ids import BaseIssueID
-from props.core.paths import SnapshotRelativePath
-from props.core.rationale import Rationale
+from props.core.models.types import Rationale, SnapshotRelativePath
 
 
 class LineRange(BaseModel):
@@ -221,19 +220,3 @@ class IssueCore(BaseModel):
     rationale: Rationale
 
     model_config = ConfigDict(extra="forbid")
-
-
-def should_catch_occurrence(occ: TruePositiveOccurrence, reviewed_files: set[Path]) -> bool:
-    """Check if occurrence should be caught given reviewed files.
-
-    Returns True if any alternative file set is a subset of reviewed files.
-    """
-    return any(alt.issubset(reviewed_files) for alt in occ.critic_scopes_expected_to_recall)
-
-
-def should_show_fp_occurrence(occ: FalsePositiveOccurrence, reviewed_files: set[Path]) -> bool:
-    """Check if FP occurrence is relevant given reviewed files.
-
-    Returns True if there's any overlap between relevant files and reviewed files.
-    """
-    return bool(occ.relevant_files & reviewed_files)

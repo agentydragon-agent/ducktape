@@ -70,9 +70,31 @@ py_binary(
 )
 
 py_test(
-    name = "test_ember",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/conftest.py",
+    name = "test_documentation_snippets",
+    srcs = ["test_documentation_snippets.py"],
+    imports = [".."],
+    deps = [
+        ":ember",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_matrix_client",
+    srcs = ["test_matrix_client.py"],
+    imports = [".."],
+    deps = [
+        ":ember",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_python_session",
+    srcs = ["test_python_session.py"],
+    imports = [".."],
     deps = [
         ":ember",
         "@pypi//pytest",

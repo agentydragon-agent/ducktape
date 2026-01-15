@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files([
@@ -6,31 +6,37 @@ exports_files([
 ])
 
 py_library(
-    name = "wt",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-        ],
-    ),
-    data = glob(["shell/*.sh"]),
+    name = "cli",
+    srcs = [
+        "__init__.py",
+        "cli.py",
+        "demo_plugin.py",
+        "plugins.py",
+    ],
     imports = [".."],
-    visibility = ["//visibility:public"],
+    visibility = ["//wt:__subpackages__"],
     deps = [
         "//cli_util",
+        "//wt/client",
+        "//wt/shared",
+        "//wt/shell",
         "@pypi//click",
         "@pypi//colorama",
         "@pypi//pluggy",
-        "@pypi//psutil",
-        "@pypi//punq",
-        "@pypi//pydantic",
-        "@pypi//pygit2",
-        "@pypi//pygithub",
-        "@pypi//pyyaml",
-        "@pypi//tabulate",
         "@pypi//typer",
-        "@pypi//watchdog",
+    ],
+)
+
+# Umbrella target that re-exports everything
+py_library(
+    name = "wt",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli",
+        "//wt/client",
+        "//wt/server",
+        "//wt/shared",
+        "//wt/shell",
     ],
 )
 
@@ -38,29 +44,7 @@ py_binary(
     name = "wt-cli",
     srcs = ["cli.py"],
     main = "cli.py",
-    deps = [":wt"],
-)
-
-py_binary(
-    name = "wt-install",
-    srcs = ["shell/install.py"],
-    main = "shell/install.py",
-    deps = [":wt"],
-)
-
-py_test(
-    name = "test_wt",
-    srcs = glob(["tests/**/*.py"]),
-    imports = ["."],
-    main = "tests/conftest.py",
-    deps = [
-        ":wt",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_mock",
-        "@pypi//tenacity",
-    ],
+    deps = [":cli"],
 )
 
 ruff_test(

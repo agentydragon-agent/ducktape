@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ...ids import SnapshotSlug
 from ...models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
-from ...rationale import Rationale
+from ...models.types import Rationale
 from ._models import FalsePositive, TruePositive
 
 

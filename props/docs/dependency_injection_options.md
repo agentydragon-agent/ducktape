@@ -386,7 +386,7 @@ import atexit
 import docker
 from ..hydration import SnapshotHydrator
 from ..db.sync._sync import FilesystemLoader
-from ..prop_utils import specimens_definitions_root
+from ..runs_context import specimens_definitions_root
 
 # Singleton resources (created once, reused)
 @cache

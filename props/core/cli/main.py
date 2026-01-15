@@ -56,7 +56,6 @@ from props.core.db.models import (
 from props.core.db.query_builders import query_recall_by_example
 from props.core.db.session import get_session, init_db
 from props.core.display import fmt_pct, short_sha
-from props.core.eval_harness import run_all_evals
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.prompt_improve.improve_agent import (
@@ -67,7 +66,6 @@ from props.core.prompt_improve.improve_agent import (
 from props.core.prompt_improve.reminder_handler import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
-from props.core.runs_context import RunsContext
 from props.core.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -139,7 +137,7 @@ def run_info_cmd() -> None:
         agent_run = get_current_agent_run(session)
         typer.echo("Agent Run Info:")
         typer.echo(f"  agent_run_id: {agent_run.agent_run_id}")
-        typer.echo(f"  definition_id: {agent_run.agent_definition_id}")
+        typer.echo(f"  image_digest: {agent_run.image_digest}")
         typer.echo(f"  model: {agent_run.model}")
         typer.echo(f"  status: {agent_run.status.value}")
         if agent_run.parent_agent_run_id:
@@ -229,10 +227,10 @@ async def prompt_improve_cmd(
     console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
 
     # Helper function for Pareto selection
-    def select_pareto_examples(session, agent_definition_id_param: DefinitionId, limit: int) -> list[ExampleSpec]:
+    def select_pareto_examples(session, agent_definition_id_param: str, limit: int) -> list[ExampleSpec]:
         """Select Pareto-optimal training examples for an agent definition."""
         # Query occurrence-weighted recall per example using helper
-        results = query_recall_by_example(session, split=Split.TRAIN, critic_definition_id=agent_definition_id_param)
+        results = query_recall_by_example(session, split=Split.TRAIN, critic_image_digest=agent_definition_id_param)
 
         if not results:
             raise ValueError(f"No grader runs found for definition {short_sha(agent_definition_id_param)}")
@@ -272,14 +270,14 @@ async def prompt_improve_cmd(
             .all()
         )
 
-        # Build index: agent_definition_id -> set of ExampleSpec for examples that have grader runs
+        # Build index: image_digest -> set of ExampleSpec for examples that have grader runs
         # NOTE: Originally indexed by prompt_sha256, but prompts were replaced by agent_definitions
         definition_to_examples: dict[str, set[ExampleSpec]] = {}
         for cr in critic_runs:
             critic_config = cr.critic_config()
             example_spec = critic_config.example
             snapshot_slug = example_spec.snapshot_slug
-            definition_id = cr.agent_definition_id
+            definition_id = cr.image_digest
 
             # Check if this snapshot is in TRAIN split
             snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
@@ -319,7 +317,7 @@ async def prompt_improve_cmd(
             .filter(
                 RecallByDefinitionSplitKind.split == Split.VALID,
                 RecallByDefinitionSplitKind.example_kind == ExampleKind.WHOLE_SNAPSHOT,
-                RecallByDefinitionSplitKind.critic_definition_id.in_(eligible_definition_ids),
+                RecallByDefinitionSplitKind.critic_image_digest.in_(eligible_definition_ids),
             )
             .all()
         )
@@ -341,7 +339,7 @@ async def prompt_improve_cmd(
             return -1.0
 
         best = max(eligible_stats, key=get_lcb)
-        definition_id = best.critic_definition_id
+        definition_id = best.critic_image_digest
 
         example_count = next(count for d, count in definition_example_counts if d == definition_id)
         console.print(f"[green]✓[/green] Selected best definition: {definition_id} ({example_count} training examples)")
@@ -406,7 +404,7 @@ async def prompt_improve_cmd(
     try:
         result = await run_improvement_agent(
             examples=allowed_examples,
-            baseline_definition_ids=[definition_id],
+            baseline_image_refs=[definition_id],
             token_budget=token_budget,
             model=model,
             docker_client=docker_client,
@@ -609,16 +607,6 @@ async def cmd_grade_missing(
         await registry.close()
 
 
-@app.command("eval-all")
-@async_run
-async def cmd_eval_all() -> None:
-    docker_client = aiodocker.Docker()
-    try:
-        await run_all_evals(client=build_client("gpt-5"), docker_client=docker_client, ctx=RunsContext.from_pkg_dir())
-    finally:
-        await docker_client.close()
-
-
 # GEPA command (optional - requires gepa package)
 try:
     from props.core.cli.cmd_gepa import cmd_gepa
@@ -684,7 +672,7 @@ async def cmd_run(
 
         # Run critic via registry
         critic_run_id = await registry.run_critic(
-            definition_id=definition_id,
+            image_ref=definition_id,  # definition_id is actually an image ref
             example=example_spec,
             client=build_client(model),
             verbose=True,
@@ -718,3 +706,7 @@ async def cmd_run(
                 typer.echo(f"Critic run ended with status: {critic_run.status.value}", err=True)
     finally:
         await registry.close()
+
+
+if __name__ == "__main__":
+    app()

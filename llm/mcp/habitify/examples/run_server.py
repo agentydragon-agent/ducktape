@@ -7,8 +7,8 @@ import argparse
 import logging
 import sys
 
-from habitify_mcp_server.server import create_habitify_mcp_server
-from habitify_mcp_server.utils import get_api_key_from_param_or_env
+from habitify.server import create_habitify
+from habitify.utils import get_api_key_from_param_or_env
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -49,7 +49,7 @@ def main() -> int:
     try:
         # Create the server (with port configuration)
         logger.info("Creating Habitify MCP server...")
-        server = create_habitify_mcp_server(port=args.port)
+        server = create_habitify(port=args.port)
 
         # Run the server with the specified transport
         if args.transport == "stdio":

@@ -202,6 +202,108 @@ class LogLevelCounter(logging.Handler):
             self.error_count += 1
 
 
+def setup_podman_storage(log: logging.Logger) -> None:
+    """Configure podman for gVisor compatibility.
+
+    gVisor sandbox has restrictions that require specific podman configuration:
+    1. VFS storage driver (no overlay filesystem support)
+    2. System-level config (/etc/containers) since running as root
+    3. Explicit runroot and graphroot paths
+    4. Host user namespace (userns = "host")
+    """
+    # Storage configuration (system-level since running as root)
+    storage_conf = Path("/etc/containers/storage.conf")
+    storage_conf.parent.mkdir(parents=True, exist_ok=True)
+    storage_conf.write_text("""[storage]
+driver = "vfs"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
+""")
+
+    # Container runtime configuration
+    containers_conf = Path("/etc/containers/containers.conf")
+    containers_conf.write_text("""[containers]
+# Host user namespace for gVisor compatibility
+userns = "host"
+
+[engine]
+network_backend = "cni"
+""")
+
+    # Ensure storage directories exist
+    Path("/run/containers/storage").mkdir(parents=True, exist_ok=True)
+    Path("/var/lib/containers/storage").mkdir(parents=True, exist_ok=True)
+
+    log.info("Configured podman for gVisor: VFS storage, host userns")
+
+
+def setup_props_environment(log: logging.Logger) -> None:
+    """Set environment variables for props e2e testing with podman + host networking."""
+    env_file_str = os.environ.get("CLAUDE_ENV_FILE")
+    if not env_file_str:
+        log.warning("CLAUDE_ENV_FILE not set, cannot configure props environment")
+        return
+
+    # Podman + host networking configuration
+    env_content = """
+# Props e2e test configuration (podman + host networking)
+export PGHOST=127.0.0.1
+export PGPORT=5433
+export AGENT_PGHOST=127.0.0.1
+export PROPS_REGISTRY_PROXY_HOST=127.0.0.1
+export PROPS_REGISTRY_PROXY_PORT=5051
+export PROPS_DOCKER_NETWORK=host
+"""
+
+    env_file = Path(env_file_str)
+    with env_file.open("a") as f:
+        f.write(env_content)
+
+    log.info("Configured props environment variables for podman + host networking")
+
+
+def emit_podman_guidance() -> None:
+    """Emit podman usage guidance for gVisor sandbox (visible to agent)."""
+    guidance = """
+Podman Usage in gVisor Sandbox
+===============================
+
+Podman is configured with gVisor-specific workarounds. All containers MUST use:
+
+  --annotation run.oci.keep_original_groups=1
+
+This bypasses /proc/self/setgroups which is unavailable in gVisor.
+
+Required Flags for ALL Container Runs:
+--------------------------------------
+podman run --annotation run.oci.keep_original_groups=1 [other-flags] image
+
+Example (simple):
+  podman run --rm --network=host \\
+    --annotation run.oci.keep_original_groups=1 \\
+    alpine echo "Hello"
+
+Example (postgres):
+  podman run -d --rm --network=host \\
+    --annotation run.oci.keep_original_groups=1 \\
+    --name postgres -e POSTGRES_PASSWORD=pass \\
+    docker.io/library/postgres:16 postgres -p 5433
+
+Configuration Applied:
+---------------------
+- Storage: VFS (/etc/containers/storage.conf)
+- User namespace: host (userns = "host")
+- Networking: host networking recommended (--network=host)
+- Image names: use fully qualified names (docker.io/library/...)
+
+Without --annotation run.oci.keep_original_groups=1, containers will fail with:
+  "crun: error opening file `/proc/self/setgroups`: No such file or directory"
+
+"""
+    print(guidance)
+    sys.stdout.flush()
+
+
 class SessionLoggers:
     """Container for stdout (compact) and file-only (verbose) loggers."""
 
@@ -332,6 +434,15 @@ def main() -> int:
                 verbose.info("alejandra installed successfully")
             except Exception as e:
                 verbose.warning("Failed to install nix/alejandra: %s", e)
+
+        # Configure podman and props environment if props directory exists
+        props_dir = project_dir / "props"
+        if props_dir.is_dir():
+            verbose.info("Configuring podman and props environment for e2e testing...")
+            setup_podman_storage(verbose)
+            setup_props_environment(verbose)
+            # Emit usage guidance visible to agent
+            emit_podman_guidance()
     else:
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
@@ -346,6 +457,10 @@ def main() -> int:
     verbose.info("Configuring bazel availability for bash sessions...")
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file:
+        # Read existing content (may include props environment from setup_props_environment)
+        env_path = Path(env_file)
+        existing_content = env_path.read_text() if env_path.exists() else ""
+
         env_content = bazelisk_setup.get_env_script()
         env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
         if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
@@ -354,7 +469,10 @@ def main() -> int:
         nix_profile_bin = Path.home() / ".nix-profile" / "bin"
         if nix_profile_bin.exists():
             env_content += f'\nexport PATH="{nix_profile_bin}:$PATH"\n'
-        Path(env_file).write_text(env_content)
+
+        # Append to existing content (preserves props environment variables)
+        full_content = existing_content + env_content
+        env_path.write_text(full_content)
         verbose.info("Wrote PATH exports to %s", env_file)
     else:
         # Fallback: symlink bazel to ~/.local/bin

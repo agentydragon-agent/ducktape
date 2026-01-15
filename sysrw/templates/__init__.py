@@ -54,7 +54,7 @@ def validate_template_file(template_path: Path) -> None:
 def iter_templates() -> Iterator[tuple[str, str]]:
     """Yield (relative_name, text) for all packaged templates/*.txt files.
 
-    Traverses the installed package resources under adgn.sysrw.templates
+    Traverses the installed package resources under sysrw.templates
     so it works from sdist/wheel installs and zipped packages.
     """
     root = resources.files(__name__)

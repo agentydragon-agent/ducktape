@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from ...ids import SnapshotSlug
 from ...models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
-from ...rationale import Rationale
+from ...models.types import Rationale
 
 
 @dataclass

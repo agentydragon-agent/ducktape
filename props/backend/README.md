@@ -5,8 +5,11 @@ FastAPI backend for the props training/evaluation dashboard.
 ## Quick Start
 
 ```bash
-# Start all services via devenv (from props/)
-cd props && devenv up
+# Start infrastructure (from props/)
+cd props && docker compose up -d
+
+# Run frontend + backend dev servers with watch
+bazelisk run //props/frontend:dev
 ```
 
 The API will be available at `http://localhost:8000`.
@@ -38,8 +41,11 @@ Frontend lives in `../frontend/`.
 Requires the `props` package (workspace member) for database access.
 
 ```bash
-# Start all services (from props/)
-cd props && devenv up
+# Start infrastructure (from props/)
+cd props && docker compose up -d
+
+# Run frontend + backend dev servers
+bazelisk run //props/frontend:dev
 
 # Regenerate API types after schema changes
 bazel build //props/frontend:bundle
@@ -58,4 +64,4 @@ Backend imports from `props_core` package:
 - `props_core.db.models` - ORM models, views
 - `props_core.db.config` - Database connection
 
-Shared database is managed by props devenv (PostgreSQL container).
+Shared database is managed by Docker Compose (see `props/compose.yaml`).

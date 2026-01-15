@@ -22,15 +22,16 @@ from openai_utils.types import ReasoningSummary
 from props.core.agent_handle import AgentHandle
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_setup import AgentEnvironment
-from props.core.agent_types import ImprovementTypeConfig
+from props.core.agent_types import AgentType, ImprovementTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
-from props.core.db.agent_definition_ids import IMPROVEMENT_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import IMPROVEMENT_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleSpec
+from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 from props.core.prompt_improve.reminder_handler import ImprovementReminderHandler, TerminationSuccess
 from props.core.prompt_improve.token_budget_handler import TokenBudgetHandler
 from props.core.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
@@ -67,7 +68,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         self,
         docker_client: aiodocker.Docker,
         improvement_run_id: UUID,
-        baseline_definition_ids: list[str],
+        baseline_image_refs: list[str],
         allowed_examples: list[ExampleSpec],
         improvement_model: str,
         critic_client: OpenAIModelProto,
@@ -76,9 +77,11 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         workspace_manager: WorkspaceManager,
         registry: AgentRegistry,
         verbose: bool = False,
+        *,
+        image: str,
     ):
         type_config = ImprovementTypeConfig(
-            baseline_definition_ids=baseline_definition_ids,
+            baseline_image_refs=baseline_image_refs,
             allowed_examples=allowed_examples,
             improvement_model=improvement_model,
             critic_model=critic_client.model,
@@ -93,11 +96,11 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         self.agent_state = PromptOptimizerState()
 
         super().__init__(
-            definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
             agent_run_id=improvement_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image=image,
             container_name=f"improve-{short_uuid(improvement_run_id)}",
             labels={"adgn.project": "props", "adgn.role": "improve", "adgn.agent_run_id": str(improvement_run_id)},
             auto_remove=True,
@@ -125,7 +128,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
 
 async def run_improvement_agent(
     examples: list[ExampleSpec],
-    baseline_definition_ids: list[str],
+    baseline_image_refs: list[str],
     token_budget: int,
     model: str,
     docker_client: aiodocker.Docker,
@@ -136,6 +139,9 @@ async def run_improvement_agent(
     output_dir: Path | None = None,
     verbose: bool = False,
 ) -> ImprovementResult:
+    """Run improvement agent to optimize prompts.
+
+    Always uses builtin improvement image for consistency."""
     if not examples:
         raise ValueError("examples must not be empty")
 
@@ -152,8 +158,13 @@ async def run_improvement_agent(
     )
     logger.info(f"Output directory: {output_dir}")
 
+    # Always use builtin improvement image
+    image_digest = resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
+    image = build_oci_reference(AgentType.IMPROVEMENT, image_digest)
+    logger.info(f"Using builtin improvement image: {image_digest}")
+
     type_config = ImprovementTypeConfig(
-        baseline_definition_ids=baseline_definition_ids,
+        baseline_image_refs=baseline_image_refs,
         allowed_examples=examples,
         improvement_model=model,
         critic_model=critic_client.model,
@@ -163,7 +174,7 @@ async def run_improvement_agent(
     with get_session() as session:
         agent_run = AgentRun(
             agent_run_id=run_id,
-            agent_definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
+            image_digest=image_digest,
             model=model,
             type_config=type_config,
             status=AgentRunStatus.IN_PROGRESS,
@@ -176,7 +187,7 @@ async def run_improvement_agent(
     agent_env = ImprovementAgentEnvironment(
         docker_client=docker_client,
         improvement_run_id=run_id,
-        baseline_definition_ids=baseline_definition_ids,
+        baseline_image_refs=baseline_image_refs,
         allowed_examples=examples,
         improvement_model=model,
         critic_client=critic_client,
@@ -185,6 +196,7 @@ async def run_improvement_agent(
         workspace_manager=workspace_manager,
         registry=registry,
         verbose=verbose,
+        image=image,
     )
 
     try:
@@ -213,7 +225,7 @@ async def run_improvement_agent(
                 # Create AgentHandle - reads system prompt from container via MCP, runs init
                 handle = await AgentHandle.create(
                     agent_run_id=run_id,
-                    definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
+                    image_digest=IMPROVEMENT_IMAGE_REF,
                     model_client=client,
                     mcp_client=mcp_client,
                     compositor=comp,

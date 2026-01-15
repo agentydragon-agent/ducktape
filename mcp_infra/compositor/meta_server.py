@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, cast
 
 from fastmcp.resources import FunctionResource, ResourceTemplate
 
-from mcp_infra.compositor.mount import MountEvent
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.mount_types import MountEvent
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import ServerEntry
 

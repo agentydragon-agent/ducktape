@@ -3,13 +3,15 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "difftree",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "__init__.py",
+        "__main__.py",
+        "config.py",
+        "diff_tree.py",
+        "parser.py",
+        "progress_bar.py",
+        "tree.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -28,13 +30,20 @@ py_binary(
 
 py_test(
     name = "test_all",
-    srcs = glob(["tests/**/*.py"]),
-    data = glob([
-        "tests/**/*.txt",
-        "tests/**/*.diff",
-    ]),
-    imports = ["."],
-    main = "tests/test_diff_tree.py",
+    srcs = [
+        "conftest.py",
+        "test_cli.py",
+        "test_config.py",
+        "test_diff_tree.py",
+        "test_e2e.py",
+        "test_parser.py",
+        "test_progress_bar.py",
+        "test_snapshots.py",
+        "test_tree.py",
+    ],
+    data = ["__snapshots__/test_snapshots.ambr"],
+    imports = [".."],
+    main = "test_diff_tree.py",
     deps = [
         ":difftree",
         "@pypi//pyhamcrest",

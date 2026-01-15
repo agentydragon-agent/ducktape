@@ -87,39 +87,10 @@ The sensor exposes the following attributes:
 
 ## Development & Testing
 
-### Use a Virtual Environment (recommended)
-
-Working inside an isolated Python environment prevents global “dependency hell” and makes it trivial to pin a
-Python version for the project. The following workflow uses [pyenv](https://github.com/pyenv/pyenv) to obtain the
-exact interpreter version and the built-in `venv` module to create an environment that is **local to the repository**.
-
-1. (one-time) Install `pyenv` by following the instructions for your platform.
-2. Install the Python version required by this project and make it the local default:
-
-   ```bash
-   pyenv install 3.10.12   # skip if already installed
-   pyenv local 3.10.12     # creates a `.python-version` file (already in repo)
-   ```
-
-3. Create and activate a virtual environment next to the code (this keeps the directory tree tidy – the folder is
-   already ignored by `.gitignore`):
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
-
-4. Install the component **and** the development dependencies into that environment:
-
-   ```bash
-   pip install -e ".[test]"
-   ```
-
-That is it – you are now ready to run the unit-test suite or start hacking away without touching the rest of the
-system. Whenever you come back to the project make sure to re-activate the venv with `source .venv/bin/activate`.
-
-### Running the Tests
+See the repository root AGENTS.md for the standard Bazel workflow.
 
 ```bash
-pytest
+bazel build //homeassistant/iaqi/...
+bazel test //homeassistant/iaqi/...
+bazel build --config=check //homeassistant/iaqi/...  # lint + typecheck
 ```

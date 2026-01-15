@@ -1,21 +1,8 @@
-# Increase refresh rate of command line UI for improved perceived responsiveness.
-common --show_progress_rate_limit=0.05
 common --progress_in_terminal_title
 
-# Should show all parallelism.
-common --ui_actions_shown 256
-
-# Imports:
-# build --remote_cache=https://agentydragon-laptop:<PASSWORD>@bazel-cache.agentydragon.com:9090
-# Might not be present on other laptops, don't fail if it isn't.
-try-import /home/agentydragon/.config/bazelrc.secrets
+# TODO: configure Bazel cache once it's set up, e.g. via try-import
 
 common --enable_bzlmod
-
-# Trying to see if this might fix the issues with errors in
-# cargo-raze-generated platform-specific dependencies in BUILD files
-# NOTE: Commented out - cargo-raze is no longer used (now using rules_rust crate_universe)
-# build --platforms //:linux_x64
 
 # Lint configuration (Python ruff + JS/TS eslint)
 # Run with: bazel build --config=lint //...

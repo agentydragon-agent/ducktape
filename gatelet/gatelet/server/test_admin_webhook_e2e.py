@@ -18,7 +18,7 @@ from gatelet.server.models import Base
 
 
 @pytest.fixture(scope="session")
-def server_url(_postgres: None) -> Generator[str, None, None]:
+def server_url(_postgres: None) -> Generator[str]:
     """Start the Gatelet server for browser tests."""
     cfg_dir = Path(__file__).resolve().parents[2]
     env = os.environ.copy()

@@ -110,10 +110,10 @@
             </tr>
           </thead>
           <tbody>
-            {#each data.definitions as def (def.definition_id)}
+            {#each data.definitions as def (def.image_digest)}
               <tr class="border-b border-gray-100 hover:bg-gray-50">
                 <td class="px-3 py-2">
-                  <DefinitionIdLink id={def.definition_id} />
+                  <DefinitionIdLink id={def.image_digest} />
                 </td>
                 <td class="px-3 py-2 text-gray-600 font-mono text-xs">{def.model}</td>
                 <td class="px-3 py-2 text-right {recallColorClass(def.credit_stats?.mean)}">

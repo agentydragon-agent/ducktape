@@ -486,7 +486,7 @@
         </div>
         <div>
           <span class="text-gray-500">Definition:</span>
-          <span class="ml-1"><DefinitionIdLink id={run.definition_id} /></span>
+          <span class="ml-1"><DefinitionIdLink id={run.image_digest} /></span>
         </div>
         <div>
           <span class="text-gray-500">Model:</span>
@@ -536,7 +536,7 @@
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span
             ><span class="text-gray-500">Baselines:</span>
-            {#each config.baseline_definition_ids as defId, i (defId)}
+            {#each config.baseline_image_refs as defId, i (defId)}
               {#if i > 0},
               {/if}<DefinitionIdLink id={defId} />
             {/each}

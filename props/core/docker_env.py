@@ -12,7 +12,7 @@ import aiodocker
 
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.container_session import BindMount, ContainerOptions
+from mcp_infra.exec.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from props.core.db.config import DbConnectionConfig
@@ -24,10 +24,11 @@ DOCKER_MOUNT_PREFIX = MCPMountPrefix("docker")
 
 
 # Docker network name for properties containers
-# - Shared with postgres container (container-to-container communication)
-# - Allows container→host communication for MCP HTTP mode
-# - Non-internal network (needed for host access)
-PROPS_NETWORK_NAME = "props_default"
+# Agent containers connect to this network to access:
+# - props-postgres (for RLS-controlled database queries)
+# - props-registry-proxy (for OCI image operations with ACL enforcement)
+# This network is non-internal to allow container→host communication for MCP HTTP mode
+PROPS_NETWORK_NAME = "props-agents"
 
 
 class PropertiesDockerCompositor(Compositor):

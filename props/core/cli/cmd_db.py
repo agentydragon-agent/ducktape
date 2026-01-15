@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import gzip
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
-import aiodocker
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -16,7 +14,7 @@ from rich.table import Table
 from props.core.db.config import DatabaseConfig, get_database_config
 from props.core.db.session import get_session, recreate_database
 from props.core.db.setup import ensure_database_exists
-from props.core.db.sync.sync import FullSyncResult, build_definition_images, sync_all
+from props.core.db.sync.sync import FullSyncResult, sync_all
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
@@ -53,14 +51,6 @@ def recreate_database_and_sync(*, use_staged: bool = False) -> FullSyncResult:
         return sync_all(session, use_staged=use_staged)
 
 
-async def build_all_definition_images(console: Console) -> None:
-    """Build Docker images for all agent definitions in the database."""
-    async with aiodocker.Docker() as docker:
-        with get_session() as session:
-            count = await build_definition_images(docker, session)
-    console.print(f"Built {count} agent definition images")
-
-
 def print_sync_result(console: Console, result: FullSyncResult) -> None:
     """Print sync result summary table.
 
@@ -76,7 +66,6 @@ def print_sync_result(console: Console, result: FullSyncResult) -> None:
     table.add_row("Snapshot files", result.snapshot_file_stats.summary_text)
     table.add_row("File sets", result.file_set_stats.summary_text)
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
-    table.add_row("Agent definitions", result.agent_definition_stats.summary_text)
     console.print(table)
 
 
@@ -84,27 +73,21 @@ def cmd_sync(
     use_staged: bool = typer.Option(
         False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
     ),
-    build_images: bool = typer.Option(
-        False, "--build-images", help="Build Docker images for all agent definitions after sync"
-    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without committing (rollback after sync)"),
 ) -> None:
     """Sync snapshots, issues, files, file sets, model metadata, and agent definitions from source to DB."""
     console = Console()
     with get_session() as session:
-        result = sync_all(session, use_staged=use_staged)
+        result = sync_all(session, use_staged=use_staged, dry_run=dry_run)
+    if dry_run:
+        console.print("[yellow]DRY-RUN:[/yellow] Validation passed, no changes committed")
     print_sync_result(console, result)
-
-    if build_images:
-        asyncio.run(build_all_definition_images(console))
 
 
 def cmd_db_recreate(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
     use_staged: bool = typer.Option(
         False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
-    ),
-    build_images: bool = typer.Option(
-        False, "--build-images", help="Build Docker images for all agent definitions after sync"
     ),
 ) -> None:
     """Recreate database from scratch (destructive - drops all tables/views/policies).
@@ -114,7 +97,6 @@ def cmd_db_recreate(
     2. Drop all existing schema objects (tables, views, RLS policies, functions)
     3. Run Alembic migrations to recreate schema
     4. Sync all data from filesystem (snapshots, issues, files, file sets, model metadata, agent definitions)
-    5. (Optional) Build Docker images for all agent definitions
 
     Note: Temporary database users are created per-agent instead of a shared agent_user role.
           Schema creation (step 3) runs all Alembic migrations, which define tables, views, RLS, etc.
@@ -140,9 +122,6 @@ def cmd_db_recreate(
     console.print("✓ Database recreated:")
 
     print_sync_result(console, result)
-
-    if build_images:
-        asyncio.run(build_all_definition_images(console))
 
 
 def get_default_backup_dir() -> Path:

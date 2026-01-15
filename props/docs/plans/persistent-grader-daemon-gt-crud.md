@@ -14,7 +14,7 @@ Replace ephemeral one-shot graders with persistent "grader daemons" (one per sna
 
 ### Phase A: Infrastructure ✅
 
-- Backup infrastructure (devenv `pg_backup` + `props db backup/restore/list-backups`)
+- Backup infrastructure (devenv `pg_backup` + `bazelisk run //props/core/cli -- db backup/restore/list-backups`)
 - Clustering removal (migration 20251227000003)
 
 ### Phase B: Schema + YAML Extension ✅
@@ -27,7 +27,7 @@ Replace ephemeral one-shot graders with persistent "grader daemons" (one per sna
 
 - GT Read API: `GET /api/gt/snapshots`, `GET /api/gt/snapshots/{slug}`
 - GT Browser Frontend: `SnapshotsList.svelte`, `SnapshotDetail.svelte`
-- DB → YAML export: `props gt export`
+- DB → YAML export: `bazelisk run //props/core/cli -- gt export`
 
 ### Phase D: Unified Grading Model ✅
 
@@ -41,12 +41,12 @@ Migration 20251228000001 completed:
 
 Grader CLI and docs completed:
 
-- `props grader-agent list pending` — Query missing edges
-- `props grader-agent show issue/gt` — Inspect issues/occurrences
-- `props grader-agent match` — Create edges with credit
-- `props grader-agent fill` — Bulk-fill remaining edges
-- `props grader-agent delete` — Delete edges for redo
-- `props grader-agent submit` — Finalize grading
+- `bazelisk run //props/core/cli -- grader-agent list pending` — Query missing edges
+- `bazelisk run //props/core/cli -- grader-agent show issue/gt` — Inspect issues/occurrences
+- `bazelisk run //props/core/cli -- grader-agent match` — Create edges with credit
+- `bazelisk run //props/core/cli -- grader-agent fill` — Bulk-fill remaining edges
+- `bazelisk run //props/core/cli -- grader-agent delete` — Delete edges for redo
+- `bazelisk run //props/core/cli -- grader-agent submit` — Finalize grading
 - `docs/agents/grader.md.j2` — Updated with edges model
 - `docs/db/grading.md.j2` — Updated with edges documentation
 
@@ -73,7 +73,7 @@ Grader CLI and docs completed:
 - Daemon-mode prompt template `docs/agents/grader_daemon_mode.md.j2`
 - Conditional template rendering in `grader.md.j2` (is_daemon flag)
 - Updated `grader-agent init` to detect mode and pass data to template
-- Unified CLI: both modes use `props grader-agent` (deleted separate `grader-daemon` CLI)
+- Unified CLI: both modes use `bazelisk run //props/core/cli -- grader-agent` (deleted separate `grader-daemon` CLI)
 - G.10: `--run` option for snapshot mode (instead of qualified IDs)
   - `list pending` shows rich table with Run column in snapshot mode
   - All commands accept `--run` to filter by critic run

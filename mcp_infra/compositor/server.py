@@ -28,12 +28,13 @@ from mcp import types as mcp_types
 from pydantic import ValidationError
 
 from mcp_infra.compositor.meta_server import CompositorMetaServer
-from mcp_infra.compositor.mount import Mount, MountEvent
+from mcp_infra.compositor.mount import Mount
 from mcp_infra.compositor.rendering import render_compositor_instructions
+from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.constants import COMPOSITOR_META_MOUNT_PREFIX, RESOURCES_MOUNT_PREFIX
+from mcp_infra.mount_types import MountEvent
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.resources.server import ResourcesServer
 from mcp_infra.snapshots import (
     FailedServerEntry,
     InitializingServerEntry,

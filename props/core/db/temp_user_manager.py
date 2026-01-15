@@ -81,7 +81,7 @@ class TempUserManager:
     Usage:
         async with TempUserManager(admin_config, agent_run_id) as creds:
             # Combine credentials with your connection parameters
-            config = admin_config.with_user(creds)
+            config = admin_config.with_user(creds.username, creds.password)
             engine = create_engine(config.url())
             # Agent has RLS-scoped access based on agent_run_id and type_config
         # User automatically cleaned up on exit

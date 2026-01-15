@@ -23,11 +23,11 @@ from openai_utils.types import ReasoningSummary
 from props.core.agent_handle import AgentHandle
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_setup import AgentEnvironment
-from props.core.agent_types import PromptOptimizerTypeConfig
+from props.core.agent_types import AgentType, PromptOptimizerTypeConfig
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.critic.exceptions import CriticExecutionError
-from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
+from props.core.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
 from props.core.db.config import DatabaseConfig
 from props.core.db.examples import Example
 from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingEdge, Snapshot
@@ -36,6 +36,7 @@ from props.core.display import short_uuid
 from props.core.exceptions import AgentDidNotSubmitError
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
+from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
 from props.core.prompt_optimize.budget_handler import BudgetEnforcementHandler
 from props.core.splits import Split
 
@@ -119,6 +120,8 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         workspace_manager: WorkspaceManager,
         registry: AgentRegistry,
         verbose: bool = False,
+        *,
+        image: str,
     ):
         self._optimizer_run_id = optimizer_run_id
         self._optimizer_model = optimizer_model
@@ -132,11 +135,11 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         self._verbose = verbose
 
         super().__init__(
-            definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
             agent_run_id=optimizer_run_id,
             docker_client=docker_client,
             db_config=db_config,
             workspace_manager=workspace_manager,
+            image=image,
             container_name=f"promptopt-{short_uuid(optimizer_run_id)}",
             labels={
                 "adgn.project": "props",
@@ -325,7 +328,7 @@ class PromptEvalServer(EnhancedFastMCP):
             # Execute critic run using registry
             try:
                 critic_run_id = await self._registry.run_critic(
-                    definition_id=payload.definition_id,
+                    image_ref=payload.definition_id,  # definition_id is actually an image ref
                     example=payload.example,
                     client=self._critic_client,
                     parent_run_id=self._optimizer_run_id,
@@ -472,14 +475,14 @@ class PromptEvalServer(EnhancedFastMCP):
                         "IMPORTANT: Check n_examples >= 5 before trusting metrics (small samples have high variance). "
                         "Use UCB/LCB bounds to quantify uncertainty. "
                         f"Example: SELECT recall_stats, n_examples FROM recall_by_definition_split_kind "
-                        f"WHERE critic_definition_id='...' AND split='valid' AND example_kind='{ExampleKind.WHOLE_SNAPSHOT}'; "
+                        f"WHERE critic_image_digest ='...' AND split='valid' AND example_kind='{ExampleKind.WHOLE_SNAPSHOT}'; "
                         f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
                     )
                 else:
                     # TRAIN split or per-file examples: use aggregate views
                     query_advice = (
                         f"{_VIEW_BASED_METRICS_ADVICE} "
-                        "Example: SELECT recall_stats FROM recall_by_definition_split_kind WHERE critic_definition_id='...' AND split='train'; "
+                        "Example: SELECT recall_stats FROM recall_by_definition_split_kind WHERE critic_image_digest ='...' AND split='train'; "
                         f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
                     )
 
@@ -513,6 +516,7 @@ async def run_prompt_optimizer(
     db_config: DatabaseConfig,
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
+    image_ref: str = BUILTIN_TAG,
 ) -> None:
     """Run prompt optimizer agent. Loops until budget exhausted or report_failure called."""
     # Get train snapshots from database
@@ -526,6 +530,11 @@ async def run_prompt_optimizer(
     agent_run_id = uuid4()
     logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
 
+    # Resolve image reference to digest and construct full OCI reference
+    image_digest = resolve_image_ref(AgentType.PROMPT_OPTIMIZER, image_ref)
+    image = build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
+    logger.info(f"Resolved prompt-optimizer image {image_ref} → {image}")
+
     # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
     with get_session() as session:
         type_config = PromptOptimizerTypeConfig(
@@ -538,7 +547,7 @@ async def run_prompt_optimizer(
 
         agent_run = AgentRun(
             agent_run_id=agent_run_id,
-            agent_definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
+            image_digest=image_digest,
             model=optimizer_client.model,
             type_config=type_config,
             status=AgentRunStatus.IN_PROGRESS,
@@ -569,6 +578,7 @@ async def run_prompt_optimizer(
         workspace_manager=workspace_manager,
         registry=registry,
         verbose=verbose,
+        image=image,
     )
     async with agent_env as comp:
         # comp is a PropertiesDockerCompositor with:
@@ -626,7 +636,7 @@ Prioritize recall.
             # Create AgentHandle - reads system prompt from container via MCP, runs init
             handle = await AgentHandle.create(
                 agent_run_id=agent_run_id,
-                definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
+                image_digest=PROMPT_OPTIMIZER_IMAGE_REF,
                 model_client=optimizer_client,
                 mcp_client=mcp_client,
                 compositor=comp,

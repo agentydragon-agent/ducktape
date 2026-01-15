@@ -369,7 +369,7 @@ def apply(
         total_processed = 0
         for sig, msg_ids in plan.group_by_signature().items():
             batch_size = 1000
-            for batch in itertools.batched(msg_ids, batch_size):
+            for batch in itertools.batched(msg_ids, batch_size, strict=False):
                 body: dict = {"ids": list(batch)}
                 if sig.labels_to_add:
                     body["addLabelIds"] = list(sig.labels_to_add)

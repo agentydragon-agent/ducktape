@@ -810,7 +810,7 @@ For whole-snapshot scope, always returns TRUE.'
         CREATE FUNCTION get_validation_full_snapshot_aggregates()
         RETURNS TABLE(
             snapshot_slug text,
-            critic_definition_id text,
+            critic_image_digest text,
             critic_model text,
             grader_model text,
             critic_run_id uuid,
@@ -836,7 +836,7 @@ For whole-snapshot scope, always returns TRUE.'
             WITH occurrence_avg_credits AS (
                 SELECT
                     oc.snapshot_slug,
-                    oc.critic_definition_id,
+                    oc.critic_image_digest,
                     oc.critic_model,
                     oc.grader_model,
                     oc.critic_run_id,
@@ -851,12 +851,12 @@ For whole-snapshot scope, always returns TRUE.'
                 WHERE s.split = 'valid'::split_enum
                   AND oc.example_kind = 'whole_snapshot'
                   AND (cr.type_config->>'agent_type') = 'critic'
-                GROUP BY oc.snapshot_slug, oc.critic_definition_id, oc.critic_model, oc.grader_model,
+                GROUP BY oc.snapshot_slug, oc.critic_image_digest, oc.critic_model, oc.grader_model,
                          oc.critic_run_id, oc.grader_run_id, cr.status, oc.tp_id, oc.occurrence_id
             )
             SELECT
                 occurrence_avg_credits.snapshot_slug,
-                occurrence_avg_credits.critic_definition_id,
+                occurrence_avg_credits.critic_image_digest,
                 occurrence_avg_credits.critic_model,
                 occurrence_avg_credits.grader_model,
                 occurrence_avg_credits.critic_run_id,
@@ -865,11 +865,11 @@ For whole-snapshot scope, always returns TRUE.'
                 SUM(avg_credit) as total_credit,
                 CAST(COUNT(*) AS integer) as n_occurrences
             FROM occurrence_avg_credits
-            GROUP BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_definition_id,
+            GROUP BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_image_digest,
                      occurrence_avg_credits.critic_model, occurrence_avg_credits.grader_model,
                      occurrence_avg_credits.critic_run_id, occurrence_avg_credits.grader_run_id,
                      occurrence_avg_credits.status
-            ORDER BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_definition_id,
+            ORDER BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_image_digest,
                      occurrence_avg_credits.critic_model, occurrence_avg_credits.grader_model,
                      occurrence_avg_credits.critic_run_id, occurrence_avg_credits.grader_run_id;
         END;
@@ -970,10 +970,10 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.PrimaryKeyConstraint("slug"),
     )
 
-    # Agent definitions table
+    # Agent definitions table (digest-based, OCI images)
     op.create_table(
         "agent_definitions",
-        sa.Column("id", sa.Text(), nullable=False),
+        sa.Column("digest", sa.Text(), nullable=False, comment="OCI image digest (sha256:...)"),
         sa.Column(
             "agent_type",
             postgresql.ENUM(
@@ -987,26 +987,22 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
                 create_type=False,
             ),
             nullable=False,
+            comment="Agent type enum (maps to repository name in registry)",
         ),
-        sa.Column("archive", sa.LargeBinary(), nullable=False),
-        sa.Column("created_by_agent_run_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column(
+            "created_by_agent_run_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=True,
+            comment="Agent run that created this image (NULL for builtin images)",
+        ),
+        sa.Column("base_digest", sa.Text(), nullable=True, comment="Parent image digest if this is a layered image"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.CheckConstraint("octet_length(archive) <= 10485760", name="agent_definitions_archive_max_size"),
+        sa.PrimaryKeyConstraint("digest"),
     )
 
     op.execute(
-        "COMMENT ON TABLE agent_definitions IS 'Agent package archives containing Dockerfile, /init script, and supporting files'"
-    )
-    op.execute(
-        "COMMENT ON COLUMN agent_definitions.id IS 'Readable ID: repo-backed use names like \"critic\", agent-created use auto-generated'"
-    )
-    op.execute(
-        "COMMENT ON COLUMN agent_definitions.archive IS 'Uncompressed tar archive of the definition directory (max 10MB)'"
-    )
-    op.execute(
-        "COMMENT ON COLUMN agent_definitions.created_by_agent_run_id IS 'Agent run that created this definition (NULL for repo-backed)'"
+        "COMMENT ON TABLE agent_definitions IS 'Agent images as OCI digests. Registry proxy writes rows on manifest push.'"
     )
 
     # Agent role salt table (singleton)
@@ -1027,7 +1023,9 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     op.create_table(
         "agent_runs",
         sa.Column("agent_run_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("agent_definition_id", sa.Text(), nullable=False),
+        sa.Column(
+            "image_digest", sa.Text(), nullable=False, comment="OCI image digest (FK to agent_definitions.digest)"
+        ),
         sa.Column("parent_agent_run_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("model", sa.Text(), nullable=False),
         sa.Column("type_config", postgresql.JSONB(), nullable=False),
@@ -1049,7 +1047,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.Column("completion_summary", sa.Text(), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("agent_run_id"),
-        sa.ForeignKeyConstraint(["agent_definition_id"], ["agent_definitions.id"]),
+        sa.ForeignKeyConstraint(["image_digest"], ["agent_definitions.digest"]),
         sa.ForeignKeyConstraint(["parent_agent_run_id"], ["agent_runs.agent_run_id"]),
     )
 
@@ -1077,6 +1075,8 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         ["created_by_agent_run_id"],
         ["agent_run_id"],
     )
+
+    op.execute("COMMENT ON COLUMN agent_runs.image_digest IS 'OCI image digest (FK to agent_definitions.digest)'")
 
     # Snapshot files table - all files in each snapshot for FK validation
     op.create_table(
@@ -2136,7 +2136,7 @@ a critique to an occurrence that could not have been found from those files.'
                 s.split,
                 e.recall_denominator,
                 cr.agent_run_id AS critic_run_id,
-                cr.agent_definition_id AS critic_definition_id,
+                cr.image_digest AS critic_image_digest,
                 cr.model AS critic_model,
                 cr.status AS critic_status,
                 compute_stats_with_ci(
@@ -2155,12 +2155,12 @@ a critique to an occurrence that could not have been found from those files.'
             LEFT JOIN grader_stats gs ON gs.critique_run_id = cr.agent_run_id
             WHERE (cr.type_config->>'agent_type') = 'critic'
               AND cr.status != 'in_progress'
-            GROUP BY cr.agent_run_id, cr.type_config, cr.agent_definition_id, cr.model, cr.status,
+            GROUP BY cr.agent_run_id, cr.type_config, cr.image_digest, cr.model, cr.status,
                      e.example_kind, e.files_hash, e.recall_denominator, s.split
         )
         SELECT
             snapshot_slug, example_kind, files_hash, split, recall_denominator,
-            critic_run_id, critic_definition_id, critic_model, critic_status,
+            critic_run_id, critic_image_digest, critic_model, critic_status,
             credit_stats,
             scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM per_run
@@ -2176,7 +2176,7 @@ a critique to an occurrence that could not have been found from those files.'
         CREATE VIEW recall_by_definition_example AS
         WITH raw_stats AS (
             SELECT
-                rbr.critic_definition_id,
+                rbr.critic_image_digest,
                 rbr.critic_model,
                 rbr.snapshot_slug,
                 rbr.example_kind,
@@ -2189,11 +2189,11 @@ a critique to an occurrence that could not have been found from those files.'
                     COALESCE((rbr.credit_stats).mean, 0.0)
                 )) AS credit_stats
             FROM recall_by_run rbr
-            GROUP BY rbr.critic_definition_id, rbr.critic_model,
+            GROUP BY rbr.critic_image_digest, rbr.critic_model,
                      rbr.snapshot_slug, rbr.example_kind, rbr.files_hash, rbr.split
         )
         SELECT
-            critic_definition_id, critic_model,
+            critic_image_digest, critic_model,
             snapshot_slug, example_kind, files_hash, split,
             recall_denominator, n_runs, status_counts, credit_stats,
             scale_stats(credit_stats, recall_denominator) AS recall_stats
@@ -2211,20 +2211,20 @@ a critique to an occurrence that could not have been found from those files.'
         WITH
         example_counts AS (
             SELECT
-                split, example_kind, critic_definition_id, critic_model,
+                split, example_kind, critic_image_digest, critic_model,
                 COUNT(*)::integer AS n_examples,
                 SUM(recall_denominator)::integer AS recall_denominator
             FROM (
                 SELECT DISTINCT
                     split, example_kind, files_hash, recall_denominator,
-                    critic_definition_id, critic_model
+                    critic_image_digest, critic_model
                 FROM recall_by_definition_example
             ) per_example
-            GROUP BY split, example_kind, critic_definition_id, critic_model
+            GROUP BY split, example_kind, critic_image_digest, critic_model
         ),
         run_stats AS (
             SELECT
-                split, example_kind, critic_definition_id, critic_model,
+                split, example_kind, critic_image_digest, critic_model,
                 COUNT(*)::integer AS n_runs,
                 agg_status_counts(array_agg(status_counts)) AS status_counts,
                 compute_stats_with_ci(array_agg(
@@ -2232,16 +2232,16 @@ a critique to an occurrence that could not have been found from those files.'
                 )) AS credit_stats,
                 COUNT(*) FILTER (WHERE COALESCE((credit_stats).mean, 0.0) = 0.0)::integer AS zero_count
             FROM recall_by_definition_example
-            GROUP BY split, example_kind, critic_definition_id, critic_model
+            GROUP BY split, example_kind, critic_image_digest, critic_model
         )
         SELECT
-            rs.split, rs.example_kind, rs.critic_definition_id, rs.critic_model,
+            rs.split, rs.example_kind, rs.critic_image_digest, rs.critic_model,
             ec.n_examples, rs.n_runs, ec.recall_denominator,
             rs.status_counts, rs.credit_stats,
             scale_stats(rs.credit_stats, ec.recall_denominator) AS recall_stats,
             rs.zero_count
         FROM run_stats rs
-        JOIN example_counts ec USING (split, example_kind, critic_definition_id, critic_model)
+        JOIN example_counts ec USING (split, example_kind, critic_image_digest, critic_model)
     """)
 
     op.execute("""
@@ -2308,7 +2308,11 @@ a critique to an occurrence that could not have been found from those files.'
             snapshot_slug, example_kind, files_hash, split,
             MAX(recall_denominator)::integer AS recall_denominator,
             critic_model,
-            array_agg(DISTINCT critic_definition_id) AS winning_critic_definition_ids,
+            jsonb_agg(DISTINCT jsonb_build_object(
+                'image_digest', critic_image_digest,
+                'credit_stats', credit_stats,
+                'n_runs', n_runs
+            )) AS winning_definitions,
             best_mean_credit
         FROM ranked
         GROUP BY snapshot_slug, example_kind, files_hash, split, critic_model, best_mean_credit
@@ -2323,13 +2327,13 @@ a critique to an occurrence that could not have been found from those files.'
     op.execute("""
         CREATE VIEW validation_recall_by_definition AS
         SELECT
-            critic_definition_id,
+            critic_image_digest,
             critic_model,
             compute_stats_with_ci(array_agg(
                 total_credit / NULLIF(n_occurrences, 0)
             )) AS recall_stats
         FROM get_validation_full_snapshot_aggregates()
-        GROUP BY critic_definition_id, critic_model
+        GROUP BY critic_image_digest, critic_model
     """)
 
     op.execute("""
@@ -2424,7 +2428,7 @@ Groups by model so queries can see per-model breakdown.'
             -- Critic-specific
             ge.critique_run_id AS critic_run_id,
             ge.critique_run_id AS critic_transcript_id,
-            cr.agent_definition_id AS critic_definition_id,
+            cr.image_digest AS critic_image_digest,
             cr.model AS critic_model,
             -- Grader-specific
             ge.grader_run_id,
@@ -2458,7 +2462,7 @@ Groups by model so queries can see per-model breakdown.'
             tpo.occurrence_id,
             cr.agent_run_id AS critic_run_id,
             cr.agent_run_id AS critic_transcript_id,
-            cr.agent_definition_id AS critic_definition_id,
+            cr.image_digest AS critic_image_digest,
             cr.model AS critic_model,
             NULL::uuid AS grader_run_id,
             NULL::uuid AS grader_transcript_id,
@@ -2505,7 +2509,7 @@ USEFUL FOR: Prompt optimizer (TRAIN split via RLS), improvement agent.'
             occurrence_id,
             critic_run_id,
             critic_transcript_id,
-            critic_definition_id,
+            critic_image_digest,
             critic_model,
             grader_run_id,
             grader_transcript_id,
@@ -2516,7 +2520,7 @@ USEFUL FOR: Prompt optimizer (TRAIN split via RLS), improvement agent.'
             string_agg(DISTINCT grader_rationale, ' | ') AS combined_rationale
         FROM occurrence_credits
         GROUP BY snapshot_slug, split, example_kind, files_hash, tp_id, occurrence_id,
-            critic_run_id, critic_transcript_id, critic_definition_id, critic_model,
+            critic_run_id, critic_transcript_id, critic_image_digest, critic_model,
             grader_run_id, grader_transcript_id, graded_at, grader_model
     """)
 
@@ -2529,13 +2533,13 @@ USEFUL FOR: Prompt optimizer (TRAIN split via RLS), improvement agent.'
             files_hash,
             tp_id,
             occurrence_id,
-            critic_definition_id,
+            critic_image_digest,
             critic_model,
             grader_model,
             compute_stats_with_ci(array_agg(total_credit)) AS credit_stats
         FROM occurrence_run_credits
         GROUP BY snapshot_slug, split, example_kind, files_hash, tp_id, occurrence_id,
-            critic_definition_id, critic_model, grader_model
+            critic_image_digest, critic_model, grader_model
     """)
 
     op.execute("""

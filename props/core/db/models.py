@@ -11,14 +11,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeVar
+from typing import Annotated, Any, ClassVar, Literal, TypeVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
-
-if TYPE_CHECKING:
-    from props.core.db.examples import Example
-
 from sqlalchemy import (
     CheckConstraint,
     Enum,
@@ -34,13 +30,13 @@ from sqlalchemy import (
     func,
     select,
 )
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from agent_core.events import EventType
 from props.core.agent_types import (
+    AgentType,
     CriticTypeConfig,
     FreeformTypeConfig,
     GraderTypeConfig,
@@ -50,7 +46,7 @@ from props.core.agent_types import (
     TypeConfig,
 )
 from props.core.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
-from props.core.ids import DefinitionId, SnapshotSlug, _SnapshotSlugBase
+from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.models.snapshot import BundleFilter, Source
 from props.core.splits import Split
@@ -352,16 +348,6 @@ class Snapshot(Base):
     )
     false_positives: Mapped[list[FalsePositive]] = relationship(
         back_populates="snapshot_obj", cascade="all, delete-orphan"
-    )
-    # CRITICAL: order_by ensures deterministic ordering for GEPA checkpoint compatibility
-    # GEPA maps Example → DataId via list position, so examples must load in stable order
-    # NOTE: examples is a VIEW, so we need explicit primaryjoin (no FK constraint exists)
-    examples: Mapped[list[Example]] = relationship(
-        "Example",
-        primaryjoin="Snapshot.slug == foreign(Example.snapshot_slug)",
-        back_populates="snapshot_obj",
-        viewonly=True,  # VIEW is read-only
-        order_by="Example.files_hash",
     )
 
     @classmethod
@@ -1051,7 +1037,7 @@ class OccurrenceCredit(Base):
     Detailed view with one row per (grader_run, occurrence), fully denormalized for filtering/grouping:
     - Run identification (grader_run_id, graded_at)
     - Snapshot/Example context (snapshot_slug, split, files_hash, example_kind)
-    - Critique provenance (critic_run_id, critic_definition_id)
+    - Critique provenance (critic_run_id, critic_image_digest)
     - Models (critic_model, grader_model)
     - Occurrence details (tp_id, occurrence_id, found_credit, matched_by_json, grader_rationale)
 
@@ -1078,7 +1064,7 @@ class OccurrenceCredit(Base):
 
     # Critique provenance
     critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, nullable=False)
+    critic_image_digest: Mapped[str] = mapped_column(String, nullable=False)
 
     # Models
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
@@ -1118,7 +1104,7 @@ class RecallByRun(Base):
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Critic-specific columns
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, nullable=False)
+    critic_image_digest: Mapped[str] = mapped_column(String, nullable=False)
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
     critic_status: Mapped[AgentRunStatus] = mapped_column(nullable=False)
 
@@ -1145,7 +1131,7 @@ class RecallByDefinitionExample(Base):
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     # Composite primary key
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
+    critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
@@ -1185,7 +1171,7 @@ class RecallByDefinitionSplitKind(Base):
     # Composite primary key (matches view GROUP BY)
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
+    critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Example and run counts
@@ -1248,7 +1234,7 @@ class RecallByExample(Base):
 class WinningDefinition(BaseModel):
     """A definition that achieved best score on an example."""
 
-    definition_id: DefinitionId
+    image_digest: str
     credit_stats: StatsWithCI
     n_runs: int
 
@@ -1263,7 +1249,7 @@ class ParetoFrontierByExample(Base):
 
     For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
     - recall_denominator: ground truth count (denominator for recall)
-    - winning_definitions: list of {definition_id, credit_stats, n_runs} for all definitions at best score
+    - winning_definitions: list of {image_digest, credit_stats, n_runs} for all definitions at best score
 
     All entries in winning_definitions have the same credit_stats.mean (the best score).
     Consumer can compute recall as best_mean_credit / recall_denominator.
@@ -1291,7 +1277,7 @@ class ParetoFrontierByExample(Base):
     # Ground truth count for this example
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # JSONB array of {definition_id, credit_stats, n_runs} objects
+    # JSONB array of {image_digest, credit_stats, n_runs} objects
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)
 
     @property
@@ -1300,9 +1286,9 @@ class ParetoFrontierByExample(Base):
         return _WinningDefinitionListAdapter.validate_python(self._winning_definitions_raw)
 
     @property
-    def winning_definition_ids(self) -> list[str]:
-        """Convenience: get just the definition IDs."""
-        return [w.definition_id for w in self.winning_definitions]
+    def winning_image_digests(self) -> list[str]:
+        """Convenience: get just the image digests."""
+        return [w.image_digest for w in self.winning_definitions]
 
     @property
     def best_mean_credit(self) -> float:
@@ -1337,7 +1323,7 @@ class OccurrenceStatistics(Base):
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Critic-specific
-    critic_definition_id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
+    critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Grader-specific
@@ -1348,22 +1334,31 @@ class OccurrenceStatistics(Base):
 
 
 class AgentDefinition(Base):
-    """Agent package archive stored in database.
+    """Agent image definition stored as OCI digest.
 
-    Contains Dockerfile, /init script, and optional supporting files packed as tar.
-    Packages can be repo-backed (readable names) or agent-created (auto-generated IDs).
+    The registry proxy writes rows to this table on manifest push.
+    Digest is the primary key (sha256:...).
     """
 
     __tablename__ = "agent_definitions"
 
-    id: Mapped[DefinitionId] = mapped_column(String, primary_key=True)
-    agent_type: Mapped[str] = mapped_column(String, nullable=False)  # agent_type_enum value
-    archive: Mapped[bytes] = mapped_column(postgresql.BYTEA, nullable=False)
+    digest: Mapped[str] = mapped_column(String, primary_key=True, comment="OCI image digest (sha256:...)")
+    agent_type: Mapped[AgentType] = mapped_column(String, nullable=False, comment="Agent type enum")
+    created_by_agent_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True, index=True, comment="Agent run that created this image (NULL for builtin)"
+    )
+    base_digest: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="Parent image digest if this is a layered image"
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    created_by_agent_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
-    agent_runs: Mapped[list[AgentRun]] = relationship(back_populates="agent_definition")
+    agent_runs: Mapped[list[AgentRun]] = relationship(
+        back_populates="agent_definition", foreign_keys="AgentRun.image_digest"
+    )
 
 
 class AgentRun(Base):
@@ -1376,13 +1371,19 @@ class AgentRun(Base):
     - status: Current run status (in_progress, completed, etc.)
     - completion_summary: Markdown summary from agent (when status='completed')
       or error message (when status='reported_failure')
+
+    Image reference:
+    - image_digest: OCI image digest (sha256:...), FK to agent_definitions.digest
     """
 
     __tablename__ = "agent_runs"
 
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    agent_definition_id: Mapped[DefinitionId] = mapped_column(
-        String, ForeignKey("agent_definitions.id"), nullable=False
+    image_digest: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("agent_definitions.digest"),
+        nullable=False,
+        comment="OCI image digest (FK to agent_definitions.digest)",
     )
     parent_agent_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id"), nullable=True, index=True
@@ -1405,7 +1406,7 @@ class AgentRun(Base):
     )
 
     # Relationships
-    agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs")
+    agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs", foreign_keys=[image_digest])
     parent: Mapped[AgentRun | None] = relationship("AgentRun", remote_side=[agent_run_id], backref="children")
     reported_issues: Mapped[list[ReportedIssue]] = relationship(
         back_populates="agent_run", cascade="all, delete-orphan"

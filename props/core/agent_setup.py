@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import secrets
 from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack, suppress
@@ -39,26 +38,23 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
 
 from agent_core.handler import BaseHandler
-from agent_pkg.host.builder import ensure_image_from_archive
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from net_util.docker import get_docker_network_gateway_async
 from net_util.net import pick_free_port, wait_for_port
-from props.core.agent_handle import load_definition_archive
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli.common_options import DEFAULT_MAX_LINES
 from props.core.db.config import DatabaseConfig
 from props.core.db.temp_user_manager import TempUserManager
 from props.core.db_event_handler import DatabaseEventHandler
 from props.core.docker_env import DOCKER_MOUNT_PREFIX, PROPS_NETWORK_NAME, PropertiesDockerCompositor
-from props.core.ids import DefinitionId
+from props.core.registry.images import _resolve_image_ref
 
 
-def _make_container_name(definition_id: DefinitionId, agent_run_id: UUID) -> str:
-    def_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", definition_id) or "agent"
-    def_part = def_slug[:20]
+def _make_container_name(agent_run_id: UUID) -> str:
+    """Generate container name from agent run ID only."""
     run_part = str(agent_run_id).split("-")[0]
-    return f"{def_part}-{run_part}"
+    return f"agent-{run_part}"
 
 
 if TYPE_CHECKING:
@@ -104,15 +100,14 @@ async def build_props_handlers(
 
 
 class AgentEnvironment(ABC):
-    """Base class for definition-based agent environments with HTTP MCP server.
+    """Base class for agent environments with HTTP MCP server.
 
     Manages complete agent lifecycle:
-    1. Builds Docker image from definition archive
+    1. Pulls OCI image from registry
     2. Creates temporary database user with scoped access
     3. Starts HTTP MCP server with agent-specific tools (via _make_mcp_server)
     4. Creates Docker container with:
        - docker_exec tool available
-       - Unpacked definition mounted at /workspace
        - Database credentials in PG* env vars
        - MCP server URL/token in env vars
     5. Cleans up in reverse order on exit
@@ -121,7 +116,7 @@ class AgentEnvironment(ABC):
     props.agent_helpers. No bind mounts for snapshots - agents extract them
     directly from the database.
 
-    Agent package structure (in Docker image, built from archive):
+    Agent image structure (OCI image):
     - /init: Bootstrap script executed before agent sampling (outputs system prompt)
     - /agent.md: Agent-specific prompt portion (optional, used by some /init scripts)
 
@@ -133,13 +128,13 @@ class AgentEnvironment(ABC):
 
     Example subclass:
         class CriticAgentEnvironment(AgentEnvironment):
-            def __init__(self, docker_client, agent_run_id, db_config, workspace_manager):
+            def __init__(self, docker_client, agent_run_id, db_config, workspace_manager, image):
                 super().__init__(
-                    definition_id="critic",
                     agent_run_id=agent_run_id,
                     docker_client=docker_client,
                     db_config=db_config,
                     workspace_manager=workspace_manager,
+                    image=image,  # Full OCI ref from AgentRegistry
                 )
 
             def _make_mcp_server(self, auth) -> FastMCP:
@@ -150,7 +145,6 @@ class AgentEnvironment(ABC):
             # Use AgentHandle.create() to run agent with init script
             handle = await AgentHandle.create(
                 agent_run_id=agent_run_id,
-                definition_id=definition_id,
                 compositor=compositor,
                 ...
             )
@@ -159,21 +153,21 @@ class AgentEnvironment(ABC):
 
     def __init__(
         self,
-        definition_id: DefinitionId,
         agent_run_id: UUID,
         docker_client: aiodocker.Docker,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
         *,
+        image: str,
         container_name: str | None = None,
         labels: dict[str, str] | None = None,
         auto_remove: bool = False,
     ):
-        self._definition_id = definition_id
         self._agent_run_id = agent_run_id
         self._docker_client = docker_client
         self._db_config = db_config
         self._workspace_manager = workspace_manager
+        self._image = image  # Full OCI reference (host:port/repo@digest)
         self._container_name = container_name
         self._labels = labels or {}
         self._auto_remove = auto_remove
@@ -182,11 +176,6 @@ class AgentEnvironment(ABC):
         self._exit_stack: AsyncExitStack | None = None
         self._compositor: PropertiesDockerCompositor | None = None
         self._image_id: str | None = None
-
-    @property
-    def definition_id(self) -> str:
-        """Agent definition ID."""
-        return self._definition_id
 
     @property
     def agent_run_id(self) -> UUID:
@@ -224,16 +213,15 @@ class AgentEnvironment(ABC):
         Returns:
             PropertiesDockerCompositor with docker_exec tool available
         """
-        # Build image from definition archive (cached by content hash)
-        archive = load_definition_archive(self._definition_id)
-        self._image_id = await ensure_image_from_archive(self._docker_client, archive)
-        logger.info(f"Using image {self._image_id[:19]} for definition {self._definition_id}")
+        # Resolve image from OCI reference
+        self._image_id = await _resolve_image_ref(self._docker_client, self._image)
+        logger.info(f"Using image {self._image_id[:19]} from {self._image}")
 
         self._user_manager = TempUserManager(self._db_config.admin, self._agent_run_id)
         temp_creds = await self._user_manager.__aenter__()
         logger.info(f"Created temporary database user: {temp_creds.username}")
 
-        container_db = self._db_config.for_container_user(temp_creds)
+        container_db = self._db_config.for_container_user(temp_creds.username, temp_creds.password)
 
         self._exit_stack = AsyncExitStack()
         await self._exit_stack.__aenter__()
@@ -245,7 +233,6 @@ class AgentEnvironment(ABC):
             docker_client=self._docker_client,
             image_id=self._image_id,
             db_conn=container_db,
-            definition_id=self._definition_id,
             agent_run_id=self._agent_run_id,
             container_name=self._container_name,
             labels=self._labels,
@@ -331,19 +318,13 @@ class _AgentDockerCompositor(PropertiesDockerCompositor):
         image_id: str,
         db_conn,
         *,
-        definition_id: DefinitionId,
         agent_run_id: UUID,
         container_name: str | None,
         labels: dict[str, str],
         auto_remove: bool,
     ):
-        merged_labels = {
-            "adgn.project": "props",
-            "adgn.role": definition_id,
-            "adgn.agent_run_id": str(agent_run_id),
-            **labels,
-        }
-        name = container_name or _make_container_name(definition_id, agent_run_id)
+        merged_labels = {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id), **labels}
+        name = container_name or _make_container_name(agent_run_id)
         super().__init__(
             workspace_root,
             docker_client,

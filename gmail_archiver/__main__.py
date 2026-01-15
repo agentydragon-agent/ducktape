@@ -122,7 +122,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
             add_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_add]
             remove_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_remove]
 
-            for batch in itertools.batched(msg_ids, batch_size):
+            for batch in itertools.batched(msg_ids, batch_size, strict=False):
                 body: dict = {"ids": list(batch)}
                 if add_ids:
                     body["addLabelIds"] = add_ids

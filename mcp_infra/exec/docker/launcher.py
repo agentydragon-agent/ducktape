@@ -13,7 +13,7 @@ import typer
 from typer_di import TyperDI
 
 from cli_util.decorators import async_run
-from mcp_infra.container_session import BindMount, ContainerOptions
+from mcp_infra.exec.container_session import BindMount, ContainerOptions
 from mcp_infra.mcp_types import NetworkMode
 
 from .server import ContainerExecServer

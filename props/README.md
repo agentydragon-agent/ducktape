@@ -6,8 +6,9 @@ High-level architecture and shared infrastructure for the props evaluation syste
 
 ```
 props/
-├── .envrc                    # Single devenv entry point (shared by all)
-├── devenv.nix                # Manages postgres, backend, frontend processes
+├── .envrc                    # Devenv entry point for env vars
+├── devenv.nix                # Devenv config: sets PG* env vars for Docker Compose access
+├── compose.yaml              # Docker Compose for postgres, registry, proxy
 ├── core/                     # Core Python library (props_core)
 │   ├── pyproject.toml        # Package: props-core
 │   ├── src/props_core/       # The Python package
@@ -21,78 +22,74 @@ props/
     └── src/
 ```
 
-## Development Server Management (devenv + process-compose)
+## Initial Setup
 
-The backend, frontend, and PostgreSQL are managed by devenv via process-compose.
+### Prerequisites
 
-### Starting All Services
+- Specimens repository cloned at `../specimens` (relative to ducktape root):
+  `git clone https://github.com/agentydragon/specimens ../specimens`
+
+### First-Time Setup
 
 ```bash
 cd props
-devenv up  # Starts postgres, backend, frontend
+
+# 1. Allow direnv (generates PGPASSWORD, sets env vars)
+direnv allow
+
+# 2. Build and load proxy image
+bazelisk run //props/registry_proxy:load
+
+# 3. Start infrastructure
+docker compose up -d
+
+# 4. Initialize database (runs migrations, syncs specimens)
+bazelisk run //props/core/cli -- db recreate
+
+# 5. Push agent images to registry
+bazelisk run //props/core/agent_defs/critic:push
+bazelisk run //props/core/agent_defs/grader:push
+bazelisk run //props/core/agent_defs/improvement:push
+bazelisk run //props/core/agent_defs/prompt_optimizer:push
 ```
 
-### Process Management Commands
+## Development
+
+**Build system:** Bazel (see root AGENTS.md).
 
 ```bash
-# List processes and their status
-process-compose process list
-
-# Get detailed status of a process
-process-compose process get backend
-
-# View logs
-process-compose process logs backend
-
-# Restart a process (picks up code changes)
-process-compose process restart backend
-
-# Stop/start a process
-process-compose process stop backend
-process-compose process start backend
+docker compose up -d                       # Start infrastructure
+docker compose down                        # Stop infrastructure
+docker compose logs -f postgres            # View logs
+bazelisk run //props/frontend:dev          # Frontend + backend with watch
+bazelisk test //props/...                  # Run all tests
+bazelisk build --config=check //props/...  # Lint + typecheck
 ```
 
 ### Service URLs
 
-- Backend: <http://localhost:8000>
 - Frontend: <http://localhost:5173>
+- Backend: <http://localhost:8000>
 - PostgreSQL: localhost:5433
-
-### Backend Watch Directories
-
-The devenv backend watches:
-
-- `backend/src` - Backend route handlers
-- `core/src` - Props core package
-
-Changes trigger automatic reload.
-
-### Regenerating OpenAPI Schema
-
-After backend API changes, rebuild the frontend (Bazel regenerates types automatically):
-
-```bash
-bazel build //props/frontend:bundle
-```
+- Registry: localhost:5050 (direct), localhost:5051 (proxy with ACL)
 
 ## Database Management
 
-### psql Access
-
 ```bash
-cd props && direnv exec . psql # Uses PG* environment variables set by devenv
-```
+# psql access (uses PG* environment variables from devenv)
+psql
 
-### Applying Migrations
+# Recreate database from scratch (drops all data, runs migrations, syncs specimens)
+bazelisk run //props/core/cli -- db recreate
 
-For applying migrations to an existing database:
-
-```bash
-direnv exec . alembic upgrade head
+# Backup and restore
+bazelisk run //props/core/cli -- db backup
+bazelisk run //props/core/cli -- db restore <backup_file>
 ```
 
 ## Specimens Dataset
 
 **Specimens data lives in a separate repository**: <https://github.com/agentydragon/specimens>
 
-The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`). The props package loads specimen data from this external location.
+The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`).
+The props package loads specimen data from this external location.

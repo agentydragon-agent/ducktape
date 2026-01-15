@@ -4,14 +4,20 @@ Svelte-based web interface for viewing Props evaluation results.
 
 ## Development
 
-All builds go through Bazel:
+```bash
+# Start infrastructure (from props/)
+cd props && docker compose up -d
+
+# Run frontend + backend dev servers with watch
+bazelisk run //props/frontend:dev
+```
+
+For standalone commands (rarely needed):
 
 ```bash
 bazel build //props/frontend:bundle    # Production build
 bazel test //props/frontend:visual_test  # Visual regression tests
 ```
-
-The `generate_schema` Bazel target regenerates TypeScript types from the backend OpenAPI schema.
 
 ## Visual Regression Testing
 

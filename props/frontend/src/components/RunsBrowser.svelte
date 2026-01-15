@@ -47,7 +47,7 @@
     const filters: RunsFilters = { offset, limit };
     if (statusFilter) filters.status = statusFilter;
     if (agentTypeFilter) filters.agent_type = agentTypeFilter;
-    if (initialDefinitionId) filters.definition_id = initialDefinitionId;
+    if (initialDefinitionId) filters.image_digest = initialDefinitionId;
     if (initialSplit) filters.split = initialSplit;
     if (initialKind) filters.example_kind = initialKind;
     return filters;
@@ -97,7 +97,7 @@
       data: runs,
       columns: [
         { id: 'agent_run_id', key: 'agent_run_id', name: 'ID', sortable: true },
-        { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
+        { id: 'image_digest', key: 'image_digest', name: 'Definition', sortable: true },
         { id: 'split', key: 'split', name: 'Split', sortable: true },
         { id: 'model', key: 'model', name: 'Model', sortable: true },
         { id: 'status', key: 'status', name: 'Status', sortable: true },
@@ -203,9 +203,9 @@
             </th>
             <th
               class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('definition_id')}
+              onclick={() => table.toggleSort('image_digest')}
             >
-              Definition{getSortIndicator('definition_id')}
+              Definition{getSortIndicator('image_digest')}
             </th>
             <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort('split')}>
               Split{getSortIndicator('split')}
@@ -232,7 +232,7 @@
                 <RunIdLink id={run.agent_run_id} />
               </td>
               <td class="px-3 py-2 text-xs">
-                <DefinitionIdLink id={run.definition_id} />
+                <DefinitionIdLink id={run.image_digest} />
               </td>
               <td class="px-3 py-2 text-xs text-gray-500">
                 {run.split ?? '—'}

@@ -82,7 +82,7 @@ def _postgres():
 
 
 @pytest_asyncio.fixture
-async def db_engine(_postgres) -> AsyncGenerator[AsyncEngine, None]:
+async def db_engine(_postgres) -> AsyncGenerator[AsyncEngine]:
     """Create a database engine and initialize the schema."""
 
     database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres@localhost/postgres")
@@ -97,7 +97,7 @@ async def db_engine(_postgres) -> AsyncGenerator[AsyncEngine, None]:
 
 
 @pytest_asyncio.fixture
-async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
+async def db_session(db_engine: AsyncEngine) -> AsyncGenerator[AsyncSession]:
     """Provide a database session wrapped in a transaction."""
 
     session_factory = async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False)
@@ -120,7 +120,7 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
     """Override ``get_db_session`` globally for tests."""
 
     @asynccontextmanager
-    async def _override() -> AsyncGenerator[AsyncSession, None]:
+    async def _override() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
     monkeypatch.setattr("gatelet.server.database.get_db_session", _override)
@@ -149,10 +149,10 @@ def test_settings(tmp_path: Path) -> Settings:
 
 
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGenerator[AsyncClient, None]:
+async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGenerator[AsyncClient]:
     """Get a test client connected to the test database with test settings."""
 
-    async def override_db() -> AsyncGenerator[AsyncSession, None]:
+    async def override_db() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
     def override_settings() -> Settings:

@@ -1,56 +1,24 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
 
 py_library(
-    name = "graders",
-    srcs = glob(["graders/**/*.py"]),
+    name = "claude_optimizer",
+    srcs = [
+        "__init__.py",
+        "generic_graders.py",
+        "requirement_templates.py",
+        "scoresheet.py",
+    ],
     visibility = ["//visibility:public"],
     deps = [
-        "@pypi//anthropic",
-        "@pypi//claude_code_sdk",
-        "@pypi//docker",
-        "@pypi//numpy",
         "@pypi//openai",
-        "@pypi//pandas",
-        "@pypi//pathspec",
-        "@pypi//plotnine",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
-        "@pypi//structlog",
-        "@pypi//tiktoken",
-    ],
-)
-
-py_test(
-    name = "test_unit",
-    srcs = glob(["tests/unit/**/*.py"]),
-    main = "tests/unit/__init__.py",
-    deps = [
-        ":graders",
-        "//inop",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_integration",
-    srcs = glob([
-        "tests/*.py",
-        "tests/integration/**/*.py",
-    ]),
-    main = "tests/__init__.py",
-    # Integration tests require docker/external resources
-    tags = ["manual"],
-    deps = [
-        ":graders",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
     ],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":graders"],
+    srcs = [":claude_optimizer"],
 )

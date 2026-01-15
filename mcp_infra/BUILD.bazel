@@ -1,52 +1,65 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# Core mcp_infra types and utilities (no subpackages - consumers add those explicitly)
 py_library(
     name = "mcp_infra",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-        ],
-    ),
-    data = glob([
-        "**/*.j2",
-        "**/*.md",
-    ]),
+    srcs = [
+        "__init__.py",
+        "calltool.py",
+        "client_helpers.py",
+        "config_loader.py",
+        "constants.py",
+        "mcp_types.py",
+        "mount_types.py",
+        "mounted.py",
+        "naming.py",
+        "prefix.py",
+        "resource_utils.py",
+        "snapshots.py",
+        "tool_schemas.py",
+        "urls.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core",
-        "//cli_util",
         "//mcp_utils",
-        "//openai_utils",
-        "@pypi//aiodocker",
-        "@pypi//anyio",
-        "@pypi//compact_json",
         "@pypi//fastmcp",
-        "@pypi//jinja2",
         "@pypi//mcp",
         "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//typer",
     ],
 )
 
-py_test(
-    name = "test_mcp_infra",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/test_types.py",
+# Shared test utilities
+py_library(
+    name = "test_support",
+    srcs = [
+        "_markers.py",
+        "conftest.py",
+    ],
+    imports = [".."],
+    visibility = ["//mcp_infra:__subpackages__"],
     deps = [
         ":mcp_infra",
         "//agent_core_testing",
-        "@pypi//docker",
-        "@pypi//pyhamcrest",
+        "//mcp_infra/compositor",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//mcp_infra/notifications",
+        "//mcp_infra/resources",
+        "//mcp_infra/stubs",
+        "//mcp_infra/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//syrupy",
-        "@pypi//types_docker",
     ],
+)
+
+py_test(
+    name = "test_types",
+    srcs = ["test_types.py"],
+    main = "test_types.py",
+    deps = [":test_support"],
 )
 
 ruff_test(

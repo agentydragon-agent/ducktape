@@ -115,20 +115,20 @@ Run `bazel run //bazelization:audit` to get updated counts.
 
 ### Docker Images Inventory
 
-| Image               | Location                                   | Status      | Notes                                            |
-| ------------------- | ------------------------------------------ | ----------- | ------------------------------------------------ |
-| `editor_agent`      | `editor_agent/runtime/`                    | ✅ Migrated | `bazel build //editor_agent/runtime:image`       |
-| `runtime`           | `docker/runtime/`                          | ✅ Migrated | `bazel build //docker/runtime:image`             |
-| `rspcache`          | `rspcache/`                                | ✅ Migrated | `bazel build //rspcache:image`                   |
-| `gatelet`           | `gatelet/`                                 | ✅ Migrated | `bazel build //gatelet:image`                    |
-| `webhook_inbox`     | `experimental/webhook_inbox/`              | ✅ Migrated | `bazel build //experimental/webhook_inbox:image` |
-| `ember`             | `ember/`                                   | ✅ Migrated | `bazel build //ember:image`                      |
-| `html`              | `llm/html/`                                | ✅ Migrated | `bazel build //llm/html:image`                   |
-| `properties-critic` | `docker/llm/properties-critic/`            | ❌ Deleted  | Orphaned, never used                             |
-| `openai_utils`      | `openai_utils/docker/`                     | ❌ Deleted  | Probe module never implemented                   |
-| `claude_optimizer`  | `claude/claude_optimizer/docker/`          | Pending     | 8 variant images                                 |
-| `props agents`      | `props/core/src/props_core/agent_defs/`    | Pending     | 9 agent images                                   |
-| `molecule`          | `ansible/molecule/github_release_plugins/` | Skip        | Ansible testing                                  |
+| Image               | Location                                   | Status      | Notes                                                      |
+| ------------------- | ------------------------------------------ | ----------- | ---------------------------------------------------------- |
+| `editor_agent`      | `editor_agent/runtime/`                    | ✅ Migrated | `bazel build //editor_agent/runtime:image`                 |
+| `runtime`           | `docker/runtime/`                          | ✅ Migrated | `bazel build //docker/runtime:image`                       |
+| `rspcache`          | `rspcache/`                                | ✅ Migrated | `bazel build //rspcache:image`                             |
+| `gatelet`           | `gatelet/`                                 | ✅ Migrated | `bazel build //gatelet:image`                              |
+| `webhook_inbox`     | `experimental/webhook_inbox/`              | ✅ Migrated | `bazel build //experimental/webhook_inbox:image`           |
+| `ember`             | `ember/`                                   | ✅ Migrated | `bazel build //ember:image`                                |
+| `html`              | `llm/html/`                                | ✅ Migrated | `bazel build //llm/html:image`                             |
+| `properties-critic` | `docker/llm/properties-critic/`            | ❌ Deleted  | Orphaned, never used                                       |
+| `openai_utils`      | `openai_utils/docker/`                     | ❌ Deleted  | Probe module never implemented                             |
+| `claude_optimizer`  | `claude/claude_optimizer/docker/`          | Pending     | 8 variant images                                           |
+| `props agents`      | `props/core/agent_defs/`                   | ✅ Migrated | critic (5 variants), grader, improvement, prompt_optimizer |
+| `molecule`          | `ansible/molecule/github_release_plugins/` | Skip        | Ansible testing                                            |
 
 **Migration notes:**
 
@@ -237,7 +237,24 @@ Non-Bazelized shell scripts that are intentionally outside the build system:
 #### Docker Images Pending (from inventory above)
 
 - `claude_optimizer` (8 variant images)
-- `props agents` (9 agent images)
+
+#### Test Files Without Bazel Targets
+
+**claude/claude_optimizer/tests/** (5 files) - BUILD.bazel globs only `tests/unit/**/*.py` and `tests/integration/**/*.py`, missing root-level test files:
+
+- `test_e2e_database.py`
+- `test_file_truncation.py`
+- `test_full_e2e_workflow.py`
+- `test_optimizer.py`
+- `test_types.py`
+
+**experimental/cotrl/** (1 file) - Only `test_llm_rl_minimal.py` is explicitly listed:
+
+- `llm_rl_quick_test.py`
+
+**inventree_utils/rai_plugin/templatetags/** (1 file) - Requires InvenTree/Django:
+
+- `test_custom_tags.py` - ✅ Added as manual target (requires Django)
 
 ## Package Structure
 
@@ -771,14 +788,13 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 
 ### Other Configuration Files
 
-| File                     | Purpose               | Notes                                        |
-| ------------------------ | --------------------- | -------------------------------------------- |
-| `.yamllint.yaml`         | yamllint config       | Used by `bazel test //ansible:yamllint_test` |
-| `mypy.ini`               | Root mypy config      | Used by adgn, critic_util                    |
-| `mypy-homeassistant.ini` | HA-specific mypy      | Used by homeassistant/iaqi                   |
-| `Cargo.toml`             | Rust dependencies     | Used by crate_universe for `@crates//` deps  |
-| `.bazelrc`               | Bazel config          | Generated by session hook                    |
-| `.bazelignore`           | Bazel ignore patterns | Static                                       |
+| File             | Purpose               | Notes                                        |
+| ---------------- | --------------------- | -------------------------------------------- |
+| `.yamllint.yaml` | yamllint config       | Used by `bazel test //ansible:yamllint_test` |
+| `mypy.ini`       | Root mypy config      | Used by all packages via --config=typecheck  |
+| `Cargo.toml`     | Rust dependencies     | Used by crate_universe for `@crates//` deps  |
+| `.bazelrc`       | Bazel config          | Generated by session hook                    |
+| `.bazelignore`   | Bazel ignore patterns | Static                                       |
 
 ### Known Duplication
 

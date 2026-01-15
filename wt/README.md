@@ -18,28 +18,17 @@ Makes switching between git worktrees feel like `git switch` while adding copy-o
 
 Tests will fail immediately if gitstatusd is missing.
 
-## Development Setup
+## Development
 
-Uses Nix + devenv + direnv for environment management:
+See the repository root AGENTS.md for the standard Bazel workflow.
 
 ```bash
-cd wt
-direnv allow
+bazel run //wt:wt-cli -- --help
+bazel test //wt/...
+bazel build --config=check //wt/...  # lint + typecheck
 ```
 
-This loads `.envrc`, bootstraps devenv, and installs `wt` in editable mode with dev extras via uv.
-
-**Environment verification:**
-
-- `direnv status` — shows if `.envrc` is loaded
-- `echo "$VIRTUAL_ENV"` — should contain `.../wt/.devenv/state/venv`
-- `which python` — should resolve to the venv bin directory
-
-**Provided binaries:** `libgit2`, `pkg-config`, and `git` are provided via devenv. `gitstatusd` is **not bundled** — install it separately and ensure it's on `PATH`.
-
 ## Installation
-
-See `@AGENTS.md` in the repository root for Bazel build, test, and lint workflows.
 
 - Add the wt shell function in your shell init (e.g. `.bashrc` / `.zshrc`): `eval "$(python -m wt.shell.install)"`
 - Reload your shell / source the same dotfile.
