@@ -45,7 +45,7 @@ async def test_po_agent_psql_connectivity(synced_test_db: DatabaseConfig, noop_o
     def mock(m: PropsMock) -> PlayGen:
         yield None  # Receive first request
         result = yield from m.psql_roundtrip("SELECT 1")
-        assert_that(result, all_of(exited_successfully(), stdout_contains("1")))  # type: ignore[arg-type]
+        assert_that(result, all_of(exited_successfully(), stdout_contains("1")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "psql connectivity verified"])
 
     await run_prompt_optimizer(
@@ -92,7 +92,7 @@ def make_grader_mock_with_data_access(critic_run_id: UUID) -> PropsMock:
         result = yield from m.psql_roundtrip(
             f"SELECT issue_id, rationale FROM reported_issues WHERE agent_run_id = '{critic_run_id}'"
         )
-        assert_that(result, all_of(exited_successfully(), stdout_contains("test-issue-001")))  # type: ignore[arg-type]
+        assert_that(result, all_of(exited_successfully(), stdout_contains("test-issue-001")))
         result = yield from m.psql_roundtrip("SELECT tp_id, rationale FROM true_positives LIMIT 5")
         assert_that(result, exited_successfully())
         result = yield from m.psql_roundtrip("SELECT fp_id, rationale FROM false_positives LIMIT 5")
@@ -128,7 +128,7 @@ async def test_three_agent_workflow_with_grader_data_access(
     def optimizer_mock(m: PropsMock) -> PlayGen:
         yield None  # First request
         result = yield from m.psql_roundtrip("SELECT 1")
-        assert_that(result, all_of(exited_successfully(), stdout_contains("1")))  # type: ignore[arg-type]
+        assert_that(result, all_of(exited_successfully(), stdout_contains("1")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Setup verified, proceeding"])
 
     # Run prompt optimizer (just to verify setup)
@@ -214,7 +214,7 @@ async def test_cli_leaderboard_shows_recall(
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
         result = yield from m.docker_exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"])
-        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))  # type: ignore[arg-type]
+        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
 
     await run_prompt_optimizer(
@@ -241,7 +241,7 @@ async def test_cli_hard_examples_shows_metrics(
     def mock(m: PropsMock) -> PlayGen:
         yield None  # First request
         result = yield from m.docker_exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"])
-        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))  # type: ignore[arg-type]
+        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
 
     await run_prompt_optimizer(

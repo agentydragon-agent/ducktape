@@ -30,6 +30,9 @@ py_library(
     deps = [
         "//agent_core",
         "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
         "//openai_utils",
         "@pypi//fastapi",
         "@pypi//fastmcp",

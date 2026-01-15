@@ -33,7 +33,7 @@ def is_tool_item(tool: str | None = None, call_id: str | None = None):
     if call_id is not None:
         tool_call_props["call_id"] = call_id
     if tool_call_props:
-        props["tool_call"] = has_properties(**tool_call_props)  # type: ignore[assignment]
+        props["tool_call"] = has_properties(**tool_call_props)
     return has_properties(**props)
 
 
@@ -123,10 +123,10 @@ def assert_items_include_instances(items: Sequence[Any], *types: type[object]) -
     if not types:
         raise ValueError("at least one type is required")
     matchers = [instance_of(tp) for tp in types]
-    assert_that(items, has_items(*matchers))  # type: ignore[arg-type]
+    assert_that(items, has_items(*matchers))
 
 
 def assert_items_exclude_instance(items: Sequence[Any], typ: type[object]) -> None:
     """Assert that ``items`` contains no instance of ``typ``."""
 
-    assert_that(items, is_not(has_item(instance_of(typ))))  # type: ignore[arg-type]
+    assert_that(items, is_not(has_item(instance_of(typ))))

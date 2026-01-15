@@ -279,6 +279,7 @@ py_library(
         ":common_options",
         "//cli_util",
         "//mcp_infra",
+        "//mcp_infra/display",
         "//openai_utils",
         "//props/core/db:models",
         "//props/core/db:session",

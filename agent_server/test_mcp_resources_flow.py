@@ -38,8 +38,8 @@ async def test_model_reads_container_info_with_stubbed_openai(
         req = yield tool_call
         # Verify stateless replay: second call must include function_call and function_call_output
         assert isinstance(req.input, list)
-        assert_that(req.input, has_item(instance_of(FunctionCallItem)))  # type: ignore[arg-type]
-        assert_that(req.input, has_item(instance_of(FunctionCallOutputItem)))  # type: ignore[arg-type]
+        assert_that(req.input, has_item(instance_of(FunctionCallItem)))
+        assert_that(req.input, has_item(instance_of(FunctionCallOutputItem)))
         yield m.assistant_text("ok")
 
     agent = await Agent.create(

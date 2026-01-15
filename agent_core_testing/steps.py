@@ -55,7 +55,7 @@ def _assert_docker_exec_success(
     )
 
     if stdout_matchers:
-        assert_that(stdout_text, all_of(*stdout_matchers))  # type: ignore[arg-type]
+        assert_that(stdout_text, all_of(*stdout_matchers))
     elif expected_output and expected_output not in stdout_text:
         raise AssertionError(f"Expected stdout to contain {expected_output!r}, got {stdout_text!r}")
 

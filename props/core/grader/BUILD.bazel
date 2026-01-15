@@ -13,6 +13,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//mcp_infra",
+        "//mcp_infra/enhanced",
         "//openai_utils",
         "//props/core/db:models",
         "//props/core/db:session",

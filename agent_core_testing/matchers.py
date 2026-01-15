@@ -151,12 +151,12 @@ def assert_items_include_instances(items: Sequence[Any], *types: type[object]) -
     if not types:
         raise ValueError("at least one type is required")
     matchers = [instance_of(tp) for tp in types]
-    assert_that(items, has_items(*matchers))  # type: ignore[arg-type]
+    assert_that(items, has_items(*matchers))
 
 
 def assert_items_exclude_instance(items: Sequence[Any], typ: type[object]) -> None:
     """Assert that items contains no instance of typ."""
-    assert_that(items, is_not(has_item(instance_of(typ))))  # type: ignore[arg-type]
+    assert_that(items, is_not(has_item(instance_of(typ))))
 
 
 # ------------------------

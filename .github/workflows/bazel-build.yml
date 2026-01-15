@@ -46,6 +46,7 @@ jobs:
             ~/.cache/bazelisk
           key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
           restore-keys: bazel-${{ runner.os }}-
+          save-always: true
 
       # Pull Docker image needed by agent_server tests (removed by free-disk-space)
       - name: Pull test Docker image
@@ -58,15 +59,15 @@ jobs:
           if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
             PROFILE_FLAG="--config=ci-profile"
           fi
-          bazel build --config=check $PROFILE_FLAG //...
+          bazel build --keep_going --config=check $PROFILE_FLAG //...
 
       # All tests
       - name: Run tests
-        run: bazel test //...
+        run: bazel test --keep_going //...
 
       # Rust lint (separate because finance/ is optional)
       - name: Rust lint
-        run: bazel build --config=rust-check //finance/... || true
+        run: bazel build --keep_going --config=rust-check //finance/... || true
 
       # Upload profiling artifacts (when enabled)
       - name: Upload Bazel profile
