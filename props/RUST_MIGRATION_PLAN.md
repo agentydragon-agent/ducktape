@@ -134,21 +134,97 @@ enum Content {
 | Provider abstraction | ✅ Excellent | Good fit |
 | Docker container management | ❌ Not in scope | Use bollard directly |
 
+### Loop Management: Opt-In
+
+**Key insight:** Rig's agentic loop is **opt-in**, not mandatory.
+
+```rust
+// Rig manages the loop internally when you use multi_turn()
+let response = agent
+    .prompt(query)
+    .with_history(&mut history)
+    .multi_turn(15)  // Rig runs up to 15 tool-call rounds
+    .await?;
+
+// WITHOUT multi_turn(), max_depth=0: single completion, no automatic tool handling
+let response = agent
+    .chat(&prompt, &history)
+    .await?;  // Returns after ONE model call, even if it wants to call tools
+```
+
+This means you can:
+1. Use Rig for provider abstraction and message types
+2. Manage your own loop externally
+3. Implement custom `LoopDecision` logic between calls
+
+### Transcript Serialization & Resume
+
+Rig's `Message` type is **fully serializable**:
+
+```rust
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "role", rename_all = "lowercase")]
+pub enum Message {
+    User { content: OneOrMany<UserContent> },
+    Assistant { id: Option<String>, content: OneOrMany<AssistantContent> },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub enum AssistantContent {
+    Text(Text),
+    ToolCall(ToolCall),
+    Reasoning(Reasoning),  // Extended thinking with signature
+    Image(Image),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct Reasoning {
+    pub id: Option<String>,
+    pub reasoning: Vec<String>,
+    pub signature: Option<String>,  // Cryptographic signature for Anthropic
+}
+```
+
+**Database persistence pattern:**
+
+```rust
+// Save to PostgreSQL JSONB
+let history_json = serde_json::to_value(&chat_history)?;
+sqlx::query!("UPDATE agent_runs SET transcript = $1 WHERE id = $2", history_json, run_id)
+    .execute(&pool).await?;
+
+// Resume from saved state
+let row = sqlx::query!("SELECT transcript FROM agent_runs WHERE id = $1", run_id)
+    .fetch_one(&pool).await?;
+let mut chat_history: Vec<Message> = serde_json::from_value(row.transcript)?;
+
+// Continue conversation
+let response = agent.prompt("Continue").with_history(&mut chat_history).await?;
+```
+
+**What's preserved:**
+- ✅ User messages (text, images, audio, documents)
+- ✅ Assistant text responses
+- ✅ Tool calls (with `call_id` and `signature`)
+- ✅ Tool results
+- ✅ Reasoning/thinking tokens (with cryptographic signature for Anthropic)
+- ❌ Token usage (separate from Message, not persisted)
+
 ### Verdict on Rig
 
 **Suitable for:**
-- Provider abstraction layer (if multi-provider needed)
-- Tool definition via macros
-- Basic agent loops with tool use
+- Provider abstraction layer (20+ providers)
+- Message types with full serde support
+- Tool definition via `#[tool]` macro
+- Transcript persistence and resume
 - Vector store integration (RAG)
 
-**Not suitable for:**
-- Our specific event model
-- Fine-grained loop control
-- Handler chain with message injection
-- Context compaction strategies
+**Not suitable for (but can work around):**
+- Custom loop control → Use single-call mode, manage loop yourself
+- Handler chain with mutation → Implement externally
+- Context compaction → Implement externally
 
-**Recommendation:** Use Rig as **optional provider abstraction** but build core agent loop custom.
+**Recommendation:** **Option B (Rig + Custom Loop)** is now more attractive than initially assessed. Use Rig's `Message` types and provider abstraction, but manage the agentic loop yourself.
 
 ---
 
@@ -206,13 +282,21 @@ rig-core (full) + bollard + sqlx
 - No message injection from hooks
 - No context compaction built-in
 
-### Recommendation: **Option A (Full Custom)**
+### Recommendation: **Option B (Rig + Custom Loop)**
 
-Rationale:
-- Python codebase has well-defined algebraic types that map directly to Rust enums
-- Loop control semantics (`InjectItems`, `Compact`) are central to our design
-- Handler chain with mutation is a core pattern
-- Single provider (OpenAI Responses API) simplifies implementation
+Updated rationale after deeper analysis:
+- Rig's loop is **opt-in** - can use single-call mode and manage loop yourself
+- Rig's `Message` types have **full serde support** including reasoning tokens with signatures
+- **Transcript persistence/resume** works out of the box with JSONB
+- Provider abstraction gives future flexibility (Anthropic, etc.)
+- Can still implement custom `LoopDecision`, `Handler`, and compaction externally
+- Tool definition macros reduce boilerplate
+
+**Hybrid approach:**
+```rust
+// Use Rig for: providers, message types, tool definitions
+// Build custom: agentic loop, handler chain, compaction, event persistence
+```
 
 ---
 
@@ -465,8 +549,8 @@ pub trait Handler: Send + Sync {
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-01-15 | Use SQLx over SeaORM | Better raw SQL support, compile-time checks |
-| 2026-01-15 | Build custom agent loop | Rig doesn't support our loop control semantics |
-| 2026-01-15 | Use async-openai directly | Single provider, full control |
+| 2026-01-15 | Use Rig + custom loop (Option B) | Rig's loop is opt-in; Message types have full serde; transcript resume works |
+| 2026-01-15 | Use Rig's Message types for DB | Full serde support, reasoning signatures preserved, easy JSONB storage |
 | | | |
 
 ---
