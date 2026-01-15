@@ -1,6 +1,5 @@
 """Run fixtures (critic runs, grader runs) for props tests."""
 
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest

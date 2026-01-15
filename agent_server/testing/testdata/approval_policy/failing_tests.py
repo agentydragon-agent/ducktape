@@ -1,7 +1,6 @@
+from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-
-from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 
 TEST_CASES = [
     # Expect DENY_ABORT for UI send_message, but decide() returns ALLOW → preflight fails

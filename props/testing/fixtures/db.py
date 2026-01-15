@@ -95,7 +95,7 @@ def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
 @pytest.fixture
 def test_db(
     request: pytest.FixtureRequest, block_production_config_in_tests: Callable
-) -> Generator[DatabaseConfig, None, None]:
+) -> Generator[DatabaseConfig]:
     """Create isolated database for each test.
 
     Creates a unique database per test, initializes schema, and drops it after.
@@ -162,7 +162,7 @@ def _sync_test_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(scope="session")
-def session_monkeypatch() -> Generator[pytest.MonkeyPatch, None, None]:
+def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
     """Session-scoped monkeypatch for environment variable overrides."""
     mp = pytest.MonkeyPatch()
     yield mp
@@ -172,7 +172,7 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch, None, None]:
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _session_synced_db(
     request: pytest.FixtureRequest, session_monkeypatch: pytest.MonkeyPatch
-) -> AsyncGenerator[DatabaseConfig, None]:
+) -> AsyncGenerator[DatabaseConfig]:
     """Internal: Session-scoped synced database.
 
     Use synced_readonly_session instead of this directly.
@@ -209,7 +209,7 @@ async def _session_synced_db(
 
 
 @pytest.fixture(scope="session")
-def synced_readonly_session(_session_synced_db: DatabaseConfig) -> Generator[Session, None, None]:
+def synced_readonly_session(_session_synced_db: DatabaseConfig) -> Generator[Session]:
     """Session-scoped SQLAlchemy Session for READ-ONLY tests.
 
     WARNING: Do not commit/write via this session - use synced_test_db for write tests.
@@ -226,7 +226,7 @@ def synced_test_db(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.fixture
-def synced_test_session(synced_test_db: DatabaseConfig) -> Generator[Session, None, None]:
+def synced_test_session(synced_test_db: DatabaseConfig) -> Generator[Session]:
     """Function-scoped session over synced test database (read-write)."""
     with get_session() as session:
         yield session

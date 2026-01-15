@@ -5,9 +5,9 @@ This script helps you install the Habitify MCP server to Claude Desktop,
 making its tools available to Claude for habit tracking.
 """
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 # Add the parent directory to the path so we can import the server
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

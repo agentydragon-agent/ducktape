@@ -9,14 +9,19 @@ line-length = 120
 # Target Python 3.13+ consistently
 target-version = "py313"
 
-# Exclude testdata, fixtures, third-party, examples, and archived code from all ruff operations
+# Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
+# .gitattributes is the source of truth; this list must stay in sync.
+# Reason: tools/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
+# See README.md "Lint/Format Exclusions" section for details.
 exclude = [
-    "**/testdata",
-    "**/fixtures",
-    "**/examples",
     "**/third_party",
     "k8s-old",
     "tana/export/references",
+    "props/testing/fixtures/testdata",
+    "claude/claude_hooks/testdata",
+    "sandboxed_jupyter/testdata",
+    "sysrw/testdata",
+    "tana/testdata",
 ]
 
 [format]

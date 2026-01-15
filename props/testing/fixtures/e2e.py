@@ -14,12 +14,10 @@ from openai_utils.model import ResponsesResult
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_workspace import WorkspaceManager
 from props.core.db.agent_definition_ids import CRITIC_IMAGE_REF
-from props.core.db.config import DatabaseConfig
-from props.core.db.examples import Example
 from props.core.db.models import AgentRun, AgentRunStatus
 from props.core.db.session import get_session
 from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleKind, ExampleSpec, WholeSnapshotExample
+from props.core.models.examples import ExampleSpec, WholeSnapshotExample
 from props.core.prompt_improve.improve_agent import run_improvement_agent
 from props.core.prompt_improve.reminder_handler import TerminationSuccess
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer

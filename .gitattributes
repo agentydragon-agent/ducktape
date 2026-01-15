@@ -1,9 +1,23 @@
-# Exclude zsh files from formatting (shfmt doesn't support zsh syntax)
+# Lint/Format Exclusions
+# This file is the source of truth for files excluded from linting and formatting.
+# tools/format/format.py reads these via `git check-attr`.
+# For Python files, patterns must also be mirrored in ruff.toml exclude.
+# See README.md "Lint/Format Exclusions" section for details.
+
+# Zsh files - shfmt doesn't support zsh syntax
 # TODO: Install a zsh-specific formatter to handle .zsh files properly
 *.zsh rules-lint-ignored=true
 
-# Claude Code testdata - extracted from Claude Code binary, should not be modified
-claude/claude_hooks/claude_hooks/testdata/claude_tools/** rules-lint-ignored=true
-
-# Third-party code - don't reformat external code
+# Third-party code - don't lint or reformat external code
 **/third_party/** rules-lint-ignored=true
+
+# Test data files - inputs to tests, not source code
+claude/claude_hooks/claude_hooks/testdata/** rules-lint-ignored=true
+props/testing/fixtures/testdata/** rules-lint-ignored=true
+sandboxed_jupyter/testdata/** rules-lint-ignored=true
+sysrw/testdata/** rules-lint-ignored=true
+tana/testdata/** rules-lint-ignored=true
+
+# Archived/legacy code
+k8s-old/** rules-lint-ignored=true
+tana/export/references/** rules-lint-ignored=true

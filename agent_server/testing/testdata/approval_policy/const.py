@@ -1,8 +1,7 @@
-from mcp_infra.constants import UI_MOUNT_PREFIX
-from mcp_infra.naming import build_mcp_function
-
 from agent_server.approvals import WellKnownTools
 from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from mcp_infra.constants import UI_MOUNT_PREFIX
+from mcp_infra.naming import build_mcp_function
 
 CONST_X = 42
 

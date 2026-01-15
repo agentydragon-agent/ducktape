@@ -13,6 +13,22 @@ pre-commit install
 
 This installs the pre-commit framework which runs ruff, buildifier, prettier and other linters on staged files, checks for conflict markers, validates syntax, and more (see `.pre-commit-config.yaml`). For ESLint and mypy, run `bazel build --config=check //...`.
 
+### Lint/Format Exclusions
+
+Files excluded from linting and formatting are controlled in two places:
+
+| File                | Purpose                            | Read by                  |
+| ------------------- | ---------------------------------- | ------------------------ |
+| `.gitattributes`    | Source of truth for all exclusions | `tools/format/format.py` |
+| `ruff.toml exclude` | Must mirror Python patterns        | ruff check (lint aspect) |
+
+**Why two files?** Our `format.py` reads `.gitattributes` (via `git check-attr`), but ruff's linter only reads `ruff.toml`. For Python files, patterns must exist in both.
+
+To exclude a file/directory:
+
+1. Add `path/** rules-lint-ignored=true` to `.gitattributes`
+2. If it contains Python, also add to `ruff.toml exclude`
+
 ## License
 
 AGPL 3.0

@@ -1,7 +1,6 @@
 """Scope fixtures (ExampleSpec variants) for props tests."""
 
 import pytest
-from sqlalchemy.orm import Session
 
 from props.core.db.config import DatabaseConfig
 from props.core.db.models import FileSet, FileSetMember
