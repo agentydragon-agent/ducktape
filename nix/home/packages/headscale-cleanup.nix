@@ -8,7 +8,7 @@
   pkgs,
 }: let
   # 8-char commit SHA from GitHub release tag
-  shortSha = "6de4aa95";
+  shortSha = "023784bf";
 
   # Fetch wheel directly with fetchurl
   wheelSrc = pkgs.fetchurl {
