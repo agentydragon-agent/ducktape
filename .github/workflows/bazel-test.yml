@@ -1,14 +1,14 @@
-# Bazel build reusable workflow
+# Bazel test reusable workflow
 #
-# Builds all targets (without lint aspects)
-name: Bazel Build
+# Runs all Bazel tests and Rust clippy
+name: Bazel Test
 
 on:
   workflow_call:
 
 jobs:
-  build:
-    name: Build
+  test:
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -35,9 +35,17 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-build-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-build-${{ runner.os }}-
+          key: bazel-test-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-test-${{ runner.os }}-
           save-always: true
 
-      - name: Build
-        run: bazel build --keep_going //...
+      # Pull Docker image needed by agent_server tests (removed by free-disk-space)
+      - name: Pull test Docker image
+        run: docker pull python:3.12-slim
+
+      - name: Run tests
+        run: bazel test --keep_going //...
+
+      # Rust lint (separate because finance/ is optional)
+      - name: Rust lint
+        run: bazel build --keep_going --config=rust-check //finance/... || true

@@ -1,0 +1,68 @@
+# Bazel lint + typecheck reusable workflow
+#
+# Runs lint and typecheck via Bazel aspects:
+# - Python: ruff (lint), mypy (types)
+# - JS/TS: ESLint
+# - Formatting checks
+name: Bazel Lint
+
+on:
+  workflow_call:
+    inputs:
+      enable_profiling:
+        description: 'Enable Bazel profiling (generates downloadable artifacts)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  lint:
+    name: Lint and Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: true
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-lint-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-lint-${{ runner.os }}-
+          save-always: true
+
+      - name: Lint and typecheck
+        run: |
+          PROFILE_FLAG=""
+          if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
+            PROFILE_FLAG="--config=ci-profile"
+          fi
+          bazel build --keep_going --config=check $PROFILE_FLAG //...
+
+      - name: Upload Bazel profile
+        if: inputs.enable_profiling && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-profile-lint-${{ github.run_id }}
+          path: |
+            bazel-profile.gz
+            execution-log.json
+          retention-days: 14
+          if-no-files-found: warn

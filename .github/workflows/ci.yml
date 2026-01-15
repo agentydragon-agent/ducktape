@@ -2,12 +2,14 @@
 #
 # Jobs (defined in separate files):
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
-# - bazel-build: Comprehensive linting (Python, JS/TS, Rust) + build + test
+# - bazel-build: Build all targets
+# - bazel-lint: Comprehensive linting (Python ruff + mypy, JS/TS eslint)
+# - bazel-test: Run all tests
 # - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
 #
-# Linting via Bazel aspects (run in both pre-commit and bazel-build):
+# Linting via Bazel aspects (run in both pre-commit and bazel-lint):
 # - Python: ruff (lint), mypy (types), ruff format (formatting)
 # - JS/TS: ESLint (lint), prettier (formatting)
 # - Rust: clippy (lint), rustfmt (formatting)
@@ -48,8 +50,14 @@ jobs:
 
   bazel-build:
     uses: ./.github/workflows/bazel-build.yml
+
+  bazel-lint:
+    uses: ./.github/workflows/bazel-lint.yml
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
+
+  bazel-test:
+    uses: ./.github/workflows/bazel-test.yml
 
   nix-flake-check:
     uses: ./.github/workflows/nix-flake-check.yml
