@@ -68,6 +68,7 @@
   # System packages
   environment.systemPackages = with pkgs; [
     libsecret # secret-tool for keyring access (used by ansible vault)
+    telegram-desktop
   ];
 
   # Zsh as default shell
