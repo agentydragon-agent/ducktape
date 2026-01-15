@@ -19,6 +19,13 @@ on:
   push:
     branches: [main, master, devel]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      enable_profiling:
+        description: "Enable Bazel profiling (generates downloadable artifacts)"
+        required: false
+        type: boolean
+        default: false
 
 # Cancel outdated workflow runs when new commits are pushed
 concurrency:
@@ -41,6 +48,8 @@ jobs:
 
   bazel-build:
     uses: ./.github/workflows/bazel-build.yml
+    with:
+      enable_profiling: ${{ inputs.enable_profiling || false }}
 
   nix-flake-check:
     uses: ./.github/workflows/nix-flake-check.yml

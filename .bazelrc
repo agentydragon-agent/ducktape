@@ -45,3 +45,12 @@ build:eslint --output_groups=+rules_lint_report
 
 # Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
+
+# CI profiling - captures performance data for every build
+# Run with: bazel build --config=ci-profile //...
+# Produces: bazel-profile.gz (Chrome tracing format), execution-log.json (action-level timing)
+build:ci-profile --profile=bazel-profile.gz
+build:ci-profile --experimental_profile_cpu_usage
+build:ci-profile --experimental_json_trace_compression
+build:ci-profile --experimental_collect_load_average_in_profiler
+build:ci-profile --execution_log_json_file=execution-log.json

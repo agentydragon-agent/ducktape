@@ -8,6 +8,12 @@ name: Bazel Build
 
 on:
   workflow_call:
+    inputs:
+      enable_profiling:
+        description: 'Enable Bazel profiling (generates downloadable artifacts)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   bazel-build:
@@ -47,7 +53,12 @@ jobs:
 
       # Lint + typecheck (Python ruff + mypy, JS/TS eslint)
       - name: Lint and typecheck
-        run: bazel build --config=check //...
+        run: |
+          PROFILE_FLAG=""
+          if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
+            PROFILE_FLAG="--config=ci-profile"
+          fi
+          bazel build --config=check $PROFILE_FLAG //...
 
       # All tests
       - name: Run tests
@@ -56,3 +67,32 @@ jobs:
       # Rust lint (separate because finance/ is optional)
       - name: Rust lint
         run: bazel build --config=rust-check //finance/... || true
+
+      # Upload profiling artifacts (when enabled)
+      - name: Upload Bazel profile
+        if: inputs.enable_profiling && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-profile-${{ github.run_id }}
+          path: |
+            bazel-profile.gz
+            execution-log.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Profile summary
+        if: inputs.enable_profiling && always()
+        run: |
+          echo "## Bazel Profiling" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Profile artifacts uploaded: \`bazel-profile-${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Files included:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`bazel-profile.gz\` - Chrome tracing format (open in chrome://tracing or https://analyzer.engflow.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`execution-log.json\` - Per-action timing data" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**To analyze:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the artifact" >> $GITHUB_STEP_SUMMARY
+          echo "2. Chrome tracing: Open \`chrome://tracing\`, load \`bazel-profile.gz\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. EngFlow analyzer: Upload to https://analyzer.engflow.com" >> $GITHUB_STEP_SUMMARY
+          echo "4. CLI: \`bazel analyze-profile bazel-profile.gz\`" >> $GITHUB_STEP_SUMMARY
