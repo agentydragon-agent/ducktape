@@ -5,8 +5,8 @@ from collections.abc import Callable
 from agent_core.handler import BaseHandler
 from agent_server.agent_types import AgentID
 from agent_server.notifications.handler import NotificationsHandler
-from agent_server.persist import Persistence
 from agent_server.persist.handler import RunPersistenceHandler
+from agent_server.persist.types import Persistence
 from agent_server.server.bus import ServerBus
 from agent_server.server.mode_handler import ServerModeHandler
 from agent_server.server.runtime import UiEventHandler

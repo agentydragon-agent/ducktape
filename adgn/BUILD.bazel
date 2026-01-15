@@ -6,14 +6,9 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "adgn",
     srcs = [
-        "__init__.py",
         "agent/cli.py",
-        "gitea_pr_gate/__init__.py",
         "gitea_pr_gate/policy_common.py",
         "gitea_pr_gate/policy_server_fastapi.py",
-        "mcp/__init__.py",
-        "mcp/testing/stdio_notifier.py",
-        "testing/__init__.py",
         "testing/bootstrap.py",
         "tools/trivial_patterns.py",
     ],
@@ -28,6 +23,7 @@ py_library(
         "//arg0_runner",
         "//cli_util",
         "//mcp_infra",
+        "//mcp_infra/display",
         "//net_util",
         "//openai_utils",
         "@pypi//aiodocker",

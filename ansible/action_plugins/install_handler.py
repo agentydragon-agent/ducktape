@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 from ansible.errors import AnsibleError
-
 from ansible.plugins.action import ActionBase
 
 

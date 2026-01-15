@@ -57,6 +57,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/exec",
         "//props/core/db:config",
         "@pypi//aiodocker",
     ],
@@ -151,6 +153,7 @@ py_library(
         ":oci_utils",
         "//agent_core",
         "//mcp_infra",
+        "//mcp_infra/display",
         "//openai_utils",
         "//props/core/cli:common_options",
         "//props/core/critic",

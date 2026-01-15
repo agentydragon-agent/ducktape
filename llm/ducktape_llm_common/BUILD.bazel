@@ -1,53 +1,39 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 exports_files(["pyproject.toml"])
 
 py_library(
-    name = "ducktape_llm_common",
-    srcs = glob(["ducktape_llm_common/**/*.py"]),
+    name = "core",
+    srcs = [
+        "ducktape_llm_common/__init__.py",
+        "ducktape_llm_common/claude_code_api.py",
+        "ducktape_llm_common/claude_hook.py",
+        "ducktape_llm_common/claude_hooks.py",
+        "ducktape_llm_common/claude_outcomes.py",
+        "ducktape_llm_common/hook_logging.py",
+        "ducktape_llm_common/hook_session_state.py",
+    ],
     data = glob(["ducktape_llm_common/**/*.md"]),
-    imports = ["."],  # Add this directory to Python path so 'ducktape_llm_common' is importable
-    visibility = ["//visibility:public"],
+    imports = ["."],
+    visibility = ["//llm/ducktape_llm_common:__subpackages__"],
     deps = [
-        "@pypi//click",
-        "@pypi//humanize",
-        "@pypi//platformdirs",
         "@pypi//pydantic",
-        "@pypi//pygit2",
-        "@pypi//pytimeparse",
-        "@pypi//pyyaml",
-        "@pypi//ruff",
-        "@pypi//tomli",
-        "@pypi//tomli_w",
     ],
 )
 
-py_binary(
-    name = "claude-linter",
-    srcs = ["ducktape_llm_common/claude_linter/cli.py"],
-    main = "ducktape_llm_common/claude_linter/cli.py",
-    deps = [":ducktape_llm_common"],
-)
-
-py_binary(
-    name = "claude-linter-v2",
-    srcs = ["ducktape_llm_common/claude_linter_v2/cli.py"],
-    main = "ducktape_llm_common/claude_linter_v2/cli.py",
-    deps = [":ducktape_llm_common"],
-)
-
-py_test(
-    name = "test_all",
-    srcs = glob(["tests/**/*.py"]),
-    main = "tests/__init__.py",
+# Umbrella target that re-exports everything
+py_library(
+    name = "ducktape_llm_common",
+    visibility = ["//visibility:public"],
     deps = [
-        ":ducktape_llm_common",
-        "@pypi//pytest",
+        ":core",
+        "//llm/ducktape_llm_common/ducktape_llm_common/claude_linter",
+        "//llm/ducktape_llm_common/ducktape_llm_common/claude_linter_v2",
     ],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":ducktape_llm_common"],
+    srcs = [":core"],
 )

@@ -9,13 +9,77 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "agent_server",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            "tests/**",
-            "testing/**",
-        ],
-    ),
+    srcs = [
+        # Root
+        "agent_types.py",
+        "approvals.py",
+        "cli.py",
+        "logging_config.py",
+        "matrix_bot.py",
+        "presets.py",
+        "runtime_image.py",
+        # mcp/approval_policy
+        "mcp/approval_policy/clients.py",
+        "mcp/approval_policy/engine.py",
+        # mcp/chat
+        "mcp/chat/server.py",
+        # mcp/loop
+        "mcp/loop/server.py",
+        # mcp/matrix
+        "mcp/matrix/control.py",
+        "mcp/matrix/server.py",
+        # mcp/runtime
+        "mcp/runtime/server.py",
+        # mcp/ui
+        "mcp/ui/server.py",
+        # mcp_bridge
+        "mcp_bridge/agents.py",
+        "mcp_bridge/auth.py",
+        "mcp_bridge/compositor_factory.py",
+        "mcp_bridge/registry.py",
+        # models
+        "models/policy_error.py",
+        "models/proposal_status.py",
+        # notifications
+        "notifications/handler.py",
+        # persist
+        "persist/types.py",
+        "persist/events.py",
+        "persist/handler.py",
+        "persist/sqlite.py",
+        # policies
+        "policies/approve_all.py",
+        "policies/default_policy.py",
+        "policies/loader.py",
+        "policies/policy_types.py",
+        "policies/presets.py",
+        "policies/scaffold.py",
+        # policy_eval
+        "policy_eval/constants.py",
+        "policy_eval/container.py",
+        "policy_eval/runner.py",
+        "policy_eval/shim.py",
+        # runtime
+        "runtime/auto_attach.py",
+        "runtime/container.py",
+        "runtime/handlers.py",
+        "runtime/images.py",
+        "runtime/registry.py",
+        # scripts
+        "scripts/generate_frontend_code.py",
+        # server
+        "server/app.py",
+        "server/bus.py",
+        "server/exceptions.py",
+        "server/mcp_routing.py",
+        "server/mode_handler.py",
+        "server/protocol.py",
+        "server/reducer.py",
+        "server/runtime.py",
+        "server/state.py",
+        "server/status_shared.py",
+        "server/system_message.py",
+    ],
     data = glob(["**/*.j2.md"]),  # Include Jinja2 templates
     imports = [".."],
     visibility = ["//visibility:public"],
@@ -24,6 +88,14 @@ py_library(
         "//agent_core_testing",
         "//cli_util",
         "//mcp_infra",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec",
+        "//mcp_infra/notifications",
+        "//mcp_infra/resources",
+        "//mcp_infra/stubs",
+        "//mcp_infra/testing",
         "//net_util",
         "//openai_utils",
         "@pypi//aiodocker",
@@ -63,14 +135,48 @@ py_binary(
 
 py_test(
     name = "test_agent_server",
-    srcs = glob(
-        ["tests/**/*.py"],
-        exclude = ["tests/e2e/**/*.py"],
-    ),
+    srcs = [
+        # Root test files
+        "conftest.py",
+        "pytest_runner.py",
+        "ui_asserts.py",
+        "test_approval_integration.py",
+        "test_default_approval_policy.py",
+        "test_exec_roundtrip.py",
+        "test_mcp_integration.py",
+        "test_mcp_notifications_flow.py",
+        "test_mcp_resources_flow.py",
+        "test_notifications_handler.py",
+        "test_policy_eval_abort_on_error.py",
+        "test_rendering_instructions.py",
+        "test_runtime_timeout.py",
+        # mcp tests
+        "mcp/test_chat_notifications.py",
+        "mcp/test_chat_server.py",
+        "mcp/test_notifications_envelope.py",
+        "mcp/test_policy_gateway_middleware.py",
+        "mcp/test_policy_gateway_middleware_unit.py",
+        "mcp/test_stdio_notifications_envelope.py",
+        "mcp/test_ui_server.py",
+        # mcp/approval_policy tests
+        "mcp/approval_policy/test_policy_validation.py",
+        "mcp/approval_policy/test_preset_policy_loading.py",
+        "mcp/approval_policy/test_schema.py",
+        "mcp/approval_policy/test_server.py",
+        "mcp/approval_policy/test_server_available.py",
+        # mcp_bridge tests
+        "mcp_bridge/test_agents_server.py",
+        "mcp_bridge/test_integration.py",
+        # server tests
+        "server/test_end_turn_ui_integration.py",
+        "server/test_history_fold_typed.py",
+        "server/test_reducer.py",
+    ],
     imports = [".."],
-    main = "tests/pytest_runner.py",
+    main = "pytest_runner.py",
     deps = [
         ":agent_server",
+        "//adgn",
         "//agent_server/testing",
         "@pypi//docker",
         "@pypi//pyhamcrest",
@@ -83,15 +189,22 @@ py_test(
 
 py_test(
     name = "test_agent_server_e2e",
-    srcs = glob(["tests/e2e/**/*.py"]) + [
-        "tests/conftest.py",
-        "tests/pytest_runner_e2e.py",
+    srcs = [
+        "conftest.py",
+        "e2e/conftest.py",
+        "e2e/pytest_runner_e2e.py",
+        "e2e/test_abort.py",
+        "e2e/test_approvals.py",
+        "e2e/test_notifications_handler.py",
+        "e2e/test_proposals_reject.py",
+        "e2e/test_ui.py",
     ],
     imports = [".."],
-    main = "tests/pytest_runner_e2e.py",
+    main = "e2e/pytest_runner_e2e.py",
     tags = ["manual"],  # Don't run by default; requires Playwright browsers
     deps = [
         ":agent_server",
+        "//adgn",
         "//agent_server/testing",
         "@pypi//docker",
         "@pypi//playwright",
@@ -111,24 +224,36 @@ ruff_test(
 # --- OCI Runtime Image ---
 # Used by runtime exec and policy evaluation
 
+_RUNTIME_DEPS = [
+    "//adgn",
+    "//agent_core",
+    "//agent_pkg/runtime",
+    "//agent_server",
+    "//cli_util",
+    "//mcp_infra",
+    "//net_util",
+    "//openai_utils",
+]
+
 py_binary(
     name = "runtime_image",
     srcs = ["runtime_image.py"],
-    deps = [
-        "//adgn",
-        "//agent_core",
-        "//agent_pkg/runtime",
-        "//agent_server",
-        "//cli_util",
-        "//mcp_infra",
-        "//net_util",
-        "//openai_utils",
-    ],
+    deps = _RUNTIME_DEPS,
+)
+
+py_binary(
+    name = "policy_shim",
+    srcs = ["policy_eval/shim.py"],
+    main = "policy_eval/shim.py",
+    deps = _RUNTIME_DEPS,
 )
 
 pkg_tar(
     name = "runtime_image_tar",
-    srcs = [":runtime_image"],
+    srcs = [
+        ":policy_shim",
+        ":runtime_image",
+    ],
     include_runfiles = True,
     package_dir = "/opt/adgn",
     strip_prefix = ".",

@@ -24,4 +24,4 @@ Key layout (`tana/`):
 - `io/` — JSON loaders (`load_workspace`).
 - `export/` — CLI entry points and higher-level workflows.
 
-Tests are under `tests/` with golden fixtures in `tests/tana/testdata/`.
+Tests and golden fixtures are in `testdata/`.

@@ -24,16 +24,29 @@ props/
 
 ## Initial Setup
 
+### Prerequisites
+
+- Specimens repository cloned at `../specimens` (relative to ducktape root):
+  `git clone https://github.com/agentydragon/specimens ../specimens`
+
+### First-Time Setup
+
 ```bash
 cd props
 
-# 1. Build and load proxy image (first time only)
+# 1. Allow direnv (generates PGPASSWORD, sets env vars)
+direnv allow
+
+# 2. Build and load proxy image
 bazelisk run //props/registry_proxy:load
 
-# 2. Start infrastructure
+# 3. Start infrastructure
 docker compose up -d
 
-# 3. Push built-in agent images to registry
+# 4. Initialize database (runs migrations, syncs specimens)
+bazelisk run //props/core/cli -- db recreate
+
+# 5. Push agent images to registry
 bazelisk run //props/core/agent_defs/critic:push
 bazelisk run //props/core/agent_defs/grader:push
 bazelisk run //props/core/agent_defs/improvement:push
@@ -42,7 +55,7 @@ bazelisk run //props/core/agent_defs/prompt_optimizer:push
 
 ## Development
 
-**Build system:** Bazel (see root AGENTS.md). The devenv.nix only sets environment variables for Docker Compose (PGHOST, PGPORT, etc.) - it does not manage Python packages.
+**Build system:** Bazel (see root AGENTS.md).
 
 ```bash
 docker compose up -d                       # Start infrastructure
@@ -67,11 +80,11 @@ bazelisk build --config=check //props/...  # Lint + typecheck
 psql
 
 # Recreate database from scratch (drops all data, runs migrations, syncs specimens)
-bazelisk run //props/core:props -- db recreate
+bazelisk run //props/core/cli -- db recreate
 
 # Backup and restore
-bazelisk run //props/core:props -- db backup
-bazelisk run //props/core:props -- db restore <backup_file>
+bazelisk run //props/core/cli -- db backup
+bazelisk run //props/core/cli -- db restore <backup_file>
 ```
 
 ## Specimens Dataset

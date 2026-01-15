@@ -24,19 +24,19 @@ from agent_server.mcp.chat.server import attach_persisted_chat_servers
 from agent_server.mcp.loop.server import LoopServer
 from agent_server.mcp.runtime.server import RuntimeServer
 from agent_server.mcp.ui.server import UiServer
-from agent_server.persist import ApprovalOutcome
 from agent_server.persist.handler import RunPersistenceHandler
 from agent_server.persist.sqlite import SQLitePersistence
+from agent_server.persist.types import ApprovalOutcome
 from agent_server.presets import discover_presets
 from agent_server.runtime.images import resolve_runtime_image
 from agent_server.server.bus import ServerBus
 from agent_server.server.runtime import AgentSession, UiEventHandler
 from agent_server.server.system_message import get_ui_system_message
 from mcp_infra.compositor.clients import CompositorMetaClient
+from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.server import Compositor
-from mcp_infra.container_session import ContainerOptions
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.notifications.buffer import NotificationsBuffer
+from mcp_infra.exec.container_session import ContainerOptions
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
 from openai_utils.client_factory import build_client

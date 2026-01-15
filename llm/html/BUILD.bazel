@@ -7,7 +7,14 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "llm_html",
-    srcs = glob(["llm_html/**/*.py"]),
+    srcs = [
+        "llm_html/__init__.py",
+        "llm_html/server.py",
+        "llm_html/test_html_rendering.py",
+        "llm_html/test_token.py",
+        "llm_html/token_counter.py",
+        "llm_html/token_scheme.py",
+    ],
     data = glob([
         "*.css",
         "*.html",

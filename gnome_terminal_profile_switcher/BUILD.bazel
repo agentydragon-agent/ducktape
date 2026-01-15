@@ -4,7 +4,7 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "gnome_terminal_profile_switcher",
-    srcs = glob(["**/*.py"]),
+    srcs = ["__init__.py"],
     imports = [".."],
     # Requires system libraries (libgirepository1.0-dev, libdbus-1-dev) - manual only
     tags = ["manual"],

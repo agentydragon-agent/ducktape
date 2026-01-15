@@ -1,1 +1,0 @@
-"""Gitea PR Gate package."""

@@ -25,7 +25,7 @@ from agent_core.events import ToolCall
 # Import models to export
 from agent_server.approvals import ApprovalRequest
 from agent_server.mcp_bridge.agents import AgentInfo
-from agent_server.persist import ApprovalOutcome, EventType
+from agent_server.persist.types import ApprovalOutcome, EventType
 from agent_server.server.protocol import AgentStatus
 
 # ============================================================================

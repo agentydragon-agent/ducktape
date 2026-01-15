@@ -73,11 +73,14 @@ def cmd_sync(
     use_staged: bool = typer.Option(
         False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
     ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without committing (rollback after sync)"),
 ) -> None:
     """Sync snapshots, issues, files, file sets, model metadata, and agent definitions from source to DB."""
     console = Console()
     with get_session() as session:
-        result = sync_all(session, use_staged=use_staged)
+        result = sync_all(session, use_staged=use_staged, dry_run=dry_run)
+    if dry_run:
+        console.print("[yellow]DRY-RUN:[/yellow] Validation passed, no changes committed")
     print_sync_result(console, result)
 
 

@@ -32,9 +32,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ansible.errors import AnsibleError
-from gi.repository import GLib
-
 from ansible.plugins.action import ActionBase
+from gi.repository import GLib
 
 
 def _array_to_list(raw: str | None) -> list[str]:

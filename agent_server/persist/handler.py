@@ -8,9 +8,8 @@ from typing import Any
 from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
 from agent_server.agent_types import AgentID
+from agent_server.persist.types import Persistence
 from openai_utils.model import ReasoningItem
-
-from . import Persistence
 
 logger = logging.getLogger(__name__)
 

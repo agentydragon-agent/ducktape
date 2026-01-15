@@ -67,7 +67,10 @@ jobs:
       - name: Prepare wheel
         run: |
           mkdir -p dist
-          cp ${{ inputs.wheel_path }}/${{ inputs.wheel_name }}-*.whl dist/${{ inputs.wheel_name }}.whl
+          # Keep the full PEP 427 wheel filename (version + platform tags required by installers)
+          cp ${{ inputs.wheel_path }}/${{ inputs.wheel_name }}-*.whl dist/
+          # Export wheel filename for release step
+          echo "WHEEL_FILE=$(basename ${{ inputs.wheel_path }}/${{ inputs.wheel_name }}-*.whl)" >> $GITHUB_ENV
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -82,9 +85,9 @@ jobs:
 
             Install:
             ```bash
-            pip install https://github.com/${{ github.repository }}/releases/download/${{ inputs.package_name }}-${{ env.SHORT_SHA }}/${{ inputs.wheel_name }}.whl
+            pip install https://github.com/${{ github.repository }}/releases/download/${{ inputs.package_name }}-${{ env.SHORT_SHA }}/${{ env.WHEEL_FILE }}
             ```
-          files: dist/${{ inputs.wheel_name }}.whl
+          files: dist/${{ env.WHEEL_FILE }}
 
       - name: Cleanup old releases
         env:

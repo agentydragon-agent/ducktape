@@ -6,7 +6,7 @@ finance/worthy/worthy/index_tail.html
 llm/html/**
 
 # Claude Code testdata - description.md are extracted content from Claude Code
-claude/claude_hooks/claude_hooks/testdata/claude_tools/**/*.md
+claude/claude_hooks/testdata/claude_tools/**/*.md
 
 # OrcaSlicer config - machine-generated, should not be formatted
 nonrcm-dotfiles/config/OrcaSlicer/**
@@ -19,9 +19,9 @@ inventree_utils/labels/**
 tana/export/references/**
 
 # Tana testdata - exclude non-JSON fixtures (JSON should be formatted)
-tana/tests/testdata/**/*.md
-tana/tests/testdata/**/*.tanapaste
-tana/tests/testdata/**/*.txt
+tana/testdata/**/*.md
+tana/testdata/**/*.tanapaste
+tana/testdata/**/*.txt
 
 # SvelteKit generated files
 **/.svelte-kit/**
@@ -53,7 +53,6 @@ cluster/k8s/*-chart/templates/**
 **/uv.lock
 
 # TODO: Fix formatting and remove exclusions below
-agent_server/docs/scaffold_reflection.md
 claude-commands-old/ccr-code-work.md
 claude-commands-old/commit.md
 claude-commands-old/rulelint.md
@@ -68,13 +67,10 @@ finance/reconcile/README.md
 llm/claude-instructions/CLAUDE-2025-07-12.md
 llm/claude-instructions/history.md
 mcp_infra/docs/eliminating-class-constants-analysis.md
-nix/home/README.md
 nix/home/claude-code/commands/analyze-permissions.md
 nix/home/claude-code/commands/dump.md
 nix/home/claude-code/commands/followups.md
 prompts/scans/useless-comments-and-docs.md
-props/core/src/props_core/.claude/commands/extract-principles.md
-props/core/src/props_core/docs/prompts/code_health_audit_fullprops.md
 props/standards/self-describing-names.md
 sandboxed_jupyter/docs/TODO-SANDBOX.md
 sandboxed_jupyter/docs/TODO.md

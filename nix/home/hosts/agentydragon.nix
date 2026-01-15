@@ -10,6 +10,7 @@
 }: {
   imports = [
     ../home.nix
+    ../modules/popos-bazel.nix
     # TODO: Fix cosmic.nix - the source path doesn't exist
     # ../modules/cosmic.nix
   ];

@@ -1,0 +1,55 @@
+# Build and push props-cli OCI image to GHCR
+#
+# Used by specimens repo for validation (pre-commit + CI)
+name: props-cli Image
+
+on:
+  push:
+    branches: [main, devel]
+    paths:
+      - "props/**"
+      - "agent_core/**"
+      - "agent_pkg/**"
+      - "cli_util/**"
+      - "mcp_infra/**"
+      - "openai_utils/**"
+      - ".github/workflows/props-cli-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-props-cli-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-props-cli-
+
+      - name: Build OCI image
+        run: bazelisk build //props/core/cli:image
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        run: bazelisk run //props/core/cli:push_ghcr

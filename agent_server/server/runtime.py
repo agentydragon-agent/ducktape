@@ -13,8 +13,8 @@ from agent_core.handler import BaseHandler
 from agent_server.agent_types import AgentID
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.mcp.ui.server import UiServer
-from agent_server.persist import Persistence
 from agent_server.persist.handler import RunPersistenceHandler
+from agent_server.persist.types import Persistence
 from agent_server.server.bus import ServerBus, UiEndTurn, UiMessage
 from agent_server.server.protocol import (
     FunctionCallOutput,

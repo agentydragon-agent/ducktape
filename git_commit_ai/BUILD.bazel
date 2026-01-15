@@ -22,6 +22,10 @@ py_library(
     deps = [
         "//agent_core",
         "//mcp_infra",
+        "//mcp_infra/bootstrap",
+        "//mcp_infra/compositor",
+        "//mcp_infra/display",
+        "//mcp_infra/enhanced",
         "//openai_utils",
         "@pypi//fastmcp",
         "@pypi//mako",
@@ -56,6 +60,7 @@ py_test(
     main = "test_amend.py",
     deps = [
         ":git_commit_ai_lib",
+        "//mcp_infra/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

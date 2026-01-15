@@ -12,7 +12,7 @@ import aiodocker
 
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.container_session import BindMount, ContainerOptions
+from mcp_infra.exec.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from props.core.db.config import DbConnectionConfig

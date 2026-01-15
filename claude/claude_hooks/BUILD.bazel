@@ -5,8 +5,18 @@ exports_files(["pyproject.toml"])
 
 py_library(
     name = "claude_hooks",
-    srcs = glob(["claude_hooks/**/*.py"]),
-    imports = ["."],
+    srcs = [
+        "__init__.py",
+        "actions.py",
+        "base.py",
+        "config.py",
+        "inputs.py",
+        "logging_context.py",
+        "precommit_autofix.py",
+        "tool_models.py",
+    ],
+    data = glob(["testdata/**"]),
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//platformdirs",
@@ -21,16 +31,27 @@ py_library(
 
 py_binary(
     name = "claude-autofixer",
-    srcs = ["claude_hooks/precommit_autofix.py"],
-    main = "claude_hooks/precommit_autofix.py",
+    srcs = ["precommit_autofix.py"],
+    imports = [".."],
+    main = "precommit_autofix.py",
     deps = [":claude_hooks"],
 )
 
 py_test(
     name = "test_claude_hooks",
-    srcs = glob(["tests/**/*.py"]),
-    imports = ["."],
-    main = "tests/conftest.py",
+    srcs = [
+        "conftest.py",
+        "test_autofixer.py",
+        "test_helpers.py",
+        "test_input_parsing.py",
+        "test_integration.py",
+        "test_models.py",
+        "test_precommit_integration.py",
+        "test_precommit_syntax_check.py",
+        "test_protocol_actions.py",
+    ],
+    imports = [".."],
+    main = "conftest.py",
     deps = [
         ":claude_hooks",
         "@pypi//pytest",

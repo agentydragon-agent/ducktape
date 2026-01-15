@@ -2,15 +2,20 @@
 
 load("@rules_python//python:defs.bzl", "py_test")
 
+filegroup(
+    name = "migrations",
+    srcs = [
+        "README",
+        "env.py",
+        "script.py.mako",
+    ] + glob(["versions/*.py"]),
+    visibility = ["//props:__subpackages__"],
+)
+
 py_test(
     name = "test_migration_sequence",
     srcs = ["test_migration_sequence.py"],
-    data = [
-        "env.py",
-        "script.py.mako",
-        "versions/20251228000000_complete_schema.py",
-        "versions/20260113_allow_proxy_create_agent_definitions.py",
-    ],
+    data = [":migrations"],
     imports = ["../../../.."],
     deps = [
         "@pypi//alembic",

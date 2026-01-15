@@ -832,7 +832,7 @@ class FullSyncResult:
     model_metadata_stats: ModelMetadataSyncStats
 
 
-def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
+def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = False) -> FullSyncResult:
     """Sync snapshots, issues, files, file sets, and model metadata.
 
     Note: Agent definitions are no longer synced - they are OCI images managed via registry.
@@ -851,6 +851,7 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
     Args:
         session: Active database session
         use_staged: If True, read agent definitions from staged files instead of HEAD.
+        dry_run: If True, rollback all changes instead of committing. Validates constraints.
 
     Returns:
         Combined results from all sync operations
@@ -889,6 +890,10 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
     print(f"  {model_metadata_stats.summary_text}")
 
     # Note: Agent definitions no longer synced (OCI images managed via registry)
+
+    if dry_run:
+        logger.info("DRY-RUN: Rolling back all changes")
+        session.rollback()
 
     return FullSyncResult(
         snapshot_stats=snapshot_stats,

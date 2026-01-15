@@ -51,10 +51,7 @@ from props.testing.fixtures.runs import (
 )
 
 # Scope fixtures
-from props.testing.fixtures.scopes import (
-    all_files_scope,
-    subtract_file_example,
-)
+from props.testing.fixtures.scopes import all_files_scope, subtract_file_example
 
 # E2E fixtures
 from props.testing.fixtures.e2e import (

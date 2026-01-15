@@ -54,9 +54,11 @@ async def run_policy_source(
     ctx_json = input_payload.model_dump_json()
 
     # Build container config (no Detach - attach to capture logs)
+    # Use dedicated policy_shim binary which has proper PYTHONPATH setup
     config: JSONObject = {
         "Image": img,
-        "Cmd": ["python", "-m", "agent_server.policy_eval.shim"],
+        "Entrypoint": ["/opt/adgn/policy_shim"],
+        "Cmd": [],
         "AttachStdout": True,
         "AttachStderr": True,
         "Tty": False,
@@ -94,13 +96,17 @@ async def run_policy_source(
         wait_result = await container.wait()
         exit_code = wait_result.get("StatusCode")
 
-        # Get logs
-        logs_raw = await container.log(stdout=True, stderr=True)
+        # Get stdout only - policy JSON comes from stdout, stderr is for diagnostics
+        logs_raw = await container.log(stdout=True, stderr=False)
         logs_bytes = _normalize_logs(logs_raw)
 
         # Check exit status
         if exit_code != 0:
-            text = logs_bytes.decode("utf-8", errors="replace")
+            # On error, get both stdout and stderr for diagnostics
+            stderr_raw = await container.log(stdout=False, stderr=True)
+            stderr_bytes = _normalize_logs(stderr_raw)
+            combined = logs_bytes + stderr_bytes
+            text = combined.decode("utf-8", errors="replace")
             raise RuntimeError(f"policy eval failed (exit={exit_code}): {text.strip()}")
 
         # Parse response

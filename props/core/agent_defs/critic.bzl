@@ -21,15 +21,6 @@ def critic_variant(name, agent_md):
         agent_md: Source markdown file for agent instructions
     """
 
-    # Package props CLI and dependencies
-    pkg_tar(
-        name = name + "_app_tar",
-        srcs = ["//props/core/cli:props"],
-        include_runfiles = True,
-        package_dir = "/app",
-        strip_prefix = ".",
-    )
-
     # Rename variant-specific agent.md to standard agent.md
     # Uses genrule + strip_prefix pattern (same as init_script_tar)
     native.genrule(
@@ -57,7 +48,7 @@ def critic_variant(name, agent_md):
             "PYTHONUNBUFFERED": "1",
         },
         tars = [
-            ":" + name + "_app_tar",
+            "//props/core/cli:app_tar",
             "//props/core/agent_defs:critic_dev_init_tar",
             ":" + name + "_agent_md_tar",
         ],

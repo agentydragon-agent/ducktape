@@ -1,8 +1,6 @@
 """Typed stubs for resources MCP server."""
 
-from mcp_infra.mcp_types import SimpleOk
-from mcp_infra.resource_utils import read_text_json_typed
-from mcp_infra.resources.server import (
+from mcp_infra.compositor.resources_server import (
     ListSubscribeArgs,
     ReadBlocksArgs,
     ReadBlocksResult,
@@ -11,6 +9,8 @@ from mcp_infra.resources.server import (
     ResourcesSubscribeArgs,
     ResourceTemplatesListResult,
 )
+from mcp_infra.mcp_types import SimpleOk
+from mcp_infra.resource_utils import read_text_json_typed
 from mcp_infra.resources.types import SubscriptionsIndex
 from mcp_infra.stubs.server_stubs import ServerStub
 

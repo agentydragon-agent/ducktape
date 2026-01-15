@@ -7,11 +7,11 @@
 1. Create a new module in `ducktape_llm_common/claude_linter/linters/`
 2. Implement the linter function with proper type annotations
 3. Register it in the appropriate mode in `registry.py`
-4. Add tests in `tests/claude_linter/`
+4. Add tests parallel to production code in `ducktape_llm_common/claude_linter/`
 
 ### Testing Patterns
 
-- Tests are colocated in the `tests/` directory
+- Tests live parallel to production code (e.g., `ducktape_llm_common/claude_linter/test_*.py`)
 - Use pytest fixtures for common test data
 - Mock external dependencies (file system, git operations)
 - Test both success and failure cases

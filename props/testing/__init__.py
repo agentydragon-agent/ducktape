@@ -1,1 +1,0 @@
-"""Props test infrastructure package."""
