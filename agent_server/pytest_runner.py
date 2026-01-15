@@ -1,4 +1,10 @@
-"""Pytest runner shim for Bazel integration."""
+"""Pytest runner shim for Bazel integration.
+
+TODO: Investigate using rules_python's py_pytest_main from
+@rules_python//python/private/pytest:defs.bzl as an alternative to
+this manual runner. It may handle Bazel integration (XML output,
+sharding, etc.) automatically.
+"""
 
 import os
 import sys

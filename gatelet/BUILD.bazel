@@ -3,71 +3,59 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
+exports_files([
+    "gatelet.toml",
+    "pyproject.toml",
+])
 
+# Reporter is a standalone CLI tool - doesn't depend on server
 py_library(
-    name = "gatelet",
-    srcs = glob(["gatelet/**/*.py"]),
-    data = glob([
-        "gatelet/**/*.html",
-        "gatelet/**/*.jinja2",
-    ]),
+    name = "reporter_lib",
+    srcs = ["reporter.py"],
+    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "@pypi//alembic",
-        "@pypi//aqipy",
-        "@pypi//asyncpg",
-        "@pypi//aw_client",
-        "@pypi//aw_core",
-        "@pypi//compact_json",
-        "@pypi//cryptography",
-        "@pypi//fastapi",
-        "@pypi//fastapi_csrf_protect",
-        "@pypi//fastapi_sessions",
-        "@pypi//fastapi_users",
-        "@pypi//fastapi_users_db_sqlalchemy",
-        "@pypi//geopy",
-        "@pypi//google_api_python_client",
-        "@pypi//google_auth",
-        "@pypi//homeassistant_api",
-        "@pypi//jinja2",
-        "@pypi//meteostat",
-        "@pypi//oura",
-        "@pypi//passlib",
-        "@pypi//psycopg2_binary",
+        "@pypi//httpx",
+        "@pypi//psutil",
         "@pypi//pydantic",
-        "@pypi//pyowm",
-        "@pypi//python_metar",
-        "@pypi//python_multipart",
-        "@pypi//sqlalchemy",
         "@pypi//tomlkit",
-        "@pypi//uvicorn",
     ],
 )
 
 py_binary(
-    name = "gatelet-reporter",
-    srcs = ["gatelet/reporter/__init__.py"],
-    main = "gatelet/reporter/__init__.py",
-    deps = [":gatelet"],
+    name = "reporter",
+    srcs = ["reporter.py"],
+    imports = [".."],
+    main = "reporter.py",
+    deps = [":reporter_lib"],
+)
+
+# Management utility - depends on server
+py_library(
+    name = "manage_lib",
+    srcs = ["manage.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//gatelet/server",
+        "@pypi//sqlalchemy",
+        "@pypi//tomlkit",
+    ],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":gatelet"],
+    srcs = [
+        ":manage_lib",
+        ":reporter_lib",
+    ],
 )
 
 # --- OCI Image ---
 
-py_binary(
-    name = "server",
-    srcs = ["server.py"],
-    deps = [":gatelet"],
-)
-
 pkg_tar(
     name = "server_tar",
-    srcs = [":server"],
+    srcs = ["//gatelet/server:server_bin"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",

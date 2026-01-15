@@ -12,7 +12,7 @@ claude/claude_hooks/testdata/claude_tools/**/*.md
 nonrcm-dotfiles/config/OrcaSlicer/**
 
 # Jinja2 templates - prettier mangles block tag formatting
-gatelet/gatelet/server/templates/**
+gatelet/server/templates/**
 inventree_utils/labels/**
 
 # Tana export references - generated content, should not be formatted

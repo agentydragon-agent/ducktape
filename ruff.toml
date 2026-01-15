@@ -150,7 +150,7 @@ split-on-trailing-comma = false
 # Project-specific ignores (consolidated from individual pyproject.toml files)
 "gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
 "rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
-"gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+"gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "py_detectors/det_*.py" = ["N802"]

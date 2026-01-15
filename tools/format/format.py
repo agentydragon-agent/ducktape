@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
 """Unified formatter that routes files to appropriate formatters.
+
+Based on: https://github.com/aspect-build/rules_lint/blob/main/format/private/format.sh
 
 Unlike rules_lint's format.sh, this handles filenames with special characters correctly
 by not using `find` (which breaks on filenames like "-recipe-").
@@ -12,13 +13,18 @@ Exclusions: Files with these .gitattributes are skipped (like rules_lint):
 Usage:
     bazel run //tools/format -- file1.py file2.js  # Format specific files
     bazel run //tools/format                        # Format all tracked files
+
+TODO: Support gofmt special case (check stdout, not exit code)
+TODO: Support Java/Scala JAVA_RUNFILES workaround
 """
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -62,12 +68,59 @@ FILENAME_MAP: dict[str, str] = {
     "WORKSPACE.bazel": "buildifier",
 }
 
+# Shebang pattern for shell scripts (matching rules_lint)
+SHELL_SHEBANG_RE = re.compile(rb"^#![ \t]*/(usr/)?bin/(env[ \t]+)?(sh|bash|mksh|bats|zsh)")
+
+
+def get_max_batch_size() -> int:
+    """Get max command-line size, matching rules_lint behavior."""
+    try:
+        arg_max = os.sysconf("SC_ARG_MAX")
+    except (ValueError, OSError):
+        arg_max = 128000
+    return min(arg_max - 2048, 128000)
+
+
+def batch_files(files: list[str], max_size: int) -> list[list[str]]:
+    """Split files into batches that fit within ARG_MAX."""
+    batches: list[list[str]] = []
+    current_batch: list[str] = []
+    current_size = 0
+    for f in files:
+        if current_size + len(f) + 1 >= max_size and current_batch:
+            batches.append(current_batch)
+            current_batch = []
+            current_size = 0
+        current_batch.append(f)
+        current_size += len(f) + 1
+    if current_batch:
+        batches.append(current_batch)
+    return batches
+
+
+def detect_shell_by_shebang(path: Path) -> bool:
+    """Check if file has a shell shebang (for files without .sh extension)."""
+    if path.suffix:  # Has extension, skip shebang check
+        return False
+    try:
+        with path.open("rb") as f:
+            first_line = f.readline(256)
+        return bool(SHELL_SHEBANG_RE.match(first_line))
+    except OSError:
+        return False
+
 
 def get_formatter(path: Path) -> str | None:
     """Determine which formatter to use for a file."""
     if path.name in FILENAME_MAP:
         return FILENAME_MAP[path.name]
-    return EXTENSION_MAP.get(path.suffix.lower())
+    formatter = EXTENSION_MAP.get(path.suffix.lower())
+    if formatter:
+        return formatter
+    # Check shebang for shell scripts without extension (like gradlew)
+    if detect_shell_by_shebang(path):
+        return "shfmt"
+    return None
 
 
 def get_all_files() -> list[Path]:
@@ -115,48 +168,45 @@ def filter_ignored(files: list[Path]) -> list[Path]:
     return [f for f in files if str(f) not in ignored_files]
 
 
-def run_formatter(formatter: str, files: list[Path], check_mode: bool) -> bool:
-    """Run a formatter on files. Returns True if successful."""
+def run_formatter(formatter: str, files: list[Path], check_mode: bool) -> None:
+    """Run a formatter on files. Raises on failure."""
     if not files:
-        return True
+        return
 
     # Filter to existing files
     existing = [str(f) for f in files if f.exists()]
     if not existing:
-        return True
+        return
 
     # Get binary path from environment (set by Bazel) and resolve via runfiles
     bin_var = f"{formatter.upper()}_BIN"
     rlocation_path = os.environ.get(bin_var)
     if not rlocation_path:
-        print(f"Error: {bin_var} not set", file=sys.stderr)
-        return False
+        raise RuntimeError(f"{bin_var} not set")
 
     bin_path = _RUNFILES.Rlocation(rlocation_path)
     if not bin_path or not Path(bin_path).exists():
-        print(f"Error: could not resolve {rlocation_path}", file=sys.stderr)
-        return False
+        raise RuntimeError(f"could not resolve {rlocation_path}")
 
-    # Build command based on formatter
+    # Build base command (without files)
     if formatter == "prettier":
-        cmd = [bin_path, "--check" if check_mode else "--write", *existing]
+        base_cmd = [bin_path, "--check" if check_mode else "--write"]
     elif formatter == "ruff":
-        cmd = [bin_path, "format", *(["--check"] if check_mode else []), *existing]
+        base_cmd = [bin_path, "format", *(["--check"] if check_mode else [])]
     elif formatter == "shfmt":
-        cmd = [bin_path, "-d" if check_mode else "-w", *existing]
+        base_cmd = [bin_path, "-d" if check_mode else "-w"]
     elif formatter == "buildifier":
-        # buildifier.check is a different binary for check mode
-        cmd = [bin_path, *existing]
+        base_cmd = [bin_path]
     else:
-        print(f"Unknown formatter: {formatter}", file=sys.stderr)
-        return False
+        raise RuntimeError(f"Unknown formatter: {formatter}")
 
-    print(f"Formatting {len(existing)} files with {formatter}...")
-    try:
-        subprocess.run(cmd, check=True)
-        return True
-    except subprocess.CalledProcessError:
-        return False
+    # Batch files to avoid ARG_MAX limit
+    batches = batch_files(existing, get_max_batch_size())
+    start = time.perf_counter()
+    for batch in batches:
+        subprocess.run([*base_cmd, *batch], check=True)
+    elapsed = time.perf_counter() - start
+    print(f"Formatted {len(existing)} files with {formatter} in {elapsed:.1f}s")
 
 
 def main() -> int:
@@ -181,12 +231,16 @@ def main() -> int:
             by_formatter[formatter].append(f)
 
     # Run formatters
-    success = True
-    for formatter, formatter_files in by_formatter.items():
-        if not run_formatter(formatter, formatter_files, check_mode):
-            success = False
+    try:
+        for formatter, formatter_files in by_formatter.items():
+            run_formatter(formatter, formatter_files, check_mode)
+    except subprocess.CalledProcessError as e:
+        print(f"FAILED: A formatter exited with code {e.returncode}", file=sys.stderr)
+        if check_mode:
+            print("Try running 'bazel run //tools/format' to fix this.", file=sys.stderr)
+        raise
 
-    return 0 if success else 1
+    return 0
 
 
 if __name__ == "__main__":
