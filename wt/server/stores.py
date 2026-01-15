@@ -17,7 +17,7 @@ PR data is managed by a single GitHubWatcher that:
 The join from (worktree → branch) + (branch → PR) happens at query time in status_handler.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import cast
 
@@ -55,7 +55,13 @@ class DaemonStore:
                     branches.add(collector.last_ok.value.branch)
             return frozenset(branches)
 
-        self.active_branches: Computed[frozenset[str]] = Computed(_compute_active_branches)
+        self.active_branches: Callable[[], frozenset[str]] = Computed(_compute_active_branches)
+
+        # Computed aggregator for gitstatusd data
+        def _compute_gitstatusd() -> dict[Path, Collector[GitstatusdData]]:
+            return {path: sig() for path, sig in self._gitstatusd_sources().items()}
+
+        self._gitstatusd_computed: Callable[[], dict[Path, Collector[GitstatusdData]]] = Computed(_compute_gitstatusd)
 
     # Registration methods - sources call these to join/leave the aggregation
 
@@ -69,10 +75,9 @@ class DaemonStore:
 
     # Computed aggregators - read from all registered signals
 
-    @Computed
     def gitstatusd(self) -> dict[Path, Collector[GitstatusdData]]:
         """Aggregate gitstatusd data by reading all registered signals."""
-        return {path: sig() for path, sig in self._gitstatusd_sources().items()}
+        return self._gitstatusd_computed()
 
     # Config accessors
 

@@ -111,13 +111,13 @@ async def _compute_worktree_status(
             )
 
         collector = gs_client.status()
-        has_data = collector.last_ok is not None
-        if has_data:
-            status_data = collector.last_ok.value
+        last_ok = collector.last_ok
+        if last_ok is not None:
+            status_data = last_ok.value
             dirty_count = status_data.staged + status_data.unstaged
             untracked_count = status_data.untracked
-            cache_age_ms = (time.time() - collector.last_ok.at.timestamp()) * 1000
-            last_updated_at = collector.last_ok.at
+            cache_age_ms = (time.time() - last_ok.at.timestamp()) * 1000
+            last_updated_at = last_ok.at
         else:
             dirty_count, untracked_count = 0, 0
             cache_age_ms = None
@@ -147,7 +147,7 @@ async def _compute_worktree_status(
                 if pr_refreshed is not None:
                     pr_info = PRInfoOk(pr_data=pr_refreshed)
 
-        is_cached = has_data
+        is_cached = last_ok is not None
         is_stale = bool(cache_age_ms and timedelta(milliseconds=cache_age_ms) > config.cache_refresh_age)
         state = GitstatusdState.RUNNING if gs_client.is_running else GitstatusdState.STOPPED
 

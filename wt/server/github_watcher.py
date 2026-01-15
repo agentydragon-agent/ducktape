@@ -106,7 +106,11 @@ class GitHubWatcher:
             result: dict[str, PRData | None] = {}
             for branch in branches:
                 result[branch] = load_pr_fixture(self._config, branch)
-            self.pr_cache.update(lambda c, r=result: c.ok(r))
+
+            def _set_fixture_result(c: Collector[dict[str, PRData | None]]) -> Collector[dict[str, PRData | None]]:
+                return c.ok(result)
+
+            self.pr_cache.update(_set_fixture_result)
             return
 
         # No GitHub interface: nothing to fetch
@@ -134,10 +138,18 @@ class GitHubWatcher:
                 else:
                     result[branch] = None
 
-            self.pr_cache.update(lambda c, r=result: c.ok(r))
+            def _set_fetch_result(c: Collector[dict[str, PRData | None]]) -> Collector[dict[str, PRData | None]]:
+                return c.ok(result)
+
+            self.pr_cache.update(_set_fetch_result)
         except Exception as exc:
             logger.warning("GitHub batch fetch failed: %s", exc)
-            self.pr_cache.update(lambda c, e=exc: c.exception(e))
+            captured_exc = exc
+
+            def _set_fetch_error(c: Collector[dict[str, PRData | None]]) -> Collector[dict[str, PRData | None]]:
+                return c.exception(captured_exc)
+
+            self.pr_cache.update(_set_fetch_error)
 
     def trigger_refresh(self) -> None:
         """Manual refresh trigger (for pr_refresh_now RPC)."""
