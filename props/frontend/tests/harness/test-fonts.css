@@ -8,8 +8,8 @@
  */
 
 @font-face {
-  font-family: 'Inter';
-  src: url('../fonts/Inter.woff2') format('woff2');
+  font-family: "Inter";
+  src: url("../fonts/Inter.woff2") format("woff2");
   font-weight: 100 900;
   font-display: block;
 }
@@ -18,7 +18,7 @@
 :root,
 body,
 * {
-  font-family: 'Inter', sans-serif !important;
+  font-family: "Inter", sans-serif !important;
 }
 
 /* Disable all animations and transitions for deterministic screenshots */

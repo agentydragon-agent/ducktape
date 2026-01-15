@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { OverviewResponse, DefinitionRow, StatsWithCI } from '../../lib/types';
-  import { formatStatsWithCI } from '../../lib/formatters';
-  import DefinitionIdLink from '../../lib/DefinitionIdLink.svelte';
+  import type { OverviewResponse, DefinitionRow, StatsWithCI } from "../../lib/types";
+  import { formatStatsWithCI } from "../../lib/formatters";
+  import DefinitionIdLink from "../../lib/DefinitionIdLink.svelte";
 
   interface Props {
     data: OverviewResponse;
@@ -13,7 +13,7 @@
   function findBestDefinition(): { def: DefinitionRow; recall_stats: StatsWithCI } | null {
     let best: { def: DefinitionRow; recall_stats: StatsWithCI } | null = null;
     for (const def of data.definitions) {
-      const stats = def.stats['valid']?.['whole_snapshot'];
+      const stats = def.stats["valid"]?.["whole_snapshot"];
       const recall_stats = stats?.recall_stats;
       if (recall_stats != null) {
         if (!best || recall_stats.mean > best.recall_stats.mean) {
@@ -72,29 +72,29 @@
   <div class="bg-white rounded-lg shadow p-4">
     <h3 class="text-sm font-medium text-gray-500 mb-2">Runs ({totalRuns})</h3>
     <div class="flex gap-2 text-xs">
-      {#if statusCounts['completed']}
+      {#if statusCounts["completed"]}
         <span class="text-green-600" title="Completed">
-          ✓{statusCounts['completed']}
+          ✓{statusCounts["completed"]}
         </span>
       {/if}
-      {#if statusCounts['in_progress']}
+      {#if statusCounts["in_progress"]}
         <span class="text-blue-600" title="In Progress">
-          ⟳{statusCounts['in_progress']}
+          ⟳{statusCounts["in_progress"]}
         </span>
       {/if}
-      {#if statusCounts['max_turns_exceeded']}
+      {#if statusCounts["max_turns_exceeded"]}
         <span class="text-yellow-600" title="Max Turns Exceeded">
-          S{statusCounts['max_turns_exceeded']}
+          S{statusCounts["max_turns_exceeded"]}
         </span>
       {/if}
-      {#if statusCounts['context_length_exceeded']}
+      {#if statusCounts["context_length_exceeded"]}
         <span class="text-orange-600" title="Context Exceeded">
-          C{statusCounts['context_length_exceeded']}
+          C{statusCounts["context_length_exceeded"]}
         </span>
       {/if}
-      {#if statusCounts['reported_failure']}
+      {#if statusCounts["reported_failure"]}
         <span class="text-red-600" title="Failed">
-          F{statusCounts['reported_failure']}
+          F{statusCounts["reported_failure"]}
         </span>
       {/if}
     </div>

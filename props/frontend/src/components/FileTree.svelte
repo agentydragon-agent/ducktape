@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-svelte';
-  import { SvelteSet } from 'svelte/reactivity';
-  import type { FileTreeNode } from '../lib/api/client';
-  import { getFileIcon } from '../lib/fileTypes';
+  import { ChevronRight, ChevronDown, Folder, FolderOpen } from "lucide-svelte";
+  import { SvelteSet } from "svelte/reactivity";
+  import type { FileTreeNode } from "../lib/api/client";
+  import { getFileIcon } from "../lib/fileTypes";
 
   interface Props {
     nodes: FileTreeNode[];
@@ -44,7 +44,7 @@
       }
     }}
     onkeydown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         if (node.is_dir) {
           toggleExpand(node.path);

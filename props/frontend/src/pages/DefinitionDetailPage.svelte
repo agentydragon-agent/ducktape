@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import DefinitionDetail from '$components/DefinitionDetail.svelte';
-  import { fetchDefinitionDetail, type DefinitionDetailResponse } from '$lib/api/client';
+  import { onMount } from "svelte";
+  import DefinitionDetail from "$components/DefinitionDetail.svelte";
+  import { fetchDefinitionDetail, type DefinitionDetailResponse } from "$lib/api/client";
 
   interface Props {
     definitionId: string;
@@ -18,7 +18,7 @@
     try {
       definition = await fetchDefinitionDetail(definitionId);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load definition';
+      error = e instanceof Error ? e.message : "Failed to load definition";
     } finally {
       loading = false;
     }

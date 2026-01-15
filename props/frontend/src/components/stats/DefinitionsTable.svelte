@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { DataTable } from '@careswitch/svelte-data-table';
-  import type { DefinitionRow, SplitScopeStats, Split, ExampleKind } from '../../lib/types';
-  import { formatStatsWithCI, formatAge } from '../../lib/formatters';
-  import { recallColorClass } from '../../lib/colors';
-  import DefinitionIdLink from '../../lib/DefinitionIdLink.svelte';
+  import { DataTable } from "@careswitch/svelte-data-table";
+  import type { DefinitionRow, SplitScopeStats, Split, ExampleKind } from "../../lib/types";
+  import { formatStatsWithCI, formatAge } from "../../lib/formatters";
+  import { recallColorClass } from "../../lib/colors";
+  import DefinitionIdLink from "../../lib/DefinitionIdLink.svelte";
 
   interface CellClickInfo {
     definitionId: string;
@@ -31,8 +31,8 @@
   }
 
   // Hierarchical structure: splits -> kinds
-  const splits: Split[] = ['valid', 'train'];
-  const kinds: ExampleKind[] = ['whole_snapshot', 'file_set'];
+  const splits: Split[] = ["valid", "train"];
+  const kinds: ExampleKind[] = ["whole_snapshot", "file_set"];
   const metricsPerKind = 5; // Recall, Runs, Zero, Done, Stalled
 
   // Create DataTable with sortable columns
@@ -40,29 +40,29 @@
     new DataTable({
       data: definitions,
       columns: [
-        { id: 'image_digest', key: 'image_digest', name: 'Definition', sortable: true },
-        { id: 'created_at', key: 'created_at', name: 'Age', sortable: true },
+        { id: "image_digest", key: "image_digest", name: "Definition", sortable: true },
+        { id: "created_at", key: "created_at", name: "Age", sortable: true },
         // Generate columns for each split/kind combo
         ...splits.flatMap((split) =>
           kinds.map((kind) => ({
             id: `${split}_${kind}_recall`,
-            key: 'stats' as keyof DefinitionRow,
+            key: "stats" as keyof DefinitionRow,
             name: `${split} ${kind} Recall`,
             sortable: true,
             getValue: (row: DefinitionRow) => getStats(row, split, kind)?.recall_stats?.mean ?? -1,
           }))
         ),
       ],
-      initialSort: 'valid_whole_snapshot_recall',
-      initialSortDirection: 'desc',
+      initialSort: "valid_whole_snapshot_recall",
+      initialSortDirection: "desc",
     })
   );
 
   function getSortIndicator(columnId: string): string {
     const state = table.getSortState(columnId);
-    if (state === 'asc') return ' ↑';
-    if (state === 'desc') return ' ↓';
-    return '';
+    if (state === "asc") return " ↑";
+    if (state === "desc") return " ↓";
+    return "";
   }
 </script>
 
@@ -74,16 +74,16 @@
         <th
           rowspan="3"
           class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 align-bottom"
-          onclick={() => table.toggleSort('image_digest')}
+          onclick={() => table.toggleSort("image_digest")}
         >
-          Definition{getSortIndicator('image_digest')}
+          Definition{getSortIndicator("image_digest")}
         </th>
         <th
           rowspan="3"
           class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 align-bottom"
-          onclick={() => table.toggleSort('created_at')}
+          onclick={() => table.toggleSort("created_at")}
         >
-          Age{getSortIndicator('created_at')}
+          Age{getSortIndicator("created_at")}
         </th>
         {#each splits as split (split)}
           <th
@@ -139,7 +139,7 @@
               {@const cellClick = clickable
                 ? () => onCellClick({ definitionId: def.image_digest, split, kind })
                 : undefined}
-              {@const clickClass = clickable ? 'cursor-pointer hover:bg-blue-100' : ''}
+              {@const clickClass = clickable ? "cursor-pointer hover:bg-blue-100" : ""}
               {@const clickTitle = clickable ? `View ${split} ${kind} runs` : undefined}
               {#if stats}
                 <td
@@ -149,7 +149,7 @@
                   onclick={cellClick}
                   title={clickTitle}
                 >
-                  {stats.recall_stats ? formatStatsWithCI(stats.recall_stats) : '—'}
+                  {stats.recall_stats ? formatStatsWithCI(stats.recall_stats) : "—"}
                 </td>
                 <td class="px-2 py-2 text-right">{stats.n_examples}</td>
                 <td class="px-2 py-2 text-right text-gray-400">{stats.zero_count}</td>

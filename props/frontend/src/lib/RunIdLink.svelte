@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$lib/router';
+  import { resolve } from "$lib/router";
 
   // Link component for agent run IDs (UUIDs)
   // Uses native <a> with SvelteKit client-side navigation

@@ -89,8 +89,8 @@ repos:
         language: system
         pass_filenames: true
         # Use files regex since pre-commit doesn't have starlark type
-        # Covers: JS/TS, CSS, Markdown, YAML, JSON, HTML, Python, Shell, Starlark
-        files: "\\.(js|jsx|ts|tsx|css|md|yaml|yml|json|html|py|sh|bash)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$"
+        # Covers: JS/TS/Svelte, CSS, Markdown, YAML, JSON, HTML, Python, Shell, Starlark
+        files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$"
         exclude: "node_modules/|.pnpm/|bazel-|.git/"
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)

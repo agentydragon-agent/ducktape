@@ -1,18 +1,18 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { pathname, resolve } from '$lib/router';
-  import { toast } from 'svelte-sonner';
-  import { splitBadgeClass } from '$lib/colors';
-  import type { SnapshotDetailResponse, FileContentResponse, FileTreeResponse } from '$lib/api/client';
-  import { fetchSnapshotDetail, fetchSnapshotTree, fetchSnapshotFile } from '$lib/api/client';
-  import FileTree from '$components/FileTree.svelte';
-  import FileViewer from '$components/FileViewer.svelte';
-  import TabButton from '$components/TabButton.svelte';
-  import Breadcrumb from '$components/Breadcrumb.svelte';
-  import CopyButton from '$components/CopyButton.svelte';
-  import BackButton from '$components/BackButton.svelte';
-  import OccurrenceLink from '$lib/OccurrenceLink.svelte';
-  import { createExpansionState } from '$lib/expansionState.svelte';
+  import { onMount } from "svelte";
+  import { pathname, resolve } from "$lib/router";
+  import { toast } from "svelte-sonner";
+  import { splitBadgeClass } from "$lib/colors";
+  import type { SnapshotDetailResponse, FileContentResponse, FileTreeResponse } from "$lib/api/client";
+  import { fetchSnapshotDetail, fetchSnapshotTree, fetchSnapshotFile } from "$lib/api/client";
+  import FileTree from "$components/FileTree.svelte";
+  import FileViewer from "$components/FileViewer.svelte";
+  import TabButton from "$components/TabButton.svelte";
+  import Breadcrumb from "$components/Breadcrumb.svelte";
+  import CopyButton from "$components/CopyButton.svelte";
+  import BackButton from "$components/BackButton.svelte";
+  import OccurrenceLink from "$lib/OccurrenceLink.svelte";
+  import { createExpansionState } from "$lib/expansionState.svelte";
 
   interface Props {
     slug: string; // This is the full catch-all path: "snapshot-name" or "snapshot-name/issueId/occurrenceId"
@@ -23,7 +23,7 @@
 
   // Parse the slug into components
   const parsedSlug = $derived.by(() => {
-    const parts = slug.split('/');
+    const parts = slug.split("/");
     const snapshotSlug = parts[0];
     const issueId = parts.length >= 3 ? parts[1] : undefined;
     const occurrenceId = parts.length >= 3 ? parts[2] : undefined;
@@ -33,11 +33,11 @@
   // Parse query params for file
   const queryParams = $derived.by(() => {
     const path = $pathname;
-    const queryStart = path.indexOf('?');
+    const queryStart = path.indexOf("?");
     if (queryStart === -1) return new URLSearchParams();
     return new URLSearchParams(path.slice(queryStart + 1));
   });
-  const targetFile = $derived(queryParams.get('file') || undefined);
+  const targetFile = $derived(queryParams.get("file") || undefined);
 
   let snapshot: SnapshotDetailResponse | null = $state(initialSnapshot ?? null);
   let tree: FileTreeResponse | null = $state(initialTree ?? null);
@@ -45,7 +45,7 @@
   let error: string | null = $state(null);
 
   const expandedIssues = createExpansionState();
-  let activeTab: 'files' | 'tps' | 'fps' = $state('files');
+  let activeTab: "files" | "tps" | "fps" = $state("files");
   let selectedFile: FileContentResponse | null = $state(null);
   let loadingFile = $state(false);
 
@@ -60,7 +60,7 @@
       snapshot = snapshotData;
       tree = treeData;
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load snapshot';
+      error = e instanceof Error ? e.message : "Failed to load snapshot";
     } finally {
       loading = false;
     }
@@ -83,7 +83,7 @@
   const breadcrumbs = $derived.by(() => {
     if (!selectedFile || !snapshot) return [{ label: parsedSlug.snapshotSlug }];
 
-    const parts = selectedFile.path.split('/');
+    const parts = selectedFile.path.split("/");
     const items: Array<{ label: string; href?: string }> = [
       { label: snapshot.slug, href: `/snapshots/${parsedSlug.snapshotSlug}` },
       ...parts.map((part) => ({ label: part })),
@@ -103,7 +103,7 @@
       const endLine = r.end_line ?? r.start_line;
       return r.start_line === endLine ? `${r.start_line}` : `${r.start_line}-${endLine}`;
     });
-    return `${file.path}:${rangeStrs.join(',')}`;
+    return `${file.path}:${rangeStrs.join(",")}`;
   }
 
   async function handleFileClick(path: string) {
@@ -133,7 +133,7 @@
 
     const searchInIssues = (issues: typeof snap.true_positives | typeof snap.false_positives) => {
       for (const issue of issues) {
-        const issueIdMatch = 'tp_id' in issue ? issue.tp_id === issueId : issue.fp_id === issueId;
+        const issueIdMatch = "tp_id" in issue ? issue.tp_id === issueId : issue.fp_id === issueId;
         if (issueIdMatch) {
           const occ = issue.occurrences.find((o) => o.occurrence_id === occurrenceId);
           if (occ?.files.length) {
@@ -141,11 +141,11 @@
             const fileToLoad = filePath || occ.files[0].path;
             handleFileClick(fileToLoad);
             expandedIssues.expand(issueId);
-            activeTab = 'files';
+            activeTab = "files";
             setTimeout(() => {
               document.getElementById(`${issueId}-${occurrenceId}`)?.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center',
+                behavior: "smooth",
+                block: "center",
               });
             }, 100);
             return true;
@@ -188,18 +188,18 @@
         </div>
       </div>
       <Breadcrumb
-        items={[{ label: 'Home', href: '/' }, { label: 'Snapshots', href: '/snapshots' }, { label: snapshot.slug }]}
+        items={[{ label: "Home", href: "/" }, { label: "Snapshots", href: "/snapshots" }, { label: snapshot.slug }]}
       />
     </div>
 
     <!-- Tabs -->
     <div class="border-b">
       <nav class="flex -mb-px">
-        <TabButton active={activeTab === 'files'} onclick={() => (activeTab = 'files')}>Files</TabButton>
-        <TabButton active={activeTab === 'tps'} onclick={() => (activeTab = 'tps')}>
+        <TabButton active={activeTab === "files"} onclick={() => (activeTab = "files")}>Files</TabButton>
+        <TabButton active={activeTab === "tps"} onclick={() => (activeTab = "tps")}>
           True Positives ({snapshot.true_positives.length})
         </TabButton>
-        <TabButton active={activeTab === 'fps'} onclick={() => (activeTab = 'fps')}>
+        <TabButton active={activeTab === "fps"} onclick={() => (activeTab = "fps")}>
           False Positives ({snapshot.false_positives.length})
         </TabButton>
       </nav>
@@ -207,7 +207,7 @@
 
     <!-- Content -->
     <div class="p-4">
-      {#if activeTab === 'files'}
+      {#if activeTab === "files"}
         <div class="grid grid-cols-2 gap-4">
           <!-- File Tree -->
           <div class="overflow-y-auto max-h-[70vh]">
@@ -235,7 +235,7 @@
             {/if}
           </div>
         </div>
-      {:else if activeTab === 'tps'}
+      {:else if activeTab === "tps"}
         <div class="max-h-[70vh] overflow-y-auto">
           {#if snapshot.true_positives.length === 0}
             <p class="text-gray-500">No true positives</p>
@@ -248,7 +248,7 @@
                     onclick={() => expandedIssues.toggle(tp.tp_id)}
                   >
                     <div class="flex items-center gap-2">
-                      <span class="text-gray-400">{expandedIssues.isExpanded(tp.tp_id) ? '▼' : '▶'}</span>
+                      <span class="text-gray-400">{expandedIssues.isExpanded(tp.tp_id) ? "▼" : "▶"}</span>
                       <span class="font-mono text-sm font-medium">{tp.tp_id}</span>
                       <span class="text-xs text-gray-500">({tp.occurrences.length} occ)</span>
                     </div>
@@ -294,8 +294,8 @@
                             {#if occ.critic_scopes_expected_to_recall && occ.critic_scopes_expected_to_recall.length > 0}
                               <div class="mt-1 text-xs text-gray-500">
                                 Expected recall scopes: {occ.critic_scopes_expected_to_recall
-                                  .map((f: string[]) => f.join(', '))
-                                  .join(' | ')}
+                                  .map((f: string[]) => f.join(", "))
+                                  .join(" | ")}
                               </div>
                             {/if}
                           </div>
@@ -321,7 +321,7 @@
                     onclick={() => expandedIssues.toggle(fp.fp_id)}
                   >
                     <div class="flex items-center gap-2">
-                      <span class="text-gray-400">{expandedIssues.isExpanded(fp.fp_id) ? '▼' : '▶'}</span>
+                      <span class="text-gray-400">{expandedIssues.isExpanded(fp.fp_id) ? "▼" : "▶"}</span>
                       <span class="font-mono text-sm font-medium">{fp.fp_id}</span>
                       <span class="text-xs text-gray-500">({fp.occurrences.length} occ)</span>
                     </div>
@@ -366,7 +366,7 @@
                             {/if}
                             {#if occ.relevant_files && occ.relevant_files.length > 0}
                               <div class="mt-1 text-xs text-gray-500">
-                                Relevant: {occ.relevant_files.join(', ')}
+                                Relevant: {occ.relevant_files.join(", ")}
                               </div>
                             {/if}
                           </div>

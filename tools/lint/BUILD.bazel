@@ -64,8 +64,15 @@ eslint_bin.eslint_binary(
 # Prettier binary for JS/TS/Svelte formatting
 # Set BAZEL_BINDIR to allow running outside Bazel build actions
 # See: https://github.com/aspect-build/rules_js#running-nodejs-programs
+#
+# data: Includes svelte plugin and its peer deps so prettier can find them
+# at runtime in the Bazel runfiles tree.
 prettier_bin.prettier_binary(
     name = "prettier",
+    data = [
+        "//:node_modules/prettier-plugin-svelte",
+        "//:node_modules/svelte",
+    ],
     env = {"BAZEL_BINDIR": "."},
 )
 

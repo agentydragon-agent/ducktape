@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { toast } from 'svelte-sonner';
-  import { DataTable } from '@careswitch/svelte-data-table';
-  import BackButton from './BackButton.svelte';
+  import { onMount } from "svelte";
+  import { toast } from "svelte-sonner";
+  import { DataTable } from "@careswitch/svelte-data-table";
+  import BackButton from "./BackButton.svelte";
   import {
     fetchRuns,
     type RunInfo,
@@ -14,13 +14,13 @@
     AGENT_RUN_STATUS_VALUES,
     AGENT_TYPE_VALUES,
     type CriticTypeConfig,
-  } from '../lib/api/client';
-  import type { RunTrigger } from '../lib/types';
-  import { formatAge } from '../lib/formatters';
-  import { getStatusColor, formatStatus } from '../lib/status';
-  import RunIdLink from '../lib/RunIdLink.svelte';
-  import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
-  import ExampleLink from '../lib/ExampleLink.svelte';
+  } from "../lib/api/client";
+  import type { RunTrigger } from "../lib/types";
+  import { formatAge } from "../lib/formatters";
+  import { getStatusColor, formatStatus } from "../lib/status";
+  import RunIdLink from "../lib/RunIdLink.svelte";
+  import DefinitionIdLink from "../lib/DefinitionIdLink.svelte";
+  import ExampleLink from "../lib/ExampleLink.svelte";
 
   // Props
   interface Props {
@@ -39,8 +39,8 @@
   const limit = 50;
 
   // Filters
-  let statusFilter: AgentRunStatus | '' = $state('');
-  let agentTypeFilter: AgentType | '' = $state('');
+  let statusFilter: AgentRunStatus | "" = $state("");
+  let agentTypeFilter: AgentType | "" = $state("");
 
   // Build filters object
   function buildFilters(): RunsFilters {
@@ -61,7 +61,7 @@
       runs = result?.runs ?? [];
       totalCount = result?.total_count ?? 0;
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Unknown error';
+      const message = e instanceof Error ? e.message : "Unknown error";
       toast.error(message);
       runs = [];
       totalCount = 0;
@@ -96,23 +96,23 @@
     new DataTable({
       data: runs,
       columns: [
-        { id: 'agent_run_id', key: 'agent_run_id', name: 'ID', sortable: true },
-        { id: 'image_digest', key: 'image_digest', name: 'Definition', sortable: true },
-        { id: 'split', key: 'split', name: 'Split', sortable: true },
-        { id: 'model', key: 'model', name: 'Model', sortable: true },
-        { id: 'status', key: 'status', name: 'Status', sortable: true },
-        { id: 'created_at', key: 'created_at', name: 'Created', sortable: true },
+        { id: "agent_run_id", key: "agent_run_id", name: "ID", sortable: true },
+        { id: "image_digest", key: "image_digest", name: "Definition", sortable: true },
+        { id: "split", key: "split", name: "Split", sortable: true },
+        { id: "model", key: "model", name: "Model", sortable: true },
+        { id: "status", key: "status", name: "Status", sortable: true },
+        { id: "created_at", key: "created_at", name: "Created", sortable: true },
       ],
-      initialSort: 'created_at',
-      initialSortDirection: 'desc',
+      initialSort: "created_at",
+      initialSortDirection: "desc",
     })
   );
 
   function getSortIndicator(columnId: string): string {
     const state = table.getSortState(columnId);
-    if (state === 'asc') return ' ↑';
-    if (state === 'desc') return ' ↓';
-    return '';
+    if (state === "asc") return " ↑";
+    if (state === "desc") return " ↓";
+    return "";
   }
 
   // Rows are clickable via RunIdLink inside each row
@@ -197,31 +197,31 @@
           <tr class="border-b border-gray-300">
             <th
               class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('agent_run_id')}
+              onclick={() => table.toggleSort("agent_run_id")}
             >
-              ID{getSortIndicator('agent_run_id')}
+              ID{getSortIndicator("agent_run_id")}
             </th>
             <th
               class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('image_digest')}
+              onclick={() => table.toggleSort("image_digest")}
             >
-              Definition{getSortIndicator('image_digest')}
+              Definition{getSortIndicator("image_digest")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort('split')}>
-              Split{getSortIndicator('split')}
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("split")}>
+              Split{getSortIndicator("split")}
             </th>
             <th class="px-3 py-2 text-left"> Example </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort('model')}>
-              Model{getSortIndicator('model')}
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("model")}>
+              Model{getSortIndicator("model")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort('status')}>
-              Status{getSortIndicator('status')}
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("status")}>
+              Status{getSortIndicator("status")}
             </th>
             <th
               class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('created_at')}
+              onclick={() => table.toggleSort("created_at")}
             >
-              Created{getSortIndicator('created_at')}
+              Created{getSortIndicator("created_at")}
             </th>
           </tr>
         </thead>
@@ -235,10 +235,10 @@
                 <DefinitionIdLink id={run.image_digest} />
               </td>
               <td class="px-3 py-2 text-xs text-gray-500">
-                {run.split ?? '—'}
+                {run.split ?? "—"}
               </td>
               <td class="px-3 py-2 text-xs text-gray-500">
-                {#if run.type_config.agent_type === 'critic'}
+                {#if run.type_config.agent_type === "critic"}
                   {@const config = run.type_config as CriticTypeConfig}
                   <ExampleLink example={config.example} />
                 {:else}

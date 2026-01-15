@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$lib/router';
+  import { resolve } from "$lib/router";
 
   // Link component for TP/FP occurrence IDs
   // Links to snapshot detail page with issue/occurrence and optional file parameter

@@ -1,20 +1,20 @@
 <script lang="ts">
-  import type { TruncatedStream } from '../lib/api/client';
+  import type { TruncatedStream } from "../lib/api/client";
 
   interface Props {
     stream: string | TruncatedStream;
-    kind: 'stdout' | 'stderr';
+    kind: "stdout" | "stderr";
   }
 
   let { stream, kind }: Props = $props();
 
-  const text = $derived(typeof stream === 'string' ? stream : stream.truncated_text);
+  const text = $derived(typeof stream === "string" ? stream : stream.truncated_text);
 
-  const isTruncated = $derived(typeof stream !== 'string');
+  const isTruncated = $derived(typeof stream !== "string");
 
-  const totalBytes = $derived(typeof stream === 'string' ? undefined : stream.total_bytes);
+  const totalBytes = $derived(typeof stream === "string" ? undefined : stream.total_bytes);
 
-  const colorClass = $derived(kind === 'stdout' ? 'text-gray-200' : 'text-red-400');
+  const colorClass = $derived(kind === "stdout" ? "text-gray-200" : "text-red-400");
 </script>
 
 {#if text}

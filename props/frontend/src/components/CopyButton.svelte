@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { Copy, Check } from 'lucide-svelte';
-  import { toast } from 'svelte-sonner';
+  import { Copy, Check } from "lucide-svelte";
+  import { toast } from "svelte-sonner";
 
   interface Props {
     text: string;
@@ -8,7 +8,7 @@
     successMessage?: string;
   }
 
-  let { text, label = 'Copy', successMessage = 'Copied to clipboard' }: Props = $props();
+  let { text, label = "Copy", successMessage = "Copied to clipboard" }: Props = $props();
 
   let copied = $state(false);
 
@@ -19,8 +19,8 @@
       toast.success(successMessage);
       setTimeout(() => (copied = false), 2000);
     } catch (err) {
-      toast.error('Failed to copy to clipboard');
-      console.error('Copy failed:', err);
+      toast.error("Failed to copy to clipboard");
+      console.error("Copy failed:", err);
     }
   }
 </script>

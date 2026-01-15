@@ -1,5 +1,5 @@
 <script lang="ts">
-  import RunDetail from '$components/RunDetail.svelte';
+  import RunDetail from "$components/RunDetail.svelte";
 
   interface Props {
     runId: string;

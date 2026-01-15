@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { CheckCircle, XCircle, Link } from 'lucide-svelte';
-  import type { GradingEdgeInfo, FileLocationInfo } from '../lib/api/client';
-  import { issueColors } from '../lib/colors';
-  import { formatFileLocation } from '../lib/formatters';
-  import OccurrenceLink from '../lib/OccurrenceLink.svelte';
-  import CopyButton from './CopyButton.svelte';
+  import { CheckCircle, XCircle, Link } from "lucide-svelte";
+  import type { GradingEdgeInfo, FileLocationInfo } from "../lib/api/client";
+  import { issueColors } from "../lib/colors";
+  import { formatFileLocation } from "../lib/formatters";
+  import OccurrenceLink from "../lib/OccurrenceLink.svelte";
+  import CopyButton from "./CopyButton.svelte";
 
   interface Props {
-    kind: 'tp' | 'fp' | 'critique';
+    kind: "tp" | "fp" | "critique";
     issueId: string;
     rationale: string;
     note?: string;
@@ -54,8 +54,8 @@
 
   // Target kind to color mapping
   const TARGET_COLORS = {
-    tp: 'green',
-    fp: 'red',
+    tp: "green",
+    fp: "red",
   } as const;
 
   // Helper to create color classes for a given base color
@@ -74,35 +74,35 @@
   });
 
   // Get label for grading edge target
-  const getTargetLabel = (target: { kind: 'tp' | 'fp'; tp_id?: string; fp_id?: string; occurrence_id?: string }) => {
-    if (target.kind === 'tp') return `${target.tp_id}/${target.occurrence_id}`;
+  const getTargetLabel = (target: { kind: "tp" | "fp"; tp_id?: string; fp_id?: string; occurrence_id?: string }) => {
+    if (target.kind === "tp") return `${target.tp_id}/${target.occurrence_id}`;
     return `${target.fp_id}/${target.occurrence_id}`;
   };
 
   // Compute critique classification once
   const critiqueType = $derived.by(() => {
-    if (kind !== 'critique') return null;
-    const hasTPMatch = gradingEdges.some((e) => e.target.kind === 'tp' && e.target.credit > 0);
-    const hasFPMatch = gradingEdges.some((e) => e.target.kind === 'fp' && e.target.credit > 0);
-    if (hasTPMatch) return 'tp';
-    if (hasFPMatch) return 'fp';
-    return 'default';
+    if (kind !== "critique") return null;
+    const hasTPMatch = gradingEdges.some((e) => e.target.kind === "tp" && e.target.credit > 0);
+    const hasFPMatch = gradingEdges.some((e) => e.target.kind === "fp" && e.target.credit > 0);
+    if (hasTPMatch) return "tp";
+    if (hasFPMatch) return "fp";
+    return "default";
   });
 
   const Icon = $derived.by(() => {
-    if (kind === 'tp') return ICONS.tp;
-    if (kind === 'fp') return ICONS.fp;
+    if (kind === "tp") return ICONS.tp;
+    if (kind === "fp") return ICONS.fp;
     return ICONS.critique;
   });
 
   const styling = $derived.by(() => {
-    if (kind === 'tp') return createStyling(issueColors.tp, 'TP');
-    if (kind === 'fp') return createStyling(issueColors.fp, 'FP');
+    if (kind === "tp") return createStyling(issueColors.tp, "TP");
+    if (kind === "fp") return createStyling(issueColors.fp, "FP");
 
     // Critique styling based on grading
-    if (critiqueType === 'tp') return createStyling(issueColors.critique, 'Critique (TP)');
-    if (critiqueType === 'fp') return createStyling(issueColors.critiqueFp, 'Critique (FP)');
-    return createStyling(issueColors.critique, 'Critique');
+    if (critiqueType === "tp") return createStyling(issueColors.critique, "Critique (TP)");
+    if (critiqueType === "fp") return createStyling(issueColors.critiqueFp, "Critique (FP)");
+    return createStyling(issueColors.critique, "Critique");
   });
 </script>
 
@@ -119,7 +119,7 @@
     {#if credit !== undefined}
       <span class="text-xs text-gray-500">(+{credit.toFixed(2)})</span>
     {/if}
-    <span class="ml-auto text-gray-400 text-xs">{expanded ? '▼' : '▶'}</span>
+    <span class="ml-auto text-gray-400 text-xs">{expanded ? "▼" : "▶"}</span>
   </button>
 
   <!-- Content (expanded) -->
@@ -153,11 +153,11 @@
         </div>
       {/if}
 
-      {#if kind === 'critique' && gradingEdges.length > 0}
+      {#if kind === "critique" && gradingEdges.length > 0}
         <div>
           <div class="text-xs font-medium text-gray-600 mb-1">Grading:</div>
           <div class="space-y-1">
-            {#each gradingEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === 'tp' ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
+            {#each gradingEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === "tp" ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
               {@const target = edge.target}
               {#if target.credit > 0}
                 {@const TargetIcon = ICONS[target.kind]}
@@ -166,9 +166,9 @@
                   <div class="flex items-center gap-2">
                     <TargetIcon size={12} class={targetStyling.iconColor} />
                     <span class="font-mono">
-                      {#if snapshotSlug && target.kind === 'tp' && target.tp_id && target.occurrence_id}
+                      {#if snapshotSlug && target.kind === "tp" && target.tp_id && target.occurrence_id}
                         <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
-                      {:else if snapshotSlug && target.kind === 'fp' && target.fp_id && target.occurrence_id}
+                      {:else if snapshotSlug && target.kind === "fp" && target.fp_id && target.occurrence_id}
                         <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
                       {:else}
                         <span class={targetStyling.textColor}>{targetStyling.label}</span>

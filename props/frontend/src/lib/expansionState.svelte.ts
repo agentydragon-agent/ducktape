@@ -1,4 +1,4 @@
-import { SvelteSet } from 'svelte/reactivity';
+import { SvelteSet } from "svelte/reactivity";
 
 /**
  * Reusable expansion state manager using Svelte 5 runes.

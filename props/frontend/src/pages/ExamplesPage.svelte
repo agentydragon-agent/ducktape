@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { pathname } from '$lib/router';
-  import ExampleDetail from '$components/ExampleDetail.svelte';
-  import { fetchExampleDetail, type ExampleDetailResponse, type ExampleKind } from '$lib/api/client';
+  import { onMount } from "svelte";
+  import { pathname } from "$lib/router";
+  import ExampleDetail from "$components/ExampleDetail.svelte";
+  import { fetchExampleDetail, type ExampleDetailResponse, type ExampleKind } from "$lib/api/client";
 
   interface Props {
     initialData?: ExampleDetailResponse;
@@ -17,18 +17,18 @@
   // Parse query params from hash URL
   const queryParams = $derived.by(() => {
     const path = $pathname;
-    const queryStart = path.indexOf('?');
+    const queryStart = path.indexOf("?");
     if (queryStart === -1) return new URLSearchParams();
     return new URLSearchParams(path.slice(queryStart + 1));
   });
 
-  const snapshotSlug = $derived(queryParams.get('snapshot_slug') ?? '');
-  const exampleKind = $derived((queryParams.get('example_kind') ?? 'whole_snapshot') as ExampleKind);
-  const filesHash = $derived(queryParams.get('files_hash'));
+  const snapshotSlug = $derived(queryParams.get("snapshot_slug") ?? "");
+  const exampleKind = $derived((queryParams.get("example_kind") ?? "whole_snapshot") as ExampleKind);
+  const filesHash = $derived(queryParams.get("files_hash"));
 
   async function loadData() {
     if (!snapshotSlug) {
-      error = 'Missing snapshot_slug parameter';
+      error = "Missing snapshot_slug parameter";
       loading = false;
       return;
     }
@@ -38,7 +38,7 @@
     try {
       example = await fetchExampleDetail(snapshotSlug, exampleKind, filesHash);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load example';
+      error = e instanceof Error ? e.message : "Failed to load example";
     } finally {
       loading = false;
     }

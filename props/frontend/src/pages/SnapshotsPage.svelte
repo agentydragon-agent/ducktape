@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { goto, resolve } from '$lib/router';
-  import { fetchSnapshots, type SnapshotsResponse } from '$lib/api/client';
-  import { splitBadgeClass } from '$lib/colors';
+  import { onMount } from "svelte";
+  import { goto, resolve } from "$lib/router";
+  import { fetchSnapshots, type SnapshotsResponse } from "$lib/api/client";
+  import { splitBadgeClass } from "$lib/colors";
 
   interface Props {
-    initialData?: SnapshotsResponse['snapshots'];
+    initialData?: SnapshotsResponse["snapshots"];
   }
 
   let { initialData }: Props = $props();
 
-  let snapshots: SnapshotsResponse['snapshots'] = $state(initialData ?? []);
+  let snapshots: SnapshotsResponse["snapshots"] = $state(initialData ?? []);
   let loading = $state(!initialData);
   let error: string | null = $state(null);
 
@@ -21,7 +21,7 @@
       const data = await fetchSnapshots();
       snapshots = data.snapshots;
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load snapshots';
+      error = e instanceof Error ? e.message : "Failed to load snapshots";
     } finally {
       loading = false;
     }

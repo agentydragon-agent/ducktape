@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { GradingEdgeInfo } from '../lib/api/client';
-  import CritiqueIssueLink from '../lib/CritiqueIssueLink.svelte';
-  import OccurrenceLink from '../lib/OccurrenceLink.svelte';
+  import type { GradingEdgeInfo } from "../lib/api/client";
+  import CritiqueIssueLink from "../lib/CritiqueIssueLink.svelte";
+  import OccurrenceLink from "../lib/OccurrenceLink.svelte";
 
   interface MissedOccurrence {
     tp_id: string;
@@ -57,13 +57,13 @@
       <!-- Non-zero credit edges (both TP and FP) -->
       {#if nonZeroEdges.length > 0}
         <div class="text-xs font-medium mb-1">Matches ({nonZeroEdges.length}):</div>
-        {#each nonZeroEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === 'tp' ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
+        {#each nonZeroEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === "tp" ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
           {@const target = edge.target}
           {@const credit = getCredit(edge)}
-          {@const isTP = target.kind === 'tp'}
-          {@const bgColor = isTP ? 'bg-green-50' : 'bg-red-50'}
-          {@const borderColor = isTP ? 'border-green-200' : 'border-red-200'}
-          {@const textColor = isTP ? 'text-green-600' : 'text-red-600'}
+          {@const isTP = target.kind === "tp"}
+          {@const bgColor = isTP ? "bg-green-50" : "bg-red-50"}
+          {@const borderColor = isTP ? "border-green-200" : "border-red-200"}
+          {@const textColor = isTP ? "text-green-600" : "text-red-600"}
           <div class="p-2 rounded border text-xs {bgColor} {borderColor}">
             <div class="flex items-center gap-2 mb-1">
               {#if runId}
@@ -72,7 +72,7 @@
                 <span class="font-mono font-medium">{edge.critique_issue_id}</span>
               {/if}
               <span class="text-gray-400">→</span>
-              {#if target.kind === 'tp'}
+              {#if target.kind === "tp"}
                 {#if snapshotSlug}
                   <span class={textColor}>
                     <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
@@ -81,7 +81,7 @@
                   <span class={textColor}>{target.tp_id}/{target.occurrence_id}</span>
                 {/if}
                 <span class="{textColor} font-medium">(+{credit.toFixed(2)})</span>
-              {:else if target.kind === 'fp'}
+              {:else if target.kind === "fp"}
                 {#if snapshotSlug}
                   <span class={textColor}>
                     <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
@@ -105,12 +105,12 @@
             onclick={() => (showZeroEdges = !showZeroEdges)}
             class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
           >
-            <span>{showZeroEdges ? '▼' : '▶'}</span>
+            <span>{showZeroEdges ? "▼" : "▶"}</span>
             <span>Non-matches ({zeroEdges.length})</span>
           </button>
           {#if showZeroEdges}
             <div class="mt-2 space-y-1">
-              {#each zeroEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === 'tp' ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
+              {#each zeroEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === "tp" ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
                 {@const target = edge.target}
                 <div class="p-2 rounded border text-xs bg-gray-50 border-gray-200">
                   <div class="flex items-center gap-2 mb-1">
@@ -120,7 +120,7 @@
                       <span class="font-mono text-gray-500">{edge.critique_issue_id}</span>
                     {/if}
                     <span class="text-gray-400">→</span>
-                    {#if target.kind === 'tp'}
+                    {#if target.kind === "tp"}
                       {#if snapshotSlug}
                         <span class="text-gray-500">
                           <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
@@ -128,7 +128,7 @@
                       {:else}
                         <span class="text-gray-500">{target.tp_id}/{target.occurrence_id}</span>
                       {/if}
-                    {:else if target.kind === 'fp'}
+                    {:else if target.kind === "fp"}
                       {#if snapshotSlug}
                         <span class="text-gray-500">
                           <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />

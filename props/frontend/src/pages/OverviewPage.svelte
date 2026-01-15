@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { onMount, getContext } from 'svelte';
-  import { goto, resolve } from '$lib/router';
-  import type { RunModalPrefill } from '$lib/types';
-  import { fetchOverview, type OverviewResponse } from '$lib/api/client';
-  import DefinitionsTable from '$components/stats/DefinitionsTable.svelte';
-  import SummaryCards from '$components/stats/SummaryCards.svelte';
-  import JobsList from '$components/JobsList.svelte';
-  import RunList from '$components/RunList.svelte';
+  import { onMount, getContext } from "svelte";
+  import { goto, resolve } from "$lib/router";
+  import type { RunModalPrefill } from "$lib/types";
+  import { fetchOverview, type OverviewResponse } from "$lib/api/client";
+  import DefinitionsTable from "$components/stats/DefinitionsTable.svelte";
+  import SummaryCards from "$components/stats/SummaryCards.svelte";
+  import JobsList from "$components/JobsList.svelte";
+  import RunList from "$components/RunList.svelte";
 
   interface Props {
     initialData?: OverviewResponse;
@@ -16,7 +16,7 @@
 
   const runModal = getContext<{
     open: (_?: RunModalPrefill) => void;
-  }>('runModal');
+  }>("runModal");
 
   let overview: OverviewResponse | null = $state(initialData ?? null);
   let loading = $state(!initialData);
@@ -28,7 +28,7 @@
     try {
       overview = await fetchOverview();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load overview';
+      error = e instanceof Error ? e.message : "Failed to load overview";
     } finally {
       loading = false;
     }
@@ -42,11 +42,11 @@
 
   function handleNavigateToRuns(filters: RunModalPrefill) {
     const params = new URLSearchParams();
-    if (filters.definitionId) params.set('definition', filters.definitionId);
-    if (filters.split) params.set('split', filters.split);
-    if (filters.kind) params.set('kind', filters.kind);
+    if (filters.definitionId) params.set("definition", filters.definitionId);
+    if (filters.split) params.set("split", filters.split);
+    if (filters.kind) params.set("kind", filters.kind);
     const qs = params.toString();
-    goto(qs ? `/runs?${qs}` : '/runs');
+    goto(qs ? `/runs?${qs}` : "/runs");
   }
 </script>
 

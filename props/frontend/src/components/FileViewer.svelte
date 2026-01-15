@@ -1,8 +1,8 @@
 <script lang="ts">
-  import 'highlight.js/styles/github.css';
-  import { resolve } from '$lib/router';
-  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-  import { CheckCircle, XCircle, MessageSquare } from 'lucide-svelte';
+  import "highlight.js/styles/github.css";
+  import { resolve } from "$lib/router";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { CheckCircle, XCircle, MessageSquare } from "lucide-svelte";
   import type {
     FileContentResponse,
     TpInfo,
@@ -10,11 +10,11 @@
     GradingEdgeInfo,
     ReportedIssueInfo,
     ReportedIssueOccurrenceInfo,
-  } from '../lib/api/client';
-  import type { IssueMarker, LineRange } from '../lib/types';
-  import IssueComment from './IssueComment.svelte';
-  import { detectLanguage } from '../lib/fileTypes';
-  import { highlightLines } from '../lib/highlighting';
+  } from "../lib/api/client";
+  import type { IssueMarker, LineRange } from "../lib/types";
+  import IssueComment from "./IssueComment.svelte";
+  import { detectLanguage } from "../lib/fileTypes";
+  import { highlightLines } from "../lib/highlighting";
 
   function getRangesForFile(marker: IssueMarker, filePath: string): LineRange[] | null {
     return marker.allFiles.find((f) => f.path === filePath)?.ranges ?? null;
@@ -40,7 +40,7 @@
     targetOccurrenceId = null,
   }: Props = $props();
 
-  const lines = $derived(file.content.split('\n'));
+  const lines = $derived(file.content.split("\n"));
   const language = $derived(detectLanguage(file.path));
   const highlightedLines = $derived(highlightLines(lines, language));
 
@@ -52,7 +52,7 @@
       for (const occ of tp.occurrences) {
         if (occ.files.some((f) => f.path === file.path)) {
           result.push({
-            kind: 'tp',
+            kind: "tp",
             issueId: tp.tp_id,
             occurrenceId: occ.occurrence_id,
             rationale: tp.rationale,
@@ -67,7 +67,7 @@
       for (const occ of fp.occurrences) {
         if (occ.files.some((f) => f.path === file.path)) {
           result.push({
-            kind: 'fp',
+            kind: "fp",
             issueId: fp.fp_id,
             occurrenceId: occ.occurrence_id,
             rationale: fp.rationale,
@@ -84,7 +84,7 @@
         const edges = gradingEdges.filter((e) => e.critique_issue_id === issue.issue_id);
         const note = issue.occurrences[0]?.note ?? undefined;
         result.push({
-          kind: 'critique',
+          kind: "critique",
           issueId: issue.issue_id,
           rationale: issue.rationale,
           note,
@@ -167,9 +167,9 @@
     return `${window.location.origin}/${resolve(routePath)}`;
   }
 
-  const tpCount = $derived(allIssues.filter((i) => i.kind === 'tp').length);
-  const fpCount = $derived(allIssues.filter((i) => i.kind === 'fp').length);
-  const critiqueCount = $derived(allIssues.filter((i) => i.kind === 'critique').length);
+  const tpCount = $derived(allIssues.filter((i) => i.kind === "tp").length);
+  const fpCount = $derived(allIssues.filter((i) => i.kind === "fp").length);
+  const critiqueCount = $derived(allIssues.filter((i) => i.kind === "critique").length);
   const hasCritiques = $derived(critiqueIssues.length > 0);
 </script>
 
@@ -193,17 +193,17 @@
       <tbody>
         {#each lines as line, idx (idx)}
           {@const lineIssues = lineToIssues.get(idx) || []}
-          {@const hasTP = lineIssues.some((i) => i.kind === 'tp')}
-          {@const hasFP = lineIssues.some((i) => i.kind === 'fp')}
-          {@const hasCritique = lineIssues.some((i) => i.kind === 'critique')}
-          {@const bgClass = hasTP ? 'bg-green-50' : hasFP ? 'bg-red-50' : hasCritique ? 'bg-blue-50' : ''}
+          {@const hasTP = lineIssues.some((i) => i.kind === "tp")}
+          {@const hasFP = lineIssues.some((i) => i.kind === "fp")}
+          {@const hasCritique = lineIssues.some((i) => i.kind === "critique")}
+          {@const bgClass = hasTP ? "bg-green-50" : hasFP ? "bg-red-50" : hasCritique ? "bg-blue-50" : ""}
           {@const borderClass = hasTP
-            ? 'border-l-4 border-green-500'
+            ? "border-l-4 border-green-500"
             : hasFP
-              ? 'border-l-4 border-red-500'
+              ? "border-l-4 border-red-500"
               : hasCritique
-                ? 'border-l-4 border-blue-500'
-                : ''}
+                ? "border-l-4 border-blue-500"
+                : ""}
 
           <tr class="hover:bg-gray-100 {bgClass} {borderClass}">
             <!-- Line number (1-based display) -->
@@ -212,11 +212,11 @@
                 {#if lineIssues.length > 0}
                   <div class="flex gap-0.5">
                     {#each lineIssues as issue (getIssueKey(issue))}
-                      {#if issue.kind === 'tp'}
+                      {#if issue.kind === "tp"}
                         <CheckCircle size={12} class="text-green-600" />
-                      {:else if issue.kind === 'fp'}
+                      {:else if issue.kind === "fp"}
                         <XCircle size={12} class="text-red-600" />
-                      {:else if issue.kind === 'critique'}
+                      {:else if issue.kind === "critique"}
                         <MessageSquare size={12} class="text-blue-600" />
                       {/if}
                     {/each}
@@ -245,7 +245,7 @@
                 <td colspan="2" class="px-4 py-1">
                   <div
                     id={issue.occurrenceId ? `${issue.issueId}-${issue.occurrenceId}` : undefined}
-                    class={isTargeted ? 'ring-2 ring-blue-500 rounded' : ''}
+                    class={isTargeted ? "ring-2 ring-blue-500 rounded" : ""}
                   >
                     <IssueComment
                       kind={issue.kind}

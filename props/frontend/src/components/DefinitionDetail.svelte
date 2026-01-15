@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { type DefinitionDetailResponse } from '../lib/api/client';
-  import { formatStatsWithCI, formatAge } from '../lib/formatters';
-  import { recallColorClass } from '../lib/colors';
-  import RunsBrowser from './RunsBrowser.svelte';
-  import BackButton from './BackButton.svelte';
-  import Breadcrumb from './Breadcrumb.svelte';
-  import type { Split, ExampleKind } from '../lib/types';
+  import { type DefinitionDetailResponse } from "../lib/api/client";
+  import { formatStatsWithCI, formatAge } from "../lib/formatters";
+  import { recallColorClass } from "../lib/colors";
+  import RunsBrowser from "./RunsBrowser.svelte";
+  import BackButton from "./BackButton.svelte";
+  import Breadcrumb from "./Breadcrumb.svelte";
+  import type { Split, ExampleKind } from "../lib/types";
 
   interface Props {
     data: DefinitionDetailResponse;
@@ -24,10 +24,10 @@
 
   // Column group configs (same as DefinitionsTable)
   const colGroups: { split: Split; kind: ExampleKind; label: string }[] = [
-    { split: 'valid', kind: 'whole_snapshot', label: 'Valid Whole' },
-    { split: 'valid', kind: 'file_set', label: 'Valid Partial' },
-    { split: 'train', kind: 'whole_snapshot', label: 'Train Whole' },
-    { split: 'train', kind: 'file_set', label: 'Train Partial' },
+    { split: "valid", kind: "whole_snapshot", label: "Valid Whole" },
+    { split: "valid", kind: "file_set", label: "Valid Partial" },
+    { split: "train", kind: "whole_snapshot", label: "Train Whole" },
+    { split: "train", kind: "file_set", label: "Train Partial" },
   ];
 
   function getStats(split: Split, kind: ExampleKind) {
@@ -43,7 +43,7 @@
       <h2 class="text-lg font-semibold">Definition Detail</h2>
     </div>
     <Breadcrumb
-      items={[{ label: 'Home', href: '/' }, { label: 'Definitions', href: '/' }, { label: data.image_digest }]}
+      items={[{ label: "Home", href: "/" }, { label: "Definitions", href: "/" }, { label: data.image_digest }]}
     />
 
     <div class="space-y-3 mt-3">
@@ -66,7 +66,7 @@
           class="px-3 py-2 text-sm border rounded hover:bg-gray-50 whitespace-nowrap"
           onclick={copyCommand}
         >
-          {copied ? 'Copied!' : 'Copy'}
+          {copied ? "Copied!" : "Copy"}
         </button>
       </div>
     </div>
@@ -94,7 +94,7 @@
               <td class="px-3 py-2 font-medium">{label}</td>
               {#if stats}
                 <td class="px-3 py-2 text-right {recallColorClass(stats.recall_stats?.mean)}">
-                  {stats.recall_stats ? formatStatsWithCI(stats.recall_stats) : '—'}
+                  {stats.recall_stats ? formatStatsWithCI(stats.recall_stats) : "—"}
                 </td>
                 <td class="px-3 py-2 text-right">
                   {stats.n_examples}/{stats.total_available}

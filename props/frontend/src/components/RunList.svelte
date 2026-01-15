@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { runs } from '$lib/stores/runsFeed';
-  import { getStatusColor, formatStatus } from '$lib/status';
-  import DefinitionIdLink from '$lib/DefinitionIdLink.svelte';
-  import RunIdLink from '$lib/RunIdLink.svelte';
+  import { runs } from "$lib/stores/runsFeed";
+  import { getStatusColor, formatStatus } from "$lib/status";
+  import DefinitionIdLink from "$lib/DefinitionIdLink.svelte";
+  import RunIdLink from "$lib/RunIdLink.svelte";
 
   // Filter to show only in-progress runs
-  const activeRuns = $derived($runs.filter((r) => r.status === 'in_progress'));
+  const activeRuns = $derived($runs.filter((r) => r.status === "in_progress"));
 </script>
 
 <div class="bg-white rounded-lg shadow p-4">

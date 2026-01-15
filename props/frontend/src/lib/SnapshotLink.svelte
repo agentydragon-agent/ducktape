@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { resolve } from '$lib/router';
-  import { formatSnapshotSlug } from './formatters';
+  import { resolve } from "$lib/router";
+  import { formatSnapshotSlug } from "./formatters";
 
   // Link component for snapshot slugs
   // Uses native <a> with SvelteKit client-side navigation

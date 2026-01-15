@@ -43,6 +43,7 @@ EXTENSION_MAP: dict[str, str] = {
     ".json": "prettier",
     ".yaml": "prettier",
     ".yml": "prettier",
+    ".svelte": "prettier",
     # Ruff
     ".py": "ruff",
     # Shell

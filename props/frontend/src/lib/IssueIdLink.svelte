@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$lib/router';
+  import { resolve } from "$lib/router";
 
   // Link component for TP/FP issue IDs
   // Links to snapshot detail page with anchor to issue section
@@ -8,7 +8,7 @@
   interface Props {
     snapshotSlug: string;
     issueId: string;
-    kind: 'tp' | 'fp';
+    kind: "tp" | "fp";
     displayText?: string; // Override default issueId display
   }
 

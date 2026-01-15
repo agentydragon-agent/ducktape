@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { type ExampleDetailResponse } from '../lib/api/client';
-  import { formatStatsWithCI } from '../lib/formatters';
-  import { recallColorClass } from '../lib/colors';
-  import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
-  import SnapshotLink from '../lib/SnapshotLink.svelte';
-  import FileLink from '../lib/FileLink.svelte';
-  import BackButton from './BackButton.svelte';
-  import Breadcrumb from './Breadcrumb.svelte';
+  import { type ExampleDetailResponse } from "../lib/api/client";
+  import { formatStatsWithCI } from "../lib/formatters";
+  import { recallColorClass } from "../lib/colors";
+  import DefinitionIdLink from "../lib/DefinitionIdLink.svelte";
+  import SnapshotLink from "../lib/SnapshotLink.svelte";
+  import FileLink from "../lib/FileLink.svelte";
+  import BackButton from "./BackButton.svelte";
+  import Breadcrumb from "./Breadcrumb.svelte";
 
   interface Props {
     data: ExampleDetailResponse;
@@ -18,7 +18,7 @@
     if (counts.completed) parts.push(`${counts.completed} completed`);
     if (counts.max_turns_exceeded) parts.push(`${counts.max_turns_exceeded} max_turns`);
     if (counts.in_progress) parts.push(`${counts.in_progress} in_progress`);
-    return parts.join(', ') || '—';
+    return parts.join(", ") || "—";
   }
 </script>
 
@@ -31,10 +31,10 @@
     </div>
     <Breadcrumb
       items={[
-        { label: 'Home', href: '/' },
-        { label: 'Examples', href: '/examples' },
+        { label: "Home", href: "/" },
+        { label: "Examples", href: "/examples" },
         {
-          label: `${data.snapshot_slug}/${data.example_kind}${data.files_hash ? `/${data.files_hash.substring(0, 8)}` : ''}`,
+          label: `${data.snapshot_slug}/${data.example_kind}${data.files_hash ? `/${data.files_hash.substring(0, 8)}` : ""}`,
         },
       ]}
     />
@@ -69,7 +69,7 @@
       </div>
 
       <!-- File list for file_set examples -->
-      {#if data.example_kind === 'file_set' && data.files}
+      {#if data.example_kind === "file_set" && data.files}
         <div>
           <h3 class="text-sm font-medium text-gray-700 mb-2">Files ({data.files.length})</h3>
           <ul class="text-xs text-gray-600 space-y-1">
@@ -117,7 +117,7 @@
                 </td>
                 <td class="px-3 py-2 text-gray-600 font-mono text-xs">{def.model}</td>
                 <td class="px-3 py-2 text-right {recallColorClass(def.credit_stats?.mean)}">
-                  {def.credit_stats ? formatStatsWithCI(def.credit_stats) : '—'}
+                  {def.credit_stats ? formatStatsWithCI(def.credit_stats) : "—"}
                 </td>
                 <td class="px-3 py-2 text-right text-gray-600">{def.n_runs}</td>
                 <td class="px-3 py-2 text-xs text-gray-600">{formatStatusCounts(def.status_counts)}</td>

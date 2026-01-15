@@ -2,7 +2,7 @@
   interface Props {
     active: boolean;
     onclick: () => void;
-    children: import('svelte').Snippet;
+    children: import("svelte").Snippet;
   }
 
   let { active, onclick, children }: Props = $props();

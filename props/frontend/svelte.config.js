@@ -3,6 +3,6 @@
 /** @type {import('svelte/compiler').CompileOptions} */
 export default {
   compilerOptions: {
-    css: 'injected',
+    css: "injected",
   },
 };

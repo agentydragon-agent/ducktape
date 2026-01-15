@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { ChevronRight } from 'lucide-svelte';
-  import { resolve } from '$lib/router';
+  import { ChevronRight } from "lucide-svelte";
+  import { resolve } from "$lib/router";
 
   interface BreadcrumbItem {
     label: string;

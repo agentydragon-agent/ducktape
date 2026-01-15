@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolve } from '$lib/router';
+  import { resolve } from "$lib/router";
 
   // Link component for files in snapshots
   // Links to snapshot detail page with file query parameter

@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { toast } from 'svelte-sonner';
+  import { onMount } from "svelte";
+  import { toast } from "svelte-sonner";
   import {
     fetchDefinitions,
     triggerValidationRuns,
     type DefinitionInfo,
     type Split,
     type ExampleKind,
-  } from '../lib/api/client';
+  } from "../lib/api/client";
 
   interface Prefill {
     definitionId?: string;
@@ -25,9 +25,9 @@
 
   // Form state
   let definitions: DefinitionInfo[] = $state([]);
-  let selectedDefinition: string = $state('');
-  let selectedSplit: Split = $state('valid');
-  let selectedKind: ExampleKind = $state('whole_snapshot');
+  let selectedDefinition: string = $state("");
+  let selectedSplit: Split = $state("valid");
+  let selectedKind: ExampleKind = $state("whole_snapshot");
   let nSamples: number = $state(5);
   let loading = $state(false);
   let loadingDefinitions = $state(true);
@@ -35,13 +35,13 @@
   // Load definitions on mount
   onMount(async () => {
     try {
-      const result = await fetchDefinitions('critic');
+      const result = await fetchDefinitions("critic");
       definitions = result.definitions;
       if (definitions.length > 0 && !selectedDefinition) {
         selectedDefinition = definitions[0].image_digest;
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Failed to load definitions';
+      const message = e instanceof Error ? e.message : "Failed to load definitions";
       toast.error(message);
     } finally {
       loadingDefinitions = false;
@@ -68,13 +68,13 @@
         split: selectedSplit,
         example_kind: selectedKind,
         n_samples: nSamples,
-        critic_model: 'gpt-5.1-codex-mini',
-        grader_model: 'gpt-5.1-codex-mini',
+        critic_model: "gpt-5.1-codex-mini",
+        grader_model: "gpt-5.1-codex-mini",
       });
       toast.success(result.message);
       onClose();
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Failed to trigger runs';
+      const message = e instanceof Error ? e.message : "Failed to trigger runs";
       toast.error(message);
     } finally {
       loading = false;
@@ -88,7 +88,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
+    if (event.key === "Escape") {
       onClose();
     }
   }
@@ -196,7 +196,7 @@
             disabled={loading || !selectedDefinition}
             class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
-            {loading ? 'Running...' : 'Run'}
+            {loading ? "Running..." : "Run"}
           </button>
         </div>
       {/if}
