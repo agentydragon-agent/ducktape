@@ -1,9 +1,0 @@
-[submodule ".oh-my-zsh"]
-	path = dotfiles/oh-my-zsh
-	url = git://github.com/robbyrussell/oh-my-zsh.git
-[submodule ".mutt-colors"]
-	path = dotfiles/mutt-colors
-	url = https://github.com/altercation/mutt-colors-solarized
-[submodule "mc/lib"]
-	path = dotfiles/mc/lib
-	url = https://github.com/iwfmp/mc-solarized-skin.git
