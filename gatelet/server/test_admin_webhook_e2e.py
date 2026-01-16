@@ -34,7 +34,7 @@ def server_url(_postgres: None) -> Generator[str]:
         asyncio.run(_create_schema())
         asyncio.run(engine.dispose())
 
-    asyncio.run(reset_db())
+    asyncio.run(reset_db(force=True))
     port = 8001
     proc = subprocess.Popen(
         [

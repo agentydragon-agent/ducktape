@@ -32,14 +32,18 @@ async def _entity_counts(session: AsyncSession) -> list[tuple[str, int]]:
     return counts
 
 
-async def reset_db() -> None:
-    """Drop and recreate tables and populate with sample data."""
+async def reset_db(*, force: bool = False) -> None:
+    """Drop and recreate tables and populate with sample data.
+
+    Args:
+        force: If True, skip confirmation prompt (for CI/automated use).
+    """
     engine = create_async_engine(str(get_settings().database.dsn), future=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 
     async with session_factory() as session:
         counts = await _entity_counts(session)
-        if any(cnt > 0 for _, cnt in counts):
+        if any(cnt > 0 for _, cnt in counts) and not force:
             print("Current entity counts:")
             for name, cnt in counts:
                 print(f"  {name}: {cnt}")
@@ -91,13 +95,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Gatelet management utility")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("reset-db", help="Initialize a fresh database")
+    reset_parser = sub.add_parser("reset-db", help="Initialize a fresh database")
+    reset_parser.add_argument("--force", "-f", action="store_true", help="Skip confirmation prompt")
     pw = sub.add_parser("change-password", help="Change admin password")
     pw.add_argument("password", nargs="?", help="New password")
 
     args = parser.parse_args()
     if args.cmd == "reset-db":
-        asyncio.run(reset_db())
+        asyncio.run(reset_db(force=args.force))
     elif args.cmd == "change-password":
         change_password(args.password)
 

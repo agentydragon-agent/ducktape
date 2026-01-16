@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from fastapi.templating import Jinja2Templates
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -40,7 +41,7 @@ from gatelet.server.config import (
     get_settings,
 )
 from gatelet.server.database import get_db_session
-from gatelet.server.lifespan import _init_csrf_config
+from gatelet.server.lifespan import BASE_DIR, _init_csrf_config
 from gatelet.server.models import AuthCRSession, AuthKey, Base
 from gatelet.server.tests.utils import persist
 
@@ -161,6 +162,10 @@ async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGene
 
     # Initialize CSRF protection for tests (normally done in lifespan)
     _init_csrf_config(test_settings.security.csrf_secret)
+
+    # Initialize templates (normally done in lifespan)
+    app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
+    app.state.templates.env.globals.update({"max": max, "min": min})
 
     app.dependency_overrides[get_db_session] = override_db
     app.dependency_overrides[get_settings] = override_settings
