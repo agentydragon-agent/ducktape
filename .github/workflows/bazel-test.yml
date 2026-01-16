@@ -11,6 +11,13 @@ on:
         required: false
         type: string
         default: '//...'
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Bazel targets to test (default: //...)'
+        required: false
+        type: string
+        default: '//...'
 
 jobs:
   test:

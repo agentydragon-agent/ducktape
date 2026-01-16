@@ -5,6 +5,7 @@ name: Ansible-lint
 
 on:
   workflow_call:
+  workflow_dispatch:
 
 jobs:
   ansible-lint-full:

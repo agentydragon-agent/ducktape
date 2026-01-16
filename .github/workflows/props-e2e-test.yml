@@ -11,6 +11,13 @@ on:
         required: false
         type: string
         default: "//props/core/critic:test_e2e //props/core/grader:test_e2e //props/core/prompt_improve:test_e2e //props/core/prompt_optimize:test_e2e //props/core:test_agent_pkg_e2e"
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "E2E test targets to run"
+        required: false
+        type: string
+        default: "//props/core/critic:test_e2e //props/core/grader:test_e2e //props/core/prompt_improve:test_e2e //props/core/prompt_optimize:test_e2e //props/core:test_agent_pkg_e2e"
 
 jobs:
   e2e:
