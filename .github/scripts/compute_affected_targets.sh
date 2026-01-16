@@ -8,6 +8,14 @@
 # Falls back to full build (//...) on any failure.
 set -euo pipefail
 
+# Full build on main/devel branches (only use diffs for PRs)
+if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+  echo "Push to ${GITHUB_REF_NAME} branch, running full build"
+  echo "targets=//..." >>"$GITHUB_OUTPUT"
+  echo "has_changes=true" >>"$GITHUB_OUTPUT"
+  exit 0
+fi
+
 BAZEL_DIFF_VERSION="12.1.1"
 BAZEL_DIFF_JAR="/tmp/bazel-diff.jar"
 
