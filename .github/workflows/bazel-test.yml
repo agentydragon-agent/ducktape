@@ -96,9 +96,12 @@ jobs:
             PROFILE_FLAG="--config=ci-profile"
           fi
           bazel coverage --keep_going \
-            --test_tag_filters=-requires_docker,-requires_postgres \
+            --test_tag_filters=-requires_docker,-visual \
             --combined_report=lcov \
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
+            --test_env=PGHOST=localhost --test_env=PGPORT=5432 \
+            --test_env=PGUSER=postgres --test_env=PGPASSWORD=postgres \
+            --test_env=PGDATABASE=postgres \
             $PROFILE_FLAG \
             ${{ inputs.targets }}
 

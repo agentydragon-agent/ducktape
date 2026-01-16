@@ -6,6 +6,7 @@
 # - bazel-lint: Comprehensive linting (Python ruff + mypy, JS/TS eslint)
 # - bazel-test: Run all tests (excludes e2e tests requiring Docker infra)
 # - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
+# - editor-e2e-test: Editor agent e2e tests (requires Docker)
 # - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
@@ -99,8 +100,12 @@ jobs:
   pre-commit:
     uses: ./.github/workflows/pre-commit.yml
 
-  # Always run - visual tests
+  # Conditional - only when props/frontend changed
   visual-regression:
+    needs: compute-targets
+    if: |
+      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
+      contains(needs.compute-targets.outputs.bazel_targets, '//props/frontend')
     uses: ./.github/workflows/visual-regression.yml
 
   # Conditional - only when Bazel targets changed
@@ -134,6 +139,15 @@ jobs:
       needs.compute-targets.outputs.has_bazel_changes == 'true' &&
       contains(needs.compute-targets.outputs.bazel_targets, '//props/')
     uses: ./.github/workflows/props-e2e-test.yml
+
+  # Editor E2E tests - requires Docker
+  # Only runs when editor_agent/ targets are affected
+  editor-e2e-test:
+    needs: compute-targets
+    if: |
+      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
+      contains(needs.compute-targets.outputs.bazel_targets, '//editor_agent/')
+    uses: ./.github/workflows/editor-e2e-test.yml
 
   # Conditional - only when nix/ changed
   nix-flake-check:
