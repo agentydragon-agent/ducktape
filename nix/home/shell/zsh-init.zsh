@@ -3,7 +3,8 @@
 
 # Prompt selection: USE_OHMYPOSH=1 for Oh-My-Posh, otherwise Powerlevel10k
 if [[ -n "$USE_OHMYPOSH" ]]; then
-	# Oh-My-Posh prompt
+	# Oh-My-Posh prompt - clear zsh RPROMPT to avoid conflict
+	unset RPROMPT
 	eval "$(oh-my-posh init zsh --config ~/.config/oh-my-posh/config.json)"
 else
 	# Powerlevel10k instant prompt (must be near top of .zshrc)

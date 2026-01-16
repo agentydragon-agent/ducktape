@@ -888,6 +888,7 @@ in {
   };
 
   # Prompt configurations (switchable via USE_OHMYPOSH env var)
+  # TODO: oh-my-posh being tested, not working currently
   xdg.configFile."oh-my-posh/config.json".source = ./ohmyposh.json;
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
