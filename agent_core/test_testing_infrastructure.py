@@ -1,19 +1,24 @@
-"""Reusable Hamcrest matchers for agent test assertions."""
+"""Tests for agent testing infrastructure: matchers, mocks, and test utilities."""
 
 from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 from mcp import types as mcp_types
 
+from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
+from agent_core.loop_control import RequireAnyTool
+from agent_core_testing.matchers import assert_function_call_output_structured
+from agent_core_testing.openai_mock import LIVE
+from agent_core_testing.responses import EchoMock
+from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 
-# ------------------------
-# Hamcrest matcher helpers
-# ------------------------
+# --- Hamcrest matchers ---
 
 
 def is_ui_message(content: str | None = None, mime: str | None = None):
@@ -41,11 +46,6 @@ def assert_payloads_have(payloads: list[object], *matchers):
 
 # Convenience alias for substring assertions
 contains_err = contains_string
-
-
-# ------------------------
-# MCP tool result matchers
-# ------------------------
 
 
 class HasErrorText(BaseMatcher):
@@ -94,11 +94,6 @@ def tool_call_with_error_text(text_matcher):
     return HasErrorText(text_matcher)
 
 
-# ------------------------
-# Higher-level payload matchers
-# ------------------------
-
-
 def is_function_call_output(call_id: str | None = None, **structured_kvs):
     """Matcher: payload is a function_call_output with optional call_id and structuredContent entries.
 
@@ -118,7 +113,7 @@ def is_function_call_output_end_turn(call_id: str | None = None):
     return is_function_call_output(call_id=call_id, kind="EndTurn")
 
 
-def assert_function_call_output_structured(
+def assert_function_call_output_structured_local(
     records: list[ToolCall | ToolCallOutput], structured_content_matcher: Any
 ) -> None:
     """Assert that a RecordingHandler-style records list contains a function_call_output
@@ -136,3 +131,41 @@ def assert_function_call_output_structured(
     result_matcher: Any = has_properties(structuredContent=structured_content_matcher)
     entry_matcher: Any = has_properties(type="function_call_output", result=result_matcher)
     assert_that(records, has_item(entry_matcher))
+
+
+# --- Mock execution tests ---
+
+
+@pytest.mark.parametrize(
+    "client_mode", [pytest.param("mock", id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_openai_api)]
+)
+async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
+    responses_factory, live_openai, client_mode, mcp_client_echo, test_handlers, recording_handler
+) -> None:
+    # Responses sequence:
+    # 1) Model asks to call echo.echo with {"text": "hi"}
+    # 2) Model returns a final assistant message "done"
+    client: OpenAIModelProto
+    if client_mode is not LIVE:
+
+        @EchoMock.mock()
+        def mock(m: EchoMock):
+            yield
+            yield from m.echo_roundtrip("hi")
+            yield m.assistant_text("done")
+
+        client = mock
+    else:
+        client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
+
+    agent = await Agent.create(
+        mcp_client=mcp_client_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
+    )
+    agent.process_message(UserMessage.text("say hi"))
+
+    res = await agent.run()
+
+    # Verify final text returned
+    assert res.text.strip() == "done"
+    # Verify the handler saw a function_call_output with the expected structured content
+    assert_function_call_output_structured(recording_handler.records, has_entries(echo="hi"))

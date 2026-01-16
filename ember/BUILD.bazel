@@ -9,22 +9,27 @@ exports_files(["devenv.nix"])
 
 py_library(
     name = "ember",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            "tests/**",
-        ],
-    ),
-    data = glob(
-        [
-            "**/*.md",
-            "**/*.j2",
-            "resources/**/*",
-        ],
-        exclude = [
-            "tests/**",
-        ],
-    ),
+    srcs = [
+        "__main__.py",
+        "app.py",
+        "config.py",
+        "handlers.py",
+        "integrations/gitea.py",
+        "matrix_client.py",
+        "mcp_tools.py",
+        "python_session.py",
+        "runtime.py",
+        "secrets.py",
+        "system_prompt.py",
+    ],
+    data = [
+        "docs/agent_ontology.md",
+        "docs/pilot_plan.md",
+        "resources/examples/matrix-client/quickstart.py",
+        "resources/examples/python-session/demo.sh",
+        "resources/examples/python-session/test_demo.sh",
+        "system_prompt.md.j2",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -67,8 +72,8 @@ py_binary(
 
 py_binary(
     name = "ember-python",
-    srcs = ["runtime/python_session.py"],
-    main = "runtime/python_session.py",
+    srcs = ["python_session.py"],
+    main = "python_session.py",
     deps = [":ember"],
 )
 

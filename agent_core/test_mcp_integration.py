@@ -1,14 +1,63 @@
-"""Tests for ResponsesFactory MCP tool call methods."""
+"""Tests for MCP tool integration with the agent."""
 
-from hamcrest import all_of, assert_that, has_length, has_properties, has_property, instance_of
+from __future__ import annotations
+
+from hamcrest import all_of, assert_that, has_entries, has_length, has_properties, has_property, instance_of
 from pydantic import BaseModel
 
-from agent_core_testing.matchers import has_json_arguments
-from agent_core_testing.responses import ResponsesFactory
+from agent_core.agent import Agent
+from agent_core.loop_control import RequireAnyTool
+from agent_core_testing.matchers import assert_function_call_output_structured, has_json_arguments
+from agent_core_testing.responses import EchoMock, ResponsesFactory
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
-from openai_utils.model import FunctionCallItem
+from openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
+
+# --- Agent MCP echo tests ---
+
+
+async def test_agent_mcp_echo_basic(mcp_client_echo, test_handlers, recording_handler) -> None:
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield from m.echo_roundtrip("hello")
+
+    agent = await Agent.create(
+        mcp_client=mcp_client_echo,
+        client=mock,
+        handlers=test_handlers,
+        tool_policy=RequireAnyTool(),
+        parallel_tool_calls=False,
+    )
+    agent.process_message(SystemMessage.text("test: use echo"))
+
+    await agent.run()
+
+    assert_function_call_output_structured(recording_handler.records, has_entries(echo="hello"))
+
+
+async def test_agent_mcp_echo_with_response(mcp_client_echo, test_handlers, recording_handler) -> None:
+    @EchoMock.mock()
+    def mock(m: EchoMock):
+        yield
+        yield from m.echo_roundtrip("hello")
+        yield m.assistant_text("done")
+
+    agent = await Agent.create(
+        mcp_client=mcp_client_echo, client=mock, handlers=test_handlers, tool_policy=RequireAnyTool()
+    )
+    agent.process_message(UserMessage.text("say hello"))
+
+    res = await agent.run()
+
+    outputs = [r for r in recording_handler.records if r.type == "function_call_output"]
+    assert outputs, "No tool outputs captured"
+    assert outputs[0].result.structuredContent == {"echo": "hello"}
+    assert res.text.strip() == "done"
+
+
+# --- ResponsesFactory MCP tool call tests ---
 
 
 class SampleInput(BaseModel):

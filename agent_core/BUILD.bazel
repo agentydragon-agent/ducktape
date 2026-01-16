@@ -29,37 +29,57 @@ py_library(
     ],
 )
 
+_TEST_DEPS = [
+    ":agent_core",
+    "//agent_core_testing",
+    "//mcp_infra/bootstrap",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
 py_test(
-    name = "test_agent_core",
+    name = "test_mcp_integration",
     srcs = [
         "conftest.py",
-        "test_agent_mcp_echo.py",
-        "test_agent_mcp_echo_debug.py",
-        "test_bootstrap_integration.py",
-        "test_capture_text_handler.py",
-        "test_compaction.py",
-        "test_flat_tools_schema.py",
-        "test_malformed_json.py",
-        "test_matchers.py",
-        "test_messages_forwarding.py",
-        "test_null_byte_sanitization.py",
-        "test_parallel_calls.py",
-        "test_process_message.py",
-        "test_reasoning_threading.py",
-        "test_responses_factory_mcp.py",
-        "test_tool_error_continuation.py",
-        "test_tool_error_sequence.py",
-        "test_turn_limit.py",
-        "test_with_mocks.py",
+        "test_mcp_integration.py",
     ],
-    main = "test_compaction.py",
-    deps = [
-        ":agent_core",
-        "//agent_core_testing",
-        "//mcp_infra/bootstrap",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_tool_execution",
+    srcs = [
+        "conftest.py",
+        "test_tool_execution.py",
     ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_message_processing",
+    srcs = [
+        "conftest.py",
+        "test_message_processing.py",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_handlers",
+    srcs = [
+        "conftest.py",
+        "test_handlers.py",
+    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_testing_infrastructure",
+    srcs = [
+        "conftest.py",
+        "test_testing_infrastructure.py",
+    ],
+    deps = _TEST_DEPS,
 )
 
 ruff_test(

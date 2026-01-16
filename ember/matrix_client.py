@@ -30,8 +30,8 @@ from nio.responses import (
 )
 from pydantic import BaseModel, ConfigDict
 
-from .config import MatrixSettings
-from .secrets import ProjectedSecret
+from ember.config import MatrixSettings
+from ember.secrets import ProjectedSecret
 
 logger = logging.getLogger(__name__)
 

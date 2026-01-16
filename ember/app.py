@@ -7,8 +7,8 @@ from typing import Annotated, Literal
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, ConfigDict
 
-from .config import EmberSettings, load_settings
-from .runtime import EmberRuntime
+from ember.config import EmberSettings, load_settings
+from ember.runtime import EmberRuntime
 
 logger = logging.getLogger(__name__)
 

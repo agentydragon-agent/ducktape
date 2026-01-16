@@ -11,10 +11,9 @@ from typing import Annotated, Any, Literal, cast
 from openai.types.responses import ResponseIncludable
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from ember.secrets import ProjectedSecret
+from ember.system_prompt import load_system_prompt
 from openai_utils.types import ReasoningEffort
-
-from .secrets import ProjectedSecret
-from .system_prompt import load_system_prompt
 
 
 class _SleepPolicyBase(BaseModel):

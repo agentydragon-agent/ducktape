@@ -7,7 +7,7 @@ from typing import Any
 import requests
 from pydantic import BaseModel, Field
 
-from ..secrets import ProjectedSecret
+from ember.secrets import ProjectedSecret
 
 __all__ = ["GiteaBranchInfo", "GiteaClient", "GiteaComment", "GiteaError", "GiteaRepository", "GiteaUser"]
 

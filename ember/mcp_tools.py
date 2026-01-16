@@ -14,14 +14,17 @@ from typing import Literal, Protocol
 
 from pydantic import ConfigDict
 
+from ember.config import (
+    EnforcedSleepUntilUserMessagePolicy,
+    LegacySleepUntilUserMessagePolicy,
+    SleepUntilUserMessagePolicy,
+)
+from ember.matrix_client import ConversationStatus
 from mcp_infra.compositor.server import Compositor, Mounted
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-
-from .config import EnforcedSleepUntilUserMessagePolicy, LegacySleepUntilUserMessagePolicy, SleepUntilUserMessagePolicy
-from .matrix_client import ConversationStatus
 
 
 class ConversationStatusProvider(Protocol):

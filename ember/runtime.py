@@ -14,14 +14,13 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.handler import RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from ember.config import EmberSettings
+from ember.handlers import EmberPersistenceHandler, EmberSleepHandler
+from ember.matrix_client import MatrixClient
+from ember.mcp_tools import EmberCompositor
+from ember.python_session import ensure_kernel
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
-
-from ..config import EmberSettings
-from ..handlers import EmberPersistenceHandler, EmberSleepHandler
-from ..matrix_client import MatrixClient
-from ..mcp_tools import EmberCompositor
-from .python_session import ensure_kernel
 
 # Reminder injected when agent sends text instead of using tools
 TEXT_REMINDER = (

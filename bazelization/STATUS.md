@@ -56,29 +56,37 @@ Unified Bazel build system for all Python packages:
 
 ## Current Status (January 2026)
 
+### Success Criteria (6/8 complete, 75%)
+
+| Criterion                                          | Status               |
+| -------------------------------------------------- | -------------------- |
+| No manual tool invocations (ruff, mypy, npm, etc.) | ✅ Done              |
+| Auto-fix on commit for all formatters              | ✅ Done              |
+| Type errors block commits (mypy in pre-commit)     | ✅ Done              |
+| Zero bespoke shell scripts in tools/hooks/         | ✅ Done              |
+| Hermetic builds (all tools fetched by Bazel)       | ✅ Done              |
+| Fast incremental checks (Bazel caching works)      | ✅ Done              |
+| Unified "check everything" command                 | ⏳ Pending (Phase 3) |
+| CI uses unified command                            | ⏳ Pending (Phase 3) |
+
+### Remaining Roadmap
+
+- **Phase 3**: Unified `bazel check //...` command for all linters/type checkers
+- **Phase 4**: Ansible Bazelization (or document as intentional exception)
+- **Phase 5**: Simplify CI to single check command
+
 ### Multi-Language Coverage Summary
 
-| Language   | Total Files | In Bazel | Not in Targets | Excluded | Coverage |
-| ---------- | ----------- | -------- | -------------- | -------- | -------- |
-| Python     | 1139        | 1048     | 75             | 16       | 93.3%    |
-| TypeScript | 52          | 29       | 23             | 0        | 55.8%    |
-| JavaScript | 13          | 2        | 11             | 0        | 15.4%    |
-| Rust       | 24          | 24       | 0              | 0        | 100.0%   |
-| Shell      | 39          | 1        | 26             | 12       | 3.7%     |
+| Language   | Total | In Bazel | Whitelisted | Orphan | Coverage |
+| ---------- | ----- | -------- | ----------- | ------ | -------- |
+| Python     | 1030  | 976      | 53          | 1      | 94.8%    |
+| Rust       | 21    | 21       | 0           | 0      | 100%     |
+| TypeScript | 36    | -        | 36          | -      | -        |
+| JavaScript | 14    | -        | 14          | -      | -        |
 
-**Bazel Targets:**
+**Bazel Targets:** 183 py_library, 115 py_test, 46 ruff_test
 
-- py_library: 54
-- py_test: 32
-- ruff_test: 40
-
-Run `bazel run //bazelization:audit` to get updated counts.
-
-**Notes:**
-
-- Coverage includes files in both `srcs` (source code) and `data` (test fixtures, examples)
-- Audit script extended 2026-01-04 to track TypeScript, JavaScript, Rust, and Shell files
-- Audit performance optimized: eliminated duplicate queries, now ~15min (was 34min)
+Run `bazel run //tools/orphans:find_orphans` to list orphaned files.
 
 ### Completed
 
@@ -156,70 +164,6 @@ Run `bazel run //bazelization:audit` to get updated counts.
 | `//mcp_starter:test_integration`             | Requires running MCP server        |
 | `//website:*`                                | Haskell/stack build system         |
 
-### Files Not in Any Bazel Target (42 files)
-
-**adgn/ (4 files)**
-
-- `adgn/examples/openai_api/stateless_two_step_demo.py` - Example script
-- `adgn/gitea_pr_gate/*.py` - Gitea PR gate policy (3 files)
-
-**bazelization/ (1 file)**
-
-- `bazelization/audit.py` - This audit script itself
-
-**cluster/ (4 files)**
-
-- `cluster/scripts/validate-*.py` - Validation scripts (3 files)
-- `cluster/terraform/01-infrastructure/scripts/cleanup-proxmox-volumes.py`
-
-**conftest.py (1 file)**
-
-- Root test configuration file
-
-**dotfiles/ (1 file)**
-
-- `dotfiles/config/pythonstartup.py` - Python REPL startup
-
-**experimental/ (6 files)**
-
-- `experimental/ember_evals/*.py` - Ember evaluation framework (5 files)
-- `experimental/flake8-early-bailout/setup.py` - Old flake8 plugin
-
-**finance/ (1 file)**
-
-- `finance/reconcile/external_expense.py` - Reconciliation utility
-
-**gatelet/ (1 file)**
-
-- `gatelet/tasks.py` - Invoke tasks file
-
-**inventree_utils/ (9 files)**
-
-- `inventree_utils/*.py` - InventTree plugin and utilities
-- `inventree_utils/rai_plugin/**/*.py` - RAI plugin with template tags
-
-**k8s-old/ (4 files)**
-
-- `k8s-old/helm/*/files/*.py` - Helm chart Python scripts (archived)
-
-**llm/ (4 files)**
-
-- `llm/ducktape_llm_common/examples/complex_predicate.py`
-- `llm/ducktape_llm_common/scripts/notification_test_manual.py`
-- `llm/mcp/habitify/examples/install_to_claude.py`
-- `llm/mcp/habitify/habitify_api_reference/collect_references.py`
-
-**sandboxed_jupyter/ (2 files)**
-
-- `sandboxed_jupyter/examples/*.py` - Example workflows
-
-**trilium/ (3 files)**
-
-- `trilium/papers/*.py` - Trilium/Remarkable integration (2 files)
-- `trilium/search_hack.py` - Search utility
-
-Run `uv run bazelization/audit.py` for current list.
-
 ### Pending Migration Tasks
 
 #### Shell Scripts Inventory
@@ -237,24 +181,6 @@ Non-Bazelized shell scripts that are intentionally outside the build system:
 #### Docker Images Pending (from inventory above)
 
 - `claude_optimizer` (8 variant images)
-
-#### Test Files Without Bazel Targets
-
-**claude/claude_optimizer/tests/** (5 files) - BUILD.bazel globs only `tests/unit/**/*.py` and `tests/integration/**/*.py`, missing root-level test files:
-
-- `test_e2e_database.py`
-- `test_file_truncation.py`
-- `test_full_e2e_workflow.py`
-- `test_optimizer.py`
-- `test_types.py`
-
-**experimental/cotrl/** (1 file) - Only `test_llm_rl_minimal.py` is explicitly listed:
-
-- `llm_rl_quick_test.py`
-
-**inventree_utils/rai_plugin/templatetags/** (1 file) - Requires InvenTree/Django:
-
-- `test_custom_tags.py` - ✅ Added as manual target (requires Django)
 
 ## Package Structure
 
@@ -533,41 +459,18 @@ bazel build --config=check //...
   - Currently read-only (`--remote_upload_local_results=false`)
   - Enable for main branch for better cache hit rates
 
-- **Migrate Docker images to rules_oci**
-  - See Docker Images section below for full inventory
+- **Migrate remaining Docker images** (`claude_optimizer` - 8 variant images)
 
-- **Fix ember_evals missing modules**
-  - Add missing .kubernetes, .matrix, .steps, .models submodules
-  - Or remove if abandoned
+- **Phase 3: Unified check command**
+  - Create `bazel check //...` that runs all linters/type checkers
+  - Simplify pre-commit to single command
+  - Update CI to use unified command
 
-### Medium Priority
+### Aspirational (do incrementally)
 
-- **Bazelify remaining Python files (54 not in targets)**
-  - `inventree_utils/` (23 files) - create BUILD.bazel
-  - `llm/` examples/scripts (6 files) - add to srcs or mark as data
-  - `experimental/ember_evals/` (5 files) - fix or remove
-  - Others: helm chart scripts, trilium scripts, etc.
-
-### Low Priority / Evaluate
-
-- **Website (Haskell/stack)**
-  - Extremely slow cold builds
-  - Keep `stack build` outside Bazel for now
-
-### Structural Improvements (do incrementally)
-
-- **Colocate tests with production code**
-  - Move `tests/test_foo.py` → `src/pkg/foo_test.py`
-  - Simpler BUILD files, easier to see coverage gaps
-
-- **Flatten package layouts**
-  - Remove `src/` nesting (Bazel handles packaging)
-  - Simpler paths in BUILD.bazel files
-
-- **Package consolidation**
-  - Consider merging `mcp_infra/` into `adgn/`
-  - Consider merging `agent_core/` into `adgn/`
-  - Use Bazel visibility instead of package boundaries
+- Colocate tests with production code
+- Flatten package layouts (remove `src/` nesting)
+- Package consolidation (merge small packages into larger ones)
 
 ## Future Structure Goals
 
@@ -828,7 +731,7 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 
 ### Ongoing Maintenance
 
-1. **Run audit periodically**: `./bazelization/audit.py`
+1. **Check for orphans periodically**: `bazel run //tools/orphans:find_orphans`
 2. **Add ruff_test to new packages**: Every BUILD.bazel with py_library should have ruff_test
 3. **Keep requirements_bazel.txt updated**: Run `bazel run //:requirements.update` after adding deps
 4. **Test with `bazel test //...`**: Ensure all non-manual tests pass before commits

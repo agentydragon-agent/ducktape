@@ -121,17 +121,40 @@ flake.lock
 # Helm charts
 *.helmignore
 
-# Legacy directories
-llm/**
+# === Legacy/Archived Directories ===
 nonrcm-dotfiles/**
-homeassistant/**
-inventree_utils/**
 terraform/**
 tana/**
 trilium/**
 sysrw/**
-ember/**
-claude/**
+
+# === Intentionally Outside Bazel (external ecosystems) ===
+homeassistant/**
+inventree_utils/**
+
+# === Partially Bazelized - specific orphan files ===
+# ember/ - OCI image migrated, but core Python not yet in BUILD
+ember/__init__.py
+ember/__main__.py
+ember/app.py
+ember/config.py
+ember/handlers.py
+ember/integrations/__init__.py
+ember/integrations/gitea.py
+ember/matrix_client.py
+ember/mcp_tools.py
+ember/resources/examples/matrix-client/quickstart.py
+ember/runtime/__init__.py
+ember/runtime/python_session.py
+ember/secrets.py
+ember/system_prompt.py
+ember/test_*.py
+
+# llm/ - mostly bazelized, these specific files are examples/scripts
+llm/ducktape_llm_common/examples/complex_predicate.py
+llm/ducktape_llm_common/scripts/notification_test_manual.py
+llm/mcp/habitify/api_reference/collect_references.py
+llm/mcp/habitify/examples/install_to_claude.py
 
 # Local registry patches
 tools/local_registry/**
@@ -156,6 +179,9 @@ hooks/pre-commit
 # Wrapper scripts without extension
 **/scripts/*_wrapper
 
+# Deployment scripts without extension
+ember/scripts/ember-deploy
+
 # TODO/notes files
 *-TODO
 **/TODO
@@ -163,8 +189,12 @@ TODO
 **/todo-*
 **/pytest-todo
 
-# Not-yet-Bazelized packages
-gatelet/**
+# === Not-yet-Bazelized packages ===
+# gatelet/ - server/ is bazelized, root files are orphans
+gatelet/aw_summary.py
+gatelet/tasks.py
+gatelet/Makefile
+
 openai_utils/**
 sandboxed_jupyter/**
 
