@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
@@ -164,7 +164,7 @@ async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGene
 
     app.dependency_overrides[get_db_session] = override_db
     app.dependency_overrides[get_settings] = override_settings
-    async with AsyncClient(app=app, base_url="http://testserver") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         yield client
     app.dependency_overrides.pop(get_db_session, None)
     app.dependency_overrides.pop(get_settings, None)

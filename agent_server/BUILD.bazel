@@ -133,58 +133,234 @@ py_binary(
     deps = [":agent_server"],
 )
 
+# Common test dependencies
+_TEST_DEPS = [
+    ":agent_server",
+    "//adgn",
+    "//agent_server/testing",
+    "@pypi//docker",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+    "@pypi//pytest_timeout",
+    "@pypi//syrupy",
+]
+
+# Shared test support files (conftest.py auto-discovered by pytest)
+_TEST_SUPPORT = [
+    "conftest.py",
+    "ui_asserts.py",
+]
+
+# Root test files
 py_test(
-    name = "test_agent_server",
-    srcs = [
-        # Root test files
-        "conftest.py",
-        "pytest_runner.py",
-        "ui_asserts.py",
-        "test_approval_integration.py",
-        "test_default_approval_policy.py",
-        "test_exec_roundtrip.py",
-        "test_mcp_integration.py",
-        "test_mcp_notifications_flow.py",
-        "test_mcp_resources_flow.py",
-        "test_notifications_handler.py",
-        "test_policy_eval_abort_on_error.py",
-        "test_rendering_instructions.py",
-        "test_runtime_timeout.py",
-        # mcp tests
-        "mcp/test_chat_notifications.py",
-        "mcp/test_chat_server.py",
-        "mcp/test_notifications_envelope.py",
-        "mcp/test_policy_gateway_middleware.py",
-        "mcp/test_policy_gateway_middleware_unit.py",
-        "mcp/test_stdio_notifications_envelope.py",
-        "mcp/test_ui_server.py",
-        # mcp/approval_policy tests
-        "mcp/approval_policy/test_policy_validation.py",
-        "mcp/approval_policy/test_preset_policy_loading.py",
-        "mcp/approval_policy/test_schema.py",
-        "mcp/approval_policy/test_server.py",
-        "mcp/approval_policy/test_server_available.py",
-        # mcp_bridge tests
-        "mcp_bridge/test_agents_server.py",
-        "mcp_bridge/test_integration.py",
-        # server tests
-        "server/test_end_turn_ui_integration.py",
-        "server/test_history_fold_typed.py",
-        "server/test_reducer.py",
-    ],
+    name = "test_approval_integration",
+    srcs = _TEST_SUPPORT + ["test_approval_integration.py"],
     imports = [".."],
-    main = "pytest_runner.py",
-    deps = [
-        ":agent_server",
-        "//adgn",
-        "//agent_server/testing",
-        "@pypi//docker",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_timeout",
-        "@pypi//syrupy",
-    ],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_default_approval_policy",
+    srcs = _TEST_SUPPORT + ["test_default_approval_policy.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_exec_roundtrip",
+    srcs = _TEST_SUPPORT + ["test_exec_roundtrip.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_integration",
+    srcs = _TEST_SUPPORT + ["test_mcp_integration.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_notifications_flow",
+    srcs = _TEST_SUPPORT + ["test_mcp_notifications_flow.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_resources_flow",
+    srcs = _TEST_SUPPORT + ["test_mcp_resources_flow.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_notifications_handler",
+    srcs = _TEST_SUPPORT + ["test_notifications_handler.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_policy_eval_abort_on_error",
+    srcs = _TEST_SUPPORT + ["test_policy_eval_abort_on_error.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_rendering_instructions",
+    srcs = _TEST_SUPPORT + ["test_rendering_instructions.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_runtime_timeout",
+    srcs = _TEST_SUPPORT + ["test_runtime_timeout.py"],
+    imports = [".."],
+    deps = _TEST_DEPS,
+)
+
+# mcp tests
+py_test(
+    name = "test_mcp_chat_notifications",
+    srcs = _TEST_SUPPORT + ["mcp/test_chat_notifications.py"],
+    imports = [".."],
+    main = "mcp/test_chat_notifications.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_chat_server",
+    srcs = _TEST_SUPPORT + ["mcp/test_chat_server.py"],
+    imports = [".."],
+    main = "mcp/test_chat_server.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_notifications_envelope",
+    srcs = _TEST_SUPPORT + ["mcp/test_notifications_envelope.py"],
+    imports = [".."],
+    main = "mcp/test_notifications_envelope.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_policy_gateway_middleware",
+    srcs = _TEST_SUPPORT + ["mcp/test_policy_gateway_middleware.py"],
+    imports = [".."],
+    main = "mcp/test_policy_gateway_middleware.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_policy_gateway_middleware_unit",
+    srcs = _TEST_SUPPORT + ["mcp/test_policy_gateway_middleware_unit.py"],
+    imports = [".."],
+    main = "mcp/test_policy_gateway_middleware_unit.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_stdio_notifications_envelope",
+    srcs = _TEST_SUPPORT + ["mcp/test_stdio_notifications_envelope.py"],
+    imports = [".."],
+    main = "mcp/test_stdio_notifications_envelope.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_ui_server",
+    srcs = _TEST_SUPPORT + ["mcp/test_ui_server.py"],
+    imports = [".."],
+    main = "mcp/test_ui_server.py",
+    deps = _TEST_DEPS,
+)
+
+# mcp/approval_policy tests
+py_test(
+    name = "test_approval_policy_validation",
+    srcs = _TEST_SUPPORT + ["mcp/approval_policy/test_policy_validation.py"],
+    imports = [".."],
+    main = "mcp/approval_policy/test_policy_validation.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_approval_policy_preset_loading",
+    srcs = _TEST_SUPPORT + ["mcp/approval_policy/test_preset_policy_loading.py"],
+    imports = [".."],
+    main = "mcp/approval_policy/test_preset_policy_loading.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_approval_policy_schema",
+    srcs = _TEST_SUPPORT + ["mcp/approval_policy/test_schema.py"],
+    imports = [".."],
+    main = "mcp/approval_policy/test_schema.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_approval_policy_server",
+    srcs = _TEST_SUPPORT + ["mcp/approval_policy/test_server.py"],
+    imports = [".."],
+    main = "mcp/approval_policy/test_server.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_approval_policy_server_available",
+    srcs = _TEST_SUPPORT + ["mcp/approval_policy/test_server_available.py"],
+    imports = [".."],
+    main = "mcp/approval_policy/test_server_available.py",
+    deps = _TEST_DEPS,
+)
+
+# mcp_bridge tests
+py_test(
+    name = "test_mcp_bridge_agents_server",
+    srcs = _TEST_SUPPORT + ["mcp_bridge/test_agents_server.py"],
+    imports = [".."],
+    main = "mcp_bridge/test_agents_server.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_mcp_bridge_integration",
+    srcs = _TEST_SUPPORT + ["mcp_bridge/test_integration.py"],
+    imports = [".."],
+    main = "mcp_bridge/test_integration.py",
+    deps = _TEST_DEPS,
+)
+
+# server tests
+py_test(
+    name = "test_server_end_turn_ui_integration",
+    srcs = _TEST_SUPPORT + ["server/test_end_turn_ui_integration.py"],
+    imports = [".."],
+    main = "server/test_end_turn_ui_integration.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_server_history_fold_typed",
+    srcs = _TEST_SUPPORT + ["server/test_history_fold_typed.py"],
+    imports = [".."],
+    main = "server/test_history_fold_typed.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_server_reducer",
+    srcs = _TEST_SUPPORT + ["server/test_reducer.py"],
+    imports = [".."],
+    main = "server/test_reducer.py",
+    deps = _TEST_DEPS,
 )
 
 py_test(

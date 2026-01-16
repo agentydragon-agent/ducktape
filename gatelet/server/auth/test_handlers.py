@@ -14,6 +14,7 @@ from gatelet.server.auth.handlers import (
     key_path_auth,
     session_auth,
 )
+from gatelet.server.config import Settings
 from gatelet.server.models import AuthCRSession, AuthKey
 
 
@@ -56,7 +57,7 @@ async def test_session_auth_context():
 
 
 @pytest.mark.timeout(5)  # 5 second timeout
-async def test_key_path_auth_valid(db_session: AsyncSession):
+async def test_key_path_auth_valid(db_session: AsyncSession, test_settings: Settings):
     """Test key_path_auth with valid key."""
     # Use a unique key value
     unique_id = uuid.uuid4().hex[:8]
@@ -68,21 +69,21 @@ async def test_key_path_auth_valid(db_session: AsyncSession):
     await db_session.flush()
 
     # Test with valid key - use the direct key_value rather than refreshing
-    auth_context = await key_path_auth(key.key_value, db_session)
+    auth_context = await key_path_auth(key.key_value, db_session, test_settings)
 
     assert auth_context.key_value == key.key_value
 
 
 @pytest.mark.timeout(5)  # 5 second timeout
-async def test_key_path_auth_invalid(db_session: AsyncSession):
+async def test_key_path_auth_invalid(db_session: AsyncSession, test_settings: Settings):
     """Test key_path_auth with invalid key."""
     # Test with invalid key
     with pytest.raises(AuthHandlerError):
-        await key_path_auth("invalid-key", db_session)
+        await key_path_auth("invalid-key", db_session, test_settings)
 
 
 @pytest.mark.timeout(5)  # 5 second timeout
-async def test_session_auth_valid(db_session: AsyncSession):
+async def test_session_auth_valid(db_session: AsyncSession, test_settings: Settings):
     """Test session_auth with valid session."""
     # Use unique values for key and session
     unique_id = uuid.uuid4().hex[:8]
@@ -104,7 +105,7 @@ async def test_session_auth_valid(db_session: AsyncSession):
     await db_session.flush()
 
     # Test with valid session
-    auth_context = await session_auth(session.session_token, db_session)
+    auth_context = await session_auth(session.session_token, db_session, test_settings)
     assert auth_context.session_token == session.session_token
 
     # Verify last_activity_at was updated
@@ -112,15 +113,15 @@ async def test_session_auth_valid(db_session: AsyncSession):
 
 
 @pytest.mark.timeout(5)  # 5 second timeout
-async def test_session_auth_invalid(db_session: AsyncSession):
+async def test_session_auth_invalid(db_session: AsyncSession, test_settings: Settings):
     """Test session_auth with invalid session."""
     # Test with invalid session token
     with pytest.raises(AuthHandlerError):
-        await session_auth("invalid-session", db_session)
+        await session_auth("invalid-session", db_session, test_settings)
 
 
 @pytest.mark.timeout(5)  # 5 second timeout
-async def test_session_auth_expired(db_session: AsyncSession):
+async def test_session_auth_expired(db_session: AsyncSession, test_settings: Settings):
     """Test session_auth with expired session."""
     # Use unique values
     unique_id = uuid.uuid4().hex[:8]
@@ -141,4 +142,4 @@ async def test_session_auth_expired(db_session: AsyncSession):
 
     # Test with expired session
     with pytest.raises(AuthHandlerError):
-        await session_auth(session.session_token, db_session)
+        await session_auth(session.session_token, db_session, test_settings)
