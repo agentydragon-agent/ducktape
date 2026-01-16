@@ -58,6 +58,12 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         except Exception as exc:
             pytest.skip(f"Docker not available: {exc}")
 
+    # PostgreSQL availability check
+    if item.get_closest_marker("requires_postgres") is not None:
+        pg_host = os.getenv("PGHOST")
+        if not pg_host:
+            pytest.skip("PGHOST not set - PostgreSQL not configured")
+
     # LLM API key requirements
     if item.get_closest_marker("live_openai_api") is not None and not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
