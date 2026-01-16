@@ -64,6 +64,8 @@ jobs:
         run: docker pull python:3.12-slim
 
       - name: Run tests
+        id: tests
+        continue-on-error: true
         env:
           # PostgreSQL environment for props and gatelet tests
           PGHOST: localhost
@@ -73,6 +75,58 @@ jobs:
           PGDATABASE: postgres
         run: bazel test --keep_going ${{ inputs.targets }}
 
+      - name: Collect failed test logs
+        if: always()
+        run: |
+          mkdir -p failed-test-logs
+
+          # Find all test.xml files and check for failures
+          find bazel-testlogs -name "test.xml" 2>/dev/null | while read xml; do
+            test_dir=$(dirname "$xml")
+            # Check if test.xml contains failures or errors
+            if grep -qE 'failures="[1-9]|errors="[1-9]' "$xml" 2>/dev/null; then
+              # Preserve test path structure
+              target_path="${test_dir#bazel-testlogs/}"
+              mkdir -p "failed-test-logs/$target_path"
+              cp "$test_dir/test.log" "failed-test-logs/$target_path/" 2>/dev/null || true
+              cp "$test_dir/test.xml" "failed-test-logs/$target_path/" 2>/dev/null || true
+            fi
+          done
+
+      - name: Upload failed test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-test-logs-${{ github.run_id }}
+          path: failed-test-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          echo "### Bazel Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.tests.outcome }}" = "success" ]; then
+            echo ":white_check_mark: All tests passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo ":x: Some tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Failed tests:**" >> $GITHUB_STEP_SUMMARY
+            find failed-test-logs -name "test.xml" 2>/dev/null | while read xml; do
+              test_path="${xml#failed-test-logs/}"
+              test_name="${test_path%/test.xml}"
+              echo "- \`//${test_name}\`" >> $GITHUB_STEP_SUMMARY
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo ":package: Logs available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
+          fi
+
       # Rust lint (separate because finance/ is optional)
       - name: Rust lint
         run: bazel build --keep_going --config=rust-check //finance/... || true
+
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
