@@ -32,14 +32,15 @@ jobs:
       - name: Setup Bazelisk
         uses: bazelbuild/setup-bazelisk@v3
 
-      - name: Cache Bazel
-        uses: actions/cache@v4
+      - name: Restore Bazel cache
+        id: cache-bazel-restore
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
           key: bazel-${{ runner.os }}-props-cli-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-props-cli-
+          restore-keys: bazel-${{ runner.os }}-
 
       - name: Build OCI image
         run: bazelisk build //props/core/cli:image
@@ -53,3 +54,12 @@ jobs:
 
       - name: Push to GHCR
         run: bazelisk run //props/core/cli:push_ghcr
+
+      - name: Save Bazel cache
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}

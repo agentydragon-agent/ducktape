@@ -51,15 +51,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ${{ inputs.apt_packages }}
 
-      - name: Cache Bazel repository
-        uses: actions/cache@v4
+      - name: Restore Bazel cache
+        id: cache-bazel-restore
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-wheel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: |
-            bazel-wheel-${{ runner.os }}-
+          key: bazel-${{ runner.os }}-wheel-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-
 
       - name: Build wheel
         run: bazel build ${{ inputs.bazel_target }}
@@ -92,3 +92,12 @@ jobs:
             | tail -n +11 \
             | cut -f1 \
             | xargs -r -I{} gh release delete {} --yes --cleanup-tag
+
+      - name: Save Bazel cache
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}

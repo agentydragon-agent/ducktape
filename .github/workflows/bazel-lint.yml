@@ -43,15 +43,15 @@ jobs:
       - name: Setup Bazelisk
         uses: bazelbuild/setup-bazelisk@v3
 
-      - name: Cache Bazel
-        uses: actions/cache@v4
+      - name: Restore Bazel cache
+        id: cache-bazel-restore
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-lint-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-lint-${{ runner.os }}-
-          save-always: true
+          key: bazel-${{ runner.os }}-lint-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-
 
       - name: Lint and typecheck
         run: |
@@ -74,3 +74,12 @@ jobs:
             execution-log.json
           retention-days: 14
           if-no-files-found: warn
+
+      - name: Save Bazel cache
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}

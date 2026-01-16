@@ -428,7 +428,8 @@ in {
       sqlite
       gnupg
 
-      # Zsh theme
+      # Prompt themes (switchable via USE_OHMYPOSH env var)
+      oh-my-posh # Cross-shell prompt with proper powerline support
       zsh-powerlevel10k # Powerlevel10k theme for zsh
 
       # vertical-workspaces managed by gnome-workspace-shortcuts module
@@ -693,6 +694,7 @@ in {
       ];
     };
 
+    # p10k plugin loaded conditionally in zsh-init.zsh based on USE_OHMYPOSH env var
     plugins = [
       {
         name = "powerlevel10k";
@@ -885,7 +887,8 @@ in {
     '';
   };
 
-  # Powerlevel10k configuration, sourced in zsh-init.sh
+  # Prompt configurations (switchable via USE_OHMYPOSH env var)
+  xdg.configFile."oh-my-posh/config.json".source = ./ohmyposh.json;
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
   # Create Worthy config directory

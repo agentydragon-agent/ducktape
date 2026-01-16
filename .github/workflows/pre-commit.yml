@@ -68,10 +68,11 @@ jobs:
           # Set PCT_TFPATH so terraform hooks find opentofu
           echo "PCT_TFPATH=$(which tofu)" >> $GITHUB_ENV
 
-      - name: Cache Ansible Galaxy downloads
-        uses: actions/cache@v4
+      - name: Restore Ansible Galaxy cache
+        id: cache-ansible-restore
+        uses: actions/cache/restore@v4
         with:
-          path: ${{ env.HOME }}/.ansible
+          path: ~/.ansible
           key: ansible-galaxy-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
           restore-keys: |
             ansible-galaxy-${{ runner.os }}-
@@ -85,8 +86,9 @@ jobs:
           ansible-galaxy role install -r requirements.yaml --ignore-errors || true
           ansible-galaxy collection install -r requirements.yaml --ignore-errors || true
 
-      - name: Cache pre-commit environments
-        uses: actions/cache@v4
+      - name: Restore pre-commit cache
+        id: cache-precommit-restore
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -102,3 +104,17 @@ jobs:
           # Update both when bumping pre-commit version
           pip install pre-commit==4.0.1
           pre-commit run --all-files --show-diff-on-failure
+
+      - name: Save Ansible Galaxy cache
+        if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ansible
+          key: ${{ steps.cache-ansible-restore.outputs.cache-primary-key }}
+
+      - name: Save pre-commit cache
+        if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}

@@ -1,9 +1,17 @@
 # Zsh-specific initialization
 # Loaded by home-manager's programs.zsh.initExtra
 
-# Powerlevel10k instant prompt
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-$USER.zsh" ]]; then
-	source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-$USER.zsh"
+# Prompt selection: USE_OHMYPOSH=1 for Oh-My-Posh, otherwise Powerlevel10k
+if [[ -n "$USE_OHMYPOSH" ]]; then
+	# Oh-My-Posh prompt
+	eval "$(oh-my-posh init zsh --config ~/.config/oh-my-posh/config.json)"
+else
+	# Powerlevel10k instant prompt (must be near top of .zshrc)
+	if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-$USER.zsh" ]]; then
+		source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-$USER.zsh"
+	fi
+	# Powerlevel10k configuration
+	[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh
 fi
 
 # Disable menu completion
@@ -14,9 +22,6 @@ unsetopt auto_menu
 zstyle ':completion:*' completer _complete _ignored
 zstyle ':completion:*' group-name ''
 zstyle ':completion:*' matcher-list ''
-
-# Powerlevel10k configuration
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
 # Custom keybindings for zsh-autosuggestions
 accept_or_end() {
