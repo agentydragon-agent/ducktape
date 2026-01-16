@@ -63,7 +63,7 @@ jobs:
       - name: Pull test Docker image
         run: docker pull python:3.12-slim
 
-      - name: Run tests
+      - name: Run tests with coverage
         id: tests
         continue-on-error: true
         env:
@@ -73,7 +73,12 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
           PGDATABASE: postgres
-        run: bazel test --keep_going ${{ inputs.targets }}
+        run: |
+          bazel coverage --keep_going \
+            --test_tag_filters=-requires_docker,-requires_postgres \
+            --combined_report=lcov \
+            --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
+            ${{ inputs.targets }}
 
       - name: Collect failed test logs
         if: always()
@@ -119,6 +124,24 @@ jobs:
           path: failed-test-logs/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.run_id }}
+          path: bazel-out/_coverage/_coverage_report.dat
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Test Report
+        uses: dorny/test-reporter@v2
+        if: always()
+        with:
+          name: Bazel Test Results
+          path: 'bazel-testlogs/**/test.xml'
+          reporter: java-junit
+          fail-on-error: false
 
       - name: Generate test summary
         if: always()

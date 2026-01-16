@@ -1,0 +1,162 @@
+# Props E2E test reusable workflow
+#
+# Runs props e2e tests that require Docker infrastructure (registry, proxy, postgres)
+name: Props E2E Test
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: "E2E test targets to run"
+        required: false
+        type: string
+        default: "//props/core/critic:test_e2e //props/core/grader:test_e2e //props/core/prompt_improve:test_e2e //props/core/prompt_optimize:test_e2e //props/core:test_agent_pkg_e2e"
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: true
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Restore Bazel cache
+        id: cache-bazel-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-e2e-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-
+
+      # Generate PGPASSWORD (compose.yaml expects it from environment)
+      - name: Setup environment
+        run: echo "PGPASSWORD=$(openssl rand -base64 24)" >> $GITHUB_ENV
+
+      # Build registry-proxy image (compose.yaml references props-registry-proxy:latest)
+      - name: Build registry proxy
+        run: bazel run //props/registry_proxy:load
+
+      # Pull images needed by compose.yaml
+      - name: Pull infrastructure images
+        run: |
+          docker pull postgres:16
+          docker pull registry:2
+          docker pull python:3.12-slim
+
+      # Start services using existing compose.yaml
+      - name: Start infrastructure
+        working-directory: props
+        run: |
+          docker compose up -d
+          echo "Waiting for PostgreSQL..."
+          until pg_isready -h 127.0.0.1 -p 5433 -U postgres; do sleep 1; done
+          echo "Waiting for registry..."
+          until curl -sf http://127.0.0.1:5050/v2/; do sleep 1; done
+          echo "Waiting for registry proxy..."
+          for i in {1..30}; do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5051/v2/ || echo "000")
+            if [[ "$HTTP" =~ ^(200|401)$ ]]; then break; fi
+            if [ $i -eq 30 ]; then
+              echo "Registry proxy failed to start"
+              docker logs props-registry-proxy
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Infrastructure ready"
+
+      # Build and push agent images to local registry
+      - name: Push agent images
+        run: |
+          bazel run //props/core/agent_defs/critic:push
+          bazel run //props/core/agent_defs/grader:push
+          bazel run //props/core/agent_defs/improvement:push
+          bazel run //props/core/agent_defs/prompt_optimizer:push
+
+      - name: Run E2E tests
+        id: tests
+        continue-on-error: true
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5433
+          PGUSER: postgres
+          PGDATABASE: eval_results
+          AGENT_PGHOST: 127.0.0.1
+          PROPS_REGISTRY_PROXY_HOST: 127.0.0.1
+          PROPS_REGISTRY_PROXY_PORT: "5051"
+          PROPS_DOCKER_NETWORK: host
+        run: |
+          bazel test --keep_going \
+            --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
+            --test_env=PGHOST --test_env=PGPORT --test_env=PGUSER --test_env=PGPASSWORD --test_env=PGDATABASE \
+            --test_env=AGENT_PGHOST --test_env=PROPS_REGISTRY_PROXY_HOST --test_env=PROPS_REGISTRY_PROXY_PORT \
+            --test_env=PROPS_DOCKER_NETWORK \
+            ${{ inputs.targets }}
+
+      - name: Collect test logs
+        if: always()
+        run: |
+          mkdir -p e2e-test-logs
+          TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
+          if [ -d "$TESTLOGS_DIR" ]; then
+            find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
+              test_dir=$(dirname "$xml")
+              target_path="${test_dir#$TESTLOGS_DIR/}"
+              mkdir -p "e2e-test-logs/$target_path"
+              cp "$test_dir/test.log" "e2e-test-logs/$target_path/" 2>/dev/null || true
+              cp "$test_dir/test.xml" "e2e-test-logs/$target_path/" 2>/dev/null || true
+            done
+          fi
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-logs-${{ github.run_id }}
+          path: e2e-test-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Test Report
+        uses: dorny/test-reporter@v2
+        if: always()
+        with:
+          name: Props E2E Test Results
+          path: "bazel-testlogs/**/test.xml"
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Cleanup infrastructure
+        if: always()
+        working-directory: props
+        run: docker compose down
+
+      - name: Save Bazel cache
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
+
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1

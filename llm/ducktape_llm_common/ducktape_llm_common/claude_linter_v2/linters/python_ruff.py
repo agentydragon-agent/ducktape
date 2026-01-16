@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+import sys
 from pathlib import Path
 from typing import ClassVar
 
@@ -47,7 +48,9 @@ class PythonRuffLinter:
     def _check_ruff_available(self) -> bool:
         """Check if ruff is available."""
         try:
-            result = subprocess.run(["ruff", "--version"], capture_output=True, text=True, timeout=5, check=False)
+            result = subprocess.run(
+                [sys.executable, "-m", "ruff", "--version"], capture_output=True, text=True, timeout=5, check=False
+            )
             if result.returncode == 0:
                 logger.debug(f"Found ruff: {result.stdout.strip()}")
                 return True
@@ -73,8 +76,8 @@ class PythonRuffLinter:
 
         violations = []
 
-        # Build ruff command
-        cmd = ["ruff", "check", "--output-format", "json", "--stdin-filename", str(file_path)]
+        # Build ruff command (use python -m ruff to work in Bazel sandbox)
+        cmd = [sys.executable, "-m", "ruff", "check", "--output-format", "json", "--stdin-filename", str(file_path)]
 
         # Add force-select rules if provided
         if self.force_select:

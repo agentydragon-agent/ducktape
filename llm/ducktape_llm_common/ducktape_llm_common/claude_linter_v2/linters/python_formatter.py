@@ -2,6 +2,7 @@
 
 import logging
 import subprocess
+import sys
 from pathlib import Path
 
 from ..config.models import AutofixCategory
@@ -27,7 +28,9 @@ class PythonFormatter:
         available = []
         for tool in self.tools:
             try:
-                result = subprocess.run([tool, "--version"], capture_output=True, text=True, timeout=5, check=False)
+                # Use python -m for ruff to work in Bazel sandbox
+                cmd = [sys.executable, "-m", tool, "--version"] if tool == "ruff" else [tool, "--version"]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
                 if result.returncode == 0:
                     available.append(tool)
                     logger.debug(f"Found {tool}: {result.stdout.strip()}")
@@ -94,8 +97,9 @@ class PythonFormatter:
         """Format code with ruff."""
         try:
             # Use stdin/stdout to avoid file operations
+            # Use python -m ruff to work in Bazel sandbox
             result = subprocess.run(
-                ["ruff", "format", "--stdin-filename", file_path, "-"],
+                [sys.executable, "-m", "ruff", "format", "--stdin-filename", file_path, "-"],
                 input=code,
                 capture_output=True,
                 text=True,
@@ -140,9 +144,12 @@ class PythonFormatter:
 
         if "ruff" in self._available_tools:
             # Ruff can fix imports with --fix
+            # Use python -m ruff to work in Bazel sandbox
             try:
                 result = subprocess.run(
                     [
+                        sys.executable,
+                        "-m",
                         "ruff",
                         "check",
                         "--fix",

@@ -7,6 +7,18 @@ import sys
 import pytest
 
 
+def _has_ruff() -> bool:
+    """Check if ruff CLI is available."""
+    try:
+        # Use python -m ruff to work in Bazel sandbox
+        result = subprocess.run(
+            [sys.executable, "-m", "ruff", "--version"], capture_output=True, check=False, timeout=5
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 class TestCLIIntegration:
     """Test the full CLI integration."""
 
@@ -103,10 +115,7 @@ def hello():
         # Clean code should not be blocked
         assert response.get("decision") != "block"
 
-    @pytest.mark.skipif(
-        subprocess.run(["ruff", "--version"], capture_output=True, check=False).returncode != 0,
-        reason="ruff not available",
-    )
+    @pytest.mark.skipif(not _has_ruff(), reason="ruff not available")
     def test_pre_hook_ruff_violation(self, tmp_path):
         """Test that pre-hook blocks ruff violations."""
         request_data = {

@@ -4,7 +4,8 @@
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
 # - bazel-build: Build all targets
 # - bazel-lint: Comprehensive linting (Python ruff + mypy, JS/TS eslint)
-# - bazel-test: Run all tests
+# - bazel-test: Run all tests (excludes e2e tests requiring Docker infra)
+# - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
 # - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
@@ -124,6 +125,15 @@ jobs:
     uses: ./.github/workflows/bazel-test.yml
     with:
       targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+
+  # Props E2E tests - requires Docker infrastructure (registry, proxy, postgres)
+  # Only runs when props/ targets are affected
+  props-e2e-test:
+    needs: [compute-targets, bazel-build]
+    if: |
+      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
+      contains(needs.compute-targets.outputs.bazel_targets, '//props/')
+    uses: ./.github/workflows/props-e2e-test.yml
 
   # Conditional - only when nix/ changed
   nix-flake-check:
