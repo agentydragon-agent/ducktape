@@ -3,7 +3,6 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "shell",
     srcs = [
-        "__init__.py",
         "install.py",
     ],
     data = glob(["*.sh"]),

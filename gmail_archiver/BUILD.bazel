@@ -4,7 +4,6 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "gmail_archiver_lib",
     srcs = [
-        "__init__.py",
         "cli/__init__.py",
         "cli/common.py",
         "cli/filters.py",
@@ -22,7 +21,6 @@ py_library(
         "models.py",
         "plan.py",
         "plan_display.py",
-        "planners/__init__.py",
         "planners/aliexpress.py",
         "planners/anthem_eob.py",
         "planners/anthem_reimbursement.py",

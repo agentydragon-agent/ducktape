@@ -3,7 +3,6 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "server",
     srcs = [
-        "__init__.py",
         "copy_strategies.py",
         "git_manager.py",
         "git_refs_watcher.py",
@@ -11,7 +10,6 @@ py_library(
         "github_watcher.py",
         "gitstatus_refresh.py",
         "gitstatusd_listener.py",
-        "handlers/__init__.py",
         "handlers/path_handler.py",
         "handlers/pr_handler.py",
         "handlers/status_handler.py",

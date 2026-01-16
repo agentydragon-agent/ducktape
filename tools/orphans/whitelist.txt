@@ -167,7 +167,6 @@ TODO
 gatelet/**
 openai_utils/**
 sandboxed_jupyter/**
-editor_agent/**
 
 # Root conftest.py (pytest autodiscovery)
 conftest.py

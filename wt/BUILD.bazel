@@ -8,7 +8,6 @@ exports_files([
 py_library(
     name = "cli",
     srcs = [
-        "__init__.py",
         "cli.py",
         "demo_plugin.py",
         "plugins.py",
