@@ -162,15 +162,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             return Response(content="Agent UI assets not built", media_type="text/plain", status_code=200)
         return FileResponse(file_path)
 
-    @app.get("/vite.svg", response_model=None)
-    async def vite_svg() -> Response:
-        svg = STATIC_DIR / "vite.svg"
-        if not svg.exists():
-            if require_static_assets:
-                raise RuntimeError("Missing vite.svg asset")
-            return Response(content="", media_type="image/svg+xml", status_code=404)
-        return FileResponse(svg)
-
     # Mount MCP routing endpoint
     # Note: The global_compositor is created during startup, so this uses a lazy sub-app
     mcp_sub_app = SubApp()
