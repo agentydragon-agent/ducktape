@@ -8,13 +8,18 @@
 # Falls back to full build (//...) on any failure.
 set -euo pipefail
 
-BAZEL_DIFF_VERSION="7.2.0"
+BAZEL_DIFF_VERSION="12.1.1"
 BAZEL_DIFF_JAR="/tmp/bazel-diff.jar"
 
 # Download bazel-diff
 echo "Downloading bazel-diff v${BAZEL_DIFF_VERSION}..."
-curl -fsSL -o "$BAZEL_DIFF_JAR" \
-  "https://github.com/Tinder/bazel-diff/releases/download/v${BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
+if ! curl -fsSL -o "$BAZEL_DIFF_JAR" \
+  "https://github.com/Tinder/bazel-diff/releases/download/${BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"; then
+  echo "Failed to download bazel-diff, falling back to full build"
+  echo "targets=//..." >>"$GITHUB_OUTPUT"
+  echo "has_changes=true" >>"$GITHUB_OUTPUT"
+  exit 0
+fi
 
 # Determine base commit
 if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
