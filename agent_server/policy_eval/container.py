@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 import aiodocker
 
@@ -11,10 +11,22 @@ from agent_server.policies.policy_types import PolicyRequest, PolicyResponse
 from agent_server.policy_eval.runner import run_policy_source
 from agent_server.runtime.images import resolve_runtime_image
 
-if TYPE_CHECKING:
-    from agent_server.mcp.approval_policy.engine import PolicyEngine
-
 logger = logging.getLogger(__name__)
+
+
+class PolicyProvider(Protocol):
+    """Protocol for policy source providers (e.g., PolicyEngine).
+
+    TODO: This Protocol exists to break a circular dependency between
+    policy_eval and mcp/approval_policy. The circle is:
+    - policy_eval.container needs PolicyEngine type
+    - approval_policy.engine imports policy_eval.container and policy_eval.runner
+    Using a Protocol avoids the BUILD-level dependency.
+    """
+
+    def get_policy(self) -> str:
+        """Return the current policy source code."""
+        ...
 
 
 @dataclass
@@ -29,7 +41,7 @@ class ContainerPolicyEvaluator:
 
     agent_id: str
     docker_client: aiodocker.Docker
-    engine: PolicyEngine
+    engine: PolicyProvider
     image: str = field(default_factory=resolve_runtime_image)
     timeout_secs: float = field(default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5")))
 

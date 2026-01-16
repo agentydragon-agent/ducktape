@@ -1,0 +1,99 @@
+# Agent server E2E test reusable workflow
+#
+# Runs agent_server tests that require Docker and the runtime image
+name: Agent Server E2E Test
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: true
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Restore Bazel cache
+        id: cache-bazel-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-agent-server-e2e-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: bazel-${{ runner.os }}-
+
+      - name: Build and load agent server runtime image
+        run: bazel run //agent_server:load
+
+      - name: Run E2E tests
+        id: tests
+        continue-on-error: true
+        run: |
+          bazel test --keep_going \
+            --test_tag_filters=requires_docker \
+            --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
+            //agent_server/...
+
+      - name: Collect test logs
+        if: always()
+        run: |
+          mkdir -p e2e-test-logs
+          TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
+          if [ -d "$TESTLOGS_DIR" ]; then
+            find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
+              test_dir=$(dirname "$xml")
+              target_path="${test_dir#$TESTLOGS_DIR/}"
+              mkdir -p "e2e-test-logs/$target_path"
+              cp "$test_dir/test.log" "e2e-test-logs/$target_path/" 2>/dev/null || true
+              cp "$test_dir/test.xml" "e2e-test-logs/$target_path/" 2>/dev/null || true
+            done
+          fi
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-server-e2e-test-logs-${{ github.run_id }}
+          path: e2e-test-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Test Report
+        uses: dorny/test-reporter@v2
+        if: always()
+        with:
+          name: Agent Server E2E Test Results
+          path: "bazel-testlogs/**/test.xml"
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Save Bazel cache
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
+
+      - name: Fail if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1

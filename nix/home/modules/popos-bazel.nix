@@ -12,13 +12,11 @@
   lib,
   ...
 }: {
-  home.file.".bazelrc".text = lib.mkMerge [
-    # Force system CC toolchain for Rust proc-macro compatibility
-    ''
-      build --action_env=CC=/usr/bin/gcc
-      build --action_env=CXX=/usr/bin/g++
-      build --action_env=OPENSSL_DIR=/usr
-      build --action_env=OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
-    ''
-  ];
+  # Force system CC toolchain for Rust proc-macro compatibility
+  home.file.".bazelrc".text = lib.mkAfter ''
+    build --action_env=CC=/usr/bin/gcc
+    build --action_env=CXX=/usr/bin/g++
+    build --action_env=OPENSSL_DIR=/usr
+    build --action_env=OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+  '';
 }

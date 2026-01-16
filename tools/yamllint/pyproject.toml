@@ -1,8 +1,0 @@
-[project]
-name = "tools-yamllint"
-version = "0.1.0"
-description = "Yamllint tool wrapper for Bazel"
-requires-python = ">=3.12"
-dependencies = [
-    "yamllint>=1.35",
-]

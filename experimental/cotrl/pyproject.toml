@@ -1,8 +1,0 @@
-[project]
-name = "cotrl"
-version = "0.1.0"
-description = "Experimental LLM RL scripts"
-requires-python = ">=3.13"
-dependencies = [
-    "pydantic>=2.0.0",
-]

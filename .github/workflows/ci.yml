@@ -7,6 +7,7 @@
 # - bazel-test: Run all tests (excludes e2e tests requiring Docker infra)
 # - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
 # - editor-e2e-test: Editor agent e2e tests (requires Docker)
+# - agent-server-e2e-test: Agent server e2e tests (requires Docker and runtime image)
 # - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
@@ -148,6 +149,15 @@ jobs:
       needs.compute-targets.outputs.has_bazel_changes == 'true' &&
       contains(needs.compute-targets.outputs.bazel_targets, '//editor_agent/')
     uses: ./.github/workflows/editor-e2e-test.yml
+
+  # Agent Server E2E tests - requires Docker and runtime image
+  # Only runs when agent_server/ targets are affected
+  agent-server-e2e-test:
+    needs: compute-targets
+    if: |
+      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
+      contains(needs.compute-targets.outputs.bazel_targets, '//agent_server/')
+    uses: ./.github/workflows/agent-server-e2e-test.yml
 
   # Conditional - only when nix/ changed
   nix-flake-check:

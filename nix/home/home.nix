@@ -296,9 +296,13 @@ in {
     source = ./config/nvim;
     recursive = true;
   };
-  xdg.configFile."bazel/bazelrc" = {
-    source = ./config/bazelrc;
-  };
+  # Base bazelrc settings (layered by popos-bazel.nix and host configs)
+  home.file.".bazelrc".text = ''
+    common --show_progress_rate_limit=0.05
+    common --progress_in_terminal_title
+    common --enable_bzlmod
+    build --platforms //:linux_x64
+  '';
 
   # Packages to install (Phase 1: only actual user-level packages from Ansible)
   home.packages = with pkgs;
