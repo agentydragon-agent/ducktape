@@ -4,9 +4,9 @@
 
 ### Medium Priority
 
-- [ ] **NOTE: FileLocationInfo should stay in props_core**
-  - FileLocationInfo is correctly defined in props_core (domain model layer)
-  - Backend routes import from props_core - this is correct architecture
+- [ ] **NOTE: FileLocationInfo should stay in props.core**
+  - FileLocationInfo is correctly defined in props.core (domain model layer)
+  - Backend routes import from props.core - this is correct architecture
   - No changes needed
 
 ### Low Priority

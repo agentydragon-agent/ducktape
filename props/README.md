@@ -14,9 +14,9 @@ props/
 │   ├── src/props_core/       # The Python package
 │   └── tests/                # Tests for props_core
 ├── backend/                  # FastAPI dashboard backend
-│   ├── pyproject.toml        # Package: props-backend
-│   ├── src/props_backend/
-│   └── tests/
+│   ├── __init__.py           # Python package root
+│   ├── routes/               # API endpoints
+│   └── tests/                # Tests for props.backend
 └── frontend/                 # Svelte UI
     ├── package.json
     └── src/

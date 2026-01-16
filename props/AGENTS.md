@@ -4,7 +4,7 @@
 
 ## Component Documentation
 
-- **Core library:** @core/src/props_core/AGENTS.md
+- **Core library:** @core/AGENTS.md
 - **Backend API:** @backend/AGENTS.md
 - **Tests:** @core/testing/AGENTS.md
 
