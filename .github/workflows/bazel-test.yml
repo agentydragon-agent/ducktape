@@ -5,6 +5,12 @@ name: Bazel Test
 
 on:
   workflow_call:
+    inputs:
+      targets:
+        description: 'Bazel targets to test (default: //...)'
+        required: false
+        type: string
+        default: '//...'
 
 jobs:
   test:
@@ -65,7 +71,7 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
           PGDATABASE: postgres
-        run: bazel test --keep_going //...
+        run: bazel test --keep_going ${{ inputs.targets }}
 
       # Rust lint (separate because finance/ is optional)
       - name: Rust lint

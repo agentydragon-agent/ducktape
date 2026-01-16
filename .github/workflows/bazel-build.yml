@@ -5,6 +5,12 @@ name: Bazel Build
 
 on:
   workflow_call:
+    inputs:
+      targets:
+        description: 'Bazel targets to build (default: //...)'
+        required: false
+        type: string
+        default: '//...'
 
 jobs:
   build:
@@ -40,4 +46,4 @@ jobs:
           save-always: true
 
       - name: Build
-        run: bazel build --keep_going //...
+        run: bazel build --keep_going ${{ inputs.targets }}
