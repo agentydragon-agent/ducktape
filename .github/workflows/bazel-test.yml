@@ -11,6 +11,11 @@ on:
         required: false
         type: string
         default: '//...'
+      enable_profiling:
+        description: 'Enable Bazel profiling (generates downloadable artifacts)'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       targets:
@@ -18,6 +23,11 @@ on:
         required: false
         type: string
         default: '//...'
+      enable_profiling:
+        description: 'Enable Bazel profiling (generates downloadable artifacts)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -81,10 +91,15 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: postgres
         run: |
+          PROFILE_FLAG=""
+          if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
+            PROFILE_FLAG="--config=ci-profile"
+          fi
           bazel coverage --keep_going \
             --test_tag_filters=-requires_docker,-requires_postgres \
             --combined_report=lcov \
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
+            $PROFILE_FLAG \
             ${{ inputs.targets }}
 
       - name: Collect failed test logs
@@ -140,6 +155,17 @@ jobs:
           path: bazel-out/_coverage/_coverage_report.dat
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Upload Bazel profile
+        if: inputs.enable_profiling && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-profile-test-${{ github.run_id }}
+          path: |
+            bazel-profile.gz
+            execution-log.json
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Test Report
         uses: dorny/test-reporter@v2
