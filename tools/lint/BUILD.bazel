@@ -3,19 +3,24 @@
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
 load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
-load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-# Mypy CLI using hermetic Python 3.13 toolchain with fixed librt dependency
+# Custom mypy CLI that uses symlinks instead of copies for upstream caches.
+# This reduces disk usage from O(n²) to O(n) for the mypy cache merge step.
+# See mypy_runner.py for details on the patch.
+#
 # deps includes mypy plugins:
 #   - pydantic: understands Field aliases, model validation
 #   - sqlalchemy: ORM type inference for mapped columns
-mypy_cli(
+py_binary(
     name = "mypy_cli",
-    mypy_requirement = "@pypi//mypy",
+    srcs = ["mypy_runner.py"],
+    main = "mypy_runner.py",
     python_version = "3.13",
     deps = [
+        "@pypi//mypy",
         # Mypy plugins
         "@pypi//pydantic",  # pydantic.mypy plugin
         "@pypi//sqlalchemy",  # sqlalchemy.ext.mypy.plugin
