@@ -29,15 +29,11 @@ BAZEL_LOCAL_PROXY = require_env("BAZEL_LOCAL_PROXY")
 
 def check_supervisor() -> bool:
     """Check if supervisor socket exists."""
-    if not BAZEL_SUPERVISOR_SOCK:
-        return False
     return Path(BAZEL_SUPERVISOR_SOCK).is_socket()
 
 
 def check_proxy() -> bool:
     """Check if bazel-proxy service is running under supervisor."""
-    if not BAZEL_SUPERVISOR_CONF:
-        return False
     try:
         result = subprocess.run(
             ["supervisorctl", "-c", BAZEL_SUPERVISOR_CONF, "status", "bazel-proxy"],
