@@ -18,6 +18,8 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
+from claude_web_hooks.supervisor_setup import SUPERVISOR_CONF, SUPERVISOR_DIR, SUPERVISOR_SOCK
+
 log = logging.getLogger(__name__)
 
 BAZELISK_VERSION = "1.25.0"
@@ -113,7 +115,13 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
     return WRAPPER_PATH
 
 
-def get_env_script(proxy_port: int = 18081, repo_root: Path | None = None) -> str:
+def get_env_script(
+    proxy_port: int = 18081,
+    repo_root: Path | None = None,
+    hook_timestamp: str | None = None,
+    combined_ca: Path | None = None,
+    nix_profile_bin: Path | None = None,
+) -> str:
     """Get bash script fragment to add wrapper dir to PATH and set config env vars.
 
     This should be appended to CLAUDE_ENV_FILE.
@@ -121,26 +129,36 @@ def get_env_script(proxy_port: int = 18081, repo_root: Path | None = None) -> st
     Args:
         proxy_port: Port for the local Bazel proxy
         repo_root: Path to the repository root (for error messages)
+        hook_timestamp: Session start hook timestamp
+        combined_ca: Path to combined CA bundle for Node.js
+        nix_profile_bin: Path to nix profile bin directory
     """
-    supervisor_sock = Path.home() / ".config" / "supervisor" / "supervisor.sock"
-    supervisor_conf = Path.home() / ".config" / "supervisor" / "supervisord.conf"
     local_proxy = f"http://localhost:{proxy_port}"
 
     exports = {
         "PATH": f"{WRAPPER_DIR}:$PATH",
         "BAZELISK_PATH": str(BAZELISK_PATH),
-        "BAZEL_SUPERVISOR_SOCK": str(supervisor_sock),
-        "BAZEL_SUPERVISOR_CONF": str(supervisor_conf),
+        "BAZEL_SUPERVISOR_SOCK": str(SUPERVISOR_SOCK),
+        "BAZEL_SUPERVISOR_CONF": str(SUPERVISOR_CONF),
         "BAZEL_LOCAL_PROXY": local_proxy,
     }
 
     if repo_root:
         exports["DUCKTAPE_REPO_ROOT"] = str(repo_root)
+    if hook_timestamp:
+        exports["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp
+    if combined_ca:
+        exports["NODE_EXTRA_CA_CERTS"] = str(combined_ca)
 
     lines = ["# Bazel wrapper (sets proxy for TLS-inspecting proxy)"]
     lines.append(f'[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"')
+
+    # Add nix to PATH first if provided
+    if nix_profile_bin:
+        lines.append(f'[ -d "{nix_profile_bin}" ] && export PATH="{nix_profile_bin}:$PATH"')
+
     for key, value in exports.items():
-        if key != "PATH":  # PATH already handled with conditional
+        if key != "PATH":  # PATH already handled with conditionals
             lines.append(f'export {key}="{value}"')
 
     return "\n".join(lines) + "\n"

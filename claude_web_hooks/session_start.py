@@ -389,15 +389,17 @@ def main() -> int:
 
     # Detect project directory
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
+    project_dir: Path | None = None
     if project_dir_str:
         verbose.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
+        project_dir = Path(project_dir_str)
     else:
         verbose.warning("CLAUDE_PROJECT_DIR not provided (fallback to PWD)")
         pwd = Path.cwd()
         if (pwd / ".git").exists():
-            project_dir_str = str(pwd)
-            os.environ["CLAUDE_PROJECT_DIR"] = project_dir_str
-            log.info("Project: %s", project_dir_str)
+            project_dir = pwd
+            os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
+            log.info("Project: %s", project_dir)
         else:
             log.error("Cannot detect project root (no .git)")
 
@@ -407,8 +409,7 @@ def main() -> int:
     # Set up Bazel proxy
     bazel_proxy_setup.setup_bazel_proxy()
 
-    if project_dir_str:
-        project_dir = Path(project_dir_str)
+    if project_dir:
         bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
         install_git_precommit_hook(project_dir, verbose)  # Detailed logging to file
 
@@ -455,26 +456,29 @@ def main() -> int:
 
     # Configure PATH for bash sessions
     verbose.info("Configuring bazel availability for bash sessions...")
-    env_file = os.environ.get("CLAUDE_ENV_FILE")
-    if env_file:
+    env_file_str = os.environ.get("CLAUDE_ENV_FILE")
+    if env_file_str:
+        env_path = Path(env_file_str)
         # Read existing content (may include props environment from setup_props_environment)
-        env_path = Path(env_file)
         existing_content = env_path.read_text() if env_path.exists() else ""
 
-        repo_root = Path(project_dir_str) if project_dir_str else None
-        env_content = bazelisk_setup.get_env_script(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=repo_root)
-        env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
-        if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
-            env_content += f'\nexport NODE_EXTRA_CA_CERTS="{bazel_proxy_setup.BAZEL_COMBINED_CA}"\n'
-        # Add nix profile to PATH for alejandra and other nix-installed tools
+        # Generate consolidated env script with all settings
+        combined_ca = bazel_proxy_setup.BAZEL_COMBINED_CA if bazel_proxy_setup.BAZEL_COMBINED_CA.exists() else None
         nix_profile_bin = Path.home() / ".nix-profile" / "bin"
-        if nix_profile_bin.exists():
-            env_content += f'\nexport PATH="{nix_profile_bin}:$PATH"\n'
+        nix_bin = nix_profile_bin if nix_profile_bin.exists() else None
+
+        env_content = bazelisk_setup.get_env_script(
+            proxy_port=bazel_proxy_setup.BAZEL_PROXY_PORT,
+            repo_root=project_dir,
+            hook_timestamp=hook_timestamp,
+            combined_ca=combined_ca,
+            nix_profile_bin=nix_bin,
+        )
 
         # Append to existing content (preserves props environment variables)
         full_content = existing_content + env_content
         env_path.write_text(full_content)
-        verbose.info("Wrote PATH exports to %s", env_file)
+        verbose.info("Wrote PATH exports to %s", env_path)
     else:
         # Fallback: symlink bazel to ~/.local/bin
         verbose.warning("CLAUDE_ENV_FILE not provided, using symlink fallback")
@@ -512,10 +516,10 @@ def main() -> int:
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), bazel_proxy_setup.get_status(), node_ca_status
     )
     # Show cluster tools status if cluster/ exists
-    if project_dir_str and (Path(project_dir_str) / "cluster").is_dir():
+    if project_dir and (project_dir / "cluster").is_dir():
         log.info("Cluster tools: %s", cluster_tools.get_status())
     # Show nix tools status if .nix files exist
-    if project_dir_str and any(Path(project_dir_str).rglob("*.nix")):
+    if project_dir and any(project_dir.rglob("*.nix")):
         log.info("Nix tools: %s", get_nix_tools_status())
 
     # Emit supervisor usage guidance if proxy is running
