@@ -517,6 +517,12 @@ def main() -> int:
     if project_dir_str and any(Path(project_dir_str).rglob("*.nix")):
         log.info("Nix tools: %s", get_nix_tools_status())
 
+    # Emit supervisor usage guidance if proxy is running
+    if bazel_proxy_setup.is_configured():
+        from claude_web_hooks import supervisor_setup
+
+        supervisor_setup.emit_usage_guidance()
+
     # Emit context for Claude Code
     emit_session_context(had_warnings=loggers.counter.warning_count > 0, had_errors=loggers.counter.error_count > 0)
 

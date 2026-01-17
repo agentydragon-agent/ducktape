@@ -152,28 +152,32 @@ def _update_proxy_credentials() -> None:
 
 
 def _start_proxy_server() -> bool:
-    """Start the local Bazel proxy in the background.
+    """Start the local Bazel proxy via supervisor.
 
     Returns True if proxy was started successfully.
-
-    Uses -r to replace any existing instance with fresh credentials.
     """
+    from claude_web_hooks import supervisor_setup
+
     proxy_script = _get_proxy_script_path()
     if not proxy_script.exists():
         log.warning("Bazel proxy script not found at %s", proxy_script)
         return False
 
-    log.info("Starting Bazel proxy on port %d", BAZEL_PROXY_PORT)
+    # Ensure supervisor is running
+    if not supervisor_setup.start():
+        log.warning("Could not start supervisor")
+        return False
 
-    # -d: daemonize, -r: replace any existing instance
-    result = subprocess.run(
-        ["python3", str(proxy_script), "-d", "-r", "--listen-port", str(BAZEL_PROXY_PORT)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        log.warning("Failed to start proxy: %s", result.stderr)
+    log.info("Starting Bazel proxy on port %d via supervisor", BAZEL_PROXY_PORT)
+
+    # Add proxy as a supervisor service (foreground mode, no -d flag)
+    command = f"python3 {proxy_script} --listen-port {BAZEL_PROXY_PORT}"
+    if not supervisor_setup.add_service(
+        name="bazel-proxy",
+        command=command,
+        directory=str(BAZEL_PROXY_DIR),
+    ):
+        log.warning("Failed to add proxy to supervisor")
         return False
 
     # Wait for it to start listening

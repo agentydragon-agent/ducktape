@@ -59,34 +59,43 @@ It's used by session-start hooks which run before package installation. The hook
 
 ## Usage
 
-### As a daemon (typical usage)
+### Via Supervisor (recommended)
+
+The proxy runs under supervisor for automatic restarts and easy log access:
 
 ```bash
-# Start proxy in background (kills any existing proxy first)
-python -m claude_web_hooks.proxy -d
+# View proxy status
+supervisorctl -c ~/.config/supervisor/supervisord.conf status bazel-proxy
 
-# Kill existing proxy
-python -m claude_web_hooks.proxy -k
-```
+# Restart proxy (e.g., after credential refresh)
+supervisorctl -c ~/.config/supervisor/supervisord.conf restart bazel-proxy
 
-### CLI options
+# View proxy logs (stdout)
+tail -f ~/.config/supervisor/bazel-proxy.log
 
-```
---listen-host    Host to listen on (default: 127.0.0.1)
---listen-port    Port to listen on (default: 18081)
---state-dir      Directory for pidfile and log (default: ~/.cache/bazel-proxy/)
--d, --daemonize  Fork to background
--k, --kill       Kill existing proxy and exit
+# View proxy errors (stderr)
+tail -f ~/.config/supervisor/bazel-proxy.err.log
+
+# Stop proxy
+supervisorctl -c ~/.config/supervisor/supervisord.conf stop bazel-proxy
 ```
 
 ### From session-start hook
 
 The hook (`bazel_proxy_setup.py`) handles the full setup:
 
-1. Extracts the TLS inspection CA from the proxy via openssl
-2. Creates a Java truststore with the CA
-3. Starts this proxy at `127.0.0.1:18081`
-4. Writes `~/.bazelrc` with JVM properties for proxy and truststore
+1. Starts supervisord for process management
+2. Extracts the TLS inspection CA from the proxy via openssl
+3. Creates a Java truststore with the CA
+4. Registers the proxy with supervisor at `127.0.0.1:18081`
+5. Writes `~/.bazelrc` with JVM properties for proxy and truststore
+
+### Manual startup (for testing)
+
+```bash
+# Run in foreground
+python -m claude_web_hooks.proxy --listen-port 18081
+```
 
 ## How It Works
 
@@ -98,40 +107,50 @@ The hook (`bazel_proxy_setup.py`) handles the full setup:
 
 ## Lifecycle Management
 
-The proxy manages its own lifecycle:
+The proxy runs under supervisor:
 
-- **Pidfile**: Written to `~/.cache/bazel-proxy/proxy.pid`
-- **Logging**: When daemonized, logs to `~/.cache/bazel-proxy/proxy.log`
-- **Restart**: Starting the proxy automatically kills any existing instance
-- **Cleanup**: Pidfile is cleaned up on exit via atexit
+- **Process Manager**: supervisord (`~/.config/supervisor/supervisord.conf`)
+- **Service Config**: `~/.config/supervisor/conf.d/bazel-proxy.conf`
+- **Logging**: Stdout/stderr to `~/.config/supervisor/bazel-proxy.{log,err.log}`
+- **Auto-restart**: Supervisor automatically restarts on crashes
+- **Credentials**: Reads from `~/.cache/bazel-proxy/upstream_proxy` (reloaded on each connection)
 
 ## Verification
 
 After session start:
 
 ```bash
-# Proxy should be running
+# Verify supervisor is running the proxy
+supervisorctl -c ~/.config/supervisor/supervisord.conf status
+
+# Proxy should be accessible
 curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
 
 # Bazel should be able to access BCR
 bazel info
 
-# Check proxy log
-cat ~/.cache/bazel-proxy/proxy.log
+# Check proxy logs
+tail -20 ~/.config/supervisor/bazel-proxy.log
+tail -20 ~/.config/supervisor/bazel-proxy.err.log
 ```
 
 ## Files
 
-Runtime files (in `~/.cache/bazel-proxy/`):
+Supervisor files (in `~/.config/supervisor/`):
 
-- `proxy.pid` - Process ID file
-- `proxy.log` - Proxy output log (when daemonized)
+- `supervisord.conf` - Supervisor main configuration
+- `supervisord.{log,pid}` - Supervisor daemon state
+- `supervisor.sock` - Supervisor control socket
+- `conf.d/bazel-proxy.conf` - Proxy service configuration
+- `bazel-proxy.{log,err.log}` - Proxy stdout/stderr logs
 
-Setup files (created by `bazel_proxy_setup.py`):
+Setup files (in `~/.cache/bazel-proxy/`, created by `bazel_proxy_setup.py`):
 
+- `upstream_proxy` - Upstream proxy credentials (read on each connection)
 - `anthropic_ca.pem` - Extracted TLS inspection CA
+- `combined_ca.pem` - System CAs + Anthropic CA bundle
 - `cacerts.jks` - Java truststore with CA
-- `bazelrc` - Proxy startup options
+- `bazelrc` - Bazel proxy configuration (imported by ~/.bazelrc)
 
 ## Known Limitations
 
