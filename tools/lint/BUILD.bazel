@@ -11,9 +11,13 @@ package(default_visibility = ["//visibility:public"])
 # This reduces disk usage from O(n²) to O(n) for the mypy cache merge step.
 # See mypy_runner.py for details on the patch.
 #
-# deps includes mypy plugins:
+# deps includes mypy and its plugins:
 #   - pydantic: understands Field aliases, model validation
 #   - sqlalchemy: ORM type inference for mapped columns
+#
+# Type stubs and packages with py.typed are provided by:
+# 1. The types extension (@pip_types) for types-*/stubs packages
+# 2. The target's deps for packages with py.typed (via MYPYPATH from aspect)
 py_binary(
     name = "mypy_cli",
     srcs = ["mypy_runner.py"],
@@ -21,40 +25,8 @@ py_binary(
     python_version = "3.13",
     deps = [
         "@pypi//mypy",
-        # Mypy plugins
         "@pypi//pydantic",  # pydantic.mypy plugin
         "@pypi//sqlalchemy",  # sqlalchemy.ext.mypy.plugin
-        # Packages with inline stubs (py.typed)
-        "@pypi//click",
-        "@pypi//pytest",
-        "@pypi//httpx",
-        "@pypi//humanize",
-        "@pypi//platformdirs",
-        "@pypi//pyyaml",
-        "@pypi//tomli",
-        "@pypi//tomli_w",
-        "@pypi//openai",
-        "@pypi//anthropic",
-        "@pypi//anyio",
-        "@pypi//rich",
-        "@pypi//typer",
-        "@pypi//structlog",
-        "@pypi//requests",
-        "@pypi//fastapi",
-        "@pypi//uvicorn",
-        "@pypi//tenacity",
-        "@pypi//jinja2",
-        "@pypi//markdown",
-        "@pypi//markdownify",
-        "@pypi//mcp",
-        "@pypi//fastmcp",
-        "@pypi//ruff",
-        "@pypi//pygit2",
-        "@pypi//pytimeparse",
-        # Type stubs for packages without inline types
-        "@pypi//types_colorama",
-        "@pypi//types_markdown",
-        "@pypi//types_pyyaml",
     ],
 )
 

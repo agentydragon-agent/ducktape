@@ -58,8 +58,11 @@ py_library(
 py_test(
     name = "test_types",
     srcs = ["test_types.py"],
-    main = "test_types.py",
-    deps = [":test_support"],
+    deps = [
+        ":test_support",
+        "@pypi//pydantic",  # imports TypeAdapter, ValidationError
+        "@pypi//pytest",  # imports pytest
+    ],
 )
 
 ruff_test(

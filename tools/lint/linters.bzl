@@ -3,6 +3,7 @@
 load("@aspect_rules_lint//lint:eslint.bzl", "lint_eslint_aspect")
 load("@aspect_rules_lint//lint:lint_test.bzl", "lint_test")
 load("@aspect_rules_lint//lint:ruff.bzl", "lint_ruff_aspect")
+load("@pip_types//:types.bzl", "types")
 load("@rules_mypy//mypy:mypy.bzl", "mypy")
 
 # Ruff aspect for --config=lint builds
@@ -27,6 +28,7 @@ ruff = lint_ruff_aspect(
 mypy_aspect = mypy(
     mypy_cli = Label("//tools/lint:mypy_cli"),
     mypy_ini = Label("//:mypy.ini"),
+    types = types,
 )
 
 # ESLint aspect for JS/TS linting
