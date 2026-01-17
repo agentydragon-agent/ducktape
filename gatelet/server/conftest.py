@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
-import subprocess
-import tempfile
-import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -48,46 +44,32 @@ from gatelet.server.tests.utils import persist
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _postgres():
-    """Start and stop a temporary PostgreSQL server if needed."""
+def _build_database_url(driver: str = "asyncpg") -> str:
+    """Build DATABASE_URL from standard PG* environment variables.
 
-    # In CI (GitHub Actions, etc.), use the service container
-    # The service container provides PostgreSQL at localhost:5432
-    if os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
-        os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet"
-        yield
-        return
+    Expected env vars (set by CI workflow or local devenv):
+        PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE
 
-    # In Codex environment, set up a temporary PostgreSQL server
-    if os.environ.get("IS_CODEX_ENV") != "1":
-        yield
-        return
+    Args:
+        driver: SQLAlchemy driver suffix (e.g., "asyncpg" for async, empty for sync)
+    """
+    host = os.environ.get("PGHOST", "localhost")
+    port = os.environ.get("PGPORT", "5432")
+    user = os.environ.get("PGUSER", "postgres")
+    password = os.environ.get("PGPASSWORD", "postgres")
+    database = os.environ.get("PGDATABASE", "gatelet")
 
-    datadir = tempfile.mkdtemp(prefix="pgdata-")
-    subprocess.check_call(["chown", "-R", "postgres:postgres", datadir])
-    bin_dir = Path(shutil.which("initdb")).parent
-    initdb = bin_dir / "initdb"
-    pg_ctl = bin_dir / "pg_ctl"
-    createdb = bin_dir / "createdb"
-    port = "55432"
-    subprocess.check_call(["sudo", "-u", "postgres", str(initdb), "-D", datadir, "-A", "trust"])
-    subprocess.check_call(["sudo", "-u", "postgres", str(pg_ctl), "-D", datadir, "-w", "-o", f"-p {port}", "start"])
-    subprocess.check_call(["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"])
-    os.environ["DATABASE_URL"] = f"postgresql+asyncpg://postgres@localhost:{port}/gatelet"
-    time.sleep(0.5)
-    try:
-        yield
-    finally:
-        subprocess.check_call(["sudo", "-u", "postgres", str(pg_ctl), "-D", datadir, "-m", "fast", "stop"])
-        shutil.rmtree(datadir)
+    scheme = f"postgresql+{driver}" if driver else "postgresql"
+    if password:
+        return f"{scheme}://{user}:{password}@{host}:{port}/{database}"
+    return f"{scheme}://{user}@{host}:{port}/{database}"
 
 
 @pytest_asyncio.fixture
-async def db_engine(_postgres) -> AsyncGenerator[AsyncEngine]:
+async def db_engine() -> AsyncGenerator[AsyncEngine]:
     """Create a database engine and initialize the schema."""
 
-    database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres@localhost/postgres")
+    database_url = _build_database_url()
     engine = create_async_engine(database_url, future=True)
 
     async with engine.begin() as conn:
@@ -137,7 +119,7 @@ def test_settings(tmp_path: Path) -> Settings:
     This ensures tests don't depend on production config.
     """
     return Settings(
-        database=DatabaseSettings(dsn=os.environ.get("DATABASE_URL", "postgresql://test@localhost/test")),
+        database=DatabaseSettings(dsn=_build_database_url(driver="")),
         server=ServerSettings(log_file=str(tmp_path / "test.log")),
         auth=AuthSettings(
             key_in_url=KeyInUrlAuthSettings(enabled=True, key_valid_days=365),
