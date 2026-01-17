@@ -6,10 +6,13 @@ Provides a centralized process manager for:
 """
 
 import configparser
+import http.client
 import logging
 import shlex
+import socket
 import subprocess
 import time
+import xmlrpc.client
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -19,6 +22,40 @@ SUPERVISOR_CONF = SUPERVISOR_DIR / "supervisord.conf"
 SUPERVISOR_SOCK = SUPERVISOR_DIR / "supervisor.sock"
 SUPERVISOR_LOG = SUPERVISOR_DIR / "supervisord.log"
 SUPERVISOR_PIDFILE = SUPERVISOR_DIR / "supervisord.pid"
+
+
+class _UnixStreamHTTPConnection(http.client.HTTPConnection):
+    """HTTP connection over Unix domain socket."""
+
+    def connect(self) -> None:
+        """Connect to Unix socket instead of TCP."""
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(self.host)
+
+
+class _UnixStreamTransport(xmlrpc.client.Transport):
+    """XML-RPC transport over Unix domain socket."""
+
+    def __init__(self, socket_path: str) -> None:
+        super().__init__()
+        self._socket_path = socket_path
+
+    def make_connection(self, host: object) -> _UnixStreamHTTPConnection:
+        """Create Unix socket connection."""
+        return _UnixStreamHTTPConnection(self._socket_path)
+
+
+def _get_supervisor_client() -> xmlrpc.client.ServerProxy:
+    """Get XML-RPC client for supervisor.
+
+    Returns client connected to supervisor's Unix socket.
+    Raises ConnectionError if socket doesn't exist.
+    """
+    if not SUPERVISOR_SOCK.exists():
+        raise ConnectionError(f"Supervisor socket not found: {SUPERVISOR_SOCK}")
+
+    transport = _UnixStreamTransport(str(SUPERVISOR_SOCK))
+    return xmlrpc.client.ServerProxy("http://localhost", transport=transport)
 
 
 def _write_supervisor_config() -> None:
@@ -54,14 +91,11 @@ def is_running() -> bool:
         return False
 
     try:
-        result = subprocess.run(
-            ["supervisorctl", "-c", str(SUPERVISOR_CONF), "status"],
-            capture_output=True,
-            timeout=2,
-            check=False,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        client = _get_supervisor_client()
+        # Simple API call to check if supervisor is responsive
+        client.supervisor.getState()
+        return True
+    except (ConnectionError, OSError, xmlrpc.client.Fault):
         return False
 
 
@@ -187,32 +221,48 @@ def add_service(name: str, command: str, directory: str | None = None, environme
         config.write(f)
     log.info("Wrote service config: %s", service_conf)
 
-    # Reload supervisor config
-    result = subprocess.run(
-        ["supervisorctl", "-c", str(SUPERVISOR_CONF), "reread"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-        check=False,
-    )
-    if result.returncode != 0:
-        log.warning("Failed to reread config: %s", result.stderr)
+    # Reload supervisor config via XML-RPC
+    try:
+        client = _get_supervisor_client()
+        # Reread config files
+        result = client.supervisor.reloadConfig()
+        # result is ([added], [changed], [removed])
+        log.info("Reloaded config: added=%s, changed=%s, removed=%s", *result)
+
+        # Add/update the service
+        client.supervisor.addProcessGroup(name)
+        log.info("Added and started service: %s", name)
+        return True
+    except xmlrpc.client.Fault as e:
+        # addProcessGroup raises fault if already exists, which is fine
+        if "ALREADY_ADDED" in str(e):
+            log.info("Service %s already running", name)
+            return True
+        log.warning("Failed to add service %s: %s", name, e)
+        return False
+    except (ConnectionError, OSError) as e:
+        log.warning("Failed to communicate with supervisor: %s", e)
         return False
 
-    # Add and start the service
-    result = subprocess.run(
-        ["supervisorctl", "-c", str(SUPERVISOR_CONF), "update"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-        check=False,
-    )
-    if result.returncode != 0:
-        log.warning("Failed to update services: %s", result.stderr)
+
+def is_service_running(service_name: str) -> bool:
+    """Check if a specific service is running under supervisor.
+
+    Args:
+        service_name: Name of the service to check
+
+    Returns:
+        True if service is running, False otherwise
+    """
+    if not is_running():
         return False
 
-    log.info("Added and started service: %s", name)
-    return True
+    try:
+        client = _get_supervisor_client()
+        info = client.supervisor.getProcessInfo(service_name)
+        return info["statename"] == "RUNNING"
+    except (ConnectionError, OSError, xmlrpc.client.Fault):
+        return False
 
 
 def get_status() -> str:
@@ -221,20 +271,13 @@ def get_status() -> str:
         return "not running"
 
     try:
-        result = subprocess.run(
-            ["supervisorctl", "-c", str(SUPERVISOR_CONF), "status"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0:
-            # Count running services
-            lines = result.stdout.strip().split("\n")
-            running = sum(1 for line in lines if "RUNNING" in line)
-            return f"running ({running} services)"
-        return "error"
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        client = _get_supervisor_client()
+        # Get all process info
+        all_info = client.supervisor.getAllProcessInfo()
+        # Count running services
+        running = sum(1 for info in all_info if info["statename"] == "RUNNING")
+        return f"running ({running} services)"
+    except (ConnectionError, OSError, xmlrpc.client.Fault):
         return "error"
 
 

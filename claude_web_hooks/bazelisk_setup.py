@@ -139,7 +139,6 @@ def get_env_script(
         "PATH": f"{WRAPPER_DIR}:$PATH",
         "BAZELISK_PATH": str(BAZELISK_PATH),
         "BAZEL_SUPERVISOR_SOCK": str(SUPERVISOR_SOCK),
-        "BAZEL_SUPERVISOR_CONF": str(SUPERVISOR_CONF),
         "BAZEL_LOCAL_PROXY": local_proxy,
         "DUCKTAPE_REPO_ROOT": str(repo_root),
         "DUCKTAPE_SESSION_START_HOOK_TS": hook_timestamp.isoformat(),

@@ -5,7 +5,6 @@ Reads configuration from environment variables set by bazelisk_setup.py.
 """
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -23,7 +22,6 @@ def require_env(name: str) -> str:
 REPO_PATH = require_env("DUCKTAPE_REPO_ROOT")
 BAZELISK_PATH = require_env("BAZELISK_PATH")
 BAZEL_SUPERVISOR_SOCK = require_env("BAZEL_SUPERVISOR_SOCK")
-BAZEL_SUPERVISOR_CONF = require_env("BAZEL_SUPERVISOR_CONF")
 BAZEL_LOCAL_PROXY = require_env("BAZEL_LOCAL_PROXY")
 
 
@@ -35,16 +33,13 @@ def check_supervisor() -> bool:
 def check_proxy() -> bool:
     """Check if bazel-proxy service is running under supervisor."""
     try:
-        result = subprocess.run(
-            ["supervisorctl", "-c", BAZEL_SUPERVISOR_CONF, "status", "bazel-proxy"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-        return result.returncode == 0 and "RUNNING" in result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+        # Import here to avoid dependency at module load time
+        from claude_web_hooks.supervisor_setup import is_service_running
+
+        return is_service_running("bazel-proxy")
+    except ImportError:
+        # Fallback: just check if socket exists
+        return check_supervisor()
 
 
 def print_error(supervisor_running: bool, proxy_running: bool) -> None:
@@ -52,24 +47,12 @@ def print_error(supervisor_running: bool, proxy_running: bool) -> None:
     print("✓ supervisord running" if supervisor_running else "✗ supervisord not running", file=sys.stderr)
     print("✓ bazel-proxy running" if proxy_running else "✗ bazel-proxy not running", file=sys.stderr)
     print("", file=sys.stderr)
-
-    if not supervisor_running:
-        print("To start:", file=sys.stderr)
-        print(f"  cd {REPO_PATH}", file=sys.stderr)
-        print("  python3 -m claude_web_hooks.session_start", file=sys.stderr)
-        print("", file=sys.stderr)
-        print(f"Documentation: {REPO_PATH}/claude_web_hooks/README.md", file=sys.stderr)
-        print("Setup log: ~/.cache/claude-code-web/session-start.log", file=sys.stderr)
-    else:
-        print("To start proxy:", file=sys.stderr)
-        print(f"  cd {REPO_PATH}", file=sys.stderr)
-        print("  python3 -m claude_web_hooks.session_start", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Or restart service:", file=sys.stderr)
-        print(f"  supervisorctl -c {BAZEL_SUPERVISOR_CONF} start bazel-proxy", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Logs: ~/.config/supervisor/bazel-proxy.{log,err.log}", file=sys.stderr)
-        print(f"Documentation: {REPO_PATH}/claude_web_hooks/README.md", file=sys.stderr)
+    print("To start/restart:", file=sys.stderr)
+    print(f"  cd {REPO_PATH}", file=sys.stderr)
+    print("  python3 -m claude_web_hooks.session_start", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Logs: ~/.config/supervisor/bazel-proxy.{log,err.log}", file=sys.stderr)
+    print(f"Documentation: {REPO_PATH}/claude_web_hooks/README.md", file=sys.stderr)
 
 
 def main() -> int:
