@@ -1,0 +1,92 @@
+# Bazel Rust lint reusable workflow
+#
+# Runs Rust linting via Bazel aspects:
+# - Rust: clippy
+name: Bazel Rust Lint
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: "Bazel targets to lint (default: //finance/...)"
+        required: false
+        type: string
+        default: "//finance/..."
+      enable_profiling:
+        description: "Enable Bazel profiling (generates downloadable artifacts)"
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Bazel targets to lint (default: //finance/...)"
+        required: false
+        type: string
+        default: "//finance/..."
+      enable_profiling:
+        description: "Enable Bazel profiling (generates downloadable artifacts)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  rust-lint:
+    name: Rust Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: true
+
+      - name: Setup Bazelisk
+        uses: bazelbuild/setup-bazelisk@v3
+
+      - name: Restore Bazel cache
+        id: cache-bazel-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: bazel-${{ runner.os }}-rust-lint-${{ hashFiles('MODULE.bazel', 'Cargo.toml', 'Cargo.lock') }}
+          restore-keys: bazel-${{ runner.os }}-
+
+      - name: Rust lint
+        run: |
+          PROFILE_FLAG=""
+          if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
+            PROFILE_FLAG="--config=ci-profile"
+          fi
+          bazel build --keep_going --config=rust-check $PROFILE_FLAG ${{ inputs.targets }}
+
+      - name: Upload Bazel profile
+        if: inputs.enable_profiling && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-profile-rust-lint-${{ github.run_id }}
+          path: |
+            bazel-profile.gz
+            execution-log.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Save Bazel cache
+        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
