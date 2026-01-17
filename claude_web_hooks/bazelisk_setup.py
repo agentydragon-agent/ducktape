@@ -91,20 +91,15 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
     bazelisk at ~/.cache/bazel-proxy/bazelisk.
     Also creates a bazelisk symlink for pre-commit hooks.
     Includes health checks for supervisor and proxy service.
+
+    The wrapper reads configuration from environment variables (set via get_env_script).
     """
     _ = repo_root  # No longer used - proxy config is handled by module extension
     WRAPPER_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Read wrapper template and substitute values
-    template_path = Path(__file__).parent / "bazel_wrapper.sh"
-    template = template_path.read_text()
-
-    wrapper_content = template.replace("{{SUPERVISOR_SOCK}}", str(Path.home() / ".config" / "supervisor" / "supervisor.sock"))
-    wrapper_content = wrapper_content.replace("{{SUPERVISOR_CONF}}", str(Path.home() / ".config" / "supervisor" / "supervisord.conf"))
-    wrapper_content = wrapper_content.replace("{{LOCAL_PROXY}}", f"http://localhost:{proxy_port}")
-    wrapper_content = wrapper_content.replace("{{BAZELISK_PATH}}", str(BAZELISK_PATH))
-
-    WRAPPER_PATH.write_text(wrapper_content)
+    # Copy wrapper script as-is (no template substitution)
+    wrapper_source = Path(__file__).parent / "bazel_wrapper.sh"
+    WRAPPER_PATH.write_text(wrapper_source.read_text())
     WRAPPER_PATH.chmod(0o755)
     log.info("Installed bazel wrapper at %s with health checks", WRAPPER_PATH)
 
@@ -118,14 +113,22 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
     return WRAPPER_PATH
 
 
-def get_env_script() -> str:
-    """Get bash script fragment to add wrapper dir to PATH.
+def get_env_script(proxy_port: int = 18081) -> str:
+    """Get bash script fragment to add wrapper dir to PATH and set config env vars.
 
     This should be appended to CLAUDE_ENV_FILE.
     """
+    supervisor_sock = Path.home() / ".config" / "supervisor" / "supervisor.sock"
+    supervisor_conf = Path.home() / ".config" / "supervisor" / "supervisord.conf"
+    local_proxy = f"http://localhost:{proxy_port}"
+
     return f"""\
 # Bazel wrapper (sets proxy for TLS-inspecting proxy)
 [ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"
+export BAZELISK_PATH="{BAZELISK_PATH}"
+export BAZEL_SUPERVISOR_SOCK="{supervisor_sock}"
+export BAZEL_SUPERVISOR_CONF="{supervisor_conf}"
+export BAZEL_LOCAL_PROXY="{local_proxy}"
 """
 
 
