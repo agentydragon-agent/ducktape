@@ -9,11 +9,22 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_PATH = os.environ.get("DUCKTAPE_REPO_ROOT", "~/code/ducktape")
-BAZELISK_PATH = os.environ.get("BAZELISK_PATH", "")
-BAZEL_SUPERVISOR_SOCK = os.environ.get("BAZEL_SUPERVISOR_SOCK", "")
-BAZEL_SUPERVISOR_CONF = os.environ.get("BAZEL_SUPERVISOR_CONF", "")
-BAZEL_LOCAL_PROXY = os.environ.get("BAZEL_LOCAL_PROXY", "")
+
+def require_env(name: str) -> str:
+    """Get required environment variable or exit with error."""
+    value = os.environ.get(name)
+    if not value:
+        print(f"ERROR: {name} not set", file=sys.stderr)
+        print("Run: python3 -m claude_web_hooks.session_start", file=sys.stderr)
+        sys.exit(1)
+    return value
+
+
+REPO_PATH = require_env("DUCKTAPE_REPO_ROOT")
+BAZELISK_PATH = require_env("BAZELISK_PATH")
+BAZEL_SUPERVISOR_SOCK = require_env("BAZEL_SUPERVISOR_SOCK")
+BAZEL_SUPERVISOR_CONF = require_env("BAZEL_SUPERVISOR_CONF")
+BAZEL_LOCAL_PROXY = require_env("BAZEL_LOCAL_PROXY")
 
 
 def check_supervisor() -> bool:

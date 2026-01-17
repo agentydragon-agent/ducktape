@@ -389,7 +389,7 @@ def main() -> int:
 
     # Detect project directory
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
-    project_dir: Path | None = None
+    project_dir: Path
     if project_dir_str:
         verbose.info("CLAUDE_PROJECT_DIR provided: %s", project_dir_str)
         project_dir = Path(project_dir_str)
@@ -401,7 +401,10 @@ def main() -> int:
             os.environ["CLAUDE_PROJECT_DIR"] = str(project_dir)
             log.info("Project: %s", project_dir)
         else:
-            log.error("Cannot detect project root (no .git)")
+            # Fatal: cannot detect project directory
+            log.error("Cannot detect project root (no .git, CLAUDE_PROJECT_DIR not set)")
+            log.error("Session setup cannot continue without project directory")
+            sys.exit(1)
 
     # Install Bazelisk
     bazelisk_setup.install_bazelisk()
@@ -412,40 +415,39 @@ def main() -> int:
     # Install bazel wrapper
     bazelisk_setup.install_wrapper()
 
-    if project_dir:
-        install_git_precommit_hook(project_dir, verbose)  # Detailed logging to file
+    install_git_precommit_hook(project_dir, verbose)  # Detailed logging to file
 
-        # Install cluster tools if cluster/ directory exists (for pre-commit hooks)
-        cluster_dir = project_dir / "cluster"
-        if cluster_dir.is_dir():
-            verbose.info("Installing cluster tools for pre-commit hooks...")
-            results = cluster_tools.install_all()
-            for tool, success in results.items():
-                if success:
-                    verbose.info("  %s: installed", tool)
-                else:
-                    verbose.warning("  %s: failed to install", tool)
+    # Install cluster tools if cluster/ directory exists (for pre-commit hooks)
+    cluster_dir = project_dir / "cluster"
+    if cluster_dir.is_dir():
+        verbose.info("Installing cluster tools for pre-commit hooks...")
+        results = cluster_tools.install_all()
+        for tool, success in results.items():
+            if success:
+                verbose.info("  %s: installed", tool)
+            else:
+                verbose.warning("  %s: failed to install", tool)
 
-        # Install nix + alejandra for nix file formatting (pre-commit hook)
-        # TODO: Switch to nixfmt (RFC style) once it has better pre-built binary support
-        nix_files_exist = any(project_dir.rglob("*.nix"))
-        if nix_files_exist:
-            verbose.info("Installing nix + alejandra for .nix formatting...")
-            try:
-                nix_store_bin = nix_setup.install_nix(project_dir, run_streaming)
-                nix_setup.install_tools(nix_store_bin, ["alejandra"], run_streaming)
-                verbose.info("alejandra installed successfully")
-            except Exception as e:
-                verbose.warning("Failed to install nix/alejandra: %s", e)
+    # Install nix + alejandra for nix file formatting (pre-commit hook)
+    # TODO: Switch to nixfmt (RFC style) once it has better pre-built binary support
+    nix_files_exist = any(project_dir.rglob("*.nix"))
+    if nix_files_exist:
+        verbose.info("Installing nix + alejandra for .nix formatting...")
+        try:
+            nix_store_bin = nix_setup.install_nix(project_dir, run_streaming)
+            nix_setup.install_tools(nix_store_bin, ["alejandra"], run_streaming)
+            verbose.info("alejandra installed successfully")
+        except Exception as e:
+            verbose.warning("Failed to install nix/alejandra: %s", e)
 
-        # Configure podman and props environment if props directory exists
-        props_dir = project_dir / "props"
-        if props_dir.is_dir():
-            verbose.info("Configuring podman and props environment for e2e testing...")
-            setup_podman_storage(verbose)
-            setup_props_environment(verbose)
-            # Emit usage guidance visible to agent
-            emit_podman_guidance()
+    # Configure podman and props environment if props directory exists
+    props_dir = project_dir / "props"
+    if props_dir.is_dir():
+        verbose.info("Configuring podman and props environment for e2e testing...")
+        setup_podman_storage(verbose)
+        setup_props_environment(verbose)
+        # Emit usage guidance visible to agent
+        emit_podman_guidance()
 
     # Export debug timestamp
     hook_timestamp = datetime.now()
@@ -468,12 +470,9 @@ def main() -> int:
         nix_profile_bin = Path.home() / ".nix-profile" / "bin"
         nix_bin = nix_profile_bin if nix_profile_bin.exists() else None
 
-        # Use project_dir or fallback to ~/code/ducktape
-        repo_root_for_env = project_dir if project_dir else Path.home() / "code" / "ducktape"
-
         env_content = bazelisk_setup.get_env_script(
             proxy_port=bazel_proxy_setup.BAZEL_PROXY_PORT,
-            repo_root=repo_root_for_env,
+            repo_root=project_dir,
             hook_timestamp=hook_timestamp,
             combined_ca=combined_ca,
             nix_profile_bin=nix_bin,
@@ -520,10 +519,10 @@ def main() -> int:
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), bazel_proxy_setup.get_status(), node_ca_status
     )
     # Show cluster tools status if cluster/ exists
-    if project_dir and (project_dir / "cluster").is_dir():
+    if (project_dir / "cluster").is_dir():
         log.info("Cluster tools: %s", cluster_tools.get_status())
     # Show nix tools status if .nix files exist
-    if project_dir and any(project_dir.rglob("*.nix")):
+    if any(project_dir.rglob("*.nix")):
         log.info("Nix tools: %s", get_nix_tools_status())
 
     # Emit supervisor usage guidance if proxy is running
