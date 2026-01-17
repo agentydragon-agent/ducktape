@@ -1,4 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
@@ -92,6 +93,20 @@ platform(
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
     ],
+)
+
+# Gazelle Python configuration
+# Using Gazelle without manifest for now due to system package build issues
+# (pygobject, dbus-python, pycairo require system libraries)
+# Gazelle will still work but won't auto-resolve these packages - use manual deps or ignore directives
+gazelle_binary(
+    name = "gazelle_python_binary",
+    languages = ["@rules_python_gazelle_plugin//python"],
+)
+
+gazelle(
+    name = "gazelle",
+    gazelle = ":gazelle_python_binary",
 )
 
 # Format Bazel files
