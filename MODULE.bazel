@@ -14,6 +14,11 @@ bazel_dep(name = "aspect_rules_lint", version = "2.0.0-rc0")
 bazel_dep(name = "rules_multirun", version = "0.9.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.3.0")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
+git_override(
+    module_name = "rules_mypy",
+    commit = "980fafe9bcc08d65fae0879aba8e6d42a8abca21",
+    remote = "https://github.com/agentydragon/rules_mypy.git",
+)
 
 # Terraform/OpenTofu validation (cluster/)
 bazel_dep(name = "rules_tf", version = "0.0.10")
