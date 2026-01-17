@@ -239,6 +239,17 @@ build --action_env=HTTPS_PROXY={local_proxy}
 build --action_env=HTTP_PROXY={local_proxy}
 build --action_env=https_proxy={local_proxy}
 build --action_env=http_proxy={local_proxy}
+
+# Pass proxy to repository rules (for Go modules in gazelle, etc.)
+# GONOPROXY=* forces all Go module downloads through HTTP proxy
+# Explicitly NOT passing NO_PROXY since it excludes *.googleapis.com
+common --repo_env=HTTP_PROXY
+common --repo_env=HTTPS_PROXY
+common --repo_env=http_proxy
+common --repo_env=https_proxy
+common --repo_env=GONOPROXY=*
+common --repo_env=GOPRIVATE=
+common --repo_env=GOSUMDB=sum.golang.org
 {
         ""
         if not BAZEL_COMBINED_CA.exists()
