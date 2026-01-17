@@ -16,6 +16,7 @@ import platform
 import stat
 import subprocess
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from claude_web_hooks.supervisor_setup import SUPERVISOR_CONF, SUPERVISOR_DIR, SUPERVISOR_SOCK
@@ -86,7 +87,7 @@ def install_bazelisk() -> Path:
     return BAZELISK_PATH
 
 
-def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> Path:
+def install_wrapper() -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
     The wrapper is in ~/.cache/bazel-proxy/bin/bazel and calls the real
@@ -96,11 +97,10 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
 
     The wrapper reads configuration from environment variables (set via get_env_script).
     """
-    _ = repo_root  # No longer used - proxy config is handled by module extension
     WRAPPER_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Copy wrapper script as-is (no template substitution)
-    wrapper_source = Path(__file__).parent / "bazel_wrapper.sh"
+    # Copy Python wrapper script as-is (no template substitution)
+    wrapper_source = Path(__file__).parent / "bazel_wrapper.py"
     WRAPPER_PATH.write_text(wrapper_source.read_text())
     WRAPPER_PATH.chmod(0o755)
     log.info("Installed bazel wrapper at %s with health checks", WRAPPER_PATH)
@@ -116,9 +116,9 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
 
 
 def get_env_script(
-    proxy_port: int = 18081,
-    repo_root: Path | None = None,
-    hook_timestamp: str | None = None,
+    proxy_port: int,
+    repo_root: Path,
+    hook_timestamp: datetime,
     combined_ca: Path | None = None,
     nix_profile_bin: Path | None = None,
 ) -> str:
@@ -127,11 +127,11 @@ def get_env_script(
     This should be appended to CLAUDE_ENV_FILE.
 
     Args:
-        proxy_port: Port for the local Bazel proxy
-        repo_root: Path to the repository root (for error messages)
-        hook_timestamp: Session start hook timestamp
-        combined_ca: Path to combined CA bundle for Node.js
-        nix_profile_bin: Path to nix profile bin directory
+        proxy_port: Port for the local Bazel proxy (required)
+        repo_root: Path to the repository root for error messages (required)
+        hook_timestamp: Session start hook timestamp (required)
+        combined_ca: Path to combined CA bundle for Node.js (optional)
+        nix_profile_bin: Path to nix profile bin directory (optional)
     """
     local_proxy = f"http://localhost:{proxy_port}"
 
@@ -141,12 +141,10 @@ def get_env_script(
         "BAZEL_SUPERVISOR_SOCK": str(SUPERVISOR_SOCK),
         "BAZEL_SUPERVISOR_CONF": str(SUPERVISOR_CONF),
         "BAZEL_LOCAL_PROXY": local_proxy,
+        "DUCKTAPE_REPO_ROOT": str(repo_root),
+        "DUCKTAPE_SESSION_START_HOOK_TS": hook_timestamp.isoformat(),
     }
 
-    if repo_root:
-        exports["DUCKTAPE_REPO_ROOT"] = str(repo_root)
-    if hook_timestamp:
-        exports["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp
     if combined_ca:
         exports["NODE_EXTRA_CA_CERTS"] = str(combined_ca)
 

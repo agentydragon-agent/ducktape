@@ -409,8 +409,10 @@ def main() -> int:
     # Set up Bazel proxy
     bazel_proxy_setup.setup_bazel_proxy()
 
+    # Install bazel wrapper
+    bazelisk_setup.install_wrapper()
+
     if project_dir:
-        bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=project_dir)
         install_git_precommit_hook(project_dir, verbose)  # Detailed logging to file
 
         # Install cluster tools if cluster/ directory exists (for pre-commit hooks)
@@ -444,15 +446,14 @@ def main() -> int:
             setup_props_environment(verbose)
             # Emit usage guidance visible to agent
             emit_podman_guidance()
-    else:
-        bazelisk_setup.install_wrapper(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=None)
 
     # Export debug timestamp
-    hook_timestamp = datetime.now().isoformat()
-    os.environ["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp
+    hook_timestamp = datetime.now()
+    hook_timestamp_str = hook_timestamp.isoformat()
+    os.environ["DUCKTAPE_SESSION_START_HOOK_TS"] = hook_timestamp_str
     timestamp_file = Path.home() / ".ducktape_session_hook_last_run"
-    timestamp_file.write_text(f"{hook_timestamp}\n")
-    verbose.info("Session start hook timestamp: %s", hook_timestamp)
+    timestamp_file.write_text(f"{hook_timestamp_str}\n")
+    verbose.info("Session start hook timestamp: %s", hook_timestamp_str)
 
     # Configure PATH for bash sessions
     verbose.info("Configuring bazel availability for bash sessions...")
@@ -467,9 +468,12 @@ def main() -> int:
         nix_profile_bin = Path.home() / ".nix-profile" / "bin"
         nix_bin = nix_profile_bin if nix_profile_bin.exists() else None
 
+        # Use project_dir or fallback to ~/code/ducktape
+        repo_root_for_env = project_dir if project_dir else Path.home() / "code" / "ducktape"
+
         env_content = bazelisk_setup.get_env_script(
             proxy_port=bazel_proxy_setup.BAZEL_PROXY_PORT,
-            repo_root=project_dir,
+            repo_root=repo_root_for_env,
             hook_timestamp=hook_timestamp,
             combined_ca=combined_ca,
             nix_profile_bin=nix_bin,
