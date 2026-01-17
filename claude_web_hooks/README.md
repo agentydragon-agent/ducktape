@@ -38,7 +38,7 @@ A local proxy that adds authentication headers for upstream TLS-inspecting proxi
 
 ### The Solution
 
-This local proxy acts as an authentication intermediary:
+This local proxy acts as an authentication intermediary. See <proxy-alternatives.md> for detailed analysis of why alternatives (JVM settings, credential helpers, etc.) don't work.
 
 - Accepts unauthenticated CONNECT requests from Bazel on `localhost:18081`
 - Forwards them to the upstream proxy with proper `Proxy-Authorization: Basic` headers
