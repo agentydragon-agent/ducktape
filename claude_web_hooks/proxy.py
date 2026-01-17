@@ -4,7 +4,7 @@
 Used by Bazel to access BCR through Claude Code web's proxy infrastructure.
 Reads upstream proxy configuration from https_proxy environment variable.
 
-Handles its own lifecycle: logging, pidfile, daemonization.
+Runs in foreground - lifecycle managed by supervisor.
 
 IMPORTANT: This module must not import any non-stdlib packages.
 """
@@ -13,17 +13,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import atexit
 import base64
-import fcntl
 import logging
 import os
-import signal
 import sys
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
 from urllib.parse import ParseResult, urlparse
 
 DEFAULT_STATE_DIR = Path.home() / ".cache" / "bazel-proxy"
@@ -42,118 +37,13 @@ class CredentialCache:
     mtime: float = 0
 
 
-@dataclass
-class ProxyState:
-    """Mutable state for the proxy singleton."""
-
-    lock_file: IO[bytes] | None = None
-    pid_file: Path | None = None
-    credentials: CredentialCache = field(default_factory=CredentialCache)
-
-
-def setup_logging(log_file: Path | None) -> None:
-    """Configure logging to file and/or stderr."""
-    handlers: list[logging.Handler] = []
-
-    if log_file:
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(log_file, mode="w"))
-    else:
-        handlers.append(logging.StreamHandler(sys.stderr))
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=handlers)
-
-
-def acquire_singleton_lock(pid_file: Path, state: ProxyState) -> bool:
-    """Acquire exclusive lock on pidfile, making this the singleton instance.
-
-    Uses flock() which is atomic and automatically released on process exit.
-    Returns True if lock acquired, False if another instance is running.
-    """
-    pid_file.parent.mkdir(parents=True, exist_ok=True)
-
-    # Open file for read/write (create if needed)
-    lock_file = pid_file.open("w+b")
-
-    try:
-        # Try to acquire exclusive lock (non-blocking)
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        # Another instance holds the lock
-        lock_file.close()
-        return False
-
-    # We have the lock - write our PID
-    lock_file.truncate(0)
-    lock_file.seek(0)
-    lock_file.write(f"{os.getpid()}\n".encode())
-    lock_file.flush()
-
-    # Store in state for cleanup
-    state.lock_file = lock_file
-    state.pid_file = pid_file
-
-    # Register cleanup (though lock releases automatically on exit)
-    def cleanup() -> None:
-        if state.lock_file is not None:
-            try:
-                state.lock_file.close()
-                if state.pid_file:
-                    state.pid_file.unlink(missing_ok=True)
-            except OSError:
-                # Cleanup is best-effort - process is exiting anyway
-                pass
-
-    atexit.register(cleanup)
-    return True
-
-
-def kill_existing(pid_file: Path) -> bool:
-    """Kill existing proxy if running.
-
-    Returns True if a process was killed, False otherwise.
-    Uses the pidfile to find the process, then waits for it to die.
-    """
-    if not pid_file.exists():
-        return False
-
-    try:
-        pid = int(pid_file.read_text().strip())
-    except (ValueError, OSError):
-        return False
-
-    # Check if process exists
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        # Process already dead, stale pidfile
-        return False
-    except PermissionError:
-        # Process exists but we can't signal it
-        log.warning("Cannot kill pid %d: permission denied", pid)
-        return False
-
-    log.info("Killing existing proxy (pid %d)", pid)
-    os.kill(pid, signal.SIGTERM)
-
-    # Wait for process to die (up to 5 seconds)
-    for _ in range(50):
-        try:
-            os.kill(pid, 0)
-            time.sleep(0.1)
-        except ProcessLookupError:
-            return True
-
-    # Still alive, force kill
-    log.warning("Process %d did not respond to SIGTERM, sending SIGKILL", pid)
-    try:
-        os.kill(pid, signal.SIGKILL)
-        time.sleep(0.1)
-    except ProcessLookupError:
-        # Process died between check and SIGKILL - mission accomplished
-        pass
-
-    return True
+def setup_logging() -> None:
+    """Configure logging to stdout (captured by supervisor)."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
 
 
 def parse_proxy_url(proxy_url: str) -> ParseResult:
@@ -351,69 +241,19 @@ async def run_server(host: str, port: int, state_dir: Path, cache: CredentialCac
         await server.serve_forever()
 
 
-def daemonize() -> None:
-    """Fork to background using double-fork with proper fd redirection."""
-    if os.fork() > 0:
-        sys.exit(0)
-    os.setsid()
-    if os.fork() > 0:
-        sys.exit(0)
-
-    # Redirect stdin/stdout/stderr to /dev/null using dup2
-    null_fd = os.open(os.devnull, os.O_RDWR)
-    os.dup2(null_fd, 0)  # stdin
-    os.dup2(null_fd, 1)  # stdout
-    os.dup2(null_fd, 2)  # stderr
-    os.close(null_fd)
-
-
 def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Local proxy for Bazel BCR access")
-    parser.add_argument("--listen-host", default="127.0.0.1")
-    parser.add_argument("--listen-port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR, help="Directory for pidfile and log")
-    parser.add_argument("--daemonize", "-d", action="store_true", help="Fork to background")
-    parser.add_argument("--kill", "-k", action="store_true", help="Kill existing proxy and exit")
-    parser.add_argument(
-        "--replace", "-r", action="store_true", help="Kill existing proxy before starting (default behavior)"
-    )
+    """Main entry point - runs in foreground under supervisor."""
+    parser = argparse.ArgumentParser(description="Local proxy for Bazel BCR access (managed by supervisor)")
+    parser.add_argument("--listen-host", default="127.0.0.1", help="Host to listen on")
+    parser.add_argument("--listen-port", type=int, default=DEFAULT_PORT, help="Port to listen on")
+    parser.add_argument("--state-dir", type=Path, default=DEFAULT_STATE_DIR, help="Directory for credentials file")
     args = parser.parse_args()
 
-    pid_file = args.state_dir / "proxy.pid"
-    log_file = args.state_dir / "proxy.log" if args.daemonize else None
-
-    # Handle --kill
-    if args.kill:
-        setup_logging(None)
-        kill_existing(pid_file)
-        return 0
-
-    # Daemonize if requested (before logging/lock so they happen in child)
-    if args.daemonize:
-        daemonize()
-
-    setup_logging(log_file)
-
-    # Create mutable state
-    state = ProxyState()
-
-    # Try to acquire singleton lock
-    if not acquire_singleton_lock(pid_file, state):
-        # Another instance is running
-        if args.replace:
-            # Kill it and retry
-            kill_existing(pid_file)
-            time.sleep(0.2)  # Give the lock a moment to release
-            if not acquire_singleton_lock(pid_file, state):
-                log.error("Failed to acquire lock after killing existing proxy")
-                return 1
-        else:
-            log.info("Another proxy instance is already running (use -r to replace)")
-            return 0
+    setup_logging()
+    cache = CredentialCache()
 
     try:
-        asyncio.run(run_server(args.listen_host, args.listen_port, args.state_dir, state.credentials))
+        asyncio.run(run_server(args.listen_host, args.listen_port, args.state_dir, cache))
     except KeyboardInterrupt:
         log.info("Shutting down")
     return 0
