@@ -113,10 +113,14 @@ def install_wrapper(proxy_port: int = 18081, repo_root: Path | None = None) -> P
     return WRAPPER_PATH
 
 
-def get_env_script(proxy_port: int = 18081) -> str:
+def get_env_script(proxy_port: int = 18081, repo_root: Path | None = None) -> str:
     """Get bash script fragment to add wrapper dir to PATH and set config env vars.
 
     This should be appended to CLAUDE_ENV_FILE.
+
+    Args:
+        proxy_port: Port for the local Bazel proxy
+        repo_root: Path to the repository root (for error messages)
     """
     supervisor_sock = Path.home() / ".config" / "supervisor" / "supervisor.sock"
     supervisor_conf = Path.home() / ".config" / "supervisor" / "supervisord.conf"
@@ -129,6 +133,9 @@ def get_env_script(proxy_port: int = 18081) -> str:
         "BAZEL_SUPERVISOR_CONF": str(supervisor_conf),
         "BAZEL_LOCAL_PROXY": local_proxy,
     }
+
+    if repo_root:
+        exports["DUCKTAPE_REPO_ROOT"] = str(repo_root)
 
     lines = ["# Bazel wrapper (sets proxy for TLS-inspecting proxy)"]
     lines.append(f'[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"')

@@ -461,7 +461,8 @@ def main() -> int:
         env_path = Path(env_file)
         existing_content = env_path.read_text() if env_path.exists() else ""
 
-        env_content = bazelisk_setup.get_env_script(bazel_proxy_setup.BAZEL_PROXY_PORT)
+        repo_root = Path(project_dir_str) if project_dir_str else None
+        env_content = bazelisk_setup.get_env_script(bazel_proxy_setup.BAZEL_PROXY_PORT, repo_root=repo_root)
         env_content += f'\nexport DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp}"\n'
         if bazel_proxy_setup.BAZEL_COMBINED_CA.exists():
             env_content += f'\nexport NODE_EXTRA_CA_CERTS="{bazel_proxy_setup.BAZEL_COMBINED_CA}"\n'
