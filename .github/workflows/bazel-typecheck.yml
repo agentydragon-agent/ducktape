@@ -1,15 +1,14 @@
-# Bazel lint reusable workflow
+# Bazel typecheck reusable workflow
 #
-# Runs linting via Bazel aspects:
-# - Python: ruff
-# - JS/TS: ESLint
-name: Bazel Lint
+# Runs type checking via Bazel aspects:
+# - Python: mypy
+name: Bazel Typecheck
 
 on:
   workflow_call:
     inputs:
       targets:
-        description: "Bazel targets to lint (default: //...)"
+        description: "Bazel targets to typecheck (default: //...)"
         required: false
         type: string
         default: "//..."
@@ -21,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Bazel targets to lint (default: //...)"
+        description: "Bazel targets to typecheck (default: //...)"
         required: false
         type: string
         default: "//..."
@@ -32,8 +31,8 @@ on:
         default: false
 
 jobs:
-  lint:
-    name: Lint
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -61,22 +60,25 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-lint-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
+          key: bazel-${{ runner.os }}-typecheck-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
           restore-keys: bazel-${{ runner.os }}-
 
-      - name: Lint
+      - name: Typecheck
         run: |
           PROFILE_FLAG=""
           if [[ "${{ inputs.enable_profiling }}" == "true" ]]; then
             PROFILE_FLAG="--config=ci-profile"
           fi
-          bazel build --keep_going --config=lint $PROFILE_FLAG ${{ inputs.targets }}
+          # Use local strategy for mypy to avoid sandbox copying (saves ~50% disk)
+          # mypy_runner.py copies upstream caches via shutil.copy(), not symlinks
+          # With sandbox, this happens twice: once by Bazel, once by mypy_runner
+          bazel build --keep_going --config=typecheck --strategy=mypy=local $PROFILE_FLAG ${{ inputs.targets }}
 
       - name: Upload Bazel profile
         if: inputs.enable_profiling && always()
         uses: actions/upload-artifact@v4
         with:
-          name: bazel-profile-lint-${{ github.run_id }}
+          name: bazel-profile-typecheck-${{ github.run_id }}
           path: |
             bazel-profile.gz
             execution-log.json
