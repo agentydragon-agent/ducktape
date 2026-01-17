@@ -5,6 +5,7 @@
 # - bazel-build: Build all targets
 # - bazel-lint: Linting (Python ruff, JS/TS eslint)
 # - bazel-typecheck: Type checking (Python mypy)
+# - bazel-rust-lint: Rust linting (clippy)
 # - bazel-test: Run all tests (excludes e2e tests requiring Docker infra)
 # - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
 # - editor-e2e-test: Editor agent e2e tests (requires Docker)
@@ -132,6 +133,15 @@ jobs:
     uses: ./.github/workflows/bazel-typecheck.yml
     with:
       targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+
+  bazel-rust-lint:
+    needs: compute-targets
+    if: |
+      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
+      contains(needs.compute-targets.outputs.bazel_targets, '//finance/')
+    uses: ./.github/workflows/bazel-rust-lint.yml
+    with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
 
   bazel-test:

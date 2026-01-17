@@ -1,6 +1,6 @@
 # Bazel test reusable workflow
 #
-# Runs all Bazel tests and Rust clippy
+# Runs all Bazel tests
 name: Bazel Test
 
 on:
@@ -203,10 +203,6 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo ":package: Logs available in workflow artifacts" >> $GITHUB_STEP_SUMMARY
           fi
-
-      # Rust lint (separate because finance/ is optional)
-      - name: Rust lint
-        run: bazel build --keep_going --config=rust-check //finance/... || true
 
       - name: Save Bazel cache
         if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
