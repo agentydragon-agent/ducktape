@@ -13,8 +13,8 @@
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
 #
-# Linting via Bazel aspects (run in pre-commit, bazel-lint, and bazel-typecheck):
-# - Python: ruff (lint), mypy (types), ruff format (formatting)
+# Static analysis via Bazel aspects:
+# - Python: ruff (lint and formatting), mypy (types)
 # - JS/TS: ESLint (lint), prettier (formatting)
 # - Rust: clippy (lint), rustfmt (formatting)
 # - Shell: shfmt (formatting)
