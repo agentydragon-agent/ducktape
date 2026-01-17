@@ -24,9 +24,11 @@ exports_files([
 
 # ESLint configuration as js_library
 # This makes the config and its npm dependencies available to the ESLint aspect
+# no-lint: This is a config file, not a target to lint (avoids aspect self-application)
 js_library(
     name = "eslintrc",
     srcs = ["eslint.config.js"],
+    tags = ["no-lint"],
     deps = [
         ":node_modules/@eslint/js",
         ":node_modules/@typescript-eslint/eslint-plugin",
@@ -43,9 +45,11 @@ js_library(
 # This makes the config and prettier-plugin-svelte available in runfiles.
 # Without this, prettier finds config in source tree but can't resolve plugins
 # because node_modules doesn't exist in CI. See aspect-build/rules_lint#176.
+# no-lint: This is a config file, not a target to lint (avoids aspect self-application)
 js_library(
     name = "prettierrc",
     srcs = [".prettierrc.cjs"],
+    tags = ["no-lint"],
     deps = [
         ":node_modules/prettier-plugin-svelte",
         ":node_modules/svelte",
