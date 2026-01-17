@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-01-17 22:40:00",
+  "platform": "Linux (gVisor)",
+  "arch": "amd64",
+  "method": "nix_shell",
+  "nix_version": "2.33.1",
+  "cachix_caches": ["cache.nixos.org", "devenv.cachix.org"],
+  "results": {
+    "cold_start": {
+      "description": "First tool includes nixpkgs unpack",
+      "operations": [
+        { "tool": "opentofu", "duration_seconds": 125.2, "notes": "Includes nixpkgs Git unpack" },
+        { "tool": "tflint", "duration_seconds": 4.0, "download_mb": 10.9 },
+        { "tool": "flux", "duration_seconds": 6.1, "download_mb": 23.7 },
+        { "tool": "kustomize", "duration_seconds": 2.8, "download_mb": 6.0 },
+        { "tool": "kubeseal", "duration_seconds": 2.5, "download_mb": 7.5 },
+        { "tool": "helm", "duration_seconds": 6.5, "download_mb": 16.0 }
+      ],
+      "total_seconds": 147.1
+    },
+    "warm_cache": {
+      "description": "All tools already in Nix store",
+      "all_tools_at_once_seconds": 0.59
+    }
+  }
+}

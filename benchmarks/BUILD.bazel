@@ -1,0 +1,7 @@
+# Benchmark scripts for comparing installation methods
+# Not part of production build - manual execution only
+
+exports_files([
+    "benchmark_install_methods.py",
+    "RESULTS.md",
+])

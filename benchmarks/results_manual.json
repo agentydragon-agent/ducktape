@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-01-17 22:33:18",
+  "platform": "Linux-4.4.0-x86_64-with-glibc2.39",
+  "arch": "amd64",
+  "results": [
+    {
+      "method": "manual_download",
+      "total_seconds": 30.793296577999996,
+      "operations": [
+        {
+          "operation": "opentofu",
+          "duration_seconds": 8.390862314999993,
+          "success": true,
+          "details": "https://github.com/opentofu/opentofu/releases/download/v1.9.0/tofu_1.9.0_linux_amd64.zip"
+        },
+        {
+          "operation": "tflint",
+          "duration_seconds": 3.215240102999985,
+          "success": true,
+          "details": "https://github.com/terraform-linters/tflint/releases/download/v0.53.0/tflint_linux_amd64.zip"
+        },
+        {
+          "operation": "flux",
+          "duration_seconds": 6.478954288999972,
+          "success": true,
+          "details": "https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_amd64.tar.gz"
+        },
+        {
+          "operation": "kustomize",
+          "duration_seconds": 1.5597066040000414,
+          "success": true,
+          "details": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz"
+        },
+        {
+          "operation": "kubeseal",
+          "duration_seconds": 6.15997905200004,
+          "success": true,
+          "details": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz"
+        },
+        {
+          "operation": "helm",
+          "duration_seconds": 4.987937187999989,
+          "success": true,
+          "details": "https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz"
+        }
+      ]
+    }
+  ]
+}
