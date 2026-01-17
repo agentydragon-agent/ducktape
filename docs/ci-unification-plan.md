@@ -69,9 +69,9 @@ The session start hook (`claude_web_hooks/session_start.py`) configures the Clau
 
 **Current capabilities:**
 
-- Sets up Bazel proxy configuration (for BCR access through TLS-inspecting proxy)
+- Sets up Bazel proxy configuration (for BCR access through TLS-inspecting proxy, see `claude_web_hooks/proxy-alternatives.md` for design rationale)
 - Installs Bazelisk via binary download
-- Installs pre-commit (via apt or pipx)
+- Installs pre-commit via pip (`pip install --user pre-commit==4.0.1`)
 - Runs `pre-commit install` in the repo
 
 **Missing for cluster pre-commit hooks:**
