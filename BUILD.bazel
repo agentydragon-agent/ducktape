@@ -96,9 +96,12 @@ platform(
 )
 
 # Gazelle Python configuration
-# Using Gazelle without manifest for now due to system package build issues
-# (pygobject, dbus-python, pycairo require system libraries)
-# Gazelle will still work but won't auto-resolve these packages - use manual deps or ignore directives
+# Running without manifest due to system packages (pygobject, dbus-python, pycairo)
+# that require unavailable libraries. Gazelle will still:
+# - Generate py_library/py_test targets
+# - Infer local dependencies
+# - Detect test files
+# Manual dependency management needed for: @pypi packages, system packages
 gazelle_binary(
     name = "gazelle_python_binary",
     languages = ["@rules_python_gazelle_plugin//python"],
