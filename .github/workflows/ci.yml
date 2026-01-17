@@ -3,7 +3,8 @@
 # Jobs (defined in separate files):
 # - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
 # - bazel-build: Build all targets
-# - bazel-lint: Comprehensive linting (Python ruff + mypy, JS/TS eslint)
+# - bazel-lint: Linting (Python ruff, JS/TS eslint)
+# - bazel-typecheck: Type checking (Python mypy)
 # - bazel-test: Run all tests (excludes e2e tests requiring Docker infra)
 # - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
 # - editor-e2e-test: Editor agent e2e tests (requires Docker)
@@ -12,7 +13,7 @@
 # - ansible-lint-full: Ansible validation
 # - nix-flake-check: Verify NixOS and home-manager configurations evaluate
 #
-# Linting via Bazel aspects (run in both pre-commit and bazel-lint):
+# Linting via Bazel aspects (run in pre-commit, bazel-lint, and bazel-typecheck):
 # - Python: ruff (lint), mypy (types), ruff format (formatting)
 # - JS/TS: ESLint (lint), prettier (formatting)
 # - Rust: clippy (lint), rustfmt (formatting)
@@ -121,6 +122,14 @@ jobs:
     needs: compute-targets
     if: needs.compute-targets.outputs.has_bazel_changes == 'true'
     uses: ./.github/workflows/bazel-lint.yml
+    with:
+      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      enable_profiling: ${{ inputs.enable_profiling || false }}
+
+  bazel-typecheck:
+    needs: compute-targets
+    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    uses: ./.github/workflows/bazel-typecheck.yml
     with:
       targets: ${{ needs.compute-targets.outputs.bazel_targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
