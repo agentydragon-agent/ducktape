@@ -148,6 +148,31 @@ pip.parse(
 )
 use_repo(pip, "pypi", "pypi_homeassistant")
 
+# Type stubs for mypy - extracts types-* and *-stubs packages from requirements
+# and provides them to the mypy aspect for per-target stub inclusion.
+types = use_extension("@rules_mypy//mypy:types.bzl", "types")
+types.requirements(
+    name = "pip_types",
+    # Exclusions:
+    # - sqlalchemy-stubs, types-sqlalchemy: SQLAlchemy 2.0+ has inline types via
+    #   the [mypy] extra, so external stubs conflict and cause duplicate keys.
+    # - types-paramiko: transitive dep but paramiko isn't in pypi hub
+    # - types-psycopg2: we use psycopg2-binary, not psycopg2
+    # - types-toml: we use tomli, not toml
+    # - types-jinja2: jinja2 has py.typed; stubs have broken markupsafe dep
+    exclude_requirements = [
+        "sqlalchemy-stubs",
+        "types-jinja2",
+        "types-paramiko",
+        "types-psycopg2",
+        "types-sqlalchemy",
+        "types-toml",
+    ],
+    pip_requirements = "@pypi//:requirements.bzl",
+    requirements_txt = "//:requirements_bazel.txt",
+)
+use_repo(types, "pip_types")
+
 # uv toolchain for requirements locking
 uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
 uv.configure(version = "0.6.2")

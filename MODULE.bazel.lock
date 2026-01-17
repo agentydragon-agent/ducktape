@@ -2201,6 +2201,40 @@
         ]
       }
     },
+    "@@rules_mypy~//mypy:types.bzl%types": {
+      "general": {
+        "bzlTransitiveDigest": "NRCQLKlh6DMNV8O7wtrrgFwoxCrepDJ64vJWgl4xKIo=",
+        "usagesDigest": "hno7vBHbl3mQo2rOAv8715vx2/irXtCEdy5yXyBoB+A=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "pip_types": {
+            "bzlFile": "@@rules_mypy~//mypy/private:types.bzl",
+            "ruleClassName": "generate",
+            "attributes": {
+              "pip_requirements": "@@rules_python~~pip~pypi//:requirements.bzl",
+              "requirements_txt": "@@//:requirements_bazel.txt",
+              "exclude_requirements": [
+                "sqlalchemy-stubs",
+                "types-jinja2",
+                "types-paramiko",
+                "types-psycopg2",
+                "types-sqlalchemy",
+                "types-toml"
+              ]
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "",
+            "pypi",
+            "rules_python~~pip~pypi"
+          ]
+        ]
+      }
+    },
     "@@rules_nodejs~//nodejs:extensions.bzl%node": {
       "general": {
         "bzlTransitiveDigest": "FmfMiNXAxRoLWw3NloQbssosE1egrSvzirbQnso7j7E=",

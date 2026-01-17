@@ -35,5 +35,6 @@ py_test(
     deps = [
         ":seatbelt",
         "//mcp_infra:test_support",
+        "@pypi//pytest",  # test files import pytest directly
     ],
 )

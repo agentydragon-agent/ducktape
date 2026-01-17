@@ -10,6 +10,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//mcp_infra",
+        "@pypi//mcp",  # types.py imports mcp.types
         "@pypi//pydantic",
     ],
 )
