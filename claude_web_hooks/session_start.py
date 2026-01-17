@@ -518,12 +518,8 @@ def main() -> int:
     log.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), bazel_proxy_setup.get_status(), node_ca_status
     )
-    # Show cluster tools status if cluster/ exists
-    if (project_dir / "cluster").is_dir():
-        log.info("Cluster tools: %s", cluster_tools.get_status())
-    # Show nix tools status if .nix files exist
-    if any(project_dir.rglob("*.nix")):
-        log.info("Nix tools: %s", get_nix_tools_status())
+    log.info("Cluster tools: %s", cluster_tools.get_status())
+    log.info("Nix tools: %s", get_nix_tools_status())
 
     # Emit supervisor usage guidance if proxy is running
     if bazel_proxy_setup.is_configured():
