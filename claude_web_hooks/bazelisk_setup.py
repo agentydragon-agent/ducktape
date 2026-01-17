@@ -122,14 +122,21 @@ def get_env_script(proxy_port: int = 18081) -> str:
     supervisor_conf = Path.home() / ".config" / "supervisor" / "supervisord.conf"
     local_proxy = f"http://localhost:{proxy_port}"
 
-    return f"""\
-# Bazel wrapper (sets proxy for TLS-inspecting proxy)
-[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"
-export BAZELISK_PATH="{BAZELISK_PATH}"
-export BAZEL_SUPERVISOR_SOCK="{supervisor_sock}"
-export BAZEL_SUPERVISOR_CONF="{supervisor_conf}"
-export BAZEL_LOCAL_PROXY="{local_proxy}"
-"""
+    exports = {
+        "PATH": f"{WRAPPER_DIR}:$PATH",
+        "BAZELISK_PATH": str(BAZELISK_PATH),
+        "BAZEL_SUPERVISOR_SOCK": str(supervisor_sock),
+        "BAZEL_SUPERVISOR_CONF": str(supervisor_conf),
+        "BAZEL_LOCAL_PROXY": local_proxy,
+    }
+
+    lines = ["# Bazel wrapper (sets proxy for TLS-inspecting proxy)"]
+    lines.append(f'[ -d "{WRAPPER_DIR}" ] && export PATH="{WRAPPER_DIR}:$PATH"')
+    for key, value in exports.items():
+        if key != "PATH":  # PATH already handled with conditional
+            lines.append(f'export {key}="{value}"')
+
+    return "\n".join(lines) + "\n"
 
 
 def is_installed() -> bool:

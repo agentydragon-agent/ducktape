@@ -10,6 +10,7 @@ Handles:
 import logging
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -171,7 +172,7 @@ def _start_proxy_server() -> bool:
     log.info("Starting Bazel proxy on port %d via supervisor", BAZEL_PROXY_PORT)
 
     # Add proxy as a supervisor service (foreground mode, no -d flag)
-    command = f"python3 {proxy_script} --listen-port {BAZEL_PROXY_PORT}"
+    command = " ".join([shlex.quote("python3"), shlex.quote(str(proxy_script)), "--listen-port", str(BAZEL_PROXY_PORT)])
     if not supervisor_setup.add_service(
         name="bazel-proxy",
         command=command,

@@ -5,7 +5,9 @@ Provides a centralized process manager for:
 - Future: other background services as needed
 """
 
+import configparser
 import logging
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -23,27 +25,23 @@ def _write_supervisor_config() -> None:
     """Write supervisor configuration file."""
     SUPERVISOR_DIR.mkdir(parents=True, exist_ok=True)
 
-    config = f"""\
-[unix_http_server]
-file={SUPERVISOR_SOCK}
+    config = configparser.ConfigParser()
+    config["unix_http_server"] = {"file": str(SUPERVISOR_SOCK)}
+    config["supervisord"] = {
+        "logfile": str(SUPERVISOR_LOG),
+        "pidfile": str(SUPERVISOR_PIDFILE),
+        "childlogdir": str(SUPERVISOR_DIR),
+        "nodaemon": "false",
+        "silent": "false",
+    }
+    config["rpcinterface:supervisor"] = {
+        "supervisor.rpcinterface_factory": "supervisor.rpcinterface:make_main_rpcinterface"
+    }
+    config["supervisorctl"] = {"serverurl": f"unix://{SUPERVISOR_SOCK}"}
+    config["include"] = {"files": f"{SUPERVISOR_DIR}/conf.d/*.conf"}
 
-[supervisord]
-logfile={SUPERVISOR_LOG}
-pidfile={SUPERVISOR_PIDFILE}
-childlogdir={SUPERVISOR_DIR}
-nodaemon=false
-silent=false
-
-[rpcinterface:supervisor]
-supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
-
-[supervisorctl]
-serverurl=unix://{SUPERVISOR_SOCK}
-
-[include]
-files = {SUPERVISOR_DIR}/conf.d/*.conf
-"""
-    SUPERVISOR_CONF.write_text(config)
+    with SUPERVISOR_CONF.open("w") as f:
+        config.write(f)
     log.info("Wrote supervisor config to %s", SUPERVISOR_CONF)
 
     # Create conf.d directory for service configs
@@ -160,29 +158,33 @@ def add_service(name: str, command: str, directory: str | None = None, environme
 
     service_conf = SUPERVISOR_DIR / "conf.d" / f"{name}.conf"
 
-    # Build environment string if provided
-    env_str = ""
-    if environment:
-        env_parts = [f"{k}=\"{v}\"" for k, v in environment.items()]
-        env_str = f"environment={','.join(env_parts)}"
+    config = configparser.ConfigParser()
+    section = f"program:{name}"
+    config[section] = {
+        "command": command,
+        "autostart": "true",
+        "autorestart": "true",
+        "startsecs": "1",
+        "startretries": "3",
+        "stdout_logfile": f"{SUPERVISOR_DIR}/{name}.log",
+        "stdout_logfile_maxbytes": "10MB",
+        "stdout_logfile_backups": "2",
+        "stderr_logfile": f"{SUPERVISOR_DIR}/{name}.err.log",
+        "stderr_logfile_maxbytes": "10MB",
+        "stderr_logfile_backups": "2",
+    }
 
-    config = f"""\
-[program:{name}]
-command={command}
-autostart=true
-autorestart=true
-startsecs=1
-startretries=3
-stdout_logfile={SUPERVISOR_DIR}/{name}.log
-stdout_logfile_maxbytes=10MB
-stdout_logfile_backups=2
-stderr_logfile={SUPERVISOR_DIR}/{name}.err.log
-stderr_logfile_maxbytes=10MB
-stderr_logfile_backups=2
-{f'directory={directory}' if directory else ''}
-{env_str}
-"""
-    service_conf.write_text(config)
+    if directory:
+        config[section]["directory"] = directory
+
+    if environment:
+        # Supervisor environment format: KEY="value",KEY2="value2"
+        # Use shlex.quote for proper shell escaping
+        env_parts = [f'{k}={shlex.quote(v)}' for k, v in environment.items()]
+        config[section]["environment"] = ",".join(env_parts)
+
+    with service_conf.open("w") as f:
+        config.write(f)
     log.info("Wrote service config: %s", service_conf)
 
     # Reload supervisor config
