@@ -111,7 +111,7 @@ async def run_loop_agent(
         container_db = db_config.for_container(temp_creds.username, temp_creds.password)
 
         env = {
-            # Database credentials
+            # Database credentials (agent derives run ID from PGUSER via current_agent_run_id())
             "PGHOST": container_db.host,
             "PGPORT": str(container_db.port),
             "PGUSER": container_db.username,
@@ -122,8 +122,6 @@ async def run_loop_agent(
             "OPENAI_API_KEY": temp_creds.password,
             # Model to use
             "MODEL": model,
-            # Agent run ID for CLI tools
-            "AGENT_RUN_ID": str(agent_run_id),
         }
         if extra_env:
             env.update(extra_env)
