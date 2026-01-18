@@ -9,6 +9,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core",
+        "//agent_core:direct_provider",
         "//mcp_infra/exec:subprocess_exec",
         "//openai_utils",
         "//props/core:agent_helpers",

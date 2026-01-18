@@ -13,20 +13,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from uuid import UUID
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from agent_core.agent import Agent
+from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.tool_provider import ToolResult, ToolSchema
+from agent_core.tool_provider import ToolResult
 from mcp_infra.exec.subprocess_exec import SubprocessExecArgs, run_exec
-from openai_utils.json_schema import OpenAICompatibleSchema
 from openai_utils.model import BoundOpenAIModel, SystemMessage
 from props.core.agent_helpers import get_current_agent_run_id
 from props.core.critic.tools import (
@@ -42,7 +41,6 @@ from props.core.critic.tools import (
     report_failure,
     submit,
 )
-from props.core.critic.tools import ToolResult as CriticToolResult
 from props.core.db.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -64,110 +62,81 @@ class ExitState:
     should_exit: bool = False
 
 
-@dataclass
-class CriticToolProvider:
-    """Tool provider for critic agents with exec and critic-specific tools."""
+class ListIssuesArgs(BaseModel):
+    """Empty args model for list_issues tool."""
 
-    agent_run_id: UUID
-    exit_state: ExitState = field(default_factory=ExitState)
+    pass
 
-    async def list_tools(self) -> list[ToolSchema]:
-        """Return available tools."""
-        # Exec tool schema
-        exec_schema = ToolSchema(
-            name="exec",
-            description="Execute a shell command. Use for file operations, running tests, etc.",
-            input_schema=SubprocessExecArgs.model_json_schema(schema_generator=OpenAICompatibleSchema),
-        )
 
-        # Critic tool schemas
-        critic_schemas = [
-            ToolSchema(
-                name="insert_issue",
-                description="Insert a reported issue. Call this before adding occurrences for the issue.",
-                input_schema=_make_strict_schema(InsertIssueArgs),
-            ),
-            ToolSchema(
-                name="insert_occurrence",
-                description="Insert an occurrence for a reported issue. The issue must exist first. "
-                "An occurrence can span multiple locations (e.g., duplicated code across files).",
-                input_schema=_make_strict_schema(InsertOccurrenceArgs),
-            ),
-            ToolSchema(
-                name="delete_issue",
-                description="Delete a reported issue and all its occurrences. Use to remove incorrect issues.",
-                input_schema=_make_strict_schema(DeleteIssueArgs),
-            ),
-            ToolSchema(
-                name="list_issues",
-                description="List all issues reported in this critique run. Returns JSON with issue IDs, rationales, and occurrence counts.",
-                input_schema={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
-            ),
-            ToolSchema(
-                name="submit",
-                description="Finalize and submit the critique. Validates all issues and marks the run as complete. Call this when done reviewing.",
-                input_schema=_make_strict_schema(SubmitArgs),
-            ),
-            ToolSchema(
-                name="report_failure",
-                description="Report that the critique could not be completed due to blocking issues (e.g., no files in scope).",
-                input_schema=_make_strict_schema(ReportFailureArgs),
-            ),
-        ]
+def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> DirectToolProvider:
+    """Create a tool provider with critic tools bound to the given agent run."""
+    provider = DirectToolProvider()
 
-        return [exec_schema] + critic_schemas
-
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
-        """Execute a tool and return the result."""
-        if name == "exec":
-            return await self._call_exec(arguments)
-        return self._call_critic_tool(name, arguments)
-
-    async def _call_exec(self, arguments: dict[str, Any]) -> ToolResult:
-        """Execute the exec tool."""
+    @provider.tool
+    async def exec(args: SubprocessExecArgs) -> ToolResult:
+        """Execute a shell command. Use for file operations, running tests, etc."""
         try:
-            exec_args = SubprocessExecArgs.model_validate(arguments)
-            exec_result = await run_exec(exec_args, default_cwd=WORKSPACE)
+            exec_result = await run_exec(args, default_cwd=WORKSPACE)
             return ToolResult.json(exec_result.model_dump())
         except Exception as e:
             logger.exception("Exec tool error")
             return ToolResult.error(f"Error executing command: {e}")
 
-    def _call_critic_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
-        """Execute a critic tool and return the result."""
-        try:
-            result = self._dispatch_critic_tool(name, arguments)
-            if result.should_exit:
-                self.exit_state.should_exit = True
-                logger.info("Tool %s requested exit", name)
-            return ToolResult.text(result.output)
-        except Exception as e:
-            logger.exception("Critic tool error: %s", name)
-            return ToolResult.error(f"Error in {name}: {e}")
+    @provider.tool(name="insert_issue")
+    def insert_issue_impl(args: InsertIssueArgs) -> ToolResult:
+        """Insert a reported issue. Call this before adding occurrences for the issue."""
+        result = insert_issue(agent_run_id, args)
+        return ToolResult.text(result.output)
 
-    def _dispatch_critic_tool(self, name: str, arguments: dict[str, Any]) -> CriticToolResult:
-        """Dispatch to the appropriate critic tool."""
-        if name == "insert_issue":
-            return insert_issue(self.agent_run_id, InsertIssueArgs.model_validate(arguments))
-        if name == "insert_occurrence":
-            return insert_occurrence(self.agent_run_id, InsertOccurrenceArgs.model_validate(arguments))
-        if name == "delete_issue":
-            return delete_issue(DeleteIssueArgs.model_validate(arguments))
-        if name == "list_issues":
-            return list_issues(self.agent_run_id)
-        if name == "submit":
-            return submit(self.agent_run_id, SubmitArgs.model_validate(arguments))
-        if name == "report_failure":
-            return report_failure(self.agent_run_id, ReportFailureArgs.model_validate(arguments))
-        return CriticToolResult(output=f"Error: Unknown critic tool '{name}'")
+    @provider.tool(name="insert_occurrence")
+    def insert_occurrence_impl(args: InsertOccurrenceArgs) -> ToolResult:
+        """Insert an occurrence for a reported issue. The issue must exist first.
 
+        An occurrence can span multiple locations (e.g., duplicated code across files).
+        """
+        result = insert_occurrence(agent_run_id, args)
+        return ToolResult.text(result.output)
 
-def _make_strict_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """Generate OpenAI strict-compatible JSON schema from a Pydantic model."""
-    schema = model.model_json_schema(schema_generator=OpenAICompatibleSchema)
-    # Remove $defs as OpenAI strict mode doesn't support them at top level
-    schema.pop("$defs", None)
-    return schema
+    @provider.tool(name="delete_issue")
+    def delete_issue_impl(args: DeleteIssueArgs) -> ToolResult:
+        """Delete a reported issue and all its occurrences. Use to remove incorrect issues."""
+        result = delete_issue(args)
+        return ToolResult.text(result.output)
+
+    @provider.tool(name="list_issues")
+    def list_issues_impl(args: ListIssuesArgs) -> ToolResult:
+        """List all issues reported in this critique run.
+
+        Returns JSON with issue IDs, rationales, and occurrence counts.
+        """
+        result = list_issues(agent_run_id)
+        return ToolResult.text(result.output)
+
+    @provider.tool(name="submit")
+    def submit_impl(args: SubmitArgs) -> ToolResult:
+        """Finalize and submit the critique.
+
+        Validates all issues and marks the run as complete. Call this when done reviewing.
+        """
+        result = submit(agent_run_id, args)
+        if result.should_exit:
+            exit_state.should_exit = True
+            logger.info("Submit tool requested exit")
+        return ToolResult.text(result.output)
+
+    @provider.tool(name="report_failure")
+    def report_failure_impl(args: ReportFailureArgs) -> ToolResult:
+        """Report that the critique could not be completed.
+
+        Use when there are blocking issues (e.g., no files in scope).
+        """
+        result = report_failure(agent_run_id, args)
+        if result.should_exit:
+            exit_state.should_exit = True
+            logger.info("Report failure tool requested exit")
+        return ToolResult.text(result.output)
+
+    return provider
 
 
 class LoggingHandler(BaseHandler):
@@ -193,7 +162,8 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
         agent_run_id = get_current_agent_run_id(session)
 
     # Create tool provider with shared exit state
-    tool_provider = CriticToolProvider(agent_run_id=agent_run_id)
+    exit_state = ExitState()
+    tool_provider = create_critic_tool_provider(agent_run_id, exit_state)
 
     # Create OpenAI client pointing to proxy
     client = AsyncOpenAI(
@@ -206,7 +176,7 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
     handlers: list[BaseHandler] = [
         LoggingHandler(),
         RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
-        AbortIf(lambda: tool_provider.exit_state.should_exit),
+        AbortIf(lambda: exit_state.should_exit),
     ]
 
     # Create and run agent
@@ -223,7 +193,7 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
 
     try:
         await agent.run()
-        if tool_provider.exit_state.should_exit:
+        if exit_state.should_exit:
             print("Critique completed")
             return 0
         # Agent finished without explicit exit (shouldn't happen with proper abort handling)
