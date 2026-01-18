@@ -33,12 +33,17 @@ logger = logging.getLogger(__name__)
 
 
 class HookInput(BaseModel):
-    """Input passed to Claude Code hooks via stdin."""
+    """Input passed to Claude Code hooks via stdin.
+
+    Note: permission_mode is optional because Claude Code Web was observed
+    (2025-01-18) not sending it for SessionStart:resume events, despite
+    documentation claiming it's required.
+    """
 
     session_id: str
     cwd: Path
     transcript_path: str
-    permission_mode: Literal["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"]
+    permission_mode: Literal["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"] = "default"
     hook_event_name: Literal["SessionStart"]
     source: Literal["startup", "resume", "clear", "compact"]
 
@@ -510,7 +515,13 @@ def run_web_mode(hook_input: HookInput) -> None:
 
 def main() -> None:
     """Unified entry point: dispatch to web or CLI mode based on environment."""
-    hook_input = HookInput.model_validate_json(sys.stdin.read())
+    raw_input = sys.stdin.read()
+    try:
+        hook_input = HookInput.model_validate_json(raw_input)
+    except Exception as e:
+        print(f"Failed to parse hook input: {e}", file=sys.stderr)
+        print(f"Raw input JSON:\n{raw_input}", file=sys.stderr)
+        raise
 
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
         run_web_mode(hook_input)

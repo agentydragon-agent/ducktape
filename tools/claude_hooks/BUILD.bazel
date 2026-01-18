@@ -55,6 +55,16 @@ py_wheel(
 )
 
 py_test(
+    name = "test_session_start",
+    srcs = ["test_session_start.py"],
+    imports = ["../.."],
+    deps = [
+        ":claude_hooks",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_proxy",
     srcs = ["test_proxy.py"],
     imports = ["../.."],
