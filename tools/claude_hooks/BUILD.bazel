@@ -13,7 +13,7 @@ py_library(
         ],
     ),
     data = glob(["config/**"]),
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//cryptography",
@@ -28,7 +28,7 @@ py_library(
 
 py_package(
     name = "claude_hooks_pkg",
-    packages = ["claude_hooks"],
+    packages = ["tools.claude_hooks"],
     deps = [":claude_hooks"],
 )
 
@@ -37,9 +37,9 @@ py_wheel(
     distribution = "claude_hooks",
     entry_points = {
         "console_scripts": [
-            "claude-session-start = claude_hooks.session_start:main",
-            "bazel = claude_hooks.bazel_wrapper:main",
-            "bazelisk = claude_hooks.bazel_wrapper:main",
+            "claude-session-start = tools.claude_hooks.session_start:main",
+            "bazel = tools.claude_hooks.bazel_wrapper:main",
+            "bazelisk = tools.claude_hooks.bazel_wrapper:main",
         ],
     },
     python_requires = ">=3.13",
@@ -59,7 +59,7 @@ py_wheel(
 py_test(
     name = "test_proxy",
     srcs = ["test_proxy.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":claude_hooks",
         "@pypi//pyjwt",
@@ -70,7 +70,7 @@ py_test(
 py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
-    imports = [".."],
+    imports = ["../.."],
     tags = ["integration"],
     deps = [
         ":claude_hooks",

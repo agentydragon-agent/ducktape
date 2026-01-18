@@ -26,8 +26,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from claude_hooks import proxy_setup, supervisor_setup
 from net_util.net import pick_free_port
+from tools.claude_hooks import proxy_setup, supervisor_setup
 
 # =============================================================================
 # Test Fixtures: Mock TLS-Inspecting Proxy

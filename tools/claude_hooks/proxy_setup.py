@@ -26,10 +26,10 @@ from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from mako.template import Template
 
-from claude_hooks import supervisor_setup
-from claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
-from claude_hooks.proxy_credentials import build_upstream_uri, parse_proxy_url
-from claude_hooks.resources import CONFIG_FILES
+from tools.claude_hooks import supervisor_setup
+from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
+from tools.claude_hooks.proxy_credentials import build_upstream_uri, parse_proxy_url
+from tools.claude_hooks.resources import CONFIG_FILES
 
 logger = logging.getLogger(__name__)
 

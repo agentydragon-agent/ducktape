@@ -9,9 +9,9 @@ import os
 import sys
 from datetime import UTC, datetime
 
-from claude_hooks import proxy_setup
-from claude_hooks.errors import BazelProxyError, MissingEnvVarError
-from claude_hooks.proxy_credentials import check_credential_expiry
+from tools.claude_hooks import proxy_setup
+from tools.claude_hooks.errors import BazelProxyError, MissingEnvVarError
+from tools.claude_hooks.proxy_credentials import check_credential_expiry
 
 logger = logging.getLogger(__name__)
 

@@ -21,8 +21,8 @@ from pathlib import Path
 
 from mako.template import Template
 
-from claude_hooks import proxy_setup
-from claude_hooks.resources import CONFIG_FILES
+from tools.claude_hooks import proxy_setup
+from tools.claude_hooks.resources import CONFIG_FILES
 
 logger = logging.getLogger(__name__)
 

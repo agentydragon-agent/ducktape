@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import jwt
 import pytest
 
-from claude_hooks.proxy_credentials import (
+from tools.claude_hooks.proxy_credentials import (
     CredentialStatus,
     build_upstream_uri,
     check_credential_expiry,

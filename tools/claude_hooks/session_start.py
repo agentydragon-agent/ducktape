@@ -22,8 +22,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from claude_hooks import bazelisk_setup, binary_tools, nix_setup, proxy_setup, supervisor_setup
-from claude_hooks.errors import DirenvError, ProjectNotFoundError
+from tools.claude_hooks import bazelisk_setup, binary_tools, nix_setup, proxy_setup, supervisor_setup
+from tools.claude_hooks.errors import DirenvError, ProjectNotFoundError
 
 CACHE_DIR = Path.home() / ".cache" / "claude-code-web"
 LOG_FILE = CACHE_DIR / "session-start.log"

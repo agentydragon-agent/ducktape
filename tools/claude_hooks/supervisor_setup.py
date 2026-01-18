@@ -25,7 +25,7 @@ from typing import Literal, cast
 from pydantic import BaseModel
 from supervisor.xmlrpc import Faults, SupervisorTransport
 
-from claude_hooks.errors import ProxyServiceError, SupervisorError
+from tools.claude_hooks.errors import ProxyServiceError, SupervisorError
 
 logger = logging.getLogger(__name__)
 

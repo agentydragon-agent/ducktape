@@ -8,8 +8,8 @@ import shutil
 import urllib.request
 from pathlib import Path
 
-from claude_hooks.resources import CONFIG_FILES
-from claude_hooks.streaming import run_streaming
+from tools.claude_hooks.resources import CONFIG_FILES
+from tools.claude_hooks.streaming import run_streaming
 
 logger = logging.getLogger(__name__)
 
