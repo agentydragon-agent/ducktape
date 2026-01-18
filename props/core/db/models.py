@@ -1361,6 +1361,39 @@ class AgentDefinition(Base):
     )
 
 
+class LLMRequest(Base):
+    """LLM API request logged by the proxy.
+
+    Records all requests made through the LLM proxy, including full request/response
+    payloads for debugging and token counts for cost tracking.
+
+    Token counts are extracted from the OpenAI Responses API response.usage field.
+    Cost computation happens via the llm_request_costs view.
+    """
+
+    __tablename__ = "llm_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    agent_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    model: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Relationships
+    agent_run: Mapped[AgentRun] = relationship(back_populates="llm_requests")
+
+
 class AgentRun(Base):
     """Unified agent run record (replaces separate critic_runs, grader_runs, etc.).
 
@@ -1415,6 +1448,7 @@ class AgentRun(Base):
         back_populates="grader_run", foreign_keys="GradingEdge.grader_run_id", cascade="all, delete-orphan"
     )
     events: Mapped[list[Event]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
+    llm_requests: Mapped[list[LLMRequest]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
 
     # Type-safe config accessors
     def critic_config(self) -> CriticTypeConfig:

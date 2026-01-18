@@ -441,14 +441,22 @@ Documentation:
 
 ## Migration Path
 
-### Phase 1: LLM Proxy
+### Phase 1: LLM Proxy ✓
 
-1. Build custom LLM proxy (similar to registry_proxy):
-   - Token validation via Postgres (agent_runs lookup)
-   - Request/response logging to DB
-   - Cost tracking per agent_run_id (sum up parent chain)
-   - Model enforcement (only allow assigned model)
-   - No streaming
+**Status: Complete**
+
+Implementation:
+- `props/llm_proxy/proxy.py` - FastAPI proxy with auth, model enforcement, logging
+- `props/core/db/migrations/versions/20260118_add_llm_requests.py` - Schema migration
+- `props/core/db/models.py` - Added `LLMRequest` model
+- `props/compose.yaml` - Added `llm-proxy` service on port 5052
+
+Features:
+- Token validation via Postgres (agent_runs lookup)
+- Request/response logging to `llm_requests` table
+- Cost tracking via `llm_request_costs` and `llm_run_costs` views
+- Model enforcement (only allow assigned model)
+- No streaming (returns complete response)
 
 ### Phase 2: Simple Critic
 
