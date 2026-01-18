@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     Enum,
     FetchedValue,
@@ -1373,7 +1374,7 @@ class LLMRequest(Base):
 
     __tablename__ = "llm_requests"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     agent_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"),

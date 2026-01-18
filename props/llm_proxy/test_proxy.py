@@ -206,6 +206,42 @@ class TestStreamingRejection:
         assert "Streaming is not supported" in response.json()["detail"]
 
 
+class TestStatefulModeRejection:
+    """Tests for stateful API mode rejection."""
+
+    def test_store_mode_returns_400(
+        self,
+        client: TestClient,
+        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+    ):
+        """Request with store=true returns 400."""
+        _, creds = agent_run_with_creds
+
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-4o", "input": [], "store": True},
+            headers={"Authorization": _basic_auth_header(creds.username, creds.password)},
+        )
+        assert response.status_code == 400
+        assert "store" in response.json()["detail"]
+
+    def test_previous_response_id_returns_400(
+        self,
+        client: TestClient,
+        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+    ):
+        """Request with previous_response_id returns 400."""
+        _, creds = agent_run_with_creds
+
+        response = client.post(
+            "/v1/responses",
+            json={"model": "gpt-4o", "input": [], "previous_response_id": "resp_abc123"},
+            headers={"Authorization": _basic_auth_header(creds.username, creds.password)},
+        )
+        assert response.status_code == 400
+        assert "previous_response_id" in response.json()["detail"]
+
+
 class TestRequestLogging:
     """Tests for request/response logging to llm_requests table."""
 

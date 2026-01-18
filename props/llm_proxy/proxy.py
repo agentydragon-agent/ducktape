@@ -221,6 +221,12 @@ async def responses(
     if body.get("stream"):
         raise HTTPException(status_code=400, detail="Streaming is not supported")
 
+    # Reject stateful API modes (we log everything ourselves)
+    if body.get("store"):
+        raise HTTPException(status_code=400, detail="Stateful mode 'store' is not supported")
+    if body.get("previous_response_id"):
+        raise HTTPException(status_code=400, detail="Stateful mode 'previous_response_id' is not supported")
+
     # Forward request to OpenAI
     start_time = time.monotonic()
     upstream_url = f"{OPENAI_BASE_URL}/v1/responses"
