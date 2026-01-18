@@ -10,11 +10,12 @@ Build targets:
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "proxy_lib",
     srcs = ["proxy.py"],
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//props/core/db:models",
@@ -75,4 +76,30 @@ oci_push(
     image = ":image",
     remote_tags = ["latest"],
     repository = "localhost:5050/llm-proxy",
+)
+
+# Tests
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+    },
+    imports = ["../.."],
+    tags = ["requires_postgres"],
+    deps = [
+        ":proxy_lib",
+        "//props/core:agent_types",
+        "//props/core/db:agent_definition_ids",
+        "//props/core/db:examples",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:temp_user_manager",
+        "//props/testing",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+    ],
 )
