@@ -100,75 +100,70 @@ async def run_loop_agent(
     logger.info("Using image %s from %s", image_id[:19], image)
 
     # Create temporary database user
-    user_manager = TempUserManager(db_config.admin, agent_run_id)
-    temp_creds = await user_manager.__aenter__()
-    logger.info("Created temporary database user: %s", temp_creds.username)
+    async with TempUserManager(db_config.admin, agent_run_id) as temp_creds:
+        logger.info("Created temporary database user: %s", temp_creds.username)
 
-    container = None
-    try:
-        # Build container config
-        name = container_name or f"agent-{short_uuid(agent_run_id)}"
-        container_db = db_config.for_container(temp_creds.username, temp_creds.password)
+        container = None
+        try:
+            # Build container config
+            name = container_name or f"agent-{short_uuid(agent_run_id)}"
+            container_db = db_config.for_container(temp_creds.username, temp_creds.password)
 
-        env = {
-            # Database credentials (agent derives run ID from PGUSER via current_agent_run_id())
-            "PGHOST": container_db.host,
-            "PGPORT": str(container_db.port),
-            "PGUSER": container_db.username,
-            "PGPASSWORD": container_db.password,
-            "PGDATABASE": container_db.database,
-            # LLM proxy credentials (same password as database)
-            "OPENAI_BASE_URL": f"{llm_proxy_url}/v1",
-            "OPENAI_API_KEY": temp_creds.password,
-            # Model to use
-            "MODEL": model,
-        }
-        if extra_env:
-            env.update(extra_env)
+            env = {
+                # Database credentials (agent derives run ID from PGUSER via current_agent_run_id())
+                "PGHOST": container_db.host,
+                "PGPORT": str(container_db.port),
+                "PGUSER": container_db.username,
+                "PGPASSWORD": container_db.password,
+                "PGDATABASE": container_db.database,
+                # LLM proxy credentials (same password as database)
+                "OPENAI_BASE_URL": f"{llm_proxy_url}/v1",
+                "OPENAI_API_KEY": temp_creds.password,
+                # Model to use
+                "MODEL": model,
+            }
+            if extra_env:
+                env.update(extra_env)
 
-        # Create and start container
-        container_config = {
-            "Image": image_id,
-            "Env": [f"{k}={v}" for k, v in env.items()],
-            "HostConfig": {
-                "NetworkMode": PROPS_NETWORK_NAME,
-                "AutoRemove": False,  # Keep container to read logs
-            },
-            "Labels": {
-                "adgn.project": "props",
-                "adgn.agent_run_id": str(agent_run_id),
-            },
-        }
+            # Create and start container
+            container_config = {
+                "Image": image_id,
+                "Env": [f"{k}={v}" for k, v in env.items()],
+                "HostConfig": {
+                    "NetworkMode": PROPS_NETWORK_NAME,
+                    "AutoRemove": False,  # Keep container to read logs
+                },
+                "Labels": {
+                    "adgn.project": "props",
+                    "adgn.agent_run_id": str(agent_run_id),
+                },
+            }
 
-        container = await docker_client.containers.create(container_config, name=name)
-        logger.info("Created container %s", name)
+            container = await docker_client.containers.create(container_config, name=name)
+            logger.info("Created container %s", name)
 
-        await container.start()
-        logger.info("Started container %s", name)
+            await container.start()
+            logger.info("Started container %s", name)
 
-        # Wait for container to exit
-        exit_info = await container.wait()
-        exit_code = exit_info.get("StatusCode", 1)
-        logger.info("Container %s exited with code %d", name, exit_code)
+            # Wait for container to exit
+            exit_info = await container.wait()
+            exit_code = exit_info.get("StatusCode", 1)
+            logger.info("Container %s exited with code %d", name, exit_code)
 
-        # Capture logs
-        stdout_logs = await container.log(stdout=True, stderr=False)
-        stderr_logs = await container.log(stdout=False, stderr=True)
+            # Capture logs
+            stdout_logs = await container.log(stdout=True, stderr=False)
+            stderr_logs = await container.log(stdout=False, stderr=True)
 
-        stdout = "".join(stdout_logs) if stdout_logs else ""
-        stderr = "".join(stderr_logs) if stderr_logs else ""
+            stdout = "".join(stdout_logs) if stdout_logs else ""
+            stderr = "".join(stderr_logs) if stderr_logs else ""
 
-        yield ContainerResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
+            yield ContainerResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
 
-    finally:
-        # Clean up container
-        if container is not None:
-            try:
-                await container.delete(force=True)
-                logger.info("Deleted container")
-            except Exception as e:
-                logger.warning("Failed to delete container: %s", e)
-
-        # Clean up database user
-        await user_manager.__aexit__(None, None, None)
-        logger.info("Cleaned up temporary database user")
+        finally:
+            # Clean up container
+            if container is not None:
+                try:
+                    await container.delete(force=True)
+                    logger.info("Deleted container")
+                except Exception as e:
+                    logger.warning("Failed to delete container: %s", e)
