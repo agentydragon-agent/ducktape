@@ -19,7 +19,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import httpx
@@ -64,10 +64,10 @@ def _validate_postgres_credentials(username: str, password: str) -> bool:
         return False
 
 
-def _parse_auth_header(authorization: str | None) -> tuple[str, str] | None:
-    """Parse Basic auth header, return (username, password) or None."""
+def _parse_auth_header(authorization: str | None) -> tuple[str, str]:
+    """Parse Basic auth header, raise HTTPException on failure."""
     if not authorization or not authorization.startswith("Basic "):
-        return None
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization required")
 
     try:
         encoded = authorization.removeprefix("Basic ")
@@ -76,7 +76,7 @@ def _parse_auth_header(authorization: str | None) -> tuple[str, str] | None:
         return (username, password)
     except (ValueError, UnicodeDecodeError) as e:
         logger.warning(f"Failed to parse Basic auth: {e}")
-        return None
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization format")
 
 
 def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthContext:
@@ -88,14 +88,7 @@ def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthConte
     3. Agent run exists and is in progress
     4. Returns the allowed model from the agent run
     """
-    if authorization is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization required")
-
-    creds = _parse_auth_header(authorization)
-    if creds is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization format")
-
-    username, password = creds
+    username, password = _parse_auth_header(authorization)
 
     # Validate credentials against Postgres
     if not _validate_postgres_credentials(username, password):
@@ -139,7 +132,7 @@ class ResponsesRequest(BaseModel):
     tool_choice: ToolChoice | None = None
     temperature: float | None = None
     max_output_tokens: int | None = None
-    # Note: stream is intentionally not included - we don't support streaming
+    stream: Literal[False] = False
 
 
 def _log_request(
