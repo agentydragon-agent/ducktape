@@ -39,8 +39,56 @@ pkg_tar(
 )
 
 # =============================================================================
+# In-container agent main entry point
+# =============================================================================
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_helpers",
+        "//props/core/agent_loop:loop",
+        "//props/core/db:session",
+        "@pypi//jinja2",
+    ],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":main"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
 # Library targets
 # =============================================================================
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_helpers",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "@pypi//pydantic",
+    ],
+)
 
 py_library(
     name = "exceptions",

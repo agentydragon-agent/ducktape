@@ -18,13 +18,13 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    cmd = ["/app/critic_main"],
+    cmd = ["/app/main"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
     tars = [
-        "//props/core/agent_loop:critic_main_tar",
+        "//props/core/critic:main_tar",
     ],
     workdir = "/workspace",
 )

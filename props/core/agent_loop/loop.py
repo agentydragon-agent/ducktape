@@ -20,7 +20,7 @@ from typing import Any
 from openai import OpenAI
 
 from mcp_infra.exec.direct import DirectExecArgs, run_direct_exec
-from props.core.agent_loop.critic_tools import (
+from props.core.critic.tools import (
     DeleteIssueArgs,
     InsertIssueArgs,
     InsertOccurrenceArgs,

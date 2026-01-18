@@ -1,22 +1,6 @@
 """In-container agent loop for props agents."""
 
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-
-py_library(
-    name = "critic_tools",
-    srcs = ["critic_tools.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:agent_helpers",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "//props/core/db:snapshots",
-        "@pypi//pydantic",
-    ],
-)
+load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
     name = "loop",
@@ -24,40 +8,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":critic_tools",
         "//mcp_infra/exec:direct",
+        "//props/core/critic:tools",
         "@pypi//openai",
     ],
-)
-
-py_library(
-    name = "critic_main_lib",
-    srcs = ["critic_main.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":loop",
-        "//props/core:agent_helpers",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "@pypi//jinja2",
-    ],
-)
-
-py_binary(
-    name = "critic_main",
-    srcs = ["critic_main.py"],
-    main = "critic_main.py",
-    visibility = ["//visibility:public"],
-    deps = [":critic_main_lib"],
-)
-
-# Packaging for OCI image
-pkg_tar(
-    name = "critic_main_tar",
-    srcs = [":critic_main"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
-    visibility = ["//props:__subpackages__"],
 )
