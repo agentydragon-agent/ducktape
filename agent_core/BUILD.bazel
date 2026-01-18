@@ -51,6 +51,19 @@ py_library(
     ],
 )
 
+# Verify agent_core doesn't depend on MCP packages
+genquery(
+    name = "agent_core_mcp_deps",
+    expression = "filter('@pypi//fastmcp|@pypi//mcp', deps(//agent_core:agent_core))",
+    scope = ["//agent_core:agent_core"],
+)
+
+sh_test(
+    name = "test_no_mcp_deps",
+    srcs = ["test_no_mcp_deps.sh"],
+    data = [":agent_core_mcp_deps"],
+)
+
 _TEST_DEPS = [
     ":agent_core",
     ":mcp_provider",
