@@ -36,6 +36,8 @@ py_binary(
     srcs = ["proxy.py"],
     deps = [
         ":proxy_lib",
+        "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//psycopg",
     ],
 )

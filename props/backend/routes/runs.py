@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from mcp_infra.exec.models import BaseExecResult, ExecInput
+from mcp_utils.resources import extract_text_from_tool_content
 from openai_utils.client_factory import build_client
 from openai_utils.model import ReasoningItem
 from props.backend.routes.ground_truth import FileLocationInfo
@@ -343,16 +344,6 @@ def get_registry(request: Request) -> AgentRegistry:
     return request.app.state.registry  # type: ignore[no-any-return]
 
 
-def _extract_text_from_mcp_content(content: list) -> str | None:
-    """Extract text from MCP CallToolResult content array."""
-    for item in content:
-        if isinstance(item, TextContent):
-            return item.text
-        if isinstance(item, dict) and "text" in item:
-            return str(item["text"])
-    return None
-
-
 def parse_event_payload(payload: EventType) -> ParsedEventPayload:
     """Convert internal EventType to API ParsedEventPayload."""
     try:
@@ -366,7 +357,7 @@ def parse_event_payload(payload: EventType) -> ParsedEventPayload:
             return GenericToolCallPayload(name=payload.name, call_id=payload.call_id, args_json=payload.args_json)
 
         if isinstance(payload, ToolCallOutput):
-            result_text = _extract_text_from_mcp_content(payload.result.content)
+            result_text = extract_text_from_tool_content(payload.result.content)
             if result_text:
                 try:
                     result_data = json.loads(result_text)

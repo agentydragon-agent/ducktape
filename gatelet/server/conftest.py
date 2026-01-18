@@ -127,7 +127,9 @@ def test_settings(tmp_path: Path) -> Settings:
         ),
         home_assistant=HomeAssistantSettings(api_url="http://test:8123", api_token="test-token"),
         webhook=WebhookSettings(),
-        admin=AdminSettings(password_hash="$2b$12$test"),  # bcrypt hash for "gatelet"
+        admin=AdminSettings(
+            password_hash="$argon2id$v=19$m=65536,t=3,p=4$RCjF2HuPkbI2htBaK8X4/w$ZaY5qRPTqw/wMjAVnxaK9cneVhAsRBQ0Ru1oZW09Mx8"  # argon2 hash for "gatelet"
+        ),
         security=SecuritySettings(csrf_secret="test-csrf-secret"),
     )
 

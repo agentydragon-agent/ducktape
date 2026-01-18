@@ -54,7 +54,9 @@ py_test(
     main = "conftest.py",
     deps = [
         ":claude_hooks",
+        "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//types_pyyaml",
     ],
 )
 

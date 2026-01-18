@@ -45,6 +45,8 @@ py_test(
     deps = [
         ":compositor",
         "//mcp_infra:test_support",
+        "@pypi//fastmcp",
         "@pypi//pyhamcrest",
+        "@pypi//pytest",
     ],
 )

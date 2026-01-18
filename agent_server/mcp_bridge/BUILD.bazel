@@ -23,6 +23,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//pydantic",
+        "@pypi//types_pyyaml",
     ],
 )
 
@@ -47,5 +48,9 @@ py_test(
     srcs = ["test_integration.py"],
     imports = ["../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS + ["@pypi//docker"],
+    deps = _TEST_DEPS + [
+        "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//starlette",
+    ],
 )

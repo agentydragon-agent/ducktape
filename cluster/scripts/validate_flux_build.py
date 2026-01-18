@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from collections import defaultdict
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -53,7 +53,7 @@ def analyze_flux_output(output: str) -> list[str]:
 
     try:
         documents = list(yaml.safe_load_all(output))
-        resource_counts = defaultdict(int)
+        resource_counts: Counter[str] = Counter()
         namespaces = set()
 
         for doc in documents:

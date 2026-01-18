@@ -1,1 +1,0 @@
-"""OpenAI utilities package."""

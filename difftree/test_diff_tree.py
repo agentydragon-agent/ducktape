@@ -186,7 +186,7 @@ def test_console_width_handling(width):
 
 def _extract_progress_bars(line: Text) -> str:
     """Extract just the progress bar characters from a line (after filename and counts)."""
-    plain = line.plain
+    plain: str = line.plain
     block_chars = " ▏▎▍▌▋▊▉█"
 
     # Find a sequence of at least 40 consecutive block characters (2 * bar_width)

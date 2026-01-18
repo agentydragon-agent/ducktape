@@ -61,6 +61,7 @@ py_test(
     deps = [
         ":git_commit_ai_lib",
         "//mcp_infra/testing",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

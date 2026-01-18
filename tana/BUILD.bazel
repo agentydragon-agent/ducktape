@@ -4,12 +4,10 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "tana",
     srcs = [
-        "__init__.py",
         "domain/constants.py",
         "domain/nodes.py",
         "domain/search.py",
         "domain/types.py",
-        "export/__init__.py",
         "export/cli.py",
         "export/convert.py",
         "export/export_node_subset.py",
@@ -28,7 +26,6 @@ py_library(
         "query/search/parser.py",
         "render/html.py",
         "render/inline_refs.py",
-        "services/__init__.py",
         "workspace.py",
     ],
     imports = [".."],

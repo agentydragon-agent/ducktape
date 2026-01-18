@@ -39,7 +39,12 @@ py_binary(
     srcs = ["cli.py"],
     imports = [".."],
     main = "cli.py",
-    deps = [":habitify"],
+    deps = [
+        ":habitify",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
 )
 
 py_binary(

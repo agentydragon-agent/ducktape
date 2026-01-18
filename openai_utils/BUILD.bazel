@@ -4,7 +4,6 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "openai_utils",
     srcs = [
-        "__init__.py",
         "builders.py",
         "client_factory.py",
         "errors.py",

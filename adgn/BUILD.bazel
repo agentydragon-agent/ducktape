@@ -66,7 +66,12 @@ py_binary(
     name = "adgn_agent",
     srcs = ["agent/cli.py"],
     main = "agent/cli.py",
-    deps = [":adgn"],
+    deps = [
+        ":adgn",
+        "@pypi//fastmcp",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
 )
 
 py_binary(

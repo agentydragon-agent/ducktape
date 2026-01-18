@@ -86,6 +86,7 @@ py_test(
     main = "test_integration.py",
     deps = [
         ":claude_linter_v2",
+        "@pypi//click",
         "@pypi//pytest",
     ],
 )

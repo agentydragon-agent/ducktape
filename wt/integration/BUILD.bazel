@@ -10,5 +10,6 @@ py_test(
     main = "test_integration_cli_daemon.py",
     deps = [
         "//wt/testing",
+        "@pypi//pytest",
     ],
 )

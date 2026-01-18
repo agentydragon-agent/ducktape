@@ -33,6 +33,8 @@ _TEST_DEPS = [
     ":agent_core",
     "//agent_core_testing",
     "//mcp_infra/bootstrap",
+    "@pypi//fastmcp",
+    "@pypi//mcp",
     "@pypi//pytest",
     "@pypi//pytest_asyncio",
 ]

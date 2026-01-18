@@ -35,6 +35,7 @@ py_library(
         "//net_util",
         "//openai_utils",
         "@pypi//aiodocker",
+        "@pypi//fastmcp",
         "@pypi//typer",
     ],
 )

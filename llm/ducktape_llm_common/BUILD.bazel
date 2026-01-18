@@ -6,7 +6,6 @@ exports_files(["pyproject.toml"])
 py_library(
     name = "core",
     srcs = [
-        "ducktape_llm_common/__init__.py",
         "ducktape_llm_common/claude_code_api.py",
         "ducktape_llm_common/claude_hook.py",
         "ducktape_llm_common/claude_hooks.py",
@@ -18,6 +17,7 @@ py_library(
     imports = ["."],
     visibility = ["//llm/ducktape_llm_common:__subpackages__"],
     deps = [
+        "@pypi//platformdirs",
         "@pypi//pydantic",
     ],
 )

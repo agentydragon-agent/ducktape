@@ -19,10 +19,14 @@ py_library(
     visibility = ["//wt:__subpackages__"],
     deps = [
         "//wt",
+        "@pypi//pygit2",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_mock",
+        "@pypi//pyyaml",
         "@pypi//tenacity",
+        "@pypi//typer",
+        "@pypi//types_pyyaml",
     ],
 )

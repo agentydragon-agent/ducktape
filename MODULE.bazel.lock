@@ -2274,7 +2274,7 @@
     "@@rules_mypy~//mypy:types.bzl%types": {
       "general": {
         "bzlTransitiveDigest": "NRCQLKlh6DMNV8O7wtrrgFwoxCrepDJ64vJWgl4xKIo=",
-        "usagesDigest": "hno7vBHbl3mQo2rOAv8715vx2/irXtCEdy5yXyBoB+A=",
+        "usagesDigest": "GlqpkNNKiv187Ds3+XHDzVa5B4OYljG9xfnYAXYOx18=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -2290,6 +2290,7 @@
                 "types-jinja2",
                 "types-paramiko",
                 "types-psycopg2",
+                "types-pygit2",
                 "types-sqlalchemy",
                 "types-toml"
               ]
@@ -5258,7 +5259,7 @@
         "recordedFileInputs": {
           "@@//Cargo.toml": "6a5e01e79ce3d8a1e5e75d85c69b37f9525047caa5f6d90d5a9a0379626d08db",
           "@@//Cargo.lock": "03170440faee807b8ce6bc783a56a67d6e6c595cb3bbff7d355b8f5a9df77833",
-          "@@//MODULE.bazel": "80c2f27e31ed62c36aa3b59e1dc6c7b905a0b800c1bf411d6e0eb3ca7d8391e9",
+          "@@//MODULE.bazel": "ca4fe792781283c2116558bfedcb051bc2937be232349071900a4f8cd5340aee",
           "@@rules_rust~~rust_host_tools~rust_host_tools//rust_host_tools": "ENOENT"
         },
         "recordedDirentsInputs": {},

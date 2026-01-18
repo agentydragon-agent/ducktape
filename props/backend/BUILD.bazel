@@ -17,6 +17,8 @@ py_library(
     deps = [
         "//cli_util",
         "//mcp_infra",
+        "//mcp_utils",
+        "//openai_utils",
         # props.core modules
         "//props/core:agent_registry",
         "//props/core:agent_types",
@@ -30,7 +32,10 @@ py_library(
         "//props/core/grader:daemon_manager",
         "//props/core/models:examples",
         "//props/core/models:true_positive",
+        "@pypi//aiodocker",
         "@pypi//fastapi",
+        "@pypi//mcp",
+        "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//typer",
         "@pypi//uvicorn",

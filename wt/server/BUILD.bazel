@@ -49,5 +49,7 @@ py_test(
     main = "test_worktree_service.py",
     deps = [
         "//wt/testing",
+        "@pypi//pygit2",
+        "@pypi//pytest",
     ],
 )

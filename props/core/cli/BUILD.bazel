@@ -97,6 +97,7 @@ py_library(
         "//props/core/noop_classifier:classifier",
         "@pypi//rich",
         "@pypi//sqlalchemy",
+        "@pypi//typer",
     ],
 )
 
@@ -283,7 +284,10 @@ py_library(
         "//openai_utils",
         "//props/core/db:models",
         "//props/core/db:session",
+        "@pypi//fastmcp",
+        "@pypi//rich",
         "@pypi//sqlalchemy",
+        "@pypi//typer",
     ],
 )
 

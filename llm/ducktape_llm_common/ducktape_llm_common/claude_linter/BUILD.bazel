@@ -27,7 +27,10 @@ py_binary(
     name = "claude-linter",
     srcs = ["cli.py"],
     main = "cli.py",
-    deps = [":claude_linter"],
+    deps = [
+        ":claude_linter",
+        "@pypi//click",
+    ],
 )
 
 py_test(

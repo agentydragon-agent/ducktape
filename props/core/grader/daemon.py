@@ -64,9 +64,12 @@ class GraderDaemonScaffold:
         )
 
     async def _notification_callback(
-        self, connection: asyncpg.Connection, pid: int, channel: str, payload: str
+        self, connection: asyncpg.Connection, pid: int, channel: str, payload: object
     ) -> None:
         """Handle incoming pg_notify notifications."""
+        if not isinstance(payload, str):
+            logger.warning(f"Unexpected non-string payload type: {type(payload)}")
+            return
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:

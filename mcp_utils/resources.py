@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from mcp import types as mcp_types
+
+
+def extract_text_from_tool_content(
+    content: Iterable[mcp_types.TextContent | mcp_types.ImageContent | mcp_types.EmbeddedResource],
+) -> str | None:
+    """Extract text from MCP CallToolResult content blocks.
+
+    Returns the first TextContent.text found, or None if no text content exists.
+    """
+    for item in content:
+        if isinstance(item, mcp_types.TextContent):
+            return item.text
+    return None
 
 
 def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:

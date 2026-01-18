@@ -6,7 +6,6 @@ exports_files(["pyproject.toml"])
 py_library(
     name = "dbus_fast_example",
     srcs = [
-        "__init__.py",
         "client.py",
         "dbus_service.py",
         "service_manager.py",

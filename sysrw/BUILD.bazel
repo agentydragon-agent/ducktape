@@ -6,8 +6,6 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "sysrw",
     srcs = [
-        "__init__.py",
-        "anthropic/__init__.py",
         "anthropic/text_extraction.py",
         "anthropic/types.py",
         "cli.py",
@@ -23,7 +21,6 @@ py_library(
         "run_eval.py",
         "schemas.py",
         "templates/__init__.py",
-        "tools/__init__.py",
         "tools/show_rewritten_crush.py",
         "translation.py",
         "validation.py",

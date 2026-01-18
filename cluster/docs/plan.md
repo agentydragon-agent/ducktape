@@ -1,6 +1,6 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-01-05
+**Last Updated**: 2026-01-17
 
 ## 🎯 Current Status
 
@@ -46,7 +46,56 @@ Protect terraform state with encrypted cloud backup.
 
 **Scope**: `terraform/*/terraform.tfstate` files (contain all secrets)
 
-### Branch B: DNS Stack Migration
+### Branch B: GPU Workloads (Ollama + Auth Proxy)
+
+Move GPU from standalone VM (wyrm) to k8s cluster for LLM inference.
+
+**Current State**: RTX 5090 passed through to wyrm VM, Ollama running as systemd service
+
+**Target State**: GPU passed to k8s worker node, Ollama in pod with auth proxy
+
+**Architecture**:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Internet → Ingress → Auth Proxy → Ollama Pod              │
+│                         ↓                                    │
+│                   API Key Validation                        │
+│                   (nginx/Caddy sidecar)                     │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  GPU Worker Node (Proxmox VM with PCIe passthrough)         │
+│  - NVIDIA driver + container toolkit                        │
+│  - Node label: nvidia.com/gpu=true                          │
+│  - Talos extension: nvidia-container-toolkit                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation**:
+
+- [ ] Configure Proxmox VM with GPU passthrough (PCIe device 01:00)
+- [ ] Add Talos nvidia-container-toolkit extension to worker image
+- [ ] Deploy NVIDIA device plugin DaemonSet
+- [ ] Create Ollama Deployment with GPU resource request
+- [ ] Add auth proxy sidecar (nginx with `auth_request` or Caddy with `basicauth`)
+- [ ] Store API keys in Vault, sync via ESO
+- [ ] Expose via Ingress with TLS
+
+**Auth Proxy Options**:
+
+1. **nginx sidecar** - `auth_request` directive validates Bearer token against configmap/secret
+2. **Caddy sidecar** - `basicauth` or forward_auth to validate API key
+3. **oauth2-proxy** - Full OIDC if multi-user access control needed
+
+**Why k8s instead of standalone VM**:
+
+- Unified management (GitOps, monitoring, secrets)
+- Easier scaling (add more GPU nodes)
+- Ingress/TLS handled by existing infrastructure
+- API key rotation via Vault/ESO
+
+### Branch C: DNS Stack Migration
 
 Migrate from current single-instance MariaDB to replicated Galera cluster.
 

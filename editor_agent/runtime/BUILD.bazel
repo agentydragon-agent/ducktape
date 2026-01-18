@@ -24,7 +24,10 @@ py_binary(
     srcs = ["cli.py"],
     imports = ["../.."],
     main = "cli.py",
-    deps = [":editor_agent_runtime"],
+    deps = [
+        ":editor_agent_runtime",
+        "@pypi//typer",
+    ],
 )
 
 ruff_test(
