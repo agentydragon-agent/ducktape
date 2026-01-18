@@ -16,12 +16,13 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import shutil
 import socket
 import ssl
+import subprocess
 import time
 from pathlib import Path
 
-import jks
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding
 from mako.template import Template
@@ -193,7 +194,11 @@ def _get_cert_attr(name: x509.Name, oid: x509.ObjectIdentifier) -> str:
 def _create_java_truststore() -> None:
     """Create a Java truststore with the system CAs plus the proxy CA.
 
-    Uses pyjks to manipulate Java keystores without requiring keytool.
+    Uses keytool (from JDK) to import the CA certificate into a copy of
+    the system truststore.
+
+    TODO: Switch back to pyjks when twofish supports Python 3.13.
+    pyjks was removed because twofish (C extension dep) fails to build on 3.13.
 
     Raises:
         TruststoreError: If truststore could not be created.
@@ -212,24 +217,38 @@ def _create_java_truststore() -> None:
     logger.info("Creating custom Java truststore from %s", system_cacerts)
 
     try:
-        # Load system truststore
-        keystore = jks.KeyStore.load(str(system_cacerts), TRUSTSTORE_PASSWORD)
+        # Copy system truststore to our location
+        shutil.copy2(system_cacerts, truststore)
+        # Make writable (system cacerts may be read-only)
+        truststore.chmod(0o644)
 
-        # Load and parse the proxy CA
-        ca_pem = ca_file.read_text()
-        ca_cert = x509.load_pem_x509_certificate(ca_pem.encode())
-        ca_der = ca_cert.public_bytes(Encoding.DER)
+        # Import the proxy CA using keytool
+        result = subprocess.run(
+            [
+                "keytool",
+                "-importcert",
+                "-trustcacerts",
+                "-alias",
+                "anthropic-tls-inspection",
+                "-file",
+                str(ca_file),
+                "-keystore",
+                str(truststore),
+                "-storepass",
+                TRUSTSTORE_PASSWORD,
+                "-noprompt",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
-        # Create trusted cert entry and add to keystore
-        entry = jks.TrustedCertEntry.new("X.509", ca_der)
-        keystore.entries["anthropic-tls-inspection"] = entry
-
-        # Save the modified truststore
-        keystore.save(str(truststore), TRUSTSTORE_PASSWORD)
+        if result.returncode != 0:
+            raise TruststoreError(f"keytool failed: {result.stderr}")
 
         logger.info("Created custom Java truststore at %s", truststore)
 
-    except (jks.KeystoreException, OSError, ValueError) as e:
+    except OSError as e:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 

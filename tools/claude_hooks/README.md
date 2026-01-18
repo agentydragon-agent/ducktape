@@ -15,7 +15,7 @@ The hook runs at the start of each Claude Code web session and:
 
 1. Starts supervisord for process management
 2. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
-3. Creates a Java truststore with the CA using pyjks
+3. Creates a Java truststore with the CA using keytool
 4. Registers the proxy with supervisor at `127.0.0.1:18081`
 5. Creates combined CA bundle (system CAs + proxy CA)
 6. Writes bazelrc to `~/.cache/bazel-proxy/bazelrc`
@@ -79,9 +79,10 @@ This package has the following dependencies (see BUILD.bazel):
 - cryptography (TLS certificate parsing)
 - mako (template rendering)
 - pproxy (proxy server)
-- pyjks (Java keystore manipulation)
 - pyjwt (JWT decoding)
 - supervisor (process management)
+
+**Runtime**: Requires `keytool` (from JDK) for Java truststore creation.
 
 **Note**: Requires Python 3.13+ for `ssl.SSLSocket.get_unverified_chain()` API.
 
@@ -110,14 +111,8 @@ supervisorctl -c ~/.config/supervisor/supervisord.conf stop bazel-proxy
 
 ### From session-start hook
 
-The session-start hook (`session_start.py`) calls `proxy_setup.py` which:
-
-1. Starts supervisord for process management
-2. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
-3. Creates a Java truststore with the CA using pyjks
-4. Registers the proxy with supervisor at `127.0.0.1:18081`
-5. Creates combined CA bundle (system CAs + proxy CA)
-6. Writes bazelrc to `~/.cache/bazel-proxy/bazelrc` (loaded via `BAZEL_SYSTEM_BAZELRC_PATH`)
+The session-start hook (`session_start.py`) calls `proxy_setup.py` which performs
+the proxy setup steps described above.
 
 ### Manual startup (for debugging)
 
