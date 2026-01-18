@@ -19,8 +19,8 @@ jobs:
       wheel_name: gnome_terminal_profile_switcher
       bazel_target: //gnome_terminal_profile_switcher:gnome_terminal_profile_switcher_wheel
       wheel_path: bazel-bin/gnome_terminal_profile_switcher
-      apt_packages: libcairo2-dev libgirepository1.0-dev libdbus-1-dev libxcb1-dev pkg-config
+      apt_packages: libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev pkg-config
       release_body: |
         gnome-terminal-profile-switcher wheel.
 
-        **Note**: Requires system libraries (libgirepository1.0-dev, libdbus-1-dev).
+        **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
