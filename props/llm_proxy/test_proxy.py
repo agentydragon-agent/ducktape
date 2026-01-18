@@ -12,7 +12,7 @@ from __future__ import annotations
 import base64
 from collections.abc import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -46,14 +46,10 @@ def client() -> Generator[TestClient]:
         yield c
 
 
-@pytest_asyncio.fixture
-async def agent_run_with_creds(
-    synced_test_db: DatabaseConfig,
-) -> AsyncGenerator[tuple[AgentRun, TempUserCredentials]]:
-    """Create an in-progress agent run with temp user credentials."""
+@pytest.fixture
+def agent_run_id(synced_test_db: DatabaseConfig) -> UUID:
+    """Create an in-progress agent run and return its ID."""
     run_id = uuid4()
-
-    # Get a train example for the critic config
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
         assert example, "test-fixtures/train1 fixture not found"
@@ -68,12 +64,17 @@ async def agent_run_with_creds(
         )
         session.add(agent_run)
         session.commit()
+    return run_id
 
-    async with TempUserManager(synced_test_db.admin, run_id) as creds:
-        # Re-fetch agent_run in a new session for the test
-        with get_session() as session:
-            agent_run = session.get(AgentRun, run_id)
-            yield agent_run, creds
+
+@pytest_asyncio.fixture
+async def agent_creds(
+    synced_test_db: DatabaseConfig,
+    agent_run_id: UUID,
+) -> AsyncGenerator[TempUserCredentials]:
+    """Provide temp user credentials for the agent run."""
+    async with TempUserManager(synced_test_db.admin, agent_run_id) as creds:
+        yield creds
 
 
 class TestHealthEndpoint:
@@ -137,10 +138,10 @@ class TestModelEnforcement:
         self,
         mock_client_class: AsyncMock,
         client: TestClient,
-        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+        agent_creds: TempUserCredentials,
     ):
         """Request for non-allowed model returns 403."""
-        agent_run, creds = agent_run_with_creds
+        creds = agent_creds
 
         response = client.post(
             "/v1/responses",
@@ -156,10 +157,10 @@ class TestModelEnforcement:
         self,
         mock_client_class: AsyncMock,
         client: TestClient,
-        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+        agent_creds: TempUserCredentials,
     ):
         """Request with allowed model is forwarded to upstream."""
-        agent_run, creds = agent_run_with_creds
+        creds = agent_creds
 
         # Mock the upstream response
         mock_response = AsyncMock()
@@ -192,10 +193,10 @@ class TestStreamingRejection:
     def test_streaming_request_returns_400(
         self,
         client: TestClient,
-        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+        agent_creds: TempUserCredentials,
     ):
         """Request with stream=true returns 400."""
-        _, creds = agent_run_with_creds
+        creds = agent_creds
 
         response = client.post(
             "/v1/responses",
@@ -212,10 +213,10 @@ class TestStatefulModeRejection:
     def test_store_mode_returns_400(
         self,
         client: TestClient,
-        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+        agent_creds: TempUserCredentials,
     ):
         """Request with store=true returns 400."""
-        _, creds = agent_run_with_creds
+        creds = agent_creds
 
         response = client.post(
             "/v1/responses",
@@ -228,10 +229,10 @@ class TestStatefulModeRejection:
     def test_previous_response_id_returns_400(
         self,
         client: TestClient,
-        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+        agent_creds: TempUserCredentials,
     ):
         """Request with previous_response_id returns 400."""
-        _, creds = agent_run_with_creds
+        creds = agent_creds
 
         response = client.post(
             "/v1/responses",
@@ -250,11 +251,10 @@ class TestRequestLogging:
         self,
         mock_client_class: AsyncMock,
         client: TestClient,
-        agent_run_with_creds: tuple[AgentRun, TempUserCredentials],
+        agent_run_id: UUID,
+        agent_creds: TempUserCredentials,
     ):
         """Successful request is logged to llm_requests table."""
-        agent_run, creds = agent_run_with_creds
-
         # Mock upstream response
         mock_response = AsyncMock()
         mock_response.status_code = 200
@@ -273,13 +273,13 @@ class TestRequestLogging:
         response = client.post(
             "/v1/responses",
             json={"model": "gpt-4o", "input": [{"role": "user", "content": "test"}]},
-            headers={"Authorization": _basic_auth_header(creds.username, creds.password)},
+            headers={"Authorization": _basic_auth_header(agent_creds.username, agent_creds.password)},
         )
         assert response.status_code == 200
 
         # Verify request was logged
         with get_session() as session:
-            logged = session.query(LLMRequest).filter_by(agent_run_id=agent_run.agent_run_id).all()
+            logged = session.query(LLMRequest).filter_by(agent_run_id=agent_run_id).all()
             assert len(logged) == 1
             assert logged[0].model == "gpt-4o"
             assert logged[0].input_tokens == 100
