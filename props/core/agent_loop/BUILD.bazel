@@ -9,7 +9,9 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//mcp_infra/exec:subprocess_exec",
+        "//props/core:agent_helpers",
         "//props/core/critic:tools",
+        "//props/core/db:session",
         "@pypi//openai",
     ],
 )

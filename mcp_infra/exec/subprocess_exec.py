@@ -9,7 +9,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from mcp_infra.exec.models import (
     BaseExecResult,
@@ -22,6 +22,16 @@ from mcp_infra.exec.models import (
     async_timer,
     render_outcome_to_result,
 )
+from openai_utils.json_schema import OpenAICompatibleSchema
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+
+
+def _make_output(out: bytes | None, err: bytes | None) -> ExecOutput:
+    """Create ExecOutput from stdout/stderr byte streams."""
+    return ExecOutput(
+        stdout=out if out is not None else b"",
+        stderr=err if err is not None else b"",
+    )
 
 
 async def run_proc(
@@ -46,11 +56,8 @@ async def run_proc(
 
         try:
             out, err = await asyncio.wait_for(proc.communicate(input=stdin_bytes), timeout=timeout_s)
-
-            stdout_bytes = out if out is not None else b""
-            stderr_bytes = err if err is not None else b""
+            output = _make_output(out, err)
             exit_code = proc.returncode if proc.returncode is not None else 0
-            output = ExecOutput(stdout=stdout_bytes, stderr=stderr_bytes)
 
             # Detect if process was killed by signal (negative exit code on Unix)
             if exit_code < 0:
@@ -65,14 +72,11 @@ async def run_proc(
                 out, err = await asyncio.wait_for(proc.communicate(), timeout=5)
             except (TimeoutError, ProcessLookupError):
                 out, err = b"", b""
-            stdout_bytes = out if out is not None else b""
-            stderr_bytes = err if err is not None else b""
-            output = ExecOutput(stdout=stdout_bytes, stderr=stderr_bytes)
-            return ExecOutcome(output=output, exit=TimedOut(), duration_ms=get_duration_ms())
+            return ExecOutcome(output=_make_output(out, err), exit=TimedOut(), duration_ms=get_duration_ms())
 
 
-class SubprocessExecArgs(BaseModel):
-    """Arguments for subprocess execution."""
+class SubprocessExecArgs(OpenAIStrictModeBaseModel):
+    """Arguments for subprocess execution (OpenAI strict mode compatible)."""
 
     cmd: list[str] = Field(
         description="Command array passed directly to subprocess (no shell). "
@@ -84,8 +88,6 @@ class SubprocessExecArgs(BaseModel):
     timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds")
     stdin_text: str | None = Field(None, description="Text to send to stdin")
 
-    model_config = ConfigDict(extra="forbid")
-
 
 def get_exec_tool_schema() -> dict[str, Any]:
     """Return OpenAI-compatible tool schema for the exec tool."""
@@ -93,7 +95,7 @@ def get_exec_tool_schema() -> dict[str, Any]:
         "type": "function",
         "name": "exec",
         "description": "Execute a shell command. Use for file operations, running tests, etc.",
-        "parameters": SubprocessExecArgs.model_json_schema(),
+        "parameters": SubprocessExecArgs.model_json_schema(schema_generator=OpenAICompatibleSchema),
     }
 
 
@@ -106,10 +108,7 @@ async def run_exec(args: SubprocessExecArgs, *, default_cwd: Path | None = None)
     if not args.cmd or not all(isinstance(x, str) for x in args.cmd):
         raise ValueError("INVALID_CMD: cmd must be a non-empty list[str]")
 
-    cwd_val: Path | None = Path(args.cwd) if args.cwd else None
-    if cwd_val is None and default_cwd is not None:
-        cwd_val = default_cwd
-
+    cwd_val = Path(args.cwd) if args.cwd else default_cwd
     timeout_s = max(0.001, args.timeout_ms / 1000.0)
     outcome = await run_proc(args.cmd, timeout_s, cwd=cwd_val, stdin=args.stdin_text)
     return render_outcome_to_result(outcome, args.max_bytes)

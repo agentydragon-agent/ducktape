@@ -1,6 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
-# Minimal subprocess execution - no MCP/fastmcp deps
+# Minimal subprocess execution - no MCP/fastmcp or openai API deps
 # Used by in-container agent loops that need exec without the MCP server overhead
 py_library(
     name = "subprocess_exec",
@@ -11,7 +11,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:strict_mode",
         "@pypi//pydantic",
     ],
 )

@@ -82,7 +82,6 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core:agent_helpers",
         "//props/core/db:models",
         "//props/core/db:session",
         "//props/core/db:snapshots",

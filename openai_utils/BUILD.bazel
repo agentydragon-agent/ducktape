@@ -1,6 +1,21 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# Strict mode validation - no openai API dependency
+# Used for tool argument validation in contexts that don't need the API client
+py_library(
+    name = "strict_mode",
+    srcs = [
+        "json_schema.py",
+        "pydantic_strict_mode.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
 py_library(
     name = "openai_utils",
     srcs = [
@@ -8,10 +23,8 @@ py_library(
         "client_factory.py",
         "errors.py",
         "http_logging.py",
-        "json_schema.py",
         "model.py",
         "model_metadata.py",
-        "pydantic_strict_mode.py",
         "retry.py",
         "text_extraction.py",
         "types.py",
@@ -19,6 +32,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":strict_mode",
         "@pypi//httpx",
         "@pypi//openai",
         "@pypi//pydantic",
@@ -91,5 +105,8 @@ py_test(
 
 ruff_test(
     name = "ruff",
-    srcs = [":openai_utils"],
+    srcs = [
+        ":openai_utils",
+        ":strict_mode",
+    ],
 )
