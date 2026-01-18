@@ -1,0 +1,37 @@
+"""In-container agent loop for props agents."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "loop",
+    srcs = ["loop.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "@pypi//openai",
+    ],
+)
+
+py_library(
+    name = "critic_main_lib",
+    srcs = ["critic_main.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":loop",
+        "//props/core:agent_helpers",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "@pypi//jinja2",
+    ],
+)
+
+py_binary(
+    name = "critic_main",
+    srcs = ["critic_main.py"],
+    main = "critic_main.py",
+    visibility = ["//visibility:public"],
+    deps = [":critic_main_lib"],
+)
