@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from agent_core.agent import Agent
 from agent_core.events import AssistantText
 from agent_core.handler import CaptureTextHandler, FinishOnTextMessageHandler, SequenceHandler
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core.loop_control import AllowAnyToolOrTextMessage, InjectItems, NoAction, RequireAnyTool
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from agent_core_testing.assertions import is_all_function_calls
@@ -32,7 +33,7 @@ def make_agent_with_capture(mcp_client_echo, recording_handler, capture_handler)
 
     async def _make(client: OpenAIModelProto):
         return await Agent.create(
-            mcp_client=mcp_client_echo,
+            tool_provider=MCPToolProvider(mcp_client_echo),
             client=client,
             handlers=[capture_handler, recording_handler],
             tool_policy=AllowAnyToolOrTextMessage(),
@@ -129,7 +130,7 @@ def make_agent_with_turn_limit(mcp_client_echo, recording_handler):
 
     async def _make(client: OpenAIModelProto, max_turns: int):
         return await Agent.create(
-            mcp_client=mcp_client_echo,
+            tool_provider=MCPToolProvider(mcp_client_echo),
             client=client,
             handlers=[FinishOnTextMessageHandler(), recording_handler, MaxTurnsHandler(max_turns=max_turns)],
             tool_policy=RequireAnyTool(),

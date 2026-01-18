@@ -12,6 +12,7 @@ from agent_core.compaction import CompactionHandler
 from agent_core.events import AssistantText, GroundTruthUsage, Response, SystemText, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage, Compact, NoAction, RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from agent_core_testing.matchers import assert_items_exclude_instance, assert_items_include_instances
 from agent_core_testing.responses import DecoratorMock, EchoMock
@@ -82,7 +83,7 @@ async def test_stateless_reasoning_forwarding(mcp_client_echo) -> None:
         yield [m.make_item_reasoning(), m.assistant_text("ok")]
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=MCPToolProvider(mcp_client_echo),
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -107,7 +108,7 @@ async def test_function_call_and_function_call_output_replay(mcp_client_echo) ->
         assert_items_include_instances(input_items, FunctionCallItem, FunctionCallOutputItem)
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=MCPToolProvider(mcp_client_echo),
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -129,7 +130,7 @@ async def test_mixed_reasoning_fc_ordering(mcp_client_echo) -> None:
         yield [m.make_item_reasoning(), m.echo_call("hi"), m.assistant_text("done")]
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=MCPToolProvider(mcp_client_echo),
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -155,7 +156,7 @@ async def test_no_synthesized_reasoning_items(mcp_client_echo) -> None:
         assert_items_exclude_instance(input_items, ReasoningItem)
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=MCPToolProvider(mcp_client_echo),
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -216,7 +217,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_client_
         yield m.assistant_text("done")
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=MCPToolProvider(mcp_client_echo),
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -257,7 +258,7 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
     await mock_openai.setup_summary_response("User asked about compaction. Assistant explained the concept.")
 
     agent = await Agent.create(
-        mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+        tool_provider=MCPToolProvider(compositor_client), client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
     agent.process_message(SystemMessage.text("Test system prompt"))
 
@@ -304,7 +305,7 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
 async def test_compact_transcript_insufficient_history(compositor_client, mock_openai):
     """Test that compaction doesn't happen when history is too short."""
     agent = await Agent.create(
-        mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+        tool_provider=MCPToolProvider(compositor_client), client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
     agent.process_message(SystemMessage.text("Test system prompt"))
 
@@ -364,7 +365,7 @@ async def test_compaction_handler_integrated_with_agent(compositor_client, mock_
     handler = CompactionHandler(threshold_tokens=100, keep_recent_turns=2)
 
     agent = await Agent.create(
-        mcp_client=compositor_client, client=mock_openai, handlers=[handler], tool_policy=RequireAnyTool()
+        tool_provider=MCPToolProvider(compositor_client), client=mock_openai, handlers=[handler], tool_policy=RequireAnyTool()
     )
     agent.process_message(SystemMessage.text("Test system prompt"))
 

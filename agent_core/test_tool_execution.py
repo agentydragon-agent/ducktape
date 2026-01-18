@@ -9,10 +9,11 @@ from typing import Annotated, Any, Final, Literal
 
 import pytest
 from hamcrest import all_of, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
-from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent_core.agent import Agent, _sanitize_mcp_result
+from agent_core.agent import Agent, _sanitize_tool_result
+from agent_core.mcp_provider import MCPToolProvider
+from agent_core.tool_provider import ImageContent, TextContent, ToolResult
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, RequireAnyTool
@@ -53,7 +54,7 @@ async def test_tool_error_continues_turn(compositor, compositor_client, validati
         yield m.assistant_text("Successfully sent message")
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
+        tool_provider=MCPToolProvider(compositor_client),
         client=mock,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
         tool_policy=RequireAnyTool(),
@@ -70,14 +71,14 @@ async def test_tool_error_continues_turn(compositor, compositor_client, validati
 
     # First call should fail with validation error
     first_output = outputs[0]
-    assert first_output.result.isError is True
+    assert first_output.result.is_error is True
     error_content = first_output.result.content[0].text
     assert_that(error_content.lower(), contains_string("error"))
     assert "text/markdown" in error_content or "literal" in error_content.lower()
 
     # Second call should succeed
     second_output = outputs[1]
-    assert second_output.result.isError is False
+    assert second_output.result.is_error is False
     assert_function_call_output_structured([second_output], has_entries(ok=True))
 
     assert_that(result.text, contains_string("Successfully sent message"))
@@ -109,7 +110,7 @@ async def test_app_level_error_payload_surfaced_in_structured_content(
         yield m.assistant_text("done")
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
+        tool_provider=MCPToolProvider(compositor_client),
         client=mock,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -158,7 +159,7 @@ async def test_parallel_tool_calls_reduce_wall_time(
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
+        tool_provider=MCPToolProvider(compositor_client),
         client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
         parallel_tool_calls=True,
         handlers=[handler, recording_handler],
@@ -200,7 +201,7 @@ async def _run_malformed_json_test(
 
     client = make_mock(handle_request)
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=MCPToolProvider(mcp_client_echo),
         client=client,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
         parallel_tool_calls=parallel,
@@ -292,8 +293,8 @@ async def test_malformed_json_parallel_tool_calls(mcp_client_echo, recording_han
 
     # One should be error, one should be success
     results = [out.result for out in tool_outputs]
-    error_count = sum(1 for r in results if r.isError)
-    success_count = sum(1 for r in results if not r.isError)
+    error_count = sum(r.is_error for r in results)
+    success_count = sum(not r.is_error for r in results)
 
     assert error_count == 1
     assert success_count == 1
@@ -302,79 +303,78 @@ async def test_malformed_json_parallel_tool_calls(mcp_client_echo, recording_han
 # --- Null byte sanitization tests ---
 
 
-def test_no_nulls_unchanged(text_content):
-    result = mcp_types.CallToolResult(content=[text_content("clean")], isError=False)
-    sanitized = _sanitize_mcp_result(result)
+def test_no_nulls_unchanged():
+    result = ToolResult(content=[TextContent(text="clean")], is_error=False)
+    sanitized = _sanitize_tool_result(result)
     assert sanitized.content == result.content
 
 
-def test_nulls_in_text(text_content):
-    result = mcp_types.CallToolResult(content=[text_content("a\x00b\x00c")], isError=False)
-    sanitized = _sanitize_mcp_result(result)
+def test_nulls_in_text():
+    result = ToolResult(content=[TextContent(text="a\x00b\x00c")], is_error=False)
+    sanitized = _sanitize_tool_result(result)
     first_item = sanitized.content[0]
-    assert isinstance(first_item, mcp_types.TextContent)
+    assert isinstance(first_item, TextContent)
     text = first_item.text
     assert text.startswith("NOTE: 2 null byte(s) removed")
     assert "abc" in text
 
 
-def test_nulls_in_structured(text_content):
-    result = mcp_types.CallToolResult(
-        content=[text_content("output")], structuredContent={"k": "v\x00", "nested": {"d": "x\x00"}}, isError=False
+def test_nulls_in_structured():
+    result = ToolResult(
+        content=[TextContent(text="output")], structured_content={"k": "v\x00", "nested": {"d": "x\x00"}}, is_error=False
     )
-    sanitized = _sanitize_mcp_result(result)
-    assert sanitized.structuredContent == {"k": "v", "nested": {"d": "x"}}
+    sanitized = _sanitize_tool_result(result)
+    assert sanitized.structured_content == {"k": "v", "nested": {"d": "x"}}
     first_item = sanitized.content[0]
-    assert isinstance(first_item, mcp_types.TextContent)
+    assert isinstance(first_item, TextContent)
     assert "NOTE: 2 null byte(s) removed" in first_item.text
 
 
 def test_empty_content_nulls_in_structured():
-    result = mcp_types.CallToolResult(content=[], structuredContent={"a": "b\x00"}, isError=False)
-    sanitized = _sanitize_mcp_result(result)
+    result = ToolResult(content=[], structured_content={"a": "b\x00"}, is_error=False)
+    sanitized = _sanitize_tool_result(result)
     assert len(sanitized.content) == 1
     first_item = sanitized.content[0]
-    assert isinstance(first_item, mcp_types.TextContent)
+    assert isinstance(first_item, TextContent)
     assert first_item.text.startswith("NOTE: 1 null byte(s) removed")
 
 
-def test_prepends_to_first_text_block(text_content):
-    result = mcp_types.CallToolResult(content=[text_content("a\x00"), text_content("b\x00")], isError=False)
-    sanitized = _sanitize_mcp_result(result)
+def test_prepends_to_first_text_block():
+    result = ToolResult(content=[TextContent(text="a\x00"), TextContent(text="b\x00")], is_error=False)
+    sanitized = _sanitize_tool_result(result)
     first_item = sanitized.content[0]
     second_item = sanitized.content[1]
-    assert isinstance(first_item, mcp_types.TextContent)
-    assert isinstance(second_item, mcp_types.TextContent)
+    assert isinstance(first_item, TextContent)
+    assert isinstance(second_item, TextContent)
     assert first_item.text.startswith("NOTE: 2 null byte(s) removed")
     assert second_item.text == "b"
 
 
-def test_inserts_before_non_text_first_block(text_content):
-    result = mcp_types.CallToolResult(
-        content=[mcp_types.ImageContent(type="image", data="data", mimeType="image/png"), text_content("a\x00")],
-        isError=False,
+def test_inserts_before_non_text_first_block():
+    result = ToolResult(
+        content=[ImageContent(mime_type="image/png", data="data"), TextContent(text="a\x00")],
+        is_error=False,
     )
-    sanitized = _sanitize_mcp_result(result)
+    sanitized = _sanitize_tool_result(result)
     assert len(sanitized.content) == 3
     first_item = sanitized.content[0]
-    assert isinstance(first_item, mcp_types.TextContent)
+    assert isinstance(first_item, TextContent)
     assert first_item.text.startswith("NOTE: 1 null byte(s) removed")
-    assert isinstance(sanitized.content[1], mcp_types.ImageContent)
+    assert isinstance(sanitized.content[1], ImageContent)
 
 
-def test_nested_structures(text_content):
-    result = mcp_types.CallToolResult(
-        content=[text_content("x")], structuredContent={"a": {"b": {"c": ["x\x00", "y\x00"]}}}, isError=False
+def test_nested_structures():
+    result = ToolResult(
+        content=[TextContent(text="x")], structured_content={"a": {"b": {"c": ["x\x00", "y\x00"]}}}, is_error=False
     )
-    sanitized = _sanitize_mcp_result(result)
-    assert sanitized.structuredContent == {"a": {"b": {"c": ["x", "y"]}}}
+    sanitized = _sanitize_tool_result(result)
+    assert sanitized.structured_content == {"a": {"b": {"c": ["x", "y"]}}}
 
 
-def test_preserves_error_and_meta(text_content):
-    result = mcp_types.CallToolResult(content=[text_content("err\x00")], isError=True, _meta={"k": "v"})
-    sanitized = _sanitize_mcp_result(result)
-    assert sanitized.isError is True
-    assert sanitized.meta == {"k": "v"}
+def test_preserves_error_flag():
+    result = ToolResult(content=[TextContent(text="err\x00")], is_error=True)
+    sanitized = _sanitize_tool_result(result)
+    assert sanitized.is_error is True
 
 
 # --- Flat tool schema tests ---
@@ -556,7 +556,7 @@ async def test_agent_compositor_flat_tools_request_schema(compositor, compositor
     print("PHASE 1: MCP_A ONLY")
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
+        tool_provider=MCPToolProvider(compositor_client),
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         parallel_tool_calls=False,
@@ -571,7 +571,7 @@ async def test_agent_compositor_flat_tools_request_schema(compositor, compositor
     await compositor.mount_inproc(MCPMountPrefix("mcp_b"), mcp_b)
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
+        tool_provider=MCPToolProvider(compositor_client),
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         parallel_tool_calls=False,

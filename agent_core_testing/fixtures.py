@@ -139,9 +139,12 @@ def make_test_agent(responses_factory: ResponsesFactory):
             handlers = [BaseHandler()]  # Minimal no-op handler (Agent requires at least one)
         if tool_policy is None:
             tool_policy = RequireAnyTool()
-        tool_provider = MCPToolProvider(mcp_client)
         agent = await Agent.create(
-            tool_provider=tool_provider, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
+            tool_provider=MCPToolProvider(mcp_client),
+            client=client,
+            handlers=handlers,
+            tool_policy=tool_policy,
+            **kwargs,
         )
         return agent, client
 
@@ -242,26 +245,14 @@ def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
     return _make
 
 
-@pytest.fixture
-def make_call_result() -> Callable[[dict[str, Any] | None, bool], ToolResult]:
-    """Factory for ToolResult."""
-
-    def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolResult:
-        return ToolResult(content=[], structured_content=structured_content or {}, is_error=is_error)
-
-    return _make
+def make_tool_result(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolResult:
+    """Create a ToolResult for tests."""
+    return ToolResult(content=[], structured_content=structured_content or {}, is_error=is_error)
 
 
-@pytest.fixture
-def make_tool_call_output(
-    make_call_result: Callable[[dict[str, Any] | None, bool], ToolResult],
-) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
-    """Factory for ToolCallOutput events."""
-
-    def _make(call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolCallOutput:
-        return ToolCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
-
-    return _make
+def make_tool_call_output(call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolCallOutput:
+    """Create a ToolCallOutput for tests."""
+    return ToolCallOutput(call_id=call_id, result=make_tool_result(structured_content, is_error))
 
 
 # ---- Live OpenAI fixture ----

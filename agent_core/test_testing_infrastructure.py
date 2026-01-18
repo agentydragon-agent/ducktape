@@ -8,11 +8,12 @@ import pytest
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
-from mcp import types as mcp_types
 
 from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
+from agent_core.tool_provider import TextContent, ToolResult
 from agent_core_testing.matchers import assert_function_call_output_structured
 from agent_core_testing.openai_mock import LIVE
 from agent_core_testing.responses import EchoMock
@@ -36,7 +37,7 @@ def has_function_call_output_structured(**kvs):
 
     Expects Pydantic models (ToolCallOutput), not dicts.
     """
-    return has_properties(type="function_call_output", result=has_properties(structuredContent=has_entries(**kvs)))
+    return has_properties(type="function_call_output", result=has_properties(structured_content=has_entries(**kvs)))
 
 
 def assert_payloads_have(payloads: list[object], *matchers):
@@ -49,40 +50,40 @@ contains_err = contains_string
 
 
 class HasErrorText(BaseMatcher):
-    """Matcher for CallToolResult that verifies it's an error with TextContent."""
+    """Matcher for ToolResult that verifies it's an error with TextContent."""
 
     def __init__(self, text_matcher):
         self.text_matcher = text_matcher
 
     def _matches(self, result):
-        """Match CallToolResult with isError=True and TextContent."""
-        if not isinstance(result, mcp_types.CallToolResult):
+        """Match ToolResult with is_error=True and TextContent."""
+        if not isinstance(result, ToolResult):
             return False
-        if not result.isError:
+        if not result.is_error:
             return False
         if not result.content or len(result.content) == 0:
             return False
         content_item = result.content[0]
-        if not isinstance(content_item, mcp_types.TextContent):
+        if not isinstance(content_item, TextContent):
             return False
         return self.text_matcher.matches(content_item.text)
 
     def describe_to(self, description: Description):
-        description.append_text("error CallToolResult with text content matching ")
+        description.append_text("error ToolResult with text content matching ")
         self.text_matcher.describe_to(description)
 
     def describe_mismatch(self, result, mismatch_description: Description):
-        if not isinstance(result, mcp_types.CallToolResult):
-            mismatch_description.append_text("was not a CallToolResult")
+        if not isinstance(result, ToolResult):
+            mismatch_description.append_text("was not a ToolResult")
             return
-        if not result.isError:
-            mismatch_description.append_text("was not an error (isError=False)")
+        if not result.is_error:
+            mismatch_description.append_text("was not an error (is_error=False)")
             return
         if not result.content or len(result.content) == 0:
             mismatch_description.append_text("had empty content")
             return
         content_item = result.content[0]
-        if not isinstance(content_item, mcp_types.TextContent):
+        if not isinstance(content_item, TextContent):
             mismatch_description.append_text(f"first content was {type(content_item).__name__}, not TextContent")
             return
         mismatch_description.append_text("error text ")
@@ -90,7 +91,7 @@ class HasErrorText(BaseMatcher):
 
 
 def tool_call_with_error_text(text_matcher):
-    """Match CallToolResult with isError=True and text content matching the given matcher."""
+    """Match ToolResult with is_error=True and text content matching the given matcher."""
     return HasErrorText(text_matcher)
 
 
@@ -117,7 +118,7 @@ def assert_function_call_output_structured_local(
     records: list[ToolCall | ToolCallOutput], structured_content_matcher: Any
 ) -> None:
     """Assert that a RecordingHandler-style records list contains a function_call_output
-    whose structuredContent matches the provided matcher.
+    whose structured_content matches the provided matcher.
 
     Expects Pydantic models (ToolCallOutput), not dicts.
 
@@ -128,7 +129,7 @@ def assert_function_call_output_structured_local(
         )
     """
     # Break down nested matchers with explicit Any types for PyHamcrest compatibility
-    result_matcher: Any = has_properties(structuredContent=structured_content_matcher)
+    result_matcher: Any = has_properties(structured_content=structured_content_matcher)
     entry_matcher: Any = has_properties(type="function_call_output", result=result_matcher)
     assert_that(records, has_item(entry_matcher))
 
@@ -159,7 +160,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
+        tool_provider=MCPToolProvider(mcp_client_echo), client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
     )
     agent.process_message(UserMessage.text("say hi"))
 
