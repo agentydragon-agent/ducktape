@@ -15,7 +15,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//adgn/mcp/gitea_mirror",
+        "//adgn/mcp/gitea_mirror:gitea_mirror_lib",
         "//agent_core",
         "//agent_core_testing",
         "//agent_pkg/host",

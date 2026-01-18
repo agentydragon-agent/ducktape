@@ -13,7 +13,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//third_party/openai_cookbook:apply_patch",
+        "//third_party/openai_cookbook:apply_patch_lib",
         "@pypi//unidiff",
     ],
 )

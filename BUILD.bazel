@@ -1,17 +1,10 @@
-# gazelle:exclude .devenv
-# gazelle:exclude .venv
-# gazelle:exclude .direnv
-# gazelle:exclude .pre-commit-cache
-# gazelle:exclude **/.uv-cache
-# gazelle:exclude **/__pycache__
+# Gazelle exclusions
+# Most .gitignore patterns are handled by .bazelignore (root-level directories)
+# or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible
-# gazelle:exclude experimental
-# gazelle:exclude third_party
-# gazelle:exclude investigations
-# gazelle:exclude props/.devenv
+
 # gazelle:python_root
 # gazelle:python_library_naming_convention $package_name$_lib
-# gazelle:python_binary_naming_convention $package_name$_bin
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
@@ -161,7 +154,7 @@ py_package(
         "openai_utils",
     ],
     deps = [
-        "//difftree",
+        "//difftree:difftree_lib",
         "//git_commit_ai:git_commit_ai_lib",
         "//gmail_archiver:gmail_archiver_lib",
     ],

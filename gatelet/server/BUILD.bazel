@@ -4,16 +4,16 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_binary(
-    name = "server_bin",
+    name = "server",
     srcs = ["__main__.py"],
     imports = ["../.."],
     main = "__main__.py",
     visibility = ["//gatelet:__pkg__"],
-    deps = [":server"],
+    deps = [":server_lib"],
 )
 
 py_library(
-    name = "server",
+    name = "server_lib",
     srcs = [
         # server
         "app.py",
@@ -116,7 +116,7 @@ py_test(
     imports = ["../.."],
     main = "pytest_runner.py",
     deps = [
-        ":server",
+        ":server_lib",
         "//gatelet:manage_lib",
         "//gatelet:reporter_lib",
         "@pypi//httpx",
@@ -129,5 +129,5 @@ py_test(
 
 ruff_test(
     name = "ruff",
-    srcs = [":server"],
+    srcs = [":server_lib"],
 )
