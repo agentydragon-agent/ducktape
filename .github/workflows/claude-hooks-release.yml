@@ -1,0 +1,29 @@
+# Build and release claude_hooks wheel
+name: claude-hooks Release
+
+on:
+  push:
+    branches: [devel, main]
+    paths:
+      - "tools/claude_hooks/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/python-wheel-release.yml
+    with:
+      package_name: claude-hooks
+      wheel_name: claude_hooks
+      bazel_target: //tools/claude_hooks:claude_hooks_wheel
+      wheel_path: bazel-bin/tools/claude_hooks
+      release_body: |
+        claude_hooks wheel for Claude Code web environments.
+
+        Contains:
+        - `claude-session-start` - Session start hook for Claude Code web
+        - `bazel` / `bazelisk` - Bazel wrapper with proxy support
+
+        Requires Python 3.13+
