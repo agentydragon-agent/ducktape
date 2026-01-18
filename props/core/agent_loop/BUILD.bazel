@@ -5,13 +5,27 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
+    name = "critic_tools",
+    srcs = ["critic_tools.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_helpers",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "loop",
     srcs = ["loop.py"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":critic_tools",
         "//mcp_infra/exec:direct",
-        "//mcp_infra/exec:models",
         "@pypi//openai",
     ],
 )

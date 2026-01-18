@@ -4,7 +4,7 @@ Runs the full agent loop inside the container:
 1. Fetches snapshot from Postgres
 2. Constructs system prompt
 3. Calls LLM via proxy (OPENAI_BASE_URL)
-4. Executes tools via subprocess
+4. Executes tools (both shell exec and critic-specific tools)
 5. Exits 0 on successful submit, non-zero on failure
 """
 
@@ -20,7 +20,23 @@ from typing import Any
 from openai import OpenAI
 
 from mcp_infra.exec.direct import DirectExecArgs, run_direct_exec
-from mcp_infra.exec.models import Exited
+from props.core.agent_loop.critic_tools import (
+    DeleteIssueArgs,
+    InsertIssueArgs,
+    InsertOccurrenceArgs,
+    InsertOccurrenceMultiArgs,
+    ReportFailureArgs,
+    SubmitArgs,
+    ToolResult,
+    delete_issue,
+    get_critic_tool_schemas,
+    insert_issue,
+    insert_occurrence,
+    insert_occurrence_multi,
+    list_issues,
+    report_failure,
+    submit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,18 +45,14 @@ MAX_TURNS = 100
 
 
 EXEC_TOOL_DESCRIPTION = (
-    "Execute a command in the workspace. Use critic_cli commands "
-    "to report issues and submit your critique. Commands run in /workspace directory."
+    "Execute a shell command in the workspace. Use for code analysis tools "
+    "like cat, rg, grep, find, etc. Commands run in /workspace directory."
 )
 
 
 def _get_exec_tool_schema() -> dict[str, Any]:
-    """Return the exec tool schema for OpenAI Responses API.
-
-    Generates schema from DirectExecArgs Pydantic model.
-    """
+    """Return the exec tool schema for OpenAI Responses API."""
     parameters = DirectExecArgs.model_json_schema()
-    # Remove $defs if present (OpenAI strict mode doesn't support refs)
     parameters.pop("$defs", None)
     return {
         "type": "function",
@@ -53,12 +65,37 @@ def _get_exec_tool_schema() -> dict[str, Any]:
     }
 
 
-def _check_submit_success(command: list[str], exit_code: int) -> bool:
-    """Check if this was a successful submit command."""
-    # Check if command is a submit command (critic_cli submit ...)
-    if len(command) >= 2 and command[0] == "critic_cli" and command[1] == "submit":
-        return exit_code == 0
-    return False
+def _handle_critic_tool(name: str, arguments: str) -> ToolResult:
+    """Handle a critic tool call and return the result."""
+    try:
+        args = json.loads(arguments)
+    except json.JSONDecodeError as e:
+        return ToolResult(output=f"Error: Invalid JSON arguments: {e}")
+
+    try:
+        if name == "insert_issue":
+            return insert_issue(InsertIssueArgs.model_validate(args))
+        elif name == "insert_occurrence":
+            return insert_occurrence(InsertOccurrenceArgs.model_validate(args))
+        elif name == "insert_occurrence_multi":
+            return insert_occurrence_multi(InsertOccurrenceMultiArgs.model_validate(args))
+        elif name == "delete_issue":
+            return delete_issue(DeleteIssueArgs.model_validate(args))
+        elif name == "list_issues":
+            return list_issues()
+        elif name == "submit":
+            return submit(SubmitArgs.model_validate(args))
+        elif name == "report_failure":
+            return report_failure(ReportFailureArgs.model_validate(args))
+        else:
+            return ToolResult(output=f"Error: Unknown critic tool '{name}'")
+    except Exception as e:
+        logger.exception("Critic tool error: %s", name)
+        return ToolResult(output=f"Error in {name}: {e}")
+
+
+# Critic tool names for dispatch
+CRITIC_TOOLS = {"insert_issue", "insert_occurrence", "insert_occurrence_multi", "delete_issue", "list_issues", "submit", "report_failure"}
 
 
 async def run_critic_loop(system_prompt: str, model: str) -> int:
@@ -76,7 +113,8 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
         api_key=os.environ.get("OPENAI_API_KEY", ""),
     )
 
-    tools = [_get_exec_tool_schema()]
+    # Combine exec tool with critic-specific tools
+    tools = [_get_exec_tool_schema()] + get_critic_tool_schemas()
     messages: list[dict[str, Any]] = []
 
     for turn in range(MAX_TURNS):
@@ -118,35 +156,42 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
 
         # Execute function calls
         tool_results = []
+        exit_code: int | None = None
+
         for fc in function_calls:
-            if fc.name != "exec":
-                output = f"Error: Unknown tool '{fc.name}'. Only 'exec' is available."
-                tool_results.append({"type": "function_call_output", "call_id": fc.call_id, "output": output})
-                continue
+            if fc.name == "exec":
+                # Shell execution
+                try:
+                    args = json.loads(fc.arguments)
+                    exec_args = DirectExecArgs.model_validate(args)
+                    exec_result = await run_direct_exec(exec_args)
+                    output = exec_result.model_dump_json()
+                except json.JSONDecodeError as e:
+                    output = f"Error: Invalid JSON arguments: {e}"
+                except Exception as e:
+                    output = f"Error executing command: {e}"
+                    logger.exception("Exec tool error")
+            elif fc.name in CRITIC_TOOLS:
+                # Critic tool - run in Python
+                result = _handle_critic_tool(fc.name, fc.arguments)
+                output = result.output
 
-            try:
-                args = json.loads(fc.arguments)
-                exec_args = DirectExecArgs.model_validate(args)
-                exec_result = await run_direct_exec(exec_args)
-                # Serialize result to JSON for the LLM
-                output = exec_result.model_dump_json()
-
-                # Check for successful submit
-                if isinstance(exec_result.exit, Exited) and _check_submit_success(exec_args.cmd, exec_result.exit.exit_code):
-                    logger.info("Submit succeeded, exiting")
-                    print("Critique submitted successfully")
-                    return 0
-
-            except json.JSONDecodeError as e:
-                output = f"Error: Invalid JSON arguments: {e}"
-            except Exception as e:
-                output = f"Error executing command: {e}"
-                logger.exception("Tool execution error")
+                if result.should_exit:
+                    exit_code = result.exit_code
+                    logger.info("Tool %s requested exit with code %d", fc.name, exit_code)
+            else:
+                output = f"Error: Unknown tool '{fc.name}'"
 
             tool_results.append({"type": "function_call_output", "call_id": fc.call_id, "output": output})
 
         # Add tool results to conversation
         messages.extend(tool_results)
+
+        # Exit if a tool requested it
+        if exit_code is not None:
+            if exit_code == 0:
+                print("Critique submitted successfully")
+            return exit_code
 
     logger.error("Max turns (%d) exceeded", MAX_TURNS)
     print(f"Error: Max turns ({MAX_TURNS}) exceeded", file=sys.stderr)
