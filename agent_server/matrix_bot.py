@@ -23,7 +23,7 @@ from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.models import BaseExecResult, make_exec_input
+from mcp_infra.exec.models import BaseExecResult, ExecInput
 from mcp_infra.mcp_types import NetworkMode
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
@@ -165,7 +165,7 @@ def run(
                         )
 
                         # Call docker exec using helper with defaults
-                        exec_input = make_exec_input(["sh", "-lc", curl_cmd], timeout_ms=40_000)
+                        exec_input = ExecInput.create(["sh", "-lc", curl_cmd], timeout_ms=40_000)
                         res = await mcp_client.session.call_tool(
                             name=docker_exec_tool, arguments=exec_input.model_dump()
                         )

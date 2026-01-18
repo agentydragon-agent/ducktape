@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
+from mcp_infra.exec.models import ExecInput, Exited, TimedOut
 
 # All tests below require structuredContent and call via the typed client
 
@@ -14,7 +14,7 @@ async def test_hello_world(typed_docker_client) -> None:
     names = {t.name for t in tools}
     assert "exec" in names
 
-    res = await client.exec(make_exec_input(["/bin/echo", "hello"]))
+    res = await client.exec(ExecInput.create(["/bin/echo", "hello"]))
     assert isinstance(res.exit, Exited)
     assert res.exit.exit_code == 0
     assert isinstance(res.stdout, str)  # Short output should not be truncated
@@ -24,7 +24,7 @@ async def test_hello_world(typed_docker_client) -> None:
 @pytest.mark.requires_docker
 async def test_stderr_and_exit_code(typed_docker_client) -> None:
     client, _session = typed_docker_client
-    res = await client.exec(make_exec_input(["sh", "-lc", "echo err 1>&2; exit 3"]))
+    res = await client.exec(ExecInput.create(["sh", "-lc", "echo err 1>&2; exit 3"]))
     expected_err_exit = 3
     assert isinstance(res.exit, Exited)
     assert res.exit.exit_code == expected_err_exit
@@ -35,5 +35,5 @@ async def test_stderr_and_exit_code(typed_docker_client) -> None:
 @pytest.mark.requires_docker
 async def test_timeout_flag(typed_docker_client) -> None:
     client, _session = typed_docker_client
-    res = await client.exec(make_exec_input(["sh", "-lc", "sleep 5"], timeout_ms=500))
+    res = await client.exec(ExecInput.create(["sh", "-lc", "sleep 5"], timeout_ms=500))
     assert isinstance(res.exit, TimedOut)

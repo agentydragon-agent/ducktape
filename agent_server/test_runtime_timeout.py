@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.models import BaseExecResult, Exited, TimedOut, make_exec_input
+from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited, TimedOut
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
@@ -35,11 +35,11 @@ async def test_runtime_per_session_timeout_then_next_call_ok(
         BaseExecResult,
     )
 
-    res_timeout = await stub(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500))
+    res_timeout = await stub(ExecInput.create(["sh", "-lc", "sleep 3"], timeout_ms=500))
     assert isinstance(res_timeout.exit, TimedOut)
 
     # Next call should work; container should have been restarted
-    res_ok = await stub(make_exec_input(["/bin/echo", "-n", "ok"], timeout_ms=5000))
+    res_ok = await stub(ExecInput.create(["/bin/echo", "-n", "ok"], timeout_ms=5000))
     assert isinstance(res_ok.exit, Exited)
     assert res_ok.exit.exit_code == 0
     assert (res_ok.stdout or "") == "ok"

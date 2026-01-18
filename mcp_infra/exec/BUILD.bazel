@@ -17,27 +17,82 @@ py_library(
     ],
 )
 
+# Image reading utility (shared by direct, seatbelt, bwrap, docker)
 py_library(
-    name = "exec",
+    name = "read_image",
+    srcs = ["read_image.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils",
+        "@pypi//mcp",
+    ],
+)
+
+# Direct (unsandboxed) exec MCP server
+py_library(
+    name = "direct",
+    srcs = ["direct.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":read_image",
+        ":subprocess_exec",
+        "//mcp_infra/enhanced",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+# macOS seatbelt sandbox exec MCP server
+py_library(
+    name = "seatbelt",
+    srcs = ["seatbelt.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":read_image",
+        ":subprocess_exec",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/seatbelt",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+# Linux bubblewrap sandbox exec MCP server
+py_library(
+    name = "bwrap",
+    srcs = ["bwrap.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":read_image",
+        ":subprocess_exec",
+        "//mcp_infra/enhanced",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+# Docker container exec MCP server
+py_library(
+    name = "docker",
     srcs = [
-        "__init__.py",
-        "bwrap.py",
         "container_session.py",
-        "direct.py",
         "docker/__init__.py",
         "docker/launcher.py",
         "docker/server.py",
-        "read_image.py",
-        "seatbelt.py",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":read_image",
         ":subprocess_exec",
         "//cli_util",
         "//mcp_infra",
         "//mcp_infra/enhanced",
-        "//mcp_infra/seatbelt",
         "@pypi//aiodocker",
         "@pypi//anyio",
         "@pypi//fastmcp",
@@ -46,18 +101,62 @@ py_library(
     ],
 )
 
+# Convenience target that re-exports all exec servers
+py_library(
+    name = "exec",
+    srcs = ["__init__.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bwrap",
+        ":direct",
+        ":docker",
+        ":seatbelt",
+    ],
+)
+
 py_test(
-    name = "test_exec",
+    name = "test_direct",
+    srcs = ["test_direct.py"],
+    deps = [
+        ":direct",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_seatbelt",
+    srcs = ["test_seatbelt.py"],
+    deps = [
+        ":seatbelt",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_bwrap",
+    srcs = ["test_bwrap.py"],
+    deps = [
+        ":bwrap",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_docker",
     srcs = [
-        "test_bwrap.py",
-        "test_direct.py",
         "test_docker.py",
         "test_docker_unit.py",
-        "test_seatbelt.py",
     ],
-    main = "test_direct.py",
+    main = "test_docker.py",
     deps = [
-        ":exec",
+        ":docker",
         "//mcp_infra:test_support",
         "@pypi//docker",
         "@pypi//fastmcp",

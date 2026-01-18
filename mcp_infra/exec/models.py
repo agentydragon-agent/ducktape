@@ -169,18 +169,6 @@ class ExecInput(OpenAIStrictModeBaseModel):
         return cls(cmd=cmd, cwd=cwd, env=env, user=user, timeout_ms=timeout_ms)
 
 
-def make_exec_input(
-    cmd: list[str],
-    *,
-    timeout_ms: int = 10_000,
-    cwd: str | None = None,
-    env: list[str] | None = None,
-    user: str | None = None,
-) -> ExecInput:
-    """Backwards-compatible wrapper for ExecInput.create()."""
-    return ExecInput.create(cmd, timeout_ms=timeout_ms, cwd=cwd, env=env, user=user)
-
-
 class BaseExecResult(BaseModel):
     """Standard MCP exec response - basic servers return this directly (output model).
 

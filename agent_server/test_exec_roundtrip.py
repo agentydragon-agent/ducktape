@@ -7,7 +7,7 @@ import pytest
 from agent_core.agent import Agent, AgentResult
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
-from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
+from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
@@ -23,7 +23,7 @@ SERVER_NAME = MCPMountPrefix("box")
 async def _assert_exec_echo(sess) -> None:
     # Call via compositor using namespaced tool key
     stub = ToolStub(sess, build_mcp_function(SERVER_NAME, "exec"), BaseExecResult)
-    res = await stub(make_exec_input(ECHO_CMD))
+    res = await stub(ExecInput.create(ECHO_CMD))
     assert isinstance(res.exit, Exited)
     assert res.exit.exit_code == 0
     assert (res.stdout or "") == "hello"

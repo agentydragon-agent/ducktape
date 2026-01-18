@@ -25,7 +25,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput, EchoOutput
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.models import BaseExecResult, ExecInput, make_exec_input
+from mcp_infra.exec.models import BaseExecResult, ExecInput
 from mcp_infra.mounted import Mounted
 from mcp_infra.naming import MCPMountPrefix, build_mcp_function
 from openai_utils.builders import ItemFactory
@@ -376,7 +376,7 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
         self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None, tool_name: str = "exec"
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Yield docker exec call, receive response, return typed result."""
-        exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
+        exec_input = ExecInput.create(cmd, timeout_ms=timeout_ms, cwd=cwd)
         call = self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
         return tool_roundtrip(call, BaseExecResult)
 
@@ -447,7 +447,7 @@ class DockerExecMock(DecoratorMock):
         return self.call_roundtrip(
             self._runtime,
             self._runtime.server.exec_tool,
-            make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd),
+            ExecInput.create(cmd, timeout_ms=timeout_ms, cwd=cwd),
             BaseExecResult,
         )
 
