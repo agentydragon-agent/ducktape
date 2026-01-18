@@ -103,20 +103,6 @@ py_library(
 )
 
 py_library(
-    name = "cmd_critic_agent",
-    srcs = ["cmd_critic_agent.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:agent_helpers",
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "//props/core/db:snapshots",
-        "@pypi//typer",
-    ],
-)
-
-py_library(
     name = "cmd_critic_dev",
     srcs = ["cmd_critic_dev.py"],
     imports = ["../../.."],
@@ -319,8 +305,8 @@ py_library(
         ":cmd_agent_pkg",
         ":cmd_analyze_exec",
         ":cmd_classify_noops",
-        ":cmd_critic_agent",
         ":cmd_critic_dev",
+        "//props/core/critic:cli_lib",
         ":cmd_db",
         ":cmd_gepa",
         ":cmd_grade_validation",

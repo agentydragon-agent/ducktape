@@ -13,18 +13,41 @@ To review code, use paths like:
 
 ## Workflow
 
-1. **Analyze code** using available tools (rg, ruff, mypy, vulture, etc. via docker_exec)
-2. **Report issues** using `props critic-agent` CLI
-3. **Complete review** by calling `props critic-agent submit` when done
+1. **Analyze code** using available shell commands (rg, cat, grep, etc.)
+2. **Report issues** using the `critic_cli` commands below
+3. **Complete review** by calling `critic_cli submit` when done
 
 ## CLI Commands
 
-{{ run_command("props critic-agent --help") }}
+Available critic_cli commands:
 
-## Database Schema
+```
+critic_cli insert-issue <issue_id> <rationale>
+  Insert a reported issue.
+  Example: critic_cli insert-issue dead-import "Unused import detected"
 
-{{ describe_relation("reported_issues") }}
-{{ describe_relation("reported_issue_occurrences") }}
+critic_cli insert-occurrence <issue_id> <file> [-s START] [-e END]
+  Insert a single-location occurrence.
+  Example: critic_cli insert-occurrence dead-import server.py -s 10 -e 10
+
+critic_cli insert-occurrence-multi <issue_id> <loc1> <loc2> ...
+  Insert multi-location occurrence (e.g., duplication).
+  Location format: file:start:end
+  Example: critic_cli insert-occurrence-multi dup-enum types.py:20:25 persist.py:54:58
+
+critic_cli delete-issue <issue_id>
+  Delete an issue and its occurrences.
+
+critic_cli list-issues
+  List all reported issues.
+
+critic_cli submit <count> <summary>
+  Finalize and submit the critique.
+  Example: critic_cli submit 3 "Found 1 dead code and 2 duplication issues"
+
+critic_cli report-failure <message>
+  Report that critique could not be completed.
+```
 
 ## Issue IDs
 
@@ -37,6 +60,5 @@ Use descriptive kebab-case slugs:
 - **NO access to ground truth** - You cannot see `true_positives` or `false_positives`
 - **Line ranges must be valid** (start_line > 0, end_line >= start_line)
 
-{{ include_doc("agent_pkg_runtime/docs/mcp_http_connection.md.j2") }}
 {{ include_doc("props_core/docs/database_access.md") }}
 {{ include_doc("props_core/docs/db/critiques.md.j2") }}

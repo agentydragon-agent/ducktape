@@ -1,6 +1,42 @@
 """Critic module - per-file targets."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# =============================================================================
+# CLI for critic agents (standalone binary for container use)
+# =============================================================================
+
+py_library(
+    name = "cli_lib",
+    srcs = ["cli.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:agent_helpers",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "critic_cli",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    visibility = ["//visibility:public"],
+    deps = [":cli_lib"],
+)
+
+pkg_tar(
+    name = "critic_cli_tar",
+    srcs = [":critic_cli"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
 
 # =============================================================================
 # Library targets

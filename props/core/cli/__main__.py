@@ -34,7 +34,7 @@ from props.core.cli import common_options as opt
 from props.core.cli.cmd_agent_pkg import app as agent_pkg_app
 from props.core.cli.cmd_analyze_exec import cmd_analyze_exec
 from props.core.cli.cmd_classify_noops import cmd_classify_noops
-from props.core.cli.cmd_critic_agent import app as critic_agent_app
+from props.core.critic.cli import app as critic_agent_app
 from props.core.cli.cmd_critic_dev import app as critic_dev_app
 from props.core.cli.cmd_db import db_app
 from props.core.cli.cmd_grade_validation import cmd_grade_validation

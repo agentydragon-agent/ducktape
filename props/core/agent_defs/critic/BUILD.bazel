@@ -23,7 +23,7 @@ oci_image(
         "PYTHONUNBUFFERED": "1",
     },
     tars = [
-        "//props/core/cli:app_tar",
+        "//props/core/critic:critic_cli_tar",
         "//props/core/agent_loop:critic_main_tar",
     ],
     workdir = "/workspace",

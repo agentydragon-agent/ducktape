@@ -29,7 +29,7 @@ MAX_TURNS = 100
 
 
 EXEC_TOOL_DESCRIPTION = (
-    "Execute a command in the workspace. Use this to run props critic-agent commands "
+    "Execute a command in the workspace. Use critic_cli commands "
     "to report issues and submit your critique. Commands run in /workspace directory."
 )
 
@@ -55,8 +55,8 @@ def _get_exec_tool_schema() -> dict[str, Any]:
 
 def _check_submit_success(command: list[str], exit_code: int) -> bool:
     """Check if this was a successful submit command."""
-    # Check if command is a submit command
-    if len(command) >= 3 and command[0] == "props" and command[1] == "critic-agent" and command[2] == "submit":
+    # Check if command is a submit command (critic_cli submit ...)
+    if len(command) >= 2 and command[0] == "critic_cli" and command[1] == "submit":
         return exit_code == 0
     return False
 

@@ -293,3 +293,12 @@ def list_issues_cmd() -> None:
                 locs = ", ".join(f"{loc.file}:{loc.start_line or '?'}-{loc.end_line or '?'}" for loc in occ.locations)
                 typer.echo(f"      - {locs}")
             typer.echo()
+
+
+def main() -> None:
+    """Entry point for critic-cli binary."""
+    app()
+
+
+if __name__ == "__main__":
+    main()
