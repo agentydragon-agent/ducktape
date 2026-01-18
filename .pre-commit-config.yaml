@@ -5,22 +5,14 @@ exclude: |
   (?x)^(
     # Vendored/third-party code
     .*/fixtures/.*|
-    .*/third_party/.*|
-    .*/vendor/.*|
 
     # Legacy/archived directories
     k8s-old/.*|
     claude-commands-old/.*\.md|
 
-    # Generated/synced files
-    cluster/flux-system/flux-system/.*|
-
-    # Config files with non-standard format
-    nonrcm-dotfiles/config/cronomix/.*\.json|
-
     # Test data and examples
     .*/examples/.*\.py|
-    claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\.md|
+    claude/claude_hooks/testdata/.*\.md|
     tana/testdata/.*|
 
     # LLM prompts/instructions (manually curated, not linted)
@@ -36,7 +28,6 @@ exclude: |
     finance/reconcile/README\.md|
     mcp_infra/docs/eliminating-class-constants-analysis\.md|
     nix/home/(README\.md|claude-code/commands/.*\.md)|
-    props/core/src/props_core/(\.claude/commands/.*\.md|docs/prompts/.*\.md|props/self-describing-names\.md)|
     sandboxed_jupyter/docs/TODO.*\.md|
     website/posts/.*\.markdown
   )$
