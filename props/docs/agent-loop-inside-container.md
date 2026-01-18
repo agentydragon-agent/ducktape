@@ -58,24 +58,40 @@ AgentEnvironment (simplified)
 
 ### LLM Proxy
 
-| Aspect            | Decision                                                               |
-| ----------------- | ---------------------------------------------------------------------- |
-| Env vars          | `OPENAI_BASE_URL`, `OPENAI_API_KEY` (Responses API compatible)         |
-| Token             | Same as existing Postgres password (`agent_{uuid}`)                    |
-| Token validation  | Via Postgres (lookup agent_runs)                                       |
-| Model restriction | One model per run, enforced by proxy                                   |
-| Cost budget       | Per-agent, tracked via parent-child in agent_runs                      |
-| Streaming         | Not supported (simplifies logging/budgeting)                           |
-| Implementation    | Custom proxy (like registry_proxy), queries agent_runs for auth/budget |
+| Aspect            | Decision                                                                     |
+| ----------------- | ---------------------------------------------------------------------------- |
+| Env vars          | `OPENAI_BASE_URL`, `OPENAI_API_KEY` (Responses API compatible)               |
+| Token             | Same as existing Postgres password (`agent_{uuid}`)                          |
+| Token validation  | Via Postgres (lookup agent_runs by username pattern)                         |
+| Model restriction | One model per run, enforced by proxy                                         |
+| Cost budget       | Per-agent token counts, tracked via parent-child in agent_runs               |
+| Streaming         | Not supported (simplifies logging/budgeting)                                 |
+| Implementation    | New FastAPI proxy, similar pattern to rspcache but simpler (Responses only)  |
+| Container         | New `llm-proxy` service in compose.yaml on `props-internal` + `props-agents` |
+| Port              | 5052 (internal), exposed on `props-agents` network                           |
+
+**Reference:** Existing `rspcache/` proxy handles OpenAI Responses API with caching, streaming, and token auth. New proxy is simpler:
+- No caching (every request goes upstream)
+- No streaming (simplifies logging)
+- Auth via Postgres temp user lookup (not separate token table)
+- Logs full request/response to new `llm_requests` table
 
 ### Tool Execution
 
-| Aspect          | Decision                                                                |
-| --------------- | ----------------------------------------------------------------------- |
-| Mechanism       | Subprocess inside container (no docker_exec from host)                  |
-| Tool schema     | Generic `exec` tool taking command array                                |
-| Timeouts/limits | Handle output truncation, timeouts - possibly reuse MCP local exec code |
-| Critique tools  | Bundle existing `props critic-agent` CLI (insert-issue, submit, etc.)   |
+| Aspect          | Decision                                                                 |
+| --------------- | ------------------------------------------------------------------------ |
+| Mechanism       | Subprocess inside container (no docker_exec from host)                   |
+| Tool schema     | Generic `exec` tool taking command array                                 |
+| Timeouts/limits | Reuse `mcp_infra.exec.subprocess.run_proc()` (standalone, no MCP needed) |
+| Critique tools  | Bundle existing `props critic-agent` CLI (insert-issue, submit, etc.)    |
+
+**Exec implementation:** Reuse `mcp_infra/exec/subprocess.py:run_proc()` directly:
+- Standalone async function, no MCP server dependency
+- `MAX_BYTES_CAP = 150,000` bytes per stream (stdout/stderr)
+- `MAX_EXEC_TIMEOUT_MS = 300,000` (5 minutes)
+- Clean timeout handling with `asyncio.wait_for()` + process kill
+- UTF-8 safe truncation via `errors="replace"`
+- Returns `ExecOutcome` with discriminated exit status: `Exited | TimedOut | Killed`
 
 ### Agent Loop
 
@@ -90,12 +106,23 @@ AgentEnvironment (simplified)
 
 ### Grader Daemon Mode
 
-| Aspect        | Decision                                                       |
-| ------------- | -------------------------------------------------------------- |
-| Lifecycle     | Container keeps running (doesn't exit between grading batches) |
-| Wake/sleep    | Internal loop uses pg_notify directly from container           |
-| Drift handler | Works as-is - pg_notify is accessible from inside container    |
-| Timeout       | No timeout for daemon graders (eternal)                        |
+| Aspect        | Decision                                                          |
+| ------------- | ----------------------------------------------------------------- |
+| Lifecycle     | Container runs indefinitely (no exit between grading batches)     |
+| Wake/sleep    | Internal loop uses pg_notify on `grading_pending` channel         |
+| Drift handler | `GraderDriftHandler.on_before_sample()` returns `Abort()` → sleep |
+| Timeout       | No timeout for daemon graders (eternal)                           |
+| Scope         | One daemon per snapshot, grades all critiques for that snapshot   |
+
+**How daemon graders work:**
+- "Drift" = ungraded (critique issue, GT occurrence) pairs in `grading_pending` view
+- Daemon goal: make `grading_pending` empty for its snapshot
+- Loop: check drift → grade until empty → sleep waiting for `NOTIFY grading_pending`
+- GT changes (new TPs/FPs, edits) trigger notifications that wake the daemon
+- Uses `asyncio.Event` for coordinated wake/sleep, background `pg_listen` task
+- On context length exceeded: daemon manager auto-restarts with fresh context
+
+**pg_notify permissions:** Daemon uses admin credentials for LISTEN (not temp user credentials). Agent temp users don't need LISTEN permissions - they only write to DB, the notification triggers fire from postgres-owned SECURITY DEFINER functions.
 
 ### Subagent Spawning
 
@@ -158,12 +185,26 @@ Spawn is **non-blocking** - returns immediately with agent_run_id. PO can spawn 
 
 ### Observability
 
-| Aspect         | Decision                                                     |
-| -------------- | ------------------------------------------------------------ |
-| LLM calls      | Logged by LLM proxy (all requests/responses)                 |
-| Container logs | Capture stdout/stderr, store in agent_runs or separate table |
-| Access         | PO/PI agents and humans can query logs from DB               |
-| Events table   | Deprecated - LLM proxy logs + container logs replace it      |
+| Aspect         | Decision                                                              |
+| -------------- | --------------------------------------------------------------------- |
+| LLM calls      | Logged by LLM proxy to new `llm_requests` table                       |
+| Container logs | Capture stdout/stderr, store in new columns on `agent_runs`           |
+| Access         | PO/PI agents and humans can query logs from DB                        |
+| Events table   | Deprecated (big bang cutover) - LLM proxy logs + container logs replace it |
+
+**New `llm_requests` table:**
+- `id`, `agent_run_id` (FK), `created_at`
+- `request_body` (JSONB) - full OpenAI Responses API request
+- `response_body` (JSONB) - full response including `usage` field
+- `input_tokens`, `output_tokens` (extracted from response for easy querying)
+- `model` (denormalized for filtering)
+- `latency_ms`
+- Cost computation via view joining with model pricing metadata table
+
+**New columns on `agent_runs`:**
+- `container_stdout` (TEXT) - captured stdout
+- `container_stderr` (TEXT) - captured stderr
+- Or possibly a separate `agent_logs` table if logs get large
 
 ### Security
 
@@ -172,6 +213,41 @@ Spawn is **non-blocking** - returns immediately with agent_run_id. PO can spawn 
 | Syscall filtering | None (containers are isolated enough)                 |
 | Network           | Only LLM proxy, Postgres, subagent endpoint reachable |
 | Registry          | PO/PI can push new images by digest                   |
+
+### Docker Compose Topology
+
+**Current services in `props/compose.yaml`:**
+- `postgres` (5433:5432) - on `props-internal` + `props-agents`
+- `registry` (5050:5000) - on `props-internal` + `default`
+- `registry-proxy` (5051) - on `props-internal` + `props-agents`
+
+**New service to add:**
+
+```yaml
+llm-proxy:
+  image: props-llm-proxy:latest
+  container_name: props-llm-proxy
+  ports:
+    - "5052:5052"
+  networks:
+    - props-internal
+    - props-agents
+  environment:
+    PGHOST: props-postgres
+    PGPORT: 5432
+    PGUSER: ${PGUSER}
+    PGPASSWORD: ${PGPASSWORD}
+    PGDATABASE: ${PGDATABASE}
+    OPENAI_API_KEY: ${OPENAI_API_KEY}
+  depends_on:
+    postgres:
+      condition: service_healthy
+```
+
+**Network topology:**
+- `props-internal` (internal: true) - postgres, registry, registry-proxy, llm-proxy
+- `props-agents` - postgres, registry-proxy, llm-proxy (agent containers join this)
+- Agent containers reach LLM proxy at `props-llm-proxy:5052`
 
 ## Implementation Sketch
 
@@ -284,6 +360,33 @@ async def run_critic(snapshot_slug: str, example: Example) -> AgentRunResult:
 | HTTP MCP server startup in `AgentEnvironment` | No longer needed                                    |
 | `docker_exec` tool from host                  | Tools run via subprocess inside container           |
 
+**Events table deprecation - files to update/remove:**
+
+Writing events (remove):
+- `props/core/db_event_handler.py` - `DatabaseEventHandler` class
+- `props/core/db/models.py` - `Event` model class
+
+Reading events (update to use `llm_requests` or remove):
+- `props/backend/routes/runs.py` - WebSocket streams, API responses
+- `props/core/cli/cmd_speak_with_dead.py` - replay agent execution
+- `props/core/cli/cmd_analyze_exec.py` - docker_exec pattern analysis
+- `props/core/cli/cmd_critic_dev_helpers.py` - development utilities
+- `props/core/gepa/gepa_adapter.py` - reflection event filtering
+
+Schema/views (drop):
+- `event_costs` view - extract costs from event payloads
+- `run_costs` view - aggregate event costs
+- Events table + indexes + RLS policies
+
+Tests (update):
+- `props/core/critic/test_e2e.py` - event assertions
+- `props/core/db/test_split_based_rls.py` - event RLS tests
+- `props/core/db/test_agent_queries.py` - event creation tests
+- `props/testing/fixtures/db.py` - event fixtures
+
+Documentation:
+- `props/core/docs/db/events.md.j2` - remove
+
 ### To Simplify
 
 | File/Component                                 | Change                                                                       |
@@ -302,6 +405,13 @@ async def run_critic(snapshot_slug: str, example: Example) -> AgentRunResult:
 | **In-container agent loop** | OpenAI Responses API client, exec tool, submit handling                      |
 | **Wait CLI tools**          | `props agent wait <id>`, `props agent wait-graded <critic_id>`               |
 | **Log capture**             | Store container stdout/stderr in DB                                          |
+| **`llm_requests` table**    | New table for LLM proxy logs (request/response/tokens)                       |
+| **Model pricing table**     | Metadata for computing dollar costs from token counts                        |
+
+**New CLI subcommand group:** `props agent`
+- `props agent wait <agent_run_id>` - poll until agent completes
+- `props agent wait-graded <critic_run_id>` - poll until daemon grader grades critic
+- Location: `props/core/cli/cmd_agent.py` (new file)
 
 ### To Keep (unchanged or minor changes)
 
@@ -374,45 +484,54 @@ async def run_critic(snapshot_slug: str, example: Example) -> AgentRunResult:
 
 ### Cost Budget Propagation
 
-**Decision:** LLM proxy queries `agent_runs.parent_id` to compute budget tree.
+**Decision:** LLM proxy queries `agent_runs.parent_agent_run_id` to compute budget tree.
 
 - Parent spawns child → child's cost counts against parent's budget
 - Proxy sums costs up the parent chain on each request
 - No special token encoding needed - just query the table
+- Track token counts (input_tokens, output_tokens) as reported by OpenAI Responses API
+- Dollar cost computed via view joining `llm_requests` with model pricing table
+
+### Exec Tool Implementation
+
+**Decision:** Reuse `mcp_infra/exec/subprocess.py:run_proc()` directly.
+
+- Standalone async function with no MCP dependency
+- Already handles: timeouts, output capping (150KB), stderr, UTF-8 safety
+- Import and call directly from in-container agent loop:
+  ```python
+  from mcp_infra.exec.subprocess import run_proc
+  outcome = await run_proc(["props", "critic-agent", "submit", ...], timeout_s=60.0)
+  ```
+
+### Events Table Deprecation
+
+**Decision:** Big bang cutover. Remove events table entirely, replace with:
+
+1. `llm_requests` table - LLM proxy logs full request/response payloads
+2. `agent_runs.container_stdout/stderr` - container logs
+
+Files affected documented in "Code Changes" section above.
+
+### Grader Daemon pg_notify Permissions
+
+**Decision:** No changes needed. Daemon uses admin credentials for LISTEN, not temp user credentials.
+
+- Temp users (`agent_{uuid}`) only need write access to their tables
+- pg_notify triggers run as postgres (SECURITY DEFINER)
+- Daemon's `_start_listener()` uses admin DSN for the listener connection
+
+### Log Capture Guarantee
+
+**Decision:** Docker logging driver + read on container stop. Accept that hard crashes may lose final lines.
+
+- Host reads `docker logs <container>` after container exits
+- Store in `agent_runs.container_stdout` and `agent_runs.container_stderr`
+- Hard crashes (OOM, SIGKILL) may lose buffered output - acceptable tradeoff
 
 ## Open Questions
 
-### 1. Log Capture Guarantee
-
-We want to store container logs for observability.
-
-**Question:** How do we guarantee logs are captured even if container crashes or is killed?
-
-Options:
-
-- Docker logging driver writes to file, host reads after container stops
-- Sidecar container tails logs in real-time
-- Container writes to mounted volume
-- Accept some log loss on hard crashes
-
-Leaning toward: Docker logging driver + read on container stop. Accept that hard crashes may lose final lines.
-
-### 2. Exec Tool Implementation
-
-Need: command array, timeout, output truncation, stderr handling.
-
-**Question:** Reuse existing MCP local exec code, or write simpler standalone?
-
-The MCP local exec in `mcp_infra` handles:
-
-- Output capping (`MAX_BYTES_CAP`)
-- Timeout
-- Stderr capture
-- Working directory
-
-Could extract the subprocess logic without MCP framing.
-
-### 3. Interactive Agents (Future)
+### 1. Interactive Agents (Future)
 
 Current plan: exit 0 = done.
 
