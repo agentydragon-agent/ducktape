@@ -523,11 +523,12 @@ Files affected documented in "Code Changes" section above.
 
 ### Log Capture Guarantee
 
-**Decision:** Docker logging driver + read on container stop. Accept that hard crashes may lose final lines.
+**Decision:** Collect logs on container exit via aiodocker. Accept that hard crashes may lose final lines.
 
-- Host reads `docker logs <container>` after container exits
+- Host uses `aiodocker` to read container logs after container exits
 - Store in `agent_runs.container_stdout` and `agent_runs.container_stderr`
 - Hard crashes (OOM, SIGKILL) may lose buffered output - acceptable tradeoff
+- **Important for agent-authoring agents (PO/PI):** Container logs are only available after the agent exits, not during execution. Design workflows accordingly (e.g., don't expect to read subagent logs until after `props agent wait` returns).
 
 ## Open Questions
 
