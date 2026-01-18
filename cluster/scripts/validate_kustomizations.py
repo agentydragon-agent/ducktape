@@ -1,12 +1,11 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pyyaml"]
-# ///
+"""Parallel kustomize validation script.
+
+Validates all kustomizations quickly and quietly (unless errors occur).
+
+Run via Bazel: bazel run //cluster/scripts:validate_kustomizations
 """
-Parallel kustomize validation script
-Validates all kustomizations quickly and quietly (unless errors occur)
-"""
+
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -17,14 +16,18 @@ from pathlib import Path
 
 import yaml
 
+from cluster.scripts.runfiles_util import resolve_path
+
+_KUSTOMIZE_BIN = resolve_path("multitool/tools/kustomize/kustomize")
+
 
 async def validate_kustomization(kustomization_path: Path) -> tuple[Path, bool, str]:
-    """Validate a single kustomization directory"""
+    """Validate a single kustomization directory."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            "kustomize",
+            _KUSTOMIZE_BIN,
             "build",
-            str(kustomization_path.parent),
+            kustomization_path.parent,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

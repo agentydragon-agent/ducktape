@@ -2,13 +2,42 @@
 # Validate all SealedSecrets can be decrypted with terraform keypair.
 # Uses kubeseal --recovery-unseal (works offline, no cluster needed).
 #
-# This is called by pre-commit and bootstrap.sh to catch keypair mismatches
-# before they reach the cluster.
+# Run via Bazel: bazel run //cluster/scripts:validate_sealed_secrets
+#
+# Binaries are provided via Bazel runfiles:
+#   KUBESEAL_BIN - kubeseal from @multitool//tools/kubeseal
+#   TOFU_BIN - tofu from @tf_toolchains
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Resolve binaries from Bazel runfiles
+if [[ -z "${KUBESEAL_BIN:-}" ]]; then
+  echo "ERROR: KUBESEAL_BIN not set - run via Bazel"
+  exit 1
+fi
+if [[ -z "${TOFU_BIN:-}" ]]; then
+  echo "ERROR: TOFU_BIN not set - run via Bazel"
+  exit 1
+fi
+
+# Resolve runfiles paths
+RUNFILES_DIR="${BASH_SOURCE[0]}.runfiles"
+if [[ -d "$RUNFILES_DIR" ]]; then
+  KUBESEAL="$RUNFILES_DIR/$KUBESEAL_BIN"
+  TOFU="$RUNFILES_DIR/$TOFU_BIN"
+else
+  # Fallback for direct execution
+  KUBESEAL="$KUBESEAL_BIN"
+  TOFU="$TOFU_BIN"
+fi
+
+# Determine repo root (BUILD_WORKSPACE_DIRECTORY is set by Bazel when running via `bazel run`)
+if [[ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]]; then
+  REPO_ROOT="$BUILD_WORKSPACE_DIRECTORY/cluster"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 TF_DIR="$REPO_ROOT/terraform/00-persistent-auth"
 
 # Check if terraform state exists
@@ -22,9 +51,9 @@ fi
 PRIVATE_KEY_FILE=$(mktemp)
 trap "rm -f $PRIVATE_KEY_FILE" EXIT
 
-(cd "$TF_DIR" && terraform output -raw sealed_secrets_private_key_pem 2>/dev/null) >"$PRIVATE_KEY_FILE" || {
+(cd "$TF_DIR" && "$TOFU" output -raw sealed_secrets_private_key_pem 2>/dev/null) >"$PRIVATE_KEY_FILE" || {
   echo "⚠️  Could not read sealed_secrets_private_key_pem from terraform state"
-  echo "   Run 'terraform apply' in $TF_DIR first"
+  echo "   Run 'tofu apply' in $TF_DIR first"
   rm -f "$PRIVATE_KEY_FILE"
   exit 1
 }
@@ -48,7 +77,7 @@ for file in $SEALED_SECRETS; do
   CHECKED=$((CHECKED + 1))
 
   # Try to decrypt with recovery-unseal
-  ERROR_OUTPUT=$(kubeseal --recovery-unseal \
+  ERROR_OUTPUT=$("$KUBESEAL" --recovery-unseal \
     --recovery-private-key "$PRIVATE_KEY_FILE" <"$file" 2>&1 >/dev/null) && RC=0 || RC=$?
   if [[ $RC -eq 0 ]]; then
     echo "✅ $file"

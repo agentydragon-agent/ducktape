@@ -7,10 +7,10 @@ on:
   workflow_call:
     inputs:
       targets:
-        description: 'Bazel targets to build (default: //...)'
+        description: "Bazel targets to build (default: //...)"
         required: false
         type: string
-        default: '//...'
+        default: "//..."
 
 jobs:
   build:

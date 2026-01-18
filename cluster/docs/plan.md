@@ -98,7 +98,7 @@ See **DNS Architecture** section below for details.
 ### Future Services (Lower Priority)
 
 - [ ] Jellyfin (media streaming)
-- [ ] *arr stack (media automation)
+- [ ] \*arr stack (media automation)
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache

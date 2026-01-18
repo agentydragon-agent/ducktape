@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Regenerate Attic JWT token sealed secret using keypair from terraform state
+#
+# TODO: Migrate to Bazel. See //cluster/scripts:validate_sealed_secrets for pattern.
+# Requires: @multitool//tools/kubeseal, @tf_toolchains//:tofu
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

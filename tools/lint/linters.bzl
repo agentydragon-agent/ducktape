@@ -29,6 +29,11 @@ mypy_aspect = mypy(
     mypy_cli = Label("//tools/lint:mypy_cli"),
     mypy_ini = Label("//:mypy.ini"),
     types = types,
+    # Disable cache propagation to prevent CI disk exhaustion.
+    # Without this, each target writes new cache files for pypi deps it uses,
+    # leading to O(n²) disk usage with ~9,670 targets.
+    # TODO: Enable include_external=True once site-packages issue is fixed in fork
+    cache = False,
 )
 
 # ESLint aspect for JS/TS linting

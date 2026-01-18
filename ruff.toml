@@ -105,7 +105,6 @@ known-first-party = [
     "claude_history",
     "claude_hooks",
     "claude_optimizer",
-    "claude_web_hooks",
     "cli_util",
     "clustering_util",
     "cotrl",

@@ -16,9 +16,17 @@ bazel_dep(name = "aspect_rules_lint", version = "2.0.0-rc0")
 bazel_dep(name = "rules_multirun", version = "0.9.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.3.0")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
+
+# Fork with two fixes for CI disk exhaustion during mypy type-checking:
+# 1. include_external option: allows mypy aspect to run on @pypi// deps, so they
+#    get their own .mypy_cache outputs that downstream targets can symlink to
+#    (upstream skips external deps, causing each internal target to re-cache them)
+# 2. symlinks instead of shutil.copy(): mypy_runner.py uses symlinks when merging
+#    upstream caches, reducing disk usage from O(n²) to O(n)
+# TODO: Propose these changes upstream and switch back to BCR version if accepted
 git_override(
     module_name = "rules_mypy",
-    commit = "980fafe9bcc08d65fae0879aba8e6d42a8abca21",
+    commit = "2417b972cbde24a66d6c5b10fab5737dcb1d9858",
     remote = "https://github.com/agentydragon/rules_mypy.git",
 )
 
@@ -55,7 +63,7 @@ use_repo(oci, "python_slim", "python_slim_linux_amd64")
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_rules_js", version = "2.4.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.0")
-bazel_dep(name = "rules_nodejs", version = "6.3.4")
+bazel_dep(name = "rules_nodejs", version = "6.5.2")
 
 # Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
 bazel_dep(name = "rules_playwright", version = "0.5.3")

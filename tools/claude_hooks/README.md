@@ -11,14 +11,33 @@ Session hooks and Bazel proxy for Claude Code web environments.
 
 The hook runs at the start of each Claude Code web session and:
 
-1. Starts a local auth proxy for Bazel BCR access
-2. Extracts TLS inspection CA certificates
-3. Creates Java truststores
-4. Configures bazelrc for proxy usage
+### Proxy Setup (via `proxy_setup.py`)
+
+1. Starts supervisord for process management
+2. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
+3. Creates a Java truststore with the CA using pyjks
+4. Registers the proxy with supervisor at `127.0.0.1:18081`
+5. Creates combined CA bundle (system CAs + proxy CA)
+6. Writes bazelrc to `~/.cache/bazel-proxy/bazelrc`
+
+### Bazel Setup (via `bazelisk_setup.py`)
+
+7. Downloads and installs Bazelisk
+8. Creates wrapper script at `~/.cache/bazel-proxy/bin/bazel`
+
+### Development Tools (via `binary_tools.py`)
+
+9. Installs cluster tools (opentofu, tflint, flux, kustomize, kubeseal, helm)
+10. Installs dev tools (alejandra for Nix formatting)
+11. Installs nix (for nix eval, flake operations)
+
+### Environment Configuration
+
+12. Configures podman for gVisor compatibility
+13. Sets up environment variables in `CLAUDE_ENV_FILE`
+14. Installs git pre-commit hooks
 
 See `.claude/settings.json` for hook configuration.
-
----
 
 # Bazel Proxy
 
@@ -47,15 +66,24 @@ This local proxy acts as an authentication intermediary. See <proxy-alternatives
 
 ## References
 
+See <proxy-alternatives.md> for details.
+
 - [Claude Code on the Web](https://docs.anthropic.com/en/docs/claude-code/claude-code-on-the-web) - Container environment overview
 - [Network Configuration](https://docs.anthropic.com/en/docs/claude-code/security#network-access) - Proxy and network egress details
 - [Enterprise Configuration](https://docs.anthropic.com/en/docs/claude-code/enterprise) - TLS certificate configuration
 
-## Important Constraint
+## Dependencies
 
-**This package must not have any non-stdlib dependencies.**
+This package has the following dependencies (see BUILD.bazel):
 
-It's used by session-start hooks which run before package installation. The hook needs to start the proxy before Bazel can fetch its dependencies.
+- cryptography (TLS certificate parsing)
+- mako (template rendering)
+- pproxy (proxy server)
+- pyjks (Java keystore manipulation)
+- pyjwt (JWT decoding)
+- supervisor (process management)
+
+**Note**: Requires Python 3.13+ for `ssl.SSLSocket.get_unverified_chain()` API.
 
 ## Usage
 
@@ -82,38 +110,44 @@ supervisorctl -c ~/.config/supervisor/supervisord.conf stop bazel-proxy
 
 ### From session-start hook
 
-The hook (`bazel_proxy_setup.py`) handles the full setup:
+The session-start hook (`session_start.py`) calls `proxy_setup.py` which:
 
 1. Starts supervisord for process management
-2. Extracts the TLS inspection CA from the proxy via openssl
-3. Creates a Java truststore with the CA
+2. Extracts the TLS inspection CA from the proxy via Python 3.13+ ssl APIs
+3. Creates a Java truststore with the CA using pyjks
 4. Registers the proxy with supervisor at `127.0.0.1:18081`
-5. Writes `~/.bazelrc` with JVM properties for proxy and truststore
+5. Creates combined CA bundle (system CAs + proxy CA)
+6. Writes bazelrc to `~/.cache/bazel-proxy/bazelrc` (loaded via `BAZEL_SYSTEM_BAZELRC_PATH`)
 
-### Manual startup (for testing)
+### Manual startup (for debugging)
+
+For debugging only. Normal operation uses supervisor:
 
 ```bash
-# Run in foreground
-python -m claude_web_hooks.proxy --listen-port 18081
+# Read credentials from file (in normal operation, comes from https_proxy env var)
+pproxy -l http://127.0.0.1:18081/ -r http://upstream:port#user:pass/
 ```
 
 ## How It Works
 
-1. Proxy reads `https_proxy` / `HTTPS_PROXY` from environment at startup
-2. Extracts hostname, port, and credentials from the proxy URL
-3. Listens for CONNECT requests on the local port
-4. Forwards CONNECT requests to upstream with `Proxy-Authorization: Basic ...` header
-5. Pipes data between client and upstream after tunnel is established
+1. Session hook reads `https_proxy` from environment
+2. Builds pproxy command with credentials embedded in upstream URI
+3. Registers pproxy as a supervisor service
+4. pproxy listens for CONNECT requests on local port
+5. pproxy forwards to upstream with `Proxy-Authorization: Basic ...` header
+
+Credential refresh: handled during proxy startup via `proxy_setup.ensure_proxy_running()`,
+which detects credential changes and updates the supervisor service config.
 
 ## Lifecycle Management
 
-The proxy runs under supervisor:
+The proxy (pproxy) runs under supervisor:
 
 - **Process Manager**: supervisord (`~/.config/supervisor/supervisord.conf`)
 - **Service Config**: `~/.config/supervisor/conf.d/bazel-proxy.conf`
 - **Logging**: Stdout/stderr to `~/.config/supervisor/bazel-proxy.{log,err.log}`
 - **Auto-restart**: Supervisor automatically restarts on crashes
-- **Credentials**: Reads from `~/.cache/bazel-proxy/upstream_proxy` (reloaded on each connection)
+- **Credentials**: Embedded in command (service config updated on refresh)
 
 ## Verification
 
@@ -144,13 +178,13 @@ Supervisor files (in `~/.config/supervisor/`):
 - `conf.d/bazel-proxy.conf` - Proxy service configuration
 - `bazel-proxy.{log,err.log}` - Proxy stdout/stderr logs
 
-Setup files (in `~/.cache/bazel-proxy/`, created by `bazel_proxy_setup.py`):
+Setup files (in `~/.cache/bazel-proxy/`, created by `proxy_setup.py`):
 
 - `upstream_proxy` - Upstream proxy credentials (read on each connection)
 - `anthropic_ca.pem` - Extracted TLS inspection CA
 - `combined_ca.pem` - System CAs + Anthropic CA bundle
 - `cacerts.jks` - Java truststore with CA
-- `bazelrc` - Bazel proxy configuration (imported by ~/.bazelrc)
+- `bazelrc` - Bazel proxy configuration (loaded via BAZEL_SYSTEM_BAZELRC_PATH)
 
 ## Known Limitations
 
@@ -189,5 +223,5 @@ This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.att
 
 ```bash
 # Run tests
-bazel test //claude_web_hooks:test_proxy
+bazel test //claude_hooks:test_proxy
 ```

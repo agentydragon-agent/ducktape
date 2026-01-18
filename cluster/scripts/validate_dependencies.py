@@ -1,21 +1,27 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pyyaml"]
-# ///
-"""
-GitOps Dependency Validation Script
-Validates Flux kustomization dependencies are correctly ordered and logical
+"""GitOps Dependency Validation Script.
+
+Validates Flux kustomization dependencies are correctly ordered and logical.
+
+Run via Bazel: bazel run //cluster/scripts:validate_dependencies
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+
+def _get_k8s_dir() -> Path:
+    """Get the k8s directory path, accounting for Bazel run context."""
+    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    if workspace:
+        return Path(workspace) / "cluster" / "k8s"
+    return Path("k8s")
 
 
 @dataclass
@@ -39,8 +45,10 @@ class KustomizationSpec:
         return cls(path=spec_dict.get("path", ""), depends_on=depends_on)
 
 
-def load_kustomizations(root: Path = Path("k8s")) -> dict[str, KustomizationSpec]:
-    """Load all Flux kustomizations from the repository"""
+def load_kustomizations(root: Path | None = None) -> dict[str, KustomizationSpec]:
+    """Load all Flux kustomizations from the repository."""
+    if root is None:
+        root = _get_k8s_dir()
     kustomizations = {}
 
     for flux_kustomization_file in root.rglob("flux-kustomization.yaml"):
@@ -182,14 +190,15 @@ def check_required_dependencies() -> list[str]:
 
 
 def validate_external_secrets_dependencies() -> list[str]:
-    """Validate external-secrets specific dependency patterns"""
+    """Validate external-secrets specific dependency patterns."""
     errors = []
-    kustomizations = load_kustomizations()
+    k8s_dir = _get_k8s_dir()
+    kustomizations = load_kustomizations(k8s_dir)
 
     # Check that services using ExternalSecret resources depend on external-secrets
     services_with_external_secrets = []
 
-    for kust_file in Path("k8s").rglob("*.yaml"):
+    for kust_file in k8s_dir.rglob("*.yaml"):
         if "flux-kustomization" in kust_file.name:
             continue
 
@@ -203,7 +212,7 @@ def validate_external_secrets_dependencies() -> list[str]:
                         and doc.get("apiVersion", "").startswith("external-secrets.io")
                     ):
                         # Find which kustomization this belongs to
-                        relative_path = kust_file.relative_to(Path("k8s"))
+                        relative_path = kust_file.relative_to(k8s_dir)
                         service_name = relative_path.parts[0] if relative_path.parts else None
                         if service_name and service_name not in services_with_external_secrets:
                             services_with_external_secrets.append(service_name)
