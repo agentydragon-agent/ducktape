@@ -33,7 +33,7 @@ the runner set up.
 The `@playwright/test/index.js` does:
 
 ```javascript
-module.exports = require('playwright/test');
+module.exports = require("playwright/test");
 ```
 
 This means `@playwright/test` and `playwright` must resolve to the same physical module for the
@@ -80,7 +80,7 @@ node_modules/.aspect_rules_js/@playwright+test@1.57.0/node_modules/playwright
 The test file at `props/frontend/tests/visual-regression.spec.ts` imports:
 
 ```typescript
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 ```
 
 Playwright's transform system compiles this. The resolution depends on:
@@ -187,9 +187,9 @@ Change the test file to use a relative import that definitively points to the sa
 
 ```typescript
 // Instead of:
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 // Use:
-import { test, expect } from '../node_modules/@playwright/test';
+import { test, expect } from "../node_modules/@playwright/test";
 ```
 
 This is hacky and may break IDE tooling.

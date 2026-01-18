@@ -31,7 +31,11 @@ py_test(
     name = "test_chat_notifications",
     srcs = ["test_chat_notifications.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS + ["//agent_server/mcp/chat"],
+    deps = _TEST_DEPS + [
+        "//agent_server/mcp/chat",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
 )
 
 py_test(
@@ -41,6 +45,7 @@ py_test(
     deps = _TEST_DEPS + [
         "//agent_server/mcp/chat",
         "//mcp_infra/stubs",
+        "@pypi//fastmcp",
     ],
 )
 
@@ -62,6 +67,8 @@ py_test(
     deps = _TEST_DEPS + [
         "//agent_server/mcp/approval_policy",
         "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
     ],
 )
 
@@ -69,14 +76,20 @@ py_test(
     name = "test_policy_gateway_middleware_unit",
     srcs = ["test_policy_gateway_middleware_unit.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS + ["//agent_server/mcp/approval_policy"],
+    deps = _TEST_DEPS + [
+        "//agent_server/mcp/approval_policy",
+        "@pypi//mcp",
+    ],
 )
 
 py_test(
     name = "test_stdio_notifications_envelope",
     srcs = ["test_stdio_notifications_envelope.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS + ["//agent_server/notifications"],
+    deps = _TEST_DEPS + [
+        "//agent_server/notifications",
+        "@pypi//fastmcp",
+    ],
 )
 
 py_test(

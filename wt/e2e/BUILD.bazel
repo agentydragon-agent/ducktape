@@ -20,5 +20,7 @@ py_test(
     main = "test_e2e_copy_dirty_state.py",
     deps = [
         "//wt/testing",
+        "@pypi//pygit2",
+        "@pypi//pytest",
     ],
 )

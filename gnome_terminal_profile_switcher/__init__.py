@@ -97,7 +97,8 @@ class ProfileDConf:
 
 def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
     """Copy color-related properties from one profile to another."""
-    color_properties = [
+    source_dconf, target_dconf = ProfileDConf(source_uuid), ProfileDConf(target_uuid)
+    for prop in [
         "background-color",
         "foreground-color",
         "palette",
@@ -110,10 +111,7 @@ def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
         "highlight-foreground-color",
         "font",
         "use-theme-colors",
-    ]
-
-    source_dconf, target_dconf = ProfileDConf(source_uuid), ProfileDConf(target_uuid)
-    for prop in color_properties:
+    ]:
         try:
             value = source_dconf.read_property(prop)
         except KeyError:
@@ -131,10 +129,10 @@ def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
         try:
             name = ProfileDConf(profile_uuid).visible_name
         except (KeyError, AssertionError, ValueError) as e:
-            logging.warning(f"Failed to get name for profile {profile_uuid}: {e}")
+            logging.warning(f"Cannot get name for profile {profile_uuid}: {e}")
             continue
         if name in uuid_by_name:
-            logging.warning(f"Duplicate profile name {name}: {uuid_by_name[name]} and {profile_uuid}")
+            logging.warning(f"Duplicate profile {name}: {uuid_by_name[name]} and {profile_uuid}")
             continue
         uuid_by_name[name] = profile_uuid
 
@@ -170,10 +168,8 @@ def create_or_update_auto_profile(source_profile_name: str) -> UUID:
         auto_uuid = create_auto_profile()
         logging.info(f"Created new Auto profile: {auto_uuid}")
 
-    source_uuid = uuid_by_name[source_profile_name]
-
-    logging.info(f"Copying colors from {source_profile_name} to Auto profile")
-    copy_profile_colors(source_uuid, auto_uuid)
+    logging.info(f"Applying {source_profile_name} colors to Auto profile")
+    copy_profile_colors(uuid_by_name[source_profile_name], auto_uuid)
     ProfileDConf(auto_uuid).write_property("visible-name", f"{AUTO_PROFILE_NAME} ({source_profile_name})")
 
     return auto_uuid
@@ -194,8 +190,7 @@ def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
         return UUID(description[2][0])
 
     for window in windows:
-        window_path = f"/org/gnome/Terminal/window/{window}"
-        obj = bus.get_object("org.gnome.Terminal", window_path)
+        obj = bus.get_object("org.gnome.Terminal", f"/org/gnome/Terminal/window/{window}")
         window_actions_iface = dbus.Interface(obj, "org.gtk.Actions")
         original_uuid = _get_window_profile_uuid(window_actions_iface)
         logging.info(f"talking to {obj}, starting profile uuid: {original_uuid}")

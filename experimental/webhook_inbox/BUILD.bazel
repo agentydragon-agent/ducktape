@@ -30,8 +30,10 @@ py_test(
     deps = [
         ":webhook_inbox",
         "@pypi//cryptography",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
+        "@pypi//starlette",
     ],
 )
 

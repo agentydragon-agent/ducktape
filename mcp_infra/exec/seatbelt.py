@@ -9,9 +9,9 @@ from pathlib import Path
 import anyio
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field
 
+from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import (
     BaseExecResult,
@@ -75,7 +75,7 @@ class SeatbeltExecServer(EnhancedFastMCP):
     """Seatbelt exec MCP server with typed tool access (macOS only)."""
 
     # Tool references (assigned in __init__)
-    sandbox_exec_tool: FunctionTool
+    sandbox_exec_tool: FlatTool
 
     def __init__(self):
         """Create a seatbelt exec MCP server (macOS only).

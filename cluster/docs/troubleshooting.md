@@ -487,7 +487,7 @@ kubectl logs deployment/helm-controller -n flux-system --tail=50
 **Validate all SealedSecrets offline before deployment:**
 
 ```bash
-./scripts/validate-sealed-secrets.sh
+bazel run //cluster/scripts:validate_sealed_secrets
 ```
 
 This uses `kubeseal --recovery-unseal` to verify each SealedSecret in the repo can be decrypted

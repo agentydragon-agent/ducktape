@@ -1,13 +1,7 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+"""Standalone codebase scanning scripts (stdlib only)."""
+
+load("@rules_python//python:defs.bzl", "py_binary")
 load("//tools/lint:linters.bzl", "ruff_test")
-
-# Standalone codebase scanning scripts (stdlib only)
-
-py_library(
-    name = "scans_lib",
-    srcs = glob(["scan_*.py"]),
-    visibility = ["//visibility:public"],
-)
 
 py_binary(
     name = "scan_comments",
@@ -41,5 +35,12 @@ py_binary(
 
 ruff_test(
     name = "ruff",
-    srcs = [":scans_lib"],
+    srcs = [
+        ":scan_comments",
+        ":scan_dataclass_candidates",
+        ":scan_error_handling",
+        ":scan_manual_serde",
+        ":scan_single_line_functions",
+        ":scan_string_literals",
+    ],
 )

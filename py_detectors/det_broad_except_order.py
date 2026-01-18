@@ -4,9 +4,9 @@ import ast
 from collections.abc import Iterable
 from pathlib import Path
 
-from .base import BaseDetector
-from .models import Detection
-from .utils import is_broad_exception
+from py_detectors.base import BaseDetector
+from py_detectors.models import Detection
+from py_detectors.utils import is_broad_exception
 
 
 class BroadExceptOrderDetector(BaseDetector):

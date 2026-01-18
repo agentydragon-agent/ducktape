@@ -35,6 +35,7 @@ _TEST_DEPS = [
     ":approval_policy",
     "//agent_server/testing",
     "@pypi//docker",
+    "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
     "@pypi//pytest_asyncio",

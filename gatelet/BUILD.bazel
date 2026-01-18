@@ -55,7 +55,7 @@ ruff_test(
 
 pkg_tar(
     name = "server_tar",
-    srcs = ["//gatelet/server:server_bin"],
+    srcs = ["//gatelet/server"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",

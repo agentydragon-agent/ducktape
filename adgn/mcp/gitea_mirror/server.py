@@ -8,10 +8,10 @@ from typing import Any, cast
 from urllib.parse import urlparse
 
 import requests
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 
 
 @dataclass
@@ -228,8 +228,8 @@ class GiteaMirrorServer(EnhancedFastMCP):
     """
 
     # Tool references (assigned in __init__ after tool registration)
-    trigger_mirror_sync_tool: FunctionTool
-    get_repo_info_tool: FunctionTool
+    trigger_mirror_sync_tool: FlatTool[Any, Any]
+    get_repo_info_tool: FlatTool[Any, Any]
 
     def __init__(self, *, base_url: str | None = None, token: str | None = None):
         """Create a Gitea mirror MCP server.

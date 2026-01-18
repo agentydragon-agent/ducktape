@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from typing import Any
+from urllib.parse import quote, urlencode
 
 import requests
 from pydantic import BaseModel, Field
@@ -93,14 +94,14 @@ class GiteaClient:
 
     def branch_info(self, branch: str, repo: str | GiteaRepository | None = None) -> GiteaBranchInfo:
         repository = self._resolve_repo(repo)
-        encoded_branch = requests.utils.quote(branch, safe="")
+        encoded_branch = quote(branch, safe="")
         url = self._build_url(f"/api/v1/repos/{repository.api_path}/branches/{encoded_branch}")
         data = self._request_json("GET", url)
         return GiteaBranchInfo.model_validate(data)
 
     def file_contents(self, path: str, ref: str, repo: str | GiteaRepository | None = None) -> str:
         repository = self._resolve_repo(repo)
-        encoded_path = requests.utils.quote(path.lstrip("/"), safe="/")
+        encoded_path = quote(path.lstrip("/"), safe="/")
         url = self._build_url(f"/api/v1/repos/{repository.api_path}/contents/{encoded_path}", query={"ref": ref})
         data = self._request_json("GET", url)
         content = data.get("content")
@@ -121,7 +122,7 @@ class GiteaClient:
     def _build_url(self, path: str, query: dict[str, str] | None = None) -> str:
         path_fragment = path if path.startswith("/") else f"/{path}"
         if query:
-            return f"{self._base_url}{path_fragment}?{requests.compat.urlencode(query)}"
+            return f"{self._base_url}{path_fragment}?{urlencode(query)}"
         return f"{self._base_url}{path_fragment}"
 
     def _request_json(self, method: str, url: str) -> Any:

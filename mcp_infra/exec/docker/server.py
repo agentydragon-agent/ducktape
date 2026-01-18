@@ -15,8 +15,8 @@ import aiodocker
 import mcp.types as mcp_types
 from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import Context
-from fastmcp.tools import FunctionTool
 
+from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.container_session import (
     ContainerOptions,
@@ -55,7 +55,7 @@ class ContainerExecServer(EnhancedFastMCP):
     file_resource: ResourceTemplate
 
     # Tool reference (assigned in __init__ after tool registration)
-    exec_tool: FunctionTool
+    exec_tool: FlatTool
 
     @staticmethod
     def file_uri(path: str) -> str:

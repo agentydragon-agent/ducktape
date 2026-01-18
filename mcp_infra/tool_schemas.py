@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 
 if TYPE_CHECKING:
@@ -66,8 +67,7 @@ def extract_tool_input_schemas(
     Returns:
         Mapping of (server_prefix, tool_name) -> Pydantic input type
 
-    Only includes FunctionTools with a single Pydantic BaseModel parameter annotation.
-    Handles both regular tools and flat-model tools (with _mcp_flat_input_model).
+    Only includes FlatTools or FunctionTools with a single Pydantic BaseModel parameter annotation.
     """
     schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {}
 
@@ -75,16 +75,15 @@ def extract_tool_input_schemas(
         # FastMCP public API (get_tools) is async; use internal _tools dict for sync access
         tools = server._tool_manager._tools
         for tool_name, tool in tools.items():
+            # Check for FlatTool first
+            if isinstance(tool, FlatTool):
+                schemas[(server_prefix, tool_name)] = tool.input_model
+                continue
+
+            # Regular FunctionTools: check for single Pydantic param
             if not isinstance(tool, FunctionTool):
                 continue
 
-            # Check for flat-model tools first (these have flattened signatures)
-            flat_model = getattr(tool.fn, "_mcp_flat_input_model", None)
-            if flat_model is not None and issubclass(flat_model, BaseModel):
-                schemas[(server_prefix, tool_name)] = flat_model
-                continue
-
-            # Regular tools: check for single Pydantic param
             try:
                 sig = inspect.signature(tool.fn)
             except (ValueError, TypeError):

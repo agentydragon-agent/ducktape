@@ -96,7 +96,10 @@ py_binary(
     srcs = ["beautifier/__main__.py"],
     main = "beautifier/__main__.py",
     visibility = ["//visibility:public"],
-    deps = [":beautifier"],
+    deps = [
+        ":beautifier",
+        "@pypi//structlog",
+    ],
 )
 
 # Samplebooks import (standalone script)

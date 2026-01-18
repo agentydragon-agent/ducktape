@@ -32,18 +32,19 @@ py_library(
 )
 
 py_binary(
-    name = "proxy_bin",
+    name = "proxy",
     srcs = ["proxy.py"],
-    main = "proxy.py",
     deps = [
         ":proxy_lib",
+        "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//psycopg",
     ],
 )
 
 pkg_tar(
     name = "app_tar",
-    srcs = [":proxy_bin"],
+    srcs = [":proxy"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",

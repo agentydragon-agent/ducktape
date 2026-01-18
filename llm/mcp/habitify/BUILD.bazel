@@ -39,7 +39,12 @@ py_binary(
     srcs = ["cli.py"],
     imports = [".."],
     main = "cli.py",
-    deps = [":habitify"],
+    deps = [
+        ":habitify",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
 )
 
 py_binary(
@@ -51,10 +56,10 @@ py_binary(
 )
 
 py_binary(
-    name = "test_mcp_dev",
-    srcs = ["examples/test_mcp_dev.py"],
+    name = "mcp_dev_runner",
+    srcs = ["examples/mcp_dev_runner.py"],
     imports = [".."],
-    main = "examples/test_mcp_dev.py",
+    main = "examples/mcp_dev_runner.py",
     deps = [":habitify"],
 )
 
@@ -68,6 +73,7 @@ py_test(
     imports = [".."],
     deps = [
         ":habitify",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pyyaml",
@@ -84,6 +90,7 @@ py_test(
     imports = [".."],
     deps = [
         ":habitify",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pyyaml",
@@ -100,6 +107,7 @@ py_test(
     imports = [".."],
     deps = [
         ":habitify",
+        "@pypi//httpx",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

@@ -34,5 +34,9 @@ py_test(
     deps = [
         ":enhanced",
         "//mcp_infra:test_support",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pytest",
     ],
 )

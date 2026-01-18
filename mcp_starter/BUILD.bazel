@@ -33,6 +33,7 @@ py_test(
     main = "test_server.py",
     deps = [
         ":adgn_mcp_starter",
+        "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

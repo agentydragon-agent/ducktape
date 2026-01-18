@@ -46,6 +46,8 @@ py_test(
         ":exec",
         "//mcp_infra:test_support",
         "@pypi//docker",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
         "@pypi//types_docker",
     ],
 )

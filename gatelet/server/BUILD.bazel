@@ -4,16 +4,16 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_binary(
-    name = "server_bin",
-    srcs = ["server.py"],
+    name = "server",
+    srcs = ["__main__.py"],
     imports = ["../.."],
-    main = "server.py",
+    main = "__main__.py",
     visibility = ["//gatelet:__pkg__"],
-    deps = [":server"],
+    deps = [":server_lib"],
 )
 
 py_library(
-    name = "server",
+    name = "server_lib",
     srcs = [
         # server
         "app.py",
@@ -83,51 +83,100 @@ py_library(
     ],
 )
 
+# Common test dependencies
+_TEST_DEPS = [
+    ":server_lib",
+    "//gatelet:manage_lib",
+    "//gatelet:reporter_lib",
+    "@pypi//asgi_lifespan",
+    "@pypi//httpx",
+    "@pypi//playwright",
+    "@pypi//pyhamcrest",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+]
+
+_TEST_DATA = ["//gatelet:gatelet.toml"]
+
 py_test(
-    name = "test_server",
+    name = "test_server_core",
     srcs = [
-        # Pytest runner
-        "pytest_runner.py",
-        # Shared test config
         "conftest.py",
-        # server tests
+        "pytest_runner.py",
         "test_admin_webhook_e2e.py",
         "test_report_battery.py",
         "test_report_event.py",
-        # auth tests
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_auth",
+    srcs = [
         "auth/test_handlers.py",
         "auth/test_key_auth.py",
         "auth/test_key_path_auth.py",
         "auth/test_webhook_auth.py",
-        # endpoints tests
-        "endpoints/test_activitywatch.py",
+        "conftest.py",
+        "pytest_runner.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_endpoints_admin",
+    srcs = [
+        "conftest.py",
         "endpoints/test_admin_cr_sessions.py",
         "endpoints/test_admin_keys.py",
         "endpoints/test_admin_login.py",
         "endpoints/test_admin_logs.py",
         "endpoints/test_admin_sessions.py",
+        "pytest_runner.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_endpoints_webhook",
+    srcs = [
+        "conftest.py",
+        "endpoints/test_webhook_receive.py",
+        "endpoints/test_webhook_view.py",
+        "pytest_runner.py",
+    ],
+    data = _TEST_DATA,
+    imports = ["../.."],
+    main = "pytest_runner.py",
+    deps = _TEST_DEPS,
+)
+
+py_test(
+    name = "test_endpoints_other",
+    srcs = [
+        "conftest.py",
+        "endpoints/test_activitywatch.py",
         "endpoints/test_challenge.py",
         "endpoints/test_compute_correct_option.py",
         "endpoints/test_homeassistant.py",
-        "endpoints/test_webhook_receive.py",
-        "endpoints/test_webhook_view.py",
+        "pytest_runner.py",
     ],
-    data = ["//gatelet:gatelet.toml"],
+    data = _TEST_DATA,
     imports = ["../.."],
     main = "pytest_runner.py",
-    deps = [
-        ":server",
-        "//gatelet:manage_lib",
-        "//gatelet:reporter_lib",
-        "@pypi//httpx",
-        "@pypi//playwright",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-    ],
+    deps = _TEST_DEPS,
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":server"],
+    srcs = [":server_lib"],
 )

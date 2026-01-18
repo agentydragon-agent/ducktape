@@ -7,24 +7,24 @@ on:
   workflow_call:
     inputs:
       targets:
-        description: 'Bazel targets to test (default: //...)'
+        description: "Bazel targets to test (default: //...)"
         required: false
         type: string
-        default: '//...'
+        default: "//..."
       enable_profiling:
-        description: 'Enable Bazel profiling (generates downloadable artifacts)'
+        description: "Enable Bazel profiling (generates downloadable artifacts)"
         required: false
         type: boolean
         default: false
   workflow_dispatch:
     inputs:
       targets:
-        description: 'Bazel targets to test (default: //...)'
+        description: "Bazel targets to test (default: //...)"
         required: false
         type: string
-        default: '//...'
+        default: "//..."
       enable_profiling:
-        description: 'Enable Bazel profiling (generates downloadable artifacts)'
+        description: "Enable Bazel profiling (generates downloadable artifacts)"
         required: false
         type: boolean
         default: false
@@ -175,7 +175,7 @@ jobs:
         if: always()
         with:
           name: Bazel Test Results
-          path: 'bazel-testlogs/**/test.xml'
+          path: "bazel-testlogs/**/test.xml"
           reporter: java-junit
           fail-on-error: false
 

@@ -14,7 +14,7 @@ package(default_visibility = ["//visibility:public"])
 # containing dashes that look like predicates (e.g., "-recipe-").
 py_binary(
     name = "format",
-    srcs = ["format.py"],
+    srcs = ["__main__.py"],
     data = [
         "//tools/lint:prettier",
         "@aspect_rules_lint//format:ruff",
@@ -27,7 +27,7 @@ py_binary(
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
     },
-    main = "format.py",
+    main = "__main__.py",
     deps = [
         "@rules_python//python/runfiles",
     ],
@@ -36,7 +36,7 @@ py_binary(
 # Check-only mode - same script with FMT_CHECK=1
 py_binary(
     name = "format.check",
-    srcs = ["format.py"],
+    srcs = ["__main__.py"],
     data = [
         "//tools/lint:prettier",
         "@aspect_rules_lint//format:ruff",
@@ -50,7 +50,7 @@ py_binary(
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
         "FMT_CHECK": "1",
     },
-    main = "format.py",
+    main = "__main__.py",
     deps = [
         "@rules_python//python/runfiles",
     ],

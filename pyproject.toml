@@ -151,6 +151,13 @@ dependencies = [
     # claude_hooks
     "typing-extensions",
 
+    # claude_hooks
+    "pproxy>=2.7",
+    "pyopenssl>=24.0",
+    "pyjks>=20.0",
+    "pyjwt>=2.8",
+    "supervisor>=4.2",
+
     # claude_optimizer
     "numpy",
 
@@ -185,6 +192,7 @@ dev = [
     "pytest-cov>=4.0",
     "pytest-postgresql>=4.1.1",
     "pytest-playwright",
+    "asgi-lifespan>=2.1",
     "syrupy>=4.0",
     "PyHamcrest>=2.1",
     "mypy==1.18.2",

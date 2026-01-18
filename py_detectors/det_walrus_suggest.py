@@ -4,8 +4,8 @@ import ast
 from collections.abc import Iterable
 from pathlib import Path
 
-from .base import BaseDetector
-from .models import Detection
+from py_detectors.base import BaseDetector
+from py_detectors.models import Detection
 
 
 def _is_simple_guard(test: ast.AST, name: str) -> str | None:

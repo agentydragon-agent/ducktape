@@ -1,6 +1,36 @@
-# Global exclusions - files that should never be checked by any hook
-# Note: Hook-specific exclusions go in individual hook configs
-exclude: ".*/fixtures/.*|.*/third_party/.*|.*/vendor/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*|^ansible/collections/.*|^k8s-old/|^cluster/flux-system/flux-system/|.*/node_modules/.*|^claude/claude_hooks/claude_hooks/testdata/claude_tools/.*\\.md$|^tana/testdata/|^llm/instruct-logseq/.*|^agent_server/docs/scaffold_reflection\\.md$|^claude-commands-old/.*\\.md$|^claude-commands/TODO\\.md$|^claude/claude_optimizer/README\\.md$|^cluster/docs/(agents|operations|plan|secrets|troubleshooting)\\.md$|^finance/reconcile/README\\.md$|^llm/claude-instructions/.*\\.md$|^mcp_infra/docs/eliminating-class-constants-analysis\\.md$|^nix/home/(README\\.md|claude-code/commands/.*\\.md)$|^prompts/scans/useless-comments-and-docs\\.md$|^props/core/src/props_core/(\\.claude/commands/.*\\.md|docs/prompts/.*\\.md|props/self-describing-names\\.md)$|^sandboxed_jupyter/docs/TODO.*\\.md$|^website/posts/.*\\.markdown$"
+# Global exclusions for git-tracked files that should skip hooks
+# Note: .gitignore is respected automatically (pre-commit only runs on tracked files)
+# Uses (?x) verbose regex mode for readable multi-line patterns
+exclude: |
+  (?x)^(
+    # Vendored/third-party code
+    .*/fixtures/.*|
+
+    # Legacy/archived directories
+    k8s-old/.*|
+    claude-commands-old/.*\.md|
+
+    # Test data and examples
+    .*/examples/.*\.py|
+    claude/claude_hooks/testdata/.*\.md|
+    tana/testdata/.*|
+
+    # LLM prompts/instructions (manually curated, not linted)
+    llm/instruct-logseq/.*|
+    llm/claude-instructions/.*\.md|
+    prompts/scans/useless-comments-and-docs\.md|
+
+    # Documentation (manually curated or has special formatting)
+    agent_server/docs/scaffold_reflection\.md|
+    claude-commands/TODO\.md|
+    claude/claude_optimizer/README\.md|
+    cluster/docs/(agents|operations|plan|secrets|troubleshooting)\.md|
+    finance/reconcile/README\.md|
+    mcp_infra/docs/eliminating-class-constants-analysis\.md|
+    nix/home/(README\.md|claude-code/commands/.*\.md)|
+    sandboxed_jupyter/docs/TODO.*\.md|
+    website/posts/.*\.markdown
+  )$
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -62,12 +92,6 @@ repos:
   # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
   # correctly and uses a single mypy.ini config.
 
-  # Buildifier linting (formatting handled by bazel-format below)
-  - repo: https://github.com/keith/pre-commit-buildifier
-    rev: 6.4.0
-    hooks:
-      - id: buildifier-lint
-
   # Nix formatter - requires alejandra in PATH
   # Dev: via .envrc (nix -p alejandra)
   # CI: via cachix/install-nix-action + nix profile install
@@ -81,6 +105,14 @@ repos:
         language: system
         files: \.nix$
 
+      # Buildifier linting via Bazel (hermetic buildifier binary)
+      # Formatting handled by bazel-format below
+      - id: buildifier-lint
+        name: buildifier lint
+        entry: bazelisk run //:buildifier -- --mode=check --lint=warn
+        language: system
+        files: "BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$|MODULE\\.bazel$"
+
       # Unified formatter via Bazel (prettier, ruff, buildifier, shfmt, rustfmt)
       # Single source of truth - eliminates version mismatches between pre-commit and Bazel
       - id: bazel-format
@@ -91,7 +123,7 @@ repos:
         # Use files regex since pre-commit doesn't have starlark type
         # Covers: JS/TS/Svelte, CSS, Markdown, YAML, JSON, HTML, Python, Shell, Starlark
         files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$"
-        exclude: "node_modules/|.pnpm/|bazel-|.git/"
+        exclude: "\\.pnpm/"
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
   - repo: https://github.com/DavidAnson/markdownlint-cli2
@@ -147,37 +179,37 @@ repos:
         args: [--framework, terraform, --skip-check, CKV_TF_1]
         files: ^cluster/terraform/.*\.tf$
 
-  # Cluster-specific local hooks
+  # Cluster-specific local hooks (Bazel-managed binaries)
   - repo: local
     hooks:
-      # Kustomize validation
+      # Kustomize validation via Bazel (hermetic kustomize binary)
       - id: kustomize-dry-run
         name: Validate Kustomize builds (cluster)
-        entry: bash -c 'cd cluster && scripts/validate-kustomizations.py'
+        entry: bazelisk run //cluster/scripts:validate_kustomizations --
         language: system
         files: ^cluster/k8s/.*\.(yaml|yml)$
         pass_filenames: false
 
-      # Flux build validation
+      # Flux build validation via Bazel (hermetic flux binary)
       - id: flux-build-dry-run
         name: Validate Flux kustomizations (cluster)
-        entry: bash -c 'cd cluster && scripts/validate-flux-build.py'
+        entry: bazelisk run //cluster/scripts:validate_flux_build --
         language: system
         files: ^cluster/k8s/.*\.(yaml|yml)$
         pass_filenames: false
 
-      # GitOps dependency validation
+      # GitOps dependency validation via Bazel
       - id: gitops-dependency-validation
         name: Validate GitOps dependencies (cluster)
-        entry: bash -c 'cd cluster && scripts/validate-dependencies.py'
+        entry: bazelisk run //cluster/scripts:validate_dependencies --
         language: system
         files: ^cluster/k8s/.*\.(yaml|yml)$
         pass_filenames: false
 
-      # Helm template validation
+      # Helm template validation via Bazel (hermetic helm binary)
       - id: helm-template-dry-run
         name: Validate Helm templates (cluster)
-        entry: bash -c 'find cluster/terraform/ -name "cilium" -type d | while read d; do if [[ -f "$d/values.yaml" ]]; then echo "Templating Helm chart in $d..."; helm template test-release cilium/cilium -f "$d/values.yaml" --dry-run >/dev/null || exit 1; fi; done'
+        entry: bazelisk run //cluster/scripts:validate_helm_templates --
         language: system
         files: ^cluster/terraform/.*cilium.*\.(yaml|yml|tf)$
         pass_filenames: false
@@ -199,11 +231,10 @@ repos:
         files: ^cluster/terraform/modules/.*\.tf$
         pass_filenames: false
 
-      # Validate SealedSecrets can be decrypted with terraform keypair
-      # Uses kubeseal --recovery-unseal (works offline, no cluster needed)
+      # Validate SealedSecrets via Bazel (hermetic kubeseal + tofu binaries)
       - id: validate-sealed-secrets
         name: Validate SealedSecrets with terraform keypair (cluster)
-        entry: bash -c 'cd cluster && ./scripts/validate-sealed-secrets.sh'
+        entry: bazelisk run //cluster/scripts:validate_sealed_secrets --
         language: system
         files: ^cluster/(k8s/.*sealed.*\.yaml|terraform/00-persistent-auth/)
         pass_filenames: false

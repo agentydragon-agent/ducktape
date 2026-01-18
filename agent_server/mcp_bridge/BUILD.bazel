@@ -23,6 +23,8 @@ py_library(
         "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 
@@ -30,6 +32,7 @@ _TEST_DEPS = [
     ":mcp_bridge",
     "//agent_server/persist",
     "//agent_server/testing",
+    "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
     "@pypi//pytest_asyncio",
@@ -47,5 +50,8 @@ py_test(
     srcs = ["test_integration.py"],
     imports = ["../.."],
     tags = ["requires_docker"],
-    deps = _TEST_DEPS + ["@pypi//docker"],
+    deps = _TEST_DEPS + [
+        "@pypi//docker",
+        "@pypi//starlette",
+    ],
 )

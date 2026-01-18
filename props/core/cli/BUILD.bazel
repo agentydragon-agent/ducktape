@@ -81,6 +81,7 @@ py_library(
         "//props/core/db:session",
         "@pypi//rich",
         "@pypi//sqlalchemy",
+        "@pypi//typer",
     ],
 )
 
@@ -97,6 +98,7 @@ py_library(
         "//props/core/noop_classifier:classifier",
         "@pypi//rich",
         "@pypi//sqlalchemy",
+        "@pypi//typer",
     ],
 )
 
@@ -208,6 +210,7 @@ py_library(
         "@pypi//aiodocker",
         "@pypi//rich",
         "@pypi//sqlalchemy",
+        "@pypi//typer",
     ],
 )
 
@@ -264,9 +267,12 @@ py_library(
         "//props/core/db:session",
         "//props/core/db/sync",
         "//props/core/db/sync:export",
+        "@pypi//pygit2",
+        "@pypi//pyyaml",
         "@pypi//rich",
         "@pypi//sqlalchemy",
         "@pypi//typer",
+        "@pypi//types_pyyaml",
     ],
 )
 
@@ -283,7 +289,10 @@ py_library(
         "//openai_utils",
         "//props/core/db:models",
         "//props/core/db:session",
+        "@pypi//fastmcp",
+        "@pypi//rich",
         "@pypi//sqlalchemy",
+        "@pypi//typer",
     ],
 )
 
@@ -314,7 +323,7 @@ py_library(
 
 py_library(
     name = "main",
-    srcs = ["main.py"],
+    srcs = ["__main__.py"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -362,10 +371,14 @@ py_library(
 
 py_binary(
     name = "cli",
-    srcs = ["main.py"],
-    main = "main.py",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
     visibility = ["//visibility:public"],
-    deps = [":main"],
+    deps = [
+        ":main",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
 )
 
 # =============================================================================

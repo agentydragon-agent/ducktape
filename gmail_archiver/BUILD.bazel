@@ -57,7 +57,11 @@ py_binary(
     srcs = ["__main__.py"],
     imports = [".."],
     main = "__main__.py",
-    deps = [":gmail_archiver_lib"],
+    deps = [
+        ":gmail_archiver_lib",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
 )
 
 py_test(

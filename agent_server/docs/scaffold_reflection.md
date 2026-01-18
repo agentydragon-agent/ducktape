@@ -14,7 +14,7 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
 ## Baseline dependencies
 
 - Compositor with policy middleware (enforcement gate).
-- Resources server (compositor/* introspection, subscriptions).
+- Resources server (`compositor/*` introspection, subscriptions).
 - Runtime container image `adgn-runtime` (includes Python + rg; code installed in image).
 - Optional Compositor HTTP on loopback with a bearer token for the container (<mcp-runtime/overview.md>).
 - Split policy servers: policy_reader (resources + decide), policy_approver, policy_proposer.
@@ -24,12 +24,12 @@ See also: <vision.md>, <mcp-runtime/overview.md>, <mcp-runtime/policy-gateway.md
 - runtime container info — implemented
   - Server `runtime`, URI `resource://container.info` (JSON): `{id, image, platform, os, arch, adgn_version, python_paths, tools:{rg:true}}`
   - Purpose: adapt commands/reads to container reality.
-- compositor_meta per‑server state — implemented
+- `compositor_meta` per‑server state — implemented
   - Server `compositor_meta`, resource `compositor://state/{server}` (typed union state).
   - URIs appear under the compositor prefix (e.g., `compositor://compositor_meta/state/{server}`); use the resources server helper to translate back to the server name.
   - No dedicated mounts index resource; enumerate state resources via `resources/list` and watch `resources/list_changed` for attach/detach.
   - Instructions/capabilities are available via InitializeResult in the running state (no separate resources).
-- resources://subscriptions — implemented
+- `resources://subscriptions` — implemented
   - Current durable subs; agent can reason about what’s blocked open.
 
 ## Runtime‑updatable (P0–P1) — approval‑gated

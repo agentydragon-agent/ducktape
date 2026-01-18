@@ -1,4 +1,13 @@
+# Gazelle exclusions
+# Most .gitignore patterns are handled by .bazelignore (root-level directories)
+# or don't need exclusion (cache dirs with no .py files like __pycache__)
+# gazelle:exclude ansible
+
+# gazelle:python_root
+# gazelle:python_library_naming_convention $package_name$_lib
+
 load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
@@ -94,6 +103,23 @@ platform(
     ],
 )
 
+# Gazelle Python configuration
+# Running without manifest due to system packages (pygobject, dbus-python, pycairo)
+# that require unavailable libraries. Gazelle will still:
+# - Generate py_library/py_test targets
+# - Infer local dependencies
+# - Detect test files
+# Manual dependency management needed for: @pypi packages, system packages
+gazelle_binary(
+    name = "gazelle_python_binary",
+    languages = ["@rules_python_gazelle_plugin//python"],
+)
+
+gazelle(
+    name = "gazelle",
+    gazelle = ":gazelle_python_binary",
+)
+
 # Format Bazel files
 buildifier(
     name = "buildifier",
@@ -128,7 +154,7 @@ py_package(
         "openai_utils",
     ],
     deps = [
-        "//difftree",
+        "//difftree:difftree_lib",
         "//git_commit_ai:git_commit_ai_lib",
         "//gmail_archiver:gmail_archiver_lib",
     ],

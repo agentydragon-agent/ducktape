@@ -5,11 +5,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .base import BaseDetector
-from .import_graph import _resolve_from_module, build_import_graph, module_name_for_path, would_introduce_cycle
-from .models import Detection
-from .registry import DetectorSpec, register
-from .utils import iter_py_files, parse_python_file
+from py_detectors.base import BaseDetector
+from py_detectors.import_graph import (
+    _resolve_from_module,
+    build_import_graph,
+    module_name_for_path,
+    would_introduce_cycle,
+)
+from py_detectors.models import Detection
+from py_detectors.registry import DetectorSpec, register
+from py_detectors.utils import iter_py_files, parse_python_file
 
 
 @dataclass
@@ -45,10 +50,26 @@ class _ImportVisitor(ast.NodeVisitor):
         self._maybe_report(n)
         self.generic_visit(n)
 
+    def _is_inside_type_checking_block(self) -> bool:
+        """Check if we're inside an `if TYPE_CHECKING:` block."""
+        for node in self._stack:
+            if isinstance(node, ast.If):
+                test = node.test
+                # Handle `if TYPE_CHECKING:`
+                if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+                    return True
+                # Handle `if typing.TYPE_CHECKING:`
+                if isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING":
+                    return True
+        return False
+
     def _maybe_report(self, n: ast.Import | ast.ImportFrom) -> None:
         if not self._stack:
             return
         if isinstance(self._stack[-1], ast.Module):
+            return
+        # Imports inside `if TYPE_CHECKING:` are legitimate for avoiding circular imports
+        if self._is_inside_type_checking_block():
             return
         cur_mod = module_name_for_path(self._ctx.root, self._ctx.path)
         target_mod: str | None = None

@@ -62,7 +62,11 @@ py_binary(
     name = "claude-linter-v2",
     srcs = ["cli.py"],
     main = "cli.py",
-    deps = [":claude_linter_v2"],
+    deps = [
+        ":claude_linter_v2",
+        "@pypi//click",
+        "@pypi//humanize",
+    ],
 )
 
 py_test(
@@ -86,6 +90,7 @@ py_test(
     main = "test_integration.py",
     deps = [
         ":claude_linter_v2",
+        "@pypi//click",
         "@pypi//pytest",
     ],
 )

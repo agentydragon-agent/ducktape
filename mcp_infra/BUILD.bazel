@@ -5,11 +5,11 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "mcp_infra",
     srcs = [
-        "__init__.py",
         "calltool.py",
         "client_helpers.py",
         "config_loader.py",
         "constants.py",
+        "flat_tool.py",
         "mcp_types.py",
         "mount_types.py",
         "mounted.py",

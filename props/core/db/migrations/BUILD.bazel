@@ -1,5 +1,9 @@
 """Alembic database migrations."""
 
+# gazelle:exclude env.py
+# gazelle:exclude script.py.mako
+# gazelle:exclude versions
+
 load("@rules_python//python:defs.bzl", "py_test")
 
 filegroup(

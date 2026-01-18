@@ -7,9 +7,9 @@ from shutil import which
 
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field
 
+from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import BaseExecResult, ExecOutcome, TimeoutMs, render_outcome_to_result
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
@@ -72,7 +72,7 @@ class BwrapExecServer(EnhancedFastMCP):
     """Bubblewrap-sandboxed exec MCP server with typed tool access (Linux only)."""
 
     # Tool references (assigned in __init__)
-    exec_tool: FunctionTool
+    exec_tool: FlatTool
 
     def __init__(self, *, default_cwd: Path | None = None):
         """Create a bubblewrap-sandboxed exec MCP server (Linux only).

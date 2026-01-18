@@ -7,15 +7,16 @@ Validates grading edges are complete and marks the grader run as complete.
 from __future__ import annotations
 
 import logging
+from typing import Any
 from uuid import UUID
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
-from fastmcp.tools import FunctionTool
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.core.db.models import AgentRun, AgentRunStatus
@@ -45,8 +46,8 @@ class GraderSubmitServer(EnhancedFastMCP):
     Provides grader_submit and report_failure tools.
     """
 
-    submit_tool: FunctionTool
-    report_failure_tool: FunctionTool
+    submit_tool: FlatTool[Any, Any]
+    report_failure_tool: FlatTool[Any, Any]
 
     def __init__(self, *, grader_run_id: UUID, critic_run_id: UUID, auth: AuthProvider | None = None):
         """Initialize grader submit server.

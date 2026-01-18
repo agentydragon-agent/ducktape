@@ -3,13 +3,13 @@
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
-from fastmcp.tools import FunctionTool
 from pydantic import Field
 from sqlalchemy import func
 
@@ -17,6 +17,7 @@ from agent_core.handler import AbortIf, RedirectOnTextMessageHandler
 from agent_core.turn_limit import MaxTurnsExceededError
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.types import ReasoningSummary
@@ -211,9 +212,9 @@ class PromptEvalServer(EnhancedFastMCP):
     RUN_CRITIC_TOOL = "run_critic"
     RUN_GRADER_TOOL = "run_grader"
 
-    run_critic_tool: FunctionTool
-    run_grader_tool: FunctionTool
-    report_failure_tool: FunctionTool
+    run_critic_tool: FlatTool[Any, Any]
+    run_grader_tool: FlatTool[Any, Any]
+    report_failure_tool: FlatTool[Any, Any]
 
     def __init__(
         self,

@@ -29,5 +29,7 @@ py_test(
     deps = [
         ":resources",
         "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
     ],
 )

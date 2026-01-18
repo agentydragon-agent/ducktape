@@ -16,9 +16,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from gatelet.manage import reset_db
 from gatelet.server.models import Base
 
+pytestmark = [pytest.mark.e2e, pytest.mark.requires_postgres]
+
 
 @pytest.fixture(scope="session")
-def server_url(_postgres: None) -> Generator[str]:
+def server_url() -> Generator[str]:
     """Start the Gatelet server for browser tests."""
     cfg_dir = Path(__file__).resolve().parents[2]
     env = os.environ.copy()

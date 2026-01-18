@@ -8,6 +8,9 @@
 #
 # After sealing, you must commit the sealed secret manually:
 #   git add <output-sealed.yaml> && git commit
+#
+# TODO: Migrate to Bazel. See //cluster/scripts:validate_sealed_secrets for pattern.
+# Requires: @multitool//tools/kubeseal, @tf_toolchains//:tofu
 
 set -euo pipefail
 

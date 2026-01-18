@@ -301,7 +301,3 @@ async def cmd_sh(ctx: typer.Context):
 
 
 main = get_command(app)
-
-# Enable `python -m wt.cli ...` execution
-if __name__ == "__main__":
-    app()

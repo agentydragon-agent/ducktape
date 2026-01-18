@@ -33,7 +33,7 @@ class LiteralStr(str):
 
 def _literal_str_representer(dumper: yaml.Dumper, data: LiteralStr) -> yaml.Node:
     """Represent LiteralStr as YAML literal block style."""
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")  # type: ignore[no-any-return]
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
 
 
 yaml.add_representer(LiteralStr, _literal_str_representer)

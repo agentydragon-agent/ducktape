@@ -35,6 +35,7 @@ py_library(
         "//net_util",
         "//openai_utils",
         "@pypi//aiodocker",
+        "@pypi//fastmcp",
         "@pypi//typer",
     ],
 )
@@ -44,7 +45,10 @@ py_binary(
     srcs = ["cli.py"],
     imports = ["../.."],
     main = "cli.py",
-    deps = [":editor_agent_host"],
+    deps = [
+        ":editor_agent_host",
+        "@pypi//typer",
+    ],
 )
 
 py_test(

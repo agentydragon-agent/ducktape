@@ -40,11 +40,7 @@ async def test_list_all_payloads_key_auth(client: AsyncClient, db_session: Async
     # Add some test payloads
     payloads = []
     for i in range(15):
-        payload = WebhookPayload(
-            integration_name=integration.name,
-            integration_id=integration.id,
-            payload={"test": "data", "index": i, "value": i * 10},
-        )
+        payload = WebhookPayload(integration_id=integration.id, payload={"test": "data", "index": i, "value": i * 10})
         payloads.append(await persist(db_session, payload))
 
     # Use key-in-path authentication
@@ -77,9 +73,7 @@ async def test_list_integration_payloads(client: AsyncClient, db_session: AsyncS
 
     # Add some test payloads
     for i in range(5):
-        payload = WebhookPayload(
-            integration_name=integration.name, integration_id=integration.id, payload={"test": "specific", "index": i}
-        )
+        payload = WebhookPayload(integration_id=integration.id, payload={"test": "specific", "index": i})
         await persist(db_session, payload)
 
     # Use key-in-path authentication
@@ -112,9 +106,7 @@ async def test_session_auth_webhooks(client: AsyncClient, db_session: AsyncSessi
     integration = await persist(db_session, integration)
 
     # Add a test payload
-    payload = WebhookPayload(
-        integration_name=integration.name, integration_id=integration.id, payload={"test": "session", "value": 42}
-    )
+    payload = WebhookPayload(integration_id=integration.id, payload={"test": "session", "value": 42})
     await persist(db_session, payload)
 
     # Use session-based authentication
@@ -138,7 +130,7 @@ async def test_disabled_payloads_hidden(client: AsyncClient, db_session: AsyncSe
     )
     integration = await persist(db_session, integration)
 
-    payload = WebhookPayload(integration_name=integration.name, integration_id=integration.id, payload={"hidden": True})
+    payload = WebhookPayload(integration_id=integration.id, payload={"hidden": True})
     await persist(db_session, payload)
 
     response = await client.get(f"/k/{test_auth_key.key_value}/webhooks/")

@@ -11,11 +11,11 @@ if TYPE_CHECKING:
 
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
-from fastmcp.tools import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
+from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.mount_types import MountEvent
@@ -309,15 +309,15 @@ class ResourcesServer(EnhancedFastMCP):
     subscriptions_index_resource: FunctionResource
 
     # Tool references
-    list_tool: FunctionTool
-    list_templates_tool: FunctionTool
-    read_tool: FunctionTool
-    read_blocks_tool: FunctionTool
-    subscribe_tool: FunctionTool
-    unsubscribe_tool: FunctionTool
-    list_subscriptions_tool: FunctionTool
-    subscribe_list_changes_tool: FunctionTool
-    unsubscribe_list_changes_tool: FunctionTool
+    list_tool: FlatTool
+    list_templates_tool: FlatTool
+    read_tool: FlatTool
+    read_blocks_tool: FlatTool
+    subscribe_tool: FlatTool
+    unsubscribe_tool: FlatTool
+    list_subscriptions_tool: FlatTool
+    subscribe_list_changes_tool: FlatTool
+    unsubscribe_list_changes_tool: FlatTool
 
     def __init__(self, *, compositor: Compositor):
         """Create a Resources MCP server.

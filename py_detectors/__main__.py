@@ -7,7 +7,7 @@ from typing import Any
 
 # Import detectors to register them
 # Ruff covers: none/boolean literal comparisons and some early-bailout/return patterns
-from . import (
+from py_detectors import (
     det_broad_except_order,  # noqa: F401
     det_dynamic_attr_probe,  # noqa: F401
     det_flatten_nested_guards,  # noqa: F401
@@ -21,7 +21,7 @@ from . import (
     det_trivial_alias,  # noqa: F401
     det_walrus_suggest,  # noqa: F401
 )
-from .registry import all_detectors, run_all
+from py_detectors.registry import all_detectors, run_all
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
 
     root = args.root.resolve()
     dets = run_all(root, detector_names=args.only, workers=args.workers)
-    payload: list[dict[str, Any]] = [d.model_dump(exclude_none=True) for d in dets]
+    payload: list[dict[str, Any]] = [d.model_dump(exclude_none=True, mode="json") for d in dets]
     s = json.dumps(payload, indent=2)
     if args.out:
         args.out.write_text(s, encoding="utf-8")

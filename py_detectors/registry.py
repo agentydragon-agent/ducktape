@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from .models import Detection
+from py_detectors.models import Detection
 
 
 @dataclass(frozen=True)

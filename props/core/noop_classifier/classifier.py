@@ -13,10 +13,10 @@ import asyncio
 import importlib.resources
 import json
 import logging
+from typing import Any
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.tools import FunctionTool
 
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler
@@ -24,6 +24,7 @@ from agent_core.loop_control import RequireAnyTool
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from props.core.noop_classifier.models import Classification, ClassifierState, SubmitClassificationsInput, SubmitResult
@@ -57,7 +58,7 @@ class ClassifierServer(EnhancedFastMCP):
     """
 
     # Tool reference (assigned in __init__)
-    submit_classifications_tool: FunctionTool
+    submit_classifications_tool: FlatTool[Any, Any]
 
     def __init__(self, state: ClassifierState):
         """Create classifier server with state container.

@@ -96,7 +96,7 @@ Pre-commit hook validates all SealedSecrets can be decrypted with terraform keyp
 
 ```bash
 # Validation uses kubeseal --recovery-unseal (works offline, no cluster needed)
-./scripts/validate-sealed-secrets.sh
+bazel run //cluster/scripts:validate_sealed_secrets
 ```
 
 ## Adding New SealedSecrets

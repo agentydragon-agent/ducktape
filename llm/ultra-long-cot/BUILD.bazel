@@ -2,7 +2,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
-    name = "ultra_long_cot",
+    name = "ultra_long_cot_lib",
     srcs = [
         "ultra_long_cot.py",
         "ultra_long_cot_o4.py",
@@ -16,9 +16,8 @@ py_library(
 )
 
 py_binary(
-    name = "ultra_long_cot_bin",
+    name = "ultra_long_cot",
     srcs = ["ultra_long_cot.py"],
-    main = "ultra_long_cot.py",
     deps = [
         "@pypi//openai",
         "@pypi//pydantic",
@@ -27,9 +26,8 @@ py_binary(
 )
 
 py_binary(
-    name = "ultra_long_cot_o4_bin",
+    name = "ultra_long_cot_o4",
     srcs = ["ultra_long_cot_o4.py"],
-    main = "ultra_long_cot_o4.py",
     deps = [
         "@pypi//openai",
         "@pypi//pydantic",
@@ -39,5 +37,5 @@ py_binary(
 
 ruff_test(
     name = "ruff",
-    srcs = [":ultra_long_cot"],
+    srcs = [":ultra_long_cot_lib"],
 )

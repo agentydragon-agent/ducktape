@@ -11,7 +11,7 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import add_resource_prefix
 
 if TYPE_CHECKING:
-    from fastmcp.tools import FunctionTool
+    from fastmcp.tools.tool import Tool
 
 
 @dataclass
@@ -39,11 +39,11 @@ class Mounted[T: FastMCP]:
     prefix: MCPMountPrefix
     server: T
 
-    def tool_name(self, tool: "FunctionTool") -> str:
+    def tool_name(self, tool: "Tool") -> str:
         """Get fully-qualified MCP tool name.
 
         Args:
-            tool: FunctionTool from self.server.some_tool
+            tool: Tool from self.server.some_tool
 
         Returns:
             Fully-qualified tool name (e.g., "lint_submit_submit_result")

@@ -7,16 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "PYTHONPATH=. python3 -m claude_web_hooks.cli_direnv"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "PYTHONPATH=. python3 -m claude_web_hooks.session_start"
+            "command": "uv tool run --from 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-web-hooks-v0.1.0/claude_hooks-0.1.0-py3-none-any.whl' claude-session-start"
           }
         ]
       }

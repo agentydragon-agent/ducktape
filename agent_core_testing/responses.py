@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastmcp import FastMCP
-from fastmcp.tools import FunctionTool
+from fastmcp.tools.tool import Tool
 from pydantic import BaseModel, TypeAdapter
 
 from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput, EchoOutput
@@ -121,12 +121,12 @@ class ResponsesFactory(ItemFactory):
         return self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
 
     def mounted_tool_call[S: FastMCP](
-        self, mounted: Mounted[S], tool: FunctionTool, arguments: BaseModel, call_id: str | None = None
+        self, mounted: Mounted[S], tool: Tool, arguments: BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         """Create tool call from Mounted server + tool attribute.
 
         Preferred over mcp_tool_call when you have a Mounted wrapper, as it
-        derives the fully-qualified tool name from the FunctionTool attribute.
+        derives the fully-qualified tool name from the Tool attribute.
         """
         return self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"), call_id)
 
@@ -360,7 +360,7 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
         )
 
     def call_roundtrip[S: FastMCP, U: BaseModel](
-        self, mounted: Mounted[S], tool: FunctionTool, arguments: BaseModel, output_type: type[U]
+        self, mounted: Mounted[S], tool: Tool, arguments: BaseModel, output_type: type[U]
     ) -> Generator[FunctionCallItem, ResponsesRequest, U]:
         """Create tool call and yield roundtrip generator."""
         call = self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"))

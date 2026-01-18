@@ -1,7 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "gitea_mirror",
+    name = "gitea_mirror_lib",
     srcs = [
         "launcher.py",
         "server.py",
@@ -18,10 +18,9 @@ py_library(
 )
 
 py_binary(
-    name = "launcher_bin",
+    name = "launcher",
     srcs = ["launcher.py"],
-    main = "launcher.py",
-    deps = [":gitea_mirror"],
+    deps = [":gitea_mirror_lib"],
 )
 
 py_test(
@@ -31,7 +30,7 @@ py_test(
         "test_server.py",
     ],
     deps = [
-        ":gitea_mirror",
+        ":gitea_mirror_lib",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],

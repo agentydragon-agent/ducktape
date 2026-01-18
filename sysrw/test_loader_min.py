@@ -64,5 +64,5 @@ async def test_read_crush_min(crush_min_path: Path):
     input_data = oai_req["input"]  # TypedDict access
     assert isinstance(input_data, list)
     # Extract roles from the input messages (TypedDict items remain as dicts)
-    roles = [item["role"].lower() for item in input_data if isinstance(item, dict) and "role" in item]  # type: ignore[typeddict-item]
+    roles = [item["role"].lower() for item in input_data if isinstance(item, dict) and "role" in item]
     assert any(r in ("user", "assistant") for r in roles)

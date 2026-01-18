@@ -83,6 +83,7 @@ py_library(
         "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//fastapi",
+        "@pypi//fastmcp",
         "@pypi//uvicorn",
     ],
 )

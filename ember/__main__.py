@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import copy
+from typing import Any
 
 import uvicorn
 from uvicorn.config import LOGGING_CONFIG
 
 
-def _log_config() -> dict:
-    config = copy.deepcopy(LOGGING_CONFIG)
+def _log_config() -> dict[str, Any]:
+    config: dict[str, Any] = copy.deepcopy(LOGGING_CONFIG)
 
     default_fmt = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
     access_fmt = '%(asctime)s %(levelname)s [%(name)s] %(client_addr)s - "%(request_line)s" %(status_code)s'

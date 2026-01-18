@@ -34,7 +34,12 @@ py_binary(
     srcs = ["cli.py"],
     imports = [".."],
     main = "cli.py",
-    deps = [":rspcache"],
+    deps = [
+        ":rspcache",
+        "@pypi//httpx",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
 )
 
 ruff_test(
