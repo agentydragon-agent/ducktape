@@ -1,7 +1,8 @@
 import pytest
 from fastmcp.client import Client
 
-from mcp_infra.exec.direct import DirectExecArgs, DirectExecServer
+from mcp_infra.exec.direct import DirectExecServer
+from mcp_infra.exec.subprocess_exec import SubprocessExecArgs
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.naming import build_mcp_function
@@ -32,7 +33,7 @@ async def test_direct_inprocess_server(compositor, compositor_client) -> None:
     assert any(t.name == tool_name for t in tools)
     # Sanity-call exec via the namespaced tool using the typed helper
     exec_stub = ToolStub(compositor_client, tool_name, BaseExecResult)
-    result = await exec_stub(DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000))
+    result = await exec_stub(SubprocessExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000))
     # Compare whole exit object
     assert result.exit == Exited(exit_code=0)
 

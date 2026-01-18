@@ -9,43 +9,25 @@ from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
-from mcp_infra.exec.subprocess_exec import ExecArgs, run_exec
-
-# Backwards-compatible alias
-DirectExecArgs = ExecArgs
-
-
-async def run_direct_exec(args: ExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:
-    """Execute a command locally (no sandbox).
-
-    Thin wrapper around run_exec that raises ToolError for MCP compatibility.
-    """
-    try:
-        return await run_exec(args, default_cwd=default_cwd)
-    except ValueError as e:
-        raise ToolError(str(e)) from e
+from mcp_infra.exec.subprocess_exec import SubprocessExecArgs, run_exec
 
 
 class DirectExecServer(EnhancedFastMCP):
     """Direct (unsandboxed) exec MCP server with typed tool access."""
 
-    # Tool references (assigned in __init__)
     exec_tool: FlatTool
 
     def __init__(self, *, default_cwd: Path | None = None):
-        """Create a direct (unsandboxed) exec MCP server.
-
-        Args:
-            default_cwd: Default working directory for commands when not specified
-        """
         super().__init__("Direct Exec MCP Server", instructions="Local command execution (unsandboxed)")
 
-        # Capture default_cwd in closure
         default_cwd_val = default_cwd
 
-        async def exec(input: DirectExecArgs) -> BaseExecResult:
+        async def exec(input: SubprocessExecArgs) -> BaseExecResult:
             """Execute a command locally (no sandbox)."""
-            return await run_direct_exec(input, default_cwd=default_cwd_val)
+            try:
+                return await run_exec(input, default_cwd=default_cwd_val)
+            except ValueError as e:
+                raise ToolError(str(e)) from e
 
         self.exec_tool = self.flat_model()(exec)
 

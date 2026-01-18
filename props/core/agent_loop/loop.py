@@ -19,7 +19,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from mcp_infra.exec.subprocess_exec import ExecArgs, get_exec_tool_schema, run_exec
+from mcp_infra.exec.subprocess_exec import SubprocessExecArgs, get_exec_tool_schema, run_exec
 from props.core.critic.tools import (
     DeleteIssueArgs,
     InsertIssueArgs,
@@ -142,7 +142,7 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
                 # Shell execution
                 try:
                     args = json.loads(fc.arguments)
-                    exec_args = ExecArgs.model_validate(args)
+                    exec_args = SubprocessExecArgs.model_validate(args)
                     exec_result = await run_exec(exec_args)
                     output = exec_result.model_dump_json()
                 except json.JSONDecodeError as e:

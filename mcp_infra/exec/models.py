@@ -160,12 +160,7 @@ class ExecInput(OpenAIStrictModeBaseModel):
         env: list[str] | None = None,
         user: str | None = None,
     ) -> ExecInput:
-        """Factory method for constructing ExecInput with sensible defaults.
-
-        Example:
-            exec_input = ExecInput.create(["echo", "hello"])
-            exec_input_with_timeout = ExecInput.create(["sleep", "5"], timeout_ms=6_000)
-        """
+        """Factory method for constructing ExecInput with sensible defaults."""
         return cls(cmd=cmd, cwd=cwd, env=env, user=user, timeout_ms=timeout_ms)
 
 

@@ -6,7 +6,6 @@ py_library(
     name = "subprocess_exec",
     srcs = [
         "models.py",
-        "subprocess.py",
         "subprocess_exec.py",
     ],
     imports = ["../.."],
@@ -15,6 +14,13 @@ py_library(
         "//openai_utils",
         "@pypi//pydantic",
     ],
+)
+
+# Verifies subprocess_exec has no fastmcp dependency (critical for in-container use)
+sh_test(
+    name = "test_subprocess_exec_no_fastmcp",
+    srcs = ["test_no_fastmcp_dep.sh"],
+    data = [":subprocess_exec"],
 )
 
 # Image reading utility (shared by direct, seatbelt, bwrap, docker)
