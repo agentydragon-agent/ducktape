@@ -11,8 +11,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Any
 
 import asyncpg
+from asyncpg.pool import PoolConnectionProxy
 
 from props.core.db.config import DatabaseConfig
 from props.core.grader.drift_handler import GraderDriftHandler, check_grading_pending
@@ -64,7 +66,7 @@ class GraderDaemonScaffold:
         )
 
     async def _notification_callback(
-        self, connection: asyncpg.Connection, pid: int, channel: str, payload: object
+        self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
     ) -> None:
         """Handle incoming pg_notify notifications."""
         if not isinstance(payload, str):

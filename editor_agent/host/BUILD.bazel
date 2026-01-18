@@ -45,7 +45,10 @@ py_binary(
     srcs = ["cli.py"],
     imports = ["../.."],
     main = "cli.py",
-    deps = [":editor_agent_host"],
+    deps = [
+        ":editor_agent_host",
+        "@pypi//typer",
+    ],
 )
 
 py_test(

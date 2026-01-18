@@ -7,9 +7,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
 
-from .models import Detection, LineRange
-from .registry import DetectorSpec, register
-from .utils import make_root_detector, parse_python_file, read_snippet
+from py_detectors.models import Detection, LineRange
+from py_detectors.registry import DetectorSpec, register
+from py_detectors.utils import make_root_detector, parse_python_file, read_snippet
 
 
 class BaseDetector(ABC):

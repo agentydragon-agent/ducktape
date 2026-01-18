@@ -20,7 +20,10 @@ py_binary(
     name = "headscale-cleanup",
     srcs = ["cli.py"],
     main = "cli.py",
-    deps = [":headscale_cleanup"],
+    deps = [
+        ":headscale_cleanup",
+        "@pypi//typer",
+    ],
 )
 
 py_package(

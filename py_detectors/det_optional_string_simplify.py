@@ -4,8 +4,8 @@ import ast
 from collections.abc import Iterable
 from pathlib import Path
 
-from .base import BaseDetector
-from .models import Detection
+from py_detectors.base import BaseDetector
+from py_detectors.models import Detection
 
 
 def _collect_optional_str(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:

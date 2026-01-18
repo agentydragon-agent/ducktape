@@ -73,6 +73,7 @@ py_test(
     imports = [".."],
     deps = [
         ":habitify",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pyyaml",
@@ -89,6 +90,7 @@ py_test(
     imports = [".."],
     deps = [
         ":habitify",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pyyaml",
@@ -105,6 +107,7 @@ py_test(
     imports = [".."],
     deps = [
         ":habitify",
+        "@pypi//httpx",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

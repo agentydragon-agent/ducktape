@@ -116,9 +116,10 @@ def handle_page_rendering_error(error: Exception, page_name: str = "page") -> No
 def render_html_page(title: str, content: str, active_page: str = "index") -> str:
     """Render HTML page with common structure and navigation menu."""
     template = env.get_template("base.html")
-    return template.render(
+    rendered: str = template.render(
         title=title, content=content, active_page=active_page, markdown_pages=MARKDOWN_PAGES, page_titles=PAGE_TITLES
     )
+    return rendered
 
 
 @app.get("/", response_class=HTMLResponse)

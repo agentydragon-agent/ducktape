@@ -37,14 +37,22 @@ py_binary(
     name = "sandbox-jupyter",
     srcs = ["wrapper.py"],
     main = "wrapper.py",
-    deps = [":sandboxed_jupyter"],
+    deps = [
+        ":sandboxed_jupyter",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
 )
 
 py_binary(
     name = "sandboxed-jupyter",
     srcs = ["sandboxer.py"],
     main = "sandboxer.py",
-    deps = [":sandboxed_jupyter"],
+    deps = [
+        ":sandboxed_jupyter",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
 )
 
 py_test(
@@ -65,6 +73,8 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_timeout",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 

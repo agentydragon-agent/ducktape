@@ -24,7 +24,10 @@ async def _get_filename() -> str:
         resources = await client.list_resources()
         for resource in resources:
             if str(resource.uri) == EDIT_RESOURCE_URI:
-                return resource.name
+                name: str | None = resource.name
+                if name is None:
+                    raise RuntimeError(f"Resource {EDIT_RESOURCE_URI} has no name")
+                return name
         raise RuntimeError(f"Resource {EDIT_RESOURCE_URI} not found")
 
 

@@ -20,14 +20,14 @@ py_library(
 )
 
 py_binary(
-    name = "py-detectors",
+    name = "py_detectors_cli",
     srcs = ["__main__.py"],
     main = "__main__.py",
     deps = [":py_detectors"],
 )
 
 py_binary(
-    name = "py-detectors-custom",
+    name = "py_detectors_custom",
     srcs = ["cli_custom.py"],
     main = "cli_custom.py",
     deps = [":py_detectors"],

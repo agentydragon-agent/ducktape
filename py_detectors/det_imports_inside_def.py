@@ -5,11 +5,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .base import BaseDetector
-from .import_graph import _resolve_from_module, build_import_graph, module_name_for_path, would_introduce_cycle
-from .models import Detection
-from .registry import DetectorSpec, register
-from .utils import iter_py_files, parse_python_file
+from py_detectors.base import BaseDetector
+from py_detectors.import_graph import _resolve_from_module, build_import_graph, module_name_for_path, would_introduce_cycle
+from py_detectors.models import Detection
+from py_detectors.registry import DetectorSpec, register
+from py_detectors.utils import iter_py_files, parse_python_file
 
 
 @dataclass

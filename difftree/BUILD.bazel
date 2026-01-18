@@ -25,7 +25,11 @@ py_binary(
     name = "difftree",
     srcs = ["__main__.py"],
     main = "__main__.py",
-    deps = [":difftree_lib"],
+    deps = [
+        ":difftree_lib",
+        "@pypi//click",
+        "@pypi//rich",
+    ],
 )
 
 py_test(

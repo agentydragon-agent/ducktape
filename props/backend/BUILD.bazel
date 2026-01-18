@@ -47,7 +47,11 @@ py_binary(
     srcs = ["cli.py"],
     main = "cli.py",
     visibility = ["//props/frontend:__pkg__"],
-    deps = [":backend"],
+    deps = [
+        ":backend",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
 )
 
 py_binary(

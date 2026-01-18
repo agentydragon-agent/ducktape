@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 # Import custom detectors to register them (exclude adapters; agent runs Ruff/Vulture/Mypy directly)
-from . import (
+from py_detectors import (
     det_dynamic_attr_probe,  # noqa: F401
     det_flatten_nested_guards,  # noqa: F401
     det_import_aliasing,  # noqa: F401
@@ -19,7 +19,7 @@ from . import (
     det_trivial_alias,  # noqa: F401
     det_walrus_suggest,  # noqa: F401
 )
-from .registry import run_all
+from py_detectors.registry import run_all
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
 
     root = args.root.resolve()
     dets = run_all(root, detector_names=args.only, workers=args.workers)
-    payload: list[dict[str, Any]] = [d.model_dump(exclude_none=True) for d in dets]
+    payload: list[dict[str, Any]] = [d.model_dump(exclude_none=True, mode="json") for d in dets]
     s = json.dumps(payload, indent=2)
     if args.out:
         args.out.write_text(s, encoding="utf-8")

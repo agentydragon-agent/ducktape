@@ -129,6 +129,8 @@ py_test(
         "//props/core/db:session",
         "//props/testing",
         "@pypi//pytest",
+        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
+        "@pypi//types_pyyaml",
     ],
 )

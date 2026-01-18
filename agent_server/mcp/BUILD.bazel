@@ -86,7 +86,10 @@ py_test(
     name = "test_stdio_notifications_envelope",
     srcs = ["test_stdio_notifications_envelope.py"],
     imports = ["../.."],
-    deps = _TEST_DEPS + ["//agent_server/notifications"],
+    deps = _TEST_DEPS + [
+        "//agent_server/notifications",
+        "@pypi//fastmcp",
+    ],
 )
 
 py_test(

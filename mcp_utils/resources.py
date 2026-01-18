@@ -8,7 +8,13 @@ from mcp import types as mcp_types
 
 
 def extract_text_from_tool_content(
-    content: Iterable[mcp_types.TextContent | mcp_types.ImageContent | mcp_types.EmbeddedResource],
+    content: Iterable[
+        mcp_types.TextContent
+        | mcp_types.ImageContent
+        | mcp_types.AudioContent
+        | mcp_types.ResourceLink
+        | mcp_types.EmbeddedResource
+    ],
 ) -> str | None:
     """Extract text from MCP CallToolResult content blocks.
 

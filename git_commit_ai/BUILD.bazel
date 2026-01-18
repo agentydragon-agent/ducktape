@@ -38,7 +38,10 @@ py_binary(
     name = "git_commit_ai",
     srcs = ["cli.py"],
     main = "cli.py",
-    deps = [":git_commit_ai_lib"],
+    deps = [
+        ":git_commit_ai_lib",
+        "@pypi//pygit2",
+    ],
 )
 
 py_test(

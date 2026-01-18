@@ -29,5 +29,7 @@ py_test(
     deps = [
         "//wt/testing",
         "@pypi//click",
+        "@pypi//pytest",
+        "@pypi//typer",
     ],
 )

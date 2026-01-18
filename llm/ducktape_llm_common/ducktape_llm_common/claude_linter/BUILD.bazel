@@ -45,6 +45,10 @@ py_test(
     main = "test_claude_linter.py",
     deps = [
         ":claude_linter",
+        "@pypi//click",
+        "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )

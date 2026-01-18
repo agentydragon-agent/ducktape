@@ -94,6 +94,7 @@ py_library(
     deps = [
         ":docker_env",
         "@pypi//aiodocker",
+        "@pypi//platformdirs",
     ],
 )
 

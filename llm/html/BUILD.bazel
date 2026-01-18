@@ -31,6 +31,7 @@ py_library(
         "@pypi//lxml",
         "@pypi//markdown",
         "@pypi//markdownify",
+        "@pypi//pytest",
         "@pypi//tabulate",
         "@pypi//tiktoken",
         "@pypi//types_markdown",
@@ -42,7 +43,15 @@ py_binary(
     name = "llm-html-server",
     srcs = ["llm_html/server.py"],
     main = "llm_html/server.py",
-    deps = [":llm_html"],
+    deps = [
+        ":llm_html",
+        "@pypi//fastapi",
+        "@pypi//jinja2",
+        "@pypi//markdown",
+        "@pypi//markdownify",
+        "@pypi//types_markdown",
+        "@pypi//uvicorn",
+    ],
 )
 
 ruff_test(

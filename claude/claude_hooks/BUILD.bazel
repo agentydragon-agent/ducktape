@@ -34,7 +34,11 @@ py_binary(
     srcs = ["precommit_autofix.py"],
     imports = [".."],
     main = "precommit_autofix.py",
-    deps = [":claude_hooks"],
+    deps = [
+        ":claude_hooks",
+        "@pypi//platformdirs",
+        "@pypi//pygit2",
+    ],
 )
 
 py_test(
@@ -56,6 +60,7 @@ py_test(
         ":claude_hooks",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
 )
