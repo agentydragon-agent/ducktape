@@ -88,6 +88,7 @@ _TEST_DEPS = [
     ":server_lib",
     "//gatelet:manage_lib",
     "//gatelet:reporter_lib",
+    "@pypi//asgi_lifespan",
     "@pypi//httpx",
     "@pypi//playwright",
     "@pypi//pyhamcrest",
