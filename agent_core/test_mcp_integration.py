@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core_testing.matchers import assert_function_call_output_structured, has_json_arguments
 from agent_core_testing.responses import EchoMock, ResponsesFactory
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -23,8 +24,9 @@ async def test_agent_mcp_echo_basic(mcp_client_echo, test_handlers, recording_ha
         yield
         yield from m.echo_roundtrip("hello")
 
+    tool_provider = MCPToolProvider(mcp_client_echo)
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=tool_provider,
         client=mock,
         handlers=test_handlers,
         tool_policy=RequireAnyTool(),
@@ -44,8 +46,9 @@ async def test_agent_mcp_echo_with_response(mcp_client_echo, test_handlers, reco
         yield from m.echo_roundtrip("hello")
         yield m.assistant_text("done")
 
+    tool_provider = MCPToolProvider(mcp_client_echo)
     agent = await Agent.create(
-        mcp_client=mcp_client_echo, client=mock, handlers=test_handlers, tool_policy=RequireAnyTool()
+        tool_provider=tool_provider, client=mock, handlers=test_handlers, tool_policy=RequireAnyTool()
     )
     agent.process_message(UserMessage.text("say hello"))
 
@@ -53,7 +56,7 @@ async def test_agent_mcp_echo_with_response(mcp_client_echo, test_handlers, reco
 
     outputs = [r for r in recording_handler.records if r.type == "function_call_output"]
     assert outputs, "No tool outputs captured"
-    assert outputs[0].result.structuredContent == {"echo": "hello"}
+    assert outputs[0].result.structured_content == {"echo": "hello"}
     assert res.text.strip() == "done"
 
 

@@ -17,9 +17,9 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from mcp import types as mcp_types
 from pydantic import BaseModel, Field
 
+from agent_core.tool_provider import ToolResult
 from openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, ResponsesRequest
 
 __all__ = [
@@ -74,7 +74,7 @@ class ToolCall(BaseModel):
 class ToolCallOutput(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
-    result: mcp_types.CallToolResult
+    result: ToolResult
 
 
 class ApiRequest(BaseModel):

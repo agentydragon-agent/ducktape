@@ -34,7 +34,7 @@ def has_function_call_output_structured(**kvs):
 
     Expects Pydantic models (ToolCallOutput), not dicts.
     """
-    return has_properties(type="function_call_output", result=has_properties(structuredContent=has_entries(**kvs)))
+    return has_properties(type="function_call_output", result=has_properties(structured_content=has_entries(**kvs)))
 
 
 def assert_payloads_have(payloads: list[object], *matchers):
@@ -125,7 +125,7 @@ def assert_function_call_output_structured(
     records: list[ToolCall | ToolCallOutput], structured_content_matcher: Any
 ) -> None:
     """Assert that a RecordingHandler-style records list contains a function_call_output
-    whose structuredContent matches the provided matcher.
+    whose structured_content matches the provided matcher.
 
     Expects Pydantic models (ToolCallOutput), not dicts.
 
@@ -136,7 +136,7 @@ def assert_function_call_output_structured(
         )
     """
     # Break down nested matchers with explicit Any types for PyHamcrest compatibility
-    result_matcher: Any = has_properties(structuredContent=structured_content_matcher)
+    result_matcher: Any = has_properties(structured_content=structured_content_matcher)
     entry_matcher: Any = has_properties(type="function_call_output", result=result_matcher)
     assert_that(records, has_item(entry_matcher))
 

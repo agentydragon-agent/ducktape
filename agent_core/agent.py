@@ -1,4 +1,4 @@
-"""Agent on OpenAI Responses API with MCP tool wiring.
+"""Agent on OpenAI Responses API with tool provider abstraction.
 
 For stateless reasoning/tool replay demo, see :/adgn/examples/openai_api/stateless_two_step_demo.py
 """
@@ -16,10 +16,6 @@ from uuid import uuid4
 
 import anyio
 import pydantic_core
-from fastmcp.client import Client
-from fastmcp.client.client import CallToolResult
-from fastmcp.exceptions import ToolError
-from mcp import types as mcp_types
 from pydantic import TypeAdapter
 
 from agent_core.events import (
@@ -32,6 +28,7 @@ from agent_core.events import (
     ToolCallOutput,
     UserText,
 )
+from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolProvider, ToolResult
 from agent_core.loop_control import (
     Abort,
     AllowAnyToolOrTextMessage,
@@ -92,11 +89,11 @@ class ToolCallOutcome:
     """Tool invocation result.
 
     Fields:
-    - result: The FastMCP CallToolResult
+    - result: The tool result
     - was_aborted: True if execution was aborted (policy denial), False otherwise
     """
 
-    result: CallToolResult
+    result: ToolResult
     was_aborted: bool = False
 
 
@@ -206,11 +203,9 @@ def _require_call_id(function_call: FunctionCallItem) -> str:
 DEFAULT_ABORT_ERROR = "tool execution aborted"
 
 
-def _abort_result(reason: str = DEFAULT_ABORT_ERROR) -> CallToolResult:
+def _abort_result(reason: str = DEFAULT_ABORT_ERROR) -> ToolResult:
     """Return an error result for aborted tool calls."""
-    return CallToolResult(
-        content=[mcp_types.TextContent(type="text", text=reason)], structured_content=None, meta=None, is_error=True
-    )
+    return ToolResult(content=[TextContent(text=reason)], is_error=True)
 
 
 # Size limits (bytes)
@@ -242,14 +237,12 @@ def _check_size(result: str) -> None:
         raise RuntimeError(f"Tool output too large: {len(result)} > {MAX_TOOL_RESULT_BYTES}")
 
 
-def _content_is_redundant(
-    content: list[mcp_types.TextContent | mcp_types.ImageContent | Any], sc: dict[str, Any]
-) -> bool:
+def _content_is_redundant(content: list[ResultContent], sc: dict[str, Any]) -> bool:
     """Check if content is just JSON serialization of structuredContent."""
     if len(content) != 1:
         return False
     block = content[0]
-    if not isinstance(block, mcp_types.TextContent):
+    if not isinstance(block, TextContent):
         return False
     try:
         return bool(json.loads(block.text) == sc)
@@ -258,26 +251,25 @@ def _content_is_redundant(
 
 
 def _content_block_to_openai(
-    block: mcp_types.TextContent | mcp_types.ImageContent | Any,
+    block: ResultContent,
 ) -> FunctionOutputTextContent | FunctionOutputImageContent:
-    if isinstance(block, mcp_types.TextContent):
+    if isinstance(block, TextContent):
         return FunctionOutputTextContent(text=block.text)
-    if isinstance(block, mcp_types.ImageContent):
-        return FunctionOutputImageContent(image_url=_make_data_url(block.mimeType, block.data))
-    # TODO: Wire AudioContent when OpenAI Responses API supports it
-    raise NotImplementedError(f"Unsupported MCP content type: {type(block).__name__}")
+    if isinstance(block, ImageContent):
+        return FunctionOutputImageContent(image_url=_make_data_url(block.mime_type, block.data))
+    raise TypeError(f"Unsupported content block type: {type(block).__name__}")
 
 
-def _call_tool_result_to_openai(result: mcp_types.CallToolResult) -> FunctionCallOutputType:
-    """Convert mcp.types.CallToolResult to OpenAI output format.
+def _tool_result_to_openai(result: ToolResult) -> FunctionCallOutputType:
+    """Convert ToolResult to OpenAI output format.
 
-    When isError=True, always returns a list with "ERROR" prefix block.
+    When is_error=True, always returns a list with "ERROR" prefix block.
     """
-    sc = result.structuredContent
+    sc = result.structured_content
     content = list(result.content) if result.content else []
-    is_error = bool(result.isError)
+    is_error = result.is_error
 
-    # Case 1: structuredContent present, content empty or redundant
+    # Case 1: structured_content present, content empty or redundant
     if sc is not None and (not content or _content_is_redundant(content, sc)):
         json_str = pydantic_core.to_json(sc, fallback=str).decode("utf-8")
         _check_size(json_str)
@@ -298,8 +290,8 @@ def _call_tool_result_to_openai(result: mcp_types.CallToolResult) -> FunctionCal
     return ""
 
 
-def _image_url_to_mcp_content(image_url: str | None) -> mcp_types.ImageContent:
-    """Convert a data URL to MCP ImageContent."""
+def _image_url_to_image_content(image_url: str | None) -> ImageContent:
+    """Convert a data URL to ImageContent."""
     if not isinstance(image_url, str):
         raise ValueError(f"image_url must be a string, got {type(image_url)}")
     parsed = _parse_data_url(image_url)
@@ -307,47 +299,29 @@ def _image_url_to_mcp_content(image_url: str | None) -> mcp_types.ImageContent:
         url_preview = image_url[:50] if image_url else "None"
         raise ValueError(f"Unsupported image_url format: {url_preview}...")
     mime_type, data = parsed
-    return mcp_types.ImageContent(type="image", mimeType=mime_type, data=data)
+    return ImageContent(mime_type=mime_type, data=data)
 
 
-def _openai_to_mcp_result(output: FunctionCallOutputType) -> mcp_types.CallToolResult:
-    """Convert OpenAI FunctionCallOutputItem.output format to mcp.types.CallToolResult."""
-    content: list[
-        mcp_types.TextContent
-        | mcp_types.ImageContent
-        | mcp_types.AudioContent
-        | mcp_types.ResourceLink
-        | mcp_types.EmbeddedResource
-    ] = []
+def _openai_to_tool_result(output: FunctionCallOutputType) -> ToolResult:
+    """Convert OpenAI FunctionCallOutputItem.output format to ToolResult."""
+    content: list[ResultContent] = []
     structured_content: dict[str, Any] | None = None
 
     if isinstance(output, str):
-        # Try to parse as JSON for structuredContent
+        # Try to parse as JSON for structured_content
         with contextlib.suppress(json.JSONDecodeError):
             structured_content = json.loads(output)
-        content.append(mcp_types.TextContent(type="text", text=output))
+        content.append(TextContent(text=output))
     else:
         for item in output:
             if isinstance(item, FunctionOutputTextContent):
-                content.append(mcp_types.TextContent(type="text", text=item.text))
+                content.append(TextContent(text=item.text))
             elif isinstance(item, FunctionOutputImageContent):
-                content.append(_image_url_to_mcp_content(item.image_url))
+                content.append(_image_url_to_image_content(item.image_url))
             else:
                 raise ValueError(f"Unsupported content type in tool output: {type(item)}")
 
-    return mcp_types.CallToolResult(content=content, structuredContent=structured_content, isError=False)
-
-
-def _fastmcp_to_mcp_result(res: CallToolResult) -> mcp_types.CallToolResult:
-    """Convert a FastMCP CallToolResult to mcp.types.CallToolResult.
-
-    Builds a minimal payload with alias field names (structuredContent, isError).
-    """
-    payload: dict[str, Any] = {"isError": bool(res.is_error)}
-    if res.structured_content is not None:
-        payload["structuredContent"] = res.structured_content
-    payload["content"] = list(res.content or [])
-    return mcp_types.CallToolResult.model_validate(payload)
+    return ToolResult(content=content, structured_content=structured_content, is_error=False)
 
 
 def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None) -> str | None:
@@ -382,15 +356,15 @@ type Message = UserMessage | AssistantMessage | SystemMessage
 type TranscriptItem = Message | FunctionCallItem | ReasoningItem | ToolCallOutput
 
 
-def _sanitize_mcp_result(result: mcp_types.CallToolResult) -> mcp_types.CallToolResult:
-    """Remove null bytes from MCP CallToolResult, prepending warning if any found.
+def _sanitize_tool_result(result: ToolResult) -> ToolResult:
+    """Remove null bytes from ToolResult, prepending warning if any found.
 
     Why here (not at OpenAI conversion): PostgreSQL JSONB doesn't support null bytes,
     and events are persisted via Pydantic model_dump(). Tools like `rg -0` produce null
     bytes that would break persistence. Sanitizing at event creation ensures:
     1. Stored events are JSONB-safe
     2. Warning message is part of the permanent record
-    3. OpenAI API (via _call_tool_result_to_openai) receives clean data
+    3. OpenAI API (via _tool_result_to_openai) receives clean data
     """
     null_count = 0
 
@@ -408,42 +382,34 @@ def _sanitize_mcp_result(result: mcp_types.CallToolResult) -> mcp_types.CallTool
         return value
 
     # Sanitize content blocks
-    new_content: list[
-        mcp_types.TextContent
-        | mcp_types.ImageContent
-        | mcp_types.AudioContent
-        | mcp_types.ResourceLink
-        | mcp_types.EmbeddedResource
-    ] = []
+    new_content: list[ResultContent] = []
     for block in result.content:
-        if isinstance(block, mcp_types.TextContent):
-            new_content.append(mcp_types.TextContent(type="text", text=sanitize(block.text)))
+        if isinstance(block, TextContent):
+            new_content.append(TextContent(text=sanitize(block.text)))
         else:
-            # Other content types (ImageContent, AudioContent, etc.) pass through
+            # ImageContent passes through (binary data in base64)
             new_content.append(block)
 
-    # Sanitize structuredContent if present
-    new_sc = sanitize(result.structuredContent) if result.structuredContent else None
+    # Sanitize structured_content if present
+    new_sc = sanitize(result.structured_content) if result.structured_content else None
 
     # Prepend warning if null bytes were removed
     if null_count > 0:
         warning = f"NOTE: {null_count} null byte(s) removed from tool output"
         # If first block is text, prepend warning to it; otherwise insert new block
-        if new_content and isinstance(new_content[0], mcp_types.TextContent):
-            new_content[0] = mcp_types.TextContent(type="text", text=f"{warning}\n{new_content[0].text}")
+        if new_content and isinstance(new_content[0], TextContent):
+            new_content[0] = TextContent(text=f"{warning}\n{new_content[0].text}")
         else:
-            new_content.insert(0, mcp_types.TextContent(type="text", text=warning))
+            new_content.insert(0, TextContent(text=warning))
 
-    return mcp_types.CallToolResult(
-        content=new_content, structuredContent=new_sc, isError=result.isError, _meta=result.meta
-    )
+    return ToolResult(content=new_content, structured_content=new_sc, is_error=result.is_error)
 
 
 class Agent:
     def __init__(
         self,
         *,
-        mcp_client: Client,
+        tool_provider: ToolProvider,
         client: OpenAIModelProto,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
@@ -452,7 +418,7 @@ class Agent:
         tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
-        self._mcp_client = mcp_client
+        self._tool_provider = tool_provider
         self._client = client
         self._parallel_tool_calls = parallel_tool_calls
         self._tool_policy = tool_policy
@@ -711,61 +677,44 @@ class Agent:
             (function_call, _normalize_call_arguments(function_call.arguments)) for function_call in function_calls
         ]
 
-        # local_result_map stores mcp_types.CallToolResult (Pydantic) from ToolCallOutput events
-        local_result_map: dict[str, mcp_types.CallToolResult] = {
+        # local_result_map stores ToolResult from ToolCallOutput events
+        local_result_map: dict[str, ToolResult] = {
             evt.call_id: evt.result for evt in self._transcript if isinstance(evt, ToolCallOutput)
         }
 
         async def _invoke(
             function_call: FunctionCallItem,
             args_json: str | None,
-            local_map: dict[str, mcp_types.CallToolResult] = local_result_map,
+            local_map: dict[str, ToolResult] = local_result_map,
         ) -> ToolCallOutcome:
             call_id = _require_call_id(function_call)
             # No agent-level before-tool gating; Policy Gateway middleware enforces approvals/denials
             if call_id in local_map:
-                # Already have a result (replay scenario) - convert MCP Pydantic back to FastMCP dataclass
-                mcp_result = local_map[call_id]
-                fastmcp_result = CallToolResult(
-                    content=list(mcp_result.content),
-                    structured_content=mcp_result.structuredContent,
-                    meta=mcp_result.meta,
-                    is_error=bool(mcp_result.isError),
-                )
-                return ToolCallOutcome(result=fastmcp_result)
+                # Already have a result (replay scenario)
+                return ToolCallOutcome(result=local_map[call_id])
 
-            # Call MCP tool - returns FastMCP CallToolResult (dataclass)
+            # Call tool via provider
             try:
                 parsed = json.loads(args_json) if args_json else {}
             except json.JSONDecodeError as e:
                 # Lowercase the error message for consistent matching
                 error_msg = str(e).lower()
                 return ToolCallOutcome(
-                    result=CallToolResult(
-                        content=[
-                            mcp_types.TextContent(type="text", text=f"Invalid JSON in tool arguments: {error_msg}")
-                        ],
-                        structured_content=None,
-                        meta=None,
+                    result=ToolResult(
+                        content=[TextContent(text=f"Invalid JSON in tool arguments: {error_msg}")],
                         is_error=True,
                     )
                 )
             if not isinstance(parsed, dict):
                 return ToolCallOutcome(
-                    result=CallToolResult(
-                        content=[
-                            mcp_types.TextContent(
-                                type="text", text=f"Tool arguments must be a JSON object, got {type(parsed).__name__}"
-                            )
-                        ],
-                        structured_content=None,
-                        meta=None,
+                    result=ToolResult(
+                        content=[TextContent(text=f"Tool arguments must be a JSON object, got {type(parsed).__name__}")],
                         is_error=True,
                     )
                 )
             args: dict[str, Any] = parsed
-            fastmcp_result = await self._mcp_client.call_tool(function_call.name, args, raise_on_error=False)
-            return ToolCallOutcome(result=fastmcp_result)
+            tool_result = await self._tool_provider.call_tool(function_call.name, args)
+            return ToolCallOutcome(result=tool_result)
 
         if self._parallel_tool_calls:
             await self._run_tool_calls_parallel(calls, function_calls, _invoke)
@@ -774,14 +723,12 @@ class Agent:
         self.pending_function_calls.clear()
 
     @staticmethod
-    def _tool_error_to_outcome(e: ToolError) -> ToolCallOutcome:
-        """Convert ToolError to an error tool result outcome (FastMCP CallToolResult)."""
+    def _tool_error_to_outcome(e: Exception) -> ToolCallOutcome:
+        """Convert an exception to an error tool result outcome."""
         error_msg = str(e) if str(e) else "Tool error"
         return ToolCallOutcome(
-            result=CallToolResult(
-                content=[mcp_types.TextContent(type="text", text=f"Tool call failed: {error_msg}")],
-                structured_content=None,
-                meta=None,
+            result=ToolResult(
+                content=[TextContent(text=f"Tool call failed: {error_msg}")],
                 is_error=True,
             )
         )
@@ -802,7 +749,7 @@ class Agent:
                     outcome = await invoker(fc, aj)
                 except cancelled_exc:
                     return
-                except ToolError as e:
+                except Exception as e:
                     outcome = self._tool_error_to_outcome(e)
 
                 results[call_id] = outcome
@@ -833,7 +780,7 @@ class Agent:
         for i, (function_call, args_json) in enumerate(calls):
             try:
                 outcome = await invoker(function_call, args_json)
-            except ToolError as e:
+            except Exception as e:
                 outcome = self._tool_error_to_outcome(e)
 
             self._emit_tool_result(function_call, outcome.result)
@@ -891,7 +838,7 @@ class Agent:
                 continue
             if isinstance(item, ToolCallOutput):
                 items.append(
-                    FunctionCallOutputItem(call_id=item.call_id, output=_call_tool_result_to_openai(item.result))
+                    FunctionCallOutputItem(call_id=item.call_id, output=_tool_result_to_openai(item.result))
                 )
                 continue
             raise TypeError(f"Unsupported transcript item for OpenAI input: {type(item)}")
@@ -961,8 +908,8 @@ class Agent:
         if should_sample_llm:
             tool_choice = _tool_choice_from_policy(self._tool_policy)
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
-            # Build OpenAI Responses tools list from MCP client
-            mcp_tools = await self._mcp_client.list_tools()
+            # Build OpenAI Responses tools list from tool provider
+            tools = await self._tool_provider.list_tools()
 
             req = ResponsesRequest(
                 input=self.to_openai_messages(),
@@ -971,7 +918,7 @@ class Agent:
                 tool_choice=tool_choice,
                 store=True,
                 parallel_tool_calls=self._parallel_tool_calls,
-                tools=[_make_strict_function_tool(t.name, t.description or "", t.inputSchema) for t in mcp_tools],
+                tools=[_make_strict_function_tool(t.name, t.description, t.input_schema) for t in tools],
                 reasoning=reasoning_param,
             )
 
@@ -1044,7 +991,7 @@ class Agent:
                 # Convert API output type to transcript type
                 if item.output is None:
                     raise ValueError("FunctionCallOutputItem.output is None")
-                result = _openai_to_mcp_result(item.output)
+                result = _openai_to_tool_result(item.output)
                 original_call_id = item.call_id
                 assert isinstance(original_call_id, str)
                 assert original_call_id
@@ -1076,7 +1023,7 @@ class Agent:
     async def create(
         cls,
         *,
-        mcp_client: Client,
+        tool_provider: ToolProvider,
         handlers: Iterable[BaseHandler],
         client: OpenAIModelProto,
         reasoning_effort: ReasoningEffort | None = None,
@@ -1094,7 +1041,7 @@ class Agent:
         For dynamic instructions that can change between phases, provide dynamic_instructions callback.
         """
         return cls(
-            mcp_client=mcp_client,
+            tool_provider=tool_provider,
             client=client,
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
@@ -1104,18 +1051,14 @@ class Agent:
             dynamic_instructions=dynamic_instructions,
         )
 
-    def _emit_tool_result(self, function_call: FunctionCallItem, result: CallToolResult) -> None:
+    def _emit_tool_result(self, function_call: FunctionCallItem, result: ToolResult) -> None:
         """Emit a ToolCallOutput event and notify handlers.
 
-        Converts FastMCP CallToolResult (dataclass) to mcp.types.CallToolResult (Pydantic) for storage.
         Sanitizes null bytes from tool results before emitting (PostgreSQL JSONB doesn't support them).
         """
         call_id = _require_call_id(function_call)
-        # Convert FastMCP dataclass → MCP Pydantic for storage/persistence
-        # TODO: Consider moving this conversion to persistence layer if events should store FastMCP types
-        mcp_result = _fastmcp_to_mcp_result(result)
         # Sanitize null bytes and add warning if present
-        sanitized = _sanitize_mcp_result(mcp_result)
+        sanitized = _sanitize_tool_result(result)
         event = ToolCallOutput(call_id=call_id, result=sanitized)
         self._transcript.append(event)
         for h in self._handlers:

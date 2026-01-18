@@ -34,6 +34,7 @@ from uuid import UUID
 from agent_core.agent import Agent, AgentResult, Message
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.mcp_provider import MCPToolProvider
 from agent_pkg.host.init_runner import run_init_script
 from openai_utils.model import SystemMessage
 from openai_utils.types import ReasoningSummary
@@ -127,8 +128,9 @@ class AgentHandle:
         # TODO: For conversational sub-agents (agent that returns text to parent),
         # add CaptureTextHandler here. Currently all agents use RedirectOnTextMessageHandler
         # or custom handlers that remind and continue on text.
+        tool_provider = MCPToolProvider(mcp_client)
         agent = await Agent.create(
-            mcp_client=mcp_client,
+            tool_provider=tool_provider,
             client=model_client,
             handlers=[DatabaseEventHandler(agent_run_id=agent_run_id), *handlers],
             tool_policy=AllowAnyToolOrTextMessage(),
