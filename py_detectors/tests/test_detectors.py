@@ -1,48 +1,42 @@
 from __future__ import annotations
 
+from importlib import resources
 from pathlib import Path
 
 import pytest
 
 # Ensure detectors register themselves via module imports
 import py_detectors.__main__  # noqa: F401
-from py_detectors.registry import run_all
+from py_detectors.registry import all_detectors, run_all
 from tests.fixture_utils import copy_fixture
 
-BAD_CASES: list[tuple[str, str, str]] = [
-    ("imports_inside_def.py", "imports_inside_def", "python/imports-top"),
-    ("inside_import_non_cycle", "imports_inside_def", "python/imports-top"),
-    ("dynamic_attr_probe_getattr.py", "dynamic_attr_probe", "python/forbid-dynamic-attrs"),
-    ("pathlike_str_casts.py", "pathlike_str_casts", "python/pathlike"),
-    ("swallow_errors.py", "swallow_errors", "python/no-swallowing-errors"),
-    ("broad_except_order.py", "broad_except_order", "python/scoped-try-except"),
-    ("pydantic_v1_config.py", "pydantic_v1_shims", "python/pydantic-2"),
-    ("walrus_immediate.py", "walrus_suggest", "python/walrus"),
-    ("walrus_ok_reuse.py", "walrus_suggest", "python/walrus"),
-    ("tuple_magic_indices.py", "magic_tuple_indices", "avoid-magic-tuple-indices"),
-    ("trivial_alias_once.py", "trivial_alias", "no-oneoff-vars-and-trivial-wrappers"),
-    ("import_alias_simple.py", "import_aliasing", "no-random-renames"),
-    ("from_import_alias_simple.py", "import_aliasing", "no-random-renames"),
-    ("nested_if_simple.py", "flatten_nested_guards", "minimize-nesting"),
-    ("optional_str_none_or_empty.py", "optional_string_simplify", "boolean-idioms"),
-]
 
-OK_CASES: list[tuple[str, str]] = [
-    ("compliant_imports_inside_def.py", "imports_inside_def"),
-    ("inside_import_cycle", "imports_inside_def"),
-    ("compliant_dynamic_attr_probe.py", "dynamic_attr_probe"),
-    ("compliant_pathlike_str_casts.py", "pathlike_str_casts"),
-    ("compliant_swallow_errors.py", "swallow_errors"),
-    ("compliant_broad_except_order.py", "broad_except_order"),
-    ("compliant_pydantic_v2.py", "pydantic_v1_shims"),
-    ("tuple_small_indices.py", "magic_tuple_indices"),
-    ("trivial_alias_reuse.py", "trivial_alias"),
-    ("import_alias_collision.py", "import_aliasing"),
-    ("import_alias_allowed.py", "import_aliasing"),
-    ("nested_if_with_orelse.py", "flatten_nested_guards"),
-    ("nested_if_complex_test.py", "flatten_nested_guards"),
-    ("optional_str_not_confident.py", "optional_string_simplify"),
-]
+def _discover_fixtures(base_package: str) -> list[tuple[str, str]]:
+    """Discover (fixture_path, detector_name) from directory structure.
+
+    Expects fixtures organized as: base_package/<detector_name>/<case>.py
+    """
+    base = resources.files(base_package)
+    cases: list[tuple[str, str]] = []
+    for detector_dir in base.iterdir():
+        if not detector_dir.is_dir():
+            continue
+        detector_name = detector_dir.name
+        for item in detector_dir.iterdir():
+            cases.append((f"{detector_name}/{item.name}", detector_name))
+    return sorted(cases)
+
+
+def _get_expected_property(detector_name: str) -> str:
+    """Look up the target_property for a detector from the registry."""
+    for spec in all_detectors():
+        if spec.name == detector_name:
+            return spec.target_property
+    raise ValueError(f"Unknown detector: {detector_name}")
+
+
+BAD_CASES = _discover_fixtures("tests.fixtures.bad")
+OK_CASES = _discover_fixtures("tests.fixtures.ok")
 
 
 def _run_case(tmp_path: Path, pkg_base: str, fixture_file: str, detector: str):
@@ -52,8 +46,9 @@ def _run_case(tmp_path: Path, pkg_base: str, fixture_file: str, detector: str):
     return run_all(root, detector_names=[detector])
 
 
-@pytest.mark.parametrize(("fixture_file", "detector", "expected_property"), BAD_CASES)
-def test_detectors_bad(tmp_path: Path, fixture_file: str, detector: str, expected_property: str):
+@pytest.mark.parametrize(("fixture_file", "detector"), BAD_CASES)
+def test_detectors_bad(tmp_path: Path, fixture_file: str, detector: str):
+    expected_property = _get_expected_property(detector)
     detections = _run_case(tmp_path, "tests.fixtures.bad", fixture_file, detector)
     assert detections, f"no detections for {detector}"
     assert any(d.property == expected_property for d in detections)
