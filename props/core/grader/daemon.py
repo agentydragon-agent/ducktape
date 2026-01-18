@@ -65,7 +65,7 @@ class GraderDaemonScaffold:
             snapshot_slug=self._snapshot_slug, notification_queue=self._notification_queue, wake_event=self._wake_event
         )
 
-    async def _notification_callback(
+    def _notification_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
     ) -> None:
         """Handle incoming pg_notify notifications."""

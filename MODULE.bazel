@@ -180,7 +180,6 @@ types.requirements(
         "types-jinja2",
         "types-paramiko",
         "types-psycopg2",
-        "types-pygit2",  # pygit2 has py.typed; stubs have broken _cffi_backend deps
         "types-sqlalchemy",
         "types-toml",
     ],

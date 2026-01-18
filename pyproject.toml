@@ -219,7 +219,6 @@ typing = [
     "types-jsonschema",
     "types-unidiff",
     "types-Jinja2",
-    "types-pygit2>=1.15.0",
     "types-sqlalchemy>=1.4.53",
     "asyncpg-stubs",
     "pandas-stubs",
