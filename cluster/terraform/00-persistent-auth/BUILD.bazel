@@ -1,7 +1,7 @@
 # Terraform validation for 00-persistent-auth layer
-# Uses rules_tf for hermetic linting and sh_test with tfmirror.dev for validation
+# Uses rules_tf for hermetic linting and py_test with tfmirror.dev for validation
 
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
 package(default_visibility = ["//cluster:__subpackages__"])
@@ -38,18 +38,15 @@ tf_module(
 
 # Terraform validate with tfmirror.dev network mirror
 # This test requires network access to fetch providers from tfmirror.dev
-sh_test(
+py_test(
     name = "validate",
-    srcs = ["//cluster/scripts:tofu_validate.sh"],
-    args = [
-        "$(location @tf_toolchains//:tofu)",
-        "cluster/terraform/00-persistent-auth",
-    ],
-    data = [
-        "@tf_toolchains//:tofu",
-    ] + glob(["**/*.tf"]),
+    srcs = ["//cluster/scripts:validate_tofu.py"],
+    args = ["terraform/00-persistent-auth"],
+    data = ["@multitool//tools/tofu"] + glob(["**/*.tf"]),
+    main = "//cluster/scripts:validate_tofu.py",
     tags = [
         "external",  # Uses external network resources
         "requires-network",  # Needs network for tfmirror.dev
     ],
+    deps = ["//cluster/scripts:runfiles_util"],
 )

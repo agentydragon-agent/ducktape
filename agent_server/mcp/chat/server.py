@@ -3,15 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import cast
+from typing import Any, cast
 
 from aiosqlite import Row
 from fastmcp.resources import FunctionResource, ResourceTemplate
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 
 from agent_server.persist.sqlite import SQLitePersistence
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -254,8 +254,8 @@ class ChatServer(EnhancedFastMCP):
     message_resource: ResourceTemplate
 
     # Tool references (assigned in __init__)
-    post_tool: FunctionTool
-    read_pending_messages_tool: FunctionTool
+    post_tool: FlatTool[Any, Any]
+    read_pending_messages_tool: FlatTool[Any, Any]
 
     def __init__(self, *, author: ChatAuthor, store: ChatStore):
         """Create a chat server bound to a fixed author and a shared store.

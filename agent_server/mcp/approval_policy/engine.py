@@ -18,7 +18,7 @@ from fastmcp.client import Client
 from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import ServerSession
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.tool import FunctionTool, ToolResult
+from fastmcp.tools.tool import ToolResult
 from jinja2 import Template
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
@@ -35,6 +35,7 @@ from agent_server.policy_eval.runner import run_policy_source
 from mcp_infra.constants import RUNTIME_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.naming import build_mcp_function
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -408,7 +409,7 @@ class PolicyReaderServer(EnhancedFastMCP):
     pending_calls_resource: FunctionResource
 
     # Typed tool attribute for canonical pattern compliance
-    evaluate_policy_tool: FunctionTool
+    evaluate_policy_tool: FlatTool[Any, Any]
 
     def __init__(self, engine: PolicyEngine):
         """Initialize reader server with access to policy engine state.
@@ -472,8 +473,8 @@ class PolicyProposerServer(EnhancedFastMCP):
     """Policy proposer server: create/withdraw proposal tools."""
 
     # Typed tool attributes
-    create_proposal_tool: FunctionTool
-    withdraw_proposal_tool: FunctionTool
+    create_proposal_tool: FlatTool[Any, Any]
+    withdraw_proposal_tool: FlatTool[Any, Any]
 
     def __init__(self, engine: PolicyEngine):
         """Initialize proposer server with access to policy engine.
@@ -503,9 +504,9 @@ class PolicyAdminServer(EnhancedFastMCP):
     """Policy admin server: decide_call/decide_proposal/set_policy tools."""
 
     # Typed tool attributes
-    decide_call_tool: FunctionTool
-    decide_proposal_tool: FunctionTool
-    set_policy_tool: FunctionTool
+    decide_call_tool: FlatTool[Any, Any]
+    decide_proposal_tool: FlatTool[Any, Any]
+    set_policy_tool: FlatTool[Any, Any]
 
     def __init__(self, engine: PolicyEngine):
         """Initialize admin server with access to policy engine.

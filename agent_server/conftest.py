@@ -17,7 +17,6 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from fastmcp.server import FastMCP
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
@@ -40,6 +39,7 @@ from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -393,7 +393,7 @@ class ValidationServer(EnhancedFastMCP):
     """EnhancedFastMCP server with a tool that validates input strictly."""
 
     # Tool attribute (assigned in __init__)
-    send_message_tool: FunctionTool
+    send_message_tool: FlatTool[Any, Any]
 
     def __init__(self):
         super().__init__("validator")

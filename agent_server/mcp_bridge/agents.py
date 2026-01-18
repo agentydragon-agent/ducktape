@@ -11,14 +11,14 @@ Provides tools and resources for managing agents:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastmcp.resources import FunctionResource
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 
 from agent_server.presets import discover_presets
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:
@@ -108,9 +108,9 @@ class AgentsManagementServer(EnhancedFastMCP):
     presets_resource: FunctionResource
 
     # Tool references (assigned in __init__)
-    create_agent_tool: FunctionTool
-    delete_agent_tool: FunctionTool
-    boot_agent_tool: FunctionTool
+    create_agent_tool: FlatTool[Any, Any]
+    delete_agent_tool: FlatTool[Any, Any]
+    boot_agent_tool: FlatTool[Any, Any]
 
     def __init__(self, registry: InfrastructureRegistry):
         """Create agents management server bound to an infrastructure registry.

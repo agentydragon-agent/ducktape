@@ -23,7 +23,6 @@ from typing import Any, cast
 from aiohttp import ClientSession
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
-from fastmcp.tools import FunctionTool
 from mautrix.api import HTTPAPI
 from mautrix.client import Client as MautrixClient
 from mautrix.client.state_store import FileStateStore, StateStore
@@ -32,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from agent_server.server.bus import ServerBus, UiEndTurn
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Matrix SDK uses millisecond timeouts for sync; keep constants explicit
@@ -240,9 +240,9 @@ class MatrixServer(EnhancedFastMCP):
     """
 
     # Tool references (assigned in __init__)
-    send_tool: FunctionTool
-    drain_new_messages_tool: FunctionTool
-    do_yield_tool: FunctionTool
+    send_tool: FlatTool[Any, Any]
+    drain_new_messages_tool: FlatTool[Any, Any]
+    do_yield_tool: FlatTool[Any, Any]
 
     def __init__(self, bus: ServerBus, cfg: MatrixConfig):
         """Create a Matrix MCP server with background sync.

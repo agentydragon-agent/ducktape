@@ -19,15 +19,16 @@ import asyncio
 import re
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import pygit2
 
 # FastMCP-only: no TokenVerifier in server construction
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 from pygit2.enums import BranchType, FileStatus
 
 from mcp_infra.enhanced.simple import SimpleFastMCP
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -149,15 +150,15 @@ class GitRoServer(SimpleFastMCP):
     """
 
     # Tool references (assigned in __init__ after tool registration)
-    status_tool: FunctionTool
-    diff_tool: FunctionTool
-    log_tool: FunctionTool
-    show_tool: FunctionTool
-    cat_file_tool: FunctionTool
-    log_entries_tool: FunctionTool
-    rev_parse_tool: FunctionTool
-    ls_files_tool: FunctionTool
-    branch_list_tool: FunctionTool
+    status_tool: FlatTool[Any, Any]
+    diff_tool: FlatTool[Any, Any]
+    log_tool: FlatTool[Any, Any]
+    show_tool: FlatTool[Any, Any]
+    cat_file_tool: FlatTool[Any, Any]
+    log_entries_tool: FlatTool[Any, Any]
+    rev_parse_tool: FlatTool[Any, Any]
+    ls_files_tool: FlatTool[Any, Any]
+    branch_list_tool: FlatTool[Any, Any]
 
     def __init__(self, repo: pygit2.Repository):
         """Create a read-only Git FastMCP server for an already-opened repository."""

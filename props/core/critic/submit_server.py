@@ -7,13 +7,14 @@ Validates the critique and marks the agent run as complete.
 from __future__ import annotations
 
 import logging
+from typing import Any
 from uuid import UUID
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
-from fastmcp.tools import FunctionTool
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
@@ -48,8 +49,8 @@ class CriticSubmitServer(EnhancedFastMCP):
     """
 
     # Tool attributes
-    submit_tool: FunctionTool
-    report_failure_tool: FunctionTool
+    submit_tool: FlatTool[Any, Any]
+    report_failure_tool: FlatTool[Any, Any]
 
     def __init__(
         self, *, agent_run_id: UUID, snapshot_slug: SnapshotSlug, example: ExampleSpec, auth: AuthProvider | None = None

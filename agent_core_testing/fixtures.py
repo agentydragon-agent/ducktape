@@ -21,7 +21,6 @@ import mcp.types
 import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
-from fastmcp.tools import FunctionTool
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
@@ -34,6 +33,7 @@ from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_core_testing.responses import ResponsesFactory
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import ResponsesResult
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -292,7 +292,7 @@ def live_openai(request):
 class ValidationServer(EnhancedFastMCP):
     """EnhancedFastMCP server with a tool that validates input strictly."""
 
-    send_message_tool: FunctionTool
+    send_message_tool: FlatTool[Any, Any]
 
     def __init__(self):
         super().__init__("validator")

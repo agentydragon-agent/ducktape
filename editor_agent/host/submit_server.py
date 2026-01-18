@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp.exceptions import ToolError
-from fastmcp.tools import FunctionTool
 
 from editor_agent.runtime import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:
@@ -60,8 +60,8 @@ class EditorSubmitServer(EnhancedFastMCP):
     success/failure with an optional message and, on success, the final file content.
     """
 
-    submit_success_tool: FunctionTool
-    submit_failure_tool: FunctionTool
+    submit_success_tool: FlatTool[Any, Any]
+    submit_failure_tool: FlatTool[Any, Any]
 
     def __init__(self, *, original_content: str, filename: str, prompt: str, auth: AuthProvider | None = None):
         super().__init__("Editor Submit Server", instructions="Submit edited file or failure message", auth=auth)

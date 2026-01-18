@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from fastmcp.tools import FunctionTool
 from pydantic import ConfigDict, Field
 
 from agent_server.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # UI MCP server: lightweight tools to instruct the HTML UI rendering layer.
@@ -48,8 +48,8 @@ class UiServer(EnhancedFastMCP):
     """
 
     # Tool references (assigned in __init__ after tool registration)
-    send_message_tool: FunctionTool
-    end_turn_tool: FunctionTool
+    send_message_tool: FlatTool[Any, Any]
+    end_turn_tool: FlatTool[Any, Any]
 
     def __init__(self, bus: ServerBus):
         """Create a UI MCP server bound to a ServerBus.

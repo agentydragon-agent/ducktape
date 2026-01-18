@@ -11,6 +11,7 @@ from fastmcp.tools.tool import FunctionTool
 from mcp import types as mcp_types
 
 from mcp_infra.exec.models import ExecInput
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.naming import parse_tool_name
 from openai_utils.model import ReasoningItem
 
@@ -67,7 +68,7 @@ class DisplayEventsHandler(BaseHandler):
         Returns the input parameter type of the tool, or None if:
         - No compositor available
         - Server is external (not inproc)
-        - Tool is not a FunctionTool
+        - Tool is not a FlatTool or FunctionTool
 
         Raises ValueError if tool name doesn't follow compositor format (server_tool).
         Raises if tool isn't found or type hints are broken (these indicate bugs).
@@ -83,6 +84,10 @@ class DisplayEventsHandler(BaseHandler):
 
         # Use synchronous tool access via _tool_manager
         tool = server._tool_manager.get_tool(tool_name)
+
+        # FlatTool has direct access to input_model
+        if isinstance(tool, FlatTool):
+            return tool.input_model
 
         if not isinstance(tool, FunctionTool):
             return None
