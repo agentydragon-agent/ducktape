@@ -79,9 +79,10 @@ class SubprocessExecArgs(OpenAIStrictModeBaseModel):
     """Arguments for subprocess execution (OpenAI strict mode compatible)."""
 
     cmd: list[str] = Field(
+        min_length=1,
         description="Command array passed directly to subprocess (no shell). "
         "DO NOT include shell quotes around arguments - array elements are passed as-is. "
-        "For shell features (pipes, globs), use: ['sh', '-c', 'command | pipe']"
+        "For shell features (pipes, globs), use: ['sh', '-c', 'command | pipe']",
     )
     max_bytes: int = Field(100_000, ge=0, le=100_000, description="Max bytes to capture from stdout/stderr")
     cwd: str | None = Field(None, description="Working directory (None = current directory)")
@@ -100,14 +101,7 @@ def get_exec_tool_schema() -> dict[str, Any]:
 
 
 async def run_exec(args: SubprocessExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:
-    """Execute a command and return the result.
-
-    Raises:
-        ValueError: If cmd is empty or contains non-strings
-    """
-    if not args.cmd or not all(isinstance(x, str) for x in args.cmd):
-        raise ValueError("INVALID_CMD: cmd must be a non-empty list[str]")
-
+    """Execute a command and return the result."""
     cwd_val = Path(args.cwd) if args.cwd else default_cwd
     timeout_s = max(0.001, args.timeout_ms / 1000.0)
     outcome = await run_proc(args.cmd, timeout_s, cwd=cwd_val, stdin=args.stdin_text)

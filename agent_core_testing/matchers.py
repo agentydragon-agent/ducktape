@@ -63,7 +63,7 @@ class HasErrorText(BaseMatcher):
             return False
         if not result.is_error:
             return False
-        if not result.content or len(result.content) == 0:
+        if not result.content:
             return False
         content_item = result.content[0]
         if not isinstance(content_item, TextContent):
@@ -81,7 +81,7 @@ class HasErrorText(BaseMatcher):
         if not result.is_error:
             mismatch_description.append_text("was not an error (is_error=False)")
             return
-        if not result.content or len(result.content) == 0:
+        if not result.content:
             mismatch_description.append_text("had empty content")
             return
         content_item = result.content[0]

@@ -128,9 +128,8 @@ class AgentHandle:
         # TODO: For conversational sub-agents (agent that returns text to parent),
         # add CaptureTextHandler here. Currently all agents use RedirectOnTextMessageHandler
         # or custom handlers that remind and continue on text.
-        tool_provider = MCPToolProvider(mcp_client)
         agent = await Agent.create(
-            tool_provider=tool_provider,
+            tool_provider=MCPToolProvider(mcp_client),
             client=model_client,
             handlers=[DatabaseEventHandler(agent_run_id=agent_run_id), *handlers],
             tool_policy=AllowAnyToolOrTextMessage(),
