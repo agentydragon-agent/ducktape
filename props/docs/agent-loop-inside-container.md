@@ -71,6 +71,7 @@ AgentEnvironment (simplified)
 | Port              | 5052 (internal), exposed on `props-agents` network                           |
 
 **Reference:** Existing `rspcache/` proxy handles OpenAI Responses API with caching, streaming, and token auth. New proxy is simpler:
+
 - No caching (every request goes upstream)
 - No streaming (simplifies logging)
 - Auth via Postgres temp user lookup (not separate token table)
@@ -86,6 +87,7 @@ AgentEnvironment (simplified)
 | Critique tools  | Bundle existing `props critic-agent` CLI (insert-issue, submit, etc.)    |
 
 **Exec implementation:** Reuse `mcp_infra/exec/subprocess.py:run_proc()` directly:
+
 - Standalone async function, no MCP server dependency
 - `MAX_BYTES_CAP = 150,000` bytes per stream (stdout/stderr)
 - `MAX_EXEC_TIMEOUT_MS = 300,000` (5 minutes)
@@ -115,6 +117,7 @@ AgentEnvironment (simplified)
 | Scope         | One daemon per snapshot, grades all critiques for that snapshot   |
 
 **How daemon graders work:**
+
 - "Drift" = ungraded (critique issue, GT occurrence) pairs in `grading_pending` view
 - Daemon goal: make `grading_pending` empty for its snapshot
 - Loop: check drift → grade until empty → sleep waiting for `NOTIFY grading_pending`
@@ -185,14 +188,15 @@ Spawn is **non-blocking** - returns immediately with agent_run_id. PO can spawn 
 
 ### Observability
 
-| Aspect         | Decision                                                              |
-| -------------- | --------------------------------------------------------------------- |
-| LLM calls      | Logged by LLM proxy to new `llm_requests` table                       |
-| Container logs | Capture stdout/stderr, store in new columns on `agent_runs`           |
-| Access         | PO/PI agents and humans can query logs from DB                        |
+| Aspect         | Decision                                                                   |
+| -------------- | -------------------------------------------------------------------------- |
+| LLM calls      | Logged by LLM proxy to new `llm_requests` table                            |
+| Container logs | Capture stdout/stderr, store in new columns on `agent_runs`                |
+| Access         | PO/PI agents and humans can query logs from DB                             |
 | Events table   | Deprecated (big bang cutover) - LLM proxy logs + container logs replace it |
 
 **New `llm_requests` table:**
+
 - `id`, `agent_run_id` (FK), `created_at`
 - `request_body` (JSONB) - full OpenAI Responses API request
 - `response_body` (JSONB) - full response including `usage` field
@@ -202,6 +206,7 @@ Spawn is **non-blocking** - returns immediately with agent_run_id. PO can spawn 
 - Cost computation via view joining with model pricing metadata table
 
 **New columns on `agent_runs`:**
+
 - `container_stdout` (TEXT) - captured stdout
 - `container_stderr` (TEXT) - captured stderr
 - Or possibly a separate `agent_logs` table if logs get large
@@ -217,6 +222,7 @@ Spawn is **non-blocking** - returns immediately with agent_run_id. PO can spawn 
 ### Docker Compose Topology
 
 **Current services in `props/compose.yaml`:**
+
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
 - `registry` (5050:5000) - on `props-internal` + `default`
 - `registry-proxy` (5051) - on `props-internal` + `props-agents`
@@ -245,6 +251,7 @@ llm-proxy:
 ```
 
 **Network topology:**
+
 - `props-internal` (internal: true) - postgres, registry, registry-proxy, llm-proxy
 - `props-agents` - postgres, registry-proxy, llm-proxy (agent containers join this)
 - Agent containers reach LLM proxy at `props-llm-proxy:5052`
@@ -363,10 +370,12 @@ async def run_critic(snapshot_slug: str, example: Example) -> AgentRunResult:
 **Events table deprecation - files to update/remove:**
 
 Writing events (remove):
+
 - `props/core/db_event_handler.py` - `DatabaseEventHandler` class
 - `props/core/db/models.py` - `Event` model class
 
 Reading events (update to use `llm_requests` or remove):
+
 - `props/backend/routes/runs.py` - WebSocket streams, API responses
 - `props/core/cli/cmd_speak_with_dead.py` - replay agent execution
 - `props/core/cli/cmd_analyze_exec.py` - docker_exec pattern analysis
@@ -374,17 +383,20 @@ Reading events (update to use `llm_requests` or remove):
 - `props/core/gepa/gepa_adapter.py` - reflection event filtering
 
 Schema/views (drop):
+
 - `event_costs` view - extract costs from event payloads
 - `run_costs` view - aggregate event costs
 - Events table + indexes + RLS policies
 
 Tests (update):
+
 - `props/core/critic/test_e2e.py` - event assertions
 - `props/core/db/test_split_based_rls.py` - event RLS tests
 - `props/core/db/test_agent_queries.py` - event creation tests
 - `props/testing/fixtures/db.py` - event fixtures
 
 Documentation:
+
 - `props/core/docs/db/events.md.j2` - remove
 
 ### To Simplify
@@ -409,6 +421,7 @@ Documentation:
 | **Model pricing table**     | Metadata for computing dollar costs from token counts                        |
 
 **New CLI subcommand group:** `props agent`
+
 - `props agent wait <agent_run_id>` - poll until agent completes
 - `props agent wait-graded <critic_run_id>` - poll until daemon grader grades critic
 - Location: `props/core/cli/cmd_agent.py` (new file)
