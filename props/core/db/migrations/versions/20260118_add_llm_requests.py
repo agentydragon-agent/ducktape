@@ -68,12 +68,36 @@ def upgrade() -> None:
     # Enable RLS
     op.execute("ALTER TABLE llm_requests ENABLE ROW LEVEL SECURITY")
 
-    # RLS policy: agents can only see their own requests
-    # Admin (proxy) can insert for any agent
+    # Create function to check if ancestor_id is in the parent chain of descendant_id
+    # Returns true if ancestor_id = descendant_id OR ancestor_id is a parent/grandparent/etc
+    op.execute("""
+        CREATE OR REPLACE FUNCTION is_agent_ancestor(ancestor_id UUID, descendant_id UUID)
+        RETURNS BOOLEAN AS $$
+        WITH RECURSIVE ancestors AS (
+            -- Base case: the descendant itself
+            SELECT agent_run_id, parent_agent_run_id
+            FROM agent_runs
+            WHERE agent_run_id = descendant_id
+
+            UNION ALL
+
+            -- Recursive case: walk up the parent chain
+            SELECT ar.agent_run_id, ar.parent_agent_run_id
+            FROM agent_runs ar
+            JOIN ancestors a ON ar.agent_run_id = a.parent_agent_run_id
+        )
+        SELECT EXISTS (
+            SELECT 1 FROM ancestors WHERE agent_run_id = ancestor_id
+        );
+        $$ LANGUAGE SQL STABLE SECURITY DEFINER;
+    """)
+
+    # RLS policy: agents can see their own requests and their subagents' requests
+    # Admin (proxy) can see all
     op.execute("""
         CREATE POLICY llm_requests_select ON llm_requests FOR SELECT USING (
             current_agent_run_id() IS NULL  -- Admin can see all
-            OR agent_run_id = current_agent_run_id()  -- Agent sees own
+            OR is_agent_ancestor(current_agent_run_id(), agent_run_id)  -- Agent sees own + descendants
         )
     """)
 
@@ -133,3 +157,4 @@ def downgrade() -> None:
     op.execute("DROP POLICY IF EXISTS llm_requests_insert ON llm_requests")
     op.execute("DROP POLICY IF EXISTS llm_requests_select ON llm_requests")
     op.drop_table("llm_requests")
+    op.execute("DROP FUNCTION IF EXISTS is_agent_ancestor(UUID, UUID)")
