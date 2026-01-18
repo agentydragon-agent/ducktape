@@ -174,26 +174,25 @@ class Settings(BaseModel):
     security: SecuritySettings
 
     @classmethod
-    def from_file(cls, path: Path):
+    def from_file(cls, path: Path) -> "Settings":
         """Load settings from file at path."""
         logger.info(f"Loading settings from {path.absolute()}")
         with path.open("rb") as f:
             config_dict = tomllib.load(f)
         return cls.model_validate(config_dict)
 
-
-# Path to the active configuration file
-CONFIG_PATH = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
+    @classmethod
+    def from_env(cls) -> "Settings":
+        """Load settings from GATELET_CONFIG env var (default: gatelet.toml)."""
+        path = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
+        return cls.from_file(path)
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Get application settings (cached).
+    """Cached settings for FastAPI dependency injection.
 
-    This is the proper dependency injection pattern for FastAPI.
     Use as: settings: Settings = Depends(get_settings)
-
-    The @lru_cache decorator ensures settings are loaded once and reused.
-    For tests, call get_settings.cache_clear() to reset.
+    For tests, monkeypatch this function to return test settings.
     """
-    return Settings.from_file(CONFIG_PATH)
+    return Settings.from_env()

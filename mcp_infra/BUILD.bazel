@@ -9,6 +9,7 @@ py_library(
         "client_helpers.py",
         "config_loader.py",
         "constants.py",
+        "flat_tool.py",
         "mcp_types.py",
         "mount_types.py",
         "mounted.py",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import types
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast, get_origin
+from typing import Any, TypeVar, cast, get_origin, get_type_hints
 
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
@@ -12,6 +12,7 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, TypeAdapter
 
 from mcp_infra.client_helpers import extract_error_detail_from_fastmcp
+from mcp_infra.enhanced.flat_mixin import FlatTool
 
 T_In = TypeVar("T_In", bound=BaseModel)
 T_Out = TypeVar("T_Out")
@@ -121,72 +122,36 @@ class TypedClient:
     def from_server(cls, server: FastMCP, session: Client) -> TypedClient:
         """Create a TypedClient introspecting FastMCP's tool registry.
 
-        Requires a server created via FastMCP. Uses server._tool_manager.list_tools()
-        and reads each tool.fn_metadata.arg_model/output_model.
+        Requires a server created via FastMCP. Introspects FlatTool instances
+        for input_model and return type annotations.
         """
-        # Access the internal tool manager and fetch local tools synchronously
         try:
             tm = server._tool_manager
         except AttributeError as exc:
             raise RuntimeError("Server does not expose _tool_manager") from exc
-        # Prefer local tools; mounted tools aren't needed for typed tests here
         try:
             tools_by_name = tm._tools
         except AttributeError as exc:
             raise RuntimeError("Server tool manager does not expose _tools") from exc
-        tools = list(tools_by_name.values())
 
         client = cls(session)
-        for t in tools:
-            try:
-                fm = t.fn_metadata  # type: ignore[attr-defined]
-            except AttributeError:
-                fm = None
-            try:
-                fn = t.fn  # type: ignore[attr-defined]
-            except AttributeError:
-                fn = None
-            hinted_input = None
-            hinted_output = None
-            if fn is not None:
-                try:
-                    hinted_input = fn._mcp_flat_input_model
-                except AttributeError:
-                    hinted_input = None
-                try:
-                    hinted_output = fn._mcp_flat_output_model
-                except AttributeError:
-                    hinted_output = None
-            if fm is None:
-                # Fall back to flat-model hints only
-                arg_model = hinted_input
-                out_model = hinted_output
-                if not (isinstance(arg_model, type) and issubclass(arg_model, BaseModel)):
-                    continue
-            else:
-                arg_model = fm.arg_model
-                out_model = fm.output_model
-                if out_model is None or arg_model is None:
-                    continue
-
-            if isinstance(hinted_input, type) and issubclass(hinted_input, BaseModel):
-                input_type: type[BaseModel] | None = hinted_input
-            elif isinstance(arg_model, type) and issubclass(arg_model, BaseModel):
-                input_type = arg_model
-            else:
-                input_type = None
-
-            try:
-                tool_key = t.key
-            except AttributeError:
-                try:
-                    tool_key = t.name
-                except AttributeError:
-                    tool_key = None
-            if not isinstance(tool_key, str) or not tool_key:
+        for tool in tools_by_name.values():
+            # Only FlatTool has the typed metadata we need
+            if not isinstance(tool, FlatTool):
                 continue
-            output_type = _resolve_output_type(hinted_output, out_model)
-            client._models[tool_key] = ToolModels(Input=input_type, Output=output_type, _arg_model=arg_model)
+
+            input_type: type[BaseModel] = tool.input_model
+
+            # Get output type from function's return annotation
+            try:
+                hints = get_type_hints(tool.fn, include_extras=True)
+                hinted_output = hints.get("return")
+            except (NameError, TypeError, AttributeError):
+                hinted_output = None
+
+            output_type = _resolve_output_type(hinted_output, hinted_output)
+            client._models[tool.key] = ToolModels(Input=input_type, Output=output_type, _arg_model=input_type)
+
         return client
 
     def error(self, name: str) -> Callable[[BaseModel], Awaitable[str]]:

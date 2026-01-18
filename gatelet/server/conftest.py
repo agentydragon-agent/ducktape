@@ -17,11 +17,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from gatelet.server.endpoints.webhook_view import PayloadSummary
-
-os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent / "gatelet.toml"))
-# pylint: disable=wrong-import-position
-# Imports must follow environment setup so modules see configured GATELET_CONFIG
 from gatelet.server.app import app
 from gatelet.server.config import (
     AdminSettings,
@@ -34,9 +29,9 @@ from gatelet.server.config import (
     ServerSettings,
     Settings,
     WebhookSettings,
-    get_settings,
 )
 from gatelet.server.database import get_db_session
+from gatelet.server.endpoints.webhook_view import PayloadSummary
 from gatelet.server.models import AuthCRSession, AuthKey, Base
 from gatelet.server.tests.utils import persist
 
@@ -133,18 +128,25 @@ def test_settings(tmp_path: Path) -> Settings:
     )
 
 
+@pytest.fixture(autouse=True)
+def _patch_get_settings(monkeypatch, test_settings: Settings) -> None:
+    """Override ``get_settings`` globally for tests.
+
+    This patches both the original location and where it's imported,
+    ensuring lifespan and route handlers both use test settings.
+    """
+    monkeypatch.setattr("gatelet.server.config.get_settings", lambda: test_settings)
+    monkeypatch.setattr("gatelet.server.lifespan.get_settings", lambda: test_settings)
+
+
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGenerator[AsyncClient]:
+async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
     """Get a test client connected to the test database with test settings."""
 
     async def override_db() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
-    def override_settings() -> Settings:
-        return test_settings
-
     app.dependency_overrides[get_db_session] = override_db
-    app.dependency_overrides[get_settings] = override_settings
 
     # Use LifespanManager to properly trigger app startup (which registers auth routes)
     async with (
@@ -154,7 +156,6 @@ async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGene
         yield client
 
     app.dependency_overrides.pop(get_db_session, None)
-    app.dependency_overrides.pop(get_settings, None)
 
 
 @pytest_asyncio.fixture

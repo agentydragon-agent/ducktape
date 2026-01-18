@@ -14,14 +14,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_type_hints
 
 import pydantic_core
-from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
 
 from mcp_infra.compositor.resources_server import ResourcesReadArgs, ResourcesServer
+from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.exec.models import ExecInput
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -58,23 +58,17 @@ def introspect_server_models(server: FastMCP) -> dict[str, tuple[type[BaseModel]
     models: dict[str, tuple[type[BaseModel] | None, type]] = {}
 
     for tool in tools_by_name.values():
-        if not isinstance(tool, FunctionTool):
+        if not isinstance(tool, FlatTool):
             continue
 
-        fn = tool.fn
+        input_type: type[BaseModel] | None = tool.input_model
 
-        # Check for flat-model metadata (our custom attributes, may not exist)
-        hinted_input = getattr(fn, "_mcp_flat_input_model", None)
-        hinted_output = getattr(fn, "_mcp_flat_output_model", None)
-
-        # Skip tools without flat-model metadata
-        if hinted_input is None:
-            continue
-
-        if isinstance(hinted_input, type) and issubclass(hinted_input, BaseModel):
-            input_type: type[BaseModel] | None = hinted_input
-        else:
-            input_type = None
+        # Get output type from function's return annotation
+        try:
+            hints = get_type_hints(tool.fn, include_extras=True)
+            hinted_output = hints.get("return")
+        except (NameError, TypeError, AttributeError):
+            hinted_output = None
 
         output_type = _resolve_output_type(hinted_output, hinted_output)
         models[tool.key] = (input_type, output_type)

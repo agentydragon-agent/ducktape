@@ -1,10 +1,10 @@
 from typing import Literal
 
 from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer, StdioMCPServer
-from fastmcp.tools import FunctionTool
 from pydantic import Field
 
 from mcp_infra.compositor.server import Compositor
+from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.prefix import MCPMountPrefix
@@ -77,8 +77,8 @@ class CompositorAdminServer(EnhancedFastMCP):
     """
 
     # Tool references (assigned in __init__)
-    attach_server_tool: FunctionTool
-    detach_server_tool: FunctionTool
+    attach_server_tool: FlatTool
+    detach_server_tool: FlatTool
 
     def __init__(self, *, compositor: Compositor):
         """Create admin MCP server for mounting/unmounting/listing servers.
