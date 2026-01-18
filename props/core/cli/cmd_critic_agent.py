@@ -10,8 +10,7 @@ from typing import Annotated
 
 import typer
 
-from agent_pkg.runtime.output import WORKSPACE, render_agent_prompt
-from props.core.agent_helpers import fetch_snapshot, get_current_agent_run_id, get_scope_description
+from props.core.agent_helpers import get_current_agent_run_id
 from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
 from props.core.db.snapshots import DBLocationAnchor
@@ -294,12 +293,3 @@ def list_issues_cmd() -> None:
                 locs = ", ".join(f"{loc.file}:{loc.start_line or '?'}-{loc.end_line or '?'}" for loc in occ.locations)
                 typer.echo(f"      - {locs}")
             typer.echo()
-
-
-@app.command("init")
-def init_cmd() -> None:
-    """Run bootstrap (called by /init script)."""
-    # Side-effect: fetch snapshot before rendering template
-    fetch_snapshot(WORKSPACE)
-
-    render_agent_prompt("props/docs/agents/critic.md.j2", helpers={"scope_description": get_scope_description()})

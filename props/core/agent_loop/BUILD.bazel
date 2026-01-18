@@ -1,5 +1,7 @@
 """In-container agent loop for props agents."""
 
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
@@ -8,8 +10,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//mcp_infra/exec:direct",
         "//mcp_infra/exec:models",
-        "//mcp_infra/exec:subprocess",
         "@pypi//openai",
     ],
 )
@@ -34,4 +36,14 @@ py_binary(
     main = "critic_main.py",
     visibility = ["//visibility:public"],
     deps = [":critic_main_lib"],
+)
+
+# Packaging for OCI image
+pkg_tar(
+    name = "critic_main_tar",
+    srcs = [":critic_main"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
 )

@@ -24,6 +24,30 @@ class DirectExecArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:
+    """Execute a command locally (no sandbox).
+
+    Standalone function for direct command execution. Used by DirectExecServer
+    and can be called directly for in-container agent loops.
+
+    Args:
+        input: Exec arguments (command, timeout, etc.)
+        default_cwd: Fallback working directory if input.cwd is not specified
+
+    Raises:
+        ToolError: If cmd is empty or contains non-strings
+    """
+    if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
+        raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
+    cwd_val: Path | None = Path(input.cwd) if input.cwd else None
+    if cwd_val is None and default_cwd is not None:
+        cwd_val = default_cwd
+
+    timeout_s = max(0.001, input.timeout_ms / 1000.0)
+    outcome = await run_proc(input.cmd, timeout_s, cwd=cwd_val, stdin=input.stdin_text)
+    return render_outcome_to_result(outcome, input.max_bytes)
+
+
 class DirectExecServer(EnhancedFastMCP):
     """Direct (unsandboxed) exec MCP server with typed tool access."""
 
@@ -43,15 +67,7 @@ class DirectExecServer(EnhancedFastMCP):
 
         async def exec(input: DirectExecArgs) -> BaseExecResult:
             """Execute a command locally (no sandbox)."""
-            if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
-                raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
-            cwd_val: Path | None = Path(input.cwd) if input.cwd else None
-            if cwd_val is None and default_cwd_val is not None:
-                cwd_val = default_cwd_val
-
-            timeout_s = max(0.001, input.timeout_ms / 1000.0)
-            outcome = await run_proc(input.cmd, timeout_s, cwd=cwd_val, stdin=input.stdin_text)
-            return render_outcome_to_result(outcome, input.max_bytes)
+            return await run_direct_exec(input, default_cwd=default_cwd_val)
 
         self.exec_tool = self.flat_model()(exec)
 

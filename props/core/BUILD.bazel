@@ -141,6 +141,21 @@ py_library(
 )
 
 py_library(
+    name = "loop_agent_env",
+    srcs = ["loop_agent_env.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":display",
+        ":docker_env",
+        "//props/core/db:config",
+        "//props/core/db:temp_user_manager",
+        "//props/core/registry:images",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
     name = "agent_registry",
     srcs = ["agent_registry.py"],
     imports = ["../.."],
@@ -336,6 +351,7 @@ ruff_test(
         ":docker_env",
         ":exceptions",
         ":ids",
+        ":loop_agent_env",
         ":oci_utils",
         ":runs_context",
         ":splits",
