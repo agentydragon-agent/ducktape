@@ -51,10 +51,10 @@ py_binary(
 )
 
 py_binary(
-    name = "test_mcp_dev",
-    srcs = ["examples/test_mcp_dev.py"],
+    name = "mcp_dev_runner",
+    srcs = ["examples/mcp_dev_runner.py"],
     imports = [".."],
-    main = "examples/test_mcp_dev.py",
+    main = "examples/mcp_dev_runner.py",
     deps = [":habitify"],
 )
 

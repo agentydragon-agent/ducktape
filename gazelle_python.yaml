@@ -1,5 +1,0 @@
-# Gazelle Python configuration marker file
-# This file marks the repository root for Gazelle Python scanning
-# Gazelle walks up the directory tree to find this file
-
-# Empty configuration - defaults are used

@@ -41,8 +41,8 @@ py_library(
 
 py_binary(
     name = "wt-cli",
-    srcs = ["cli.py"],
-    main = "cli.py",
+    srcs = ["__main__.py"],
+    main = "__main__.py",
     deps = [":cli"],
 )
 
