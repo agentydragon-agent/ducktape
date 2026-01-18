@@ -240,6 +240,7 @@ py_library(
         "//props/core:ids",
         "//props/core/db:models",
         "//props/core/db:session",
+        "//props/core/db:snapshot_io",
         "//props/core/db/sync",
         "//props/core/db/sync:export",
         "@pypi//pygit2",

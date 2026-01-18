@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import fnmatch
-import io
 import json
 import shutil
-import tarfile
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +19,7 @@ from cli_util.decorators import async_run
 from props.core.cli import common_options as opt
 from props.core.db.models import Snapshot
 from props.core.db.session import get_session
+from props.core.db.snapshot_io import fetch_snapshot_to_path
 from props.core.db.sync.export import _format_files
 from props.core.db.sync.sync import get_specimens_base_path
 from props.core.ids import SnapshotSlug
@@ -308,34 +307,6 @@ def snapshot_capture_ducktape(
     typer.echo("  3. Review and commit changes in specimens repo")
     typer.echo()
     typer.echo("Note: Changes are NOT auto-committed. Review before committing.")
-
-
-def fetch_snapshot_to_path(slug: str, output: Path) -> None:
-    """Fetch snapshot from database and extract to filesystem.
-
-    Retrieves the tar archive from the snapshots table and extracts it
-    to the specified output directory.
-
-    Args:
-        slug: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
-        output: Output directory to extract snapshot into
-
-    Raises:
-        ValueError: If snapshot not found or has no content
-    """
-    output.mkdir(parents=True, exist_ok=True)
-
-    with get_session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
-        if snapshot is None:
-            raise ValueError(f"Snapshot not found: {slug}")
-        if snapshot.content is None:
-            raise ValueError(f"Snapshot has no content: {slug}")
-
-        archive_bytes = snapshot.content
-
-    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tf:
-        tf.extractall(output, filter="data")
 
 
 def snapshot_fetch(

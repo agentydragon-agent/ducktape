@@ -200,14 +200,11 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":agent_registry",
-        ":ids",
-        "//props/core/cli:cmd_snapshot",
-        "//props/core/db:config",
+        "//props/core/db:models",
         "//props/core/db:session",
-        "//props/core/db:snapshots",
-        "@pypi//jinja2",
-        "@pypi//psycopg2_binary",
+        "//props/core/db:snapshot_io",
+        "//props/core/models:examples",
+        "@pypi//sqlalchemy",
     ],
 )
 
