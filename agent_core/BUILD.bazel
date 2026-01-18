@@ -24,6 +24,19 @@ py_library(
     ],
 )
 
+# Direct tool provider - no MCP overhead
+py_library(
+    name = "direct_provider",
+    srcs = ["direct_provider.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_provider",
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
 # Core agent library - no MCP dependencies
 py_library(
     name = "agent_core",
@@ -119,6 +132,7 @@ ruff_test(
     name = "ruff",
     srcs = [
         ":agent_core",
+        ":direct_provider",
         ":mcp_provider",
         ":tool_provider",
     ],

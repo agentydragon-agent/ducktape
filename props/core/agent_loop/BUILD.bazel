@@ -8,10 +8,13 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//agent_core",
         "//mcp_infra/exec:subprocess_exec",
+        "//openai_utils",
         "//props/core:agent_helpers",
         "//props/core/critic:tools",
         "//props/core/db:session",
         "@pypi//openai",
+        "@pypi//pydantic",
     ],
 )
