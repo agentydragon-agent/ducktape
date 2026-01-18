@@ -8,7 +8,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//mcp_infra/exec:direct",
+        "//mcp_infra/exec:subprocess_exec",
         "//props/core/critic:tools",
         "@pypi//openai",
     ],

@@ -19,7 +19,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from mcp_infra.exec.direct import DirectExecArgs, run_direct_exec
+from mcp_infra.exec.subprocess_exec import ExecArgs, get_exec_tool_schema, run_exec
 from props.core.critic.tools import (
     DeleteIssueArgs,
     InsertIssueArgs,
@@ -42,27 +42,6 @@ logger = logging.getLogger(__name__)
 
 # Maximum turns before giving up
 MAX_TURNS = 100
-
-
-EXEC_TOOL_DESCRIPTION = (
-    "Execute a shell command in the workspace. Use for code analysis tools "
-    "like cat, rg, grep, find, etc. Commands run in /workspace directory."
-)
-
-
-def _get_exec_tool_schema() -> dict[str, Any]:
-    """Return the exec tool schema for OpenAI Responses API."""
-    parameters = DirectExecArgs.model_json_schema()
-    parameters.pop("$defs", None)
-    return {
-        "type": "function",
-        "function": {
-            "name": "exec",
-            "description": EXEC_TOOL_DESCRIPTION,
-            "parameters": parameters,
-            "strict": True,
-        },
-    }
 
 
 def _handle_critic_tool(name: str, arguments: str) -> ToolResult:
@@ -114,7 +93,7 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
     )
 
     # Combine exec tool with critic-specific tools
-    tools = [_get_exec_tool_schema()] + get_critic_tool_schemas()
+    tools = [get_exec_tool_schema()] + get_critic_tool_schemas()
     messages: list[dict[str, Any]] = []
 
     for turn in range(MAX_TURNS):
@@ -163,8 +142,8 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
                 # Shell execution
                 try:
                     args = json.loads(fc.arguments)
-                    exec_args = DirectExecArgs.model_validate(args)
-                    exec_result = await run_direct_exec(exec_args)
+                    exec_args = ExecArgs.model_validate(args)
+                    exec_result = await run_exec(exec_args)
                     output = exec_result.model_dump_json()
                 except json.JSONDecodeError as e:
                     output = f"Error: Invalid JSON arguments: {e}"

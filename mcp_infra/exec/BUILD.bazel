@@ -1,5 +1,14 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
+# Minimal subprocess execution - no MCP/fastmcp deps
+py_library(
+    name = "subprocess_exec",
+    srcs = ["subprocess_exec.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
 py_library(
     name = "exec",
     srcs = [
