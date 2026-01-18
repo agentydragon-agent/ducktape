@@ -58,7 +58,7 @@ py_library(
     deps = [
         "//mcp_infra",
         "//mcp_infra/compositor",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:docker",
         "//props/core/db:config",
         "@pypi//aiodocker",
     ],

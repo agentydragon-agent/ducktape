@@ -45,7 +45,7 @@ py_library(
         "//agent_core_testing",
         "//mcp_infra/compositor",
         "//mcp_infra/enhanced",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:docker",
         "//mcp_infra/notifications",
         "//mcp_infra/resources",
         "//mcp_infra/stubs",

@@ -37,7 +37,7 @@ py_library(
         "//mcp_infra",
         "//mcp_infra/compositor",
         "//mcp_infra/enhanced",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:direct",
         "//openai_utils",
         "@pypi//fastapi",
         "@pypi//fastmcp",

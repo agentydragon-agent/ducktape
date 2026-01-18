@@ -24,12 +24,11 @@ from uuid import UUID
 
 import httpx
 import psycopg
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
+from openai_utils.model import FunctionToolParam, InputItem, ToolChoice
 from props.core.db.models import AgentRun, AgentRunStatus, LLMRequest
 from props.core.db.session import get_session
 
@@ -90,38 +89,38 @@ def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthConte
     4. Returns the allowed model from the agent run
     """
     if authorization is None:
-        raise HTTPException(status_code=401, detail="Authorization required")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization required")
 
     creds = _parse_auth_header(authorization)
     if creds is None:
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization format")
 
     username, password = creds
 
     # Validate credentials against Postgres
     if not _validate_postgres_credentials(username, password):
         logger.warning(f"Invalid postgres credentials for user: {username}")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     # Extract agent_run_id from username pattern: agent_{uuid}
     if not username.startswith("agent_"):
-        raise HTTPException(status_code=401, detail="Invalid agent token format")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token format")
 
     try:
         agent_run_id = UUID(username.removeprefix("agent_"))
     except ValueError:
         logger.warning(f"Invalid UUID in agent username: {username}")
-        raise HTTPException(status_code=401, detail="Invalid agent token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token")
 
     # Look up agent run to get allowed model and verify status
     with get_session() as session:
         agent_run = session.get(AgentRun, agent_run_id)
         if agent_run is None:
-            raise HTTPException(status_code=401, detail="Agent run not found")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Agent run not found")
 
         if agent_run.status != AgentRunStatus.IN_PROGRESS:
             raise HTTPException(
-                status_code=403, detail=f"Agent run is not in progress (status={agent_run.status})"
+                status_code=status.HTTP_403_FORBIDDEN, detail=f"Agent run is not in progress (status={agent_run.status})"
             )
 
         # The allowed model is stored in agent_run.model
@@ -134,17 +133,16 @@ class ResponsesRequest(BaseModel):
     """OpenAI Responses API request body."""
 
     model: str
-    input: list[dict[str, Any]]
+    input: list[InputItem] | str
     instructions: str | None = None
-    tools: list[dict[str, Any]] | None = None
-    tool_choice: str | dict[str, Any] | None = None
+    tools: list[FunctionToolParam] | None = None
+    tool_choice: ToolChoice | None = None
     temperature: float | None = None
     max_output_tokens: int | None = None
     # Note: stream is intentionally not included - we don't support streaming
 
 
 def _log_request(
-    session: Session,
     agent_run_id: UUID,
     model: str,
     request_body: dict[str, Any],
@@ -177,8 +175,10 @@ def _log_request(
         output_tokens=output_tokens,
         latency_ms=latency_ms,
     )
-    session.add(llm_request)
-    session.commit()
+
+    with get_session() as session:
+        session.add(llm_request)
+        session.commit()
 
 
 # FastAPI app
@@ -204,28 +204,28 @@ async def responses(
     try:
         body = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid JSON body: {e}")
 
     request_model = body.get("model")
     if not request_model:
-        raise HTTPException(status_code=400, detail="model field is required")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="model field is required")
 
     # Enforce model restriction
     if request_model != auth.allowed_model:
         raise HTTPException(
-            status_code=403,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Model '{request_model}' not allowed. Agent is restricted to '{auth.allowed_model}'",
         )
 
     # Reject streaming requests
     if body.get("stream"):
-        raise HTTPException(status_code=400, detail="Streaming is not supported")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Streaming is not supported")
 
     # Reject stateful API modes (we log everything ourselves)
     if body.get("store"):
-        raise HTTPException(status_code=400, detail="Stateful mode 'store' is not supported")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Stateful mode 'store' is not supported")
     if body.get("previous_response_id"):
-        raise HTTPException(status_code=400, detail="Stateful mode 'previous_response_id' is not supported")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Stateful mode 'previous_response_id' is not supported")
 
     # Forward request to OpenAI
     start_time = time.monotonic()
@@ -244,32 +244,26 @@ async def responses(
             )
         except httpx.TimeoutException:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            # Log the timeout
-            with get_session() as session:
-                _log_request(
-                    session=session,
-                    agent_run_id=auth.agent_run_id,
-                    model=request_model,
-                    request_body=body,
-                    response_body=None,
-                    error="Upstream timeout",
-                    latency_ms=latency_ms,
-                )
-            raise HTTPException(status_code=504, detail="Upstream timeout")
+            _log_request(
+                agent_run_id=auth.agent_run_id,
+                model=request_model,
+                request_body=body,
+                response_body=None,
+                error="Upstream timeout",
+                latency_ms=latency_ms,
+            )
+            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Upstream timeout")
         except httpx.RequestError as e:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            # Log the error
-            with get_session() as session:
-                _log_request(
-                    session=session,
-                    agent_run_id=auth.agent_run_id,
-                    model=request_model,
-                    request_body=body,
-                    response_body=None,
-                    error=str(e),
-                    latency_ms=latency_ms,
-                )
-            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
+            _log_request(
+                agent_run_id=auth.agent_run_id,
+                model=request_model,
+                request_body=body,
+                response_body=None,
+                error=str(e),
+                latency_ms=latency_ms,
+            )
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Upstream error: {e}")
 
     latency_ms = int((time.monotonic() - start_time) * 1000)
 
@@ -284,16 +278,14 @@ async def responses(
     if upstream_response.status_code >= 400:
         error = f"HTTP {upstream_response.status_code}"
 
-    with get_session() as session:
-        _log_request(
-            session=session,
-            agent_run_id=auth.agent_run_id,
-            model=request_model,
-            request_body=body,
-            response_body=response_body,
-            error=error,
-            latency_ms=latency_ms,
-        )
+    _log_request(
+        agent_run_id=auth.agent_run_id,
+        model=request_model,
+        request_body=body,
+        response_body=response_body,
+        error=error,
+        latency_ms=latency_ms,
+    )
 
     # Return response with same status code
     return JSONResponse(content=response_body, status_code=upstream_response.status_code)

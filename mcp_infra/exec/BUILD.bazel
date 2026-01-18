@@ -107,20 +107,6 @@ py_library(
     ],
 )
 
-# Convenience target that re-exports all exec servers
-py_library(
-    name = "exec",
-    srcs = ["__init__.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":bwrap",
-        ":direct",
-        ":docker",
-        ":seatbelt",
-    ],
-)
-
 py_test(
     name = "test_direct",
     srcs = ["test_direct.py"],

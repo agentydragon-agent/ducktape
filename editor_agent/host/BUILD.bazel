@@ -30,7 +30,7 @@ py_library(
         "//mcp_infra",
         "//mcp_infra/compositor",
         "//mcp_infra/display",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:docker",
         "//mcp_infra/resources",
         "//net_util",
         "//openai_utils",
