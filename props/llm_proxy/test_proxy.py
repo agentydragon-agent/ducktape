@@ -282,9 +282,10 @@ class TestRequestLogging:
             logged = session.query(LLMRequest).filter_by(agent_run_id=agent_run_id).all()
             assert len(logged) == 1
             assert logged[0].model == "gpt-4o"
-            assert logged[0].input_tokens == 100
-            assert logged[0].output_tokens == 50
             assert logged[0].error is None
+            # Token counts stored in response_body, computed via view
+            assert logged[0].response_body["usage"]["input_tokens"] == 100
+            assert logged[0].response_body["usage"]["output_tokens"] == 50
 
 
 class TestCompletedAgentRejection:

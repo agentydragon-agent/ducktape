@@ -1366,10 +1366,8 @@ class LLMRequest(Base):
     """LLM API request logged by the proxy.
 
     Records all requests made through the LLM proxy, including full request/response
-    payloads for debugging and token counts for cost tracking.
-
-    Token counts are extracted from the OpenAI Responses API response.usage field.
-    Cost computation happens via the llm_request_costs view.
+    payloads for debugging. Token counts are computed via llm_request_costs view
+    from response_body->'usage' for successful requests.
     """
 
     __tablename__ = "llm_requests"
@@ -1385,9 +1383,6 @@ class LLMRequest(Base):
     request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 

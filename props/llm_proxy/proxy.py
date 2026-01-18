@@ -143,29 +143,16 @@ def _log_request(
     error: str | None,
     latency_ms: int,
 ) -> None:
-    """Log LLM request to database."""
-    # Extract token counts from response if available
-    input_tokens = None
-    cached_input_tokens = None
-    output_tokens = None
+    """Log LLM request to database.
 
-    if response_body:
-        usage = response_body.get("usage", {})
-        input_tokens = usage.get("input_tokens")
-        output_tokens = usage.get("output_tokens")
-        # OpenAI uses input_tokens_details.cached_tokens for cached input
-        input_details = usage.get("input_tokens_details", {})
-        cached_input_tokens = input_details.get("cached_tokens")
-
+    Token counts are computed via llm_request_costs view from response_body.
+    """
     llm_request = LLMRequest(
         agent_run_id=agent_run_id,
         model=model,
         request_body=request_body,
         response_body=response_body,
         error=error,
-        input_tokens=input_tokens,
-        cached_input_tokens=cached_input_tokens,
-        output_tokens=output_tokens,
         latency_ms=latency_ms,
     )
 
