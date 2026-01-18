@@ -1,12 +1,20 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 # Minimal subprocess execution - no MCP/fastmcp deps
+# Used by in-container agent loops that need exec without the MCP server overhead
 py_library(
     name = "subprocess_exec",
-    srcs = ["subprocess_exec.py"],
+    srcs = [
+        "models.py",
+        "subprocess.py",
+        "subprocess_exec.py",
+    ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -19,24 +27,21 @@ py_library(
         "docker/__init__.py",
         "docker/launcher.py",
         "docker/server.py",
-        "models.py",
         "read_image.py",
         "seatbelt.py",
-        "subprocess.py",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":subprocess_exec",
         "//cli_util",
         "//mcp_infra",
         "//mcp_infra/enhanced",
         "//mcp_infra/seatbelt",
-        "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
-        "@pypi//pydantic",
         "@pypi//typer_di",
     ],
 )
