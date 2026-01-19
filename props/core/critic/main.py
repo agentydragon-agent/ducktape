@@ -9,17 +9,16 @@ This is the CMD entrypoint for the critic container. It:
 
 from __future__ import annotations
 
+import asyncio
 import importlib.resources
 import logging
-import os
 import sys
-from io import StringIO
 from pathlib import Path
 
 from jinja2 import Environment
 
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run, get_scope_description
-from props.core.critic.loop import run_critic_loop_sync
+from props.core.critic.loop import run_critic_loop
 from props.core.db.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -77,7 +76,7 @@ def render_system_prompt(template_path: str, helpers: dict | None = None) -> str
     return template.render()
 
 
-def main() -> int:
+async def main() -> int:
     """Main entry point for critic agent.
 
     Returns:
@@ -109,11 +108,11 @@ def main() -> int:
 
     # Run the agent loop
     logger.info("Starting agent loop")
-    exit_code = run_critic_loop_sync(system_prompt, model)
+    exit_code = await run_critic_loop(system_prompt, model)
 
     logger.info("Agent loop finished with exit code %d", exit_code)
     return exit_code
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))

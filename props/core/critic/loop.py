@@ -10,7 +10,6 @@ Runs the full agent loop inside the container:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -199,8 +198,3 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
     # Agent finished without explicit exit (shouldn't happen with proper abort handling)
     logger.warning("Agent finished without explicit exit")
     return 1
-
-
-def run_critic_loop_sync(system_prompt: str, model: str) -> int:
-    """Synchronous wrapper for run_critic_loop."""
-    return asyncio.run(run_critic_loop(system_prompt, model))
