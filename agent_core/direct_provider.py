@@ -10,11 +10,11 @@ Usage:
         '''Tool description from docstring.'''
         return ToolResult.text(f"Result: {args.value}")
 
-    # Sync functions also supported
+    # Sync functions supported; can return str (auto-converted to ToolResult.text)
     @provider.tool
-    def sync_tool(args: OtherArgsModel) -> ToolResult:
+    def sync_tool(args: OtherArgsModel) -> str:
         '''Another tool.'''
-        return ToolResult.text("done")
+        return "done"
 
     # Override tool name (useful when function name would shadow imports)
     @provider.tool(name="search")
@@ -34,8 +34,12 @@ from typing import Any, get_type_hints, overload
 
 from pydantic import BaseModel
 
-from agent_core.tool_provider import TextContent, ToolResult, ToolSchema
+from agent_core.tool_provider import ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
+
+# Tool functions can return ToolResult, str, or awaitables of either
+ToolReturn = ToolResult | str
+ToolFn = Callable[[Any], ToolReturn | Awaitable[ToolReturn]]
 
 
 @dataclass(slots=True)
@@ -45,83 +49,43 @@ class RegisteredTool:
     name: str
     description: str
     parameters: type[BaseModel]
-    fn: Callable[[Any], ToolResult | Awaitable[ToolResult]]
+    fn: ToolFn
 
 
 class DirectToolProvider:
     """Tool provider that wraps Python callables directly.
 
-    No MCP overhead - tools are registered via decorator.
-
-    Example:
-        provider = DirectToolProvider()
-
-        @provider.tool
-        async def search(args: SearchArgs) -> ToolResult:
-            '''Search for files matching pattern.'''
-            ...
-
-        @provider.tool
-        def list_files(args: ListFilesArgs) -> ToolResult:
-            '''List files in directory.'''
-            ...
+    No MCP overhead - tools are registered via decorator. Tools can return
+    ToolResult or str (auto-converted to ToolResult.text).
     """
 
     def __init__(self) -> None:
         self._tools: dict[str, RegisteredTool] = {}
 
     @overload
-    def tool(self, fn: Callable[[Any], ToolResult]) -> Callable[[Any], ToolResult]: ...
+    def tool(self, fn: ToolFn) -> ToolFn: ...
 
     @overload
-    def tool(self, fn: Callable[[Any], Awaitable[ToolResult]]) -> Callable[[Any], Awaitable[ToolResult]]: ...
-
-    @overload
-    def tool(
-        self, *, name: str
-    ) -> Callable[
-        [Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]]],
-        Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]],
-    ]: ...
+    def tool(self, *, name: str) -> Callable[[ToolFn], ToolFn]: ...
 
     def tool(
         self,
-        fn: Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]] | None = None,
+        fn: ToolFn | None = None,
         *,
         name: str | None = None,
-    ) -> (
-        Callable[[Any], ToolResult]
-        | Callable[[Any], Awaitable[ToolResult]]
-        | Callable[
-            [Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]]],
-            Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]],
-        ]
-    ):
+    ) -> ToolFn | Callable[[ToolFn], ToolFn]:
         """Decorator to register a function as a tool.
 
         The function must:
         - Take a single Pydantic model argument
-        - Return ToolResult (sync or async)
+        - Return ToolResult or str (sync or async)
         - Have a docstring (used as tool description)
 
         Args:
             name: Override tool name (defaults to function name)
-
-        Example:
-            @provider.tool
-            async def my_tool(args: MyArgsModel) -> ToolResult:
-                '''Description shown to LLM.'''
-                return ToolResult.text("result")
-
-            @provider.tool(name="custom_name")
-            def impl(args: ArgsModel) -> ToolResult:
-                '''Description.'''
-                return ToolResult.text("done")
         """
 
-        def register(
-            func: Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]],
-        ) -> Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]]:
+        def register(func: ToolFn) -> ToolFn:
             tool_name = name if name is not None else func.__name__
             description = inspect.getdoc(func) or ""
 
@@ -169,13 +133,15 @@ class DirectToolProvider:
         """Execute a tool and return the result."""
         tool = self._tools.get(name)
         if tool is None:
-            return ToolResult(content=[TextContent(text=f"Unknown tool: {name}")], is_error=True)
+            return ToolResult.error(f"Unknown tool: {name}")
 
         try:
             validated_args = tool.parameters.model_validate(arguments)
             result = tool.fn(validated_args)
             if isinstance(result, Awaitable):
-                return await result
+                result = await result
+            if isinstance(result, str):
+                return ToolResult.text(result)
             return result
         except Exception as e:
-            return ToolResult(content=[TextContent(text=f"Tool error: {e}")], is_error=True)
+            return ToolResult.error(f"Tool error: {e}")

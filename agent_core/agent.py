@@ -218,13 +218,14 @@ _DATA_URL_PREFIX = "data:"
 _BASE64_SEPARATOR = ";base64,"
 
 
-def _parse_data_url(url: str) -> tuple[str, str] | None:
-    """Parse a data URL into (mime_type, base64_data). Returns None if invalid."""
+def _parse_data_url(url: str) -> ImageContent:
+    """Parse a data URL into ImageContent. Raises ValueError if invalid."""
     if not url.startswith(_DATA_URL_PREFIX) or _BASE64_SEPARATOR not in url:
-        return None
+        url_preview = url[:50] if url else "None"
+        raise ValueError(f"Unsupported image_url format: {url_preview}...")
     header, data = url.split(_BASE64_SEPARATOR, 1)
     mime_type = header.removeprefix(_DATA_URL_PREFIX)
-    return (mime_type, data)
+    return ImageContent(mime_type=mime_type, data=data)
 
 
 def _make_data_url(mime_type: str, base64_data: str) -> str:
@@ -294,12 +295,7 @@ def _image_url_to_image_content(image_url: str | None) -> ImageContent:
     """Convert a data URL to ImageContent."""
     if not isinstance(image_url, str):
         raise ValueError(f"image_url must be a string, got {type(image_url)}")
-    parsed = _parse_data_url(image_url)
-    if parsed is None:
-        url_preview = image_url[:50] if image_url else "None"
-        raise ValueError(f"Unsupported image_url format: {url_preview}...")
-    mime_type, data = parsed
-    return ImageContent(mime_type=mime_type, data=data)
+    return _parse_data_url(image_url)
 
 
 def _openai_to_tool_result(output: FunctionCallOutputType) -> ToolResult:
@@ -698,19 +694,10 @@ class Agent:
                 parsed = json.loads(args_json) if args_json else {}
             except json.JSONDecodeError as e:
                 # Lowercase the error message for consistent matching
-                error_msg = str(e).lower()
-                return ToolCallOutcome(
-                    result=ToolResult(
-                        content=[TextContent(text=f"Invalid JSON in tool arguments: {error_msg}")],
-                        is_error=True,
-                    )
-                )
+                return ToolCallOutcome(result=ToolResult.error(f"Invalid JSON in tool arguments: {str(e).lower()}"))
             if not isinstance(parsed, dict):
                 return ToolCallOutcome(
-                    result=ToolResult(
-                        content=[TextContent(text=f"Tool arguments must be a JSON object, got {type(parsed).__name__}")],
-                        is_error=True,
-                    )
+                    result=ToolResult.error(f"Tool arguments must be a JSON object, got {type(parsed).__name__}")
                 )
             args: dict[str, Any] = parsed
             tool_result = await self._tool_provider.call_tool(function_call.name, args)
@@ -726,12 +713,7 @@ class Agent:
     def _tool_error_to_outcome(e: Exception) -> ToolCallOutcome:
         """Convert an exception to an error tool result outcome."""
         error_msg = str(e) if str(e) else "Tool error"
-        return ToolCallOutcome(
-            result=ToolResult(
-                content=[TextContent(text=f"Tool call failed: {error_msg}")],
-                is_error=True,
-            )
-        )
+        return ToolCallOutcome(result=ToolResult.error(f"Tool call failed: {error_msg}"))
 
     async def _run_tool_calls_parallel(
         self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker

@@ -21,7 +21,7 @@ from mcp_infra.compositor.server import Compositor
 from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.container_session import ContainerOptions
+from mcp_infra.exec.docker.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, ExecInput
 from mcp_infra.mcp_types import NetworkMode

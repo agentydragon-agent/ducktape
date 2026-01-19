@@ -18,7 +18,7 @@ from fastmcp.server.context import Context
 
 from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.container_session import (
+from mcp_infra.exec.docker.container_session import (
     ContainerOptions,
     make_container_lifespan,
     render_container_result,

@@ -15,7 +15,7 @@ from editor_agent.host.submit_server import EditorSubmitServer
 from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.exec.container_session import ContainerOptions
+from mcp_infra.exec.docker.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mounted import Mounted
 from net_util.docker import get_docker_network_gateway_async

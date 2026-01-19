@@ -75,45 +75,37 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
     @provider.tool
     async def exec(args: SubprocessExecArgs) -> ToolResult:
         """Execute a shell command. Use for file operations, running tests, etc."""
-        try:
-            exec_result = await run_exec(args, default_cwd=WORKSPACE)
-            return ToolResult.json(exec_result.model_dump())
-        except Exception as e:
-            logger.exception("Exec tool error")
-            return ToolResult.error(f"Error executing command: {e}")
+        exec_result = await run_exec(args, default_cwd=WORKSPACE)
+        return ToolResult.json(exec_result.model_dump())
 
     @provider.tool(name="insert_issue")
-    def insert_issue_impl(args: InsertIssueArgs) -> ToolResult:
+    def insert_issue_impl(args: InsertIssueArgs) -> str:
         """Insert a reported issue. Call this before adding occurrences for the issue."""
-        result = insert_issue(agent_run_id, args)
-        return ToolResult.text(result.output)
+        return insert_issue(agent_run_id, args).output
 
     @provider.tool(name="insert_occurrence")
-    def insert_occurrence_impl(args: InsertOccurrenceArgs) -> ToolResult:
+    def insert_occurrence_impl(args: InsertOccurrenceArgs) -> str:
         """Insert an occurrence for a reported issue. The issue must exist first.
 
         An occurrence can span multiple locations (e.g., duplicated code across files).
         """
-        result = insert_occurrence(agent_run_id, args)
-        return ToolResult.text(result.output)
+        return insert_occurrence(agent_run_id, args).output
 
     @provider.tool(name="delete_issue")
-    def delete_issue_impl(args: DeleteIssueArgs) -> ToolResult:
+    def delete_issue_impl(args: DeleteIssueArgs) -> str:
         """Delete a reported issue and all its occurrences. Use to remove incorrect issues."""
-        result = delete_issue(args)
-        return ToolResult.text(result.output)
+        return delete_issue(args).output
 
     @provider.tool(name="list_issues")
-    def list_issues_impl(args: ListIssuesArgs) -> ToolResult:
+    def list_issues_impl(args: ListIssuesArgs) -> str:
         """List all issues reported in this critique run.
 
         Returns JSON with issue IDs, rationales, and occurrence counts.
         """
-        result = list_issues(agent_run_id)
-        return ToolResult.text(result.output)
+        return list_issues(agent_run_id).output
 
     @provider.tool(name="submit")
-    def submit_impl(args: SubmitArgs) -> ToolResult:
+    def submit_impl(args: SubmitArgs) -> str:
         """Finalize and submit the critique.
 
         Validates all issues and marks the run as complete. Call this when done reviewing.
@@ -122,10 +114,10 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
         if result.should_exit:
             exit_state.should_exit = True
             logger.info("Submit tool requested exit")
-        return ToolResult.text(result.output)
+        return result.output
 
     @provider.tool(name="report_failure")
-    def report_failure_impl(args: ReportFailureArgs) -> ToolResult:
+    def report_failure_impl(args: ReportFailureArgs) -> str:
         """Report that the critique could not be completed.
 
         Use when there are blocking issues (e.g., no files in scope).
@@ -134,7 +126,7 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
         if result.should_exit:
             exit_state.should_exit = True
             logger.info("Report failure tool requested exit")
-        return ToolResult.text(result.output)
+        return result.output
 
     return provider
 
