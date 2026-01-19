@@ -291,11 +291,6 @@ def _tool_result_to_openai(result: ToolResult) -> FunctionCallOutputType:
     return ""
 
 
-def _image_url_to_image_content(image_url: str | None) -> ImageContent:
-    """Convert a data URL to ImageContent."""
-    if not isinstance(image_url, str):
-        raise ValueError(f"image_url must be a string, got {type(image_url)}")
-    return _parse_data_url(image_url)
 
 
 def _openai_to_tool_result(output: FunctionCallOutputType) -> ToolResult:
@@ -313,7 +308,9 @@ def _openai_to_tool_result(output: FunctionCallOutputType) -> ToolResult:
             if isinstance(item, FunctionOutputTextContent):
                 content.append(TextContent(text=item.text))
             elif isinstance(item, FunctionOutputImageContent):
-                content.append(_image_url_to_image_content(item.image_url))
+                if not isinstance(item.image_url, str):
+                    raise ValueError(f"image_url must be a string, got {type(item.image_url)}")
+                content.append(_parse_data_url(item.image_url))
             else:
                 raise ValueError(f"Unsupported content type in tool output: {type(item)}")
 
