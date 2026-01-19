@@ -86,7 +86,6 @@ py_library(
 py_library(
     name = "docker",
     srcs = [
-        "docker/__init__.py",
         "docker/container_session.py",
         "docker/launcher.py",
         "docker/server.py",
