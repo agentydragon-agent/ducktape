@@ -10,7 +10,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//mcp_infra",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
         "//mcp_infra/resources",
         "//mcp_infra/stubs",
         "//openai_utils",

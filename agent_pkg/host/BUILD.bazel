@@ -13,7 +13,8 @@ py_library(
     deps = [
         "//agent_core",
         "//mcp_infra",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
         "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//fastmcp",

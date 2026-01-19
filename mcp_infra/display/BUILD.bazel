@@ -15,7 +15,7 @@ py_library(
         "//agent_core",
         "//mcp_infra",
         "//mcp_infra/compositor",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:models",
         "//openai_utils",
         "@pypi//compact_json",
         "@pypi//fastmcp",  # event_renderer.py, rich_display.py

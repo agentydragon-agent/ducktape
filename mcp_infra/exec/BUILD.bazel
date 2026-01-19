@@ -1,53 +1,171 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/deps:check.bzl", "assert_no_deps")
 
+# Core models - no MCP dependencies, usable outside fastmcp
 py_library(
-    name = "exec",
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+# Subprocess execution utility - no MCP dependencies
+py_library(
+    name = "subprocess",
+    srcs = ["subprocess.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [":models"],
+)
+
+# Image reading utility (shared by direct, seatbelt, bwrap, docker)
+py_library(
+    name = "read_image",
+    srcs = ["read_image.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils",
+        "@pypi//mcp",
+    ],
+)
+
+# Direct (unsandboxed) exec MCP server
+py_library(
+    name = "direct",
+    srcs = ["direct.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":read_image",
+        ":subprocess",
+        "//mcp_infra/enhanced",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+# macOS seatbelt sandbox exec MCP server
+py_library(
+    name = "seatbelt",
+    srcs = ["seatbelt.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":read_image",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/seatbelt",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+# Linux bubblewrap sandbox exec MCP server
+py_library(
+    name = "bwrap",
+    srcs = ["bwrap.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":read_image",
+        ":subprocess",
+        "//mcp_infra/enhanced",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+# Docker container exec MCP server
+py_library(
+    name = "docker",
     srcs = [
-        "__init__.py",
-        "bwrap.py",
-        "container_session.py",
-        "direct.py",
-        "docker/__init__.py",
+        "docker/container_session.py",
         "docker/launcher.py",
         "docker/server.py",
-        "models.py",
-        "read_image.py",
-        "seatbelt.py",
-        "subprocess.py",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":models",
+        ":read_image",
         "//cli_util",
         "//mcp_infra",
         "//mcp_infra/enhanced",
-        "//mcp_infra/seatbelt",
-        "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
-        "@pypi//pydantic",
         "@pypi//typer_di",
     ],
 )
 
 py_test(
-    name = "test_exec",
+    name = "test_direct",
+    srcs = ["test_direct.py"],
+    deps = [
+        ":direct",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_seatbelt",
+    srcs = ["test_seatbelt.py"],
+    deps = [
+        ":seatbelt",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_bwrap",
+    srcs = ["test_bwrap.py"],
+    deps = [
+        ":bwrap",
+        "//mcp_infra:test_support",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_docker",
     srcs = [
-        "test_bwrap.py",
-        "test_direct.py",
         "test_docker.py",
         "test_docker_unit.py",
-        "test_seatbelt.py",
     ],
-    main = "test_direct.py",
+    main = "test_docker.py",
     deps = [
-        ":exec",
+        ":docker",
         "//mcp_infra:test_support",
         "@pypi//docker",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//types_docker",
     ],
+)
+
+# Verify models and subprocess have no MCP/fastmcp dependencies
+assert_no_deps(
+    name = "test_models_no_mcp_deps",
+    forbidden_pattern = "@pypi//fastmcp|@pypi//mcp",
+    target = "//mcp_infra/exec:models",
+)
+
+assert_no_deps(
+    name = "test_subprocess_no_mcp_deps",
+    forbidden_pattern = "@pypi//fastmcp|@pypi//mcp",
+    target = "//mcp_infra/exec:subprocess",
 )

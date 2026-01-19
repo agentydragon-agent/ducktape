@@ -218,6 +218,65 @@ def is_running() -> bool:
         return False
 
 
+def _cleanup_stale_supervisor_files() -> None:
+    """Clean up stale supervisor socket and pidfile.
+
+    Called before starting supervisord when is_running() returns False
+    but the socket/pidfile still exist (stale state).
+    """
+    sock = _get_supervisor_sock()
+    pidfile = _get_supervisor_pidfile()
+
+    if sock.exists():
+        logger.info("Removing stale supervisor socket: %s", sock)
+        sock.unlink()
+
+    if pidfile.exists():
+        logger.info("Removing stale supervisor pidfile: %s", pidfile)
+        pidfile.unlink()
+
+
+def _dump_supervisor_debug_info() -> str:
+    """Gather comprehensive debug info for supervisor startup failures."""
+    lines = []
+    supervisor_log = _get_supervisor_log()
+    sock = _get_supervisor_sock()
+    pidfile = _get_supervisor_pidfile()
+
+    # State of key files
+    lines.append("=== Supervisor state ===")
+    lines.append(f"Socket exists: {sock.exists()}")
+    lines.append(f"Pidfile exists: {pidfile.exists()}")
+
+    if pidfile.exists():
+        try:
+            pid_content = pidfile.read_text().strip()
+            lines.append(f"Pidfile content: {pid_content}")
+            pid = int(pid_content)
+            # Check if process exists
+            try:
+                os.kill(pid, 0)
+                lines.append(f"Process {pid}: exists")
+            except ProcessLookupError:
+                lines.append(f"Process {pid}: not found")
+            except PermissionError:
+                lines.append(f"Process {pid}: exists (permission denied)")
+        except (ValueError, OSError) as e:
+            lines.append(f"Pidfile read error: {e}")
+
+    # Full log content (limited to last 4KB to avoid massive output)
+    if supervisor_log.exists():
+        log_content = supervisor_log.read_text()
+        if len(log_content) > 4096:
+            log_content = f"... (truncated, showing last 4KB) ...\n{log_content[-4096:]}"
+        lines.append("=== supervisord.log ===")
+        lines.append(log_content)
+    else:
+        lines.append("=== supervisord.log: does not exist ===")
+
+    return "\n".join(lines)
+
+
 def start() -> None:
     """Start supervisord if not already running.
 
@@ -229,6 +288,9 @@ def start() -> None:
         return
 
     logger.info("Starting supervisord...")
+
+    # Clean up any stale files from previous crashed supervisor
+    _cleanup_stale_supervisor_files()
 
     supervisor_conf = _get_supervisor_conf()
 
@@ -258,13 +320,10 @@ def start() -> None:
         if i % 4 == 3:  # Log every second
             logger.debug("Waiting for supervisord... (%d/20)", i + 1)
 
-    # Check log for errors
-    error_hint = ""
-    if supervisor_log.exists():
-        log_tail = supervisor_log.read_text()[-500:]
-        error_hint = f"\nRecent log:\n{log_tail}"
+    # Gather comprehensive debug info for the error
+    debug_info = _dump_supervisor_debug_info()
 
-    raise SupervisorError(f"supervisord did not start in time{error_hint}")
+    raise SupervisorError(f"supervisord did not start in time\n{debug_info}")
 
 
 def add_service(name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:

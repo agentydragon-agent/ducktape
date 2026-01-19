@@ -19,7 +19,7 @@ py_library(
         "//agent_server/policy_eval",
         "//mcp_infra",
         "//mcp_infra/enhanced",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:docker",
         "//mcp_infra/stubs",
         "//openai_utils",
         "@pypi//aiodocker",

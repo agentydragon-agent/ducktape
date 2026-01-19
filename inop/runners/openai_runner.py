@@ -36,8 +36,8 @@ from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.exec.bwrap import BwrapExecServer
-from mcp_infra.exec.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.direct import DirectExecServer
+from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mcp_types import NetworkMode
 from mcp_infra.prefix import MCPMountPrefix

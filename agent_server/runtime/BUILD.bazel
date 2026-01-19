@@ -48,7 +48,7 @@ py_library(
         "//mcp_infra/compositor",
         "//mcp_infra/display",
         "//mcp_infra/enhanced",
-        "//mcp_infra/exec",
+        "//mcp_infra/exec:docker",
         "//openai_utils",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
