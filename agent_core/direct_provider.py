@@ -10,17 +10,28 @@ Usage:
         '''Tool description from docstring.'''
         return ToolResult.text(f"Result: {args.value}")
 
-    # Sync functions supported; can return str (auto-converted to ToolResult.text)
+    # Sync functions supported; can return str or Pydantic models
     @provider.tool
     def sync_tool(args: OtherArgsModel) -> str:
-        '''Another tool.'''
+        '''Returns str (auto-converted to ToolResult.text).'''
         return "done"
+
+    @provider.tool
+    def structured_tool(args: InputModel) -> OutputModel:
+        '''Returns Pydantic model (auto-converted to ToolResult.json).'''
+        return OutputModel(result=args.value)
+
+    # Zero-arg tools are supported
+    @provider.tool
+    def list_items() -> str:
+        '''No args needed.'''
+        return "items: ..."
 
     # Override tool name (useful when function name would shadow imports)
     @provider.tool(name="search")
-    def search_impl(args: SearchArgs) -> ToolResult:
+    def search_impl(args: SearchArgs) -> str:
         '''Search for items.'''
-        return ToolResult.text("found")
+        return "found"
 
     agent = await Agent.create(tool_provider=provider, ...)
 """
@@ -37,9 +48,15 @@ from pydantic import BaseModel
 from agent_core.tool_provider import ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
 
-# Tool functions can return ToolResult, str, or awaitables of either
-ToolReturn = ToolResult | str
-ToolFn = Callable[[Any], ToolReturn | Awaitable[ToolReturn]]
+# Tool functions can return ToolResult, str, BaseModel, or awaitables of any
+ToolReturn = ToolResult | str | BaseModel
+ToolFn = Callable[..., ToolReturn | Awaitable[ToolReturn]]
+
+
+class _EmptyArgs(BaseModel):
+    """Singleton empty args model for zero-arg tools."""
+
+    pass
 
 
 @dataclass(slots=True)
@@ -93,17 +110,21 @@ class DirectToolProvider:
             hints = get_type_hints(func)
             sig = inspect.signature(func)
             params = list(sig.parameters.values())
-            if not params:
-                raise TypeError(f"Tool {tool_name} must have at least one parameter (Pydantic model for args)")
 
-            first_param = params[0]
-            param_type = hints.get(first_param.name)
-            if param_type is None:
-                raise TypeError(f"Tool {tool_name} parameter '{first_param.name}' must have a type annotation")
-            if not (isinstance(param_type, type) and issubclass(param_type, BaseModel)):
-                raise TypeError(
-                    f"Tool {tool_name} parameter '{first_param.name}' must be a Pydantic BaseModel, got {param_type}"
-                )
+            if not params:
+                # Zero-arg tool - use singleton empty args model
+                param_type: type[BaseModel] = _EmptyArgs
+            else:
+                first_param = params[0]
+                param_type_hint = hints.get(first_param.name)
+                if param_type_hint is None:
+                    raise TypeError(f"Tool {tool_name} parameter '{first_param.name}' must have a type annotation")
+                if not (isinstance(param_type_hint, type) and issubclass(param_type_hint, BaseModel)):
+                    raise TypeError(
+                        f"Tool {tool_name} parameter '{first_param.name}' must be a Pydantic BaseModel, "
+                        f"got {param_type_hint}"
+                    )
+                param_type = param_type_hint
 
             self._tools[tool_name] = RegisteredTool(
                 name=tool_name,
@@ -135,13 +156,22 @@ class DirectToolProvider:
         if tool is None:
             return ToolResult.error(f"Unknown tool: {name}")
 
+        validated_args = tool.parameters.model_validate(arguments)
+
+        # Call tool function, wrapping errors as ToolResult.error
         try:
-            validated_args = tool.parameters.model_validate(arguments)
-            result = tool.fn(validated_args)
+            if tool.parameters is _EmptyArgs:
+                result = tool.fn()
+            else:
+                result = tool.fn(validated_args)
             if isinstance(result, Awaitable):
                 result = await result
-            if isinstance(result, str):
-                return ToolResult.text(result)
-            return result
         except Exception as e:
             return ToolResult.error(f"Tool error: {e}")
+
+        # Convert result to ToolResult
+        if isinstance(result, str):
+            return ToolResult.text(result)
+        if isinstance(result, BaseModel):
+            return ToolResult.json(result.model_dump())
+        return result

@@ -18,13 +18,12 @@ from pathlib import Path
 from uuid import UUID
 
 from openai import AsyncOpenAI
-from pydantic import BaseModel
 
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.tool_provider import ToolResult
+from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess_exec import SubprocessExecArgs, run_exec
 from openai_utils.model import BoundOpenAIModel, SystemMessage
 from props.core.agent_helpers import get_current_agent_run_id
@@ -62,26 +61,19 @@ class ExitState:
     should_exit: bool = False
 
 
-class ListIssuesArgs(BaseModel):
-    """Empty args model for list_issues tool."""
-
-    pass
-
-
 def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> DirectToolProvider:
     """Create a tool provider with critic tools bound to the given agent run."""
     provider = DirectToolProvider()
 
     @provider.tool
-    async def exec(args: SubprocessExecArgs) -> ToolResult:
+    async def exec(args: SubprocessExecArgs) -> BaseExecResult:
         """Execute a shell command. Use for file operations, running tests, etc."""
-        exec_result = await run_exec(args, default_cwd=WORKSPACE)
-        return ToolResult.json(exec_result.model_dump())
+        return await run_exec(args, default_cwd=WORKSPACE)
 
     @provider.tool(name="insert_issue")
     def insert_issue_impl(args: InsertIssueArgs) -> str:
         """Insert a reported issue. Call this before adding occurrences for the issue."""
-        return insert_issue(agent_run_id, args).output
+        return insert_issue(agent_run_id, args)
 
     @provider.tool(name="insert_occurrence")
     def insert_occurrence_impl(args: InsertOccurrenceArgs) -> str:
@@ -89,20 +81,20 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
 
         An occurrence can span multiple locations (e.g., duplicated code across files).
         """
-        return insert_occurrence(agent_run_id, args).output
+        return insert_occurrence(agent_run_id, args)
 
     @provider.tool(name="delete_issue")
     def delete_issue_impl(args: DeleteIssueArgs) -> str:
         """Delete a reported issue and all its occurrences. Use to remove incorrect issues."""
-        return delete_issue(args).output
+        return delete_issue(args)
 
     @provider.tool(name="list_issues")
-    def list_issues_impl(args: ListIssuesArgs) -> str:
+    def list_issues_impl() -> str:
         """List all issues reported in this critique run.
 
         Returns JSON with issue IDs, rationales, and occurrence counts.
         """
-        return list_issues(agent_run_id).output
+        return list_issues(agent_run_id)
 
     @provider.tool(name="submit")
     def submit_impl(args: SubmitArgs) -> str:
@@ -183,17 +175,13 @@ async def run_critic_loop(system_prompt: str, model: str) -> int:
     # Add system prompt
     agent.process_message(SystemMessage.text(system_prompt))
 
-    try:
-        await agent.run()
-        if exit_state.should_exit:
-            print("Critique completed")
-            return 0
-        # Agent finished without explicit exit (shouldn't happen with proper abort handling)
-        logger.warning("Agent finished without explicit exit")
-        return 1
-    except Exception as e:
-        logger.error("Agent loop error: %s", e)
-        return 1
+    await agent.run()
+    if exit_state.should_exit:
+        print("Critique completed")
+        return 0
+    # Agent finished without explicit exit (shouldn't happen with proper abort handling)
+    logger.warning("Agent finished without explicit exit")
+    return 1
 
 
 def run_critic_loop_sync(system_prompt: str, model: str) -> int:

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
 
 from pydantic import Field
 
@@ -22,7 +21,6 @@ from mcp_infra.exec.models import (
     async_timer,
     render_outcome_to_result,
 )
-from openai_utils.json_schema import OpenAICompatibleSchema
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
@@ -88,16 +86,6 @@ class SubprocessExecArgs(OpenAIStrictModeBaseModel):
     cwd: str | None = Field(None, description="Working directory (None = current directory)")
     timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds")
     stdin_text: str | None = Field(None, description="Text to send to stdin")
-
-
-def get_exec_tool_schema() -> dict[str, Any]:
-    """Return OpenAI-compatible tool schema for the exec tool."""
-    return {
-        "type": "function",
-        "name": "exec",
-        "description": "Execute a shell command. Use for file operations, running tests, etc.",
-        "parameters": SubprocessExecArgs.model_json_schema(schema_generator=OpenAICompatibleSchema),
-    }
 
 
 async def run_exec(args: SubprocessExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:

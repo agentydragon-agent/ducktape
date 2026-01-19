@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/deps:check.bzl", "assert_no_deps")
 
 # Minimal subprocess execution - no MCP/fastmcp or openai API deps
 # Used by in-container agent loops that need exec without the MCP server overhead
@@ -16,11 +17,11 @@ py_library(
     ],
 )
 
-# Verifies subprocess_exec has no fastmcp dependency (critical for in-container use)
-sh_test(
-    name = "test_subprocess_exec_no_fastmcp",
-    srcs = ["test_no_fastmcp_dep.sh"],
-    data = [":subprocess_exec"],
+# Verifies subprocess_exec has no fastmcp/mcp dependency (critical for in-container use)
+assert_no_deps(
+    name = "test_subprocess_exec_no_mcp",
+    target = "//mcp_infra/exec:subprocess_exec",
+    forbidden_pattern = "@pypi//fastmcp|@pypi//mcp",
 )
 
 # Image reading utility (shared by direct, seatbelt, bwrap, docker)

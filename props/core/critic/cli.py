@@ -11,7 +11,7 @@ from typing import Annotated
 import typer
 
 from props.core.agent_helpers import get_current_agent_run_id
-from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
+from props.core.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
 from props.core.db.snapshots import DBLocationAnchor
 
@@ -30,9 +30,8 @@ Common workflow:
   Fix a mistake:
     props critic-agent delete-issue wrong-issue
 
-  Finalize and submit:
+  List current issues:
     props critic-agent list-issues
-    props critic-agent submit 3 "Found 1 dead code and 2 duplication issues"
 """
 
 app = typer.Typer(name="critic-agent", help=HELP_TEXT, add_completion=False)
@@ -137,132 +136,6 @@ def delete_issue_cmd(issue_id: Annotated[str, typer.Argument(help="ID of the iss
             raise typer.Exit(1)
         session.delete(issue)
     typer.echo(f"Deleted issue: {issue_id}")
-
-
-def _validate_occurrence(occ: ReportedIssueOccurrence) -> str | None:
-    """Validate a single occurrence. Returns error message or None if valid."""
-    if not occ.locations or len(occ.locations) == 0:
-        return f"Occurrence {occ.id} must have at least one location"
-
-    for i, loc in enumerate(occ.locations):
-        if not isinstance(loc, DBLocationAnchor):
-            return f"Location {i} must be a DBLocationAnchor, got {type(loc)}"
-
-        if loc.start_line is not None:
-            if loc.start_line <= 0:
-                return f"Location {i}: start_line must be > 0, got {loc.start_line}"
-
-            if loc.end_line is not None and loc.end_line < loc.start_line:
-                return f"Location {i}: end_line ({loc.end_line}) must be >= start_line ({loc.start_line})"
-
-    return None
-
-
-@app.command("submit")
-def submit_cmd(
-    issues_count: Annotated[int, typer.Argument(help="Total number of issues reported")],
-    summary: Annotated[str, typer.Argument(help="Brief summary of the code review findings")],
-) -> None:
-    """Finalize the critique and validate reported issues.
-
-    This validates all issues and occurrences, then marks the run as complete.
-    Prints validation errors to stderr and exits with code 1 if validation fails.
-
-    Validations:
-    - Issues count must match actual reported issues
-    - Every issue must have at least one occurrence
-    - Each occurrence must have at least one location
-    - Line ranges must be valid (start_line > 0, end_line >= start_line)
-
-    Example:
-        props critic-agent submit 3 "Found 1 dead code issue and 2 duplication issues"
-    """
-    with get_session() as session:
-        agent_run_id = get_current_agent_run_id(session)
-        agent_run = session.get(AgentRun, agent_run_id)
-
-        if agent_run is None:
-            typer.echo(f"Error: Agent run {agent_run_id} not found", err=True)
-            raise typer.Exit(1)
-
-        if agent_run.status == AgentRunStatus.COMPLETED:
-            typer.echo(f"Error: Agent run {agent_run_id} already completed", err=True)
-            raise typer.Exit(1)
-
-        issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
-
-        actual_issues_count = len(issues)
-        if issues_count != actual_issues_count:
-            typer.echo(
-                f"Error: Issues count mismatch: expected {issues_count} but found {actual_issues_count} in database",
-                err=True,
-            )
-            raise typer.Exit(1)
-
-        total_occurrences = 0
-        for issue in issues:
-            occurrences = (
-                session.query(ReportedIssueOccurrence)
-                .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
-                .all()
-            )
-
-            if len(occurrences) == 0:
-                typer.echo(
-                    f"Error: Issue '{issue.issue_id}' has no occurrences. "
-                    f"Every issue must have at least one occurrence showing where it occurs in the code.",
-                    err=True,
-                )
-                raise typer.Exit(1)
-
-            total_occurrences += len(occurrences)
-
-            for occ in occurrences:
-                error = _validate_occurrence(occ)
-                if error:
-                    typer.echo(f"Error: {error}", err=True)
-                    raise typer.Exit(1)
-
-        agent_run.status = AgentRunStatus.COMPLETED
-        agent_run.completion_summary = summary
-
-    typer.echo(f"Submitted critique: {issues_count} issues, {total_occurrences} occurrences")
-
-
-@app.command("report-failure")
-def report_failure_cmd(
-    message: Annotated[str, typer.Argument(help="Description of why the critique could not be completed")],
-) -> None:
-    """Report that critique could not be completed.
-
-    Call this when you encounter blocking issues that prevent review completion
-    (e.g., no files matched scope, access issues, missing dependencies).
-
-    This marks the run as failed and stores the error message.
-
-    Example:
-        props critic-agent report-failure "No Python files found in scope"
-    """
-    with get_session() as session:
-        agent_run_id = get_current_agent_run_id(session)
-        agent_run = session.get(AgentRun, agent_run_id)
-
-        if agent_run is None:
-            typer.echo(f"Error: Agent run {agent_run_id} not found", err=True)
-            raise typer.Exit(1)
-
-        if agent_run.status == AgentRunStatus.COMPLETED:
-            typer.echo(f"Error: Agent run {agent_run_id} already completed", err=True)
-            raise typer.Exit(1)
-
-        if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
-            typer.echo(f"Error: Agent run {agent_run_id} already reported failure", err=True)
-            raise typer.Exit(1)
-
-        agent_run.status = AgentRunStatus.REPORTED_FAILURE
-        agent_run.completion_summary = message
-
-    typer.echo(f"Reported failure: {message}")
 
 
 @app.command("list-issues")
