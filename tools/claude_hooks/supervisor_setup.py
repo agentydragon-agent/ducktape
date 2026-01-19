@@ -222,18 +222,14 @@ def start() -> None:
         _write_config()
 
     # Start supervisord using Python module to ensure it's on the right Python path
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "supervisor.supervisord", "-c", supervisor_conf],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise SupervisorError(f"Failed to start supervisord: {result.stderr}")
-    except subprocess.TimeoutExpired as e:
-        raise SupervisorError("supervisord startup timed out") from e
+    # Use Popen with start_new_session to fully detach the daemon process
+    subprocess.Popen(
+        [sys.executable, "-m", "supervisor.supervisord", "-c", supervisor_conf],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
     # Wait for supervisor to be ready
     for _ in range(10):
