@@ -34,7 +34,7 @@ from props.core.critic.tools import (
     ReportFailureArgs,
     SubmitArgs,
 )
-from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
+from props.core.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
 from props.core.db.snapshots import DBLocationAnchor
 
@@ -55,16 +55,6 @@ class ExitState:
     """Tracks whether a tool has requested exit."""
 
     should_exit: bool = False
-
-
-def _get_in_progress_run(session: object, agent_run_id: UUID) -> AgentRun:
-    """Get agent run, ensuring it exists and is in progress."""
-    agent_run = session.get(AgentRun, agent_run_id)  # type: ignore[union-attr]
-    if agent_run is None:
-        raise RuntimeError(f"Agent run {agent_run_id} not found")
-    if agent_run.status != AgentRunStatus.IN_PROGRESS:
-        raise RuntimeError(f"Agent run {agent_run_id} not in progress (status: {agent_run.status})")
-    return agent_run
 
 
 def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> DirectToolProvider:
@@ -135,10 +125,9 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
     def submit(args: SubmitArgs) -> None:
         """Finalize and submit the critique.
 
-        Validates all issues and marks the run as complete. Call this when done reviewing.
+        Validates all issues then signals exit. Host updates agent_run status based on exit code.
         """
         with get_session() as session:
-            agent_run = _get_in_progress_run(session, agent_run_id)
             issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
 
             actual_issues_count = len(issues)
@@ -161,10 +150,6 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
                     )
                 total_occurrences += occurrence_count
 
-            # TODO: Need SECURITY DEFINER function - agent can't UPDATE agent_runs via RLS
-            agent_run.status = AgentRunStatus.COMPLETED
-            agent_run.completion_summary = args.summary
-
         exit_state.should_exit = True
         logger.info("Critique submitted: %d issues, %d occurrences", args.issues_count, total_occurrences)
 
@@ -173,13 +158,8 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
         """Report that the critique could not be completed.
 
         Use when there are blocking issues (e.g., no files in scope).
+        Signals exit; host updates agent_run status based on exit code.
         """
-        with get_session() as session:
-            agent_run = _get_in_progress_run(session, agent_run_id)
-            # TODO: Need SECURITY DEFINER function - agent can't UPDATE agent_runs via RLS
-            agent_run.status = AgentRunStatus.REPORTED_FAILURE
-            agent_run.completion_summary = args.message
-
         exit_state.should_exit = True
         logger.info("Reported failure: %s", args.message)
 
