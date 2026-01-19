@@ -30,15 +30,13 @@ from props.core.critic.tools import (
     DeleteIssueArgs,
     InsertIssueArgs,
     InsertOccurrenceArgs,
+    IssueInfo,
     ListIssuesOutput,
     ReportFailureArgs,
     SubmitArgs,
     SubmitResult,
 )
-from props.core.critic.tools import list_issues as _list_issues
-from props.core.critic.tools import report_failure as _report_failure
-from props.core.critic.tools import submit as _submit
-from props.core.db.models import ReportedIssue, ReportedIssueOccurrence
+from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
 from props.core.db.snapshots import DBLocationAnchor
 
@@ -59,6 +57,16 @@ class ExitState:
     """Tracks whether a tool has requested exit."""
 
     should_exit: bool = False
+
+
+def _get_in_progress_run(session: object, agent_run_id: UUID) -> AgentRun:
+    """Get agent run, ensuring it exists and is in progress."""
+    agent_run = session.get(AgentRun, agent_run_id)  # type: ignore[union-attr]
+    if agent_run is None:
+        raise RuntimeError(f"Agent run {agent_run_id} not found")
+    if agent_run.status != AgentRunStatus.IN_PROGRESS:
+        raise RuntimeError(f"Agent run {agent_run_id} not in progress (status: {agent_run.status})")
+    return agent_run
 
 
 def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> DirectToolProvider:
@@ -112,7 +120,19 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
 
         Returns issue IDs, rationales, and occurrence counts.
         """
-        return _list_issues(agent_run_id)
+        with get_session() as session:
+            issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
+            issue_infos = []
+            for issue in issues:
+                occurrence_count = (
+                    session.query(ReportedIssueOccurrence)
+                    .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
+                    .count()
+                )
+                issue_infos.append(
+                    IssueInfo(issue_id=issue.issue_id, rationale=issue.rationale, occurrence_count=occurrence_count)
+                )
+            return ListIssuesOutput(issues=issue_infos)
 
     @provider.tool
     def submit(args: SubmitArgs) -> SubmitResult:
@@ -120,10 +140,40 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
 
         Validates all issues and marks the run as complete. Call this when done reviewing.
         """
-        result = _submit(agent_run_id, args)
+        with get_session() as session:
+            agent_run = _get_in_progress_run(session, agent_run_id)
+            issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
+
+            actual_issues_count = len(issues)
+            if args.issues_count != actual_issues_count:
+                raise ValueError(
+                    f"Issues count mismatch: expected {args.issues_count} but found {actual_issues_count} in database"
+                )
+
+            total_occurrences = 0
+            for issue in issues:
+                occurrence_count = (
+                    session.query(ReportedIssueOccurrence)
+                    .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
+                    .count()
+                )
+                if occurrence_count == 0:
+                    raise ValueError(
+                        f"Issue '{issue.issue_id}' has no occurrences. "
+                        f"Every issue must have at least one occurrence showing where it occurs in the code."
+                    )
+                total_occurrences += occurrence_count
+
+            agent_run.status = AgentRunStatus.COMPLETED
+            agent_run.completion_summary = args.summary
+
         exit_state.should_exit = True
-        logger.info("Submit tool requested exit")
-        return result
+        logger.info("Critique submitted: %d issues, %d occurrences", args.issues_count, total_occurrences)
+        return SubmitResult(
+            issues_count=args.issues_count,
+            occurrences_count=total_occurrences,
+            message=f"Submitted critique: {args.issues_count} issues, {total_occurrences} occurrences",
+        )
 
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> str:
@@ -131,10 +181,14 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
 
         Use when there are blocking issues (e.g., no files in scope).
         """
-        result = _report_failure(agent_run_id, args)
+        with get_session() as session:
+            agent_run = _get_in_progress_run(session, agent_run_id)
+            agent_run.status = AgentRunStatus.REPORTED_FAILURE
+            agent_run.completion_summary = args.message
+
         exit_state.should_exit = True
-        logger.info("Report failure tool requested exit")
-        return result
+        logger.info("Reported failure: %s", args.message)
+        return f"Reported failure: {args.message}"
 
     return provider
 

@@ -106,9 +106,6 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core/db:models",
-        "//props/core/db:session",
-        "//props/core/db:snapshots",
         "@pypi//pydantic",
     ],
 )
