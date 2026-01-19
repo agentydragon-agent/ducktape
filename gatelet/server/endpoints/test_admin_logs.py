@@ -2,6 +2,7 @@ import re
 from http import HTTPStatus
 from pathlib import Path
 
+import pytest_bazel
 from httpx import AsyncClient
 
 from gatelet.server.config import Settings
@@ -32,3 +33,7 @@ async def test_view_logs(client: AsyncClient, test_settings: Settings):
     assert response.status_code == HTTPStatus.OK
     assert "line3" in response.text
     assert "line1" in response.text
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

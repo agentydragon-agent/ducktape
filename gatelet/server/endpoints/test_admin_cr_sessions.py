@@ -1,6 +1,7 @@
 import re
 from http import HTTPStatus
 
+import pytest_bazel
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,3 +46,7 @@ async def test_invalidate_llm_session(client: AsyncClient, db_session: AsyncSess
         await db_session.execute(select(AuthCRSession).where(AuthCRSession.id == test_auth_session.id))
     ).scalar_one_or_none()
     assert result is None
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -10,6 +10,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 from playwright.sync_api import Page
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -71,3 +72,7 @@ def test_admin_login_and_view_webhooks(page: Page, server_url: str) -> None:
     page.click("text=Webhook Payloads")
     page.wait_for_url(f"{server_url}/admin/webhooks/")
     assert "sample" in page.content()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import pytest_bazel
 from typer.testing import CliRunner
 
 from wt.cli import app
@@ -83,3 +84,7 @@ class TestNewCLIIntegration:
 
         assert result.exit_code == 0
         assert_output_contains(result.output, "test-worktree")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

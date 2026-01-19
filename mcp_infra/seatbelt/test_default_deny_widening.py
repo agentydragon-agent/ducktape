@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
 from mcp_infra.seatbelt.model import DefaultBehavior, FileOp, FileRule, LiteralFilter, ProcessRule, SBPLPolicy, Subpath
@@ -154,3 +155,7 @@ async def test_incremental_widening(label: str, add_rules, expect: dict):
         assert res.exit_code != 0
     else:
         assert res.exit_code == expect["exit"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -4,6 +4,7 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 # Ensure detectors register themselves via module imports
 import py_detectors.__main__  # noqa: F401
@@ -58,3 +59,7 @@ def test_detectors_bad(tmp_path: Path, fixture_file: str, detector: str):
 def test_detectors_ok(tmp_path: Path, fixture_file: str, detector: str):
     detections = _run_case(tmp_path, "tests.fixtures.ok", fixture_file, detector)
     assert not detections, f"unexpected detections for {detector}: {detections}"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

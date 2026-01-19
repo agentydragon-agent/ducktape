@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that, has_properties
 from pydantic import ValidationError
 
@@ -93,3 +94,7 @@ def test_user_prompt_submit_input():
     input_obj = UserPromptSubmitInput.model_validate(data)
     assert input_obj.prompt == "Write a function"
     assert input_obj.session_id == session_id
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

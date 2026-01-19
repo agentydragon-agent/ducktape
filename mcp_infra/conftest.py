@@ -5,12 +5,16 @@ from contextlib import suppress
 import docker
 import pytest
 
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from agent_core_testing.fixtures import *  # noqa: F403
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.testing.fixtures import *  # noqa: F403
 from mcp_infra.testing.fixtures import make_container_opts
 
-# Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from agent_core_testing.fixtures import *  # noqa: F401, F403
-from mcp_infra.testing.fixtures import *  # noqa: F401, F403
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:

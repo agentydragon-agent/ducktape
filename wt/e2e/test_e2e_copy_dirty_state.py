@@ -1,6 +1,8 @@
 from datetime import timedelta
 from pathlib import Path
 
+import pytest_bazel
+
 from wt.testing.git_helpers import add_and_commit
 
 
@@ -32,3 +34,7 @@ def test_copy_dirty_state_cli(wt_cli, real_temp_repo):
     assert (dst_path / "untracked.txt").exists()
     # Tracked file modifications should be copied
     assert (dst_path / "README.md").read_text() == "modified\n"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

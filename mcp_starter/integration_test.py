@@ -5,6 +5,7 @@ Tests the actual server functionality without requiring Claude SDK.
 
 import mcp.types as mcp_types
 import pytest
+import pytest_bazel
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
@@ -55,3 +56,7 @@ async def test_unknown_tool_raises(mcp_client: Client) -> None:
     """Unknown tool calls should raise ToolError by default."""
     with pytest.raises(ToolError):
         await mcp_client.call_tool(name="__does_not_exist__", arguments={})
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

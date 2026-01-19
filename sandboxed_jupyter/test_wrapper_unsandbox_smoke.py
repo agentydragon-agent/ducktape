@@ -2,6 +2,7 @@ import os
 import shutil
 
 import pytest
+import pytest_bazel
 
 from ._markers import REQUIRES_SANDBOX_EXEC
 
@@ -34,3 +35,7 @@ async def test_wrapper_unsandbox_initialize_and_hello(provision_ws_with_policy, 
     async with mcp_client_from_cmd("sandbox-jupyter", cmd_args, init_timeout=30.0) as client:
         result = await client.call_tool("append_execute_code_cell", {"cell_source": "print('hello world')"})
         assert "hello world" in str(result)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

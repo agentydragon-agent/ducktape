@@ -1,6 +1,7 @@
 """Tests for webhook authentication handlers."""
 
 import pytest
+import pytest_bazel
 from fastapi import Request
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -96,3 +97,7 @@ async def test_bearer_auth_handler_invalid_token(bearer_auth_handler, mock_reque
     credentials = HTTPAuthorizationCredentials(scheme="bearer", credentials="wrong-token")
     with pytest.raises(AuthError, match="Invalid token"):
         await bearer_auth_handler.validate(mock_request, credentials)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

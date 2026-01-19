@@ -1,3 +1,4 @@
+import pytest_bazel
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,3 +28,7 @@ async def test_send_event_works(client: AsyncClient, db_session: AsyncSession):
     stmt = select(WebhookPayload).where(WebhookPayload.id == result["payload_id"])
     stored = (await db_session.execute(stmt)).scalar_one()
     assert stored.payload == payload
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

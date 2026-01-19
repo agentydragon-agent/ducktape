@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest_bazel
+
 from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
 from mcp_infra.seatbelt.runner import run_sandboxed_async
 
@@ -12,3 +14,7 @@ async def test_trivial_yes_hello_world(allow_all_policy):
     stdout_bytes = res.stdout if res.stdout is not None else b""
     stderr_bytes = res.stderr if res.stderr is not None else b""
     assert b"hello" in stdout_bytes or b"hello" in stderr_bytes
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -2,6 +2,7 @@
 
 import re
 
+import pytest_bazel
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,3 +25,7 @@ async def test_admin_login_invalid(client: AsyncClient, db_session: AsyncSession
     token = m.group(1)
     response = await client.post("/admin/login", data={"password": "wrong", "csrf_token": token})
     assert response.status_code == 401
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

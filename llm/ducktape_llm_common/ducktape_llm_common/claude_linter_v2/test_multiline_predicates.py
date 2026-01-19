@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 import pytest
+import pytest_bazel
 
 from ducktape_llm_common.claude_linter_v2.access.context import PredicateContext
 from ducktape_llm_common.claude_linter_v2.access.evaluator import PredicateEvaluator
@@ -208,6 +209,7 @@ def check_test_file(ctx):
 import json
 import re
 from datetime import datetime, timedelta
+import pytest_bazel
 
 def check_recent_activity(ctx):
     # Check if activity is within last hour
@@ -276,3 +278,7 @@ def safe_git_commands(ctx):
             tool="Bash", args={"command": "git status"}, session_id=TEST_SESSION_ID, timestamp=datetime.now()
         )
         assert evaluator.evaluate(predicate_git, context_git) is True
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

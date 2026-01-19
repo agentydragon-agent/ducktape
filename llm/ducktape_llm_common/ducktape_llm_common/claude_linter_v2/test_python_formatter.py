@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest_bazel
+
 from ducktape_llm_common.claude_linter_v2.config.models import AutofixCategory
 from ducktape_llm_common.claude_linter_v2.linters.python_formatter import PythonFormatter
 
@@ -116,6 +118,7 @@ class TestPythonFormatter:
 import sys
 from typing import List
 import json
+import pytest_bazel
 
 def foo():
     return json.dumps({})
@@ -222,3 +225,7 @@ def foo():
             timeout=30,
             check=False,
         )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

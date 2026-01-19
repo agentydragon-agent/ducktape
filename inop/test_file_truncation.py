@@ -2,6 +2,7 @@
 
 import json
 
+import pytest_bazel
 import tiktoken
 
 from inop.prompting.truncation_utils import TruncationManager
@@ -112,6 +113,7 @@ import os
 import sys
 import json
 from typing import List, Dict, Any
+import pytest_bazel
 
 def main():
     """Main entry point."""
@@ -140,3 +142,7 @@ This is a test project for file truncation.
         assert len(result) <= len(files)
         assert all(isinstance(f["path"], str) for f in result)
         assert all(isinstance(f["content"], str) for f in result)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

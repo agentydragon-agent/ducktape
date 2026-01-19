@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pygit2
 import pytest
+import pytest_bazel
 
 from wt.testing.git_helpers import add_and_commit, worktree_exists
 from wt.testing.utils import wait_until
@@ -88,3 +89,7 @@ def test_real_git_operations(real_temp_repo, wt_cli):
     # Verify branch name using pygit2
     wt_repo = pygit2.Repository(worktree_path)
     assert wt_repo.head.shorthand == "test/git-test"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

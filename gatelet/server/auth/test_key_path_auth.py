@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 
 import pytest
+import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.auth.handlers import AuthHandlerError, key_path_auth
@@ -38,3 +39,7 @@ async def test_key_path_auth_invalid(db_session: AsyncSession, test_settings: Se
     # Use a key that doesn't exist
     with pytest.raises(AuthHandlerError):
         await key_path_auth("nonexistent-key", db_session, test_settings)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

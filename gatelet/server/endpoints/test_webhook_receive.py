@@ -2,6 +2,7 @@
 
 from http import HTTPStatus
 
+import pytest_bazel
 from hamcrest import anything, assert_that, equal_to, has_entries, has_properties, is_, none
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -135,3 +136,7 @@ async def test_receive_webhook_invalid_json(client: AsyncClient, db_session: Asy
         f"/webhook/{integration.name}", content="not-json", headers={"Content-Type": "application/json"}
     )
     assert_that(response.status_code, equal_to(HTTPStatus.BAD_REQUEST))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

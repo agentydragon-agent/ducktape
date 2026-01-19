@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
 from mcp_infra.seatbelt.model import DefaultBehavior, FileOp, FileRule, ProcessRule, SBPLPolicy, Subpath
@@ -65,3 +66,7 @@ async def test_run_sandboxed_async_echo(tmp_path: Path):
     # Trace managed internally and captured
     assert res.trace_path is not None
     assert res.trace_text is None or isinstance(res.trace_text, str)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

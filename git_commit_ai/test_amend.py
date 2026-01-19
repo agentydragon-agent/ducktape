@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pygit2
 import pytest
+import pytest_bazel
 
 from git_commit_ai.cli import build_cache_key
 
@@ -39,3 +40,6 @@ def test_cache_key_includes_amend_status():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+if __name__ == "__main__":
+    pytest_bazel.main()

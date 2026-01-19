@@ -1,5 +1,6 @@
 from collections import namedtuple
 
+import pytest_bazel
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,3 +34,7 @@ async def test_send_battery_status(monkeypatch, client: AsyncClient, db_session:
     stored = (await db_session.execute(stmt)).scalar_one()
     assert stored.payload["percent"] == percent
     assert stored.payload["plugged"] is True
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

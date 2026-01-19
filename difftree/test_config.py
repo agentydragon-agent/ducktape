@@ -1,6 +1,7 @@
 """Tests for configuration module."""
 
 import pytest
+import pytest_bazel
 
 from difftree.config import Column, RenderConfig, parse_columns
 
@@ -30,3 +31,7 @@ def test_render_config_minimal():
     """Test minimal RenderConfig."""
     config = RenderConfig(columns=[Column.TREE])
     assert config.columns == [Column.TREE]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import pytest_bazel
 
 from wt.cli import app
 from wt.shared.protocol import CommitInfo, StatusResult
@@ -109,3 +110,7 @@ class TestCLIOutputFormat:
         result = cli_runner_with_env(status_response, [], mock_get_status)
         assert result.exit_code == 0
         assert_output_contains(result.output, "unknown")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

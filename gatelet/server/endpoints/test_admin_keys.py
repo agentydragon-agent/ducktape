@@ -1,6 +1,7 @@
 import re
 from http import HTTPStatus
 
+import pytest_bazel
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,3 +59,7 @@ async def test_revoke_key(client: AsyncClient, db_session: AsyncSession, test_au
 
     await db_session.refresh(test_auth_key)
     assert test_auth_key.revoked_at is not None
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

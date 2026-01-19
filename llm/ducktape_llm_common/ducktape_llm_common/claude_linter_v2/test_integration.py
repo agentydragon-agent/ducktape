@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 import pytest
+import pytest_bazel
 
 
 def _has_ruff() -> bool:
@@ -160,6 +161,7 @@ def get_data():
                 "content": """
 from .module1 import *
 from .module2 import Class1, Class2
+import pytest_bazel
 
 __all__ = ['Class1', 'Class2']
 """,
@@ -275,3 +277,7 @@ class TestSessionCommands:
         assert result.returncode == 0
         # Isolated env has no sessions to apply rule to
         assert "No active sessions found" in result.stdout
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

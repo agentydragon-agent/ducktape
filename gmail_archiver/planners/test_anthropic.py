@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import pytest
+import pytest_bazel
 
 from gmail_archiver.planners.anthropic import AnthropicReceipt, parse_anthropic
 
@@ -129,3 +130,7 @@ class TestAnthropicParser:
 
         receipt = parse_anthropic(msg)
         assert receipt.receipt_number == expected_receipt
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

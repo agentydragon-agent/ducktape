@@ -4,6 +4,7 @@ import html
 from datetime import datetime, timedelta
 from http import HTTPStatus
 
+import pytest_bazel
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,3 +55,7 @@ async def test_challenge_template_contains_code(client: AsyncClient, test_auth_k
 
     page_text = html.unescape(response.text)
     assert COMPUTE_OPTION_SOURCE in page_text
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

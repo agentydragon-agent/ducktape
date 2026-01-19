@@ -8,6 +8,7 @@ deterministic.
 from datetime import datetime
 
 import pytest
+import pytest_bazel
 from pydantic import BaseModel, Field
 
 from .server import TIMEZONE
@@ -92,3 +93,7 @@ def test_tokens_from_past_still_verify():
 
     # Should verify successfully
     token_scheme.verify_token(past_token)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

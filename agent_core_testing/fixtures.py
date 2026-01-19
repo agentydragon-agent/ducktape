@@ -28,13 +28,15 @@ from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutpu
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core.tool_provider import ToolProvider, ToolResult
+from agent_core.tool_provider import ToolProvider
 from agent_core_testing.echo_server import make_echo_server
 from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_core_testing.responses import ResponsesFactory
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import ResponsesResult
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -247,29 +249,13 @@ def call_id_gen() -> Callable[[], str]:
 
 @pytest.fixture
 def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
-    """Factory for ToolCall events with auto call_id generation.
+    """Factory for ToolCall events with auto call_id generation."""
 
-    Note: Uses simple string concatenation for tool names. Downstream tests
-    should use their own naming helpers (e.g., build_mcp_function) if needed.
-    """
-
-    def _make(server: str, tool: str, args: dict[str, Any] | None = None) -> ToolCall:
+    def _make(server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> ToolCall:
         args_json = json.dumps(args) if args is not None else None
-        return ToolCall(name=f"{server}_{tool}", args_json=args_json, call_id=call_id_gen())
+        return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
 
     return _make
-
-
-def make_tool_result(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolResult:
-    """Create a ToolResult for tests."""
-    return ToolResult(content=[], structured_content=structured_content or {}, is_error=is_error)
-
-
-def make_tool_call_output(
-    call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False
-) -> ToolCallOutput:
-    """Create a ToolCallOutput for tests."""
-    return ToolCallOutput(call_id=call_id, result=make_tool_result(structured_content, is_error))
 
 
 # ---- Live OpenAI fixture ----

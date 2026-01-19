@@ -3,6 +3,7 @@
 import subprocess
 
 import pytest
+import pytest_bazel
 from hamcrest import all_of, assert_that, contains_string, has_entries
 
 from ducktape_llm_common.claude_code_api import StopRequest
@@ -143,3 +144,7 @@ def test_stop_hook_quality_gate_disabled(handler, session_id, tmp_path):
         "decision": None,
         "reason": None,
     }
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

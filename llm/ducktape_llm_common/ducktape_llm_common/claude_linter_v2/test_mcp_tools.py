@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import pytest_bazel
 
 from ducktape_llm_common.claude_code_api import PostToolUseRequest, PreToolUseRequest
 from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
@@ -339,3 +340,7 @@ class TestMCPToolLogging:
         assert "pre_hook_start" in content
         assert "access_control" in content
         assert "file_type_check" in content
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

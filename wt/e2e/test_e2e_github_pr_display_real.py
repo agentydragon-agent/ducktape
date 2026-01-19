@@ -14,6 +14,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+import pytest_bazel
 
 from wt.shared.fixtures import PRFixtureEntry
 from wt.shared.github_models import PRState
@@ -89,3 +90,7 @@ def test_github_pr_display_with_mocked_pygithub(real_temp_repo, config_factory, 
     ok = wait_until(_status_has_pr, timeout_seconds=12.0, interval_seconds=0.25)
     if not ok:
         raise AssertionError(f"PR details not shown in time. Last output:\n{last['out']}")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
