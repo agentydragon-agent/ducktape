@@ -49,17 +49,6 @@ class ReportFailureArgs(BaseModel):
     message: str = Field(..., description="Description of why the critique could not be completed")
 
 
-# --- Tool result models ---
-
-
-class SubmitResult(BaseModel):
-    """Result from successful submit."""
-
-    issues_count: int
-    occurrences_count: int
-    message: str
-
-
 # --- Result models ---
 
 
@@ -69,9 +58,3 @@ class IssueInfo(BaseModel):
     issue_id: str
     rationale: str
     occurrence_count: int
-
-
-class ListIssuesOutput(BaseModel):
-    """Output from list_issues tool."""
-
-    issues: list[IssueInfo]

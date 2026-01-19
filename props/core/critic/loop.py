@@ -31,10 +31,8 @@ from props.core.critic.tools import (
     InsertIssueArgs,
     InsertOccurrenceArgs,
     IssueInfo,
-    ListIssuesOutput,
     ReportFailureArgs,
     SubmitArgs,
-    SubmitResult,
 )
 from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
@@ -115,27 +113,26 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
         return f"Deleted issue: {args.issue_id}"
 
     @provider.tool
-    def list_issues() -> ListIssuesOutput:
+    def list_issues() -> list[IssueInfo]:
         """List all issues reported in this critique run.
 
         Returns issue IDs, rationales, and occurrence counts.
         """
         with get_session() as session:
             issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
-            issue_infos = []
-            for issue in issues:
-                occurrence_count = (
-                    session.query(ReportedIssueOccurrence)
+            return [
+                IssueInfo(
+                    issue_id=issue.issue_id,
+                    rationale=issue.rationale,
+                    occurrence_count=session.query(ReportedIssueOccurrence)
                     .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
-                    .count()
+                    .count(),
                 )
-                issue_infos.append(
-                    IssueInfo(issue_id=issue.issue_id, rationale=issue.rationale, occurrence_count=occurrence_count)
-                )
-            return ListIssuesOutput(issues=issue_infos)
+                for issue in issues
+            ]
 
     @provider.tool
-    def submit(args: SubmitArgs) -> SubmitResult:
+    def submit(args: SubmitArgs) -> None:
         """Finalize and submit the critique.
 
         Validates all issues and marks the run as complete. Call this when done reviewing.
@@ -164,31 +161,27 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
                     )
                 total_occurrences += occurrence_count
 
+            # TODO: Need SECURITY DEFINER function - agent can't UPDATE agent_runs via RLS
             agent_run.status = AgentRunStatus.COMPLETED
             agent_run.completion_summary = args.summary
 
         exit_state.should_exit = True
         logger.info("Critique submitted: %d issues, %d occurrences", args.issues_count, total_occurrences)
-        return SubmitResult(
-            issues_count=args.issues_count,
-            occurrences_count=total_occurrences,
-            message=f"Submitted critique: {args.issues_count} issues, {total_occurrences} occurrences",
-        )
 
     @provider.tool
-    def report_failure(args: ReportFailureArgs) -> str:
+    def report_failure(args: ReportFailureArgs) -> None:
         """Report that the critique could not be completed.
 
         Use when there are blocking issues (e.g., no files in scope).
         """
         with get_session() as session:
             agent_run = _get_in_progress_run(session, agent_run_id)
+            # TODO: Need SECURITY DEFINER function - agent can't UPDATE agent_runs via RLS
             agent_run.status = AgentRunStatus.REPORTED_FAILURE
             agent_run.completion_summary = args.message
 
         exit_state.should_exit = True
         logger.info("Reported failure: %s", args.message)
-        return f"Reported failure: {args.message}"
 
     return provider
 

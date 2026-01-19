@@ -10,7 +10,7 @@ Usage:
         '''Tool description from docstring.'''
         return ToolResult.text(f"Result: {args.value}")
 
-    # Sync functions supported; can return str or Pydantic models
+    # Sync functions supported; can return str, Pydantic models, lists, or None
     @provider.tool
     def sync_tool(args: OtherArgsModel) -> str:
         '''Returns str (auto-converted to ToolResult.text).'''
@@ -21,17 +21,21 @@ Usage:
         '''Returns Pydantic model (auto-converted to ToolResult.json).'''
         return OutputModel(result=args.value)
 
+    @provider.tool
+    def list_tool(args: QueryArgs) -> list[ItemModel]:
+        '''Returns list of Pydantic models (auto-converted to ToolResult.json).'''
+        return [ItemModel(id=1), ItemModel(id=2)]
+
+    @provider.tool
+    def exit_tool(args: ExitArgs) -> None:
+        '''Returns None (auto-converted to ToolResult.text("OK")).'''
+        do_exit_stuff()
+
     # Zero-arg tools are supported
     @provider.tool
     def list_items() -> str:
         '''No args needed.'''
         return "items: ..."
-
-    # Override tool name (useful when function name would shadow imports)
-    @provider.tool(name="search")
-    def search_impl(args: SearchArgs) -> str:
-        '''Search for items.'''
-        return "found"
 
     agent = await Agent.create(tool_provider=provider, ...)
 """
@@ -48,8 +52,8 @@ from pydantic import BaseModel
 from agent_core.tool_provider import ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
 
-# Tool functions can return ToolResult, str, BaseModel, or awaitables of any
-ToolReturn = ToolResult | str | BaseModel
+# Tool functions can return ToolResult, str, BaseModel, list, None, or awaitables of any
+ToolReturn = ToolResult | str | BaseModel | list | None
 ToolFn = Callable[..., ToolReturn | Awaitable[ToolReturn]]
 
 
@@ -170,8 +174,13 @@ class DirectToolProvider:
             return ToolResult.error(f"Tool error: {e}")
 
         # Convert result to ToolResult
+        if result is None:
+            return ToolResult.text("OK")
         if isinstance(result, str):
             return ToolResult.text(result)
         if isinstance(result, BaseModel):
             return ToolResult.json(result.model_dump())
+        if isinstance(result, list):
+            # Convert list of Pydantic models to list of dicts
+            return ToolResult.json([item.model_dump() if isinstance(item, BaseModel) else item for item in result])
         return result
