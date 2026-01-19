@@ -7,6 +7,7 @@ import pytest
 from agent_core.agent import Agent, AgentResult
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -43,7 +44,10 @@ async def test_live_llm_exec_echo(mcp_client_box) -> None:
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
     client = build_client(model_name)
     agent = await Agent.create(
-        mcp_client=mcp_client_box, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+        tool_provider=MCPToolProvider(mcp_client_box),
+        client=client,
+        handlers=[BaseHandler()],
+        tool_policy=RequireAnyTool(),
     )
     agent.process_message(
         SystemMessage.text(

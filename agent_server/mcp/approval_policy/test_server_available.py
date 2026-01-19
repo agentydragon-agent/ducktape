@@ -6,6 +6,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core_testing.responses import DecoratorMock
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
@@ -36,7 +37,7 @@ async def test_approval_policy_server_is_available(echo_spec, make_policy_gatewa
         assert expected <= tool_names
 
         agent = await Agent.create(
-            mcp_client=mcp_client,
+            tool_provider=MCPToolProvider(mcp_client),
             client=mock,
             handlers=[FinishOnTextMessageHandler()],
             tool_policy=AllowAnyToolOrTextMessage(),

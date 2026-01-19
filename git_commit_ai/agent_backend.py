@@ -11,6 +11,7 @@ from pydantic import Field
 from agent_core.agent import Agent
 from agent_core.handler import BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
 from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, NoAction
+from agent_core.mcp_provider import MCPToolProvider
 from git_commit_ai.git_ro.server import (
     GIT_RO_MOUNT_PREFIX,
     DiffFormat,
@@ -263,7 +264,7 @@ async def generate_commit_message_agent(
 
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
-                mcp_client=mcp_client,
+                tool_provider=MCPToolProvider(mcp_client),
                 client=build_client(model),
                 handlers=handlers,
                 dynamic_instructions=comp.render_agent_dynamic_instructions,

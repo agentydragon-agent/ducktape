@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from mcp import types as mcp_types
 
 from agent_core.agent import Agent
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.tool_provider import TextContent
 from agent_core_testing.openai_mock import NoopOpenAIClient
 
 # Register testing fixtures:
@@ -23,15 +23,15 @@ pytest_plugins = [
 
 @pytest.fixture
 def text_content():
-    """Helper to create MCP TextContent blocks."""
-    return lambda text: mcp_types.TextContent(type="text", text=text)
+    """Helper to create TextContent blocks for tests."""
+    return lambda text: TextContent(text=text)
 
 
 @pytest.fixture
-async def noop_agent(compositor_client, recording_handler):
+async def noop_agent(mcp_tool_provider, recording_handler):
     """Agent with NoopOpenAIClient for testing message processing without sampling."""
     return await Agent.create(
-        mcp_client=compositor_client,
+        tool_provider=mcp_tool_provider,
         client=NoopOpenAIClient(),
         handlers=[recording_handler],
         tool_policy=AllowAnyToolOrTextMessage(),

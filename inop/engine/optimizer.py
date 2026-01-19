@@ -47,6 +47,7 @@ from fastmcp.client import Client
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
 from inop.config import OptimizerConfig
 from inop.engine import runner_factory
@@ -317,7 +318,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
             # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
             pe = await Agent.create(
-                mcp_client=mcp_client,
+                tool_provider=MCPToolProvider(mcp_client),
                 client=model,
                 handlers=[
                     ProposePromptNTimes(args.iterations),

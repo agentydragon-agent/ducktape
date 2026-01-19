@@ -7,7 +7,6 @@ import shlex
 from typing import TYPE_CHECKING, Any
 
 from compact_json import Formatter
-from mcp import types as mcp_types
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 from rich import box
@@ -19,28 +18,13 @@ from rich.text import Text
 
 from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
+from mcp_infra.display.json_utils import parse_json_or_none
+from mcp_infra.display.result_utils import extract_display_data
 from mcp_infra.exec.models import BaseExecResult, ExecInput, ExecStream, TruncatedStream
 from mcp_infra.naming import parse_tool_name
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 from openai_utils.model import ReasoningItem
-
-from .json_utils import parse_json_or_none
-
-
-def _extract_display_data(result: mcp_types.CallToolResult) -> Any:
-    """Extract display-friendly data from mcp.types.CallToolResult.
-
-    Prefers structuredContent if present, otherwise extracts text from content blocks.
-    """
-    if result.structuredContent is not None:
-        return result.structuredContent
-    # Extract text from content blocks
-    texts = [block.text for block in result.content if isinstance(block, mcp_types.TextContent)]
-    if texts:
-        return "\n".join(texts) if len(texts) > 1 else texts[0]
-    return None
-
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
@@ -311,7 +295,7 @@ class RichDisplayHandler(BaseHandler):
             label = f"◀ {call.name}" if call else "◀ tool_output"
 
             # Extract display data from ToolOutput
-            display_data: Any = _extract_display_data(event.result)
+            display_data: Any = extract_display_data(event.result)
 
             # Try to parse with registered schema if we have structured data
             if isinstance(display_data, dict) and call:
@@ -628,7 +612,7 @@ class CompactDisplayHandler(BaseHandler):
             call = self._calls.get(event.call_id)
 
             # Extract display data from ToolOutput
-            display_data: Any = _extract_display_data(event.result)
+            display_data: Any = extract_display_data(event.result)
 
             # Try to parse with registered schema if we have structured data
             if isinstance(display_data, dict) and call:

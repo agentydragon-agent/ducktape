@@ -23,6 +23,7 @@ py_library(
     deps = [
         ":models",
         "//agent_core",
+        "//agent_core:mcp_provider",
         "//mcp_infra",
         "//mcp_infra/compositor",
         "//mcp_infra/display",

@@ -17,14 +17,14 @@ from openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
 # --- Agent MCP echo tests ---
 
 
-async def test_agent_mcp_echo_basic(mcp_client_echo, test_handlers, recording_handler) -> None:
+async def test_agent_mcp_echo_basic(mcp_tool_provider_echo, test_handlers, recording_handler) -> None:
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
         yield from m.echo_roundtrip("hello")
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=test_handlers,
         tool_policy=RequireAnyTool(),
@@ -37,7 +37,7 @@ async def test_agent_mcp_echo_basic(mcp_client_echo, test_handlers, recording_ha
     assert_function_call_output_structured(recording_handler.records, has_entries(echo="hello"))
 
 
-async def test_agent_mcp_echo_with_response(mcp_client_echo, test_handlers, recording_handler) -> None:
+async def test_agent_mcp_echo_with_response(mcp_tool_provider_echo, test_handlers, recording_handler) -> None:
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
@@ -45,7 +45,7 @@ async def test_agent_mcp_echo_with_response(mcp_client_echo, test_handlers, reco
         yield m.assistant_text("done")
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo, client=mock, handlers=test_handlers, tool_policy=RequireAnyTool()
+        tool_provider=mcp_tool_provider_echo, client=mock, handlers=test_handlers, tool_policy=RequireAnyTool()
     )
     agent.process_message(UserMessage.text("say hello"))
 

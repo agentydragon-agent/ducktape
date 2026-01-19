@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core_testing.openai_mock import make_mock
 from agent_core_testing.responses import ResponsesFactory
 from agent_server.notifications.handler import NotificationsHandler
@@ -85,7 +86,7 @@ async def _make_agent_with_notifications(mcp_client, buf, client):
     so that the agent loop terminates when the model sends a text-only response.
     """
     return await Agent.create(
-        mcp_client=mcp_client,
+        tool_provider=MCPToolProvider(mcp_client),
         handlers=[NotificationsHandler(buf.poll), FinishOnTextMessageHandler()],
         client=client,
         tool_policy=AllowAnyToolOrTextMessage(),

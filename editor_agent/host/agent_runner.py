@@ -8,6 +8,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core.turn_limit import MaxTurnsHandler
 from agent_pkg.host.init_runner import run_init_script
 from editor_agent.host.runner import EditorDockerSession, editor_docker_session, writeback_success
@@ -49,7 +50,7 @@ Do NOT send text messages - execute your plan with docker_exec."""
             handlers.append(display_handler)
 
         agent = Agent(
-            mcp_client=mcp_client,
+            tool_provider=MCPToolProvider(mcp_client),
             client=model_client,
             parallel_tool_calls=False,
             handlers=handlers,

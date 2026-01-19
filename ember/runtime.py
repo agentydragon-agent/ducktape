@@ -14,6 +14,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.handler import RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.mcp_provider import MCPToolProvider
 from ember.config import EmberSettings
 from ember.handlers import EmberPersistenceHandler, EmberSleepHandler
 from ember.matrix_client import MatrixClient
@@ -110,7 +111,7 @@ class EmberRuntime:
         )
 
         self._agent = await Agent.create(
-            mcp_client=self._mcp_client,
+            tool_provider=MCPToolProvider(self._mcp_client),
             client=model_client,
             handlers=handlers,
             tool_policy=AllowAnyToolOrTextMessage(),

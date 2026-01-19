@@ -17,6 +17,7 @@ py_library(
     deps = [
         "//adgn/mcp/gitea_mirror:gitea_mirror_lib",
         "//agent_core",
+        "//agent_core:mcp_provider",
         "//agent_core_testing",
         "//agent_pkg/host",
         "//agent_pkg/runtime",

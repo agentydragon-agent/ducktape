@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from agent_server.agent_types import AgentID
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
@@ -436,7 +437,7 @@ class AgentContainer:
 
         # Start agent
         agent = await Agent.create(
-            mcp_client=mcp_client,
+            tool_provider=MCPToolProvider(mcp_client),
             client=client,
             handlers=handlers,
             dynamic_instructions=self._compositor.render_agent_dynamic_instructions,

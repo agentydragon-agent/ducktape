@@ -13,6 +13,7 @@ from pydantic import TypeAdapter
 
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from agent_server.logging_config import configure_logging_info
 from agent_server.server.bus import ServerBus, UiEndTurn
 from agent_server.server.mode_handler import ServerModeHandler
@@ -144,7 +145,7 @@ def run(
                 notif_buffer = NotificationsBuffer(compositor=comp)
                 async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
                     agent = await Agent.create(
-                        mcp_client=mcp_client,
+                        tool_provider=MCPToolProvider(mcp_client),
                         client=client,
                         handlers=[
                             ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll),

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, get_args, get_type_hints
 
 import pydantic_core
 from fastmcp.tools.tool import FunctionTool
-from mcp import types as mcp_types
 
 from mcp_infra.exec.models import ExecInput
 from mcp_infra.flat_tool import FlatTool
@@ -20,21 +19,8 @@ if TYPE_CHECKING:
 
 from agent_core.events import AssistantText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
-
-from .json_utils import parse_json_or_none
-
-
-def _extract_display_data(result: mcp_types.CallToolResult) -> Any:
-    """Extract display-friendly data from mcp.types.CallToolResult.
-
-    Prefers structuredContent if present, otherwise extracts text from content blocks.
-    """
-    if result.structuredContent is not None:
-        return result.structuredContent
-    texts = [block.text for block in result.content if isinstance(block, mcp_types.TextContent)]
-    if texts:
-        return "\n".join(texts) if len(texts) > 1 else texts[0]
-    return None
+from mcp_infra.display.json_utils import parse_json_or_none
+from mcp_infra.display.result_utils import extract_display_data
 
 
 class DisplayEventsHandler(BaseHandler):
@@ -145,7 +131,7 @@ class DisplayEventsHandler(BaseHandler):
 
             if input_type is ExecInput:
                 # Extract result data from ToolOutput
-                data: Any = _extract_display_data(evt.result)
+                data: Any = extract_display_data(evt.result)
 
                 s = self._render_docker_exec(call.name, call, data)
                 if s:
@@ -173,7 +159,7 @@ class DisplayEventsHandler(BaseHandler):
         return f"{header}\n{self._pp_json(args)}"
 
     def _render_tool_result(self, call: ToolCall | None, output: ToolCallOutput) -> str:
-        data: Any = _extract_display_data(output.result)
+        data: Any = extract_display_data(output.result)
 
         # Default rendering (specialized rendering is handled in on_tool_result_event)
         label = call.name if call is not None else "tool_output"

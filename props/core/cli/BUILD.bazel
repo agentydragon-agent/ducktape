@@ -283,6 +283,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
+        "//agent_core",
+        "//agent_core:mcp_provider",
         "//cli_util",
         "//mcp_infra",
         "//mcp_infra/display",

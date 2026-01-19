@@ -12,6 +12,7 @@ from sqlalchemy import String, cast, select
 from agent_core.agent import Agent, TranscriptItem
 from agent_core.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
 from agent_core.loop_control import ForbidAllTools
+from agent_core.mcp_provider import MCPToolProvider
 from cli_util.decorators import async_run
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.event_renderer import DisplayEventsHandler
@@ -190,7 +191,7 @@ async def cmd_speak_with_dead(
             return system_instructions
 
         agent = await Agent.create(
-            mcp_client=mcp_client,
+            tool_provider=MCPToolProvider(mcp_client),
             client=client,
             handlers=[DisplayEventsHandler()],
             parallel_tool_calls=False,

@@ -6,6 +6,7 @@ py_library(
         "__init__.py",
         "event_renderer.py",
         "json_utils.py",
+        "result_utils.py",
         "rich_display.py",
     ],
     imports = ["../.."],

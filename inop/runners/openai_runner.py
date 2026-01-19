@@ -18,6 +18,7 @@ from fastmcp.server import FastMCP
 from agent_core.agent import Agent
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
 from inop.engine.models import (
     FinalOutput,
@@ -93,7 +94,7 @@ class OpenAIRunner(AgentRunner):
         handlers: list[BaseHandler] = self._handlers or default_handlers
         mcp_client = await self._exit_stack.enter_async_context(Client(comp))
         agent = await Agent.create(
-            mcp_client=mcp_client,
+            tool_provider=MCPToolProvider(mcp_client),
             client=self._openai_model,
             reasoning_effort=self.reasoning_effort,
             handlers=handlers,

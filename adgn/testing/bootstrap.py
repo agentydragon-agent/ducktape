@@ -12,10 +12,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_core.agent import _openai_to_mcp_result
+from agent_core.agent import _openai_to_tool_result
 from agent_core_testing.responses import ResponsesFactory
 from agent_core_testing.steps import DockerExecCall, MakeCall
-from mcp_infra.calltool import extract_structured_content
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, Killed, TimedOut, TruncatedStream
 from mcp_infra.naming import parse_tool_name
@@ -100,8 +99,8 @@ def assert_bootstrap_exec_success(req: ResponsesRequest, *, test_name: str | Non
             continue
 
         try:
-            result = _openai_to_mcp_result(item.output)
-            exec_result = extract_structured_content(result, BaseExecResult)
+            result = _openai_to_tool_result(item.output)
+            exec_result = result.extract_structured(BaseExecResult)
         except (ValueError, TypeError) as e:
             output_preview = str(item.output)[:500]
             failures.append(

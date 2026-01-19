@@ -27,12 +27,12 @@ def capture_handler():
 
 
 @pytest.fixture
-def make_agent_with_capture(mcp_client_echo, recording_handler, capture_handler):
+def make_agent_with_capture(mcp_tool_provider_echo, recording_handler, capture_handler):
     """Factory for creating agents with CaptureTextHandler."""
 
     async def _make(client: OpenAIModelProto):
         return await Agent.create(
-            mcp_client=mcp_client_echo,
+            tool_provider=mcp_tool_provider_echo,
             client=client,
             handlers=[capture_handler, recording_handler],
             tool_policy=AllowAnyToolOrTextMessage(),
@@ -124,12 +124,12 @@ async def test_has_text_property(capture_handler) -> None:
 
 
 @pytest.fixture
-def make_agent_with_turn_limit(mcp_client_echo, recording_handler):
+def make_agent_with_turn_limit(mcp_tool_provider_echo, recording_handler):
     """Factory for creating agents with turn limit."""
 
     async def _make(client: OpenAIModelProto, max_turns: int):
         return await Agent.create(
-            mcp_client=mcp_client_echo,
+            tool_provider=mcp_tool_provider_echo,
             client=client,
             handlers=[FinishOnTextMessageHandler(), recording_handler, MaxTurnsHandler(max_turns=max_turns)],
             tool_policy=RequireAnyTool(),

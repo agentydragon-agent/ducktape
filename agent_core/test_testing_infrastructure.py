@@ -140,7 +140,7 @@ def assert_function_call_output_structured_local(
     "client_mode", [pytest.param("mock", id="mock"), pytest.param(LIVE, id="live", marks=pytest.mark.live_openai_api)]
 )
 async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
-    responses_factory, live_openai, client_mode, mcp_client_echo, test_handlers, recording_handler
+    responses_factory, live_openai, client_mode, mcp_tool_provider_echo, test_handlers, recording_handler
 ) -> None:
     # Responses sequence:
     # 1) Model asks to call echo.echo with {"text": "hi"}
@@ -159,7 +159,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
+        tool_provider=mcp_tool_provider_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
     )
     agent.process_message(UserMessage.text("say hi"))
 

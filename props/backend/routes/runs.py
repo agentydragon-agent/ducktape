@@ -14,12 +14,11 @@ from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from mcp.types import EmbeddedResource, ImageContent, TextContent
 from pydantic import BaseModel, Field, ValidationError
 
 from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.tool_provider import TextContent
 from mcp_infra.exec.models import BaseExecResult, ExecInput
-from mcp_utils.resources import extract_text_from_tool_content
 from openai_utils.client_factory import build_client
 from openai_utils.model import ReasoningItem
 from props.backend.routes.ground_truth import FileLocationInfo
@@ -357,7 +356,9 @@ def parse_event_payload(payload: EventType) -> ParsedEventPayload:
             return GenericToolCallPayload(name=payload.name, call_id=payload.call_id, args_json=payload.args_json)
 
         if isinstance(payload, ToolCallOutput):
-            result_text = extract_text_from_tool_content(payload.result.content)
+            # Extract text from our ToolResult content blocks
+            texts = [c.text for c in payload.result.content if isinstance(c, TextContent)]
+            result_text = "\n".join(texts) if texts else None
             if result_text:
                 try:
                     result_data = json.loads(result_text)
@@ -367,11 +368,7 @@ def parse_event_payload(payload: EventType) -> ParsedEventPayload:
                 except (json.JSONDecodeError, ValidationError):
                     pass
             return GenericToolOutputPayload(
-                call_id=payload.call_id,
-                content=[
-                    c.model_dump() if isinstance(c, TextContent | ImageContent | EmbeddedResource) else c
-                    for c in payload.result.content
-                ],
+                call_id=payload.call_id, content=[c.model_dump() for c in payload.result.content]
             )
 
         # Pass through types that already have correct structure

@@ -8,6 +8,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core_testing.responses import EchoMock
 from agent_server.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
 from agent_server.policies.policy_types import ApprovalDecision
@@ -39,7 +40,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
     servers = dict(echo_spec)
     async with make_policy_gateway_compositor(servers, policy_engine=engine) as comp, Client(comp) as mcp_client:
         agent = await Agent.create(
-            mcp_client=mcp_client,
+            tool_provider=MCPToolProvider(mcp_client),
             client=mock,
             handlers=[FinishOnTextMessageHandler()],
             tool_policy=AllowAnyToolOrTextMessage(),

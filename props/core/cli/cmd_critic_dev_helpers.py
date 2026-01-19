@@ -40,8 +40,8 @@ def _fmt_event(event: Event) -> tuple[str, str] | None:
     if isinstance(p, ToolCall):
         return (event.event_type, f"{p.name} | {ellipticize(p.args_json or '{}', 100)}")
     if isinstance(p, ToolCallOutput):
-        c = str(p.result.structuredContent or p.result.content or "").replace("\n", " ")
-        return (f"{event.event_type} ({'ERROR' if p.result.isError else 'OK'})", ellipticize(c, 50))
+        c = str(p.result.structured_content or p.result.content or "").replace("\n", " ")
+        return (f"{event.event_type} ({'ERROR' if p.result.is_error else 'OK'})", ellipticize(c, 50))
     if isinstance(p, ReasoningItem):
         return (event.event_type, ellipticize(" | ".join(i.text for i in p.summary), 100))
     if isinstance(p, AssistantText | UserText):

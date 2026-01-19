@@ -64,6 +64,7 @@ py_binary(
     deps = [
         ":root_modules",
         "//agent_core",
+        "//agent_core:mcp_provider",
         "//agent_server/server:handlers",
         "//agent_server/server:types",
         "//mcp_infra/compositor",
@@ -96,6 +97,7 @@ py_binary(
 _TEST_DEPS = [
     ":root_modules",
     "//adgn",
+    "//agent_core:mcp_provider",
     "//agent_server/mcp",
     "//agent_server/mcp_bridge",
     "//agent_server/persist",

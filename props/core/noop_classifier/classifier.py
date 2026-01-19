@@ -21,6 +21,7 @@ from fastmcp.exceptions import ToolError
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -158,7 +159,7 @@ async def classify_worker(
 
             # Create agent once for all batches
             agent = await Agent.create(
-                mcp_client=mcp_client,
+                tool_provider=MCPToolProvider(mcp_client),
                 client=client,
                 handlers=handlers,
                 dynamic_instructions=handle.render_agent_dynamic_instructions,

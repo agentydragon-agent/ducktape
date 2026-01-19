@@ -6,11 +6,10 @@ that monitors init script execution and aborts on failure.
 
 from __future__ import annotations
 
-from mcp.types import CallToolResult, TextContent
-
 from agent_core.events import ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
+from agent_core.tool_provider import TextContent, ToolResult
 from agent_pkg.host.init_runner import InitFailedError
 from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
 from openai_utils.model import FunctionCallItem
@@ -70,11 +69,11 @@ class BootstrapHandler(BaseHandler):
 
         self._init_complete = True
 
-        result: CallToolResult = evt.result
+        result: ToolResult = evt.result
 
-        if result.isError:
-            if result.structuredContent:
-                error_content = result.structuredContent
+        if result.is_error:
+            if result.structured_content:
+                error_content = result.structured_content
                 error_text = error_content.get("error") if isinstance(error_content, dict) else str(error_content)
                 raise InitFailedError(f"Init script failed: {error_text or 'error flagged'}")
             for block in result.content:
@@ -82,10 +81,10 @@ class BootstrapHandler(BaseHandler):
                     raise InitFailedError(f"Init script failed: {block.text}")
             raise InitFailedError("Init script failed (error flagged)")
 
-        if not result.structuredContent:
+        if not result.structured_content:
             raise InitFailedError("Init script returned no structured content")
 
-        exec_result = BaseExecResult.model_validate(result.structuredContent)
+        exec_result = BaseExecResult.model_validate(result.structured_content)
         _raise_if_failed(exec_result)
 
     def on_before_sample(self) -> LoopDecision:

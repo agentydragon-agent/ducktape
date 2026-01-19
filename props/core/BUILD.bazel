@@ -108,6 +108,7 @@ py_library(
         ":db_event_handler",
         ":docker_env",
         "//agent_core",
+        "//agent_core:mcp_provider",
         "//agent_pkg/host",
         "//mcp_infra",
         "@pypi//fastmcp",

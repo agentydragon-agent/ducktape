@@ -1,6 +1,43 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/deps:check.bzl", "assert_no_deps")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# Tool provider protocol - no MCP dependencies
+py_library(
+    name = "tool_provider",
+    srcs = ["tool_provider.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+# MCP-based tool provider - wraps fastmcp.Client
+py_library(
+    name = "mcp_provider",
+    srcs = ["mcp_provider.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_provider",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
+)
+
+# Direct tool provider - no MCP overhead
+py_library(
+    name = "direct_provider",
+    srcs = ["direct_provider.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_provider",
+        "//openai_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+# Core agent library - no MCP dependencies
 py_library(
     name = "agent_core",
     srcs = [
@@ -18,10 +55,9 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":tool_provider",
         "//openai_utils",
         "@pypi//anyio",
-        "@pypi//fastmcp",
-        "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//rich",
@@ -29,8 +65,16 @@ py_library(
     ],
 )
 
+# Verify agent_core doesn't depend on MCP packages
+assert_no_deps(
+    name = "test_no_mcp_deps",
+    forbidden_pattern = "@pypi//fastmcp|@pypi//mcp",
+    target = "//agent_core",
+)
+
 _TEST_DEPS = [
     ":agent_core",
+    ":mcp_provider",
     "//agent_core_testing",
     "//mcp_infra/bootstrap",
     "@pypi//fastmcp",
@@ -86,5 +130,10 @@ py_test(
 
 ruff_test(
     name = "ruff",
-    srcs = [":agent_core"],
+    srcs = [
+        ":agent_core",
+        ":direct_provider",
+        ":mcp_provider",
+        ":tool_provider",
+    ],
 )

@@ -34,6 +34,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core",
+        "//agent_core:mcp_provider",
         "//mcp_infra",
         "//mcp_infra/compositor",
         "//mcp_infra/enhanced",

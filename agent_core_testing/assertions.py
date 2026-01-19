@@ -1,7 +1,7 @@
 """Assertion and extraction helpers for test validation.
 
 Provides utilities for verifying tool calls and extracting structured outputs from
-MCP tool results in tests.
+tool results in tests.
 """
 
 from __future__ import annotations
@@ -14,8 +14,7 @@ from typing import TypeGuard
 import pytest
 from pydantic import BaseModel
 
-from agent_core.agent import _openai_to_mcp_result
-from mcp_infra.calltool import extract_structured_content
+from agent_core.agent import _openai_to_tool_result
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage, UserMessage
 
 logger = logging.getLogger(__name__)
@@ -44,9 +43,9 @@ def get_last_function_output[T: BaseModel](req: ResponsesRequest, output_type: t
             if not item.output:
                 raise RuntimeError(f"FunctionCallOutputItem has no output: {item}")
 
-            # Convert OpenAI output format to MCP CallToolResult
-            result = _openai_to_mcp_result(item.output)
-            return extract_structured_content(result, output_type)
+            # Convert OpenAI output format to ToolResult
+            result = _openai_to_tool_result(item.output)
+            return result.extract_structured(output_type)
 
     raise RuntimeError(f"No FunctionCallOutputItem found in request input for {output_type.__name__}")
 

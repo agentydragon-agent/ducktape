@@ -33,6 +33,7 @@ py_library(
 
 _TEST_DEPS = [
     ":approval_policy",
+    "//agent_core:mcp_provider",
     "//agent_server/testing",
     "@pypi//docker",
     "@pypi//fastmcp",

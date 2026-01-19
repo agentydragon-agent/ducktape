@@ -7,6 +7,7 @@ from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
 from agent_core_testing.responses import DecoratorMock
 from mcp_infra.compositor.resources_server import ResourcesReadArgs
 from mcp_infra.display.event_renderer import DisplayEventsHandler
@@ -43,7 +44,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
         yield m.assistant_text("ok")
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
+        tool_provider=MCPToolProvider(compositor_client),
         client=mock,
         handlers=[FinishOnTextMessageHandler(), DisplayEventsHandler(), recording_handler],
         tool_policy=RequireAnyTool(),

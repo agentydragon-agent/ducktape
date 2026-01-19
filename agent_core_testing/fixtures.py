@@ -17,7 +17,6 @@ import json
 from collections.abc import Callable, Iterable
 from typing import Any
 
-import mcp.types
 import pytest
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
@@ -28,6 +27,8 @@ from agent_core.agent import Agent
 from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
+from agent_core.mcp_provider import MCPToolProvider
+from agent_core.tool_provider import ToolProvider, ToolResult
 from agent_core_testing.echo_server import make_echo_server
 from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_core_testing.responses import ResponsesFactory
@@ -139,7 +140,11 @@ def make_test_agent(responses_factory: ResponsesFactory):
         if tool_policy is None:
             tool_policy = RequireAnyTool()
         agent = await Agent.create(
-            mcp_client=mcp_client, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
+            tool_provider=MCPToolProvider(mcp_client),
+            client=client,
+            handlers=handlers,
+            tool_policy=tool_policy,
+            **kwargs,
         )
         return agent, client
 
@@ -173,6 +178,21 @@ async def mcp_client_echo(make_compositor, echo_spec):
     """
     async with make_compositor(echo_spec) as (client, _comp):
         yield client
+
+
+@pytest.fixture
+def mcp_tool_provider(compositor_client) -> ToolProvider:
+    """MCPToolProvider wrapping compositor_client.
+
+    Use this fixture instead of manually wrapping compositor_client.
+    """
+    return MCPToolProvider(compositor_client)
+
+
+@pytest.fixture
+def mcp_tool_provider_echo(mcp_client_echo) -> ToolProvider:
+    """MCPToolProvider wrapping echo-only client (no compositor)."""
+    return MCPToolProvider(mcp_client_echo)
 
 
 # ---- Slow server for parallel call testing ----
@@ -240,26 +260,16 @@ def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
     return _make
 
 
-@pytest.fixture
-def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult]:
-    """Factory for MCP CallToolResult."""
-
-    def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> mcp.types.CallToolResult:
-        return mcp.types.CallToolResult(content=[], structuredContent=structured_content or {}, isError=is_error)
-
-    return _make
+def make_tool_result(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolResult:
+    """Create a ToolResult for tests."""
+    return ToolResult(content=[], structured_content=structured_content or {}, is_error=is_error)
 
 
-@pytest.fixture
 def make_tool_call_output(
-    make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
-) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
-    """Factory for ToolCallOutput events."""
-
-    def _make(call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolCallOutput:
-        return ToolCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
-
-    return _make
+    call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False
+) -> ToolCallOutput:
+    """Create a ToolCallOutput for tests."""
+    return ToolCallOutput(call_id=call_id, result=make_tool_result(structured_content, is_error))
 
 
 # ---- Live OpenAI fixture ----

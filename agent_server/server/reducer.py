@@ -191,7 +191,7 @@ def fold_events_to_ui_state(events: Sequence[EventRecord]) -> UiState:
             continue
         if isinstance(ev.payload, RuntimeToolCallOutput):
             # Safely narrow to ToolCallOutput (runtime type) and avoid casts
-            structured = ev.payload.result.structuredContent
+            structured = ev.payload.result.structured_content
             # Live in-proc tools may return Pydantic models directly in
             # structured_content; persisted events always store JSON. Normalize
             # to the persisted JSON shape first so parsing is uniform.

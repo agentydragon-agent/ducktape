@@ -73,7 +73,7 @@ async def test_process_message_adds_to_transcript(noop_agent, recording_handler)
 
 
 @pytest.mark.timeout(1)
-async def test_stateless_reasoning_forwarding(mcp_client_echo) -> None:
+async def test_stateless_reasoning_forwarding(mcp_tool_provider_echo) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
 
     @DecoratorMock.mock()
@@ -82,7 +82,7 @@ async def test_stateless_reasoning_forwarding(mcp_client_echo) -> None:
         yield [m.make_item_reasoning(), m.assistant_text("ok")]
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -94,7 +94,7 @@ async def test_stateless_reasoning_forwarding(mcp_client_echo) -> None:
 
 
 @pytest.mark.timeout(1)
-async def test_function_call_and_function_call_output_replay(mcp_client_echo) -> None:
+async def test_function_call_and_function_call_output_replay(mcp_tool_provider_echo) -> None:
     """Request1 produces a function_call; after local execution, messages() must include function_call and function_call_output."""
 
     @EchoMock.mock()
@@ -107,7 +107,7 @@ async def test_function_call_and_function_call_output_replay(mcp_client_echo) ->
         assert_items_include_instances(input_items, FunctionCallItem, FunctionCallOutputItem)
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -117,7 +117,7 @@ async def test_function_call_and_function_call_output_replay(mcp_client_echo) ->
 
 
 @pytest.mark.timeout(1)
-async def test_mixed_reasoning_fc_ordering(mcp_client_echo) -> None:
+async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
     """
@@ -129,7 +129,7 @@ async def test_mixed_reasoning_fc_ordering(mcp_client_echo) -> None:
         yield [m.make_item_reasoning(), m.echo_call("hi"), m.assistant_text("done")]
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -142,7 +142,7 @@ async def test_mixed_reasoning_fc_ordering(mcp_client_echo) -> None:
 
 
 @pytest.mark.timeout(1)
-async def test_no_synthesized_reasoning_items(mcp_client_echo) -> None:
+async def test_no_synthesized_reasoning_items(mcp_tool_provider_echo) -> None:
     """Ensure agent does not fabricate reasoning rs_* items when missing."""
 
     @EchoMock.mock()
@@ -155,7 +155,7 @@ async def test_no_synthesized_reasoning_items(mcp_client_echo) -> None:
         assert_items_exclude_instance(input_items, ReasoningItem)
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -167,7 +167,7 @@ async def test_no_synthesized_reasoning_items(mcp_client_echo) -> None:
 # --- Reasoning threading tests ---
 
 
-async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_client_echo) -> None:
+async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_provider_echo) -> None:
     """Test that reasoning items are properly threaded with their function calls across turns."""
 
     @DecoratorMock.mock()
@@ -216,7 +216,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_client_
         yield m.assistant_text("done")
 
     agent = await Agent.create(
-        mcp_client=mcp_client_echo,
+        tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
@@ -252,12 +252,12 @@ def mock_openai():
     return MockOpenAIClient()
 
 
-async def test_compact_transcript_basic(compositor_client, mock_openai):
+async def test_compact_transcript_basic(mcp_tool_provider, mock_openai):
     """Test basic transcript compaction."""
     await mock_openai.setup_summary_response("User asked about compaction. Assistant explained the concept.")
 
     agent = await Agent.create(
-        mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+        tool_provider=mcp_tool_provider, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
     agent.process_message(SystemMessage.text("Test system prompt"))
 
@@ -301,10 +301,10 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
     mock_openai.responses_create.assert_called_once()
 
 
-async def test_compact_transcript_insufficient_history(compositor_client, mock_openai):
+async def test_compact_transcript_insufficient_history(mcp_tool_provider, mock_openai):
     """Test that compaction doesn't happen when history is too short."""
     agent = await Agent.create(
-        mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+        tool_provider=mcp_tool_provider, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
     agent.process_message(SystemMessage.text("Test system prompt"))
 
@@ -324,7 +324,7 @@ async def test_compact_transcript_insufficient_history(compositor_client, mock_o
     mock_openai.responses_create.assert_not_called()
 
 
-async def test_compaction_handler_triggers_at_threshold(compositor_client, mock_openai):
+async def test_compaction_handler_triggers_at_threshold(mcp_tool_provider, mock_openai):
     """Test that CompactionHandler tracks tokens and returns Compact decision when threshold exceeded."""
     # Create compaction handler with low threshold
     handler = CompactionHandler(threshold_tokens=1000, keep_recent_turns=2)
@@ -356,7 +356,7 @@ async def test_compaction_handler_triggers_at_threshold(compositor_client, mock_
     assert isinstance(decision, NoAction)
 
 
-async def test_compaction_handler_integrated_with_agent(compositor_client, mock_openai):
+async def test_compaction_handler_integrated_with_agent(mcp_tool_provider, mock_openai):
     """Test that CompactionHandler works when integrated with agent loop."""
     await mock_openai.setup_summary_response("Summary of early conversation.")
 
@@ -364,7 +364,7 @@ async def test_compaction_handler_integrated_with_agent(compositor_client, mock_
     handler = CompactionHandler(threshold_tokens=100, keep_recent_turns=2)
 
     agent = await Agent.create(
-        mcp_client=compositor_client, client=mock_openai, handlers=[handler], tool_policy=RequireAnyTool()
+        tool_provider=mcp_tool_provider, client=mock_openai, handlers=[handler], tool_policy=RequireAnyTool()
     )
     agent.process_message(SystemMessage.text("Test system prompt"))
 
