@@ -8,19 +8,13 @@ from typing import cast
 
 import pytest
 import pytest_bazel
-from mcp.types import (
-    CallToolResult,
-    Implementation,
-    InitializeResult,
-    ReadResourceResult,
-    ServerCapabilities,
-    TextResourceContents,
-)
+from mcp.types import Implementation, InitializeResult, ReadResourceResult, ServerCapabilities, TextResourceContents
 from pydantic import AnyUrl, BaseModel
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
 
 from agent_core.events import ToolCall, ToolCallOutput
+from agent_core.tool_provider import ToolResult
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited
@@ -89,8 +83,7 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
 
     # Create ToolCallOutput with BaseExecResult
     output = ToolCallOutput(
-        call_id=call.call_id,
-        result=CallToolResult(content=[], structuredContent=exec_result.model_dump(), isError=False),
+        call_id=call.call_id, result=ToolResult(content=[], structured_content=exec_result.model_dump(), is_error=False)
     )
 
     # Render to string
@@ -119,8 +112,7 @@ def test_docker_exec_with_custom_cwd_snapshot(snapshot: SnapshotAssertion, call_
 
     # Create ToolCallOutput
     output = ToolCallOutput(
-        call_id=call.call_id,
-        result=CallToolResult(content=[], structuredContent=exec_result.model_dump(), isError=False),
+        call_id=call.call_id, result=ToolResult(content=[], structured_content=exec_result.model_dump(), is_error=False)
     )
 
     # Render to string
@@ -152,8 +144,8 @@ def test_compact_display_handler_with_anyurl_in_result():
     # that can't be serialized by json.dumps() or compact_json Formatter
     dumped_without_mode = init_result.model_dump()  # This would have Url objects
 
-    # Now create a CallToolResult with this as structured content (simulating a tool returning it)
-    result = CallToolResult(structuredContent=dumped_without_mode, isError=False, content=[])
+    # Now create a ToolResult with this as structured content (simulating a tool returning it)
+    result = ToolResult(structured_content=dumped_without_mode, is_error=False, content=[])
 
     # Create handler with a StringIO console to capture output
     output_buffer = StringIO()
@@ -198,8 +190,8 @@ def test_compact_display_handler_with_read_resource_result():
     # Dump without mode - this will have Url objects
     dumped = read_result.model_dump()
 
-    # Create a CallToolResult with this as structured content
-    result = CallToolResult(structuredContent=dumped, isError=False, content=[])
+    # Create a ToolResult with this as structured content
+    result = ToolResult(structured_content=dumped, is_error=False, content=[])
 
     # Create handler with StringIO console
     output_buffer = StringIO()

@@ -29,6 +29,7 @@ py_test(
     deps = [
         ":resources",
         "//mcp_infra:test_support",
+        "@pypi//docker",  # mcp_infra/conftest.py imports docker
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pytest",
