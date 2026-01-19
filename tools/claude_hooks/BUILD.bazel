@@ -4,15 +4,26 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "claude_hooks",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [
-            ".*/**",
-            "tests/**",
-            "test_*.py",
-        ],
-    ),
-    data = glob(["config/**"]),
+    srcs = [
+        "bazel_wrapper.py",
+        "bazelisk_setup.py",
+        "binary_tools.py",
+        "errors.py",
+        "nix_setup.py",
+        "proxy_credentials.py",
+        "proxy_setup.py",
+        "resources.py",
+        "session_start.py",
+        "streaming.py",
+        "supervisor_setup.py",
+    ],
+    data = [
+        "config/bazelrc.mako",
+        "config/env.mako",
+        "config/nix.conf",
+        "config/podman/containers.conf",
+        "config/podman/storage.conf",
+    ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
@@ -84,6 +95,21 @@ py_test(
         ":claude_hooks",
         "//net_util",
         "@pypi//cryptography",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    imports = ["../.."],
+    tags = [
+        "e2e",
+        "external",  # Requires network access
+    ],
+    deps = [
+        ":claude_hooks",
+        "//tools/claude_hooks/testing:forwarding_tls_proxy",
         "@pypi//pytest",
     ],
 )

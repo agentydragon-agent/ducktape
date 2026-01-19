@@ -1,0 +1,12 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "forwarding_tls_proxy",
+    testonly = True,
+    srcs = ["forwarding_tls_proxy.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+    deps = [
+        "@pypi//cryptography",
+    ],
+)

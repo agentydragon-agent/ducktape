@@ -424,10 +424,6 @@ def run_web_mode(hook_input: HookInput) -> None:
 
     install_git_precommit_hook(project_dir)
 
-    # Install cluster tools for pre-commit hooks (cluster/ always exists in ducktape)
-    logger.info("Installing cluster tools for pre-commit hooks...")
-    binary_tools.install_cluster_tools()
-
     # Install dev tools (alejandra for .nix formatting)
     logger.info("Installing dev tools (alejandra)...")
     binary_tools.install_dev_tools()
@@ -503,7 +499,6 @@ def run_web_mode(hook_input: HookInput) -> None:
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_setup.get_status(), proxy_setup.get_status(), node_ca_status
     )
-    logger.info("Cluster tools: %s", binary_tools.get_cluster_tools_status())
     logger.info("Dev tools: %s", binary_tools.get_dev_tools_status())
     logger.info("Nix: %s", get_nix_status())
 
