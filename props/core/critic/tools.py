@@ -5,16 +5,13 @@ These tools are called directly by the agent loop, not via CLI subprocess.
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from props.core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
-from props.core.db.snapshots import DBLocationAnchor
 
 logger = logging.getLogger(__name__)
 
@@ -63,48 +60,36 @@ class ReportFailureArgs(BaseModel):
     message: str = Field(..., description="Description of why the critique could not be completed")
 
 
-# --- Tool result for exit-signaling tools ---
+# --- Tool result models ---
 
 
-@dataclass
-class ExitToolResult:
-    """Result from a tool that can signal exit (submit, report_failure)."""
+class SubmitResult(BaseModel):
+    """Result from successful submit."""
 
-    output: str
-    should_exit: bool = False
+    issues_count: int
+    occurrences_count: int
+    message: str
 
 
 # --- Tool implementations ---
 
 
-def insert_issue(agent_run_id: UUID, args: InsertIssueArgs) -> str:
-    """Insert a reported issue."""
-    with get_session() as session:
-        issue = ReportedIssue(agent_run_id=agent_run_id, issue_id=args.issue_id, rationale=args.rationale)
-        session.add(issue)
-    return f"Inserted issue: {args.issue_id}"
+def _get_in_progress_run(session: object, agent_run_id: UUID) -> AgentRun:
+    """Get agent run, ensuring it exists and is in progress.
 
+    Args:
+        session: Database session (typed as object to avoid sqlalchemy import complexity)
+        agent_run_id: ID of the agent run
 
-def insert_occurrence(agent_run_id: UUID, args: InsertOccurrenceArgs) -> str:
-    """Insert an occurrence (one or more locations) for a reported issue."""
-    with get_session() as session:
-        occurrence = ReportedIssueOccurrence(
-            agent_run_id=agent_run_id,
-            reported_issue_id=args.issue_id,
-            locations=[DBLocationAnchor(file=loc.file, start_line=loc.start_line, end_line=loc.end_line) for loc in args.locations],
-        )
-        session.add(occurrence)
-    return f"Inserted occurrence for {args.issue_id}"
-
-
-def delete_issue(args: DeleteIssueArgs) -> str:
-    """Delete a reported issue and all its occurrences."""
-    with get_session() as session:
-        issue = session.query(ReportedIssue).filter_by(issue_id=args.issue_id).first()
-        if issue is None:
-            return f"Error: Issue not found: {args.issue_id}"
-        session.delete(issue)
-    return f"Deleted issue: {args.issue_id}"
+    Raises:
+        RuntimeError: If agent run not found or not in progress
+    """
+    agent_run = session.get(AgentRun, agent_run_id)  # type: ignore[union-attr]
+    if agent_run is None:
+        raise RuntimeError(f"Agent run {agent_run_id} not found")
+    if agent_run.status != AgentRunStatus.IN_PROGRESS:
+        raise RuntimeError(f"Agent run {agent_run_id} not in progress (status: {agent_run.status})")
+    return agent_run
 
 
 class IssueInfo(BaseModel):
@@ -121,7 +106,7 @@ class ListIssuesOutput(BaseModel):
     issues: list[IssueInfo]
 
 
-def list_issues(agent_run_id: UUID) -> str:
+def list_issues(agent_run_id: UUID) -> ListIssuesOutput:
     """List all issues reported in this critique run."""
     with get_session() as session:
         issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
@@ -135,27 +120,25 @@ def list_issues(agent_run_id: UUID) -> str:
             )
             issue_infos.append(IssueInfo(issue_id=issue.issue_id, rationale=issue.rationale, occurrence_count=occurrence_count))
 
-        output = ListIssuesOutput(issues=issue_infos)
-        return json.dumps(output.model_dump(), indent=2)
+        return ListIssuesOutput(issues=issue_infos)
 
 
-def submit(agent_run_id: UUID, args: SubmitArgs) -> ExitToolResult:
-    """Finalize the critique and validate reported issues."""
+def submit(agent_run_id: UUID, args: SubmitArgs) -> SubmitResult:
+    """Finalize the critique and validate reported issues.
+
+    Raises:
+        ValueError: If validation fails (count mismatch, missing occurrences, etc.)
+        RuntimeError: If agent run not found or not in progress
+    """
     with get_session() as session:
-        agent_run = session.get(AgentRun, agent_run_id)
-
-        if agent_run is None:
-            return ExitToolResult(output=f"Error: Agent run {agent_run_id} not found")
-
-        if agent_run.status == AgentRunStatus.COMPLETED:
-            return ExitToolResult(output=f"Error: Agent run {agent_run_id} already completed")
+        agent_run = _get_in_progress_run(session, agent_run_id)
 
         issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
 
         actual_issues_count = len(issues)
         if args.issues_count != actual_issues_count:
-            return ExitToolResult(
-                output=f"Error: Issues count mismatch: expected {args.issues_count} but found {actual_issues_count} in database"
+            raise ValueError(
+                f"Issues count mismatch: expected {args.issues_count} but found {actual_issues_count} in database"
             )
 
         total_occurrences = 0
@@ -167,8 +150,8 @@ def submit(agent_run_id: UUID, args: SubmitArgs) -> ExitToolResult:
             )
 
             if occurrence_count == 0:
-                return ExitToolResult(
-                    output=f"Error: Issue '{issue.issue_id}' has no occurrences. "
+                raise ValueError(
+                    f"Issue '{issue.issue_id}' has no occurrences. "
                     f"Every issue must have at least one occurrence showing where it occurs in the code."
                 )
 
@@ -178,28 +161,23 @@ def submit(agent_run_id: UUID, args: SubmitArgs) -> ExitToolResult:
         agent_run.completion_summary = args.summary
 
     logger.info("Critique submitted: %d issues, %d occurrences", args.issues_count, total_occurrences)
-    return ExitToolResult(
-        output=f"Submitted critique: {args.issues_count} issues, {total_occurrences} occurrences",
-        should_exit=True,
+    return SubmitResult(
+        issues_count=args.issues_count,
+        occurrences_count=total_occurrences,
+        message=f"Submitted critique: {args.issues_count} issues, {total_occurrences} occurrences",
     )
 
 
-def report_failure(agent_run_id: UUID, args: ReportFailureArgs) -> ExitToolResult:
-    """Report that critique could not be completed."""
+def report_failure(agent_run_id: UUID, args: ReportFailureArgs) -> str:
+    """Report that critique could not be completed.
+
+    Raises:
+        RuntimeError: If agent run not found or not in progress
+    """
     with get_session() as session:
-        agent_run = session.get(AgentRun, agent_run_id)
-
-        if agent_run is None:
-            return ExitToolResult(output=f"Error: Agent run {agent_run_id} not found")
-
-        if agent_run.status == AgentRunStatus.COMPLETED:
-            return ExitToolResult(output=f"Error: Agent run {agent_run_id} already completed")
-
-        if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
-            return ExitToolResult(output=f"Error: Agent run {agent_run_id} already reported failure")
-
+        agent_run = _get_in_progress_run(session, agent_run_id)
         agent_run.status = AgentRunStatus.REPORTED_FAILURE
         agent_run.completion_summary = args.message
 
     logger.info("Reported failure: %s", args.message)
-    return ExitToolResult(output=f"Reported failure: {args.message}", should_exit=True)
+    return f"Reported failure: {args.message}"

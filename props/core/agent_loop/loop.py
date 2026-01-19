@@ -31,16 +31,17 @@ from props.core.critic.tools import (
     DeleteIssueArgs,
     InsertIssueArgs,
     InsertOccurrenceArgs,
+    ListIssuesOutput,
     ReportFailureArgs,
     SubmitArgs,
-    delete_issue,
-    insert_issue,
-    insert_occurrence,
+    SubmitResult,
     list_issues,
     report_failure,
     submit,
 )
+from props.core.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
+from props.core.db.snapshots import DBLocationAnchor
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,10 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
     @provider.tool(name="insert_issue")
     def insert_issue_impl(args: InsertIssueArgs) -> str:
         """Insert a reported issue. Call this before adding occurrences for the issue."""
-        return insert_issue(agent_run_id, args)
+        with get_session() as session:
+            issue = ReportedIssue(agent_run_id=agent_run_id, issue_id=args.issue_id, rationale=args.rationale)
+            session.add(issue)
+        return f"Inserted issue: {args.issue_id}"
 
     @provider.tool(name="insert_occurrence")
     def insert_occurrence_impl(args: InsertOccurrenceArgs) -> str:
@@ -81,32 +85,46 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
 
         An occurrence can span multiple locations (e.g., duplicated code across files).
         """
-        return insert_occurrence(agent_run_id, args)
+        with get_session() as session:
+            occurrence = ReportedIssueOccurrence(
+                agent_run_id=agent_run_id,
+                reported_issue_id=args.issue_id,
+                locations=[
+                    DBLocationAnchor(file=loc.file, start_line=loc.start_line, end_line=loc.end_line)
+                    for loc in args.locations
+                ],
+            )
+            session.add(occurrence)
+        return f"Inserted occurrence for {args.issue_id}"
 
     @provider.tool(name="delete_issue")
     def delete_issue_impl(args: DeleteIssueArgs) -> str:
         """Delete a reported issue and all its occurrences. Use to remove incorrect issues."""
-        return delete_issue(args)
+        with get_session() as session:
+            issue = session.query(ReportedIssue).filter_by(issue_id=args.issue_id).first()
+            if issue is None:
+                raise ValueError(f"Issue not found: {args.issue_id}")
+            session.delete(issue)
+        return f"Deleted issue: {args.issue_id}"
 
     @provider.tool(name="list_issues")
-    def list_issues_impl() -> str:
+    def list_issues_impl() -> ListIssuesOutput:
         """List all issues reported in this critique run.
 
-        Returns JSON with issue IDs, rationales, and occurrence counts.
+        Returns issue IDs, rationales, and occurrence counts.
         """
         return list_issues(agent_run_id)
 
     @provider.tool(name="submit")
-    def submit_impl(args: SubmitArgs) -> str:
+    def submit_impl(args: SubmitArgs) -> SubmitResult:
         """Finalize and submit the critique.
 
         Validates all issues and marks the run as complete. Call this when done reviewing.
         """
         result = submit(agent_run_id, args)
-        if result.should_exit:
-            exit_state.should_exit = True
-            logger.info("Submit tool requested exit")
-        return result.output
+        exit_state.should_exit = True
+        logger.info("Submit tool requested exit")
+        return result
 
     @provider.tool(name="report_failure")
     def report_failure_impl(args: ReportFailureArgs) -> str:
@@ -115,10 +133,9 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
         Use when there are blocking issues (e.g., no files in scope).
         """
         result = report_failure(agent_run_id, args)
-        if result.should_exit:
-            exit_state.should_exit = True
-            logger.info("Report failure tool requested exit")
-        return result.output
+        exit_state.should_exit = True
+        logger.info("Report failure tool requested exit")
+        return result
 
     return provider
 
