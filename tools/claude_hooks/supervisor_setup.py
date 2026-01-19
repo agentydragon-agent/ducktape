@@ -191,15 +191,30 @@ def _build_service_config(
 
 def is_running() -> bool:
     """Check if supervisord is running."""
-    if not _get_supervisor_sock().exists():
+    sock = _get_supervisor_sock()
+    pidfile = _get_supervisor_pidfile()
+
+    # Quick check: socket must exist
+    if not sock.exists():
+        logger.debug("Supervisor socket does not exist: %s", sock)
         return False
+
+    # Check pidfile and if process is alive
+    if pidfile.exists():
+        try:
+            pid = int(pidfile.read_text().strip())
+            # Check if process exists (signal 0 doesn't kill, just checks)
+            os.kill(pid, 0)
+        except (ValueError, ProcessLookupError, PermissionError):
+            logger.debug("Supervisor pidfile exists but process not running")
+            return False
 
     try:
         client = _get_supervisor_client()
         client.get_state()
         return True
     except (ConnectionError, OSError, xmlrpc.client.Fault) as e:
-        logger.warning("Supervisor check failed: %s", e)
+        logger.debug("Supervisor XML-RPC check failed: %s", e)
         return False
 
 
@@ -223,22 +238,33 @@ def start() -> None:
 
     # Start supervisord using Python module to ensure it's on the right Python path
     # Use Popen with start_new_session to fully detach the daemon process
-    subprocess.Popen(
-        [sys.executable, "-m", "supervisor.supervisord", "-c", supervisor_conf],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    # Log stderr to supervisor log for debugging startup failures
+    supervisor_log = _get_supervisor_log()
+    with supervisor_log.open("a") as log_file:
+        subprocess.Popen(
+            [sys.executable, "-m", "supervisor.supervisord", "-c", supervisor_conf],
+            stdout=log_file,
+            stderr=log_file,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
 
-    # Wait for supervisor to be ready
-    for _ in range(10):
-        time.sleep(0.3)
+    # Wait for supervisor to be ready (up to 5 seconds)
+    for i in range(20):
+        time.sleep(0.25)
         if is_running():
             logger.info("supervisord started successfully")
             return
+        if i % 4 == 3:  # Log every second
+            logger.debug("Waiting for supervisord... (%d/20)", i + 1)
 
-    raise SupervisorError("supervisord did not start in time")
+    # Check log for errors
+    error_hint = ""
+    if supervisor_log.exists():
+        log_tail = supervisor_log.read_text()[-500:]
+        error_hint = f"\nRecent log:\n{log_tail}"
+
+    raise SupervisorError(f"supervisord did not start in time{error_hint}")
 
 
 def add_service(name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:
