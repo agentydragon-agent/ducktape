@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest_bazel
 from click.testing import CliRunner
 
 from ducktape_llm_common.claude_linter.cli import cli
@@ -92,3 +93,7 @@ class TestUnifiedLinter:
         assert cache_dir.exists(), "Cache directory should exist"
         debug_logs = list(cache_dir.glob("debug-*.log"))
         assert len(debug_logs) > 0, "Should have created at least one debug log"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

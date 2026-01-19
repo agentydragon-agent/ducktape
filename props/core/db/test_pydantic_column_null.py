@@ -8,6 +8,7 @@ but SQLAlchemy's .isnot(None) filter only excludes SQL NULL, not JSON null.
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -245,3 +246,7 @@ def test_proper_fix_with_json_filter(test_pydantic_column_db):
         assert len(results) == 1
         assert results[0].data is not None
         assert results[0].data.value == 42  # No AttributeError!
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

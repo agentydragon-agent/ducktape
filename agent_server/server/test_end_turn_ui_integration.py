@@ -1,5 +1,6 @@
 """Test end_turn UI integration - ensures tool doesn't double-emit and renders as thick HR."""
 
+import pytest_bazel
 from hamcrest import assert_that, has_length, instance_of
 
 from agent_server.server.bus import ServerBus, UiEndTurn
@@ -68,3 +69,7 @@ def test_regular_tools_not_affected(make_tool_call):
 
     assert_items_count(after_regular.items, 1)
     assert_that(after_regular.items[0], is_tool_item(tool="echo_echo", call_id=tool_call.call_id))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

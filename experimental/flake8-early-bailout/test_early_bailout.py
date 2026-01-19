@@ -3,6 +3,7 @@
 import ast
 import textwrap
 
+import pytest_bazel
 from flake8_early_bailout import EarlyBailoutChecker
 
 
@@ -138,3 +139,7 @@ if __name__ == "__main__":
     test_loop_with_inverted_pattern()
     test_original_example()
     print("\nAll tests passed!")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

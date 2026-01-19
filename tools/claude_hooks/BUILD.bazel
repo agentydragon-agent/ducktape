@@ -72,6 +72,7 @@ py_test(
     deps = [
         ":claude_hooks",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -83,6 +84,7 @@ py_test(
         ":claude_hooks",
         "@pypi//pyjwt",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -96,6 +98,7 @@ py_test(
         "//net_util",
         "@pypi//cryptography",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -111,6 +114,7 @@ py_test(
         ":claude_hooks",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

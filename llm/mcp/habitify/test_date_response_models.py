@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+import pytest_bazel
 from habitify.types import HabitStatus
 
 # Uses 'client' fixture from conftest.py
@@ -85,3 +86,7 @@ async def test_check_habit_status_range_returns_iso_date_strings(client):
             assert status.date in expected_dates
 
         assert actual_dates == expected_dates
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

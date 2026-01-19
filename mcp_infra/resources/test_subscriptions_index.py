@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest_bazel
 from hamcrest import assert_that, empty, has_item, has_properties
 
 from mcp_infra.compositor.resources_server import ResourcesSubscribeArgs
@@ -31,3 +32,7 @@ async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_re
     # Subscriptions index should be empty now
     idx2 = await typed_resources_client.list_subscriptions()
     assert_that(idx2.subscriptions, empty())
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -115,6 +115,7 @@ py_test(
         "//mcp_infra:test_support",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -126,6 +127,7 @@ py_test(
         "//mcp_infra:test_support",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -137,6 +139,7 @@ py_test(
         "//mcp_infra:test_support",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -153,6 +156,7 @@ py_test(
         "@pypi//docker",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//types_docker",
     ],
 )

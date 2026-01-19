@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from io import StringIO
 
+import pytest_bazel
 from rich.console import Console
 from rich.text import Text
 from syrupy.assertion import SnapshotAssertion
@@ -162,3 +163,7 @@ def test_max_height_wrapping_snapshot(snapshot: SnapshotAssertion):
 
     # Compare against snapshot
     assert output == snapshot
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

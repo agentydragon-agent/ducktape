@@ -2,6 +2,8 @@ import ast
 import pkgutil
 from pathlib import Path
 
+import pytest_bazel
+
 from wt.testing.conftest import get_wt_package_dir
 
 ROOT = get_wt_package_dir()
@@ -75,3 +77,7 @@ def test_server_does_not_import_client():
             if imp.startswith(CLIENT_PREFIX):
                 violations.append((mod, imp))
     assert not violations, f"Server imports client: {violations}"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

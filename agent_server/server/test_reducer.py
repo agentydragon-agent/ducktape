@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest_bazel
 from hamcrest import assert_that, equal_to, has_properties
 
 from agent_server.server.bus import MimeType
@@ -94,3 +95,7 @@ def test_ui_message_becomes_assistant_markdown(fresh_ui_state):
 
     assert_that(result.seq, equal_to(1))
     assert_typed_items_have_one(result.items, is_assistant_markdown("**hi**"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

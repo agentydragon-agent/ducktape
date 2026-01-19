@@ -15,6 +15,7 @@ Covers:
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core.events import ApiRequest, SystemText, ToolCall
@@ -157,3 +158,7 @@ async def test_critic_zero_issues(test_registry, test_snapshot, all_files_scope)
         assert run.critic_config().example.snapshot_slug == test_snapshot
         assert run.status == AgentRunStatus.COMPLETED
         assert len(run.reported_issues) == 0
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

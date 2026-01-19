@@ -78,6 +78,7 @@ py_test(
         ":tana",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 

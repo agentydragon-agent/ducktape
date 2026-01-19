@@ -165,6 +165,7 @@ py_test(
         ":session",
         "//props/testing",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -180,6 +181,7 @@ py_test(
         ":session",
         "//props/testing",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -195,6 +197,7 @@ py_test(
         ":session",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -213,6 +216,7 @@ py_test(
         "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -228,6 +232,7 @@ py_test(
         ":session",
         "//props/testing",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

@@ -68,6 +68,7 @@ py_test(
         "//props/core/db:session",
         "//props/testing",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

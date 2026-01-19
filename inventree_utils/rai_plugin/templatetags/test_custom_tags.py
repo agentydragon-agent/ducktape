@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest_bazel
+
 sys.path.append(str(Path(__file__).parent))
 from django.utils.safestring import SafeString
 
@@ -29,3 +31,7 @@ def test_input_voltage_range():
     parameters = {}
     pp = ParametersProcessor(part=None, parameters=parameters)
     assert pp.input_voltage_range is None
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that, has_item, instance_of
 
 from agent_core.agent import Agent
@@ -55,3 +56,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
     types = [e.type for e in recording_handler.records if isinstance(e, ToolCall | ToolCallOutput)]
     assert "tool_call" in types
     assert "function_call_output" in types
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

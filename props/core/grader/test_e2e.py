@@ -15,6 +15,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core_testing.openai_mock import CapturingOpenAIModel
@@ -233,3 +234,7 @@ async def test_grader_comprehensive_data_access(critic_run_with_issue, test_snap
             elif isinstance(req.input, str):
                 print(f"  (string input): {req.input[:200]}")
         raise
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

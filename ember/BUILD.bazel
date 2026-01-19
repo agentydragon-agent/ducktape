@@ -89,6 +89,7 @@ py_test(
         ":ember",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -100,6 +101,7 @@ py_test(
         ":ember",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -111,6 +113,7 @@ py_test(
         ":ember",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 

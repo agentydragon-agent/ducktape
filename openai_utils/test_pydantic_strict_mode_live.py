@@ -11,6 +11,7 @@ import os
 from typing import Annotated, Literal
 
 import pytest
+import pytest_bazel
 from openai import BadRequestError
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.json_schema import GenerateJsonSchema
@@ -243,3 +244,7 @@ async def test_validator_matches_openai_reality(
     assert validator_accepts == openai_accepts, (
         f"Validator: {validator_accepts}, OpenAI: {openai_accepts}{error_context}"
     )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

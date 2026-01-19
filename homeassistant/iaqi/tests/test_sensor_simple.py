@@ -1,5 +1,7 @@
 """Basic tests for the Indoor AQI sensor component."""
 
+import pytest_bazel
+
 from custom_components.indoor_aqi.sensor import compute_iaqi
 from hamcrest import assert_that, close_to
 
@@ -29,3 +31,7 @@ def test_compute_iaqi_interpolation():
 def test_compute_iaqi_unknown_pollutant():
     """Test IAQI calculation with unknown pollutant."""
     assert compute_iaqi("unknown", 100) is None
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

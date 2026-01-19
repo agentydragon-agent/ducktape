@@ -30,6 +30,7 @@ py_test(
         "//wt/testing",
         "@pypi//click",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )

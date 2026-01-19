@@ -60,6 +60,7 @@ py_test(
         ":claude_hooks",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],

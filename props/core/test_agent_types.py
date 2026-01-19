@@ -3,6 +3,7 @@
 from uuid import UUID
 
 import pytest
+import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from props.core.agent_types import (
@@ -230,3 +231,7 @@ class TestAgentConfig:
         restored = AgentConfig.model_validate_json(json_str)
         assert restored == original
         assert restored.agent_type == AgentType.CRITIC
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

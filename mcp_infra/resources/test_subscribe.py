@@ -1,3 +1,5 @@
+import pytest_bazel
+
 from mcp_infra.compositor.resources_server import ResourcesSubscribeArgs
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
@@ -29,3 +31,7 @@ async def test_client_resource_subscribe_and_unsubscribe(compositor, typed_resou
     )
     assert recorder.subscribed, "expected origin to receive subscribe"
     assert recorder.unsubscribed, "expected origin unsubscribe call"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

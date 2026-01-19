@@ -4,6 +4,7 @@ import secrets
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 
 from mcp_infra._markers import REQUIRES_SANDBOX_EXEC
@@ -154,3 +155,7 @@ async def test_sandbox_exec_cwd_and_env(tmp_path: Path, seatbelt_session) -> Non
     assert res.stdout.splitlines()[:2] == [str(tmp_path), "BAR"]
 
     # No policy CRUD tests; server no longer stores policies.
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

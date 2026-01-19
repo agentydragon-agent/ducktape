@@ -10,6 +10,7 @@ Tests the end-to-end SQL workflow where grader agents:
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.exceptions import ToolError
 from sqlalchemy import create_engine, text
 
@@ -494,3 +495,7 @@ async def test_grader_report_failure_idempotency_fails(grader_submit_server, tes
     # Second call should fail
     with pytest.raises(ToolError, match="already reported failure"):
         await grader_submit_server.report_failure_tool.run({"message": "Second failure report"})
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

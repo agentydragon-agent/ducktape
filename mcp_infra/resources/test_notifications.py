@@ -1,5 +1,6 @@
 import asyncio
 
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
@@ -35,3 +36,7 @@ async def test_resources_list_changed_notification(compositor, resources_server)
                 break
             await asyncio.sleep(0.01)
         assert "list_changed" in catcher.events
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

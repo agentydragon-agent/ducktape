@@ -251,6 +251,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -265,6 +266,7 @@ py_test(
         "//props/core/models:examples",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -275,6 +277,7 @@ py_test(
     deps = [
         ":agent_workspace",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -297,6 +300,7 @@ py_test(
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -318,6 +322,7 @@ py_test(
         "//props/testing",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

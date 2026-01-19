@@ -1,5 +1,6 @@
 """Test that failed critic runs appear in occurrence_credits view with zero credit."""
 
+import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -355,3 +356,7 @@ def test_occurrence_statistics_has_correct_n_critic_runs(
     # Run 1: 0.8, Run 2: avg(0.5,0.6,0.7,0.8) = 0.65 -> mean = 0.725
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
     assert abs(avg_caught - 0.725) < 0.01, f"Expected 0.725, got {avg_caught}"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import jwt
 import pytest
+import pytest_bazel
 
 from tools.claude_hooks.proxy_credentials import (
     CredentialStatus,
@@ -155,3 +156,7 @@ class TestCheckCredentialExpiry:
         token = jwt.encode({"exp": exp_time}, "secret", algorithm="HS256")
         status = check_credential_expiry(f"http://user:jwt_{token}@proxy:8080")
         assert status.expiry is not None
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

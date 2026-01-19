@@ -5,12 +5,10 @@ for pytest auto-discovery. Tests anywhere in props/core/ will have access
 to these fixtures.
 """
 
-# Register shared fixtures from other packages
-pytest_plugins = [
-    "agent_core_testing.fixtures",  # Recording handler, make_test_agent, etc.
-    "agent_core_testing.responses",  # make_step_runner, responses_factory, etc.
-    "mcp_infra.testing.fixtures",  # async_docker_client, make_compositor, etc.
-]
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from agent_core_testing.fixtures import *  # noqa: F401, F403
+from agent_core_testing.responses import *  # noqa: F401, F403
+from mcp_infra.testing.fixtures import *  # noqa: F401, F403
 
 # Import fixtures from our testing package for pytest discovery
 # Re-export factory functions (not fixtures, but commonly used in tests)

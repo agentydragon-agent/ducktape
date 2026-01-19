@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from arg0_runner.unified_patch import apply_unified_diff
 
@@ -79,3 +80,7 @@ def test_context_mismatch_raises() -> None:
     )
     with pytest.raises(ValueError, match=r"context.*mismatch|patch.*failed|apply.*failed"):
         apply_unified_diff(bad_patch, fs.open_fn, fs.write_fn, fs.remove_fn)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

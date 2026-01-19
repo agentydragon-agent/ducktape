@@ -6,6 +6,8 @@ and whole-snapshot entries. These tests verify the VIEW produces correct example
 
 from __future__ import annotations
 
+import pytest_bazel
+
 from props.core.db.examples import Example
 from props.core.db.models import Snapshot
 from props.core.db.session import get_session
@@ -102,3 +104,7 @@ def test_generate_examples_unique_file_sets(synced_test_db):
 
         # Total examples = unique file sets + one whole-snapshot
         assert len(examples) == len(file_set_examples) + 1
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

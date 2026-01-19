@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest_bazel
 from fastmcp.client import Client
 
 from mcp_infra.exec.direct import DirectExecArgs, DirectExecServer
@@ -16,3 +17,7 @@ async def test_direct_exec_echo_inproc() -> None:
         res = await stub.exec(DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100000, timeout_ms=5000))
         assert res.exit == Exited(exit_code=0)
         assert res.stdout == "hello\n"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

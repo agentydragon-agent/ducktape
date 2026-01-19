@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 
 from mcp_infra.compositor.admin import CompositorAdminServer, convert_mcp_server_types_to_spec
@@ -50,3 +51,7 @@ async def test_compositor_admin_attach_invalid_name_errors(admin_client, stdio_e
     spec_dict = spec.model_dump(mode="json", exclude_none=False)
     with pytest.raises(Exception, match=r"validation.*error|invalid.*prefix|String should match pattern"):
         await admin_client.call_tool("attach_server", arguments={"prefix": "BadName", "spec": spec_dict})
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

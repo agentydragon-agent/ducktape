@@ -12,5 +12,6 @@ py_test(
         "//wt/testing",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

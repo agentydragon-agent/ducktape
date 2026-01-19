@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from editor_agent.host.runner import editor_docker_session, writeback_success
 from editor_agent.host.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
@@ -31,3 +32,7 @@ async def test_submit_success_writes_back(tmp_path: Path):
     writeback_success(target, server.state.content)
 
     assert target.read_text(encoding="utf-8") == "updated"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

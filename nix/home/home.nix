@@ -517,9 +517,6 @@ in {
     # Character encoding
     DEFAULT_CHARSET = "utf8";
 
-    # Aider AI model
-    AIDER_MODEL = "o1";
-
     # GCC colored warnings and errors
     GCC_COLORS = "error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01";
 

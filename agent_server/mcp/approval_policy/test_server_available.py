@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 
 from agent_core.agent import Agent
@@ -47,3 +48,7 @@ async def test_approval_policy_server_is_available(echo_spec, make_policy_gatewa
         # Run should complete without issues
         result = await agent.run()
         assert "approval" in result.text.lower()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

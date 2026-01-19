@@ -61,6 +61,7 @@ py_test(
         "@pypi//aiodocker",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//pytest_mock",
     ],
 )
@@ -81,6 +82,7 @@ py_test(
         ":inop",
         "@pypi//pathspec",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//tiktoken",
     ],
 )

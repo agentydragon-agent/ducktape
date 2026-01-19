@@ -1,5 +1,7 @@
 """Tests for block-level resource reading with truncation markers."""
 
+import pytest_bazel
+
 from mcp_infra.compositor.resources_server import ReadBlocksArgs
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
@@ -83,3 +85,7 @@ async def test_read_blocks_truncate_within_single_large_block(compositor, typed_
     assert truncated.ended_at == 40
     assert truncated.full_size == 100
     assert truncated.content.text == "x" * 40
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -11,6 +11,7 @@ import sys
 import gymnasium as gym
 import numpy as np
 import openai
+import pytest_bazel
 
 
 async def test_minimal():
@@ -56,3 +57,7 @@ async def test_minimal():
 if __name__ == "__main__":
     success = asyncio.run(test_minimal())
     sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

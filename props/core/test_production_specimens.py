@@ -22,6 +22,7 @@ from collections.abc import AsyncGenerator, Generator
 
 import pytest
 import pytest_asyncio
+import pytest_bazel
 from hamcrest import assert_that, greater_than_or_equal_to
 from sqlalchemy import create_engine, text
 
@@ -129,3 +130,7 @@ def test_split_distribution_and_issue_counts(synced_production_db: DatabaseConfi
     assert_that(issue_counts[Split.VALID], greater_than_or_equal_to(50))
     # TODO: Uncomment when TEST split is populated
     # assert_that(issue_counts[Split.TEST], greater_than_or_equal_to(60))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

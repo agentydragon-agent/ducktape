@@ -52,6 +52,7 @@ py_library(
         "//mcp_infra/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 

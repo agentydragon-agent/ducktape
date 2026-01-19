@@ -1,4 +1,5 @@
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 
 from mcp_infra.exec.direct import DirectExecArgs, DirectExecServer
@@ -47,3 +48,7 @@ async def test_inproc_container_exec_exposes_container_info_resource(
     async with Client(docker_exec_server_py312slim) as sess:
         res = await sess.read_resource_mcp(docker_exec_server_py312slim.container_info_resource.uri)
         assert res.contents, "container.info returned no contents"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

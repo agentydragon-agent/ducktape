@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from agent_server.mcp.approval_policy.engine import POLICY_EVALUATOR_ERROR_MSG
 from agent_server.testing.approval_policy_testdata import fetch_policy
@@ -28,3 +29,7 @@ async def test_container_timeout_causes_deny_abort(
         with pytest.raises(Exception, match=POLICY_EVALUATOR_ERROR_MSG) as ei:
             await sess.call_tool(build_mcp_function(MCPMountPrefix("backend"), "echo"), {"text": "timeout"})
         assert POLICY_EVALUATOR_ERROR_MSG in str(ei.value)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

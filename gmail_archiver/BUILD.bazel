@@ -71,6 +71,7 @@ py_test(
     deps = [
         ":gmail_archiver_lib",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -84,6 +85,7 @@ py_test(
     deps = [
         ":gmail_archiver_lib",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -97,6 +99,7 @@ py_test(
     deps = [
         ":gmail_archiver_lib",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

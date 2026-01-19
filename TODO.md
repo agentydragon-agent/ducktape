@@ -33,6 +33,10 @@
 
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests, flat structure like `git_commit_ai/`)
 
+## Testing
+
+- [ ] Add automated check for missing `pytest_bazel.main()` in py_test targets (validation test using `bazel query` + AST parsing, or pre-commit hook for new test files)
+
 ## Repository
 
 - [ ] Pick a sane license schema (probably AGPL)

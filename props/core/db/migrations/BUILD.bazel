@@ -24,5 +24,6 @@ py_test(
     deps = [
         "@pypi//alembic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

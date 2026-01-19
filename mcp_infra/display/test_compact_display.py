@@ -7,6 +7,7 @@ from io import StringIO
 from typing import cast
 
 import pytest
+import pytest_bazel
 from mcp.types import (
     CallToolResult,
     Implementation,
@@ -218,3 +219,7 @@ def test_compact_display_handler_with_read_resource_result():
     assert "resource://" in output_text or "test content" in output_text, (
         f"Output missing expected content: {output_text}"
     )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

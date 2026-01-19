@@ -19,6 +19,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
+import pytest_bazel
 from hamcrest import all_of, assert_that
 
 from agent_core_testing.openai_mock import CapturingOpenAIModel
@@ -253,3 +254,7 @@ async def test_cli_hard_examples_shows_metrics(
         target_metric=TargetMetric.WHOLE_REPO,
         db_config=synced_test_db,
     )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

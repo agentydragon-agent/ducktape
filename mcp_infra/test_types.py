@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from mcp_infra.prefix import MCPMountPrefix
@@ -51,3 +52,7 @@ class TestMCPMountPrefix:
         # Verify error info is present
         errors = exc_info.value.errors()
         assert len(errors) > 0
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

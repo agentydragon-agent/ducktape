@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
 
 from sysrw.run_eval import read_dataset
@@ -66,3 +67,7 @@ async def test_read_crush_min(crush_min_path: Path):
     # Extract roles from the input messages (TypedDict items remain as dicts)
     roles = [item["role"].lower() for item in input_data if isinstance(item, dict) and "role" in item]
     assert any(r in ("user", "assistant") for r in roles)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

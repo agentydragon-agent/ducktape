@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.server import FastMCP
 from pydantic import BaseModel
 
@@ -317,3 +318,7 @@ async def test_bootstrap_builder_without_introspection():
     call = builder.call(MCPMountPrefix("unknown_server"), "unknown_tool", TestInput(value="test"))
     assert call.name == "unknown_server_unknown_tool"
     assert call.call_id == "bootstrap:1"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

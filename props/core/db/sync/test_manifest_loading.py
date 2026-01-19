@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
@@ -82,3 +83,7 @@ def test_invalid_manifest_raises(tmp_path: Path) -> None:
     # Pydantic raises ValidationError for non-dict input
     with pytest.raises(ValidationError):
         discover_snapshots(tmp_path)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

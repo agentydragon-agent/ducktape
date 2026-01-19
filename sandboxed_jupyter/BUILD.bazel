@@ -72,6 +72,7 @@ py_test(
         ":sandboxed_jupyter",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//pytest_timeout",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",

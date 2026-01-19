@@ -36,7 +36,10 @@ py_test(
     deps = [
         ":display",
         "//mcp_infra:test_support",
+        "@pypi//docker",
         "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//rich",
         "@pypi//syrupy",
     ],

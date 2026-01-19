@@ -6,6 +6,7 @@ null/None values and list all resources when filters are not provided.
 
 from __future__ import annotations
 
+import pytest_bazel
 from hamcrest import assert_that, contains_inanyorder, has_length
 
 from mcp_infra.compositor.resources_server import ResourcesListArgs
@@ -112,3 +113,7 @@ async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources
     # Verify URIs (unprefixed - the server name is in ResourceEntry.server)
     test_uris = [str(r.resource.uri) for r in test_resources.resources]
     assert_that(test_uris, contains_inanyorder("resource://test/foo", "resource://test/bar"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

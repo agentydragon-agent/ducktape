@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
 
@@ -37,3 +38,7 @@ async def test_timeout_flag(typed_docker_client) -> None:
     client, _session = typed_docker_client
     res = await client.exec(make_exec_input(["sh", "-lc", "sleep 5"], timeout_ms=500))
     assert isinstance(res.exit, TimedOut)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

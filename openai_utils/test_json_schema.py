@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 import pytest
+import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from openai_utils.json_schema import OpenAICompatibleSchema
@@ -90,3 +91,7 @@ def test_validation_still_works():
     # Validation errors still work
     with pytest.raises(ValidationError):
         PetWithDiscriminator(animal={"pet_type": "bird", "chirps": 2})
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

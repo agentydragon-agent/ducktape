@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from logging.handlers import MemoryHandler
 
 import pytest
+import pytest_bazel
 from custom_components.indoor_aqi.sensor import _LOGGER, IndoorAQISensor, compute_iaqi
 from hamcrest import assert_that, close_to, contains_inanyorder, has_entries
 from hamcrest.core.base_matcher import BaseMatcher
@@ -259,3 +260,7 @@ async def test_log_after_hour_unchanged(hass, memory_handler, now):
     # Update again - should log since it's been over an hour
     sensor.update()
     assert_that(buffer, log_containing("partial data"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

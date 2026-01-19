@@ -1,5 +1,7 @@
 """Test the Indoor AQI config flow."""
 
+import pytest_bazel
+
 from custom_components.indoor_aqi import DOMAIN
 from hamcrest import assert_that, contains_string, equal_to, has_entries
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -48,3 +50,7 @@ async def test_import_flow_empty_data(hass):
 
     # Check that it still works (creates an entry with empty data)
     assert_that(result, has_entries(type="create_entry", data={}))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

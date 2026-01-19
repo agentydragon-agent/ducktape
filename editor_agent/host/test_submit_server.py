@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.exceptions import ToolError
 
 from editor_agent.host.submit_server import (
@@ -34,3 +35,7 @@ async def test_submit_failure_only_once():
 
     with pytest.raises(ToolError, match="submit already called"):
         await server.submit_failure_tool.run(SubmitFailureInput(message="again").model_dump())
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

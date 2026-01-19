@@ -24,6 +24,7 @@ _TEST_DEPS = [
     "//mcp_infra/testing",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
+    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
 ]
 

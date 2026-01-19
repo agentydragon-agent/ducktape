@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 
 from agent_core.agent import Agent
@@ -80,3 +81,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
 
 
 # Note: server availability and resources are tested under tests/mcp/approval_policy
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

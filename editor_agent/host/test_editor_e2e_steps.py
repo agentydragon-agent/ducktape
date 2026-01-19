@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core_testing.responses import DecoratorMock, PlayGen
@@ -40,3 +41,7 @@ async def test_editor_step_sequence(tmp_path, async_docker_client, editor_image_
     assert isinstance(result, SubmitStateSuccess)
     # Verify the modified content was written back to host
     assert target.read_text(encoding="utf-8") == "modified content\n"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

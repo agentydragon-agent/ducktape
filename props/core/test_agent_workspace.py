@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+import pytest_bazel
 
 from props.core.agent_workspace import WorkspaceManager
 
@@ -33,3 +34,7 @@ class TestWorkspaceManager:
         run_id = UUID("00000000-0000-0000-0000-000000000001")
 
         assert mgr.get_path(run_id).parent == custom
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

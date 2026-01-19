@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from agent_core.loop_control import Abort, NoAction
 from agent_server.mcp.ui.server import EndTurnInput, SendMessageInput, UiServer
@@ -49,3 +50,7 @@ def test_ui_handler_abort_on_end_turn(bus) -> None:
     bus.push_end_turn()
     dec2 = h.on_before_sample()
     assert isinstance(dec2, Abort)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

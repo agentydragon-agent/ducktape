@@ -6,6 +6,7 @@ These tests verify that the policy gateway correctly gates tool calls based on p
 import asyncio
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
@@ -167,3 +168,7 @@ async def test_policy_gateway_middleware_ask_then_allow(
         res = await call_task
         assert not res.is_error
         assert call_ids, "pending call should have been recorded"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

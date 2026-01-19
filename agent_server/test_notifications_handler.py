@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest_bazel
+
 from agent_core.loop_control import InjectItems, NoAction
 from agent_server.notifications.handler import NotificationsHandler
 from agent_server.testing.helpers import strip_system_notification_wrapper
@@ -43,3 +45,7 @@ def test_notifications_handler_batches_single_message():
     # Second call returns NoAction (empty)
     dec2 = h.on_before_sample()
     assert isinstance(dec2, NoAction)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

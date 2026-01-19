@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp import Context
 from fastmcp.server import FastMCP
 from pydantic import BaseModel, ConfigDict
@@ -186,3 +187,7 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
         assert any(_has_notification_with_substring(req, "policy.py") for req in captured), (
             "expected system notification after out-of-tool broadcast"
         )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

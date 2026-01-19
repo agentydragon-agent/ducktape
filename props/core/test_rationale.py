@@ -1,6 +1,7 @@
 """Tests for Rationale type validation."""
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that, equal_to
 from pydantic import ValidationError
 
@@ -68,3 +69,7 @@ def test_rejects_non_string(rationale_model):
 
     with pytest.raises(ValidationError, match="valid string"):
         rationale_model(rationale=None)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

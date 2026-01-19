@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 
@@ -123,3 +124,7 @@ class TestPresetPolicyResolution:
         assert row is not None
         assert row.metadata is not None
         assert row.metadata.preset == "default"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

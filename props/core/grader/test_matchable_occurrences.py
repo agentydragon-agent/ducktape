@@ -9,6 +9,7 @@ The filtering is based on graders_match_only_if_reported_on:
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from sqlalchemy import text
 
 from props.core.db.session import get_session
@@ -181,3 +182,7 @@ class TestMatchableOccurrences:
                 assert is_cross_cutting, (
                     f"TP {row.tp_id}/{row.tp_occurrence_id} matched from empty array but isn't cross-cutting"
                 )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

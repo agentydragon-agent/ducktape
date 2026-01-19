@@ -17,6 +17,7 @@ import secrets
 import textwrap
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core_testing.responses import PlayGen, tool_roundtrip
@@ -368,3 +369,7 @@ async def test_critic_cannot_push_images(test_registry, test_snapshot, all_files
     with get_session() as session:
         defns = session.query(AgentDefinition).filter_by(created_by_agent_run_id=run_id).all()
         assert len(defns) == 0, "Critic should not be able to create agent definitions"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

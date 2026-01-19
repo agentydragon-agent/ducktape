@@ -33,5 +33,6 @@ py_test(
         ":gitea_mirror_lib",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )

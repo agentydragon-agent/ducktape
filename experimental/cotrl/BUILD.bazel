@@ -41,6 +41,7 @@ py_test(
         "@pypi//gymnasium",
         "@pypi//openai",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

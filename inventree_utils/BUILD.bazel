@@ -130,6 +130,7 @@ py_test(
     deps = [
         ":lcsc_util",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -140,6 +141,7 @@ py_test(
     deps = [
         ":fix_lcsc_links",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -150,6 +152,7 @@ py_test(
     deps = [
         ":assign_jellybean",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

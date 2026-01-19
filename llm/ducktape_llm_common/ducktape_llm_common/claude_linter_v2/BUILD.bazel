@@ -92,5 +92,6 @@ py_test(
         ":claude_linter_v2",
         "@pypi//click",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

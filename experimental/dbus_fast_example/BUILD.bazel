@@ -24,6 +24,7 @@ py_test(
         ":dbus_fast_example",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 

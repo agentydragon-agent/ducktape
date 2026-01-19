@@ -2,6 +2,7 @@ import asyncio
 from typing import Any
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 from hamcrest import anything, assert_that, empty, has_properties
 from hamcrest.core.matcher import Matcher
@@ -176,3 +177,7 @@ async def test_chat_resources_return_ints_directly(human_session, assistant_sess
     last_read_contents = await assistant_sess.read_resource(assistant.last_read_resource.uri)
     last_read_text = extract_single_text_content(last_read_contents)
     assert last_read_text == str(msg_id)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

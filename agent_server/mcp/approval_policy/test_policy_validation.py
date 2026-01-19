@@ -6,6 +6,7 @@ Tests that PolicyEngine rejects policies with failing or missing tests.
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 
 from agent_server.mcp.approval_policy.engine import PolicyEngine
@@ -61,3 +62,7 @@ class TestPolicyValidation:
     async def test_self_check_passes_valid(self, policy_engine, policy_allow_all):
         """PolicyEngine.self_check passes for valid policy."""
         await policy_engine.self_check(policy_allow_all)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

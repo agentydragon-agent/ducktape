@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest_bazel
 from fastmcp.client import Client
 
 from agent_server.notifications.handler import format_notifications_message
@@ -29,3 +30,7 @@ async def test_stdio_child_notifications_envelope(compositor, stdio_notifier_spe
         # Should include list_changed and updated with the dummy URI
         assert child.get("list_changed") is True
         assert "resource://dummy" in (child.get("updated") or [])
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

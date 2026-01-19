@@ -13,6 +13,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core_testing.responses import PlayGen
@@ -259,3 +260,7 @@ async def test_cli_hard_examples_in_improvement_agent(
         )
 
     assert result.tokens_used >= 0
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

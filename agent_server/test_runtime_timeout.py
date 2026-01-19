@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, TimedOut, make_exec_input
@@ -43,3 +44,7 @@ async def test_runtime_per_session_timeout_then_next_call_ok(
     assert isinstance(res_ok.exit, Exited)
     assert res_ok.exit.exit_code == 0
     assert (res_ok.stdout or "") == "ok"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -5,6 +5,7 @@ import json
 from typing import Literal
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.server.context import Context
 from pydantic import Field, field_validator
@@ -207,3 +208,7 @@ async def test_flat_model_validation_error_formatting():
         assert err["ctx"] == {"error": "must be positive"}
         # Verify no URL
         assert "url" not in err
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

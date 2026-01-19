@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
@@ -169,3 +170,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     assert res.text.strip() == "done"
     # Verify the handler saw a function_call_output with the expected structured content
     assert_function_call_output_structured(recording_handler.records, has_entries(echo="hi"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

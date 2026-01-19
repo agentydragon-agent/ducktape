@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest_bazel
+
 from custom_components.indoor_aqi import DOMAIN, async_setup_entry, async_unload_entry
 from hamcrest import assert_that, has_entries
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -63,3 +65,7 @@ async def test_unload_entry(hass):
 
         # Check that it unloaded the platforms
         mock_unload.assert_called_once_with(entry, ["sensor"])
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

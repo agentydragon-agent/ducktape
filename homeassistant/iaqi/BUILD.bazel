@@ -28,6 +28,7 @@ py_test(
     main = "tests/test_sensor.py",
     deps = [
         ":indoor_aqi",
+        "@pypi//pytest_bazel",
         "@pypi_homeassistant//pyhamcrest",
         "@pypi_homeassistant//pytest",
         "@pypi_homeassistant//pytest_homeassistant_custom_component",

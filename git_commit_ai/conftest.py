@@ -8,7 +8,8 @@ import pytest
 from .testing import git_repo_utils
 from .testing.git_repo_utils import RepoHelper
 
-pytest_plugins = ["mcp_infra.testing.fixtures"]
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from mcp_infra.testing.fixtures import *  # noqa: F401, F403
 
 
 @pytest.fixture

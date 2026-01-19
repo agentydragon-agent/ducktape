@@ -34,6 +34,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+import pytest_bazel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -373,3 +374,7 @@ async def test_prompt_optimizer_can_see_train_split_events(
 
     assert len(train_events) == 1, "prompt optimizer user should see train split events via RLS"
     assert train_events[0].event_type == "tool_call"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

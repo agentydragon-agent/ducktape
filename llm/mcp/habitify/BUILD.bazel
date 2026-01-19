@@ -76,6 +76,7 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -93,6 +94,7 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -111,6 +113,7 @@ py_test(
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

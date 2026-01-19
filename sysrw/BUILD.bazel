@@ -53,6 +53,7 @@ py_test(
     deps = [
         ":sysrw",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -69,6 +70,7 @@ py_test(
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -83,6 +85,7 @@ py_test(
     deps = [
         ":sysrw",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

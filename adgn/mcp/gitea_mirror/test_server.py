@@ -1,6 +1,7 @@
 from typing import Any
 
 import pytest
+import pytest_bazel
 
 from adgn.mcp.gitea_mirror import server
 from adgn.mcp.gitea_mirror.server import TriggerMirrorSyncArgs
@@ -89,3 +90,7 @@ def test_make_mcp_requires_configuration() -> None:
     # Use a raw regex for the generic message match
     with pytest.raises(ValueError, match=r"."):
         server.GiteaMirrorServer()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

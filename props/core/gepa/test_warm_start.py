@@ -8,6 +8,7 @@ to use agent_definitions instead.
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from props.core.db.examples import Example
 from props.core.db.session import get_session
@@ -236,3 +237,7 @@ def test_deterministic_ordering(db_with_historical_runs, standard_valset):
 
     # Scores should match
     assert state1["prog_candidate_val_subscores"] == state2["prog_candidate_val_subscores"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

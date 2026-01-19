@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+import pytest_bazel
 
 from props.core.db import query_builders as qb
 from props.core.db.examples import Example
@@ -287,3 +288,7 @@ class TestJsonbNullFiltering:
 
     Note: We use raw SQL to insert test data to precisely control JSONB content.
     """
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

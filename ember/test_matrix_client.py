@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import pytest_bazel
 
 from ember.matrix_client import MatrixClient
 
@@ -74,3 +75,7 @@ async def test_matrix_client_send_text_message(tmp_path: Path, monkeypatch: pyte
             "content": {"msgtype": "m.notice", "body": "integration hello"},
         }
     ]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

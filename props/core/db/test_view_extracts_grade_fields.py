@@ -2,6 +2,7 @@
 
 from uuid import uuid4
 
+import pytest_bazel
 from sqlalchemy import text
 
 from props.core.db.config import DatabaseConfig
@@ -104,3 +105,7 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         assert result.tp_id == matching_tp.tp_id, "Should extract tp_id from grading_edges"
         assert result.occurrence_id == matching_occ_id, "Should extract occurrence_id from grading_edges"
         assert result.found_credit == 1.0, "Should extract credit from grading_edges"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

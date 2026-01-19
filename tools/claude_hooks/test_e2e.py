@@ -260,3 +260,7 @@ class TestForwardingProxy:
             assert b"200" in response, f"Expected 200, got: {response!r}"
         finally:
             sock.close()
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-v"]))

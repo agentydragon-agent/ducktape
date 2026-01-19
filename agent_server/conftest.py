@@ -51,12 +51,10 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 # Test server mount name used in fixtures
 TEST_BACKEND_SERVER_NAME = "backend"
 
-# Load external fixture modules so they're available in xdist workers
-pytest_plugins = (
-    "mcp_infra.testing.fixtures",  # Shared mcp_infra fixtures
-    "agent_core_testing.fixtures",  # Core agent fixtures (make_test_agent, etc.)
-    "agent_core_testing.responses",  # make_step_runner, responses_factory, etc.
-)
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from agent_core_testing.fixtures import *  # noqa: F401, F403
+from agent_core_testing.responses import *  # noqa: F401, F403
+from mcp_infra.testing.fixtures import *  # noqa: F401, F403
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+import pytest_bazel
 
 
 @pytest.mark.asyncio
@@ -65,3 +66,7 @@ async def test_set_habit_status_returns_date_object(client):
         # Verify the date is the same Python date object we passed in
         assert isinstance(status.date, datetime.date)
         assert status.date == test_date
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

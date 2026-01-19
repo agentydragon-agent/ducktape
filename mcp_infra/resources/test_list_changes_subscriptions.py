@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest_bazel
 from fastmcp.server import FastMCP
 from hamcrest import assert_that, contains, contains_inanyorder, empty, has_item, has_properties
 
@@ -41,3 +42,7 @@ async def test_list_changes_multiple_subscriptions_and_unsubscribe(compositor, t
     await typed_resources_client.unsubscribe_list_changes(ListSubscribeArgs(server=a_prefix))
     idx2 = await typed_resources_client.list_subscriptions()
     assert_that([x.server for x in idx2.list_subscriptions], contains(b_prefix))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -1,5 +1,6 @@
 import asyncio
 
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
@@ -35,3 +36,7 @@ async def test_chat_head_notifications_other_participant(compositor) -> None:
         assert not out2.is_error
         await asyncio.sleep(0.05)
         assert str(human.head_resource.uri) in cap_human.updated, cap_human.updated
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

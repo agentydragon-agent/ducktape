@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+import pytest_bazel
 from pydantic import BaseModel, ConfigDict, Field
 
 from openai_utils.json_schema import OpenAICompatibleSchema
@@ -229,3 +230,7 @@ def test_anyof_nested_is_permitted():
 
     # Should not raise - anyOf is allowed when nested
     validate_openai_strict_mode_schema(schema_with_nested_anyof, "NestedAnyOfSchema")
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 import webhook_inbox
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
@@ -108,3 +109,7 @@ def test_crypto_roundtrip():
     exec(webhook_inbox.DECRYPT_CODE_SNIPPET, ns)
 
     assert ns["events"] == events
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

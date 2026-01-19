@@ -7,6 +7,8 @@ coupling database migrations to grader-specific logic.
 import ast
 from pathlib import Path
 
+import pytest_bazel
+
 
 def test_db_does_not_import_grader():
     """Verify that db/ modules do not import from grader.*.
@@ -44,3 +46,7 @@ def test_db_does_not_import_grader():
             "Violations found:\n" + "\n".join(f"  - {v}" for v in violations)
         )
         raise AssertionError(msg)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

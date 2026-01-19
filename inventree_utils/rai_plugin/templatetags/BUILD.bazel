@@ -13,5 +13,9 @@ py_test(
     srcs = ["test_custom_tags.py"],
     # TODO: Add Django to requirements_bazel.txt to make hermetic
     tags = ["manual"],
-    deps = [":custom_tags"],
+    deps = [
+        ":custom_tags",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

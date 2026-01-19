@@ -24,5 +24,6 @@ py_test(
     deps = [
         ":arg0_runner",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

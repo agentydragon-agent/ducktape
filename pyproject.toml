@@ -192,6 +192,7 @@ dev = [
     "pytest-cov>=4.0",
     "pytest-postgresql>=4.1.1",
     "pytest-playwright",
+    "pytest-bazel>=0.1.6",
     "asgi-lifespan>=2.1",
     "syrupy>=4.0",
     "PyHamcrest>=2.1",

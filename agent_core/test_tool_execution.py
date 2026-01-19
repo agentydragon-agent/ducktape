@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, Final, Literal
 
 import pytest
+import pytest_bazel
 from hamcrest import all_of, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -577,3 +578,7 @@ async def test_agent_compositor_flat_tools_request_schema(compositor, mcp_tool_p
     )
     agent.process_message(SystemMessage.text(system_prompt))
     await agent.run()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

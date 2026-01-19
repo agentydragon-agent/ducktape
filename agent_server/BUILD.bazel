@@ -113,6 +113,7 @@ _TEST_DEPS = [
     "@pypi//mcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
+    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
     "@pypi//pytest_timeout",
     "@pypi//starlette",

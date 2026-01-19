@@ -32,5 +32,7 @@ py_test(
     main = "test_layering.py",
     deps = [
         "//wt/testing",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

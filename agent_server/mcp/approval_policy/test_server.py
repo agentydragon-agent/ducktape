@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from mcp_utils.resources import extract_single_text_content
 
@@ -25,3 +26,7 @@ async def test_resources_list_and_read_policy(make_typed_mcp, approval_policy_se
         policy_text = extract_single_text_content(result)
         assert "def decide" in policy_text
         assert "PolicyResponse" in policy_text
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

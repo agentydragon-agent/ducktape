@@ -5,6 +5,7 @@ import subprocess
 from collections.abc import Iterator
 
 import pytest
+import pytest_bazel
 
 from experimental.dbus_fast_example.client import ExampleClient
 from experimental.dbus_fast_example.service_manager import ServiceManager
@@ -63,3 +64,7 @@ async def test_signal_flow(bus_address: str) -> None:
 
     await client.disconnect()
     await manager.stop()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

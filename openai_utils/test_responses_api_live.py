@@ -5,6 +5,7 @@ from typing import Any, cast
 
 import openai
 import pytest
+import pytest_bazel
 from openai.types.responses import EasyInputMessageParam, ResponseInputParam
 
 
@@ -56,3 +57,7 @@ async def test_responses_streaming_live(tmp_path):
         items.append(event.model_dump(exclude_none=True))
 
     assert items, "No stream events received"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -35,8 +35,10 @@ py_test(
         ":enhanced",
         "//mcp_infra:test_support",
         "@pypi//anyio",
+        "@pypi//docker",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

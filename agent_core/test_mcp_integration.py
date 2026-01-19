@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest_bazel
 from hamcrest import all_of, assert_that, has_entries, has_length, has_properties, has_property, instance_of
 from pydantic import BaseModel
 
@@ -137,3 +138,7 @@ def test_mcp_tool_call_composes_with_make(responses_factory: ResponsesFactory):
     assert_that(result.output, has_length(3))
     _reasoning, call, _text = result.output
     assert_that(call, has_properties(name="server_tool"))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

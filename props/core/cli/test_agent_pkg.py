@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 from typer.testing import CliRunner
 
 from props.core.agent_pkg_utils import DOCKERFILE_FILE, AgentPkgValidationError, validate_packed_agent_pkg
@@ -79,3 +80,7 @@ class TestCmdValidate:
         """Invalid package exits with non-zero code (exception propagates)."""
         result = runner.invoke(app, ["validate", str(pkg_missing_dockerfile)])
         assert result.exit_code != 0
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

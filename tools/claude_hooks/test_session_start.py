@@ -1,6 +1,7 @@
 """Tests for session_start.py HookInput parsing."""
 
 import pytest
+import pytest_bazel
 
 from tools.claude_hooks.session_start import HookInput
 
@@ -64,3 +65,7 @@ def test_hook_input_all_sources(source: str) -> None:
     }
     result = HookInput.model_validate(data)
     assert result.source == source
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

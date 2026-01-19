@@ -48,6 +48,7 @@ py_test(
         "@pypi//click",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],

@@ -97,6 +97,7 @@ _TEST_DEPS = [
     "//mcp_infra/exec:models",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
+    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
 ]
 

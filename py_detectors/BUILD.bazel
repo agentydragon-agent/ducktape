@@ -45,6 +45,7 @@ py_test(
     deps = [
         ":py_detectors",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

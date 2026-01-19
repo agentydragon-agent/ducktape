@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 
@@ -114,3 +115,7 @@ class TestAgentsPresetsResource:
             # Should have at least the default preset
             names = [p.name for p in presets]
             assert "default" in names
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

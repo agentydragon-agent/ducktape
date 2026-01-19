@@ -48,5 +48,6 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

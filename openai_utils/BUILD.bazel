@@ -34,6 +34,7 @@ py_test(
         "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -46,6 +47,7 @@ py_test(
         "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -60,6 +62,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -73,6 +76,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -86,6 +90,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 

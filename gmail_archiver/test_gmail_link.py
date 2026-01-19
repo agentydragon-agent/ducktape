@@ -1,5 +1,7 @@
 """Tests for gmail_link formatting."""
 
+import pytest_bazel
+
 from gmail_archiver.plan_display import gmail_link
 
 
@@ -18,3 +20,7 @@ def test_gmail_link_creates_clickable_hyperlink():
     assert message_id in result
     assert "[link=" in result
     assert "[/link]" in result
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

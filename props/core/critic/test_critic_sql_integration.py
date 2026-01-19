@@ -10,6 +10,7 @@ Tests the end-to-end SQL workflow where critic agents:
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from fastmcp.exceptions import ToolError
 from sqlalchemy import text
 
@@ -265,3 +266,7 @@ async def test_insert_issue(test_critic_run, temp_engine):
     with get_session() as session:
         issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="test-issue").one()
         assert issue.rationale == "Test rationale"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

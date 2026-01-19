@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import pytest_bazel
 
 import ember
 from ember.system_prompt import load_system_prompt
@@ -79,3 +80,7 @@ def test_python_session_demo_scripts_are_embedded_and_work(
     assert "@demo:example.org: hello world" in out
     assert fake_session_state["sent"] == ["!room:example.org:Hello from Ember's matrix-client quickstart!:m.notice"]
     assert fake_session_state["closed"] == ["yes"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import pytest
+import pytest_bazel
 
 from agent_core.agent import Agent, AgentResult
 from agent_core.handler import BaseHandler
@@ -61,3 +62,7 @@ async def test_live_llm_exec_echo(mcp_client_box) -> None:
     res: AgentResult = await agent.run()
     text = (res.text or "").strip()
     assert text == "hello"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

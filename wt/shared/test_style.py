@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import pytest_bazel
+
 from wt.testing.conftest import get_wt_package_dir
 
 WT_DIR = get_wt_package_dir()
@@ -13,13 +15,16 @@ BANNED_PATTERNS = {
     r"except\s*:": "bare except is banned; catch specific exceptions",
 }
 
-EXCLUDE_DIRS = {".benchmarks", "wt.egg-info", "tests"}
+EXCLUDE_DIRS = {".benchmarks", "wt.egg-info", "tests", "testing"}
 
 
 def iter_python_files(base: Path):
     for p in base.rglob("*.py"):
         parts = set(p.parts)
         if parts & EXCLUDE_DIRS:
+            continue
+        # Exclude test files (which may define banned patterns as test data)
+        if p.name.startswith("test_"):
             continue
         yield p
 
@@ -39,3 +44,7 @@ def test_banned_patterns_absent():
                     continue
                 failures.append(f"{path}:{line}: {message}")
     assert not failures, "\n" + "\n".join(failures)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

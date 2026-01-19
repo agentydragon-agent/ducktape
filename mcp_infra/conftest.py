@@ -8,8 +8,9 @@ import pytest
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.testing.fixtures import make_container_opts
 
-# Register mcp_infra and agent_core fixtures
-pytest_plugins = ["mcp_infra.testing.fixtures", "agent_core_testing.fixtures"]
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from agent_core_testing.fixtures import *  # noqa: F401, F403
+from mcp_infra.testing.fixtures import *  # noqa: F401, F403
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:

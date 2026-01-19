@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from openai_utils.client_factory import build_client
 from openai_utils.errors import ContextLengthExceededError
@@ -34,3 +35,7 @@ async def test_chat_context_length_exceeded_live(require_openai_api_key, live_op
 
     with pytest.raises(ContextLengthExceededError):
         await chat_create_with_retries(live_async_openai, params)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

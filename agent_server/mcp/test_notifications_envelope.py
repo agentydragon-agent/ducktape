@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from agent_server.notifications.handler import format_notifications_message
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -68,3 +69,7 @@ async def test_notifications_envelope_after_remount(make_buffered_client, notifi
         assert isinstance(resources, dict)
         assert "child" in resources
         assert resources["child"].get("list_changed") is True
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

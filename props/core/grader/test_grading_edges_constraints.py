@@ -9,6 +9,7 @@ Verifies that database constraints correctly enforce:
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 
 from props.core.db.models import AgentRunStatus, GradingEdge
@@ -183,3 +184,7 @@ def test_credit_sum_trigger_enforces_limit_fp(session, add_edge, fp_occurrence):
     with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

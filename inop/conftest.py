@@ -1,5 +1,4 @@
 """Pytest configuration for inop tests."""
 
-pytest_plugins = [
-    "agent_core_testing.responses"  # responses_factory fixture
-]
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from agent_core_testing.responses import *  # noqa: F401, F403

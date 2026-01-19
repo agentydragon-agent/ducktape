@@ -196,6 +196,23 @@ bazel build --config=rust-check //finance/...  # Rust linting
 - Framework: pytest with pytest-asyncio
 - Fixtures for shared setup
 
+#### pytest and Bazel
+
+**CRITICAL**: All `py_test` targets MUST have a `pytest_bazel.main()` entry point:
+
+```python
+import pytest_bazel
+
+# ... test code ...
+
+if __name__ == "__main__":
+    pytest_bazel.main()
+```
+
+Without this, Bazel runs the test file directly as a script, which imports and exits 0 (success) without actually running any tests. This caused 99% of tests to silently pass without executing.
+
+Also add `@pypi//pytest_bazel` to the test's deps in BUILD.bazel.
+
 ### Deployment
 
 ```bash

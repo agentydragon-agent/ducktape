@@ -93,6 +93,7 @@ _TEST_DEPS = [
     "@pypi//playwright",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
+    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
 ]
 

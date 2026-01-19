@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.mcp_config import MCPConfig
 from starlette.applications import Starlette
@@ -454,3 +455,7 @@ class TestInfrastructureRegistry:
 
         assert registry.is_external("externalagent") is True
         assert "externalagent" in registry._agents
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

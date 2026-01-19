@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -426,3 +427,7 @@ class TestRobustness:
         # Should NOT require 2+ certs anymore
         assert "len(cert_chain_der) < 2" not in source, "Should not require 2+ certs"
         assert "at least 2 certs" not in source.lower(), "Should not require 2+ certs"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

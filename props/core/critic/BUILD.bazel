@@ -79,6 +79,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -96,6 +97,7 @@ py_test(
         "//props/testing",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -126,5 +128,6 @@ py_test(
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )

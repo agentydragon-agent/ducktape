@@ -54,6 +54,7 @@ py_test(
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
         "@pypi//rich",
         "@pypi//syrupy",
     ],

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from importlib import resources
 
+import pytest_bazel
 from mcp import types
 
 from mcp_infra.compositor.rendering import render_compositor_instructions
@@ -34,3 +35,7 @@ def test_render_single_running_with_instructions() -> None:
     assert "# docker_exec" in out
     assert "## Instructions" in out
     assert "Hello world" in out
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

@@ -80,6 +80,7 @@ _TEST_DEPS = [
     "@pypi//fastmcp",
     "@pypi//mcp",
     "@pypi//pytest",
+    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
 ]
 

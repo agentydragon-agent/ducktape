@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_bazel
 
 from sysrw.templates import iter_templates, validate_template_text
 
@@ -24,3 +25,7 @@ def test_template_mustache_markers_present_and_only_once(rel_name: str, text: st
 def test_templates_exist_and_are_discoverable() -> None:
     items = _iter_templates_from_package()
     assert items, "no packaged template *.txt files discovered via iter_templates()"
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

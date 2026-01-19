@@ -394,6 +394,7 @@ py_test(
     deps = [
         ":cmd_agent_pkg",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )

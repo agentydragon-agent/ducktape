@@ -1,6 +1,7 @@
 """Test that approval policy MCP server exposes proper tool schemas."""
 
 import pytest
+import pytest_bazel
 
 
 @pytest.mark.requires_docker
@@ -12,3 +13,7 @@ async def test_approval_policy_tool_schemas(make_typed_mcp, approval_policy_serv
         # Expect typed tools available
         names = set(client.models.keys())
         assert {"create_proposal", "withdraw_proposal"} <= names
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

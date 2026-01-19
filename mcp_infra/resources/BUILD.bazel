@@ -31,5 +31,7 @@ py_test(
         "//mcp_infra:test_support",
         "@pypi//fastmcp",
         "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

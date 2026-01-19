@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import pytest_bazel
 from hamcrest import assert_that, has_item, has_properties, instance_of, not_
 
 from agent_core.agent import Agent
@@ -398,3 +399,7 @@ async def test_compaction_handler_integrated_with_agent(mcp_tool_provider, mock_
     assert len(agent._transcript) < 6  # Original was 6 messages
     # Check that summary text is present (no longer wrapped in tags)
     assert any("Summary of early conversation" in str(item) for item in agent._transcript)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

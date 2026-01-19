@@ -3,6 +3,7 @@ from pathlib import Path
 
 import aiodocker
 import pytest
+import pytest_bazel
 
 from inop.config import (
     DebugConfig,
@@ -217,3 +218,7 @@ async def test_optimize_prompts_two_iterations_async(
 
     # Restore original method
     monkeypatch.setattr(optimizer.ScoreEvolutionTracker, "generate_report", orig_generate_report)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

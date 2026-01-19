@@ -4107,6 +4107,7 @@ pytest==9.0.2 \
     #   ducktape (pyproject.toml)
     #   pytest-asyncio
     #   pytest-base-url
+    #   pytest-bazel
     #   pytest-cov
     #   pytest-env
     #   pytest-mock
@@ -4123,6 +4124,9 @@ pytest-base-url==2.1.0 \
     --hash=sha256:02748589a54f9e63fcbe62301d6b0496da0d10231b753e950c63e03aee745d45 \
     --hash=sha256:3ad15611778764d451927b2a53240c1a7a591b521ea44cebfe45849d2d2812e6
     # via pytest-playwright
+pytest-bazel==0.1.6 \
+    --hash=sha256:a29e80e1d67c3db801bdd4d0b6b742f2bfb48cd6841caa33401458e5c4e29c21
+    # via ducktape (pyproject.toml)
 pytest-cov==7.0.0 \
     --hash=sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1 \
     --hash=sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861

@@ -1,4 +1,5 @@
 import pytest
+import pytest_bazel
 from mcp import McpError, types
 
 from agent_server.mcp.approval_policy.engine import (
@@ -23,3 +24,7 @@ async def test_raise_if_reserved_code_remaps_stamped_upstream() -> None:
     assert getattr(err, "error", None) is not None
     assert err.error.code == POLICY_BACKEND_RESERVED_MISUSE_CODE
     assert err.error.message == POLICY_BACKEND_RESERVED_MISUSE_MSG
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
