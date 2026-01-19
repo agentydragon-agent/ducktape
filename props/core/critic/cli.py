@@ -29,9 +29,6 @@ Common workflow:
 
   Fix a mistake:
     props critic-agent delete-issue wrong-issue
-
-  List current issues:
-    props critic-agent list-issues
 """
 
 app = typer.Typer(name="critic-agent", help=HELP_TEXT, add_completion=False)
@@ -136,36 +133,6 @@ def delete_issue_cmd(issue_id: Annotated[str, typer.Argument(help="ID of the iss
             raise typer.Exit(1)
         session.delete(issue)
     typer.echo(f"Deleted issue: {issue_id}")
-
-
-@app.command("list-issues")
-def list_issues_cmd() -> None:
-    """List all issues reported in this critique run.
-
-    Shows issue IDs, rationales, and occurrence counts.
-    """
-    with get_session() as session:
-        agent_run_id = get_current_agent_run_id(session)
-        issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
-
-        if not issues:
-            typer.echo("No issues reported yet.")
-            return
-
-        typer.echo(f"Issues reported ({len(issues)}):\n")
-        for issue in issues:
-            occurrences = (
-                session.query(ReportedIssueOccurrence)
-                .filter_by(agent_run_id=agent_run_id, reported_issue_id=issue.issue_id)
-                .all()
-            )
-            typer.echo(f"  {issue.issue_id}")
-            typer.echo(f"    Rationale: {issue.rationale}")
-            typer.echo(f"    Occurrences: {len(occurrences)}")
-            for occ in occurrences:
-                locs = ", ".join(f"{loc.file}:{loc.start_line or '?'}-{loc.end_line or '?'}" for loc in occ.locations)
-                typer.echo(f"      - {locs}")
-            typer.echo()
 
 
 def main() -> None:
