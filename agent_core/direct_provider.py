@@ -29,12 +29,23 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, get_type_hints, overload
 
 from pydantic import BaseModel
 
 from agent_core.tool_provider import TextContent, ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
+
+
+@dataclass(slots=True)
+class RegisteredTool:
+    """A registered tool with its metadata and implementation."""
+
+    name: str
+    description: str
+    parameters: type[BaseModel]
+    fn: Callable[[Any], ToolResult | Awaitable[ToolResult]]
 
 
 class DirectToolProvider:
@@ -57,7 +68,7 @@ class DirectToolProvider:
     """
 
     def __init__(self) -> None:
-        self._tools: dict[str, _RegisteredTool] = {}
+        self._tools: dict[str, RegisteredTool] = {}
 
     @overload
     def tool(self, fn: Callable[[Any], ToolResult]) -> Callable[[Any], ToolResult]: ...
@@ -130,7 +141,7 @@ class DirectToolProvider:
                     f"Tool {tool_name} parameter '{first_param.name}' must be a Pydantic BaseModel, got {param_type}"
                 )
 
-            self._tools[tool_name] = _RegisteredTool(
+            self._tools[tool_name] = RegisteredTool(
                 name=tool_name,
                 description=description,
                 parameters=param_type,
@@ -168,21 +179,3 @@ class DirectToolProvider:
             return result
         except Exception as e:
             return ToolResult(content=[TextContent(text=f"Tool error: {e}")], is_error=True)
-
-
-class _RegisteredTool:
-    """Internal representation of a registered tool."""
-
-    __slots__ = ("name", "description", "parameters", "fn")
-
-    def __init__(
-        self,
-        name: str,
-        description: str,
-        parameters: type[BaseModel],
-        fn: Callable[[Any], ToolResult | Awaitable[ToolResult]],
-    ) -> None:
-        self.name = name
-        self.description = description
-        self.parameters = parameters
-        self.fn = fn
