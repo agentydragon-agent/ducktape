@@ -6,6 +6,7 @@ null/None values and list all resources when filters are not provided.
 
 from __future__ import annotations
 
+import pytest
 import pytest_bazel
 from hamcrest import assert_that, contains_inanyorder, has_length
 
@@ -15,6 +16,7 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.notifications import enable_resources_caps
 
 
+@pytest.mark.asyncio
 async def test_list_resources_with_null_server_filter(compositor, origin_with_recorder, typed_resources_client):
     """Test that server=None lists resources from all servers."""
     origin, _ = origin_with_recorder
@@ -34,6 +36,7 @@ async def test_list_resources_with_null_server_filter(compositor, origin_with_re
     assert str(origin_resources[0].resource.uri) == "resource://foo/bar"
 
 
+@pytest.mark.asyncio
 async def test_list_resources_with_no_args_uses_defaults(compositor, origin_with_recorder, typed_resources_client):
     """Test that passing explicit None values works (fields are required but accept None)."""
     origin, _ = origin_with_recorder
@@ -48,6 +51,7 @@ async def test_list_resources_with_no_args_uses_defaults(compositor, origin_with
     assert_that(list(server_names), contains_inanyorder("resources", "compositor_meta", "origin"))
 
 
+@pytest.mark.asyncio
 async def test_list_resources_filters_by_server_when_provided(compositor, origin_with_recorder, typed_resources_client):
     """Test that server filter works when a specific server name is provided."""
     origin, _ = origin_with_recorder
@@ -71,6 +75,7 @@ async def test_list_resources_filters_by_server_when_provided(compositor, origin
     assert_that(result_other.resources, has_length(0))
 
 
+@pytest.mark.asyncio
 async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources_client):
     """Test that uri_prefix filter works correctly."""
 

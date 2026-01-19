@@ -1,5 +1,6 @@
 import asyncio
 
+import pytest
 import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -23,6 +24,7 @@ class _NotifyCatcher(MessageHandler):
         self.events.append("list_changed")
 
 
+@pytest.mark.asyncio
 async def test_resources_list_changed_notification(compositor, resources_server):
     catcher = _NotifyCatcher()
     async with Client(resources_server, message_handler=catcher) as client:

@@ -1,3 +1,4 @@
+import pytest
 import pytest_bazel
 
 from mcp_infra.compositor.resources_server import ResourcesSubscribeArgs
@@ -6,6 +7,7 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.notifications import enable_resources_caps, install_subscription_recorder
 
 
+@pytest.mark.asyncio
 async def test_client_resource_subscribe_and_unsubscribe(compositor, typed_resources_client):
     """Subscribe/unsubscribe to a server resource via the Compositor client.
 

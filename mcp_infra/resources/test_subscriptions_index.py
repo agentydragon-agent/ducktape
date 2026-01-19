@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import pytest_bazel
 from hamcrest import assert_that, empty, has_item, has_properties
 
@@ -7,6 +8,7 @@ from mcp_infra.compositor.resources_server import ResourcesSubscribeArgs
 from mcp_infra.prefix import MCPMountPrefix
 
 
+@pytest.mark.asyncio
 async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_recorder, typed_resources_client):
     # Compositor with one origin server mounted
     origin, hooks = origin_with_recorder
