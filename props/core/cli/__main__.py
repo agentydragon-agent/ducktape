@@ -34,7 +34,6 @@ from props.core.cli import common_options as opt
 from props.core.cli.cmd_agent_pkg import app as agent_pkg_app
 from props.core.cli.cmd_analyze_exec import cmd_analyze_exec
 from props.core.cli.cmd_classify_noops import cmd_classify_noops
-from props.core.critic.cli import app as critic_agent_app
 from props.core.cli.cmd_critic_dev import app as critic_dev_app
 from props.core.cli.cmd_db import db_app
 from props.core.cli.cmd_grade_validation import cmd_grade_validation
@@ -80,7 +79,6 @@ app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(agent_pkg_app, name="agent-pkg")
 
 # Agent-type CLI subcommands (dual-use: human operators + container agents)
-app.add_typer(critic_agent_app, name="critic-agent")
 app.add_typer(grader_agent_app, name="grader-agent")
 app.add_typer(critic_dev_app, name="critic-dev")
 

@@ -307,7 +307,6 @@ py_library(
         ":cmd_analyze_exec",
         ":cmd_classify_noops",
         ":cmd_critic_dev",
-        "//props/core/critic:cli_lib",
         ":cmd_db",
         ":cmd_gepa",
         ":cmd_grade_validation",
