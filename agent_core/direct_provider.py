@@ -27,18 +27,14 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import Any, ParamSpec, TypeVar, get_type_hints, overload
+from typing import Any, get_type_hints, overload
 
 from pydantic import BaseModel
 
 from agent_core.tool_provider import TextContent, ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 
 class DirectToolProvider:
@@ -134,13 +130,11 @@ class DirectToolProvider:
                     f"Tool {tool_name} parameter '{first_param.name}' must be a Pydantic BaseModel, got {param_type}"
                 )
 
-            is_async = asyncio.iscoroutinefunction(func)
             self._tools[tool_name] = _RegisteredTool(
                 name=tool_name,
                 description=description,
                 parameters=param_type,
                 fn=func,
-                is_async=is_async,
             )
             return func
 
@@ -168,10 +162,10 @@ class DirectToolProvider:
 
         try:
             validated_args = tool.parameters.model_validate(arguments)
-            if tool.is_async:
-                return await tool.fn(validated_args)
-            else:
-                return tool.fn(validated_args)
+            result = tool.fn(validated_args)
+            if isinstance(result, Awaitable):
+                return await result
+            return result
         except Exception as e:
             return ToolResult(content=[TextContent(text=f"Tool error: {e}")], is_error=True)
 
@@ -179,18 +173,16 @@ class DirectToolProvider:
 class _RegisteredTool:
     """Internal representation of a registered tool."""
 
-    __slots__ = ("name", "description", "parameters", "fn", "is_async")
+    __slots__ = ("name", "description", "parameters", "fn")
 
     def __init__(
         self,
         name: str,
         description: str,
         parameters: type[BaseModel],
-        fn: Callable[[Any], ToolResult] | Callable[[Any], Awaitable[ToolResult]],
-        is_async: bool,
+        fn: Callable[[Any], ToolResult | Awaitable[ToolResult]],
     ) -> None:
         self.name = name
         self.description = description
         self.parameters = parameters
         self.fn = fn
-        self.is_async = is_async
