@@ -53,7 +53,6 @@ async def run_loop_agent(
     *,
     image: str,
     llm_proxy_url: str,
-    model: str,
     extra_env: dict[str, str] | None = None,
     container_name: str | None = None,
 ):
@@ -73,7 +72,6 @@ async def run_loop_agent(
         db_config: Database configuration
         image: OCI image reference (e.g., "localhost:5050/critic@sha256:...")
         llm_proxy_url: URL of the LLM proxy (e.g., "http://props-llm-proxy:5052")
-        model: Model name to use for LLM calls
         extra_env: Additional environment variables for the container
         container_name: Optional container name (defaults to agent-{short_uuid})
 
@@ -119,8 +117,6 @@ async def run_loop_agent(
                 # LLM proxy credentials (same password as database)
                 "OPENAI_BASE_URL": f"{llm_proxy_url}/v1",
                 "OPENAI_API_KEY": temp_creds.password,
-                # Model to use
-                "MODEL": model,
             }
             if extra_env:
                 env.update(extra_env)

@@ -14,50 +14,8 @@ To review code, use the `exec` tool with commands like:
 ## Workflow
 
 1. **Analyze code** using the `exec` tool to run shell commands (rg, cat, grep, etc.)
-2. **Report issues** using the critic tools below
+2. **Report issues** using `insert_issue` and `insert_occurrence`
 3. **Complete review** by calling `submit` when done
-
-## Available Tools
-
-### exec
-Execute shell commands in the workspace. Use for code analysis.
-```json
-{"cmd": ["cat", "{{ workspace_dir }}/server.py"]}
-{"cmd": ["rg", "-n", "TODO", "{{ workspace_dir }}/"]}
-```
-
-### insert_issue
-Insert a reported issue. Call this before adding occurrences.
-- `issue_id`: Unique identifier (kebab-case slug)
-- `rationale`: Explanation of why this is an issue
-
-### insert_occurrence
-Insert a single-location occurrence for a reported issue.
-- `issue_id`: ID of the issue this occurrence belongs to
-- `file`: File path relative to workspace root
-- `start_line`: Starting line number (optional)
-- `end_line`: Ending line number (optional)
-
-### insert_occurrence_multi
-Insert a multi-location occurrence (e.g., duplication across files).
-- `issue_id`: ID of the issue
-- `locations`: List of `{file, start_line, end_line}` objects
-
-### delete_issue
-Delete a reported issue and all its occurrences.
-- `issue_id`: ID of the issue to delete
-
-### list_issues
-List all issues reported in this critique run. No parameters.
-
-### submit
-Finalize and submit the critique. Validates all issues.
-- `issues_count`: Total number of issues reported
-- `summary`: Brief summary of the code review findings
-
-### report_failure
-Report that critique could not be completed due to blocking issues.
-- `message`: Description of why the critique could not be completed
 
 ## Issue IDs
 
