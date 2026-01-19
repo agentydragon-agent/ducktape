@@ -39,6 +39,30 @@ pkg_tar(
 )
 
 # =============================================================================
+# In-container agent loop
+# =============================================================================
+
+py_library(
+    name = "loop",
+    srcs = ["loop.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":tools",
+        "//agent_core",
+        "//agent_core:direct_provider",
+        "//mcp_infra/exec:subprocess_exec",
+        "//openai_utils",
+        "//props/core:agent_helpers",
+        "//props/core/db:models",
+        "//props/core/db:session",
+        "//props/core/db:snapshots",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+# =============================================================================
 # In-container agent main entry point
 # =============================================================================
 
@@ -48,8 +72,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":loop",
         "//props/core:agent_helpers",
-        "//props/core/agent_loop:loop",
         "//props/core/db:session",
         "@pypi//jinja2",
     ],

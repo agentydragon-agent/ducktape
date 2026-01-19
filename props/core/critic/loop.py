@@ -35,10 +35,10 @@ from props.core.critic.tools import (
     ReportFailureArgs,
     SubmitArgs,
     SubmitResult,
-    list_issues,
-    report_failure,
-    submit,
 )
+from props.core.critic.tools import list_issues as _list_issues
+from props.core.critic.tools import report_failure as _report_failure
+from props.core.critic.tools import submit as _submit
 from props.core.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.core.db.session import get_session
 from props.core.db.snapshots import DBLocationAnchor
@@ -71,16 +71,16 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
         """Execute a shell command. Use for file operations, running tests, etc."""
         return await run_exec(args, default_cwd=WORKSPACE)
 
-    @provider.tool(name="insert_issue")
-    def insert_issue_impl(args: InsertIssueArgs) -> str:
+    @provider.tool
+    def insert_issue(args: InsertIssueArgs) -> str:
         """Insert a reported issue. Call this before adding occurrences for the issue."""
         with get_session() as session:
             issue = ReportedIssue(agent_run_id=agent_run_id, issue_id=args.issue_id, rationale=args.rationale)
             session.add(issue)
         return f"Inserted issue: {args.issue_id}"
 
-    @provider.tool(name="insert_occurrence")
-    def insert_occurrence_impl(args: InsertOccurrenceArgs) -> str:
+    @provider.tool
+    def insert_occurrence(args: InsertOccurrenceArgs) -> str:
         """Insert an occurrence for a reported issue. The issue must exist first.
 
         An occurrence can span multiple locations (e.g., duplicated code across files).
@@ -97,8 +97,8 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
             session.add(occurrence)
         return f"Inserted occurrence for {args.issue_id}"
 
-    @provider.tool(name="delete_issue")
-    def delete_issue_impl(args: DeleteIssueArgs) -> str:
+    @provider.tool
+    def delete_issue(args: DeleteIssueArgs) -> str:
         """Delete a reported issue and all its occurrences. Use to remove incorrect issues."""
         with get_session() as session:
             issue = session.query(ReportedIssue).filter_by(issue_id=args.issue_id).first()
@@ -107,32 +107,32 @@ def create_critic_tool_provider(agent_run_id: UUID, exit_state: ExitState) -> Di
             session.delete(issue)
         return f"Deleted issue: {args.issue_id}"
 
-    @provider.tool(name="list_issues")
-    def list_issues_impl() -> ListIssuesOutput:
+    @provider.tool
+    def list_issues() -> ListIssuesOutput:
         """List all issues reported in this critique run.
 
         Returns issue IDs, rationales, and occurrence counts.
         """
-        return list_issues(agent_run_id)
+        return _list_issues(agent_run_id)
 
-    @provider.tool(name="submit")
-    def submit_impl(args: SubmitArgs) -> SubmitResult:
+    @provider.tool
+    def submit(args: SubmitArgs) -> SubmitResult:
         """Finalize and submit the critique.
 
         Validates all issues and marks the run as complete. Call this when done reviewing.
         """
-        result = submit(agent_run_id, args)
+        result = _submit(agent_run_id, args)
         exit_state.should_exit = True
         logger.info("Submit tool requested exit")
         return result
 
-    @provider.tool(name="report_failure")
-    def report_failure_impl(args: ReportFailureArgs) -> str:
+    @provider.tool
+    def report_failure(args: ReportFailureArgs) -> str:
         """Report that the critique could not be completed.
 
         Use when there are blocking issues (e.g., no files in scope).
         """
-        result = report_failure(agent_run_id, args)
+        result = _report_failure(agent_run_id, args)
         exit_state.should_exit = True
         logger.info("Report failure tool requested exit")
         return result

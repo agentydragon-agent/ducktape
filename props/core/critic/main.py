@@ -19,7 +19,7 @@ from pathlib import Path
 from jinja2 import Environment
 
 from props.core.agent_helpers import fetch_snapshot, get_current_agent_run, get_scope_description
-from props.core.agent_loop.loop import run_critic_loop_sync
+from props.core.critic.loop import run_critic_loop_sync
 from props.core.db.session import get_session
 
 logger = logging.getLogger(__name__)
