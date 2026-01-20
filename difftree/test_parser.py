@@ -16,7 +16,7 @@ def test_file_change_dataclass():
     assert change.total_changes == 15
 
 
-def test_parse_git_diff_with_changes(temp_git_repo: Path, run_git):
+def test_parse_git_diff_with_changes(temp_git_repo: Path, run_git, monkeypatch):
     create_file(temp_git_repo, "file1.py", "line1\nline2\n")
     create_file(temp_git_repo, "file2.py", "line1\n")
     git_add_commit(run_git)
@@ -25,6 +25,7 @@ def test_parse_git_diff_with_changes(temp_git_repo: Path, run_git):
     create_file(temp_git_repo, "file2.py", "")
     create_file(temp_git_repo, "file3.py", "new file\n")
 
+    monkeypatch.chdir(temp_git_repo)
     changes = parse_git_diff(None)
     assert isinstance(changes, list)
 

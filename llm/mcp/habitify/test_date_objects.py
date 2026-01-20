@@ -9,7 +9,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from habitify_mcp_server.types import Status
+from habitify.types import Status
 
 
 @pytest.mark.asyncio

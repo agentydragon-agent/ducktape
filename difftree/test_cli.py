@@ -28,9 +28,10 @@ def git_repo_with_changes(temp_git_repo: Path, run_git) -> Path:
     return temp_git_repo
 
 
-def test_cli_default_columns(runner, git_repo_with_changes):
+def test_cli_default_columns(runner, git_repo_with_changes, monkeypatch):
     """Test CLI with default columns (all enabled)."""
-    result = runner.invoke(main, [], obj={}, catch_exceptions=False, env={"PWD": str(git_repo_with_changes)})
+    monkeypatch.chdir(git_repo_with_changes)
+    result = runner.invoke(main, [], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     assert result.output.strip() != ""

@@ -7,7 +7,7 @@ import pytest
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio to auto mode."""
-    config.addinivalue_line("asyncio_mode", "auto")
+    config.option.asyncio_mode = "auto"
 
 
 @pytest.fixture

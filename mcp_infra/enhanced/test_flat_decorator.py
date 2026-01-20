@@ -63,14 +63,14 @@ def test_flat_model_signature_exposed():
     def demo(input: InModel) -> OutModel:
         return OutModel(ok=True)
 
-    # flat_model() now returns FunctionTool; wrapper is accessible via .fn
+    # flat_model() returns FlatTool; .fn is the original function (not a wrapper)
+    # The flattening happens at the JSON Schema level for MCP, not in Python signature
     sig = inspect.signature(demo.fn)
     params = list(sig.parameters.values())
 
-    # Compare whole parameter specs directly
-    assert len(params) == 2
-    assert (params[0].name, params[0].kind) == ("a", inspect.Parameter.KEYWORD_ONLY)
-    assert (params[1].name, params[1].kind) == ("b", inspect.Parameter.KEYWORD_ONLY)
+    # Original function has 1 parameter: the input model
+    assert len(params) == 1
+    assert params[0].name == "input"
 
 
 async def test_flat_model_invocation_accepts_flat_kwargs():

@@ -23,7 +23,13 @@ def _discover_fixtures(base_package: str) -> list[tuple[str, str]]:
         if not detector_dir.is_dir():
             continue
         detector_name = detector_dir.name
+        # Skip __pycache__ directories
+        if detector_name == "__pycache__":
+            continue
         for item in detector_dir.iterdir():
+            # Skip __init__.py and __pycache__ directories
+            if item.name in ("__init__.py", "__pycache__") or item.name.endswith(".pyc"):
+                continue
             cases.append((f"{detector_name}/{item.name}", detector_name))
     return sorted(cases)
 

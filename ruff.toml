@@ -123,6 +123,7 @@ known-first-party = [
     "git_commit_ai",
     "gmail_archiver",
     "gnome_terminal_profile_switcher",
+    "habitify",
     "grader_util",
     "habitify_mcp_server",
     "homeassistant",
