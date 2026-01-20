@@ -566,30 +566,18 @@ def _find_wt_cli_binary() -> str | None:
 
 
 def _generate_wt_function_for_binary(binary_path: str) -> str:
-    """Generate shell function using a specific binary path."""
+    """Generate shell function using a specific binary path.
+
+    Reads the template from wt/shell/wt.sh and substitutes the binary path,
+    matching how install.main() works but using the Bazel binary instead of python -m.
+    """
+    from importlib import resources
+
     quoted_path = shlex.quote(binary_path)
-    return f"""
-wt() {{
-  local wt_command_file
-  wt_command_file=$(mktemp)
-  trap 'rm -f "$wt_command_file"' EXIT
-
-  {quoted_path} sh "$@" 3>"$wt_command_file"
-  local wt_exit_code=$?
-
-  if [ $wt_exit_code -eq 0 ] || [ $wt_exit_code -eq 2 ]; then
-    if [ -s "$wt_command_file" ]; then
-      local wt_shell_commands="$(cat "$wt_command_file")"
-      if [ -n "$wt_shell_commands" ]; then
-        eval "$wt_shell_commands"
-      fi
-    fi
-  fi
-
-  rm -f "$wt_command_file"
-  return $wt_exit_code
-}}
-"""
+    with resources.files("wt.shell").joinpath("wt.sh").open("r", encoding="utf-8") as f:
+        tpl = f.read()
+    # The template uses __PY__ -m wt.cli sh, replace with direct binary call
+    return tpl.replace("__PY__ -m wt.cli sh", quoted_path + " sh")
 
 
 @pytest.fixture
