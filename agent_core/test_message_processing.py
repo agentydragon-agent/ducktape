@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_bazel
-from hamcrest import assert_that, has_item, has_properties, instance_of, not_
+from hamcrest import all_of, assert_that, has_item, has_properties, instance_of, not_
 
 from agent_core.agent import Agent
 from agent_core.compaction import CompactionHandler
@@ -200,7 +200,9 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
         turn2_input = list(req2.input or [])
         assert_that(turn2_input, has_item(has_properties(id="rs_turn1")))
         assert_that(turn2_input, has_item(has_properties(call_id="call_1", id="fc_id_1", status="completed")))
-        assert_that(turn2_input, has_item(instance_of(FunctionCallOutputItem) & has_properties(call_id="call_1")))
+        assert_that(
+            turn2_input, has_item(all_of(instance_of(FunctionCallOutputItem), has_properties(call_id="call_1")))
+        )
 
         # Turn 3: should include both turns' sequences
         req3 = yield [m.make_item_reasoning(id="rs_turn2"), fc2]
@@ -208,11 +210,15 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
         # Turn 1's sequence still intact
         assert_that(turn3_input, has_item(has_properties(id="rs_turn1")))
         assert_that(turn3_input, has_item(has_properties(call_id="call_1", id="fc_id_1")))
-        assert_that(turn3_input, has_item(instance_of(FunctionCallOutputItem) & has_properties(call_id="call_1")))
+        assert_that(
+            turn3_input, has_item(all_of(instance_of(FunctionCallOutputItem), has_properties(call_id="call_1")))
+        )
         # Turn 2's sequence
         assert_that(turn3_input, has_item(has_properties(id="rs_turn2")))
         assert_that(turn3_input, has_item(has_properties(call_id="call_2", id="fc_id_2", status="in_progress")))
-        assert_that(turn3_input, has_item(instance_of(FunctionCallOutputItem) & has_properties(call_id="call_2")))
+        assert_that(
+            turn3_input, has_item(all_of(instance_of(FunctionCallOutputItem), has_properties(call_id="call_2")))
+        )
 
         yield m.assistant_text("done")
 

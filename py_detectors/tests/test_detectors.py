@@ -9,7 +9,7 @@ import pytest_bazel
 # Ensure detectors register themselves via module imports
 import py_detectors.__main__  # noqa: F401
 from py_detectors.registry import all_detectors, run_all
-from tests.fixture_utils import copy_fixture
+from tests.fixture_utils import copy_fixture, iter_children
 
 
 def _discover_fixtures(base_package: str) -> list[tuple[str, str]]:
@@ -19,17 +19,11 @@ def _discover_fixtures(base_package: str) -> list[tuple[str, str]]:
     """
     base = resources.files(base_package)
     cases: list[tuple[str, str]] = []
-    for detector_dir in base.iterdir():
+    for detector_dir in iter_children(base):
         if not detector_dir.is_dir():
             continue
         detector_name = detector_dir.name
-        # Skip __pycache__ directories
-        if detector_name == "__pycache__":
-            continue
-        for item in detector_dir.iterdir():
-            # Skip __init__.py and __pycache__ directories
-            if item.name in ("__init__.py", "__pycache__") or item.name.endswith(".pyc"):
-                continue
+        for item in iter_children(detector_dir):
             cases.append((f"{detector_name}/{item.name}", detector_name))
     return sorted(cases)
 
