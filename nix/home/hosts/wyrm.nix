@@ -53,6 +53,9 @@
     startup --output_user_root=/wyrmhdd/bazel
   '';
 
-  # Allow Claude Code to read Bazel output directory (test logs, etc.)
+  # Allow Claude Code to access Bazel output directory
+  # Read: for test logs, build outputs, etc.
+  # Write: for pre-commit hooks running bazel format, etc.
   programs.claude-code.extraAllowedReadDirs = [ "/wyrmhdd/bazel" ];
+  programs.claude-code.additionalDirectories = [ "/wyrmhdd/bazel" ];
 }

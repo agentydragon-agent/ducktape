@@ -59,6 +59,13 @@ in
     example = [ "/wyrmhdd/bazel" ];
   };
 
+  options.programs.claude-code.additionalDirectories = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = "Additional directories to include in the permission scope (extends beyond working directory)";
+    example = [ "/tmp" "/mnt/data" ];
+  };
+
   config.programs.claude-code = {
     enable = true;
     package = pkgsUnstable.claude-code; # Use unstable for faster updates
@@ -116,12 +123,19 @@ in
           "Bash(git stash list:*)"
           "WebFetch"
           "WebSearch"
+          # Network domains allowed for sandbox (derived from WebFetch rules)
+          "WebFetch(domain:pypi.org)"
+          "WebFetch(domain:docs.python.org)"
+          "WebFetch(domain:json.schemastore.org)"
+          "WebFetch(domain:www.schemastore.org)"
         ]
         ++ mkReadPerms alwaysAllowedReadDirs
         ++ inspectionPerms.permissions;
         # ask = ["Bash(*)"];  - use Bash without parens to allow all commands
         deny = [ ];
         defaultMode = "default";
+      } // lib.optionalAttrs (cfg.additionalDirectories != [ ]) {
+        additionalDirectories = cfg.additionalDirectories;
       };
     };
   };
