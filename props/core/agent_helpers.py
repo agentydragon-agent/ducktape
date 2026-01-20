@@ -41,7 +41,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from props.core.cli.cmd_snapshot import fetch_snapshot_to_path
+from props.core.db.snapshot_io import fetch_snapshot_to_path
 from props.core.db.models import AgentRun, FileSet
 from props.core.db.session import get_session
 from props.core.models.examples import WholeSnapshotExample
@@ -50,24 +50,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_current_agent_run_id(session: Session) -> UUID:
-    """Get the current agent run ID from the database.
+    """Get agent run ID from PostgreSQL current_agent_run_id() function.
 
-    Uses the PostgreSQL current_agent_run_id() function which extracts
-    the UUID from the database username (e.g., agent_{uuid} pattern).
-
-    This is the canonical way to get the current agent's run ID when running
-    inside the container. The database extracts the ID from the agent user's
-    username pattern.
-
-    Args:
-        session: Active SQLAlchemy session
-
-    Returns:
-        UUID of the current agent run
-
-    Raises:
-        RuntimeError: If not connected as an agent user, or if the
-                      current_agent_run_id() function returns NULL
+    Raises RuntimeError if not connected as an agent user.
     """
     result = session.execute(text("SELECT current_agent_run_id()"))
     agent_run_id = result.scalar()
@@ -81,34 +66,18 @@ def get_current_agent_run_id(session: Session) -> UUID:
     return agent_run_id
 
 
-def get_current_agent_run(session: Session) -> AgentRun:
-    """Get the current agent run ORM object from the database.
-
-    Combines get_current_agent_run_id() with loading the AgentRun record.
-    Use this when you need the full AgentRun object with typed access to
-    type_config via methods like prompt_optimizer_config().
-
-    Args:
-        session: Active SQLAlchemy session
-
-    Returns:
-        AgentRun object for the current agent
-
-    Raises:
-        RuntimeError: If not connected as an agent user
-        ValueError: If agent run record not found in database
-
-    Example:
-        with get_session() as session:
-            run = get_current_agent_run(session)
-            config = run.prompt_optimizer_config()  # Type-safe access
-            print(f"Target metric: {config.target_metric}")
-    """
-    agent_run_id = get_current_agent_run_id(session)
+def get_agent_run(session: Session, agent_run_id: UUID) -> AgentRun:
+    """Get agent run by ID. Raises ValueError if not found."""
     agent_run = session.get(AgentRun, agent_run_id)
     if agent_run is None:
-        raise ValueError(f"AgentRun not found for agent_run_id={agent_run_id}")
+        raise ValueError(f"AgentRun not found: {agent_run_id}")
     return agent_run
+
+
+def get_current_agent_run(session: Session) -> AgentRun:
+    """Get the current agent run from database via RLS context."""
+    agent_run_id = get_current_agent_run_id(session)
+    return get_agent_run(session, agent_run_id)
 
 
 def get_scope_description() -> str:
