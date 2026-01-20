@@ -4,15 +4,19 @@ from collections.abc import Iterator
 from importlib import resources
 from pathlib import Path
 
-# Directories to skip when iterating over fixture resources (contain binary files)
+# Directories and files to skip when iterating over fixture resources
 _SKIP_DIRS = {"__pycache__"}
+_SKIP_FILES = {"__init__.py"}  # Bazel auto-generates these for package structure
 
 
 def iter_children(trav: resources.abc.Traversable) -> Iterator[resources.abc.Traversable]:
-    """Iterate over children, skipping __pycache__ and other non-fixture directories."""
+    """Iterate over children, skipping __pycache__ and auto-generated __init__.py files."""
     for child in trav.iterdir():
-        if child.name not in _SKIP_DIRS:
-            yield child
+        if child.name in _SKIP_DIRS:
+            continue
+        if child.is_file() and child.name in _SKIP_FILES:
+            continue
+        yield child
 
 
 def _copy_tree(trav: resources.abc.Traversable, dest: Path) -> None:
