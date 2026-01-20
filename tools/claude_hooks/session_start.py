@@ -312,7 +312,7 @@ def setup_podman_storage() -> None:
     3. Explicit runroot and graphroot paths
     4. Host user namespace (userns = "host")
     """
-    podman_config: Traversable = importlib.resources.files("claude_hooks.config.podman")
+    podman_config: Traversable = importlib.resources.files("tools.claude_hooks.config.podman")
 
     # Storage configuration (system-level since running as root)
     storage_conf = Path("/etc/containers/storage.conf")
