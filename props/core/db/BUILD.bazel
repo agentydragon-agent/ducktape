@@ -74,6 +74,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "snapshot_io",
+    srcs = ["snapshot_io.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":models",
+        ":session",
+    ],
+)
+
 # =============================================================================
 # Higher-level modules (depend on models, session)
 # =============================================================================
