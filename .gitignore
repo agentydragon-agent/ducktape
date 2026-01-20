@@ -75,5 +75,17 @@ nix/**/result
 adgn/openai_openapi.yaml
 worktrees
 
+# Claude Code sandbox phantom dotfiles
+# Bug: https://github.com/anthropics/claude-code/issues/17258
+.bashrc
+.bash_profile
+.gitconfig
+.gitmodules
+.profile
+.ripgreprc
+.zprofile
+.zshrc
+.mcp.json
+
 # Python build artifacts
 **/dist/
