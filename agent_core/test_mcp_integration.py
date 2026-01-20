@@ -54,7 +54,7 @@ async def test_agent_mcp_echo_with_response(mcp_tool_provider_echo, test_handler
 
     outputs = [r for r in recording_handler.records if r.type == "function_call_output"]
     assert outputs, "No tool outputs captured"
-    assert outputs[0].result.structuredContent == {"echo": "hello"}
+    assert outputs[0].result.structured_content == {"echo": "hello"}
     assert res.text.strip() == "done"
 
 

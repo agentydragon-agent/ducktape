@@ -101,6 +101,7 @@ known-first-party = [
     "agent_pkg",
     "agent_server",
     "arg0_runner",
+    "bazel_util",
     "props",
     "claude_history",
     "claude_hooks",

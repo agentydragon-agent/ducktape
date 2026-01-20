@@ -323,7 +323,8 @@ class HabitifyClient:
         target_date = format_date_for_api(date)
 
         # Build the request body based on examples (API expects string value)
-        request_body: dict[str, Any] = {"status": status.value, "target_date": target_date}
+        # Status is a str-based enum, so it can be used directly as a string
+        request_body: dict[str, Any] = {"status": status, "target_date": target_date}
 
         # Add optional parameters if provided
         if note is not None:
