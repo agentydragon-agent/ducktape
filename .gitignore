@@ -86,6 +86,9 @@ worktrees
 .zprofile
 .zshrc
 .mcp.json
+.idea
+.vscode
+.claude/agents
 
 # Python build artifacts
 **/dist/
