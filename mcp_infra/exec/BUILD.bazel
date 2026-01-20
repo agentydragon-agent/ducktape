@@ -14,12 +14,16 @@ py_library(
 )
 
 # Subprocess execution utility - no MCP dependencies
+# Includes DirectExecArgs and run_direct_exec for in-container agent loops
 py_library(
     name = "subprocess",
     srcs = ["subprocess.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = [":models"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
 )
 
 # Image reading utility (shared by direct, seatbelt, bwrap, docker)
@@ -164,12 +168,18 @@ py_test(
 # Verify models and subprocess have no MCP/fastmcp dependencies
 assert_no_deps(
     name = "test_models_no_mcp_deps",
-    forbidden_pattern = "@pypi//fastmcp|@pypi//mcp",
+    forbidden = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
     target = "//mcp_infra/exec:models",
 )
 
 assert_no_deps(
     name = "test_subprocess_no_mcp_deps",
-    forbidden_pattern = "@pypi//fastmcp|@pypi//mcp",
+    forbidden = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
     target = "//mcp_infra/exec:subprocess",
 )

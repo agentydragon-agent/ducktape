@@ -68,7 +68,10 @@ py_library(
 # Verify agent_core doesn't depend on MCP packages
 assert_no_deps(
     name = "test_no_mcp_deps",
-    forbidden_pattern = "@pypi//fastmcp|@pypi//mcp",
+    forbidden = [
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+    ],
     target = "//agent_core",
 )
 
