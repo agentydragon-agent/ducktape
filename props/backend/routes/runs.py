@@ -287,18 +287,12 @@ class WsEventMessage(BaseModel):
     data: ParsedEventInfo
 
 
-class WsStatusData(BaseModel):
-    """Status data in WebSocket message."""
-
-    status: AgentRunStatus
-    completion_summary: str | None
-
-
 class WsStatusMessage(BaseModel):
     """WebSocket message containing run status."""
 
     type: Literal["status"] = "status"
-    data: WsStatusData
+    status: AgentRunStatus
+    completion_summary: str | None
 
 
 class WsCompleteMessage(BaseModel):
@@ -842,7 +836,7 @@ async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
         )
 
     def _make_status_msg(run: AgentRun) -> WsStatusMessage:
-        return WsStatusMessage(data=WsStatusData(status=run.status, completion_summary=run.completion_summary))
+        return WsStatusMessage(status=run.status, completion_summary=run.completion_summary)
 
     try:
         # Send initial state: all existing events
