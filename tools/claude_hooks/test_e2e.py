@@ -74,7 +74,7 @@ def _pick_free_port() -> int:
     """Pick an available ephemeral port."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
+    port: int = sock.getsockname()[1]
     sock.close()
     return port
 
