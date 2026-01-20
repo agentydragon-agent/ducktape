@@ -1,9 +1,9 @@
 """Typed stubs for exec MCP servers."""
 
 from mcp_infra.exec.bwrap import BwrapExecArgs
-from mcp_infra.exec.direct import DirectExecArgs
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.seatbelt import SandboxExecArgs, SandboxExecResult
+from mcp_infra.exec.subprocess import DirectExecArgs
 from mcp_infra.stubs.server_stubs import ServerStub
 
 
