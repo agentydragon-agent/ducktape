@@ -23,6 +23,7 @@ async def test_agent_mcp_echo_basic(mcp_tool_provider_echo, test_handlers, recor
     def mock(m: EchoMock):
         yield
         yield from m.echo_roundtrip("hello")
+        yield m.assistant_text("done")
 
     agent = await Agent.create(
         tool_provider=mcp_tool_provider_echo,

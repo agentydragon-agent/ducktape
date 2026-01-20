@@ -1,7 +1,5 @@
-import contextlib
 import importlib
 import importlib.util
-import io
 import json
 import os
 import shlex
@@ -34,7 +32,6 @@ from wt.shared.protocol import (
     StatusResult,
     StatusResultOk,
 )
-from wt.shell import install
 from wt.testing.config_factory import ConfigFactory
 from wt.testing.data import TestData
 from wt.testing.mock_factory import MockFactory, ServiceBuilder
@@ -552,6 +549,49 @@ def _apply_isolated_git_env(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
 
+def _find_wt_cli_binary() -> str | None:
+    """Find the Bazel-built wt-cli binary if running under Bazel."""
+    # Check for Bazel runfiles environment
+    runfiles_dir = os.environ.get("RUNFILES_DIR") or os.environ.get("TEST_SRCDIR")
+    if not runfiles_dir:
+        return None
+
+    # Try to find wt-cli in runfiles (it's in the same repo)
+    # The path structure is: runfiles/_main/wt/wt-cli
+    candidate = Path(runfiles_dir) / "_main" / "wt" / "wt-cli"
+    if candidate.exists():
+        return str(candidate)
+
+    return None
+
+
+def _generate_wt_function_for_binary(binary_path: str) -> str:
+    """Generate shell function using a specific binary path."""
+    quoted_path = shlex.quote(binary_path)
+    return f"""
+wt() {{
+  local wt_command_file
+  wt_command_file=$(mktemp)
+  trap 'rm -f "$wt_command_file"' EXIT
+
+  {quoted_path} sh "$@" 3>"$wt_command_file"
+  local wt_exit_code=$?
+
+  if [ $wt_exit_code -eq 0 ] || [ $wt_exit_code -eq 2 ]; then
+    if [ -s "$wt_command_file" ]; then
+      local wt_shell_commands="$(cat "$wt_command_file")"
+      if [ -n "$wt_shell_commands" ]; then
+        eval "$wt_shell_commands"
+      fi
+    fi
+  fi
+
+  rm -f "$wt_command_file"
+  return $wt_exit_code
+}}
+"""
+
+
 @pytest.fixture
 def shell_runner(tmp_path: Path):
     """Factory for running shell commands via the installed wt shell function."""
@@ -563,10 +603,13 @@ def shell_runner(tmp_path: Path):
             # Ensure env is a copy
             env = os.environ.copy() if env is None else env.copy()
 
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                install.main()
-            wt_fn = buf.getvalue()
+            # Find the Bazel-built wt-cli binary - tests require it for proper environment setup
+            wt_cli_path = _find_wt_cli_binary()
+            if not wt_cli_path:
+                raise RuntimeError(
+                    "wt-cli binary not found in runfiles. Ensure //wt:wt-cli is in the test's data dependencies."
+                )
+            wt_fn = _generate_wt_function_for_binary(wt_cli_path)
 
             full_script = f"""#!/bin/bash
 # Install wt function via builtin
