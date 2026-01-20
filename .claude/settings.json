@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool install --upgrade 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-6c8304bb/claude_hooks-0.1.0-py3-none-any.whl' && claude-session-start"
+            "command": "uv tool install --upgrade 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-7144e0db/claude_hooks-0.1.0-py3-none-any.whl' && claude-session-start"
           }
         ]
       }
