@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import platformdirs
 import yaml
 
 
@@ -36,8 +37,8 @@ class PreCommitRunner:
         debug_enabled = os.environ.get("CLAUDE_LINTER_DEBUG", "").lower() in ("1", "true", "yes")
         log_file = None
         if debug_enabled:
-            # Create log file
-            log_dir = Path.home() / ".cache" / "claude-linter"
+            # Create log file using platformdirs (respects XDG_CACHE_HOME)
+            log_dir = Path(platformdirs.user_cache_dir("claude-linter"))
             log_dir.mkdir(parents=True, exist_ok=True)
             log_file = log_dir / f"debug-{datetime.datetime.now().isoformat()}.log"
 

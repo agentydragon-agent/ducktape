@@ -19,6 +19,7 @@ py_library(
 
 # Root-level mcp tests
 _TEST_DEPS = [
+    "//agent_server:conftest",
     "//agent_server/testing",
     "//mcp_infra/notifications",
     "//mcp_infra/testing",
@@ -59,7 +60,10 @@ py_test(
 
 py_test(
     name = "test_policy_gateway_middleware",
-    srcs = ["test_policy_gateway_middleware.py"],
+    srcs = [
+        "test_policy_gateway_middleware.py",
+        "//agent_server:conftest.py",
+    ],
     imports = ["../.."],
     tags = [
         "requires_docker",
@@ -75,7 +79,10 @@ py_test(
 
 py_test(
     name = "test_policy_gateway_middleware_unit",
-    srcs = ["test_policy_gateway_middleware_unit.py"],
+    srcs = [
+        "test_policy_gateway_middleware_unit.py",
+        "//agent_server:conftest.py",
+    ],
     imports = ["../.."],
     deps = _TEST_DEPS + [
         "//agent_server/mcp/approval_policy",

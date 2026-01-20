@@ -20,6 +20,7 @@ py_library(
     data = ["commit_editmsg.mako"],
     visibility = ["//visibility:public"],
     deps = [
+        "//:bazel_util",
         "//agent_core",
         "//agent_core:mcp_provider",
         "//mcp_infra",

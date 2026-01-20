@@ -38,6 +38,7 @@ def make_post_tool_request(
 def _isolate_data_dir(tmp_path, monkeypatch):
     """Isolate tests from real user data and each other."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
 
 
 @pytest.fixture

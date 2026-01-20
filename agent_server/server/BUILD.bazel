@@ -92,6 +92,7 @@ py_library(
 _TEST_DEPS = [
     ":handlers",
     ":types",
+    "//agent_server:conftest",
     "//agent_server/testing",
     "//mcp_infra",
     "//mcp_infra/exec:models",
@@ -103,21 +104,30 @@ _TEST_DEPS = [
 
 py_test(
     name = "test_end_turn_ui_integration",
-    srcs = ["test_end_turn_ui_integration.py"],
+    srcs = [
+        "test_end_turn_ui_integration.py",
+        "//agent_server:conftest.py",
+    ],
     imports = ["../.."],
     deps = _TEST_DEPS,
 )
 
 py_test(
     name = "test_history_fold_typed",
-    srcs = ["test_history_fold_typed.py"],
+    srcs = [
+        "test_history_fold_typed.py",
+        "//agent_server:conftest.py",
+    ],
     imports = ["../.."],
     deps = _TEST_DEPS,
 )
 
 py_test(
     name = "test_reducer",
-    srcs = ["test_reducer.py"],
+    srcs = [
+        "test_reducer.py",
+        "//agent_server:conftest.py",
+    ],
     imports = ["../.."],
     deps = _TEST_DEPS,
 )

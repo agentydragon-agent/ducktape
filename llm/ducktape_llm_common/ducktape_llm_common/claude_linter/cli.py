@@ -5,12 +5,21 @@ import tempfile
 from pathlib import Path
 
 import click
+import platformdirs
 from pydantic import ValidationError
 
 from ..claude_code_api import EditToolCall, MultiEditToolCall, WriteToolCall
 from .config import get_merged_config
 from .models import HookRequest, LinterHookResponse
 from .precommit_runner import PreCommitRunner
+
+
+def get_cache_dir() -> Path:
+    """Get the cache directory for claude-linter.
+
+    Uses platformdirs to respect XDG_CACHE_HOME on Linux.
+    """
+    return Path(platformdirs.user_cache_dir("claude-linter"))
 
 
 def evaluate_pre(req: HookRequest) -> LinterHookResponse:
@@ -135,7 +144,7 @@ def check(files: tuple[str, ...]) -> None:
 @click.option("--older-than", type=int, default=7, help="Delete logs older than N days (default: 7)")
 def clean(dry_run: bool, older_than: int) -> None:
     """Clean up old log files."""
-    log_dir = Path.home() / ".cache" / "claude-linter"
+    log_dir = get_cache_dir()
     if not log_dir.exists():
         click.echo("No log directory found")
         return
@@ -177,7 +186,7 @@ def clean(dry_run: bool, older_than: int) -> None:
 def unified_hook() -> None:
     """Unified hook command that routes based on hook_event_name in JSON input."""
     # Create log directory
-    log_dir = Path.home() / ".cache" / "claude-linter"
+    log_dir = get_cache_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Read input

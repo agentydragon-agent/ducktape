@@ -40,6 +40,12 @@ py_library(
     deps = ["@pypi//pytest"],
 )
 
+# Utilities for Bazel-run tools (e.g., resolving BUILD_WORKING_DIRECTORY)
+py_library(
+    name = "bazel_util",
+    srcs = ["bazel_util.py"],
+)
+
 # ESLint configuration as js_library
 # This makes the config and its npm dependencies available to the ESLint aspect
 # no-lint: This is a config file, not a target to lint (avoids aspect self-application)

@@ -63,7 +63,10 @@ in
     type = lib.types.listOf lib.types.str;
     default = [ ];
     description = "Additional directories to include in the permission scope (extends beyond working directory)";
-    example = [ "/tmp" "/mnt/data" ];
+    example = [
+      "/tmp"
+      "/mnt/data"
+    ];
   };
 
   config.programs.claude-code = {
@@ -134,7 +137,8 @@ in
         # ask = ["Bash(*)"];  - use Bash without parens to allow all commands
         deny = [ ];
         defaultMode = "default";
-      } // lib.optionalAttrs (cfg.additionalDirectories != [ ]) {
+      }
+      // lib.optionalAttrs (cfg.additionalDirectories != [ ]) {
         additionalDirectories = cfg.additionalDirectories;
       };
     };

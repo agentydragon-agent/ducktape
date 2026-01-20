@@ -34,6 +34,7 @@ py_library(
 _TEST_DEPS = [
     ":approval_policy",
     "//agent_core:mcp_provider",
+    "//agent_server:conftest",
     "//agent_server/testing",
     "@pypi//docker",
     "@pypi//fastmcp",
@@ -45,7 +46,10 @@ _TEST_DEPS = [
 
 py_test(
     name = "test_policy_validation",
-    srcs = ["test_policy_validation.py"],
+    srcs = [
+        "test_policy_validation.py",
+        "//agent_server:conftest.py",
+    ],
     imports = ["../../.."],
     tags = [
         "requires_docker",

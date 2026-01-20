@@ -24,7 +24,7 @@ from . import __version__
 from .checker import FileChecker
 from .config.models import AutofixCategory
 from .hooks.exceptions import HookBugError
-from .hooks.handler import HOOK_REQUEST_TYPES, handle
+from .hooks.handler import HOOK_REQUEST_TYPES, HookHandler
 from .session.manager import RuleAction, SessionInfo, SessionManager
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,8 @@ def hook(request_json: str | None) -> None:
 
     # Process hook
     try:
-        response = handle(hook_type, request)
+        handler = HookHandler()
+        response = handler.handle(hook_type, request)
         # Output response
         click.echo(response.model_dump_json(by_alias=True, exclude_none=True))
     except HookBugError as e:

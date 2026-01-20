@@ -5,7 +5,42 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/lint:linters.bzl", "ruff_test")
 
-exports_files(["pyproject.toml"])
+exports_files(["conftest.py"])
+
+# Shared test fixtures for agent_server tests
+# Subdirectory tests can depend on this to get access to conftest fixtures
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = [".."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":root_modules",
+        "//agent_core",
+        "//agent_core_testing",
+        "//agent_server/mcp/approval_policy",
+        "//agent_server/persist",
+        "//agent_server/policies",
+        "//agent_server/policy_eval",
+        "//agent_server/runtime",
+        "//agent_server/server",
+        "//agent_server/server:handlers",
+        "//agent_server/server:types",
+        "//agent_server/testing",
+        "//mcp_infra/compositor",
+        "//mcp_infra/enhanced",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/testing",
+        "//openai_utils",
+        "@pypi//aiodocker",
+        "@pypi//docker",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
 
 # Root-level modules that don't belong in subdirectories
 # Split to break circular dependency: persist needs agent_types, presets needs persist

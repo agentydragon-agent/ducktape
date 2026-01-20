@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import platformdirs
+
 from ...claude_code_api import (
     BaseHookRequest,
     BaseResponse,
@@ -98,7 +100,7 @@ class HookHandler:
     def _setup_logging(self) -> None:
         """Set up session-based logging."""
         # Create logs directory
-        log_dir = Path.home() / ".claude-linter" / "logs"
+        log_dir = Path(platformdirs.user_cache_dir("claude-linter")) / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir = log_dir
 
@@ -754,27 +756,3 @@ class HookHandler:
                     lines.append(f"- {predicate}")
 
         return "\n".join(lines) if len(lines) > 1 else None
-
-
-# Global handler instance
-_handler = HookHandler()
-
-
-def handle(hook_type: str, request: BaseHookRequest) -> BaseResponse:
-    """
-    Handle a hook request and return a Claude response.
-
-    This is the main entry point for hook handling.
-
-    Args:
-        hook_type: Type of hook (PreToolUse, PostToolUse, Stop, etc.)
-        request: The hook request object
-
-    Returns:
-        The Claude response object
-
-    Raises:
-        HookBugError: If there's a bug in the hook handler
-    """
-    # Let exceptions propagate - the CLI will handle logging and notifications
-    return _handler.handle(hook_type, request)

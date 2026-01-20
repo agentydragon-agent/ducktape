@@ -35,6 +35,7 @@ from typing import TypeVar
 
 import pygit2
 
+from bazel_util import get_workspace_root
 from git_commit_ai.agent_backend import generate_commit_message_agent
 from git_commit_ai.editor import render_editor_content, run_editor
 
@@ -498,7 +499,7 @@ async def _execute_git_commit(message: str, *, amend: bool = False, verbose: boo
     if verbose:
         cmd.append("-v")
     cmd.extend(passthru)
-    commit_proc = await asyncio.create_subprocess_exec(*cmd, cwd=_get_working_directory())
+    commit_proc = await asyncio.create_subprocess_exec(*cmd, cwd=get_workspace_root())
     code = await commit_proc.wait()
     if code != 0:
         raise SystemExit(code)
@@ -591,17 +592,10 @@ async def _produce_message(inp: CommitMessageInput, *, no_verify: bool) -> tuple
 # ---------- main ------------------------------------------------------
 
 
-def _get_working_directory() -> Path:
-    """Get the working directory, respecting BUILD_WORKING_DIRECTORY from bazel run."""
-    if build_wd := os.environ.get("BUILD_WORKING_DIRECTORY"):
-        return Path(build_wd)
-    return Path.cwd()
-
-
 async def async_main(argv: list[str] | None = None):
     start_monotonic_s = time.monotonic()
     try:
-        repo = pygit2.Repository(_get_working_directory())
+        repo = pygit2.Repository(get_workspace_root())
     except pygit2.GitError:
         print("fatal: not a git repository (or any of the parent directories)", file=sys.stderr)
         raise SystemExit(128)

@@ -1,14 +1,24 @@
 """Shared pytest configuration and fixtures for ducktape_llm_common tests."""
 
-import os
 from pathlib import Path
 
 import pygit2
 import pytest
 import yaml
 
-# Disable loading user config in tests
-os.environ["CLAUDE_LINTER_NO_USER_CONFIG"] = "1"
+
+@pytest.fixture(autouse=True)
+def isolate_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Isolate test environment by redirecting cache and disabling user config.
+
+    Sets XDG_CACHE_HOME to tmp_path so cache writes (e.g., claude-linter logs) go to the
+    tmp directory instead of the user's home directory, which may be read-only in Bazel sandbox.
+
+    Also disables loading user config in tests.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setenv("CLAUDE_LINTER_NO_USER_CONFIG", "1")
+    return tmp_path
 
 
 @pytest.fixture

@@ -5,6 +5,7 @@ py_binary(
     name = "check_pytest_main",
     srcs = ["check_pytest_main.py"],
     visibility = ["//visibility:public"],
+    deps = ["//:bazel_util"],
 )
 
 # Validate all test files in repository
@@ -25,4 +26,5 @@ py_test(
         "manual",  # Run explicitly, not in wildcard test patterns
     ],
     visibility = ["//visibility:public"],
+    deps = ["//:bazel_util"],
 )

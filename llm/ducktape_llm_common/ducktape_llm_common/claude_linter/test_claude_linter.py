@@ -1,7 +1,5 @@
 """Unit tests for the unified Claude linter binary."""
 
-from pathlib import Path
-
 import pytest_bazel
 from click.testing import CliRunner
 
@@ -52,10 +50,8 @@ class TestUnifiedLinter:
 
     def test_debug_logs_not_created_by_default(self, tmp_path, monkeypatch):
         """Test that debug logs are not created by default."""
-
-        # Set up a fake cache directory
-        cache_dir = tmp_path / ".cache" / "claude-linter"
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        # XDG_CACHE_HOME is set by the autouse fixture isolate_test_environment
+        cache_dir = tmp_path / "claude-linter"
 
         # Ensure CLAUDE_LINTER_DEBUG is not set
         monkeypatch.delenv("CLAUDE_LINTER_DEBUG", raising=False)
@@ -74,10 +70,8 @@ class TestUnifiedLinter:
 
     def test_debug_logs_created_when_enabled(self, tmp_path, monkeypatch):
         """Test that debug logs ARE created when CLAUDE_LINTER_DEBUG is set."""
-
-        # Set up a fake cache directory
-        cache_dir = tmp_path / ".cache" / "claude-linter"
-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        # XDG_CACHE_HOME is set by the autouse fixture isolate_test_environment
+        cache_dir = tmp_path / "claude-linter"
 
         # Enable debug logging
         monkeypatch.setenv("CLAUDE_LINTER_DEBUG", "true")

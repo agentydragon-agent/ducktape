@@ -40,6 +40,8 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
+from bazel_util import get_workspace_root
+
 
 class CheckResult(NamedTuple):
     """Result of checking a single test file."""
@@ -98,7 +100,7 @@ def parse_build_file_for_target(build_file: Path, test_file: Path) -> dict | Non
 def find_build_file(test_file: Path) -> Path | None:
     """Find BUILD.bazel file for test_file by walking up directories."""
     current = test_file.parent
-    repo_root = Path.cwd()  # Assume we're run from repo root
+    repo_root = get_workspace_root()
 
     while current >= repo_root:
         build_file = current / "BUILD.bazel"
@@ -178,8 +180,9 @@ def check_file(file_path: Path) -> CheckResult:
     return CheckResult(file_path, False, "has test functions but missing pytest_bazel.main() entry point")
 
 
-def find_all_test_files(repo_root: Path) -> list[Path]:
+def find_all_test_files() -> list[Path]:
     """Find all test_*.py files in repository."""
+    repo_root = get_workspace_root()
     test_files = []
 
     for py_file in repo_root.rglob("test_*.py"):
@@ -208,15 +211,18 @@ def main() -> int:
     args = parser.parse_args()
 
     # Determine files to check
+    workspace_root = get_workspace_root()
+
     if args.all:
-        files = find_all_test_files(Path.cwd())
+        files = find_all_test_files()
         print(f"Checking {len(files)} test files in repository...", file=sys.stderr)
     elif args.files:
-        files = args.files
+        # Resolve relative paths against workspace root
+        files = [(workspace_root / f) if not f.is_absolute() else f for f in args.files]
     else:
         # Read from stdin (for pre-commit)
         lines = sys.stdin.read().strip().split("\n")
-        files = [Path(line.strip()) for line in lines if line.strip()]
+        files = [(workspace_root / line.strip()) for line in lines if line.strip()]
 
     if not files:
         print("No files to check", file=sys.stderr)
