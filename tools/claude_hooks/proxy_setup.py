@@ -76,6 +76,10 @@ def _get_bazel_proxy_rc() -> Path:
 # Pre-installed Anthropic CA on Claude Code web containers
 ANTHROPIC_CA_PREINSTALLED = Path("/usr/local/share/ca-certificates/swp-ca-production.crt")
 
+# Expected CA certificate attributes for Anthropic TLS inspection CA
+ANTHROPIC_CA_ORG = "Anthropic"
+ANTHROPIC_CA_CN_SUBSTRING = "TLS Inspection CA"
+
 # Java truststore password (standard default)
 TRUSTSTORE_PASSWORD = "changeit"
 
@@ -108,16 +112,64 @@ def _find_system_file(candidates: list[Path], description: str) -> Path:
     raise FileNotFoundError(f"Could not find {description}")
 
 
-def _extract_proxy_ca() -> None:
-    """Extract the TLS inspection CA certificate from the proxy.
+def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
+    """Check if a certificate is an Anthropic TLS Inspection CA.
 
-    Uses our local proxy (localhost:18081) which handles auth to upstream.
-    Connects through HTTP CONNECT tunnel, then performs TLS handshake to get certs.
+    The real Anthropic CA has:
+    - Subject O=Anthropic
+    - Subject CN contains "TLS Inspection CA"
+    """
+    org = _get_cert_attr(cert.subject, x509.oid.NameOID.ORGANIZATION_NAME)
+    cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
+    return org == ANTHROPIC_CA_ORG and ANTHROPIC_CA_CN_SUBSTRING in cn
+
+
+def _try_load_ca_from_filesystem() -> bool:
+    """Try to load CA from pre-installed filesystem location.
+
+    Claude Code web containers have the CA pre-installed at:
+    /usr/local/share/ca-certificates/swp-ca-production.crt
+
+    Returns True if CA was loaded successfully, False otherwise.
+    """
+    ca_path = os.environ.get("ANTHROPIC_CA_PATH")
+    ca_file = Path(ca_path) if ca_path else ANTHROPIC_CA_PREINSTALLED
+
+    if not ca_file.exists():
+        return False
+
+    try:
+        ca_pem = ca_file.read_text()
+        # Verify it's a valid PEM certificate with expected subject
+        cert = x509.load_pem_x509_certificate(ca_pem.encode())
+        if not _is_anthropic_tls_inspection_ca(cert):
+            logger.warning("CA at %s is not an Anthropic TLS Inspection CA", ca_file)
+            return False
+
+        logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
+        _get_bazel_ca_file().write_text(ca_pem)
+        return True
+    except (OSError, ValueError) as e:
+        logger.warning("Failed to load CA from %s: %s", ca_file, e)
+        return False
+
+
+def _extract_proxy_ca() -> None:
+    """Extract the TLS inspection CA certificate.
+
+    First tries to load from the pre-installed filesystem location (faster, no network).
+    Falls back to extracting from the TLS chain via proxy connection.
+
     Uses Python 3.13+ ssl.SSLSocket.get_unverified_chain() for cert chain access.
 
     Raises:
         CaExtractionError: If CA could not be extracted.
     """
+    # Prefer filesystem (pre-installed on Claude Code web containers)
+    if _try_load_ca_from_filesystem():
+        return
+
+    # Fall back to extracting from TLS chain
     proxy_port = _get_bazel_proxy_port()
     logger.info("Extracting TLS inspection CA via local proxy localhost:%d", proxy_port)
 
@@ -158,14 +210,12 @@ def _extract_proxy_ca() -> None:
             raise CaExtractionError("No certificates in chain")
 
         # Find the Anthropic TLS inspection CA in the chain
+        # Match on subject: O=Anthropic AND CN contains "TLS Inspection CA"
         for i, der_bytes in enumerate(cert_chain_der):
             cert = x509.load_der_x509_certificate(der_bytes)
-            subject_cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
-            issuer_cn = _get_cert_attr(cert.issuer, x509.oid.NameOID.COMMON_NAME)
-            org = _get_cert_attr(cert.subject, x509.oid.NameOID.ORGANIZATION_NAME)
-
-            if "Anthropic" in subject_cn or "Anthropic" in issuer_cn or "Anthropic" in org:
-                logger.info("Found Anthropic TLS inspection CA at position %d: %s", i, subject_cn)
+            if _is_anthropic_tls_inspection_ca(cert):
+                cn = _get_cert_attr(cert.subject, x509.oid.NameOID.COMMON_NAME)
+                logger.info("Found Anthropic TLS inspection CA at position %d: %s", i, cn)
                 pem_cert = cert.public_bytes(Encoding.PEM).decode()
                 _get_bazel_ca_file().write_text(pem_cert)
                 return
@@ -252,11 +302,24 @@ def _create_java_truststore() -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
+def _get_proxy_service_env() -> dict[str, str]:
+    """Get environment variables to pass to the proxy service.
+
+    In tests (when CLAUDE_AUTH_PROXY_CMD is set), we need to pass PYTHONPATH
+    so the proxy subprocess can find the module.
+    """
+    env: dict[str, str] = {}
+    # Pass PYTHONPATH if set (needed for Bazel tests where python -m is used)
+    if pythonpath := os.environ.get("PYTHONPATH"):
+        env["PYTHONPATH"] = pythonpath
+    return env
+
+
 def _build_auth_proxy_command(https_proxy: str) -> str:
     """Build command to run custom auth-forwarding proxy.
 
-    Uses the claude-auth-proxy console script entry point, which is installed
-    alongside claude-session-start when the claude_hooks wheel is installed.
+    Uses claude-auth-proxy console script by default (installed via uv tool install).
+    Tests can override via CLAUDE_AUTH_PROXY_CMD env var to use python -m invocation.
     """
     proxy = parse_proxy_url(https_proxy)
     proxy_port = _get_bazel_proxy_port()
@@ -271,9 +334,11 @@ def _build_auth_proxy_command(https_proxy: str) -> str:
     username = proxy.username
     password = proxy.password
 
-    # Use the claude-auth-proxy entry point (installed by wheel)
+    # Allow override for testing (Bazel tests set this to python -m path)
+    cmd = os.environ.get("CLAUDE_AUTH_PROXY_CMD", "claude-auth-proxy")
+
     return (
-        f"claude-auth-proxy "
+        f"{cmd} "
         f"--listen-port {proxy_port} "
         f"--upstream-host {upstream_host} "
         f"--upstream-port {upstream_port} "
@@ -336,7 +401,9 @@ def ensure_proxy_running() -> bool:
         # Update credentials and restart
         logger.info("Updating proxy with new credentials...")
         creds_file.write_text(https_proxy)
-        supervisor_setup.update_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment={})
+        supervisor_setup.update_service(
+            name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+        )
         if not _wait_for_proxy():
             raise ProxyServiceError("Proxy did not restart with new credentials")
         logger.info("Proxy credentials refreshed")
@@ -346,7 +413,9 @@ def ensure_proxy_running() -> bool:
     proxy_port = _get_bazel_proxy_port()
     logger.info("Starting auth-forwarding proxy on port %d via supervisor", proxy_port)
     creds_file.write_text(https_proxy)
-    supervisor_setup.add_service(name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment={})
+    supervisor_setup.add_service(
+        name=BAZEL_PROXY_SERVICE, command=command, directory=proxy_dir, environment=_get_proxy_service_env()
+    )
     if not _wait_for_proxy():
         raise ProxyServiceError("Bazel proxy did not start listening in time")
     logger.info("Bazel proxy started successfully")

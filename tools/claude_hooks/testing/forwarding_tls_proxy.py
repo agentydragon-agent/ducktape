@@ -24,17 +24,23 @@ from cryptography.x509.oid import NameOID
 
 
 def generate_mock_ca() -> tuple[bytes, bytes]:
-    """Generate a self-signed CA cert with 'Anthropic' in subject.
+    """Generate a self-signed CA cert matching Anthropic's real CA format.
+
+    The real Anthropic CA has:
+    - Subject: O=Anthropic, CN=sandbox-egress-production TLS Inspection CA
+    - Self-signed (issuer = subject)
+    - RSA 2048-bit key
+    - 10-year validity
 
     Returns (cert_pem, key_pem) tuple.
     """
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
+    # Match the real Anthropic CA certificate format
     subject = issuer = x509.Name(
         [
-            x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Mock Anthropic TLS Inspection"),
-            x509.NameAttribute(NameOID.COMMON_NAME, "Mock Anthropic CA"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Anthropic"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "sandbox-egress-production TLS Inspection CA"),
         ]
     )
 
@@ -45,7 +51,7 @@ def generate_mock_ca() -> tuple[bytes, bytes]:
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.now(UTC))
-        .not_valid_after(datetime.now(UTC) + timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=3650))  # 10 years like real CA
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .sign(key, hashes.SHA256())
     )
@@ -59,6 +65,12 @@ def generate_mock_ca() -> tuple[bytes, bytes]:
 
 def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -> tuple[bytes, bytes]:
     """Generate a server certificate signed by the CA for a specific hostname.
+
+    Matches real Anthropic proxy behavior:
+    - Subject CN = target hostname
+    - Issuer = Anthropic CA
+    - 24h validity (real proxy caches and rotates multiple certs per hostname)
+    - SAN with DNS name
 
     Returns (cert_pem, key_pem) tuple.
     """
@@ -238,10 +250,11 @@ class ForwardingTLSProxy:
             server_ssl = server_ctx.wrap_socket(server_sock, server_hostname=target_host)
 
             # Generate server cert for this hostname and wrap client connection
+            # Include CA cert in chain so clients can extract it via get_unverified_chain()
             server_cert_pem, server_key_pem = self._get_server_cert(target_host)
 
             client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem)
+            _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
             client_ssl = client_ctx.wrap_socket(client_sock, server_side=True)
 
             # Bidirectional forward
@@ -284,15 +297,22 @@ class ForwardingTLSProxy:
             pass
 
 
-def _load_cert_chain_from_bytes(ctx: ssl.SSLContext, cert_pem: bytes, key_pem: bytes) -> None:
+def _load_cert_chain_from_bytes(
+    ctx: ssl.SSLContext, cert_pem: bytes, key_pem: bytes, ca_cert_pem: bytes | None = None
+) -> None:
     """Load cert chain from PEM bytes by writing to temp files.
 
     Python's ssl module doesn't have load_cert_chain_from_bytes, so we
     write temp files and call load_cert_chain.
+
+    If ca_cert_pem is provided, it's appended to the cert file to send
+    the full chain (required for get_unverified_chain() to return the CA).
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         cert_path = Path(tmpdir) / "cert.pem"
         key_path = Path(tmpdir) / "key.pem"
-        cert_path.write_bytes(cert_pem)
+        # Include CA cert in chain so clients see the full chain
+        chain = cert_pem + (b"\n" + ca_cert_pem if ca_cert_pem else b"")
+        cert_path.write_bytes(chain)
         key_path.write_bytes(key_pem)
         ctx.load_cert_chain(str(cert_path), str(key_path))
