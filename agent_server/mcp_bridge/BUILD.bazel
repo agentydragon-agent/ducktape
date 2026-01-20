@@ -30,6 +30,7 @@ py_library(
 
 _TEST_DEPS = [
     ":mcp_bridge",
+    "//agent_server:conftest",
     "//agent_server/persist",
     "//agent_server/testing",
     "@pypi//fastmcp",

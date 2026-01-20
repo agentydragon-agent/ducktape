@@ -499,10 +499,10 @@ async def test_agent_compositor_flat_tools_request_schema(compositor, mcp_tool_p
         print(json.dumps(req.model_dump(exclude_none=True), indent=2))
 
         yield m.mcp_tool_call(mounted_a.prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20))
-        yield m.assistant_text("The result is 30.")
+        # Phase 1 ends with assistant text; capture Phase 2's initial request
+        req = yield m.assistant_text("The result is 30.")
 
-        # Phase 2: both servers mounted
-        req = yield
+        # Phase 2: both servers mounted (req already contains the request)
         assert req.tools is not None
         assert {"mcp_a_tool_a", "mcp_b_tool_b"} <= {t.name for t in req.tools}
         print("\nPHASE 2 REQUEST (mcp_a + mcp_b):")

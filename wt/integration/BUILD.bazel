@@ -20,6 +20,9 @@ py_test(
         "test_integration_cli_output_format.py",
         "test_integration_shell.py",
     ],
+    data = [
+        "//wt:wt-cli",  # Shell integration tests need the CLI binary
+    ],
     main = "test_integration_cli_daemon.py",
     deps = [
         ":conftest",

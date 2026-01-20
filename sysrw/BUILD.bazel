@@ -28,6 +28,7 @@ py_library(
     data = glob([
         "**/*.j2",
         "js/*.js",
+        "templates/**/*.txt",
     ]),
     imports = [".."],
     visibility = ["//visibility:public"],
