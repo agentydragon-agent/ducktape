@@ -18,12 +18,11 @@ from rich.console import Console
 from rich.table import Table
 
 import habitify
-
-from .habitify_client import HabitifyClient, HabitifyError
-from .server import create_habitify
-from .types import Status
-from .utils import format_rich_status, get_api_key_from_param_or_env, get_status_color
-from .utils.cli_utils import resolve_habit_for_cli
+from habitify.habitify_client import HabitifyClient, HabitifyError
+from habitify.server import create_habitify
+from habitify.types import Status
+from habitify.utils import format_rich_status, get_api_key_from_param_or_env, get_status_color
+from habitify.utils.cli_utils import resolve_habit_for_cli
 
 # Load environment variables
 load_dotenv()
@@ -249,9 +248,8 @@ async def _status_async(habit: str, date: str | None = None, api_key: str | None
             status = await client.check_habit_status(habit_id, date)
 
             # Create a nice table
-            # TODO: Verify if status.date can actually be None in check_habit_status response
             assert status.date is not None, "Status date should not be None"
-            formatted_date = datetime.fromisoformat(status.date).strftime("%B %d, %Y")
+            formatted_date = status.date.strftime("%B %d, %Y")
 
             console.print(f"Status for [bold green]{habit_name}[/] on [bold]{formatted_date}[/]:")
 
@@ -326,11 +324,12 @@ async def _log_async(
             result = await client.set_habit_status(habit_id=habit_id, status=status, date=date, note=note, value=value)
 
             # Format date
-            today = datetime.now().strftime("%Y-%m-%d")
-            actual_date = date or today
             if result and result.date:
-                actual_date = result.date
-            formatted_date = datetime.fromisoformat(actual_date).strftime("%B %d, %Y")
+                formatted_date = result.date.strftime("%B %d, %Y")
+            elif date:
+                formatted_date = datetime.fromisoformat(date).strftime("%B %d, %Y")
+            else:
+                formatted_date = datetime.now().strftime("%B %d, %Y")
 
             # Success message with color based on status
             status_color = get_status_color(status)

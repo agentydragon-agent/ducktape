@@ -1,7 +1,7 @@
 """Utility to resolve a habit by name or ID."""
 
-from ..habitify_client import HabitifyClient, HabitifyError
-from ..types import ResolvedHabit
+from habitify.habitify_client import HabitifyClient, HabitifyError
+from habitify.types import ResolvedHabit
 
 
 async def resolve_habit(client: HabitifyClient, id: str | None = None, name: str | None = None) -> ResolvedHabit:

@@ -6,7 +6,6 @@ Implements only the endpoints shown in the API reference YAML files.
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 import logging
 import os
@@ -15,8 +14,8 @@ from typing import Any, cast
 import httpx
 from dotenv import load_dotenv
 
-from .types import Area, Habit, HabitStatus, Status
-from .utils.date_utils import create_date_range, format_date_for_api
+from habitify.types import Area, Habit, HabitStatus, Status
+from habitify.utils.date_utils import format_date_for_api
 
 logger = logging.getLogger("habitify.client")
 
@@ -211,9 +210,9 @@ class HabitifyClient:
         except Exception as e:
             raise self._handle_error(e)
 
-    # All methods are async-only now
-
-    async def check_habit_status(self, habit_id: str, date: str | datetime.date | None = None) -> HabitStatus:
+    async def check_habit_status(
+        self, habit_id: str, date: str | datetime.date | datetime.datetime | None = None
+    ) -> HabitStatus:
         """
         Check a habit's status for a date.
 
@@ -221,10 +220,10 @@ class HabitifyClient:
 
         Args:
             habit_id: The habit ID
-            date: Optional date in YYYY-MM-DD format or date object (defaults to today)
+            date: Optional date (defaults to today). Can be datetime, date, or ISO string.
 
         Returns:
-            Habit status with ISO date string (YYYY-MM-DD)
+            Habit status with timezone-aware datetime
         """
         habit_id = self._validate_habit_id(habit_id)
         check_date = format_date_for_api(date)
@@ -234,70 +233,28 @@ class HabitifyClient:
             response.raise_for_status()
             result = cast(HabitStatus, self._process_response(response, HabitStatus))
 
-            # If API didn't return a date, add the request date
+            # If API didn't return a date, add the request date as timezone-aware datetime
             if not result.date:
-                if isinstance(date, datetime.date):
-                    result.date = date.isoformat()
+                if isinstance(date, datetime.datetime):
+                    result.date = date if date.tzinfo else date.replace(tzinfo=datetime.UTC)
+                elif isinstance(date, datetime.date):
+                    result.date = datetime.datetime.combine(date, datetime.time.min, tzinfo=datetime.UTC)
                 elif isinstance(date, str):
-                    result.date = date
+                    # Parse string to datetime
+                    parsed = datetime.datetime.fromisoformat(date)
+                    result.date = parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.UTC)
                 else:
-                    result.date = datetime.date.today().isoformat()
+                    result.date = datetime.datetime.now(tz=datetime.UTC)
 
             return result
         except Exception as e:
             raise self._handle_error(e)
 
-    async def check_habit_status_range(
-        self,
-        habit_id: str,
-        start_date: str | datetime.date | None = None,
-        end_date: str | datetime.date | None = None,
-        days: int | None = None,
-    ) -> list[HabitStatus]:
-        """
-        Check a habit's status for a range of dates.
-
-        This is a client-side implementation that fetches individual status records
-        for each date in the range concurrently.
-
-        Args:
-            habit_id: The habit ID
-            start_date: Start date of the range (inclusive)
-            end_date: End date of the range (inclusive)
-            days: Number of days to include
-
-        Returns:
-            List of habit statuses with ISO date strings (YYYY-MM-DD), one for each date in the range
-        """
-        habit_id = self._validate_habit_id(habit_id)
-
-        # Create the date range
-        _start_dt, _end_dt, date_range = create_date_range(start_date=start_date, end_date=end_date, days=days)
-
-        # Run all tasks concurrently using TaskGroup for automatic cancellation on error
-        try:
-            async with asyncio.TaskGroup() as tg:
-                tasks = [tg.create_task(self.check_habit_status(habit_id, date)) for date in date_range]
-            # Wait for all tasks to complete
-            results = [await t for t in tasks]
-        except Exception as e:
-            # TaskGroup automatically cancels pending tasks on error
-            logger.error(f"Error fetching habit status: {e!s}")
-            raise
-
-        # Sort results by date to maintain chronological order
-        # Use a default date for None values (should never happen in practice)
-        results.sort(key=lambda x: x.date or datetime.date.min)
-
-        return results
-
-    # All methods are async-only now
-
     async def set_habit_status(
         self,
         habit_id: str,
         status: Status,
-        date: str | datetime.date | None = None,
+        date: str | datetime.date | datetime.datetime | None = None,
         note: str | None = None,
         value: float | None = None,
     ) -> HabitStatus:
@@ -309,12 +266,12 @@ class HabitifyClient:
         Args:
             habit_id: The habit ID
             status: Status to set (Status enum)
-            date: Optional date in YYYY-MM-DD format or date object (defaults to today)
+            date: Optional date (defaults to today). Can be datetime, date, or ISO string.
             note: Optional note to attach to the log
             value: Optional value for habits with goals
 
         Returns:
-            Habit status with ISO date string (YYYY-MM-DD)
+            Habit status with timezone-aware datetime
         """
         if not status:
             raise HabitifyError("Status is required")
@@ -338,12 +295,18 @@ class HabitifyClient:
             response.raise_for_status()
 
             # Create result model with the input data since the API returns null for success
-            iso_date = (
-                date.isoformat()
-                if isinstance(date, datetime.date)
-                else (date if date else datetime.date.today().isoformat())
-            )
-            return HabitStatus(status=status, date=iso_date, note=note, value=value)
+            # Convert to timezone-aware datetime
+            if isinstance(date, datetime.datetime):
+                result_date = date if date.tzinfo else date.replace(tzinfo=datetime.UTC)
+            elif isinstance(date, datetime.date):
+                result_date = datetime.datetime.combine(date, datetime.time.min, tzinfo=datetime.UTC)
+            elif isinstance(date, str):
+                parsed = datetime.datetime.fromisoformat(date)
+                result_date = parsed if parsed.tzinfo else parsed.replace(tzinfo=datetime.UTC)
+            else:
+                result_date = datetime.datetime.now(tz=datetime.UTC)
+
+            return HabitStatus(status=status, date=result_date, note=note, value=value)
         except Exception as e:
             raise self._handle_error(e)
 

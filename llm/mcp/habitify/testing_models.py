@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RequestData(BaseModel):
@@ -19,7 +19,7 @@ class ResponseData(BaseModel):
 
     status_code: int = 200
     headers: dict[str, str] = {}
-    json_data: dict[str, Any] | None = None
+    json_data: dict[str, Any] | None = Field(default=None, alias="json")
     text: str | None = None
 
 

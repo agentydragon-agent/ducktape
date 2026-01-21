@@ -130,26 +130,6 @@ async def test_check_habit_status_invalid_date(client, mock_async_response, patc
         assert "date format" in str(excinfo.value).lower()
 
 
-async def test_check_habit_status_range(client, mock_async_response, patch_client_method):
-    mock_resp = mock_async_response("get_habit_status.yaml")
-    requested_dates = []
-
-    async def mock_get_with_date_tracking(url, **kwargs):
-        if "target_date" in kwargs.get("params", {}):
-            requested_dates.append(kwargs["params"]["target_date"])
-        return mock_resp
-
-    with patch_client_method("get", side_effect=mock_get_with_date_tracking) as mock_get:
-        statuses = await client.check_habit_status_range(
-            "-Lo9NTLRX3aCxg-PjN25", start_date="2025-05-01", end_date="2025-05-05"
-        )
-
-        assert mock_get.call_count == 5
-        assert_that(statuses, all_of(has_length(5), only_contains(instance_of(HabitStatus))))
-        dates = [status.date for status in statuses]
-        assert dates == sorted(dates)
-
-
 async def test_set_habit_status(client, mock_async_response, patch_client_method):
     mock_resp = mock_async_response("set_habit_status_(completed).yaml")
 

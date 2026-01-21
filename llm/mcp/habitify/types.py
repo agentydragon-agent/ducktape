@@ -5,26 +5,36 @@ These definitions are based on the actual Habitify API response structures
 as documented in the reference YAML files.
 """
 
-import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel
+from pydantic import BaseModel, BeforeValidator, PlainSerializer
 
 
-def _validate_iso_date(v: str) -> str:
-    """Validate ISO 8601 date format (YYYY-MM-DD)."""
-    if not isinstance(v, str):
-        raise ValueError("Date must be a string")
-    try:
-        datetime.date.fromisoformat(v)
+def _parse_datetime(v: str | datetime) -> datetime:
+    """Parse ISO datetime string or pass through datetime object."""
+    if isinstance(v, datetime):
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
         return v
-    except ValueError as e:
-        raise ValueError(f"Invalid ISO date format, expected YYYY-MM-DD: {e}") from e
+    if isinstance(v, str):
+        dt = datetime.fromisoformat(v)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
+    raise ValueError(f"Expected datetime or ISO string, got {type(v)}")
 
 
-# Type alias for ISO 8601 date strings (YYYY-MM-DD)
-ISODate = Annotated[str, AfterValidator(_validate_iso_date)]
+def _serialize_datetime(v: datetime) -> str:
+    """Serialize datetime to ISO string."""
+    return v.isoformat()
+
+
+# Annotated datetime type with proper serde for Habitify API
+HabitifyDatetime = Annotated[
+    datetime, BeforeValidator(_parse_datetime), PlainSerializer(_serialize_datetime, return_type=str)
+]
 
 
 class Status(str, Enum):
@@ -92,7 +102,7 @@ class HabitStatus(BaseModel):
     """Model for habit status response from the API."""
 
     status: Status
-    date: ISODate | None = None
+    date: HabitifyDatetime | None = None
     value: float | None = None
     note: str | None = None
 
@@ -179,30 +189,14 @@ class StatusResult(BaseModel):
     """Result for checkHabit tool."""
 
     status: Status
-    date: ISODate
-
-
-class DateRangeStatusItem(BaseModel):
-    """Status for a single date within a date range."""
-
-    date: ISODate
-    status: Status
-
-
-class DateRangeStatusResult(BaseModel):
-    """Result for getHabitStatus tool with date range."""
-
-    statuses: list[DateRangeStatusItem]
-    start_date: ISODate
-    end_date: ISODate
-    date_count: int
+    date: HabitifyDatetime
 
 
 class LogResult(BaseModel):
     """Result for logHabit/setHabitStatus tool."""
 
     status: Status
-    date: ISODate
+    date: HabitifyDatetime
     note: str | None = None
     value: float | None = None
 

@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
 
-from .config import load_api_key
-from .habitify_client import HabitifyClient
+from habitify.config import load_api_key
+from habitify.habitify_client import HabitifyClient
 
 
 def make_lifespan(api_key: str | None = None):

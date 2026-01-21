@@ -1,18 +1,10 @@
 """Habitify MCP tools implementation."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
-from .habitify_client import HabitifyClient, HabitifyError
-from .types import (
-    DateRangeStatusItem,
-    DateRangeStatusResult,
-    HabitResult,
-    HabitsResult,
-    LogResult,
-    Status,
-    StatusResult,
-)
-from .utils.habit_resolver import resolve_habit
+from habitify.habitify_client import HabitifyClient, HabitifyError
+from habitify.types import HabitResult, HabitsResult, LogResult, Status, StatusResult
+from habitify.utils.habit_resolver import resolve_habit
 
 
 def _require_habit_identifier(*, id: str | None, name: str | None, action: str = "use") -> None:
@@ -57,56 +49,26 @@ async def get_habit(client: HabitifyClient, *, id: str | None = None, name: str 
 
 
 async def get_habit_status(
-    client: HabitifyClient,
-    *,
-    id: str | None = None,
-    name: str | None = None,
-    date: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    days: int | None = None,
-) -> StatusResult | DateRangeStatusResult:
-    """Get a habit's status for one or more dates.
+    client: HabitifyClient, *, id: str | None = None, name: str | None = None, date: datetime | None = None
+) -> StatusResult:
+    """Get a habit's status for a single date.
 
-    Single date: use 'date' parameter.
-    Date range (inclusive): use start_date/end_date, start_date/days, end_date/days, or just days.
+    Args:
+        client: HabitifyClient instance
+        id: Habit ID (optional if name is provided)
+        name: Habit name (optional if id is provided)
+        date: Date to check (defaults to today)
+
+    Returns:
+        StatusResult with status and date
     """
     _require_habit_identifier(id=id, name=name, action="check")
     resolved = await resolve_habit(client, id=id, name=name)
 
-    is_range_query = any((start_date, end_date, days))
-
-    if date and is_range_query:
-        raise HabitifyError("Cannot specify both date and date range parameters (start_date, end_date, days).")
-
-    if is_range_query:
-        statuses = await client.check_habit_status_range(
-            resolved.habit_id, start_date=start_date, end_date=end_date, days=days
-        )
-
-        items = []
-        first_date = None
-        last_date = None
-
-        for status in statuses:
-            # TODO: Verify if status.date can actually be None in API responses
-            assert status.date is not None, "Status date should not be None in range query"
-            items.append(DateRangeStatusItem(date=status.date, status=status.status))
-            if first_date is None or status.date < first_date:
-                first_date = status.date
-            if last_date is None or status.date > last_date:
-                last_date = status.date
-
-        return DateRangeStatusResult(
-            statuses=items,
-            start_date=first_date or datetime.now().strftime("%Y-%m-%d"),
-            end_date=last_date or datetime.now().strftime("%Y-%m-%d"),
-            date_count=len(items),
-        )
-
-    date_str = date or datetime.now().strftime("%Y-%m-%d")
-    status = await client.check_habit_status(resolved.habit_id, date_str)
-    return StatusResult(status=status.status, date=date_str)
+    check_date = date or datetime.now(tz=UTC)
+    status = await client.check_habit_status(resolved.habit_id, check_date)
+    assert status.date is not None, "Status date should not be None"
+    return StatusResult(status=status.status, date=status.date)
 
 
 async def set_habit_status(
@@ -115,15 +77,28 @@ async def set_habit_status(
     id: str | None = None,
     name: str | None = None,
     status: Status = Status.COMPLETED,
-    date: str | None = None,
+    date: datetime | None = None,
     note: str | None = None,
     value: float | None = None,
 ) -> LogResult:
-    """Set a habit's status for a specific date."""
+    """Set a habit's status for a specific date.
+
+    Args:
+        client: HabitifyClient instance
+        id: Habit ID (optional if name is provided)
+        name: Habit name (optional if id is provided)
+        status: Status to set (defaults to COMPLETED)
+        date: Date to set status for (defaults to today)
+        note: Optional note to attach
+        value: Optional value for habits with goals
+
+    Returns:
+        LogResult with status, date, note, and value
+    """
     _require_habit_identifier(id=id, name=name, action="set")
     resolved = await resolve_habit(client, id=id, name=name)
 
-    result = await client.set_habit_status(resolved.habit_id, status, date, note, value)
-    # TODO: Verify if result.date can actually be None when setting status
+    set_date = date or datetime.now(tz=UTC)
+    result = await client.set_habit_status(resolved.habit_id, status, set_date, note, value)
     assert result.date is not None, "Result date should not be None after setting status"
     return LogResult(status=result.status, date=result.date, note=result.note, value=result.value)

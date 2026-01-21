@@ -1,6 +1,6 @@
 """Utility functions for the Habitify MCP server."""
 
-from ..config import load_api_key
+from habitify.config import load_api_key
 
 STATUS_COLORS = {"completed": "green", "skipped": "yellow", "failed": "red", "none": "blue"}
 

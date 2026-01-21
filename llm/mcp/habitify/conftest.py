@@ -13,6 +13,13 @@ import yaml
 from habitify.habitify_client import HabitifyClient
 from habitify.testing_models import TestReference
 
+
+def pytest_configure(config):
+    """Configure pytest-asyncio to auto mode."""
+    config.addinivalue_line("markers", "asyncio: mark test as async")
+    config.option.asyncio_mode = "auto"
+
+
 # Reference data is in the api_reference directory
 _REFERENCE_DATA_DIR = Path(__file__).parent / "api_reference"
 

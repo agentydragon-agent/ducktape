@@ -5,7 +5,7 @@ CLI-specific utility functions.
 import typer
 from rich.console import Console
 
-from ..habitify_client import HabitifyClient, HabitifyError
+from habitify.habitify_client import HabitifyClient, HabitifyError
 
 # Import asyncio for async functions
 
