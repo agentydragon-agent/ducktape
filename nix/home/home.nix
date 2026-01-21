@@ -654,6 +654,7 @@ in
     bazel = "bazelisk"; # Use bazelisk to auto-download correct Bazel version per .bazelversion
     npx = "echo '❌ No you idiot, use pnpm dlx' && false";
     gmrc = "glab mr create --fill --remove-source-branch --yes";
+    gs = "git status --short --branch --show-stash";
     vimdiff = "nvim -d";
     alert = ''notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')"'';
 
