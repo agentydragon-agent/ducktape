@@ -1,2 +1,2 @@
 def f():
-    from pkg.inside_import_cycle import b  # noqa: F401
+    from pkg.imports_inside_def.inside_import_cycle import b  # noqa: F401

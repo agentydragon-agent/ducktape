@@ -1,1 +1,1 @@
-import pkg.inside_import_cycle.a  # cycle back to a
+import pkg.imports_inside_def.inside_import_cycle.a  # cycle back to a
