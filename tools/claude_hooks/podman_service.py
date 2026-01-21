@@ -9,7 +9,9 @@ import importlib.resources
 import logging
 import shutil
 import subprocess
+import textwrap
 import time
+from dataclasses import dataclass
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
@@ -17,9 +19,53 @@ from tools.claude_hooks.supervisor_setup import SupervisorClient
 
 logger = logging.getLogger(__name__)
 
+PODMAN_SERVICE = "podman"
+
 
 class PodmanInstallError(Exception):
     """Raised when podman installation fails."""
+
+
+@dataclass
+class PodmanSetup:
+    """Result of podman setup."""
+
+    socket_url: str
+    supervisor: SupervisorClient
+
+    @property
+    def status(self) -> str:
+        """Get human-readable podman status."""
+        if self.supervisor.is_service_running(PODMAN_SERVICE, wait_for_start=False):
+            return "running"
+        return "not running"
+
+    @property
+    def guidance(self) -> str:
+        """Get podman usage guidance for gVisor sandbox."""
+        return textwrap.dedent(
+            f"""\
+            Podman in gVisor Sandbox
+            ========================
+            Podman is configured with gVisor-specific workarounds.
+            Running under supervisor (status: {self.status}). DOCKER_HOST={self.socket_url}
+
+            Required Container Flags
+            ------------------------
+            All containers MUST use `--annotation run.oci.keep_original_groups=1`.
+            This bypasses /proc/self/setgroups which is unavailable in gVisor.
+            Otherwise they will fail with:
+              "crun: error opening file `/proc/self/setgroups`: No such file or directory"
+
+            Use fully qualified image names (docker.io/library/...)
+
+            Configuration Applied:
+            ----------------------
+            - VFS storage (/etc/containers/storage.conf)
+            - userns = "host"
+            - --network=host
+            """
+        )
 
 
 def is_podman_available() -> bool:
@@ -99,7 +145,7 @@ def setup_podman_storage() -> None:
     logger.info("Configured podman for gVisor: VFS storage, host userns, registries")
 
 
-def setup_podman(supervisor: SupervisorClient) -> str:
+def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
     """Set up podman storage and start service.
 
     If podman is not installed, attempts to install it via apt.
@@ -108,7 +154,7 @@ def setup_podman(supervisor: SupervisorClient) -> str:
         supervisor: Supervisor client for managing services
 
     Returns:
-        Socket URL (with unix:// prefix)
+        PodmanSetup with socket URL and supervisor client
 
     Raises:
         PodmanInstallError: If podman installation fails.
@@ -121,7 +167,7 @@ def setup_podman(supervisor: SupervisorClient) -> str:
     setup_podman_storage()
     socket_url = start_podman_service(supervisor)
     logger.info(f"Podman service started: DOCKER_HOST={socket_url}")
-    return socket_url
+    return PodmanSetup(socket_url=socket_url, supervisor=supervisor)
 
 
 def start_podman_service(supervisor: SupervisorClient) -> str:

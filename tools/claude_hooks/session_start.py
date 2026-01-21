@@ -13,9 +13,7 @@ import logging.handlers
 import os
 import subprocess
 import sys
-import textwrap
 import traceback
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -34,43 +32,6 @@ from tools.claude_hooks import (
     supervisor_setup,
 )
 from tools.claude_hooks.errors import DirenvError, SkipError
-
-
-@dataclass
-class PodmanSetup:
-    """Result of podman setup."""
-
-    socket_url: str
-    supervisor: supervisor_setup.SupervisorClient
-
-    @property
-    def guidance(self) -> str:
-        """Get podman usage guidance for gVisor sandbox."""
-        status = "running" if self.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
-        return textwrap.dedent(
-            f"""\
-            Podman in gVisor Sandbox
-            ========================
-            Podman is configured with gVisor-specific workarounds.
-            Running under supervisor (status: {status}). DOCKER_HOST={self.socket_url}
-
-            Required Container Flags
-            ------------------------
-            All containers MUST use `--annotation run.oci.keep_original_groups=1`.
-            This bypasses /proc/self/setgroups which is unavailable in gVisor.
-            Otherwise they will fail with:
-              "crun: error opening file `/proc/self/setgroups`: No such file or directory"
-
-            Use fully qualified image names (docker.io/library/...)
-
-            Configuration Applied:
-            ----------------------
-            - VFS storage (/etc/containers/storage.conf)
-            - userns = "host"
-            - --network=host
-            """
-        )
-
 
 LOG_FILE = paths.get_cache_dir() / "session-start.log"
 TIMESTAMP_FILE = paths.get_cache_dir() / "session-hook-last-run"
@@ -439,7 +400,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         supervisor_result = supervisor_task.result()
         return proxy_setup.setup_bazel_proxy(supervisor_result.client)
 
-    async def setup_podman_with_supervisor() -> PodmanSetup:
+    async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
         await supervisor_task
         if exc := supervisor_task.exception():
@@ -450,8 +411,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
             raise RuntimeError("Podman setup skipped via CLAUDE_HOOKS_SKIP_PODMAN")
 
         supervisor_result = supervisor_task.result()
-        socket_url = podman_service.setup_podman(supervisor_result.client)
-        return PodmanSetup(socket_url=socket_url, supervisor=supervisor_result.client)
+        return podman_service.setup_podman(supervisor_result.client)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper."""
