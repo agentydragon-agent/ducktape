@@ -229,6 +229,14 @@ def emit_session_context(collector: LogCollector) -> None:
         lines.append("Warnings:")
         lines.extend(f"  - {msg}" for msg in collector.warnings)
 
+    # Check for GitHub CI token
+    if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
+        lines.append("GitHub CI Access:")
+        lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT with read access to ducktape repo.")
+        lines.append("  Use with `gh` CLI: GH_TOKEN=$DUCKTAPE_CI_READ_GITHUB_TOKEN gh ...")
+        lines.append("  Capabilities: read repo, read CI logs, list workflow runs, view PR status.")
+        lines.append("  Workflow: push to branch, ask user to create PR, then poll CI status via gh.")
+
     lines.append(f"Full log: {LOG_FILE}")
 
     print("\n".join(lines))
@@ -448,12 +456,14 @@ async def run_web_mode(hook_input: HookInput) -> None:
         logger.warning("Failed to install nix: %s", nix_result)
 
     docker_host: str | None = None
+    podman_env: dict[str, str] | None = None
     if isinstance(podman_result, SkipError):
         logger.info("Podman setup skipped: %s", podman_result)
     elif isinstance(podman_result, BaseException):
         logger.warning("Failed to configure podman: %s", podman_result)
     else:
         docker_host = podman_result.socket_url
+        podman_env = podman_result.env_vars
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -482,6 +492,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         bazel_proxy_rc=proxy_setup._get_bazel_proxy_rc(),
         nix_paths=nix_paths,
         docker_host=docker_host,
+        podman_env=podman_env,
         hook_timestamp=hook_timestamp,
     )
 
