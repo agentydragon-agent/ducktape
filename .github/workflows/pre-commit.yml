@@ -16,10 +16,15 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      # ============================================================================
+      # ENVIRONMENT SETUP
+      # ============================================================================
+
       - uses: ./.github/actions/setup-python-env
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
+      # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
 
       # Cluster validation tools - use official actions where available
       - name: Setup OpenTofu
@@ -32,27 +37,15 @@ jobs:
         with:
           tflint_version: v0.53.0
 
-      - name: Setup Flux CLI
-        uses: fluxcd/flux2/action@main
-
-      - name: Install cluster validation tools
+      # kubeconform for kubeconform-precommit-hook (not hermetic via Bazel)
+      # Other tools (kustomize, flux, helm, kubeseal) are hermetic via @multitool
+      - name: Install kubeconform
         run: |
-          # Tools without official actions - download binaries
-          # kubeconform: Kubernetes manifest validation
-          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/kubeconform /usr/local/bin/
-
-          # kustomize: Kubernetes configuration management
-          curl -sL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.5.0/kustomize_v5.5.0_linux_amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/kustomize /usr/local/bin/
-
-          # kubeseal: Sealed Secrets CLI (for validate-sealed-secrets hook)
-          curl -sL https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/kubeseal /usr/local/bin/
-
-          # helm: Kubernetes package manager (for helm-template-dry-run hook)
-          curl -sL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp
-          sudo install /tmp/linux-amd64/helm /usr/local/bin/
+          CHECKSUM="95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73"
+          curl -fsSL -o /tmp/kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          echo "$CHECKSUM  /tmp/kubeconform.tar.gz" | sha256sum -c -
+          tar xz -C /tmp -f /tmp/kubeconform.tar.gz
+          sudo install -m755 /tmp/kubeconform /usr/local/bin/
 
       # Nix for nixfmt-nix pre-commit hook (runs: nix run nixpkgs#nixfmt)
       - name: Install Nix
@@ -94,15 +87,36 @@ jobs:
           restore-keys: |
             pre-commit-${{ runner.os }}-
 
-      - name: Install and run pre-commit
+      # ============================================================================
+      # PRE-COMMIT INSTALLATION
+      # ============================================================================
+
+      - name: Install pre-commit
+        run: |
+          # Version synced with flake.nix (nixpkgs.pre-commit)
+          # Update both when bumping pre-commit version
+          pip install pre-commit==4.0.1
+
+      # ============================================================================
+      # PRE-COMMIT RUN
+      # ============================================================================
+
+      - name: Run pre-commit
         run: |
           # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
           # isolated node environments (markdownlint-cli2 hook uses npm)
           unset NODE_OPTIONS
-          # Version synced with flake.nix (nixpkgs.pre-commit)
-          # Update both when bumping pre-commit version
-          pip install pre-commit==4.0.1
           pre-commit run --all-files --show-diff-on-failure
+
+      # ============================================================================
+      # CACHE SAVES
+      # ============================================================================
+
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
+        with:
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
       - name: Save Ansible Galaxy cache
         if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'

@@ -29,18 +29,8 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Setup Bazelisk
-        uses: bazelbuild/setup-bazelisk@v3
-
-      - name: Restore Bazel cache
-        id: cache-bazel-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel-${{ runner.os }}-props-cli-${{ hashFiles('MODULE.bazel', 'requirements_bazel.txt') }}
-          restore-keys: bazel-${{ runner.os }}-
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
 
       - name: Build OCI image
         run: bazelisk build //props/core/cli:image
@@ -55,11 +45,8 @@ jobs:
       - name: Push to GHCR
         run: bazelisk run //props/core/cli:push_ghcr
 
-      - name: Save Bazel cache
-        if: always() && steps.cache-bazel-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ steps.cache-bazel-restore.outputs.cache-primary-key }}
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
