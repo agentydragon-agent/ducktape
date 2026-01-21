@@ -9,8 +9,11 @@ from openai_utils.model import ResponsesRequest
 from openai_utils.retry import chat_create_with_retries
 
 
-def _huge_prompt(length: int = 700_000) -> str:
-    """Return a deliberately oversized prompt to trigger context-length errors."""
+def _huge_prompt(length: int = 5_000_000) -> str:
+    """Return a deliberately oversized prompt to trigger context-length errors.
+
+    5M chars is ~1.25M tokens, exceeding even the largest context windows.
+    """
 
     return "x" * length
 

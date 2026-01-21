@@ -57,6 +57,10 @@ py_test(
         "conftest.py",
         "test_pydantic_strict_mode_live.py",
     ],
+    env_inherit = [
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+    ],
     tags = ["live_openai_api"],
     deps = [
         ":openai_utils",
@@ -75,6 +79,10 @@ py_test(
         "conftest.py",
         "test_context_length_live.py",
     ],
+    env_inherit = [
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
+    ],
     tags = ["live_openai_api"],
     deps = [
         ":openai_utils",
@@ -91,6 +99,10 @@ py_test(
     srcs = [
         "conftest.py",
         "test_responses_api_live.py",
+    ],
+    env_inherit = [
+        "OPENAI_API_KEY",
+        "OPENAI_MODEL",
     ],
     tags = ["live_openai_api"],
     deps = [
