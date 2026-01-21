@@ -186,15 +186,7 @@ def run_session_start_hook(
         # Run via python -m (Bazel test mode)
         cmd = [sys.executable, "-m", "tools.claude_hooks.session_start"]
 
-    return subprocess.run(
-        cmd,
-        check=False,
-        input=hook_input,
-        capture_output=True,
-        text=True,
-        env=env,
-        timeout=300,
-    )
+    return subprocess.run(cmd, check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
 
 
 @pytest.fixture(autouse=True)
@@ -300,6 +292,114 @@ class TestFullSessionStartHook:
         result = run_session_start_hook(isolated_dirs.project, env, source="resume")
 
         assert result.returncode == 0, f"Hook failed on resume:\nstderr: {result.stderr}"
+
+
+class TestPodmanIntegration:
+    """E2E tests for podman integration with session start hook.
+
+    These tests verify that podman is properly configured and can run containers
+    after the session start hook runs. They require podman to be installed.
+    """
+
+    @pytest.fixture
+    def podman_hook_env(self, isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) -> dict[str, str]:
+        """Set up environment for running session start hook WITH podman enabled."""
+        proxy_url = f"http://proxy_user:test_jwt_token@127.0.0.1:{forwarding_proxy.port}"
+
+        # Pick isolated ports for supervisor and bazel proxy
+        supervisor_port = _pick_free_port()
+        bazel_proxy_port = _pick_free_port()
+
+        use_wheel = os.environ.get("CLAUDE_HOOKS_USE_WHEEL") == "1"
+
+        env = os.environ.copy()
+        env.update(
+            {
+                # Required for web mode
+                "CLAUDE_CODE_REMOTE": "true",
+                "CLAUDE_PROJECT_DIR": str(isolated_dirs.project),
+                "CLAUDE_ENV_FILE": str(isolated_dirs.env_file),
+                # Proxy configuration (simulating Claude Code web)
+                "https_proxy": proxy_url,
+                "HTTPS_PROXY": proxy_url,
+                "http_proxy": proxy_url,
+                "HTTP_PROXY": proxy_url,
+                # Isolated directories
+                "HOME": str(isolated_dirs.home),
+                "XDG_CACHE_HOME": str(isolated_dirs.cache),
+                "XDG_CONFIG_HOME": str(isolated_dirs.config),
+                # Isolated ports (avoid conflicts between tests)
+                "CLAUDE_HOOKS_SUPERVISOR_PORT": str(supervisor_port),
+                "CLAUDE_HOOKS_BAZEL_PROXY_PORT": str(bazel_proxy_port),
+                # Disable nix and bazelisk (speeds up tests)
+                "CLAUDE_HOOKS_SKIP_NIX": "1",
+                "CLAUDE_HOOKS_SKIP_BAZELISK": "1",
+                # NOTE: NOT setting CLAUDE_HOOKS_SKIP_PODMAN - podman is enabled
+            }
+        )
+
+        if not use_wheel:
+            # Bazel test mode: need PYTHONPATH and custom proxy command
+            env["PYTHONPATH"] = os.pathsep.join(sys.path)
+            env["CLAUDE_AUTH_PROXY_CMD"] = f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy"
+
+        return env
+
+    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
+    def test_podman_service_starts(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
+        """Verify podman service starts after session start hook.
+
+        The hook will auto-install podman if not present, so no skipif for podman.
+        Requires root/sudo for apt install and writing to /etc/containers.
+        """
+        result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
+
+        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+
+        # Verify podman socket exists
+        socket_path = Path("/run/podman/podman.sock")
+        assert socket_path.exists(), f"Podman socket not created at {socket_path}"
+
+        # Verify DOCKER_HOST is set in env file
+        env_content = isolated_dirs.env_file.read_text()
+        assert "DOCKER_HOST" in env_content, "DOCKER_HOST not set in env file"
+        assert "unix:///run/podman/podman.sock" in env_content, "DOCKER_HOST not pointing to podman socket"
+
+    @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
+    def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
+        """Verify podman can run a container after session start hook.
+
+        This is the key verification that the hook properly set up podman.
+        The hook will auto-install podman if not present.
+        Requires root/sudo and network access for pulling images.
+        """
+        result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
+        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+
+        # Verify we can run podman hello-world
+        # Use --annotation for gVisor compatibility (documented in hook guidance)
+        podman_result = subprocess.run(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--annotation",
+                "run.oci.keep_original_groups=1",
+                "docker.io/library/hello-world",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=podman_hook_env,
+        )
+
+        assert podman_result.returncode == 0, (
+            f"Podman run failed:\nstdout: {podman_result.stdout}\nstderr: {podman_result.stderr}"
+        )
+        assert "Hello from Docker" in podman_result.stdout, (
+            f"Expected 'Hello from Docker' in output:\n{podman_result.stdout}"
+        )
 
 
 class TestForwardingProxy:
