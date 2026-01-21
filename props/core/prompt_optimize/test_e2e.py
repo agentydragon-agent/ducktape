@@ -22,13 +22,13 @@ from hamcrest import all_of, assert_that
 
 from agent_core_testing.responses import PlayGen
 from agent_core_testing.steps import exited_successfully, stdout_contains
-from props.core.db.config import DatabaseConfig
-from props.core.db.examples import Example
-from props.core.db.models import AgentRun, AgentRunStatus
-from props.core.db.session import get_session
 from props.core.models.examples import ExampleKind
 from props.core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.core.prompt_optimize.target_metric import TargetMetric
+from props.db.config import DatabaseConfig
+from props.db.examples import Example
+from props.db.models import AgentRun, AgentRunStatus
+from props.db.session import get_session
 from props.testing.mocks import PropsMock
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]

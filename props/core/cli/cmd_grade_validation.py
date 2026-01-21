@@ -18,12 +18,12 @@ from props.core.agent_types import AgentType
 from props.core.agent_workspace import WorkspaceManager
 from props.core.cli import common_options as opt
 from props.core.cli.resources import get_database_config
-from props.core.db.examples import Example
-from props.core.db.models import AgentDefinition, AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, Snapshot
-from props.core.db.session import get_session
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.splits import Split
+from props.db.examples import Example
+from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, Snapshot
+from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
