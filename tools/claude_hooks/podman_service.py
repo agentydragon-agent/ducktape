@@ -7,13 +7,113 @@ from __future__ import annotations
 
 import importlib.resources
 import logging
+import os
+import shutil
+import subprocess
+import textwrap
 import time
+from dataclasses import dataclass
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
+from tools.claude_hooks.errors import SkipError
 from tools.claude_hooks.supervisor_setup import SupervisorClient
 
 logger = logging.getLogger(__name__)
+
+PODMAN_SERVICE = "podman"
+SKIP_ENV_VAR = "CLAUDE_HOOKS_SKIP_PODMAN"
+
+
+class PodmanInstallError(Exception):
+    """Raised when podman installation fails."""
+
+
+@dataclass
+class PodmanSetup:
+    """Result of podman setup."""
+
+    socket_url: str
+    supervisor: SupervisorClient
+
+    @property
+    def status(self) -> str:
+        """Get human-readable podman status."""
+        if self.supervisor.is_service_running(PODMAN_SERVICE, wait_for_start=False):
+            return "running"
+        return "not running"
+
+    @property
+    def guidance(self) -> str:
+        """Get podman usage guidance for gVisor sandbox."""
+        return textwrap.dedent(
+            f"""\
+            Podman in gVisor Sandbox
+            ========================
+            Podman is configured with gVisor-specific workarounds.
+            Running under supervisor (status: {self.status}). DOCKER_HOST={self.socket_url}
+
+            Required Container Flags
+            ------------------------
+            All containers MUST use `--annotation run.oci.keep_original_groups=1`.
+            This bypasses /proc/self/setgroups which is unavailable in gVisor.
+            Otherwise they will fail with:
+              "crun: error opening file `/proc/self/setgroups`: No such file or directory"
+
+            Use fully qualified image names (docker.io/library/...)
+
+            Configuration Applied:
+            ----------------------
+            - VFS storage (/etc/containers/storage.conf)
+            - userns = "host"
+            - --network=host
+            """
+        )
+
+
+def is_podman_available() -> bool:
+    """Check if podman binary is available in PATH."""
+    return shutil.which("podman") is not None
+
+
+def install_podman() -> None:
+    """Install podman via apt if not already installed.
+
+    Raises:
+        PodmanInstallError: If installation fails.
+    """
+    if is_podman_available():
+        logger.info("Podman already installed")
+        return
+
+    logger.info("Installing podman via apt...")
+
+    # Update apt cache
+    try:
+        result = subprocess.run(["apt-get", "update"], check=False, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            logger.warning("apt-get update failed: %s", result.stderr)
+    except subprocess.TimeoutExpired:
+        logger.warning("apt-get update timed out")
+    except FileNotFoundError as e:
+        raise PodmanInstallError("apt-get not found, cannot install podman") from e
+
+    # Install podman
+    try:
+        result = subprocess.run(
+            ["apt-get", "install", "-y", "podman"], check=False, capture_output=True, text=True, timeout=300
+        )
+        if result.returncode != 0:
+            raise PodmanInstallError(f"apt-get install podman failed: {result.stderr}")
+        logger.info("Podman installed successfully")
+    except subprocess.TimeoutExpired as e:
+        raise PodmanInstallError("podman installation timed out") from e
+    except FileNotFoundError as e:
+        raise PodmanInstallError("apt-get not found, cannot install podman") from e
+
+    # Verify installation
+    if not is_podman_available():
+        raise PodmanInstallError("podman not found after installation")
 
 
 def setup_podman_storage() -> None:
@@ -24,6 +124,7 @@ def setup_podman_storage() -> None:
     2. System-level config (/etc/containers) since running as root
     3. Explicit runroot and graphroot paths
     4. Host user namespace (userns = "host")
+    5. Registry configuration for short image names
     """
     podman_config: Traversable = importlib.resources.files("tools.claude_hooks.config.podman")
 
@@ -36,27 +137,45 @@ def setup_podman_storage() -> None:
     containers_conf = Path("/etc/containers/containers.conf")
     containers_conf.write_text(podman_config.joinpath("containers.conf").read_text())
 
+    # Registry configuration (allows short image names like "alpine")
+    registries_conf = Path("/etc/containers/registries.conf")
+    registries_conf.write_text(podman_config.joinpath("registries.conf").read_text())
+
     # Ensure storage directories exist
     Path("/run/containers/storage").mkdir(parents=True, exist_ok=True)
     Path("/var/lib/containers/storage").mkdir(parents=True, exist_ok=True)
 
-    logger.info("Configured podman for gVisor: VFS storage, host userns")
+    logger.info("Configured podman for gVisor: VFS storage, host userns, registries")
 
 
-def setup_podman(supervisor: SupervisorClient) -> str:
+def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
     """Set up podman storage and start service.
+
+    If podman is not installed, attempts to install it via apt.
 
     Args:
         supervisor: Supervisor client for managing services
 
     Returns:
-        Socket URL (with unix:// prefix)
+        PodmanSetup with socket URL and supervisor client
+
+    Raises:
+        SkipError: If CLAUDE_HOOKS_SKIP_PODMAN is set.
+        PodmanInstallError: If podman installation fails.
     """
+    if os.environ.get(SKIP_ENV_VAR):
+        logger.info("Skipping podman setup (%s set)", SKIP_ENV_VAR)
+        raise SkipError("Podman", SKIP_ENV_VAR)
+
+    if not is_podman_available():
+        logger.info("Podman not found, installing...")
+        install_podman()
+
     logger.info("Configuring podman...")
     setup_podman_storage()
     socket_url = start_podman_service(supervisor)
     logger.info(f"Podman service started: DOCKER_HOST={socket_url}")
-    return socket_url
+    return PodmanSetup(socket_url=socket_url, supervisor=supervisor)
 
 
 def start_podman_service(supervisor: SupervisorClient) -> str:

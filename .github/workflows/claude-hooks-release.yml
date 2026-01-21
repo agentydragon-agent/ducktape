@@ -47,29 +47,10 @@ jobs:
             --test_env=JAVA_HOME \
             //tools/claude_hooks:all
 
-      - name: Collect test logs
+      - uses: ./.github/actions/collect-test-logs
         if: failure()
-        run: |
-          mkdir -p e2e-test-logs
-          TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
-          if [ -d "$TESTLOGS_DIR" ]; then
-            find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
-              test_dir=$(dirname "$xml")
-              target_path="${test_dir#$TESTLOGS_DIR/}"
-              mkdir -p "e2e-test-logs/$target_path"
-              cp "$test_dir/test.log" "e2e-test-logs/$target_path/" 2>/dev/null || true
-              cp "$test_dir/test.xml" "e2e-test-logs/$target_path/" 2>/dev/null || true
-            done
-          fi
-
-      - name: Upload test logs
-        if: failure()
-        uses: actions/upload-artifact@v4
         with:
-          name: claude-hooks-test-logs-${{ github.run_id }}
-          path: e2e-test-logs/
-          if-no-files-found: ignore
-          retention-days: 14
+          artifact-name: claude-hooks-test-logs
 
       - name: Test Report
         uses: dorny/test-reporter@v2
@@ -86,10 +67,63 @@ jobs:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
 
+  # Podman integration tests - runs separately since they require sudo
+  # The session start hook will auto-install podman if not present
+  podman-test:
+    name: Podman Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Java (for keytool)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - uses: ./.github/actions/bazel-cache
+        id: bazel-cache
+
+      - name: Run Podman integration tests
+        run: |
+          # Run the e2e tests with podman enabled
+          # GitHub Actions uses user 'runner' (not root) but has passwordless sudo
+          # Tests require root for:
+          # - apt install podman (if not present, hook will auto-install)
+          # - Writing to /etc/containers
+          # - Writing to /run/podman
+          sudo -E env "PATH=$PATH" "HOME=$HOME" "JAVA_HOME=$JAVA_HOME" \
+            bazel test //tools/claude_hooks:test_e2e \
+            --test_output=all \
+            --nocache_test_results \
+            --test_env=CI=true \
+            --test_env=GITHUB_ACTIONS=true \
+            --test_env=JAVA_HOME \
+            --test_filter='TestPodmanIntegration'
+
+      - name: Verify podman was installed and used
+        run: |
+          # Verify podman exists (was installed by hook)
+          which podman && podman --version
+          echo "Podman installation verified"
+
+      - uses: ./.github/actions/collect-test-logs
+        if: failure()
+        with:
+          artifact-name: podman-test-logs
+
+      - uses: ./.github/actions/bazel-cache-save
+        if: always()
+        with:
+          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
+          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+
   # Build wheel, test it, and release (on push to devel/main)
   wheel-build-test-release:
     name: Wheel Build, Test & Release
-    needs: [test]
+    needs: [test, podman-test]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

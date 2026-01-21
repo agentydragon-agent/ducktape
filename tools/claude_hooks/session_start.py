@@ -13,9 +13,7 @@ import logging.handlers
 import os
 import subprocess
 import sys
-import textwrap
 import traceback
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -34,43 +32,6 @@ from tools.claude_hooks import (
     supervisor_setup,
 )
 from tools.claude_hooks.errors import DirenvError, SkipError
-
-
-@dataclass
-class PodmanSetup:
-    """Result of podman setup."""
-
-    socket_url: str
-    supervisor: supervisor_setup.SupervisorClient
-
-    @property
-    def guidance(self) -> str:
-        """Get podman usage guidance for gVisor sandbox."""
-        status = "running" if self.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
-        return textwrap.dedent(
-            f"""\
-            Podman in gVisor Sandbox
-            ========================
-            Podman is configured with gVisor-specific workarounds.
-            Running under supervisor (status: {status}). DOCKER_HOST={self.socket_url}
-
-            Required Container Flags
-            ------------------------
-            All containers MUST use `--annotation run.oci.keep_original_groups=1`.
-            This bypasses /proc/self/setgroups which is unavailable in gVisor.
-            Otherwise they will fail with:
-              "crun: error opening file `/proc/self/setgroups`: No such file or directory"
-
-            Use fully qualified image names (docker.io/library/...)
-
-            Configuration Applied:
-            ----------------------
-            - VFS storage (/etc/containers/storage.conf)
-            - userns = "host"
-            - --network=host
-            """
-        )
-
 
 LOG_FILE = paths.get_cache_dir() / "session-start.log"
 TIMESTAMP_FILE = paths.get_cache_dir() / "session-hook-last-run"
@@ -439,19 +400,13 @@ async def run_web_mode(hook_input: HookInput) -> None:
         supervisor_result = supervisor_task.result()
         return proxy_setup.setup_bazel_proxy(supervisor_result.client)
 
-    async def setup_podman_with_supervisor() -> PodmanSetup:
+    async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
         await supervisor_task
         if exc := supervisor_task.exception():
             raise exc
-
-        if os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN"):
-            logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN set)")
-            raise RuntimeError("Podman setup skipped via CLAUDE_HOOKS_SKIP_PODMAN")
-
         supervisor_result = supervisor_task.result()
-        socket_url = podman_service.setup_podman(supervisor_result.client)
-        return PodmanSetup(socket_url=socket_url, supervisor=supervisor_result.client)
+        return podman_service.setup_podman(supervisor_result.client)
 
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper."""
@@ -462,7 +417,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     logger.info("Starting parallel installations...")
-    proxy_result, podman_result, git_result, cluster_result, nix_result, bazelisk_result = await asyncio.gather(
+    results = await asyncio.gather(
         setup_proxy_with_supervisor(),
         setup_podman_with_supervisor(),
         run_in_thread(install_git_precommit_hook, project_dir),
@@ -471,22 +426,31 @@ async def run_web_mode(hook_input: HookInput) -> None:
         run_in_thread(install_bazelisk_wrapper),
         return_exceptions=True,
     )
+    # Unpack with explicit type annotations for mypy
+    proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
+    podman_result: podman_service.PodmanSetup | BaseException = results[1]
+    git_result: None | BaseException = results[2]
+    cluster_result: None | BaseException = results[3]
+    nix_result: Path | None | BaseException = results[4]
+    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[5]
 
     # Log non-critical failures (git, cluster tools, bazelisk, nix, podman)
-    if isinstance(git_result, Exception):
+    if isinstance(git_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", git_result)
-    if isinstance(cluster_result, Exception):
+    if isinstance(cluster_result, BaseException):
         logger.warning("Failed to install cluster tools: %s", cluster_result)
-    if isinstance(bazelisk_result, Exception):
+    if isinstance(bazelisk_result, BaseException):
         logger.warning("Failed to install bazelisk: %s", bazelisk_result)
 
     # Extract artifacts
-    nix_store_bin: Path | None = None if isinstance(nix_result, Exception) else nix_result
-    if isinstance(nix_result, Exception):
+    nix_store_bin: Path | None = None if isinstance(nix_result, BaseException) else nix_result
+    if isinstance(nix_result, BaseException):
         logger.warning("Failed to install nix: %s", nix_result)
 
     docker_host: str | None = None
-    if isinstance(podman_result, Exception):
+    if isinstance(podman_result, SkipError):
+        logger.info("Podman setup skipped: %s", podman_result)
+    elif isinstance(podman_result, BaseException):
         logger.warning("Failed to configure podman: %s", podman_result)
     else:
         docker_host = podman_result.socket_url
@@ -497,9 +461,10 @@ async def run_web_mode(hook_input: HookInput) -> None:
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
 
     # Proxy setup is required - propagate failure with clear error message
-    if isinstance(proxy_result, Exception):
+    if isinstance(proxy_result, BaseException):
         logger.error("Proxy setup failed: %s", proxy_result)
         raise RuntimeError(f"Proxy setup failed: {proxy_result}") from proxy_result
+    # At this point, proxy_result is ProxySetup (type narrowed by the check above)
 
     # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
     combined_ca = proxy_setup._get_bazel_combined_ca()
@@ -527,30 +492,31 @@ async def run_web_mode(hook_input: HookInput) -> None:
     # Emit status
     if isinstance(bazelisk_result, SkipError):
         bazel_status = "skipped"
-    elif isinstance(bazelisk_result, Exception):
+    elif isinstance(bazelisk_result, BaseException):
         bazel_status = "not installed"
     else:
         bazel_status = bazelisk_result.status
-    proxy_status = proxy_result.status if not isinstance(proxy_result, Exception) else "failed"
-    ca_status = proxy_result.ca_status if not isinstance(proxy_result, Exception) else "unknown"
+    # proxy_result is already narrowed to ProxySetup after the check above
+    proxy_status = proxy_result.status
+    ca_status = proxy_result.ca_status
     logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status)
     logger.info("Nix: %s", get_nix_status())
-    if not isinstance(podman_result, Exception):
+    if not isinstance(podman_result, BaseException):
         podman_status = (
             "running" if podman_result.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
         )
         logger.info("Podman: %s", podman_status)
 
     # Emit all collected guidance
-    if not isinstance(supervisor_task.result(), Exception):
+    if not isinstance(supervisor_task.result(), BaseException):
         print(supervisor_task.result().guidance)
         sys.stdout.flush()
-    if not isinstance(proxy_result, Exception):
-        proxy_guidance = proxy_result.guidance
-        if proxy_guidance:
-            print(proxy_guidance)
-            sys.stdout.flush()
-    if not isinstance(podman_result, Exception):
+    # proxy_result is already narrowed to ProxySetup
+    proxy_guidance = proxy_result.guidance
+    if proxy_guidance:
+        print(proxy_guidance)
+        sys.stdout.flush()
+    if not isinstance(podman_result, BaseException):
         print(podman_result.guidance)
         sys.stdout.flush()
 
