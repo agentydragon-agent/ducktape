@@ -330,8 +330,9 @@ class TestProxySetup:
 
     def test_ca_extraction(self, isolated_env: IsolatedEnv, mock_ca_cert: tuple[bytes, bytes]) -> None:
         """Test that CA certificate is extracted from TLS chain."""
-        # First start the proxy
-        proxy_setup.ensure_proxy_running()
+        # First start supervisor and the proxy
+        supervisor_result = supervisor_setup.start()
+        proxy_setup.ensure_proxy_running(supervisor_result.client)
         assert _wait_for_port(isolated_env.proxy_port, timeout=5)
 
         # Now extract CA (this connects through our local proxy to the mock upstream)
@@ -353,16 +354,15 @@ class TestProxySetup:
 
     def test_credential_rotation(self, isolated_env: IsolatedEnv) -> None:
         """Test that credential changes trigger proxy restart."""
-        # Start with initial credentials
-        proxy_setup.ensure_proxy_running()
+        # Start supervisor and proxy with initial credentials
+        supervisor_result = supervisor_setup.start()
+        client = supervisor_result.client
+        proxy_setup.ensure_proxy_running(client)
         assert _wait_for_port(isolated_env.proxy_port, timeout=5)
 
         # Cache original credentials file content
         creds_file = isolated_env.bazel_proxy_dir / "upstream_proxy"
         original_creds = creds_file.read_text()
-
-        # Get initial process info
-        client = supervisor_setup.SupervisorClient()
         initial_info = client.get_process_info("bazel-proxy")
         initial_start_time = initial_info.start
 
@@ -408,7 +408,9 @@ class TestSupervisorSetup:
         supervisor_result = supervisor_setup.start()
 
         # Add a simple service (sleep command)
-        supervisor_result.client.add_service(name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir)
+        supervisor_result.client.add_service(
+            name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir
+        )
 
         # Check it's running
         assert supervisor_result.client.is_service_running("test-service")
@@ -418,7 +420,9 @@ class TestSupervisorSetup:
         supervisor_result = supervisor_setup.start()
 
         # Add initial service
-        supervisor_result.client.add_service(name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir)
+        supervisor_result.client.add_service(
+            name="test-service", command="sleep 3600", directory=isolated_env.supervisor_dir
+        )
 
         # Get initial PID
         initial_info = supervisor_result.client.get_process_info("test-service")

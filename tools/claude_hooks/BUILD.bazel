@@ -121,10 +121,9 @@ py_test(
 py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
-    data = glob(
-        ["testdata/**/*"],
-        exclude_directories = 0,
-    ) + glob(["testdata/**/.bazelversion"]),
+    data = [
+        "//tools/claude_hooks/testdata/test_workspace:workspace_files",
+    ],
     imports = ["../.."],
     tags = [
         "e2e",
@@ -133,6 +132,7 @@ py_test(
     deps = [
         ":claude_hooks",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
+        "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

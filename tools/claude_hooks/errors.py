@@ -33,6 +33,15 @@ class MissingEnvVarError(BazelProxyError):
         self.name = name
 
 
+class SkipError(Exception):
+    """Component was skipped via environment variable."""
+
+    def __init__(self, component: str, env_var: str) -> None:
+        super().__init__(f"{component} setup skipped via {env_var}")
+        self.component = component
+        self.env_var = env_var
+
+
 class DirenvError(Exception):
     """Error running direnv."""
 

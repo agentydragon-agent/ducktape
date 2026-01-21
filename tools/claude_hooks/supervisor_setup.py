@@ -58,6 +58,7 @@ class SupervisorSetup:
             """
         )
 
+
 # Default port for supervisor's inet_http_server (localhost only)
 _DEFAULT_SUPERVISOR_PORT = 19001
 
@@ -292,7 +293,9 @@ class SupervisorClient:
         except (xmlrpc.client.Fault, ConnectionError, OSError) as e:
             raise ProxyServiceError(f"Failed to restart {service_name}: {e}") from e
 
-    def update_service(self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None) -> None:
+    def update_service(
+        self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None
+    ) -> None:
         """Update an existing service's config and restart it.
 
         Rewrites the config file, reloads supervisor, removes the old process group,
@@ -564,6 +567,3 @@ def start() -> SupervisorSetup:
     debug_info = _dump_supervisor_debug_info()
 
     raise SupervisorError(f"supervisord did not start in time\n{debug_info}")
-
-
-

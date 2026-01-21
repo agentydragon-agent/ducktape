@@ -7,7 +7,6 @@ CLI mode: Loads direnv environment.
 from __future__ import annotations
 
 import asyncio
-import importlib.resources
 import json
 import logging
 import logging.handlers
@@ -18,7 +17,6 @@ import textwrap
 import traceback
 from dataclasses import dataclass
 from datetime import datetime
-from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
@@ -35,7 +33,7 @@ from tools.claude_hooks import (
     proxy_setup,
     supervisor_setup,
 )
-from tools.claude_hooks.errors import DirenvError
+from tools.claude_hooks.errors import DirenvError, SkipError
 
 
 @dataclass
@@ -72,9 +70,6 @@ class PodmanSetup:
             - --network=host
             """
         )
-
-
-from tools.claude_hooks.supervisor_setup import SupervisorSetup
 
 
 LOG_FILE = paths.get_cache_dir() / "session-start.log"
@@ -133,12 +128,7 @@ async def run_cli_mode(hook_input: HookInput) -> None:
     # Use direnv to export the environment
     try:
         result = await asyncio.create_subprocess_exec(
-            "direnv",
-            "export",
-            "bash",
-            cwd=envrc.parent,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            "direnv", "export", "bash", cwd=envrc.parent, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await asyncio.wait_for(result.communicate(), timeout=30)
     except FileNotFoundError:
@@ -463,11 +453,11 @@ async def run_web_mode(hook_input: HookInput) -> None:
         socket_url = podman_service.setup_podman(supervisor_result.client)
         return PodmanSetup(socket_url=socket_url, supervisor=supervisor_result.client)
 
-    def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup | None:
+    def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper."""
         if os.environ.get("CLAUDE_HOOKS_SKIP_BAZELISK"):
             logger.info("Skipping bazelisk installation (CLAUDE_HOOKS_SKIP_BAZELISK set)")
-            return None
+            raise SkipError("Bazelisk", "CLAUDE_HOOKS_SKIP_BAZELISK")
         return bazelisk_setup.install_bazelisk_and_wrapper()
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
@@ -530,15 +520,20 @@ async def run_web_mode(hook_input: HookInput) -> None:
     logger.info("Wrote environment to %s", env_file_path)
 
     # Emit status
-    bazel_status = bazelisk_result.status if not isinstance(bazelisk_result, Exception) else "not installed"
+    if isinstance(bazelisk_result, SkipError):
+        bazel_status = "skipped"
+    elif isinstance(bazelisk_result, Exception):
+        bazel_status = "not installed"
+    else:
+        bazel_status = bazelisk_result.status
     proxy_status = proxy_result.status if not isinstance(proxy_result, Exception) else "failed"
     ca_status = proxy_result.ca_status if not isinstance(proxy_result, Exception) else "unknown"
-    logger.info(
-        "Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status
-    )
+    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status)
     logger.info("Nix: %s", get_nix_status())
     if not isinstance(podman_result, Exception):
-        podman_status = "running" if podman_result.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
+        podman_status = (
+            "running" if podman_result.supervisor.is_service_running("podman", wait_for_start=False) else "not running"
+        )
         logger.info("Podman: %s", podman_status)
 
     # Emit all collected guidance

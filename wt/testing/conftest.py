@@ -571,10 +571,8 @@ def _generate_wt_function_for_binary(binary_path: str) -> str:
     Reads the template from wt/shell/wt.sh and substitutes the binary path,
     matching how install.main() works but using the Bazel binary instead of python -m.
     """
-    from importlib import resources
-
     quoted_path = shlex.quote(binary_path)
-    with resources.files("wt.shell").joinpath("wt.sh").open("r", encoding="utf-8") as f:
+    with importlib.resources.files("wt.shell").joinpath("wt.sh").open("r", encoding="utf-8") as f:
         tpl = f.read()
     # The template uses __PY__ -m wt.cli sh, replace with direct binary call
     return tpl.replace("__PY__ -m wt.cli sh", quoted_path + " sh")

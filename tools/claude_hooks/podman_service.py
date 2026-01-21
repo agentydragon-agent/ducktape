@@ -82,9 +82,7 @@ def start_podman_service(supervisor: SupervisorClient) -> str:
 
     # Start podman system service (--time=0 means never timeout, keep running)
     supervisor.add_service(
-        name="podman",
-        command=f"podman system service --time=0 unix://{socket_path}",
-        directory=Path.home(),
+        name="podman", command=f"podman system service --time=0 unix://{socket_path}", directory=Path.home()
     )
 
     # Wait for socket to be ready

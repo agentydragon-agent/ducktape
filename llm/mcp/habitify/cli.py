@@ -12,11 +12,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-import habitify
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
+
+import habitify
 
 from .habitify_client import HabitifyClient, HabitifyError
 from .server import create_habitify

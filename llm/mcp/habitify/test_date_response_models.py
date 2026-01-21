@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 import pytest_bazel
+
 from habitify.types import HabitStatus
 
 # Uses 'client' fixture from conftest.py

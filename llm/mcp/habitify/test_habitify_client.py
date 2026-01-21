@@ -10,9 +10,10 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 import pytest_bazel
+from hamcrest import all_of, assert_that, greater_than, has_length, has_properties, instance_of, only_contains
+
 from habitify.habitify_client import HabitifyError
 from habitify.types import Area, Habit, HabitStatus, Status
-from hamcrest import all_of, assert_that, greater_than, has_length, has_properties, instance_of, only_contains
 
 
 async def test_get_habits(client, mock_async_response, patch_client_method):

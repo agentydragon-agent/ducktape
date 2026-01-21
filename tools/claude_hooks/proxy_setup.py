@@ -20,6 +20,7 @@ import shutil
 import socket
 import ssl
 import subprocess
+import textwrap
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,7 +52,7 @@ class ProxySetup:
             return "not configured"
         if self.supervisor.is_service_running(BAZEL_PROXY_SERVICE, wait_for_start=False):
             return f"running (port {self.port})"
-        return f"configured (not running)"
+        return "configured (not running)"
 
     @property
     def ca_status(self) -> str:
@@ -61,12 +62,10 @@ class ProxySetup:
     @property
     def guidance(self) -> str:
         """Get proxy configuration guidance."""
-        import textwrap
-
         if not _get_https_proxy():
             return ""
 
-        info = self.supervisor.get_service_info(BAZEL_PROXY_SERVICE)
+        info = self.supervisor.get_process_info(BAZEL_PROXY_SERVICE)
         service_status = info.statename if info else "UNKNOWN"
         ca_info = f"Custom CA bundle: {self.combined_ca}" if self.combined_ca.exists() else "Using system CA bundle"
 
