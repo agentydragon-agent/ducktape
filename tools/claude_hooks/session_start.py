@@ -405,11 +405,6 @@ async def run_web_mode(hook_input: HookInput) -> None:
         await supervisor_task
         if exc := supervisor_task.exception():
             raise exc
-
-        if os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN"):
-            logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN set)")
-            raise RuntimeError("Podman setup skipped via CLAUDE_HOOKS_SKIP_PODMAN")
-
         supervisor_result = supervisor_task.result()
         return podman_service.setup_podman(supervisor_result.client)
 
@@ -446,7 +441,9 @@ async def run_web_mode(hook_input: HookInput) -> None:
         logger.warning("Failed to install nix: %s", nix_result)
 
     docker_host: str | None = None
-    if isinstance(podman_result, Exception):
+    if isinstance(podman_result, SkipError):
+        logger.info("Podman setup skipped: %s", podman_result)
+    elif isinstance(podman_result, Exception):
         logger.warning("Failed to configure podman: %s", podman_result)
     else:
         docker_host = podman_result.socket_url

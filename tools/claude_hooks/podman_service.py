@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.resources
 import logging
+import os
 import shutil
 import subprocess
 import textwrap
@@ -15,11 +16,13 @@ from dataclasses import dataclass
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
+from tools.claude_hooks.errors import SkipError
 from tools.claude_hooks.supervisor_setup import SupervisorClient
 
 logger = logging.getLogger(__name__)
 
 PODMAN_SERVICE = "podman"
+SKIP_ENV_VAR = "CLAUDE_HOOKS_SKIP_PODMAN"
 
 
 class PodmanInstallError(Exception):
@@ -157,8 +160,13 @@ def setup_podman(supervisor: SupervisorClient) -> PodmanSetup:
         PodmanSetup with socket URL and supervisor client
 
     Raises:
+        SkipError: If CLAUDE_HOOKS_SKIP_PODMAN is set.
         PodmanInstallError: If podman installation fails.
     """
+    if os.environ.get(SKIP_ENV_VAR):
+        logger.info("Skipping podman setup (%s set)", SKIP_ENV_VAR)
+        raise SkipError("Podman", SKIP_ENV_VAR)
+
     if not is_podman_available():
         logger.info("Podman not found, installing...")
         install_podman()
