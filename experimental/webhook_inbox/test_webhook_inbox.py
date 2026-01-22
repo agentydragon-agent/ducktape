@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 import webhook_inbox
 from cryptography.fernet import Fernet
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 
 
 @pytest.fixture

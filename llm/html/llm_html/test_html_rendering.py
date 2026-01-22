@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 import pytest_bazel
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 
 from .server import app
 from .token_scheme import N_TAGS, TokenScheme
