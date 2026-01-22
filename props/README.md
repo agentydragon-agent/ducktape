@@ -44,13 +44,13 @@ bazelisk run //props/registry_proxy:load
 docker compose up -d
 
 # 4. Initialize database (runs migrations, syncs specimens)
-bazelisk run //props/core/cli -- db recreate
+bazelisk run //props/cli -- db recreate
 
 # 5. Push agent images to registry
-bazelisk run //props/core/agent_defs/critic:push
-bazelisk run //props/core/agent_defs/grader:push
-bazelisk run //props/core/agent_defs/improvement:push
-bazelisk run //props/core/agent_defs/prompt_optimizer:push
+bazelisk run //props/core/critic:push
+bazelisk run //props/core/grader:push
+bazelisk run //props/core/critic_dev/improve:push
+bazelisk run //props/core/critic_dev/optimize:push
 ```
 
 ## Development
@@ -80,11 +80,11 @@ bazelisk build --config=check //props/...  # Lint + typecheck
 psql
 
 # Recreate database from scratch (drops all data, runs migrations, syncs specimens)
-bazelisk run //props/core/cli -- db recreate
+bazelisk run //props/cli -- db recreate
 
 # Backup and restore
-bazelisk run //props/core/cli -- db backup
-bazelisk run //props/core/cli -- db restore <backup_file>
+bazelisk run //props/cli -- db backup
+bazelisk run //props/cli -- db restore <backup_file>
 ```
 
 ## Specimens Dataset

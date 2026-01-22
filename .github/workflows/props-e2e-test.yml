@@ -10,14 +10,14 @@ on:
         description: "E2E test targets to run"
         required: false
         type: string
-        default: "//props/core/critic:test_e2e //props/core/grader:test_e2e //props/core/prompt_improve:test_e2e //props/core/prompt_optimize:test_e2e //props/core:test_agent_pkg_e2e"
+        default: "//props/critic:test_e2e //props/critic_dev/improve:test_e2e //props/critic_dev/optimize:test_e2e //props/core:test_agent_pkg_e2e"
   workflow_dispatch:
     inputs:
       targets:
         description: "E2E test targets to run"
         required: false
         type: string
-        default: "//props/core/critic:test_e2e //props/core/grader:test_e2e //props/core/prompt_improve:test_e2e //props/core/prompt_optimize:test_e2e //props/core:test_agent_pkg_e2e"
+        default: "//props/critic:test_e2e //props/critic_dev/improve:test_e2e //props/critic_dev/optimize:test_e2e //props/core:test_agent_pkg_e2e"
 
 jobs:
   e2e:
@@ -44,18 +44,24 @@ jobs:
 
       # Generate PGPASSWORD (compose.yaml expects it from environment)
       - name: Setup environment
-        run: echo "PGPASSWORD=$(openssl rand -base64 24)" >> $GITHUB_ENV
+        run: |
+          echo "PGPASSWORD=$(openssl rand -base64 24)" >> $GITHUB_ENV
+          # Dummy OPENAI_API_KEY to satisfy compose.yaml (tests use fake server)
+          echo "OPENAI_API_KEY=test-key-not-used" >> $GITHUB_ENV
 
       # Build registry-proxy image (compose.yaml references props-registry-proxy:latest)
       - name: Build registry proxy
         run: bazel run //props/registry_proxy:load
+
+      # Build llm-proxy image (compose.yaml references props-llm-proxy:latest)
+      - name: Build llm proxy
+        run: bazel run //props/llm_proxy:load
 
       # Pull images needed by compose.yaml
       - name: Pull infrastructure images
         run: |
           docker pull postgres:16
           docker pull registry:2
-          docker pull python:3.12-slim
 
       # Start services using existing compose.yaml
       - name: Start infrastructure
@@ -79,13 +85,23 @@ jobs:
           done
           echo "Infrastructure ready"
 
+      # Initialize database schema and sync test data
+      - name: Setup database
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5433
+          PGUSER: postgres
+          PGDATABASE: eval_results
+          ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
+        run: bazel run //props/cli:cli -- db recreate -y
+
       # Build and push agent images to local registry
       - name: Push agent images
         run: |
-          bazel run //props/core/agent_defs/critic:push
-          bazel run //props/core/agent_defs/grader:push
-          bazel run //props/core/agent_defs/improvement:push
-          bazel run //props/core/agent_defs/prompt_optimizer:push
+          bazel run //props/critic:push
+          bazel run //props/grader:push
+          bazel run //props/critic_dev/improve:push
+          bazel run //props/critic_dev/optimize:push
 
       - name: Run E2E tests
         env:
@@ -96,13 +112,11 @@ jobs:
           AGENT_PGHOST: 127.0.0.1
           PROPS_REGISTRY_PROXY_HOST: 127.0.0.1
           PROPS_REGISTRY_PROXY_PORT: "5051"
-          PROPS_DOCKER_NETWORK: host
+          PROPS_DOCKER_NETWORK: props-agents
+          PROPS_E2E_HOST_HOSTNAME: 172.17.0.1
         run: |
           bazel test --keep_going \
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
-            --test_env=PGHOST --test_env=PGPORT --test_env=PGUSER --test_env=PGPASSWORD --test_env=PGDATABASE \
-            --test_env=AGENT_PGHOST --test_env=PROPS_REGISTRY_PROXY_HOST --test_env=PROPS_REGISTRY_PROXY_PORT \
-            --test_env=PROPS_DOCKER_NETWORK \
             ${{ inputs.targets }}
 
       - name: Collect test logs

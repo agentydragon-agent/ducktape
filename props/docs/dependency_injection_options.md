@@ -378,7 +378,7 @@ def grade_validation(
 #### Phase 1: Setup Foundation (1 hour)
 
 ```python
-# props/core/cli/resources.py
+# props/cli/resources.py
 """Shared resources for CLI commands (DI providers)."""
 
 from functools import cache
@@ -407,7 +407,7 @@ def get_filesystem_loader() -> FilesystemLoader:
 ```
 
 ```python
-# props/core/cli/main.py
+# props/cli/main.py
 from typer_di import TyperDI, Depends  # Change import
 
 # Change this:

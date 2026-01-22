@@ -13,7 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from props.core.models.examples import ExampleSpec
-from props.core.prompt_optimize.target_metric import TargetMetric
+from props.critic_dev.shared import TargetMetric
 
 
 class AgentType(StrEnum):

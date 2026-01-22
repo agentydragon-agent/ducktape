@@ -53,6 +53,11 @@ jobs:
     outputs:
       bazel_targets: ${{ steps.bazel-diff.outputs.targets }}
       has_bazel_changes: ${{ steps.bazel-diff.outputs.has_changes }}
+      has_props: ${{ steps.bazel-diff.outputs.has_props }}
+      has_editor_agent: ${{ steps.bazel-diff.outputs.has_editor_agent }}
+      has_agent_server: ${{ steps.bazel-diff.outputs.has_agent_server }}
+      has_finance: ${{ steps.bazel-diff.outputs.has_finance }}
+      has_props_frontend: ${{ steps.bazel-diff.outputs.has_props_frontend }}
       has_nix_changes: ${{ steps.paths.outputs.nix }}
       has_ansible_changes: ${{ steps.paths.outputs.ansible }}
     steps:
@@ -67,9 +72,13 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Compute Bazel targets
         id: bazel-diff
-        run: .github/scripts/compute_affected_targets.sh
+        run: python .github/scripts/compute_affected_targets.py
 
       - name: Check path changes
         id: paths
@@ -107,9 +116,7 @@ jobs:
   # Conditional - only when props/frontend changed
   visual-regression:
     needs: compute-targets
-    if: |
-      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
-      contains(needs.compute-targets.outputs.bazel_targets, '//props/frontend')
+    if: needs.compute-targets.outputs.has_props_frontend == 'true'
     uses: ./.github/workflows/visual-regression.yml
 
   # Conditional - only when Bazel targets changed
@@ -138,9 +145,7 @@ jobs:
 
   bazel-rust-lint:
     needs: compute-targets
-    if: |
-      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
-      contains(needs.compute-targets.outputs.bazel_targets, '//finance/')
+    if: needs.compute-targets.outputs.has_finance == 'true'
     uses: ./.github/workflows/bazel-rust-lint.yml
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
@@ -156,27 +161,21 @@ jobs:
   # Only runs when props/ targets are affected
   props-e2e-test:
     needs: compute-targets
-    if: |
-      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
-      contains(needs.compute-targets.outputs.bazel_targets, '//props/')
+    if: needs.compute-targets.outputs.has_props == 'true'
     uses: ./.github/workflows/props-e2e-test.yml
 
   # Editor E2E tests - requires Docker
   # Only runs when editor_agent/ targets are affected
   editor-e2e-test:
     needs: compute-targets
-    if: |
-      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
-      contains(needs.compute-targets.outputs.bazel_targets, '//editor_agent/')
+    if: needs.compute-targets.outputs.has_editor_agent == 'true'
     uses: ./.github/workflows/editor-e2e-test.yml
 
   # Agent Server E2E tests - requires Docker and runtime image
   # Only runs when agent_server/ targets are affected
   agent-server-e2e-test:
     needs: compute-targets
-    if: |
-      needs.compute-targets.outputs.has_bazel_changes == 'true' &&
-      contains(needs.compute-targets.outputs.bazel_targets, '//agent_server/')
+    if: needs.compute-targets.outputs.has_agent_server == 'true'
     uses: ./.github/workflows/agent-server-e2e-test.yml
 
   # Claude Hooks tests are handled by claude-hooks-release.yml which runs on

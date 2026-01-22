@@ -1,0 +1,162 @@
+"""Prompt optimizer agent - implementation and container image.
+
+Build targets:
+    bazel run //props/critic_dev/optimize:load  -- Load into local Docker
+    bazel run //props/critic_dev/optimize:push  -- Push to local registry (localhost:5050)
+
+The container runs an agent loop that:
+1. Queries LLM via proxy (OPENAI_BASE_URL)
+2. Coordinates critic evaluations and improvements
+3. Optimizes prompts based on target metrics
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# =============================================================================
+# In-container agent main entry point
+# =============================================================================
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//agent_core:direct_provider",
+        "//agent_core:mcp_provider",
+        "//agent_pkg/runtime",
+        "//mcp_infra/exec:direct",
+        "//openai_utils",
+        "//props/core:loop_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+pkg_tar(
+    name = "main_tar",
+    srcs = [":main"],
+    include_runfiles = True,
+    package_dir = "/app",
+    strip_prefix = ".",
+    visibility = ["//props:__subpackages__"],
+)
+
+# =============================================================================
+# Library targets
+# =============================================================================
+
+py_library(
+    name = "budget_handler",
+    srcs = ["budget_handler.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core",
+        "//openai_utils",
+        "//props/db:query_builders",
+        "//props/db:session",
+    ],
+)
+
+py_library(
+    name = "prompt_optimizer",
+    srcs = ["prompt_optimizer.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/critic_dev:prompt_eval_server",
+        "//props/critic_dev:shared",
+    ],
+)
+
+# =============================================================================
+# Test library (fixtures used by other tests)
+# =============================================================================
+
+py_library(
+    name = "test_e2e_lib",
+    testonly = True,
+    srcs = ["test_e2e.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":prompt_optimizer",
+        "//agent_core",
+        "//agent_core_testing",
+        "//props/critic_dev:shared",
+        "//props/db:models",
+        "//props/db:session",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+py_test(
+    name = "test_e2e",
+    srcs = ["test_e2e.py"],
+    env = {
+        "PGHOST": "127.0.0.1",
+        "PGPORT": "5433",
+        "AGENT_PGHOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_HOST": "127.0.0.1",
+        "PROPS_REGISTRY_PROXY_PORT": "5051",
+        "PROPS_DOCKER_NETWORK": "host",
+    },
+    imports = ["../../.."],
+    tags = [
+        "requires_docker",
+        "requires_postgres",
+    ],
+    deps = [
+        ":test_e2e_lib",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# Container image
+# =============================================================================
+
+oci_image(
+    name = "image",
+    base = "@python_slim_linux_amd64",
+    cmd = ["/app/main"],
+    env = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUNBUFFERED": "1",
+    },
+    tars = [":main_tar"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["prompt-optimizer-agent:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:5050/prompt-optimizer",
+)

@@ -15,14 +15,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from openai import AsyncOpenAI
 
-from openai_utils.model import BoundOpenAIModel
 from props.backend.routes import ground_truth, runs, stats
+from props.cli.common_options import DEFAULT_LLM_PROXY_URL
+from props.cli.resources import get_database_config
 from props.core.agent_registry import AgentRegistry
-from props.core.agent_workspace import WorkspaceManager
-from props.core.cli.resources import get_database_config
-from props.core.grader.daemon_manager import DaemonManager
+from props.grader.daemon_manager import DaemonManager
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -64,18 +62,6 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
-def _create_grader_client() -> BoundOpenAIModel | None:
-    """Create model client for grader daemons if configured.
-
-    Returns None if PROPS_GRADER_MODEL is not set.
-    """
-    model = os.environ.get("PROPS_GRADER_MODEL")
-    if not model:
-        return None
-
-    return BoundOpenAIModel(client=AsyncOpenAI(), model=model)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
@@ -84,31 +70,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Create resources
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    workspace_manager = WorkspaceManager.from_env()
+
+    llm_proxy_url = getattr(app.state, "llm_proxy_url", None) or DEFAULT_LLM_PROXY_URL
 
     # Registry owns resources and orchestrates agent runs
-    app.state.registry = AgentRegistry(
-        docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager
-    )
+    app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
 
-    # Optionally start grader daemons if model configured
-    daemon_manager = None
-    grader_client = _create_grader_client()
-    if grader_client:
-        daemon_manager = DaemonManager(registry=app.state.registry, client=grader_client)
-        await daemon_manager.start_all()
-        app.state.daemon_manager = daemon_manager
-        logger.info(f"Grader daemons started (model: {grader_client.model})")
-    else:
-        logger.info("Grader daemons disabled (set PROPS_GRADER_MODEL to enable)")
+    # Start grader daemons (required)
+    grader_model = os.environ.get("PROPS_GRADER_MODEL")
+    if not grader_model:
+        raise RuntimeError("PROPS_GRADER_MODEL environment variable is required")
+    daemon_manager = DaemonManager(registry=app.state.registry, model=grader_model)
+    await daemon_manager.start_all()
+    app.state.daemon_manager = daemon_manager
+    logger.info(f"Grader daemons started (model: {grader_model})")
 
     logger.info("Props backend ready")
     yield
 
     # Cleanup
     logger.info("Shutting down props backend...")
-    if daemon_manager:
-        await daemon_manager.shutdown()
+    await daemon_manager.shutdown()
     await app.state.registry.close()
     logger.info("Props backend stopped")
 

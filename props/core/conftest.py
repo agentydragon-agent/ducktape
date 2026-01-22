@@ -43,9 +43,6 @@ from props.testing.fixtures import (  # noqa: F401  # noqa: E402, F401
     pytest_addoption,
     # runs
     rationale_model,
-    run_critic_with_steps,
-    run_improvement_agent_with_steps,
-    run_prompt_optimizer_with_steps,
     session_monkeypatch,
     subtract_file_example,
     success_termination,
@@ -53,7 +50,6 @@ from props.testing.fixtures import (  # noqa: F401  # noqa: E402, F401
     synced_test_db,
     synced_test_session,
     test_db,
-    test_registry,
     test_snapshot,
     test_specimens_base,
     test_train_example_with_runs,
@@ -61,12 +57,14 @@ from props.testing.fixtures import (  # noqa: F401  # noqa: E402, F401
     test_valid_example_with_runs,
     test_validation_snapshot,
     test_validation_snapshot_slug,
-    test_workspace_manager,
     tp_occurrence_single,
     tp_occurrences_multi,
     tp_single_id,
     tp_single_occurrence_id,
 )
+
+# Import e2e container fixture directly from its module
+from props.testing.fixtures.e2e_container import e2e_stack  # noqa: F401
 
 # Re-export mocks for direct imports
 from props.testing.mocks import PropsMock  # noqa: F401
