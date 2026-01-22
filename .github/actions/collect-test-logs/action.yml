@@ -24,7 +24,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Collect failed test logs
+    - name: Collect and print failed test logs
       shell: bash
       run: |
         mkdir -p failed-test-logs
@@ -33,68 +33,55 @@ runs:
         TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
         echo "Looking for test logs in: $TESTLOGS_DIR"
 
-        if [ -d "$TESTLOGS_DIR" ]; then
-          # Find all test.xml files and collect logs from failed tests
-          find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
-            test_dir=$(dirname "$xml")
-            # Check if test.xml contains failures or errors (non-zero count)
-            if grep -qE '(failures|errors)="[1-9]' "$xml"; then
-              # Preserve test path structure relative to testlogs dir
-              target_path="${test_dir#$TESTLOGS_DIR/}"
-              echo "Collecting logs for failed test: $target_path"
-              mkdir -p "failed-test-logs/$target_path"
-              cp "$test_dir/test.log" "failed-test-logs/$target_path/" 2>/dev/null || true
-              cp "$test_dir/test.xml" "failed-test-logs/$target_path/" 2>/dev/null || true
-            fi
-          done
-        else
+        if [ ! -d "$TESTLOGS_DIR" ]; then
           echo "Warning: testlogs directory not found at $TESTLOGS_DIR"
+          exit 0
         fi
 
-        echo "Collected failed test logs:"
-        find failed-test-logs -type f 2>/dev/null || echo "No files collected"
-
-    - name: Print failed test logs to console
-      shell: bash
-      run: |
+        echo ""
         echo "=================================================="
-        echo "FAILED TEST LOGS (printed for debugging)"
+        echo "FAILED TEST LOGS"
         echo "=================================================="
 
-        # Get actual testlogs path
-        TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
+        # Find all test.xml files and process failed tests
+        HAS_FAILURES=0
+        find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
+          test_dir=$(dirname "$xml")
+          # Check if test.xml contains failures or errors (non-zero count)
+          if grep -qE '(failures|errors)="[1-9]' "$xml"; then
+            HAS_FAILURES=1
+            # Preserve test path structure relative to testlogs dir
+            target_path="${test_dir#$TESTLOGS_DIR/}"
 
-        if [ -d "$TESTLOGS_DIR" ]; then
-          # Find all test.xml files and print logs from failed tests
-          find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
-            test_dir=$(dirname "$xml")
-            # Check if test.xml contains failures or errors (non-zero count)
-            if grep -qE '(failures|errors)="[1-9]' "$xml"; then
-              target_path="${test_dir#$TESTLOGS_DIR/}"
-              
+            # Collect logs to failed-test-logs directory
+            echo "Collecting logs for failed test: $target_path"
+            mkdir -p "failed-test-logs/$target_path"
+            cp "$test_dir/test.log" "failed-test-logs/$target_path/" 2>/dev/null || true
+            cp "$test_dir/test.xml" "failed-test-logs/$target_path/" 2>/dev/null || true
+
+            # Print test log to console for immediate visibility
+            echo ""
+            echo "=================================================="
+            echo "FAILED TEST: $target_path"
+            echo "=================================================="
+
+            if [ -f "$test_dir/test.log" ]; then
+              echo "--- Test log (last 500 lines) ---"
+              tail -n 500 "$test_dir/test.log"
               echo ""
-              echo "=================================================="
-              echo "FAILED TEST: $target_path"
-              echo "=================================================="
-              
-              # Print test.log if it exists
-              if [ -f "$test_dir/test.log" ]; then
-                echo "--- Test log (last 500 lines) ---"
-                tail -n 500 "$test_dir/test.log"
-                echo ""
-              else
-                echo "Warning: test.log not found for $target_path"
-              fi
+            else
+              echo "Warning: test.log not found for $target_path"
             fi
-          done
-        else
-          echo "Warning: testlogs directory not found at $TESTLOGS_DIR"
-        fi
+          fi
+        done
 
         echo ""
         echo "=================================================="
         echo "END OF FAILED TEST LOGS"
         echo "=================================================="
+        echo ""
+        echo "Collected failed test logs:"
+        find failed-test-logs -type f 2>/dev/null || echo "No files collected"
 
     - name: Upload failed test logs
       uses: actions/upload-artifact@v4
