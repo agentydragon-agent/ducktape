@@ -77,9 +77,14 @@ OPT_RUNBOOK_SNAPSHOT = typer.Option(
 # Options - LLM Proxy
 DEFAULT_LLM_PROXY_URL = "http://props-llm-proxy:5052"
 LLM_PROXY_URL_ENVVAR = "PROPS_LLM_PROXY_URL"
-OPT_LLM_PROXY_URL = typer.Option(
-    DEFAULT_LLM_PROXY_URL, "--llm-proxy-url", envvar=LLM_PROXY_URL_ENVVAR, help="URL of the LLM proxy"
-)
+
+
+def llm_proxy_url_option() -> str:
+    """Typer Option for LLM proxy URL with env var support."""
+    return typer.Option(
+        DEFAULT_LLM_PROXY_URL, "--llm-proxy-url", envvar=LLM_PROXY_URL_ENVVAR, help="URL of the LLM proxy"
+    )
+
 
 # Options - Agent Definition
 OPT_DEFINITION_ID = typer.Option(
