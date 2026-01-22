@@ -1,136 +1,73 @@
-"""LLM Proxy - OpenAI API proxy with auth, logging, and cost tracking.
+"""LLM Proxy routes - OpenAI API proxy with auth, logging, and cost tracking.
 
-Sits between agent containers and the OpenAI API to:
-- Validate agent auth tokens against Postgres
-- Enforce model restrictions per agent run
-- Log all requests/responses to llm_requests table
-- Track token usage for cost budgeting
+Endpoints:
+- POST /v1/responses - OpenAI Responses API proxy (non-streaming only)
 
-The proxy implements a subset of the OpenAI Responses API:
-- POST /v1/responses (non-streaming only)
-
-Streaming is not supported to simplify logging and cost tracking.
+Features:
+- Validates agent auth tokens against Postgres
+- Enforces model restrictions per agent run
+- Logs all requests/responses to llm_requests table
+- Tracks token usage for cost budgeting
 """
 
 from __future__ import annotations
 
-import base64
 import logging
 import os
 import time
-from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Any
 from uuid import UUID
 
 import httpx
-import psycopg
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from props.backend.auth import AuthContext, get_auth_context
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
+router = APIRouter()
+
 # Environment configuration
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com")
-PGHOST = os.environ.get("PGHOST", "props-postgres")
-PGPORT = os.environ.get("PGPORT", "5432")
-PGDATABASE = os.environ.get("PGDATABASE", "eval_results")
 
 # Request timeout for upstream OpenAI calls
 UPSTREAM_TIMEOUT_SECONDS = 300  # 5 minutes
 
 
-@dataclass
-class AuthContext:
-    """Authenticated agent context."""
+def _get_llm_auth_context(request: Request) -> tuple[UUID, str]:
+    """Get and validate auth context for LLM requests.
 
-    agent_run_id: UUID
-    allowed_model: str
-
-
-def _validate_postgres_credentials(username: str, password: str) -> bool:
-    """Validate credentials by attempting Postgres connection."""
-    try:
-        with psycopg.connect(
-            host=PGHOST, port=PGPORT, dbname=PGDATABASE, user=username, password=password, connect_timeout=5
-        ):
-            return True
-    except psycopg.OperationalError:
-        return False
-
-
-def _parse_auth_header(authorization: str | None) -> tuple[str, str]:
-    """Parse Basic auth header, raise HTTPException on failure."""
-    if not authorization or not authorization.startswith("Basic "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization required")
-
-    try:
-        encoded = authorization.removeprefix("Basic ")
-        decoded = base64.b64decode(encoded).decode("utf-8")
-        username, password = decoded.split(":", 1)
-        return (username, password)
-    except (ValueError, UnicodeDecodeError) as e:
-        logger.warning(f"Failed to parse Basic auth: {e}")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization format")
-
-
-def get_auth(authorization: Annotated[str | None, Header()] = None) -> AuthContext:
-    """Dependency to extract and validate agent auth.
-
-    Validates:
-    1. Basic auth credentials work against Postgres
-    2. Username matches agent_{uuid} pattern
-    3. Agent run exists and is in progress
-    4. Returns the allowed model from the agent run
+    Returns (agent_run_id, allowed_model) or raises HTTPException.
     """
-    username, password = _parse_auth_header(authorization)
+    auth: AuthContext = get_auth_context(request)
 
-    # Validate credentials against Postgres
-    if not _validate_postgres_credentials(username, password):
-        logger.warning(f"Invalid postgres credentials for user: {username}")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    # Check for auth errors
+    if auth.error:
+        raise HTTPException(status_code=401, detail=auth.error)
 
-    # Extract agent_run_id from username pattern: agent_{uuid}
-    if not username.startswith("agent_"):
+    # Require authentication
+    if not auth.is_authenticated:
+        raise HTTPException(status_code=401, detail="Authorization required")
+
+    # Require agent credentials (not admin)
+    if auth.agent_run_id is None:
         raise HTTPException(status_code=401, detail="Invalid agent token format")
-
-    try:
-        agent_run_id = UUID(username.removeprefix("agent_"))
-    except ValueError:
-        logger.warning(f"Invalid UUID in agent username: {username}")
-        raise HTTPException(status_code=401, detail="Invalid agent token")
 
     # Look up agent run to get allowed model and verify status
     with get_session() as session:
-        agent_run = session.get(AgentRun, agent_run_id)
+        agent_run = session.get(AgentRun, auth.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Agent run not found")
 
         if agent_run.status != AgentRunStatus.IN_PROGRESS:
             raise HTTPException(status_code=403, detail=f"Agent run is not in progress (status={agent_run.status})")
 
-        # The allowed model is stored in agent_run.model
-        allowed_model = agent_run.model
-
-    return AuthContext(agent_run_id=agent_run_id, allowed_model=allowed_model)
-
-
-class ResponsesRequest(BaseModel):
-    """OpenAI Responses API request body."""
-
-    model: str
-    input: list[dict[str, Any]]
-    instructions: str | None = None
-    tools: list[dict[str, Any]] | None = None
-    tool_choice: str | dict[str, Any] | None = None
-    temperature: float | None = None
-    max_output_tokens: int | None = None
-    stream: Literal[False] = False
+        return auth.agent_run_id, agent_run.model
 
 
 def _log_request(
@@ -142,10 +79,7 @@ def _log_request(
     error: str | None,
     latency_ms: int,
 ) -> None:
-    """Log LLM request to database.
-
-    Token counts are computed via llm_request_costs view from response_body.
-    """
+    """Log LLM request to database."""
     llm_request = LLMRequest(
         agent_run_id=agent_run_id,
         model=model,
@@ -158,23 +92,16 @@ def _log_request(
     session.commit()
 
 
-# FastAPI app
-app = FastAPI(title="Props LLM Proxy")
-
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "ok"}
-
-
-@app.post("/v1/responses")
-async def responses(request: Request, auth: Annotated[AuthContext, Depends(get_auth)]) -> JSONResponse:
+@router.post("/v1/responses")
+async def responses(request: Request) -> JSONResponse:
     """Proxy OpenAI Responses API requests.
 
     Validates model against agent's allowed model, forwards to OpenAI,
     logs request/response, and returns the response.
     """
+    # Get auth context and validate
+    agent_run_id, allowed_model = _get_llm_auth_context(request)
+
     # Parse request body
     try:
         body = await request.json()
@@ -186,10 +113,9 @@ async def responses(request: Request, auth: Annotated[AuthContext, Depends(get_a
         raise HTTPException(status_code=400, detail="model field is required")
 
     # Enforce model restriction
-    if request_model != auth.allowed_model:
+    if request_model != allowed_model:
         raise HTTPException(
-            status_code=403,
-            detail=f"Model '{request_model}' not allowed. Agent is restricted to '{auth.allowed_model}'",
+            status_code=403, detail=f"Model '{request_model}' not allowed. Agent is restricted to '{allowed_model}'"
         )
 
     # Reject streaming requests
@@ -216,11 +142,10 @@ async def responses(request: Request, auth: Annotated[AuthContext, Depends(get_a
             )
         except httpx.TimeoutException:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            # Log the timeout
             with get_session() as session:
                 _log_request(
                     session=session,
-                    agent_run_id=auth.agent_run_id,
+                    agent_run_id=agent_run_id,
                     model=request_model,
                     request_body=body,
                     response_body=None,
@@ -230,11 +155,10 @@ async def responses(request: Request, auth: Annotated[AuthContext, Depends(get_a
             raise HTTPException(status_code=504, detail="Upstream timeout")
         except httpx.RequestError as e:
             latency_ms = int((time.monotonic() - start_time) * 1000)
-            # Log the error
             with get_session() as session:
                 _log_request(
                     session=session,
-                    agent_run_id=auth.agent_run_id,
+                    agent_run_id=agent_run_id,
                     model=request_model,
                     request_body=body,
                     response_body=None,
@@ -259,7 +183,7 @@ async def responses(request: Request, auth: Annotated[AuthContext, Depends(get_a
     with get_session() as session:
         _log_request(
             session=session,
-            agent_run_id=auth.agent_run_id,
+            agent_run_id=agent_run_id,
             model=request_model,
             request_body=body,
             response_body=response_body,
@@ -267,5 +191,4 @@ async def responses(request: Request, auth: Annotated[AuthContext, Depends(get_a
             latency_ms=latency_ms,
         )
 
-    # Return response with same status code
     return JSONResponse(content=response_body, status_code=upstream_response.status_code)
