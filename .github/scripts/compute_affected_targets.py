@@ -256,13 +256,10 @@ def output_results(affected: AffectedTargets, intersections: dict[str, bool]) ->
 
     if not output_file:
         # Print to stdout if not in GitHub Actions
-        for line in lines:
-            print(line)
+        print("\n".join(lines))
         return
 
-    with Path(output_file).open("a") as f:
-        for line in lines:
-            f.write(f"{line}\n")
+    Path(output_file).write_text("\n".join(lines) + "\n")
 
 
 def main() -> None:
