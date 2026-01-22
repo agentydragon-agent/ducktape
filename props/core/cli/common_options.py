@@ -81,6 +81,9 @@ OPT_LLM_PROXY_URL = typer.Option(
     DEFAULT_LLM_PROXY_URL, "--llm-proxy-url", envvar=LLM_PROXY_URL_ENVVAR, help="URL of the LLM proxy"
 )
 
+# Options - Timeout
+DEFAULT_TIMEOUT_SECONDS = 3600
+OPT_TIMEOUT_SECONDS = typer.Option(DEFAULT_TIMEOUT_SECONDS, "--timeout", help="Max seconds before container timeout")
 
 # Options - Agent Definition
 OPT_DEFINITION_ID = typer.Option(

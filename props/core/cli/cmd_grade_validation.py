@@ -26,17 +26,12 @@ from props.db.session import get_session
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_TIMEOUT_SECONDS = 3600
-
-
 @async_run
 async def cmd_grade_validation(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     max_parallel: int = opt.OPT_MAX_PARALLEL,
     llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
-    timeout_seconds: int = typer.Option(
-        DEFAULT_TIMEOUT_SECONDS, "--timeout-seconds", help="Max seconds per critic run before timeout"
-    ),
+    timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
 ) -> None:
     """Grade validation set: ensure complete critic coverage across all definitions.
 
