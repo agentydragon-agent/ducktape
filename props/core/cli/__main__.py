@@ -159,7 +159,7 @@ async def prompt_optimize(
     budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
     optimizer_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
-    llm_proxy_url: str = opt.llm_proxy_url_option(),
+    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
     timeout_seconds: int = typer.Option(3600, "--timeout", help="Max seconds before container timeout"),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
@@ -188,7 +188,7 @@ async def prompt_improve_cmd(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     prompt_sha256: str | None = opt.OPT_PROMPT_SHA256,
     out_dir: Path | None = opt.OPT_OUT_DIR,
-    llm_proxy_url: str = opt.llm_proxy_url_option(),
+    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
     timeout_seconds: int = typer.Option(3600, "--timeout", help="Max seconds before container timeout"),
 ) -> None:
     """Run prompt improvement agent on training examples.
@@ -468,7 +468,7 @@ async def cmd_run(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    llm_proxy_url: str = opt.llm_proxy_url_option(),
+    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
     timeout_seconds: int = typer.Option(3600, "--timeout", help="Max seconds before container timeout"),
 ) -> None:
     """Run critic agent on a snapshot with DB persistence.
