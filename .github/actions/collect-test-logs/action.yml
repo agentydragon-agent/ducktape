@@ -44,12 +44,10 @@ runs:
         echo "=================================================="
 
         # Find all test.xml files and process failed tests
-        HAS_FAILURES=0
         find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
           test_dir=$(dirname "$xml")
           # Check if test.xml contains failures or errors (non-zero count)
-          if grep -qE '(failures|errors)="[1-9]' "$xml"; then
-            HAS_FAILURES=1
+          if grep -qE '(failures|errors)="[1-9][0-9]*"' "$xml"; then
             # Preserve test path structure relative to testlogs dir
             target_path="${test_dir#$TESTLOGS_DIR/}"
 
