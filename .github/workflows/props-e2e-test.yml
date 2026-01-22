@@ -92,6 +92,7 @@ jobs:
           PGPORT: 5433
           PGUSER: postgres
           PGDATABASE: eval_results
+          ADGN_PROPS_SPECIMENS_ROOT: ${{ github.workspace }}/props/testing/fixtures/testdata/specimens
         run: bazel run //props/cli:cli -- db recreate -y
 
       # Build and push agent images to local registry
