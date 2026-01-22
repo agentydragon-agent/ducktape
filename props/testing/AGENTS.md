@@ -45,7 +45,7 @@ Located in `testing/fixtures/testdata/specimens/`:
   `example_module_py_scope`, `calculator_py_scope`, `all_files_scope`.
 - **Ground truth** (ground_truth.py): `example_subtract_orm` (1 TP occurrence), `example_multi_tp_orm` (multi-TP), `test_snapshot`, `test_validation_snapshot`, `tp_occurrence_single`, `fp_id`, `fp_occurrence_id`.
 - **Runs** (runs.py): `make_critic_run`, `make_grader_run`, `make_grader_run_with_credit`.
-- **E2E** (e2e.py): `test_registry` for Docker-based integration tests.
+- **E2E** (e2e_container.py): `e2e_stack` for Docker-based integration tests with full stack.
 - **Database** (db.py): `synced_test_db`, `synced_test_session` for DB fixtures.
 
 ## Anti-patterns (do not)

@@ -22,12 +22,7 @@ from props.testing.fixtures.e2e import (
     make_openai_client,
     mock_snapshot_slug,
     noop_openai_client,
-    run_critic_with_steps,
-    run_improvement_agent_with_steps,
-    run_prompt_optimizer_with_steps,
     success_termination,
-    test_registry,
-    test_workspace_manager,
 )
 
 # Ground truth fixtures
@@ -95,9 +90,6 @@ __all__ = [
     "noop_openai_client",
     "pytest_addoption",
     "rationale_model",
-    "run_critic_with_steps",
-    "run_improvement_agent_with_steps",
-    "run_prompt_optimizer_with_steps",
     "session_monkeypatch",
     "subtract_file_example",
     "success_termination",
@@ -105,7 +97,6 @@ __all__ = [
     "synced_test_db",
     "synced_test_session",
     "test_db",
-    "test_registry",
     "test_snapshot",
     "test_specimens_base",
     "test_train_example_with_runs",
@@ -113,7 +104,6 @@ __all__ = [
     "test_valid_example_with_runs",
     "test_validation_snapshot",
     "test_validation_snapshot_slug",
-    "test_workspace_manager",
     "tp_occurrence_single",
     "tp_occurrences_multi",
     "tp_single_id",

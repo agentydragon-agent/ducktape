@@ -28,7 +28,6 @@ from agent_pkg.runtime.output import render_agent_prompt
 from props.core.agent_helpers import get_current_agent_run
 from props.core.agent_types import GraderTypeConfig, SnapshotGraderTypeConfig
 from props.core.display import short_uuid
-from props.core.grader.edge_helpers import delete_edges_for_issue, get_pending_edges, insert_edge, submit_grading
 from props.db.models import (
     AgentRun,
     FalsePositive,
@@ -40,6 +39,7 @@ from props.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props.db.session import get_session
+from props.grader.edge_helpers import delete_edges_for_issue, get_pending_edges, insert_edge, submit_grading
 
 HELP_TEXT = """Grader agent CLI for matching critique issues to ground truth.
 

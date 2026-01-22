@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 
 import tiktoken
@@ -13,14 +12,6 @@ import typer
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, WholeSnapshotExample
 from props.core.runs_context import format_timestamp_session
-
-
-@dataclass(frozen=True)
-class BuildOptions:
-    sandbox: str
-    skip_git_repo_check: bool
-    full_auto: bool
-    extra_configs: list[str] | None = None
 
 
 def save_prompt_to_tmp(stem: str, text: str) -> Path:
@@ -36,18 +27,6 @@ def save_prompt_to_tmp(stem: str, text: str) -> Path:
     tokens = len(tiktoken.get_encoding("cl100k_base").encode(text))
     print(f"Saved prompt: {outfile} (approx tokens: {tokens})")
     return outfile
-
-
-def build_cmd(model: str, workdir: Path, opts: BuildOptions) -> list[str]:
-    cmd: list[str] = ["codex", "exec", "--model", model, "--sandbox", opts.sandbox, "-C", str(workdir)]
-    if opts.extra_configs:
-        for c in opts.extra_configs:
-            cmd.extend(["-c", c])
-    if opts.full_auto:
-        cmd.append("--full-auto")
-    if opts.skip_git_repo_check:
-        cmd.append("--skip-git-repo-check")
-    return cmd
 
 
 def make_example_from_files(

@@ -29,7 +29,7 @@ py_library(
         "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
-        "//props/core/grader:daemon_manager",
+        "//props/grader:daemon_manager",
         "//props/core/models:examples",
         "//props/core/models:true_positive",
         "@pypi//aiodocker",
