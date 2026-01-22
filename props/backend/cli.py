@@ -10,7 +10,7 @@ import typer
 import uvicorn
 
 from cli_util.logging import LogLevel, make_logging_callback
-from props.backend.app import app as fastapi_app
+from props.backend.app import app as fastapi_app, config
 from props.core.cli import common_options as opt
 
 cli = typer.Typer(help="Props dashboard backend")
@@ -27,8 +27,7 @@ def serve(
     llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
 ) -> None:
     """Start the props dashboard server."""
-    # Set config via environment for app.py to pick up
-    os.environ[opt.LLM_PROXY_URL_ENVVAR] = llm_proxy_url
+    config.llm_proxy_url = llm_proxy_url
     if static_dir:
         os.environ["PROPS_DASHBOARD_STATIC_DIR"] = str(static_dir.absolute())
 
