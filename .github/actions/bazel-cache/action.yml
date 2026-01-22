@@ -4,12 +4,14 @@
 # - Setting up Bazelisk
 # - Deriving cache key from workflow/job name + file hashes
 # - Restoring and saving Bazel cache
+# - Configuring BuildBuddy remote cache (when API key provided)
 #
 # Usage:
 #   - uses: ./.github/actions/bazel-cache
 #     id: bazel-cache
 #     with:
 #       extra_hash: ${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
+#       buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 #
 #   # ... your build steps ...
 #
@@ -23,6 +25,10 @@ description: Setup Bazelisk and restore Bazel cache with auto-derived keys
 inputs:
   extra_hash:
     description: "Additional hash to append to cache key (use hashFiles() at call site)"
+    required: false
+    default: ""
+  buildbuddy-api-key:
+    description: "BuildBuddy API key for remote cache (optional)"
     required: false
     default: ""
 
@@ -39,6 +45,23 @@ runs:
   steps:
     - name: Setup Bazelisk
       uses: bazelbuild/setup-bazelisk@v3
+
+    - name: Configure BuildBuddy remote cache
+      if: inputs.buildbuddy-api-key != ''
+      shell: bash
+      env:
+        BUILDBUDDY_API_KEY: ${{ inputs.buildbuddy-api-key }}
+      run: |
+        # Write to user bazelrc (Bazel reads ~/.bazelrc automatically)
+        cat >> ~/.bazelrc << EOF
+
+        # BuildBuddy remote cache and build event stream (auto-configured by bazel-cache action)
+        build --bes_results_url=https://app.buildbuddy.io/invocation/
+        build --bes_backend=grpcs://remote.buildbuddy.io
+        build --remote_cache=grpcs://remote.buildbuddy.io
+        build --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
+        EOF
+        echo "BuildBuddy remote cache configured"
 
     - name: Derive cache key
       id: cache-key

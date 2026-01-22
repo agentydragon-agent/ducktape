@@ -520,6 +520,11 @@ def _write_bazel_config() -> None:
     if not combined_ca.exists():
         raise CaBundleError("Combined CA bundle not found - setup incomplete")
 
+    # Check for BuildBuddy API key
+    buildbuddy_api_key = os.environ.get("BUILDBUDDY_API_KEY")
+    if buildbuddy_api_key:
+        logger.info("BuildBuddy API key found, enabling remote cache")
+
     # Render bazelrc from template
     template = Template(CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"])
     result: str = template.render(
@@ -529,6 +534,7 @@ def _write_bazel_config() -> None:
         local_proxy=local_proxy,
         combined_ca_path=combined_ca,
         local_registry_path=local_registry,
+        buildbuddy_api_key=buildbuddy_api_key,
     )
     proxy_rc.write_text(result)
     logger.info("Wrote proxy config to %s", proxy_rc)

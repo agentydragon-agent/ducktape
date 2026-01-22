@@ -112,12 +112,14 @@ jobs:
   # Always run - fast safety check
   pre-commit:
     uses: ./.github/workflows/pre-commit.yml
+    secrets: inherit
 
   # Conditional - only when props/frontend changed
   visual-regression:
     needs: compute-targets
     if: needs.compute-targets.outputs.has_props_frontend == 'true'
     uses: ./.github/workflows/visual-regression.yml
+    secrets: inherit
 
   # Conditional - only when Bazel targets changed
   bazel-build:
@@ -126,6 +128,7 @@ jobs:
     uses: ./.github/workflows/bazel-build.yml
     with:
       targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+    secrets: inherit
 
   bazel-lint:
     needs: compute-targets
@@ -134,6 +137,7 @@ jobs:
     with:
       targets: ${{ needs.compute-targets.outputs.bazel_targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: inherit
 
   bazel-typecheck:
     needs: compute-targets
@@ -142,6 +146,7 @@ jobs:
     with:
       targets: ${{ needs.compute-targets.outputs.bazel_targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: inherit
 
   bazel-rust-lint:
     needs: compute-targets
@@ -149,6 +154,7 @@ jobs:
     uses: ./.github/workflows/bazel-rust-lint.yml
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
+    secrets: inherit
 
   bazel-test:
     needs: compute-targets
@@ -156,6 +162,7 @@ jobs:
     uses: ./.github/workflows/bazel-test.yml
     with:
       targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+    secrets: inherit
 
   # Props E2E tests - requires Docker infrastructure (registry, proxy, postgres)
   # Only runs when props/ targets are affected
@@ -163,6 +170,7 @@ jobs:
     needs: compute-targets
     if: needs.compute-targets.outputs.has_props == 'true'
     uses: ./.github/workflows/props-e2e-test.yml
+    secrets: inherit
 
   # Editor E2E tests - requires Docker
   # Only runs when editor_agent/ targets are affected
@@ -170,6 +178,7 @@ jobs:
     needs: compute-targets
     if: needs.compute-targets.outputs.has_editor_agent == 'true'
     uses: ./.github/workflows/editor-e2e-test.yml
+    secrets: inherit
 
   # Agent Server E2E tests - requires Docker and runtime image
   # Only runs when agent_server/ targets are affected
@@ -177,6 +186,7 @@ jobs:
     needs: compute-targets
     if: needs.compute-targets.outputs.has_agent_server == 'true'
     uses: ./.github/workflows/agent-server-e2e-test.yml
+    secrets: inherit
 
   # Claude Hooks tests are handled by claude-hooks-release.yml which runs on
   # push to devel/main (for releases) and PRs that touch tools/claude_hooks/

@@ -47,6 +47,8 @@ jobs:
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Run unit tests (sandboxed)
         run: |
@@ -129,6 +131,8 @@ jobs:
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
         run: bazel build //tools/claude_hooks:claude_hooks_wheel

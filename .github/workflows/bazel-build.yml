@@ -11,6 +11,10 @@ on:
         required: false
         type: string
         default: "//..."
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache"
+        required: false
 
 jobs:
   build:
@@ -34,6 +38,8 @@ jobs:
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build
         run: bazel build --keep_going ${{ inputs.targets }}

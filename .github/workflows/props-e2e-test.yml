@@ -11,6 +11,10 @@ on:
         required: false
         type: string
         default: "//props/critic:test_e2e //props/critic_dev/improve:test_e2e //props/critic_dev/optimize:test_e2e //props/core:test_agent_pkg_e2e"
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache"
+        required: false
   workflow_dispatch:
     inputs:
       targets:
@@ -41,6 +45,8 @@ jobs:
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       # Generate PGPASSWORD (compose.yaml expects it from environment)
       - name: Setup environment

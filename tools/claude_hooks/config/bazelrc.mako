@@ -35,3 +35,11 @@ test --spawn_strategy=local
 common --registry=file://${local_registry_path | sh}
 common --registry=https://bcr.bazel.build
 % endif
+% if buildbuddy_api_key:
+
+# BuildBuddy remote cache and build event stream
+build --bes_results_url=https://app.buildbuddy.io/invocation/
+build --bes_backend=grpcs://remote.buildbuddy.io
+build --remote_cache=grpcs://remote.buildbuddy.io
+build --remote_header=x-buildbuddy-api-key=${buildbuddy_api_key}
+% endif

@@ -17,6 +17,10 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache"
+        required: false
   workflow_dispatch:
     inputs:
       targets:
@@ -54,6 +58,7 @@ jobs:
         id: bazel-cache
         with:
           extra_hash: ${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Rust lint
         run: |

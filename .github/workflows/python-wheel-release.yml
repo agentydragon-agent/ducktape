@@ -7,6 +7,10 @@ name: Python Wheel Release
 
 on:
   workflow_call:
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache"
+        required: false
     inputs:
       package_name:
         description: "Package name for release tag prefix (e.g., 'ducktape')"
@@ -70,6 +74,8 @@ jobs:
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
         run: bazel build ${{ inputs.bazel_target }}

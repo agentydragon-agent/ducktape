@@ -36,6 +36,8 @@ jobs:
 
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build OCI image
         run: bazelisk build //props/cli:image

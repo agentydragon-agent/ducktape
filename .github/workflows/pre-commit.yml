@@ -5,6 +5,10 @@ name: Pre-commit checks
 
 on:
   workflow_call:
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache"
+        required: false
   workflow_dispatch:
 
 jobs:
@@ -25,6 +29,8 @@ jobs:
       # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          buildbuddy-api-key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       # Cluster validation tools - use official actions where available
       - name: Setup OpenTofu
