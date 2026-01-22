@@ -37,10 +37,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     try:
         client = docker.from_env()
         client.ping()
-
-        # Check if required images are available for editor tests
-        # The editor image will be built by the editor_image_id fixture
-        # But we still need to verify Docker is available
     except docker.errors.DockerException as exc:
         pytest.skip(f"Docker not available: {exc}")
     finally:
