@@ -10,7 +10,7 @@ This directory contains GitHub Actions workflows for CI/CD and GitHub Copilot co
 
 **What it does**:
 1. Checks out the repository code
-2. Sets up Python 3.12
+2. Sets up Python 3.13
 3. Installs Bazelisk (for building with Bazel)
 4. Caches Bazel artifacts for faster subsequent runs
 5. Installs pre-commit hooks
