@@ -1,17 +1,25 @@
 """Test Indoor AQI setup."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest_bazel
-from custom_components.indoor_aqi import DOMAIN, async_setup_entry, async_unload_entry
 from hamcrest import assert_that, has_entries
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from homeassistant.setup import async_setup_component
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+DOMAIN = "indoor_aqi"
 
 
-async def test_setup_component(hass):
+async def test_setup_component(hass: HomeAssistant):
     """Test setting up the Indoor AQI component."""
+    # Import inside test function to avoid loading HA modules before
+    # pytest_homeassistant_custom_component can patch them
+    from homeassistant.setup import async_setup_component  # noqa: PLC0415
+
     # Define a basic YAML config
     config = {
         DOMAIN: {
@@ -38,8 +46,11 @@ async def test_setup_component(hass):
     assert_that(hass.data[DOMAIN], has_entries(yaml_config=config[DOMAIN]))
 
 
-async def test_setup_entry(hass):
+async def test_setup_entry(hass: HomeAssistant):
     """Test setting up a config entry."""
+    from custom_components.indoor_aqi import async_setup_entry  # noqa: PLC0415
+    from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
+
     # Create a mock entry
     entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry_id")
 
@@ -50,8 +61,11 @@ async def test_setup_entry(hass):
         mock_forward.assert_called_once_with(entry, ["sensor"])
 
 
-async def test_unload_entry(hass):
+async def test_unload_entry(hass: HomeAssistant):
     """Test unloading a config entry."""
+    from custom_components.indoor_aqi import async_unload_entry  # noqa: PLC0415
+    from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
+
     # Create a mock entry
     entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry_id")
 
