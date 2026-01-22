@@ -17,9 +17,9 @@ from sqlalchemy import text
 from agent_pkg.runtime.mcp import mcp_client_from_env
 from agent_pkg.runtime.output import render_agent_prompt
 from cli_util.decorators import async_run
+from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.core.agent_helpers import get_current_agent_run, get_current_agent_run_id
 from props.core.agent_types import AgentType
-from props.core.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.core.display import ColumnDef, build_table_from_schema
 from props.core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split

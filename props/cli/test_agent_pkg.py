@@ -10,8 +10,8 @@ import pytest
 import pytest_bazel
 from typer.testing import CliRunner
 
+from props.cli.cmd_agent_pkg import app
 from props.core.agent_pkg_utils import DOCKERFILE_FILE, AgentPkgValidationError, validate_packed_agent_pkg
-from props.core.cli.cmd_agent_pkg import app
 
 
 @pytest.fixture

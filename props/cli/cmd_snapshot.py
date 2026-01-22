@@ -10,7 +10,7 @@ import typer
 from typer_di import TyperDI
 
 from cli_util.decorators import async_run
-from props.core.cli import common_options as opt
+from props.cli import common_options as opt
 from props.core.ids import SnapshotSlug
 from props.db.models import Snapshot
 from props.db.session import get_session

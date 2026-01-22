@@ -11,7 +11,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "types",
     srcs = ["types.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
@@ -23,7 +23,7 @@ py_library(
 py_library(
     name = "common_options",
     srcs = ["common_options.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":types",
@@ -35,7 +35,7 @@ py_library(
 py_library(
     name = "resources",
     srcs = ["resources.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = ["//props/db:config"],
 )
@@ -43,7 +43,7 @@ py_library(
 py_library(
     name = "shared",
     srcs = ["shared.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
@@ -61,7 +61,7 @@ py_library(
 py_library(
     name = "cmd_agent_pkg",
     srcs = ["cmd_agent_pkg.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:agent_pkg_utils",
@@ -74,7 +74,7 @@ py_library(
 py_library(
     name = "cmd_classify_noops",
     srcs = ["cmd_classify_noops.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
@@ -93,7 +93,7 @@ py_library(
 py_library(
     name = "cmd_db",
     srcs = ["cmd_db.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
@@ -108,7 +108,7 @@ py_library(
 py_library(
     name = "cmd_gepa",
     srcs = ["cmd_gepa.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
@@ -124,7 +124,7 @@ py_library(
 py_library(
     name = "cmd_grade_validation",
     srcs = ["cmd_grade_validation.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
@@ -146,7 +146,7 @@ py_library(
 py_library(
     name = "cmd_grader_agent",
     srcs = ["cmd_grader_agent.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_pkg/runtime",
@@ -169,7 +169,7 @@ py_library(
 py_library(
     name = "cmd_gt",
     srcs = ["cmd_gt.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
@@ -186,7 +186,7 @@ py_library(
 py_library(
     name = "cmd_snapshot",
     srcs = ["cmd_snapshot.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
@@ -209,7 +209,7 @@ py_library(
 py_library(
     name = "cmd_stats",
     srcs = ["cmd_stats.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:display",
@@ -234,7 +234,7 @@ py_library(
 py_library(
     name = "main",
     srcs = ["__main__.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cmd_agent_pkg",
@@ -292,7 +292,7 @@ py_binary(
 py_test(
     name = "test_agent_pkg",
     srcs = ["test_agent_pkg.py"],
-    imports = ["../../.."],
+    imports = ["../.."],
     deps = [
         ":cmd_agent_pkg",
         "@pypi//pytest",

@@ -12,7 +12,7 @@ import typer
 from rich.console import Console
 
 from openai_utils.client_factory import build_client
-from props.core.cli import common_options as opt
+from props.cli import common_options as opt
 from props.core.noop_classifier.classifier import classify_patterns_parallel
 
 logger = logging.getLogger(__name__)

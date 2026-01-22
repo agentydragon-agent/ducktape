@@ -33,7 +33,7 @@ jobs:
         id: bazel-cache
 
       - name: Build OCI image
-        run: bazelisk build //props/core/cli:image
+        run: bazelisk build //props/cli:image
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -43,7 +43,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR
-        run: bazelisk run //props/core/cli:push_ghcr
+        run: bazelisk run //props/cli:push_ghcr
 
       - uses: ./.github/actions/bazel-cache-save
         if: always()

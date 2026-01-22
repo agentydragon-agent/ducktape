@@ -12,10 +12,10 @@ import aiodocker
 import typer
 
 from cli_util.decorators import async_run
+from props.cli import common_options as opt
+from props.cli.resources import get_database_config
 from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
-from props.core.cli import common_options as opt
-from props.core.cli.resources import get_database_config
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.splits import Split

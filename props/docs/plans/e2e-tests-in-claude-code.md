@@ -82,7 +82,7 @@ Update session start hook to trigger props infrastructure when enabled.
 
    ```bash
    # Recreate database with schema and sync data
-   bazel run //props/core/cli:cli -- db recreate -y
+   bazel run //props/cli:cli -- db recreate -y
 
    # Build and push agent images to local registry
    bazel run //props/critic:push
@@ -180,7 +180,7 @@ If aiodocker doesn't support annotations, we need to:
 2. Wait for infrastructure containers to start (shown in session hook output)
 3. Run manual setup (one-time per session):
    ```bash
-   bazel run //props/core/cli:cli -- db recreate -y
+   bazel run //props/cli:cli -- db recreate -y
    bazel run //props/critic:push
    bazel run //props/grader:push
    bazel run //props/critic_dev/improve:push
@@ -195,7 +195,7 @@ If aiodocker doesn't support annotations, we need to:
 
 1. Start infrastructure: `docker compose -f props/compose.yaml up -d`
 2. Set environment variables (or source from devenv)
-3. Run setup: `bazel run //props/core/cli:cli -- db recreate -y` and image pushes
+3. Run setup: `bazel run //props/cli:cli -- db recreate -y` and image pushes
 4. Run tests:
    ```bash
    bazel test //props/critic:test_e2e

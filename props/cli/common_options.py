@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from props.core.cli.types import DEFINITION_ID, SNAPSHOT_SLUG
+from props.cli.types import DEFINITION_ID, SNAPSHOT_SLUG
 from props.core.docker_env import WORKING_DIR as CRITIC_WORKDIR
 
 # Arguments

@@ -92,7 +92,7 @@ jobs:
           PGPORT: 5433
           PGUSER: postgres
           PGDATABASE: eval_results
-        run: bazel run //props/core/cli:cli -- db recreate -y
+        run: bazel run //props/cli:cli -- db recreate -y
 
       # Build and push agent images to local registry
       - name: Push agent images

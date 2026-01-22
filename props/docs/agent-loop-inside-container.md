@@ -397,9 +397,9 @@ Writing events (remove):
 Reading events (update to use `llm_requests` or remove):
 
 - `props/backend/routes/runs.py` - WebSocket streams, API responses
-- `props/core/cli/cmd_speak_with_dead.py` - replay agent execution
-- `props/core/cli/cmd_analyze_exec.py` - docker_exec pattern analysis
-- `props/core/cli/cmd_critic_dev_helpers.py` - development utilities
+- `props/cli/cmd_speak_with_dead.py` - replay agent execution
+- `props/cli/cmd_analyze_exec.py` - docker_exec pattern analysis
+- `props/cli/cmd_critic_dev_helpers.py` - development utilities
 - `props/core/gepa/gepa_adapter.py` - reflection event filtering
 
 Schema/views (drop):

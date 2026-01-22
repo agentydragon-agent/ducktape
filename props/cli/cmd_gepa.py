@@ -11,8 +11,8 @@ from rich.console import Console
 
 from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client
+from props.cli import common_options as opt
 from props.core.agent_workspace import WorkspaceManager
-from props.core.cli import common_options as opt
 from props.core.gepa.gepa_adapter import optimize_with_gepa
 from props.db.config import get_database_config
 

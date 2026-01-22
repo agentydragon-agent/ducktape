@@ -17,19 +17,10 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from props.backend.routes import ground_truth, runs, stats
+from props.cli.common_options import DEFAULT_LLM_PROXY_URL
+from props.cli.resources import get_database_config
 from props.core.agent_registry import AgentRegistry
-from props.core.cli.common_options import DEFAULT_LLM_PROXY_URL
-from props.core.cli.resources import get_database_config
 from props.grader.daemon_manager import DaemonManager
-
-
-class _Config:
-    """Module-level config set by CLI before starting uvicorn."""
-
-    llm_proxy_url: str | None = None
-
-
-config = _Config()
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -80,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
 
-    llm_proxy_url = config.llm_proxy_url or DEFAULT_LLM_PROXY_URL
+    llm_proxy_url = getattr(app.state, "llm_proxy_url", None) or DEFAULT_LLM_PROXY_URL
 
     # Registry owns resources and orchestrates agent runs
     app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)

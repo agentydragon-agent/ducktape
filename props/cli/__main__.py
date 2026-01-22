@@ -20,21 +20,21 @@ from typer_di import TyperDI
 
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
+from props.cli import common_options as opt
+from props.cli.cmd_agent_pkg import app as agent_pkg_app
+from props.cli.cmd_classify_noops import cmd_classify_noops
+from props.cli.cmd_db import db_app
+from props.cli.cmd_grade_validation import cmd_grade_validation
+from props.cli.cmd_grader_agent import app as grader_agent_app
+from props.cli.cmd_gt import gt_app
+from props.cli.cmd_snapshot import snapshot_app
+from props.cli.cmd_stats import stats_app
+from props.cli.shared import make_example_from_files
 from props.core.agent_helpers import get_current_agent_run
 
 # cmd_gepa imported lazily below (gepa is optional)
 from props.core.agent_registry import AgentRegistry, ImprovementResult, OutcomeExhausted, OutcomeUnexpectedTermination
 from props.core.agent_types import AgentType
-from props.core.cli import common_options as opt
-from props.core.cli.cmd_agent_pkg import app as agent_pkg_app
-from props.core.cli.cmd_classify_noops import cmd_classify_noops
-from props.core.cli.cmd_db import db_app
-from props.core.cli.cmd_grade_validation import cmd_grade_validation
-from props.core.cli.cmd_grader_agent import app as grader_agent_app
-from props.core.cli.cmd_gt import gt_app
-from props.core.cli.cmd_snapshot import snapshot_app
-from props.core.cli.cmd_stats import stats_app
-from props.core.cli.shared import make_example_from_files
 from props.core.display import fmt_pct, short_sha
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -438,7 +438,7 @@ async def prompt_improve_cmd(
 
 # GEPA command (optional - requires gepa package)
 try:
-    from props.core.cli.cmd_gepa import cmd_gepa
+    from props.cli.cmd_gepa import cmd_gepa
 
     app.command("gepa")(cmd_gepa)
 except ImportError:
