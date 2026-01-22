@@ -11,6 +11,7 @@ import uvicorn
 
 from cli_util.logging import LogLevel, make_logging_callback
 from props.backend.app import app as fastapi_app
+from props.core.cli import common_options as opt
 
 cli = typer.Typer(help="Props dashboard backend")
 cli.callback()(make_logging_callback(default_level=LogLevel.INFO))
@@ -23,9 +24,11 @@ def serve(
     reload: Annotated[bool, typer.Option(help="Enable auto-reload for development")] = False,
     reload_dir: Annotated[list[str] | None, typer.Option(help="Directories to watch for reload")] = None,
     static_dir: Annotated[Path | None, typer.Option(help="Directory with static frontend assets")] = None,
+    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
 ) -> None:
     """Start the props dashboard server."""
-    # Set static dir via environment for app.py to pick up
+    # Set config via environment for app.py to pick up
+    os.environ[opt.LLM_PROXY_URL_ENVVAR] = llm_proxy_url
     if static_dir:
         os.environ["PROPS_DASHBOARD_STATIC_DIR"] = str(static_dir.absolute())
 

@@ -25,6 +25,7 @@ py_library(
         "//props/core:agent_workspace",
         "//props/core:ids",
         "//props/core:splits",
+        "//props/core/cli:common_options",
         "//props/core/cli:resources",
         "//props/db:examples",
         "//props/db:models",
