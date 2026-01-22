@@ -31,36 +31,28 @@ py_library(
 )
 
 py_binary(
-    name = "proxy",
-    srcs = ["proxy.py"],
+    name = "registry_proxy",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
     deps = [
         ":proxy_lib",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//psycopg",
+        "@pypi//uvicorn",
     ],
 )
 
 pkg_tar(
     name = "app_tar",
-    srcs = [":proxy"],
+    srcs = [":registry_proxy"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
 )
 
-# Package init script as /init (executable)
-pkg_tar(
-    name = "init_tar",
-    srcs = ["init"],
-    mode = "0755",
-    package_dir = "/",
-)
-
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    entrypoint = ["/init"],
+    cmd = ["/app/registry_proxy"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
@@ -69,10 +61,7 @@ oci_image(
         "LOG_LEVEL": "info",
     },
     exposed_ports = ["5051/tcp"],
-    tars = [
-        ":app_tar",
-        ":init_tar",
-    ],
+    tars = [":app_tar"],
 )
 
 oci_load(
