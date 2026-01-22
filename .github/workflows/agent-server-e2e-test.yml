@@ -30,6 +30,9 @@ jobs:
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
 
+      - name: Pull required Docker images
+        run: docker pull python:3.12-slim
+
       - name: Build and load agent server runtime image
         run: bazel run //agent_server:load
 

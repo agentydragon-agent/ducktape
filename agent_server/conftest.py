@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 import docker
 import mcp.types
 import pytest
-from fastapi.testclient import TestClient
 from fastmcp.client import Client
+from starlette.testclient import TestClient
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from fastmcp.server import FastMCP
 from pydantic import BaseModel

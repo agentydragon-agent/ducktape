@@ -19,6 +19,11 @@
 body,
 * {
   font-family: "Inter", sans-serif !important;
+  /* Force no antialiasing for maximum consistency */
+  -webkit-font-smoothing: none !important;
+  -moz-osx-font-smoothing: unset !important;
+  font-smooth: never !important;
+  text-rendering: geometricPrecision !important;
 }
 
 /* Disable all animations and transitions for deterministic screenshots */

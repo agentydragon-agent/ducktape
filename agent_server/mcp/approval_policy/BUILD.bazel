@@ -8,6 +8,7 @@ py_library(
         "clients.py",
         "engine.py",
     ],
+    data = ["instructions.j2.md"],
     imports = ["../../.."],
     visibility = ["//agent_server:__subpackages__"],
     deps = [

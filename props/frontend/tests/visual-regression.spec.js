@@ -206,6 +206,27 @@ async function runVisualTests() {
       "--disable-font-subpixel-positioning",
       "--disable-lcd-text",
       "--force-color-profile=srgb",
+      // Additional flags for deterministic rendering
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu-compositing",
+      "--disable-software-rasterizer",
+      "--disable-skia-runtime-opts",
+      "--disable-partial-raster",
+      "--disable-backing-store-limit",
+      "--use-gl=swiftshader",
+      "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
+      // Force CPU-only rendering for complete determinism
+      "--disable-accelerated-video-decode",
+      "--disable-canvas-aa",
+      "--disable-2d-canvas-clip-aa",
+      "--disable-webgl",
+      "--disable-webgl2",
+      // Additional stability flags
+      "--blink-settings=imageAnimationPolicy=noAnimation",
+      "--disable-smooth-scrolling",
+      "--disable-threaded-animation",
+      "--disable-threaded-scrolling",
+      "--disable-checker-imaging",
     ],
   };
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
