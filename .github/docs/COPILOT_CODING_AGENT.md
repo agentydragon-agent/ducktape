@@ -12,18 +12,39 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 - Opens a pull request with the changes
 - Responds to feedback and comments
 
-**Important**: Unlike Claude Code session hooks, GitHub Copilot coding agent runs on GitHub's managed infrastructure, not in your local environment. Therefore, it does NOT support custom environment setup hooks or scripts.
-
 ## How GitHub Copilot Coding Agent Works
 
-1. **Runs on GitHub Infrastructure**: The agent executes in GitHub's managed environment
+1. **Runs on GitHub Infrastructure**: The agent executes in an ephemeral GitHub Actions environment
 2. **Uses Repository Context**: It reads your code, issues, PRs, and configuration files  
 3. **Follows Custom Instructions**: It reads `.github/copilot-instructions.md` for repo-specific guidance
-4. **No Environment Setup Needed**: GitHub provides the runtime environment
+4. **Custom Environment Setup**: You can customize the environment via `.github/workflows/copilot-setup-steps.yml`
 
 ## Available Configuration
 
-### 1. Repository Custom Instructions (`.github/COPILOT_INSTRUCTIONS.md`)
+### 1. Environment Setup (`.github/workflows/copilot-setup-steps.yml`) ⭐ NEW
+
+**What it is**: A GitHub Actions workflow that runs before Copilot starts working, allowing you to install dependencies, tools, and configure the environment.
+
+**Location**: `.github/workflows/copilot-setup-steps.yml` 
+
+**This repository's setup**:
+- ✅ Installs Python 3.12
+- ✅ Installs Bazelisk (for building with Bazel)
+- ✅ Caches Bazel artifacts for faster builds
+- ✅ Installs pre-commit hooks
+- ✅ Installs cluster tools (opentofu, tflint)
+
+**What you can customize**:
+- Install specific versions of languages (Python, Node.js, Go, etc.)
+- Install databases (PostgreSQL, MySQL, Redis, etc.)
+- Install system dependencies
+- Set up services using Docker containers
+- Cache dependencies for faster setup
+- Set environment variables (via GitHub Actions secrets/variables in the `copilot` environment)
+
+**Documentation**: [Customize the agent environment](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment)
+
+### 2. Repository Custom Instructions (`.github/COPILOT_INSTRUCTIONS.md`)
 
 **What it is**: Instructions file that tells Copilot how to work with your repository.
 
@@ -45,7 +66,7 @@ bazel test //...    # Run all tests
 bazel lint //...    # Lint (ruff + mypy)
 ```
 
-### 2. Agent Instructions (`AGENTS.md` files)
+### 3. Agent Instructions (`AGENTS.md` files)
 
 **What it is**: Per-directory instructions for AI agents.
 
@@ -53,7 +74,7 @@ bazel lint //...    # Lint (ruff + mypy)
 
 **This repository has**: `AGENTS.md` in the root directory
 
-### 3. Path-Specific Instructions
+### 4. Path-Specific Instructions
 
 **What it is**: Instructions that apply to specific file paths.
 
@@ -92,7 +113,19 @@ bazel lint //...    # Lint (ruff + mypy)
 
 ## Best Practices for This Repository
 
-### 1. Keep COPILOT_INSTRUCTIONS.md Updated
+### 1. Keep copilot-setup-steps.yml Updated
+
+When you add new dependencies or tools to the project, update `.github/workflows/copilot-setup-steps.yml` to ensure Copilot has access to them.
+
+**Example**: If you start using PostgreSQL in your tests:
+```yaml
+- name: Set up PostgreSQL
+  run: |
+    sudo systemctl start postgresql
+    sudo -u postgres createdb testdb
+```
+
+### 2. Keep COPILOT_INSTRUCTIONS.md Updated
 
 When you make significant changes to:
 - Build system (Bazel configurations)
@@ -102,7 +135,7 @@ When you make significant changes to:
 
 Update `.github/COPILOT_INSTRUCTIONS.md` to reflect these changes.
 
-### 2. Document Common Issues
+### 3. Document Common Issues
 
 Add common pitfalls and workarounds to the instructions:
 ```markdown
@@ -112,7 +145,7 @@ Add common pitfalls and workarounds to the instructions:
 - **Solution**: Run `bazel clean` first, then `bazel test //...`
 ```
 
-### 3. Provide Clear Build Instructions
+### 4. Provide Clear Build Instructions
 
 Always include the exact commands to run:
 ```markdown
@@ -123,7 +156,7 @@ bazel build //...
 "Build the project"
 ```
 
-### 4. Use AGENTS.md for Directory-Specific Context
+### 5. Use AGENTS.md for Directory-Specific Context
 
 For complex subdirectories (like `ansible/`), create local `AGENTS.md` files with context specific to that area.
 
@@ -148,6 +181,8 @@ If you need custom environment setup (like what Claude Code hooks provide), use 
 
 ## Summary
 
-**For GitHub Copilot coding agent**: Use `.github/COPILOT_INSTRUCTIONS.md` and `AGENTS.md` files. No environment setup hooks are supported.
+**Environment Setup**: Use `.github/workflows/copilot-setup-steps.yml` to install tools, dependencies, and configure services before Copilot starts working.
 
-**For custom environment setup**: Use GitHub Codespaces with `.devcontainer/` configuration, or Claude Code session hooks for Claude environments.
+**Instructions**: Use `.github/COPILOT_INSTRUCTIONS.md` and `AGENTS.md` files to provide guidance on how to work with the code.
+
+**For Interactive Development**: Use GitHub Codespaces with `.devcontainer/` configuration if you need a persistent development environment.

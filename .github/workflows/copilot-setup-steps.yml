@@ -1,0 +1,87 @@
+name: "Copilot Setup Steps"
+
+# Automatically run the setup steps when they are changed to allow for easy validation, and
+# allow manual testing through the repository's "Actions" tab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    # Set the permissions to the lowest permissions possible needed for your steps.
+    # Copilot will be given its own token for its operations.
+    permissions:
+      # Clone the repository to set up the environment
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Bazelisk
+        run: |
+          # Bazelisk is usually pre-installed on GitHub Actions runners
+          # but we'll ensure it's available and up to date
+          if ! command -v bazelisk &> /dev/null; then
+            echo "Installing Bazelisk..."
+            BAZELISK_VERSION="v1.24.0"
+            BAZELISK_ARCH="linux-amd64"
+            curl -fsSL "https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-${BAZELISK_ARCH}" -o /usr/local/bin/bazelisk
+            chmod +x /usr/local/bin/bazelisk
+            ln -sf /usr/local/bin/bazelisk /usr/local/bin/bazel
+          fi
+          bazelisk version
+
+      - name: Cache Bazel artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'requirements_bazel.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-
+
+      - name: Install pre-commit
+        run: |
+          pip install --user pre-commit==4.0.1
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install cluster tools (optional)
+        run: |
+          # Install opentofu
+          TOFU_VERSION="1.9.0"
+          curl -fsSL "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_amd64.zip" -o /tmp/tofu.zip
+          unzip -q /tmp/tofu.zip -d /tmp
+          sudo mv /tmp/tofu /usr/local/bin/tofu
+          sudo chmod +x /usr/local/bin/tofu
+          
+          # Install tflint
+          TFLINT_VERSION="0.53.0"
+          curl -fsSL "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_amd64.zip" -o /tmp/tflint.zip
+          unzip -q /tmp/tflint.zip -d /tmp
+          sudo mv /tmp/tflint /usr/local/bin/tflint
+          sudo chmod +x /usr/local/bin/tflint
+        continue-on-error: true
+
+      - name: Verify environment
+        run: |
+          echo "=== Environment Setup Complete ==="
+          echo "Python version: $(python --version)"
+          echo "Bazel version: $(bazel version | head -1)"
+          echo "Pre-commit version: $(pre-commit --version)"
+          which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
+          which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
