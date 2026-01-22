@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import traceback
 from collections import defaultdict
 from uuid import UUID
@@ -27,7 +26,6 @@ from props.db.session import get_session
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_LLM_PROXY_URL = "http://props-llm-proxy:5052"
 DEFAULT_TIMEOUT_SECONDS = 3600
 
 
@@ -35,9 +33,7 @@ DEFAULT_TIMEOUT_SECONDS = 3600
 async def cmd_grade_validation(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     max_parallel: int = opt.OPT_MAX_PARALLEL,
-    llm_proxy_url: str = typer.Option(
-        None, "--llm-proxy-url", envvar="PROPS_LLM_PROXY_URL", help=f"LLM proxy URL (default: {DEFAULT_LLM_PROXY_URL})"
-    ),
+    llm_proxy_url: str = opt.OPT_LLM_PROXY_URL,
     timeout_seconds: int = typer.Option(
         DEFAULT_TIMEOUT_SECONDS, "--timeout-seconds", help="Max seconds per critic run before timeout"
     ),
@@ -53,9 +49,6 @@ async def cmd_grade_validation(
 
     Note: Validation/test snapshots should have exactly one example each (full-specimen scope).
     """
-    # Resolve llm_proxy_url: CLI option > env var > default
-    if llm_proxy_url is None:
-        llm_proxy_url = os.environ.get("PROPS_LLM_PROXY_URL", DEFAULT_LLM_PROXY_URL)
 
     docker_client = aiodocker.Docker()
     db_config = get_database_config()

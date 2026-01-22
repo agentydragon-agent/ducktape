@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from props.backend.routes import ground_truth, runs, stats
 from props.core.agent_registry import AgentRegistry
+from props.core.cli.common_options import DEFAULT_LLM_PROXY_URL, LLM_PROXY_URL_ENVVAR
 from props.core.cli.resources import get_database_config
 from props.grader.daemon_manager import DaemonManager
 
@@ -70,8 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
 
-    # Get LLM proxy URL from environment (required for agent runs)
-    llm_proxy_url = os.environ.get("PROPS_LLM_PROXY_URL", "http://localhost:8082")
+    llm_proxy_url = os.environ.get(LLM_PROXY_URL_ENVVAR, DEFAULT_LLM_PROXY_URL)
 
     # Registry owns resources and orchestrates agent runs
     app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)

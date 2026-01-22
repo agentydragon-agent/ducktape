@@ -74,6 +74,13 @@ OPT_RUNBOOK_SNAPSHOT = typer.Option(
     None, "--snapshot", help="Snapshot slug to hydrate and mount as /workspace (read-only)", click_type=SNAPSHOT_SLUG
 )
 
+# Options - LLM Proxy
+DEFAULT_LLM_PROXY_URL = "http://props-llm-proxy:5052"
+LLM_PROXY_URL_ENVVAR = "PROPS_LLM_PROXY_URL"
+OPT_LLM_PROXY_URL = typer.Option(
+    DEFAULT_LLM_PROXY_URL, "--llm-proxy-url", envvar=LLM_PROXY_URL_ENVVAR, help="URL of the LLM proxy"
+)
+
 # Options - Agent Definition
 OPT_DEFINITION_ID = typer.Option(
     "critic",
