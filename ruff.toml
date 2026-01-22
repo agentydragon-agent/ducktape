@@ -90,7 +90,7 @@ detect-same-package = false
 # Unknown packages default to third-party (no heuristics)
 default-section = "third-party"
 # Force third-party for packages that have same-named directories in repo
-known-third-party = ["docker"]
+known-third-party = ["ansible", "docker"]
 # First-party = our workspace packages (ruff uses heuristics otherwise)
 # TODO: Auto-generate this list from Bazel once bazelized
 known-first-party = [
