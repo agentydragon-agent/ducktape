@@ -16,6 +16,10 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache (optional)"
+        required: false
   workflow_dispatch:
     inputs:
       targets:
@@ -63,8 +67,15 @@ jobs:
           docker-images: true
           swap-storage: true
 
+      - uses: ./.github/actions/setup-buildbuddy
+        id: buildbuddy
+        with:
+          api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
 
       # Pull Docker image needed by agent_server tests (removed by free-disk-space)
       - name: Pull test Docker image
@@ -133,3 +144,4 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          skip_cache: ${{ steps.buildbuddy.outputs.enabled }}

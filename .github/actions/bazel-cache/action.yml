@@ -3,13 +3,14 @@
 # Handles:
 # - Setting up Bazelisk
 # - Deriving cache key from workflow/job name + file hashes
-# - Restoring and saving Bazel cache
+# - Restoring and saving Bazel cache (skipped if using BuildBuddy remote cache)
 #
 # Usage:
 #   - uses: ./.github/actions/bazel-cache
 #     id: bazel-cache
 #     with:
 #       extra_hash: ${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
+#       skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
 #
 #   # ... your build steps ...
 #
@@ -25,6 +26,10 @@ inputs:
     description: "Additional hash to append to cache key (use hashFiles() at call site)"
     required: false
     default: ""
+  skip_cache:
+    description: "Skip GitHub Actions cache (e.g., when using BuildBuddy remote cache)"
+    required: false
+    default: "false"
 
 outputs:
   cache-hit:
@@ -65,6 +70,7 @@ runs:
 
     - name: Restore Bazel cache
       id: cache-restore
+      if: inputs.skip_cache != 'true'
       uses: actions/cache/restore@v4
       with:
         path: |

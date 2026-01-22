@@ -188,6 +188,21 @@ bazel build --config=rust-check //finance/...  # Rust linting
 2. Run `CARGO_BAZEL_REPIN=1 bazel sync --only=crates` to update lockfile
 3. Use `@crates//crate_name` in BUILD.bazel deps
 
+### Remote Cache / BuildBuddy (Optional)
+
+To enable BuildBuddy remote caching and build event streaming, create `~/.config/bazel/buildbuddy.bazelrc`:
+
+```
+# BuildBuddy configuration
+build --bes_results_url=https://app.buildbuddy.io/invocation/
+build --bes_backend=grpcs://remote.buildbuddy.io
+common --remote_cache=grpcs://remote.buildbuddy.io
+common --remote_timeout=10m
+common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY_HERE
+```
+
+This file is loaded via `try-import` in `~/.bazelrc` and is silently ignored if missing.
+
 ## Development Practices
 
 ### Testing

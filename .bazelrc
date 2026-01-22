@@ -1,7 +1,3 @@
-common --progress_in_terminal_title
-
-# TODO: configure Bazel cache once it's set up, e.g. via try-import
-
 common --enable_bzlmod
 
 # Disable MODULE.bazel.lock to avoid churn between environments.

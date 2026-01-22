@@ -425,6 +425,36 @@ async def run_web_mode(hook_input: HookInput) -> None:
             raise SkipError("Bazelisk", "CLAUDE_HOOKS_SKIP_BAZELISK")
         return bazelisk_setup.install_bazelisk_and_wrapper()
 
+    def setup_buildbuddy() -> str | None:
+        """Configure BuildBuddy remote cache if BUILDBUDDY_API_KEY is set.
+
+        Writes config to ~/.config/bazel/buildbuddy.bazelrc and ensures
+        ~/.bazelrc has the try-import line.
+        """
+        api_key = os.environ.get("BUILDBUDDY_API_KEY")
+        if not api_key:
+            logger.info("BUILDBUDDY_API_KEY not set, skipping BuildBuddy setup")
+            return None
+
+        # Run the setup script
+        script_path = project_dir / "tools" / "setup-buildbuddy.sh"
+        if not script_path.exists():
+            logger.warning("BuildBuddy setup script not found: %s", script_path)
+            return None
+
+        result = subprocess.run(
+            [script_path],
+            env={**os.environ, "BUILDBUDDY_API_KEY": api_key},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            logger.info("BuildBuddy remote cache configured")
+            return "configured"
+        logger.warning("BuildBuddy setup failed: %s", result.stderr)
+        return None
+
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     logger.info("Starting parallel installations...")
     results = await asyncio.gather(
@@ -434,6 +464,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
         run_in_thread(binary_tools.install_cluster_tools),
         run_in_thread(nix_setup.install_nix),
         run_in_thread(install_bazelisk_wrapper),
+        run_in_thread(setup_buildbuddy),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
@@ -443,14 +474,17 @@ async def run_web_mode(hook_input: HookInput) -> None:
     cluster_result: None | BaseException = results[3]
     nix_result: Path | None | BaseException = results[4]
     bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[5]
+    buildbuddy_result: str | None | BaseException = results[6]
 
-    # Log non-critical failures (git, cluster tools, bazelisk, nix, podman)
+    # Log non-critical failures (git, cluster tools, bazelisk, nix, podman, buildbuddy)
     if isinstance(git_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", git_result)
     if isinstance(cluster_result, BaseException):
         logger.warning("Failed to install cluster tools: %s", cluster_result)
     if isinstance(bazelisk_result, BaseException):
         logger.warning("Failed to install bazelisk: %s", bazelisk_result)
+    if isinstance(buildbuddy_result, BaseException):
+        logger.warning("Failed to configure BuildBuddy: %s", buildbuddy_result)
 
     # Extract artifacts
     nix_store_bin: Path | None = None if isinstance(nix_result, BaseException) else nix_result

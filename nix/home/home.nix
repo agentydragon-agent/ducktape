@@ -303,6 +303,9 @@ in
     common --progress_in_terminal_title
     common --enable_bzlmod
     build --platforms //:linux_x64
+
+    # Optional BuildBuddy / remote cache config (file not in git)
+    try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
   '';
 
   # Packages to install (Phase 1: only actual user-level packages from Ansible)

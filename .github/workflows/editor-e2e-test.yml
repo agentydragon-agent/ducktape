@@ -5,6 +5,10 @@ name: Editor E2E Test
 
 on:
   workflow_call:
+    secrets:
+      BUILDBUDDY_API_KEY:
+        description: "BuildBuddy API key for remote cache (optional)"
+        required: false
   workflow_dispatch:
 
 jobs:
@@ -27,8 +31,15 @@ jobs:
           docker-images: true
           swap-storage: true
 
+      - uses: ./.github/actions/setup-buildbuddy
+        id: buildbuddy
+        with:
+          api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+
       - uses: ./.github/actions/bazel-cache
         id: bazel-cache
+        with:
+          skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
 
       - name: Build and load editor runtime image
         run: bazel run //editor_agent/runtime:load
@@ -59,3 +70,4 @@ jobs:
         with:
           cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
           cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
+          skip_cache: ${{ steps.buildbuddy.outputs.enabled }}
