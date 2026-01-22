@@ -448,6 +448,7 @@ async def run_web_mode(hook_input: HookInput) -> None:
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
         if result.returncode == 0:
             logger.info("BuildBuddy remote cache configured")
