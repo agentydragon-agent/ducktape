@@ -322,6 +322,7 @@ in
         enabled = true;
         autoAllowBashIfSandboxed = true;
         allowUnsandboxedCommands = true;
+        excludedCommands = [ "nvidia-smi" ];
       };
 
       permissions = {
