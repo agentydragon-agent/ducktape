@@ -58,6 +58,20 @@ def run_cmd(cmd: list[str], *, check: bool = True, capture: bool = False) -> sub
     return subprocess.run(cmd, check=check, capture_output=capture, text=True)
 
 
+def bool_str(value: bool) -> str:
+    """Convert bool to GitHub Actions output string."""
+    return "true" if value else "false"
+
+
+def print_truncated(label: str, items: list[str], limit: int = 20) -> None:
+    """Print a list, truncating if over limit."""
+    print(f"{label}:")
+    for item in items[:limit]:
+        print(f"  {item}")
+    if len(items) > limit:
+        print(f"  ... and {len(items) - limit} more")
+
+
 def download_bazel_diff(dest: Path) -> None:
     """Download bazel-diff JAR.
 
@@ -77,12 +91,8 @@ def get_changed_files(base_sha: str) -> list[str]:
 
 def has_infra_changes(changed_files: list[str]) -> bool:
     """Check if any changed files match infrastructure patterns."""
-    for pattern in INFRA_PATTERNS:
-        regex = re.compile(pattern)
-        for f in changed_files:
-            if regex.match(f):
-                return True
-    return False
+    compiled = [re.compile(p) for p in INFRA_PATTERNS]
+    return any(r.match(f) for r in compiled for f in changed_files)
 
 
 def get_base_sha() -> str | None:
@@ -182,11 +192,7 @@ def compute_affected_targets() -> AffectedTargets:
 
     # Check changed files
     changed_files = get_changed_files(base_sha)
-    print("Changed files:")
-    for f in changed_files[:20]:
-        print(f"  {f}")
-    if len(changed_files) > 20:
-        print(f"  ... and {len(changed_files) - 20} more")
+    print_truncated("Changed files", changed_files)
 
     # Check for infrastructure changes
     if has_infra_changes(changed_files):
@@ -204,15 +210,7 @@ def compute_affected_targets() -> AffectedTargets:
         print("No Bazel targets affected")
         return AffectedTargets(targets="", has_changes=False)
 
-    print(f"Found {len(targets)} affected targets")
-    if len(targets) <= 20:
-        for t in targets:
-            print(f"  {t}")
-    else:
-        for t in targets[:20]:
-            print(f"  {t}")
-        print(f"  ... and {len(targets) - 20} more")
-
+    print_truncated(f"Found {len(targets)} affected targets", targets)
     return AffectedTargets(targets=" ".join(targets), has_changes=True)
 
 
@@ -250,9 +248,8 @@ def output_results(affected: AffectedTargets, intersections: dict[str, bool]) ->
     """Write results to $GITHUB_OUTPUT."""
     output_file = os.environ.get("GITHUB_OUTPUT")
 
-    lines = [f"targets={affected.targets}", f"has_changes={'true' if affected.has_changes else 'false'}"]
-    for var_name, has_intersection in intersections.items():
-        lines.append(f"{var_name}={'true' if has_intersection else 'false'}")
+    lines = [f"targets={affected.targets}", f"has_changes={bool_str(affected.has_changes)}"]
+    lines.extend(f"{var}={bool_str(val)}" for var, val in intersections.items())
 
     if not output_file:
         # Print to stdout if not in GitHub Actions
