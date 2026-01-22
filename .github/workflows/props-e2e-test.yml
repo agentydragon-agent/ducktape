@@ -119,29 +119,10 @@ jobs:
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
             ${{ inputs.targets }}
 
-      - name: Collect test logs
+      - uses: ./.github/actions/collect-test-logs
         if: failure()
-        run: |
-          mkdir -p e2e-test-logs
-          TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
-          if [ -d "$TESTLOGS_DIR" ]; then
-            find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
-              test_dir=$(dirname "$xml")
-              target_path="${test_dir#$TESTLOGS_DIR/}"
-              mkdir -p "e2e-test-logs/$target_path"
-              cp "$test_dir/test.log" "e2e-test-logs/$target_path/" 2>/dev/null || true
-              cp "$test_dir/test.xml" "e2e-test-logs/$target_path/" 2>/dev/null || true
-            done
-          fi
-
-      - name: Upload test logs
-        if: failure()
-        uses: actions/upload-artifact@v4
         with:
-          name: e2e-test-logs-${{ github.run_id }}
-          path: e2e-test-logs/
-          if-no-files-found: ignore
-          retention-days: 14
+          artifact-name: props-e2e-test-logs
 
       - name: Test Report
         uses: dorny/test-reporter@v2
