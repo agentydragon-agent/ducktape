@@ -39,6 +39,7 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//starlette",
     ],
 )
 
