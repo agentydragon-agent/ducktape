@@ -54,6 +54,48 @@ runs:
         echo "Collected failed test logs:"
         find failed-test-logs -type f 2>/dev/null || echo "No files collected"
 
+    - name: Print failed test logs to console
+      shell: bash
+      run: |
+        echo "=================================================="
+        echo "FAILED TEST LOGS (printed for debugging)"
+        echo "=================================================="
+
+        # Get actual testlogs path
+        TESTLOGS_DIR=$(bazel info bazel-testlogs 2>/dev/null || echo "bazel-testlogs")
+
+        if [ -d "$TESTLOGS_DIR" ]; then
+          # Find all test.xml files and print logs from failed tests
+          find "$TESTLOGS_DIR" -name "test.xml" | while read xml; do
+            test_dir=$(dirname "$xml")
+            # Check if test.xml contains failures or errors (non-zero count)
+            if grep -qE '(failures|errors)="[1-9]' "$xml"; then
+              target_path="${test_dir#$TESTLOGS_DIR/}"
+              
+              echo ""
+              echo "=================================================="
+              echo "FAILED TEST: $target_path"
+              echo "=================================================="
+              
+              # Print test.log if it exists
+              if [ -f "$test_dir/test.log" ]; then
+                echo "--- Test log (last 500 lines) ---"
+                tail -n 500 "$test_dir/test.log"
+                echo ""
+              else
+                echo "Warning: test.log not found for $target_path"
+              fi
+            fi
+          done
+        else
+          echo "Warning: testlogs directory not found at $TESTLOGS_DIR"
+        fi
+
+        echo ""
+        echo "=================================================="
+        echo "END OF FAILED TEST LOGS"
+        echo "=================================================="
+
     - name: Upload failed test logs
       uses: actions/upload-artifact@v4
       with:
