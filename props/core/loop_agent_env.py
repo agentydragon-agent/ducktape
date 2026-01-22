@@ -26,7 +26,7 @@ from uuid import UUID
 
 from props.core.display import short_uuid
 from props.core.docker_env import PROPS_NETWORK_NAME
-from props.core.registry.images import _resolve_image_ref
+from props.core.oci_utils import resolve_image_ref_async
 from props.db.config import DatabaseConfig
 from props.db.temp_user_manager import TempUserManager
 
@@ -99,7 +99,7 @@ async def run_loop_agent(
             logger.error("Agent failed: %s", result.stderr)
     """
     # Resolve image from OCI reference
-    image_id = await _resolve_image_ref(docker_client, image)
+    image_id = await resolve_image_ref_async(docker_client, image)
     logger.info("Using image %s from %s", image_id[:19], image)
 
     # Create temporary database user

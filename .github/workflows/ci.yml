@@ -72,9 +72,13 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Compute Bazel targets
         id: bazel-diff
-        run: .github/scripts/compute_affected_targets.sh
+        run: python .github/scripts/compute_affected_targets.py
 
       - name: Check path changes
         id: paths

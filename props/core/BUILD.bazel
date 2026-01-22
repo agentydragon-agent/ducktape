@@ -62,7 +62,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":agent_types",
-        "//props/core/registry:images",
         "@pypi//aiodocker",
         "@pypi//requests",
     ],
@@ -124,7 +123,7 @@ py_library(
     deps = [
         ":display",
         ":docker_env",
-        "//props/core/registry:images",
+        ":oci_utils",
         "//props/db:config",
         "//props/db:temp_user_manager",
         "@pypi//aiodocker",
