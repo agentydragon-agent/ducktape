@@ -33,11 +33,13 @@ _TEST_DEPS = [
     "//agent_server:conftest",
     "//agent_server/persist",
     "//agent_server/testing",
+    "@pypi//fastapi",
     "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//starlette",
 ]
 
 py_test(
@@ -54,6 +56,5 @@ py_test(
     tags = ["requires_docker"],
     deps = _TEST_DEPS + [
         "@pypi//docker",
-        "@pypi//starlette",
     ],
 )

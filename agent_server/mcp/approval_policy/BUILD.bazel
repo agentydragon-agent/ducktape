@@ -37,11 +37,13 @@ _TEST_DEPS = [
     "//agent_server:conftest",
     "//agent_server/testing",
     "@pypi//docker",
+    "@pypi//fastapi",
     "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//starlette",
 ]
 
 py_test(

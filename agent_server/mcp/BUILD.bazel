@@ -23,10 +23,13 @@ _TEST_DEPS = [
     "//agent_server/testing",
     "//mcp_infra/notifications",
     "//mcp_infra/testing",
+    "@pypi//fastapi",
+    "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//starlette",
 ]
 
 py_test(
@@ -35,7 +38,6 @@ py_test(
     imports = ["../.."],
     deps = _TEST_DEPS + [
         "//agent_server/mcp/chat",
-        "@pypi//fastmcp",
         "@pypi//mcp",
     ],
 )
@@ -47,7 +49,6 @@ py_test(
     deps = _TEST_DEPS + [
         "//agent_server/mcp/chat",
         "//mcp_infra/stubs",
-        "@pypi//fastmcp",
     ],
 )
 
@@ -72,7 +73,6 @@ py_test(
     deps = _TEST_DEPS + [
         "//agent_server/mcp/approval_policy",
         "@pypi//docker",
-        "@pypi//fastmcp",
         "@pypi//mcp",
     ],
 )
@@ -96,7 +96,6 @@ py_test(
     imports = ["../.."],
     deps = _TEST_DEPS + [
         "//agent_server/notifications",
-        "@pypi//fastmcp",
     ],
 )
 
