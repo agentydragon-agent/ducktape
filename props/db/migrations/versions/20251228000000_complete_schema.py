@@ -2027,20 +2027,20 @@ When this view returns no rows for a grader''s scope, grading is complete.'
         BEGIN
             v_row := COALESCE(NEW, OLD);
 
-            v_item := json_build_object('table', TG_TABLE_NAME);
+            v_item := jsonb_build_object('table', TG_TABLE_NAME);
 
             CASE TG_TABLE_NAME
                 WHEN 'true_positives' THEN
-                    v_item := v_item || json_build_object('tp_id', v_row.tp_id);
+                    v_item := v_item || jsonb_build_object('tp_id', v_row.tp_id);
                 WHEN 'true_positive_occurrences' THEN
-                    v_item := v_item || json_build_object('tp_id', v_row.tp_id, 'occurrence_id', v_row.occurrence_id);
+                    v_item := v_item || jsonb_build_object('tp_id', v_row.tp_id, 'occurrence_id', v_row.occurrence_id);
                 WHEN 'false_positives' THEN
-                    v_item := v_item || json_build_object('fp_id', v_row.fp_id);
+                    v_item := v_item || jsonb_build_object('fp_id', v_row.fp_id);
                 WHEN 'false_positive_occurrences' THEN
-                    v_item := v_item || json_build_object('fp_id', v_row.fp_id, 'occurrence_id', v_row.occurrence_id);
+                    v_item := v_item || jsonb_build_object('fp_id', v_row.fp_id, 'occurrence_id', v_row.occurrence_id);
             END CASE;
 
-            PERFORM pg_notify('grading_pending', json_build_object(
+            PERFORM pg_notify('grading_pending', jsonb_build_object(
                 'operation', TG_OP,
                 'item', v_item,
                 'snapshot_slug', v_row.snapshot_slug
@@ -2094,23 +2094,23 @@ Fires on INSERT/DELETE of TPs/FPs (not UPDATE - minor wording fixes don''t need 
             WHERE ar.agent_run_id = NEW.agent_run_id;
 
             IF v_snapshot_slug IS NOT NULL THEN
-                v_item := json_build_object('table', TG_TABLE_NAME);
+                v_item := jsonb_build_object('table', TG_TABLE_NAME);
 
                 CASE TG_TABLE_NAME
                     WHEN 'reported_issues' THEN
-                        v_item := v_item || json_build_object(
+                        v_item := v_item || jsonb_build_object(
                             'agent_run_id', NEW.agent_run_id,
                             'issue_id', NEW.issue_id
                         );
                     WHEN 'reported_issue_occurrences' THEN
-                        v_item := v_item || json_build_object(
+                        v_item := v_item || jsonb_build_object(
                             'occurrence_id', NEW.id,
                             'agent_run_id', NEW.agent_run_id,
                             'reported_issue_id', NEW.reported_issue_id
                         );
                 END CASE;
 
-                PERFORM pg_notify('grading_pending', json_build_object(
+                PERFORM pg_notify('grading_pending', jsonb_build_object(
                     'operation', TG_OP,
                     'item', v_item,
                     'snapshot_slug', v_snapshot_slug
