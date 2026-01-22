@@ -8,6 +8,6 @@ occurrences:
   - occurrence_id: occ-1
     files:
       calculator.py:
-        - [6, 17]
+        - [6, 16]
     critic_scopes_expected_to_recall:
       - - calculator.py
