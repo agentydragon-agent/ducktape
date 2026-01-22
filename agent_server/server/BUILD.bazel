@@ -96,10 +96,13 @@ _TEST_DEPS = [
     "//agent_server/testing",
     "//mcp_infra",
     "//mcp_infra/exec:models",
+    "@pypi//fastapi",
+    "@pypi//fastmcp",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//starlette",
 ]
 
 py_test(
