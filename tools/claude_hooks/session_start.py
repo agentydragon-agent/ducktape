@@ -393,8 +393,14 @@ async def run_web_mode(hook_input: HookInput) -> None:
     project_dir = env_utils.get_required_env_path("CLAUDE_PROJECT_DIR")
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
 
-    # Start supervisor (required by proxy and podman)
-    supervisor_task = asyncio.create_task(run_in_thread(supervisor_setup.start))
+    # Check if we should skip proxy/podman setup
+    skip_proxy = os.environ.get("CLAUDE_HOOKS_SKIP_PROXY") == "1"
+    skip_podman = os.environ.get("CLAUDE_HOOKS_SKIP_PODMAN") == "1"
+    
+    # Start supervisor only if needed (for proxy or podman)
+    supervisor_task = None
+    if not skip_proxy or not skip_podman:
+        supervisor_task = asyncio.create_task(run_in_thread(supervisor_setup.start))
 
     # Wrappers that depend on supervisor being ready
     # TODO: Handle upstream dependency failures more gracefully.
@@ -404,6 +410,9 @@ async def run_web_mode(hook_input: HookInput) -> None:
     # of re-raising, so only the original upstream error surfaces once.
     async def setup_proxy_with_supervisor() -> proxy_setup.ProxySetup:
         """Set up bazel proxy (depends on supervisor)."""
+        if skip_proxy:
+            logger.info("Skipping proxy setup (CLAUDE_HOOKS_SKIP_PROXY=1)")
+            raise SkipError("Proxy", "CLAUDE_HOOKS_SKIP_PROXY")
         await supervisor_task
         if exc := supervisor_task.exception():
             raise exc
@@ -412,6 +421,9 @@ async def run_web_mode(hook_input: HookInput) -> None:
 
     async def setup_podman_with_supervisor() -> podman_service.PodmanSetup:
         """Set up podman (depends on supervisor)."""
+        if skip_podman:
+            logger.info("Skipping podman setup (CLAUDE_HOOKS_SKIP_PODMAN=1)")
+            raise SkipError("Podman", "CLAUDE_HOOKS_SKIP_PODMAN")
         await supervisor_task
         if exc := supervisor_task.exception():
             raise exc
@@ -472,21 +484,37 @@ async def run_web_mode(hook_input: HookInput) -> None:
     TIMESTAMP_FILE.write_text(f"{hook_timestamp.isoformat()}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
 
-    # Proxy setup is required - propagate failure with clear error message
-    if isinstance(proxy_result, BaseException):
+    # Handle proxy result (can be skipped with CLAUDE_HOOKS_SKIP_PROXY)
+    if isinstance(proxy_result, SkipError):
+        logger.info("Proxy setup skipped: %s", proxy_result)
+        # Use defaults when proxy is skipped
+        proxy_port = proxy_setup._get_bazel_proxy_port()
+        combined_ca = proxy_setup._get_bazel_combined_ca()
+        # Create minimal combined CA if it doesn't exist (use system CA)
+        if not combined_ca.exists():
+            import ssl
+            # Get system CA bundle path
+            system_ca = Path(ssl.get_default_verify_paths().cafile or "/etc/ssl/certs/ca-certificates.crt")
+            if system_ca.exists():
+                combined_ca.parent.mkdir(parents=True, exist_ok=True)
+                combined_ca.write_text(system_ca.read_text())
+            else:
+                logger.warning("System CA bundle not found, combined_ca will not be created")
+    elif isinstance(proxy_result, BaseException):
         logger.error("Proxy setup failed: %s", proxy_result)
         raise RuntimeError(f"Proxy setup failed: {proxy_result}") from proxy_result
-    # At this point, proxy_result is ProxySetup (type narrowed by the check above)
-
-    # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
-    combined_ca = proxy_setup._get_bazel_combined_ca()
-    if not combined_ca.exists():
-        raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
+    else:
+        # At this point, proxy_result is ProxySetup (type narrowed by the check above)
+        proxy_port = proxy_result.port
+        combined_ca = proxy_result.combined_ca
+        # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
+        if not combined_ca.exists():
+            raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
     nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
 
     env_vars = env_file.EnvVars(
-        proxy_port=proxy_setup._get_bazel_proxy_port(),
+        proxy_port=proxy_port,
         repo_root=project_dir,
         combined_ca=combined_ca,
         bazel_wrapper_dir=bazelisk_setup._get_wrapper_path().parent,
@@ -509,9 +537,18 @@ async def run_web_mode(hook_input: HookInput) -> None:
         bazel_status = "not installed"
     else:
         bazel_status = bazelisk_result.status
-    # proxy_result is already narrowed to ProxySetup after the check above
-    proxy_status = proxy_result.status
-    ca_status = proxy_result.ca_status
+    
+    # Proxy status
+    if isinstance(proxy_result, SkipError):
+        proxy_status = "skipped"
+        ca_status = "system"
+    elif not isinstance(proxy_result, BaseException):
+        proxy_status = proxy_result.status
+        ca_status = proxy_result.ca_status
+    else:
+        proxy_status = "error"
+        ca_status = "error"
+    
     logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status)
     logger.info("Nix: %s", get_nix_status())
     if not isinstance(podman_result, BaseException):
@@ -521,14 +558,14 @@ async def run_web_mode(hook_input: HookInput) -> None:
         logger.info("Podman: %s", podman_status)
 
     # Emit all collected guidance
-    if not isinstance(supervisor_task.result(), BaseException):
+    if supervisor_task and not isinstance(supervisor_task.result(), BaseException):
         print(supervisor_task.result().guidance)
         sys.stdout.flush()
-    # proxy_result is already narrowed to ProxySetup
-    proxy_guidance = proxy_result.guidance
-    if proxy_guidance:
-        print(proxy_guidance)
-        sys.stdout.flush()
+    if not isinstance(proxy_result, (BaseException, SkipError)):
+        proxy_guidance = proxy_result.guidance
+        if proxy_guidance:
+            print(proxy_guidance)
+            sys.stdout.flush()
     if not isinstance(podman_result, BaseException):
         print(podman_result.guidance)
         sys.stdout.flush()
@@ -536,8 +573,125 @@ async def run_web_mode(hook_input: HookInput) -> None:
     emit_session_context(collector)
 
 
+async def run_standard_mode(hook_input: HookInput) -> None:
+    """Standard mode for GitHub Copilot, Codespaces, and standard CI.
+    
+    Simplified mode that skips proxy/supervisor setup and assumes:
+    - Direct internet access (no TLS-inspecting proxy)
+    - Pre-installed Docker/Podman
+    - Pre-installed Bazel/Bazelisk
+    - Standard networking
+    
+    Still installs:
+    - Git pre-commit hooks
+    - Development tools (if requested)
+    - Nix (if requested)
+    """
+    collector = setup_logging()
+    
+    logger.info("Session start hook (standard mode)")
+    logger.info("Hook: %s", __file__)
+    logger.info("Log:  %s", LOG_FILE)
+    logger.info("Hook input: %s", hook_input.model_dump_json())
+    logger.info("Setting up dev environment (standard mode)...")
+    
+    # Get project directory (required)
+    project_dir = env_utils.get_required_env_path("CLAUDE_PROJECT_DIR")
+    logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
+    
+    # Get environment file path (optional in standard mode)
+    env_file_path = Path(os.environ.get("CLAUDE_ENV_FILE", "/tmp/ducktape-env.sh"))
+    logger.info("CLAUDE_ENV_FILE: %s", env_file_path)
+    
+    # Run installations in parallel (all are optional and can fail gracefully)
+    logger.info("Starting parallel installations...")
+    results = await asyncio.gather(
+        run_in_thread(install_git_precommit_hook, project_dir),
+        run_in_thread(binary_tools.install_cluster_tools),
+        run_in_thread(nix_setup.install_nix),
+        return_exceptions=True,
+    )
+    
+    git_result: None | BaseException = results[0]
+    cluster_result: None | BaseException = results[1]
+    nix_result: Path | None | BaseException = results[2]
+    
+    # Log non-critical failures
+    if isinstance(git_result, BaseException):
+        logger.warning("Failed to install git pre-commit: %s", git_result)
+    if isinstance(cluster_result, BaseException):
+        logger.warning("Failed to install cluster tools: %s", cluster_result)
+    
+    # Extract nix paths if successful
+    nix_store_bin: Path | None = None if isinstance(nix_result, BaseException) else nix_result
+    if isinstance(nix_result, BaseException):
+        logger.warning("Failed to install nix: %s", nix_result)
+    
+    nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
+    
+    # Generate timestamp
+    hook_timestamp = datetime.now()
+    TIMESTAMP_FILE.write_text(f"{hook_timestamp.isoformat()}\n")
+    logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
+    
+    # Write minimal environment file
+    exports = [
+        "# Environment configured by session start hook (standard mode)",
+        f"# Timestamp: {hook_timestamp.isoformat()}",
+        "",
+    ]
+    
+    # Add nix to PATH if installed
+    if nix_paths:
+        nix_path_str = ":".join(str(p) for p in nix_paths)
+        exports.append(f'export PATH="{nix_path_str}:$PATH"')
+        exports.append("")
+    
+    # Add project root
+    exports.extend([
+        "# Project configuration",
+        f'export BAZEL_REPO_ROOT="{project_dir}"',
+        "",
+        "# Session metadata",
+        f'export DUCKTAPE_SESSION_START_HOOK_TS="{hook_timestamp.isoformat()}"',
+        f'export DUCKTAPE_SESSION_START_MODE="standard"',
+    ])
+    
+    content = "\n".join(exports) + "\n"
+    env_file_path.write_text(content)
+    logger.info("Wrote environment to %s", env_file_path)
+    
+    # Emit status
+    logger.info("Ready: mode=standard, git_hooks=%s, nix=%s", 
+                "installed" if not isinstance(git_result, BaseException) else "failed",
+                get_nix_status())
+    
+    # Print summary to stdout
+    print("Development environment setup (standard mode)")
+    print(f"Mode: GitHub Copilot / Codespaces / Standard CI")
+    print(f"Timestamp: {hook_timestamp.isoformat()}")
+    print(f"Environment file: {env_file_path}")
+    if not isinstance(git_result, BaseException):
+        print("✓ Git pre-commit hooks installed")
+    if nix_store_bin:
+        print(f"✓ Nix installed: {nix_store_bin}")
+    
+    if collector.warnings:
+        print("\nWarnings:")
+        for msg in collector.warnings:
+            print(f"  - {msg}")
+    
+    if collector.errors:
+        print("\nErrors:")
+        for msg in collector.errors:
+            print(f"  - {msg}")
+    
+    print(f"\nFull log: {LOG_FILE}")
+    sys.stdout.flush()
+
+
 async def async_main() -> None:
-    """Async entry point: dispatch to web or CLI mode based on environment."""
+    """Async entry point: dispatch to web, CLI, or standard mode based on environment."""
     raw_input = sys.stdin.read()
     try:
         hook_input = HookInput.model_validate_json(raw_input)
@@ -546,9 +700,17 @@ async def async_main() -> None:
         print(f"Raw input JSON:\n{raw_input}", file=sys.stderr)
         raise
 
-    if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
+    # Determine mode from environment variables
+    mode = os.environ.get("CLAUDE_HOOKS_MODE", "").lower()
+    
+    if mode == "standard":
+        # Explicit standard mode (GitHub Copilot, Codespaces, etc.)
+        await run_standard_mode(hook_input)
+    elif os.environ.get("CLAUDE_CODE_REMOTE") == "true":
+        # Claude Code web mode
         await run_web_mode(hook_input)
     else:
+        # CLI mode (direnv)
         await run_cli_mode(hook_input)
 
 
