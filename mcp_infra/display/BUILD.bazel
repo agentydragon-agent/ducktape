@@ -31,7 +31,10 @@ py_test(
         "test_compact_display.py",
         "test_max_height.py",
     ],
-    data = ["__snapshots__/test_compact_display.ambr"],
+    data = [
+        "__snapshots__/test_compact_display.ambr",
+        "__snapshots__/test_max_height.ambr",
+    ],
     main = "test_compact_display.py",
     deps = [
         ":display",
