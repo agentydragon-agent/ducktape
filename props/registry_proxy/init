@@ -3,7 +3,7 @@ set -e
 
 # Set up Python path to include all runfiles
 cd /app
-export PYTHONPATH="/app/proxy_bin.runfiles/_main:$(find /app/proxy_bin.runfiles -type d -name site-packages | tr '\n' ':')"
+export PYTHONPATH="/app/proxy.runfiles/_main:$(find /app/proxy.runfiles -type d -name site-packages | tr '\n' ':')"
 
 # Run uvicorn with the proxy app
 exec python -m uvicorn \
