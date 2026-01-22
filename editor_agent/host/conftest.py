@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+from contextlib import suppress
+
 import pytest
+
+try:
+    import docker
+except ImportError:
+    docker = None  # type: ignore[assignment]
 
 from agent_pkg.host.builder import ensure_image
 from editor_agent.host.cli import _DOCKERFILE, _REPO_ROOT
@@ -9,6 +16,37 @@ from editor_agent.host.cli import _DOCKERFILE, _REPO_ROOT
 from mcp_infra.testing.fixtures import *  # noqa: F403
 
 EDITOR_IMAGE_TAG = "adgn-editor:test"
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Skip Docker tests when Docker daemon is not available or images are missing."""
+    if item.get_closest_marker("requires_docker") is None:
+        return
+
+    # Check if docker module is available
+    if docker is None:
+        pytest.skip("Docker module not available")
+        return
+
+    client = None
+    try:
+        client = docker.from_env()
+        client.ping()
+
+        # Check if required images are available for editor tests
+        # The editor image will be built by the editor_image_id fixture
+        # But we still need to verify Docker is available
+    except docker.errors.DockerException as exc:
+        pytest.skip(f"Docker not available: {exc}")
+    finally:
+        if client is not None:
+            with suppress(Exception):
+                client.close()
 
 
 @pytest.fixture
