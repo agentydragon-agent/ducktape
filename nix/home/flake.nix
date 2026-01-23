@@ -124,7 +124,7 @@
           enableGui = true;
           enableKube = true;
           isNixOS = false;
-          enableHeavyPackages = true;
+          enableHeavyPackages = false; # Skip FreeCAD, GIMP, Chrome, etc. to save bandwidth
         };
 
         # NixOS VM

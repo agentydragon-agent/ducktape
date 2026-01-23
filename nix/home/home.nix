@@ -1,6 +1,7 @@
 {
   config,
   pkgs,
+  pkgsUnstable,
   lib,
   enableGui,
   enableKube,
@@ -376,7 +377,7 @@ in
       devenv
       nixfmt-rfc-style # Nix formatter (RFC 166 style)
       rclone # Cloud storage mounting/sync
-      opencode # AI coding agent for terminal
+      pkgsUnstable.opencode # AI coding agent for terminal (unstable for faster updates)
 
       # Tree-sitter CLI for manual parser management
       tree-sitter # Used by nvim-treesitter auto_install
