@@ -10,6 +10,7 @@ import base64
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -114,8 +115,14 @@ def hook_env(isolated_dirs: IsolatedDirs, forwarding_proxy: ForwardingTLSProxy) 
             "CLAUDE_HOOKS_SKIP_NIX": "1",
             # Disable podman setup (requires claude_hooks wheel install)
             "CLAUDE_HOOKS_SKIP_PODMAN": "1",
+            # Skip bazelisk download (tests use system bazel)
+            "CLAUDE_HOOKS_SKIP_BAZELISK": "1",
         }
     )
+
+    # Ensure JAVA_HOME is passed through explicitly (needed for Java truststore)
+    if java_home := os.environ.get("JAVA_HOME"):
+        env["JAVA_HOME"] = java_home
 
     if not use_wheel:
         # Bazel test mode: need PYTHONPATH and custom proxy command
@@ -174,6 +181,8 @@ def run_session_start_hook(
     By default, runs via `python -m tools.claude_hooks.session_start` for Bazel tests.
     Set CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
     script instead - this tests the actual wheel packaging.
+
+    Prints hook stdout/stderr for debugging (visible in CI logs on any test failure).
     """
     hook_input = make_hook_input(project_dir, source)
 
@@ -186,7 +195,13 @@ def run_session_start_hook(
         # Run via python -m (Bazel test mode)
         cmd = [sys.executable, "-m", "tools.claude_hooks.session_start"]
 
-    return subprocess.run(cmd, check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
+    result = subprocess.run(cmd, check=False, input=hook_input, capture_output=True, text=True, env=env, timeout=300)
+
+    # Print hook output for debugging (pytest captures and shows on failure)
+    print(f"\n=== Hook stdout ===\n{result.stdout}")
+    print(f"\n=== Hook stderr ===\n{result.stderr}")
+
+    return result
 
 
 @pytest.fixture(autouse=True)
@@ -303,6 +318,20 @@ def _can_use_podman() -> bool:
     return bool(shutil.which("podman"))
 
 
+def _extract_docker_host_socket(env_file: Path) -> Path:
+    """Extract socket path from DOCKER_HOST in env file.
+
+    The env file contains export statements like:
+        export DOCKER_HOST="unix:///tmp/claude-podman-abc123.sock"
+    """
+    env_content = env_file.read_text()
+    assert "DOCKER_HOST" in env_content, "DOCKER_HOST not set in env file"
+
+    match = re.search(r'DOCKER_HOST="?unix://([^"\s]+)"?', env_content)
+    assert match, f"Could not extract DOCKER_HOST socket path from env file:\n{env_content}"
+    return Path(match.group(1))
+
+
 class TestPodmanIntegration:
     """E2E tests for podman integration with session start hook.
 
@@ -348,6 +377,10 @@ class TestPodmanIntegration:
             }
         )
 
+        # Ensure JAVA_HOME is passed through explicitly (needed for Java truststore)
+        if java_home := os.environ.get("JAVA_HOME"):
+            env["JAVA_HOME"] = java_home
+
         if not use_wheel:
             # Bazel test mode: need PYTHONPATH and custom proxy command
             env["PYTHONPATH"] = os.pathsep.join(sys.path)
@@ -361,25 +394,29 @@ class TestPodmanIntegration:
         """Verify podman service starts after session start hook."""
         result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
 
-        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        assert result.returncode == 0, "Hook failed with non-zero exit code"
 
-        # Verify podman socket exists in isolated directory
-        socket_path = isolated_dirs.cache / "claude-hooks" / "podman" / "podman.sock"
+        socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
         assert socket_path.exists(), f"Podman socket not created at {socket_path}"
-
-        # Verify DOCKER_HOST is set in env file
-        env_content = isolated_dirs.env_file.read_text()
-        assert "DOCKER_HOST" in env_content, "DOCKER_HOST not set in env file"
-        assert str(socket_path) in env_content, f"DOCKER_HOST not pointing to podman socket at {socket_path}"
 
     @pytest.mark.skipif(not shutil.which("keytool"), reason="keytool required")
     @pytest.mark.skipif(not _can_use_podman(), reason="podman not installed")
-    def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str]) -> None:
-        """Verify podman can run a container after session start hook."""
-        result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
-        assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    def test_podman_can_run_container(
+        self, isolated_dirs: IsolatedDirs, podman_hook_env: dict[str, str], forwarding_proxy: ForwardingTLSProxy
+    ) -> None:
+        """Verify podman can run a container after session start hook.
 
-        # Verify we can run podman hello-world
+        Runs podman through the ForwardingTLSProxy to verify the full proxy chain works,
+        including CA certificate configuration for container registry pulls.
+        """
+        result = run_session_start_hook(isolated_dirs.project, podman_hook_env)
+
+        assert result.returncode == 0, "Hook failed with non-zero exit code"
+
+        socket_path = _extract_docker_host_socket(isolated_dirs.env_file)
+        assert socket_path.exists(), f"Podman socket not created at {socket_path}"
+
+        # Verify we can run podman hello-world through the proxy
         # The gVisor annotation is auto-applied via containers.conf
         # Run through env file to pick up SSL_CERT_FILE for TLS proxy CA
         podman_result = shell_helpers.run_with_env_file(
@@ -391,11 +428,20 @@ class TestPodmanIntegration:
             env=podman_hook_env,
         )
 
+        # Include proxy stats in failure message for debugging
+        proxy_stats = (
+            f"\nProxy stats: {forwarding_proxy.stats.total_connections} total, "
+            f"{forwarding_proxy.stats.successful_connections} success, "
+            f"{forwarding_proxy.stats.failed_connections} failed"
+        )
+        if forwarding_proxy.stats.errors:
+            proxy_stats += f"\nProxy errors: {forwarding_proxy.stats.errors[-5:]}"
+
         assert podman_result.returncode == 0, (
-            f"Podman run failed:\nstdout: {podman_result.stdout}\nstderr: {podman_result.stderr}"
+            f"Podman run failed:\nstdout: {podman_result.stdout}\nstderr: {podman_result.stderr}{proxy_stats}"
         )
         assert "Hello from Docker" in podman_result.stdout, (
-            f"Expected 'Hello from Docker' in output:\n{podman_result.stdout}"
+            f"Expected 'Hello from Docker' in output:\n{podman_result.stdout}{proxy_stats}"
         )
 
 
