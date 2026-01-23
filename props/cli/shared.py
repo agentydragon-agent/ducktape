@@ -15,10 +15,7 @@ from props.core.runs_context import format_timestamp_session
 
 
 def save_prompt_to_tmp(stem: str, text: str) -> Path:
-    """Save prompt text under the system temp dir and print a short summary.
-
-    File name: <stem>_<ts>.md. Prints an approximate token count using tiktoken.
-    """
+    """Save prompt text to temp dir and print summary. Prints approximate token count."""
     tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
     tmpdir.mkdir(parents=True, exist_ok=True)
     ts = format_timestamp_session()
@@ -32,21 +29,7 @@ def save_prompt_to_tmp(stem: str, text: str) -> Path:
 def make_example_from_files(
     snapshot_slug: SnapshotSlug, all_files: Mapping[Path, object], requested_files: list[str] | None
 ) -> ExampleSpec:
-    """Create an ExampleSpec from file filter, with validation.
-
-    Args:
-        snapshot_slug: Snapshot identifier
-        all_files: All available files from snapshot
-        requested_files: Optional list of relative paths to filter to
-
-    Returns:
-        WholeSnapshotExample if no filter requested.
-        Currently only supports whole-snapshot; per-file requires trigger_set_id from database.
-
-    Raises:
-        typer.Exit: If requested files are invalid or not found
-        NotImplementedError: If requested_files is not None (per-file not yet supported in CLI)
-    """
+    """Create an ExampleSpec from file filter. Only supports whole-snapshot for now."""
     # No filter → return WholeSnapshotExample
     if requested_files is None:
         return WholeSnapshotExample(snapshot_slug=snapshot_slug)

@@ -17,7 +17,6 @@ gt_app = typer.Typer(help="Ground truth management commands")
 
 
 def _get_specimens_root() -> Path:
-    """Get specimens root from environment or raise."""
     specimens_root = os.environ.get("ADGN_PROPS_SPECIMENS_ROOT")
     if not specimens_root:
         raise typer.BadParameter(
@@ -33,13 +32,7 @@ EXPORT_OUTPUT_OPT = typer.Option(
 
 
 def cmd_gt_export(snapshot_slug: str = EXPORT_SNAPSHOT_ARG, output: Path | None = EXPORT_OUTPUT_OPT) -> None:
-    """Export ground truth (TPs/FPs) for a snapshot to YAML files.
-
-    Writes one YAML file per issue to <output>/issues/<issue_id>.yaml.
-    Files are formatted for round-trip compatibility with `props db sync`.
-
-    By default, outputs to $ADGN_PROPS_SPECIMENS_ROOT/<snapshot_slug>/.
-    """
+    """Export ground truth (TPs/FPs) for a snapshot to YAML files."""
     console = Console()
     slug = SnapshotSlug(snapshot_slug)
 

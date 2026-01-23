@@ -52,17 +52,14 @@ stats_app = typer.Typer(help="Statistics and metrics commands")
 
 
 def fmt_float(value: float | None, decimals: int = 2) -> str:
-    """Format float with N decimal places or dash if None."""
     return f"{value:.{decimals}f}" if value is not None else "—"
 
 
 def fmt_model(model: str, max_length: int = 12) -> str:
-    """Truncate model name to max_length characters."""
     return model[:max_length]
 
 
 def fmt_hash(hash_value: str | None) -> str:
-    """Format hash as short SHA prefix or dash if None."""
     return short_sha(hash_value) if hash_value else "—"
 
 
@@ -125,14 +122,7 @@ STATS_TABLE_LEGEND = """
 
 
 def format_age(dt: datetime) -> str:
-    """Format datetime as relative age string (e.g., '2d', '3h', '15m').
-
-    Args:
-        dt: Datetime to format (assumed UTC or naive)
-
-    Returns:
-        Age string like '2y', '3mo', '5d', '12h', '45m', or 'now'
-    """
+    """Format datetime as relative age string (e.g., '2d', '3h', '15m')."""
     now = datetime.now(UTC) if dt.tzinfo else datetime.now()
     delta = now - dt
 
@@ -152,16 +142,7 @@ def format_age(dt: datetime) -> str:
 def _generate_buckets(
     values: Sequence[float | int], num_buckets: int = 7, equal_width: bool = False
 ) -> list[tuple[str, float | int, float | int]]:
-    """Generate bucket ranges automatically based on data distribution.
-
-    Args:
-        values: List of numeric values
-        num_buckets: Desired number of buckets (default 7)
-        equal_width: If True, use equal-width bins; if False, use percentile-based (default False)
-
-    Returns:
-        List of (label, low, high) tuples defining bucket ranges
-    """
+    """Generate bucket ranges based on data distribution (percentile-based unless equal_width=True)."""
     if not values:
         return []
 
@@ -229,15 +210,7 @@ def _display_distribution(
     buckets: Sequence[tuple[str, float | int, float | int]],
     value_format: str = "{:.1f}%",
 ) -> None:
-    """Display a bucketed distribution with percentiles and histogram using plotext.
-
-    Args:
-        console: Rich console for output
-        values: List of numeric values to visualize
-        title: Section title
-        buckets: List of (label, low, high) tuples defining bucket ranges
-        value_format: Format string for displaying values (default: percentage)
-    """
+    """Display a bucketed distribution with percentiles and histogram using plotext."""
     if not values:
         return
 
@@ -276,8 +249,6 @@ def _display_distribution(
 
 @dataclass
 class SplitStats:
-    """Statistics for a prompt on a specific split."""
-
     completed: int = 0  # Unique examples evaluated (with grader runs completed)
     recalls: list[float] = None  # type: ignore[assignment]
     total_available: int = 0  # Total training examples available in this split
@@ -289,14 +260,12 @@ class SplitStats:
 
     @property
     def mean_recall(self) -> float | None:
-        """Mean recall percentage (0-100) or None if no data."""
         if not self.recalls:
             return None
         return statistics.mean(self.recalls)
 
     @property
     def zero_rate(self) -> float | None:
-        """Percentage of samples with 0% recall, or None if no data."""
         if not self.recalls:
             return None
         zeros = sum(1 for r in self.recalls if r == 0.0)
@@ -305,8 +274,6 @@ class SplitStats:
 
 @dataclass
 class PromptStats:
-    """Statistics for a single prompt across all splits."""
-
     prompt_sha256: str
     created_at: datetime
     splits: dict[Split, SplitStats]
@@ -321,16 +288,7 @@ def _display_split_analysis(
     total_available: int,
     show_all_prompts: bool = False,
 ) -> None:
-    """Display analysis of which prompts are best on which examples for a split.
-
-    Args:
-        console: Rich console for output
-        split_name: Name of the split (e.g., "Training", "Validation")
-        sample_results: Dict mapping ExampleSpec -> {prompt_sha: recall_pct}
-        tp_counts_per_sample: Dict mapping ExampleSpec -> TP count
-        total_available: Total number of examples available in this split
-        show_all_prompts: If True, show all prompts instead of top 15
-    """
+    """Display analysis of which prompts are best on which examples for a split."""
     num_evaluated = len(sample_results)
     num_unknown = total_available - num_evaluated
 
@@ -425,14 +383,6 @@ def _display_split_analysis(
 
 
 def _add_split_columns(table: Table, split_name: str, color: str, total_examples: int) -> None:
-    """Add columns for a single split (Valid or Train) with consistent formatting.
-
-    Args:
-        table: Rich Table to add columns to
-        split_name: Name of split (e.g., "Valid", "Train")
-        color: Rich color name (e.g., "cyan", "yellow")
-        total_examples: Total available examples for this split
-    """
     # Column order: Recall, LCB, N/{total}, Z, ✓, S, C, F
     table.add_column(f"[{color}]{split_name} Recall[/{color}]", justify="right", width=11)
     table.add_column(f"[{color}]LCB[/{color}]", justify="right", width=7)

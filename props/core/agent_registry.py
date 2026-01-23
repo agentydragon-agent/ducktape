@@ -22,12 +22,14 @@ Usage:
             example=example,
             model="gpt-4o",
             timeout_seconds=3600,
+            parent_run_id=None,
+            budget_usd=None,
         )
         # Check status from DB
         with get_session() as session:
             critic_run = session.get(AgentRun, critic_run_id)
             if critic_run.status == AgentRunStatus.COMPLETED:
-                # Grading is handled by snapshot grader daemons
+                # Grading is handled by grader daemons
                 pass
 """
 
@@ -52,9 +54,9 @@ from pydantic import BaseModel, Field
 from props.core.agent_types import (
     AgentType,
     CriticTypeConfig,
+    GraderTypeConfig,
     ImprovementTypeConfig,
     PromptOptimizerTypeConfig,
-    SnapshotGraderTypeConfig,
 )
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
@@ -130,7 +132,6 @@ class AgentRegistry:
         self._semaphore = asyncio.Semaphore(max_parallel)
 
     async def close(self) -> None:
-        """Clean up resources."""
         await self._docker_client.close()
 
     async def __aenter__(self) -> AgentRegistry:
@@ -150,24 +151,10 @@ class AgentRegistry:
         example: ExampleSpec,
         model: str,
         timeout_seconds: int,
-        parent_run_id: UUID | None = None,
-        budget_usd: float | None = None,
+        parent_run_id: UUID | None,
+        budget_usd: float | None,
     ) -> UUID:
-        """Run a critic agent using in-container architecture.
-
-        The container runs its own agent loop and exits 0 on success.
-
-        Args:
-            image_ref: Image reference (tag or digest)
-            example: Example specification (snapshot + scope)
-            model: Model name (e.g., "gpt-4o")
-            timeout_seconds: Max seconds before container is killed
-            parent_run_id: Optional parent agent run ID
-            budget_usd: Optional spending budget (not yet implemented)
-
-        Returns:
-            Agent run ID (query DB for status)
-        """
+        """Run a critic agent. Returns agent run ID (query DB for status)."""
         async with self._semaphore:
             return await self._run_critic_impl(
                 image_ref=image_ref,
@@ -188,7 +175,6 @@ class AgentRegistry:
         parent_run_id: UUID | None,
         budget_usd: float | None,
     ) -> UUID:
-        """Internal critic execution (semaphore already acquired)."""
         snapshot_slug = example.snapshot_slug
         agent_run_id = uuid4()
 
@@ -256,24 +242,7 @@ class AgentRegistry:
         timeout_seconds: int,
         image_ref: str = BUILTIN_TAG,
     ) -> UUID:
-        """Run a prompt optimizer agent using in-container architecture.
-
-        The optimizer container:
-        1. Talks to LLM proxy for agent responses
-        2. Connects to MCP server on host for run_critic/wait_until_graded tools
-        3. Can orchestrate critic sub-runs via the MCP tools
-
-        Args:
-            budget: Cost budget in USD
-            optimizer_model: Model name for the optimizer agent
-            critic_model: Model name for critic sub-runs
-            target_metric: WHOLE_REPO or TARGETED
-            timeout_seconds: Max seconds before container is killed
-            image_ref: Optimizer image reference (default: builtin)
-
-        Returns:
-            Agent run ID (query DB for status)
-        """
+        """Run a prompt optimizer agent. Returns agent run ID (query DB for status)."""
         async with self._semaphore:
             return await self._run_prompt_optimizer_impl(
                 budget=budget,
@@ -294,7 +263,6 @@ class AgentRegistry:
         timeout_seconds: int,
         image_ref: str,
     ) -> UUID:
-        """Internal prompt optimizer execution (semaphore already acquired)."""
         # Get train snapshots from database
         with get_session() as session:
             train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
@@ -394,23 +362,7 @@ class AgentRegistry:
         timeout_seconds: int,
         output_dir: Path | None = None,
     ) -> ImprovementResult:
-        """Run an improvement agent using in-container architecture.
-
-        The improvement agent creates agent definitions to beat baselines
-        on the allowed examples.
-
-        Args:
-            examples: Examples the agent is allowed to optimize for
-            baseline_image_refs: Baseline images to beat
-            token_budget: Token budget limit
-            improvement_model: Model name for the improvement agent
-            critic_model: Model name for critic sub-runs
-            timeout_seconds: Max seconds before container is killed
-            output_dir: Optional output directory for agent artifacts
-
-        Returns:
-            ImprovementResult with run_id, tokens_used, and outcome
-        """
+        """Run an improvement agent that creates definitions to beat baselines on the allowed examples."""
         async with self._semaphore:
             return await self._run_improvement_agent_impl(
                 examples=examples,
@@ -433,7 +385,6 @@ class AgentRegistry:
         timeout_seconds: int,
         output_dir: Path | None,
     ) -> ImprovementResult:
-        """Internal improvement agent execution (semaphore already acquired)."""
         if not examples:
             raise ValueError("examples must not be empty")
 
@@ -534,7 +485,6 @@ class AgentRegistry:
             pass  # No cleanup needed
 
     def _interpret_container_result(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
-        """Map container exit code to AgentRunStatus."""
         if result.exit_code == 0:
             # Check DB - container should have set status to COMPLETED
             with get_session() as session:
@@ -560,7 +510,6 @@ class AgentRegistry:
     # --- State Tracking ---
 
     def get(self, run_id: UUID) -> AgentRunView | None:
-        """Get agent run view from DB."""
         with get_session() as session:
             db_run = session.get(AgentRun, run_id)
             if not db_run:
@@ -574,7 +523,6 @@ class AgentRegistry:
             )
 
     def list_recent(self, limit: int = 50) -> list[AgentRunView]:
-        """List recent runs from database."""
         with get_session() as session:
             runs = session.query(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit).all()
             return [
@@ -593,20 +541,9 @@ class AgentRegistry:
     ) -> UUID:
         """Run a snapshot grader daemon. Blocks until daemon exits or timeout.
 
-        The grader daemon:
-        1. Listens for pg_notify on grading_pending channel
-        2. Grades all critiques for the snapshot until no drift remains
-        3. Sleeps when no drift, wakes on pg_notify
-        4. Exits when timeout reached or shutdown signal received
-
-        Args:
-            snapshot_slug: Snapshot this grader is responsible for
-            model: Model name (e.g., "gpt-4o")
-            timeout_seconds: Max seconds before container is killed
-            image_ref: Image reference (tag or digest), defaults to "grader"
-
-        Returns:
-            Agent run ID
+        The grader daemon listens for pg_notify on grading_pending channel, grades all
+        critiques for the snapshot until no drift remains, sleeps when no drift, and
+        exits when timeout reached or shutdown signal received.
         """
         async with self._semaphore:
             return await self._run_snapshot_grader_impl(
@@ -616,20 +553,19 @@ class AgentRegistry:
     async def _run_snapshot_grader_impl(
         self, *, snapshot_slug: SnapshotSlug, model: str, timeout_seconds: int, image_ref: str
     ) -> UUID:
-        """Internal snapshot grader execution (semaphore already acquired)."""
         agent_run_id = uuid4()
 
         # Resolve image reference to digest
-        image_digest = resolve_image_ref(AgentType.SNAPSHOT_GRADER, image_ref)
-        image = build_oci_reference(AgentType.SNAPSHOT_GRADER, image_digest)
-        logger.info(f"Resolved snapshot_grader image {image_ref} → {image_digest}")
+        image_digest = resolve_image_ref(AgentType.GRADER, image_ref)
+        image = build_oci_reference(AgentType.GRADER, image_digest)
+        logger.info(f"Resolved grader image {image_ref} → {image_digest}")
 
         # Phase 1: Write initial AgentRun to DB
         with get_session() as session:
             # Verify snapshot exists
             session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
-            type_config = SnapshotGraderTypeConfig(snapshot_slug=str(snapshot_slug))
+            type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
             agent_run = AgentRun(
                 agent_run_id=agent_run_id,

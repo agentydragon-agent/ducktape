@@ -23,15 +23,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Registry URL for pulling images (from agent containers on props-agents network)
-REGISTRY_PROXY_CONTAINER_NAME = os.environ.get("PROPS_PROXY_CONTAINER_NAME", "props-proxy")
-REGISTRY_PROXY_CONTAINER_PORT = os.environ.get("PROPS_PROXY_CONTAINER_PORT", "5050")
+# The backend container provides the registry proxy at /v2/*
+REGISTRY_PROXY_CONTAINER_NAME = os.environ.get("PROPS_PROXY_CONTAINER_NAME", "props-backend")
+REGISTRY_PROXY_CONTAINER_PORT = os.environ.get("PROPS_PROXY_CONTAINER_PORT", "8000")
 
 # Registry URL for pulling images (from host)
 REGISTRY_HOST = os.environ.get("PROPS_REGISTRY_HOST", "127.0.0.1")
-REGISTRY_PORT = os.environ.get("PROPS_REGISTRY_PORT", "5050")
+REGISTRY_PORT = os.environ.get("PROPS_REGISTRY_PORT", "8000")
 
-# Proxy URL for registry operations
-DEFAULT_PROXY_URL = os.environ.get("PROPS_REGISTRY_PROXY_URL", "http://localhost:5050")
+# Proxy URL for registry operations (backend provides registry proxy at /v2/*)
+DEFAULT_PROXY_URL = os.environ.get("PROPS_REGISTRY_PROXY_URL", "http://localhost:8000")
 
 # Builtin image tag - used by all Bazel oci_push targets
 BUILTIN_TAG = "latest"
@@ -86,8 +87,8 @@ def normalize_image_ref(image_ref: str) -> str:
         Fully qualified image reference
 
     Examples:
-        "critic:latest" -> "localhost:5050/critic:latest"
-        "localhost:5050/critic:latest" -> "localhost:5050/critic:latest"
+        "critic:latest" -> "localhost:8000/critic:latest"
+        "localhost:8000/critic:latest" -> "localhost:8000/critic:latest"
         "sha256:abc..." -> "sha256:abc..." (digest refs are not normalized)
     """
     # Digest refs don't need normalization
@@ -123,7 +124,7 @@ def resolve_image_ref(agent_type: AgentType, ref: str, *, proxy_url: str | None 
     Args:
         agent_type: Agent type (determines repository name via str(agent_type))
         ref: Tag or digest (e.g., "latest", "sha256:abc...")
-        proxy_url: Registry proxy URL (defaults to PROPS_REGISTRY_PROXY_URL env var or localhost:5050)
+        proxy_url: Registry proxy URL (defaults to PROPS_REGISTRY_PROXY_URL env var or localhost:8000)
 
     Returns:
         Digest (sha256:...) - either the provided digest or resolved from tag
@@ -189,7 +190,7 @@ def build_oci_reference(agent_type: AgentType, digest: str) -> str:
 
     Example:
         >>> build_oci_reference(AgentType.CRITIC, "sha256:abc...")
-        "localhost:5050/critic@sha256:abc..."
+        "localhost:8000/critic@sha256:abc..."
     """
     repository = str(agent_type)
     return f"{REGISTRY_HOST}:{REGISTRY_PORT}/{repository}@{digest}"

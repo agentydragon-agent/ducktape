@@ -290,7 +290,7 @@ oci_push(
     name = "push",
     image = ":image",
     remote_tags = ["latest"],
-    repository = "localhost:5050/grader",
+    repository = "localhost:8000/grader",
 )
 
 # Daemon grader (grades all critiques for a snapshot, persistent)
@@ -316,5 +316,5 @@ oci_push(
     name = "daemon_push",
     image = ":daemon_image",
     remote_tags = ["latest"],
-    repository = "localhost:5050/snapshot_grader",
+    repository = "localhost:8000/snapshot_grader",
 )

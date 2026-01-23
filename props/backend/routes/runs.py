@@ -155,9 +155,7 @@ class GraderRunSpecifics(BaseModel):
 class OtherRunSpecifics(BaseModel):
     """Other agent types have no specific fields."""
 
-    agent_type: Literal[
-        AgentType.SNAPSHOT_GRADER, AgentType.PROMPT_OPTIMIZER, AgentType.IMPROVEMENT, AgentType.FREEFORM
-    ]
+    agent_type: Literal[AgentType.PROMPT_OPTIMIZER, AgentType.IMPROVEMENT, AgentType.FREEFORM]
 
 
 RunSpecifics = Annotated[CriticRunSpecifics | GraderRunSpecifics | OtherRunSpecifics, Field(discriminator="agent_type")]

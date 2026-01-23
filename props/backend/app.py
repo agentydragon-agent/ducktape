@@ -41,7 +41,6 @@ if TYPE_CHECKING:
 
 
 def configure_logging() -> None:
-    """Configure structured logging for the backend."""
     log_level = os.environ.get("PROPS_LOG_LEVEL", "INFO").upper()
     log_file = os.environ.get("PROPS_LOG_FILE")
 
@@ -76,7 +75,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan handler."""
     logger.info("Starting props backend...")
 
     # Create resources
@@ -108,11 +106,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(*, static_dir: Path | None = None) -> FastAPI:
-    """Create and configure the FastAPI application.
-
-    Args:
-        static_dir: Optional path to static files directory for frontend assets.
-    """
     app = FastAPI(
         title="Props Backend",
         description="Unified props backend: dashboard, proxies (LLM/registry), and eval APIs",

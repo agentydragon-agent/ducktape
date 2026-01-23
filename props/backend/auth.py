@@ -75,15 +75,6 @@ ACL_CAN_USE_EVAL_API = {CallerType.ADMIN, CallerType.PROMPT_OPTIMIZER, CallerTyp
 
 @dataclass(frozen=True)
 class CredentialValidationResult:
-    """Result of credential validation.
-
-    Attributes:
-        is_valid: True if credentials are valid
-        access_level: Access level (admin or agent) if valid
-        agent_run_id: Agent run UUID if access_level is AGENT
-        error: Error message if validation failed
-    """
-
     is_valid: bool
     access_level: AccessLevel | None = None
     agent_run_id: UUID | None = None
@@ -91,29 +82,23 @@ class CredentialValidationResult:
 
     @classmethod
     def invalid(cls, error: str) -> CredentialValidationResult:
-        """Create invalid result with error message."""
         return cls(is_valid=False, error=error)
 
     @classmethod
     def admin(cls) -> CredentialValidationResult:
-        """Create valid admin result."""
         return cls(is_valid=True, access_level=AccessLevel.ADMIN)
 
     @classmethod
     def agent(cls, agent_run_id: UUID) -> CredentialValidationResult:
-        """Create valid agent result."""
         return cls(is_valid=True, access_level=AccessLevel.AGENT, agent_run_id=agent_run_id)
 
 
 def extract_agent_run_id_from_username(username: str) -> UUID | None:
     """Extract agent_run_id from username if it matches agent_{uuid} pattern.
 
-    This uses the same pattern as TempUserManager.generate_username() which creates
+    Uses the same pattern as TempUserManager.generate_username() which creates
     usernames in the format "agent_{uuid}".
-
-    Returns None if username doesn't match the pattern.
     """
-    # Pattern matches TempUserManager.generate_username(): f"agent_{self.agent_run_id}"
     prefix = "agent_"
     if not username.startswith(prefix):
         return None
@@ -126,16 +111,7 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
 
 
 def validate_postgres_credentials(username: str, password: str) -> CredentialValidationResult:
-    """Validate credentials by attempting Postgres connection.
-
-    Uses DatabaseConfig from props.db.config for connection parameters.
-
-    Returns a CredentialValidationResult with:
-    - is_valid: True if connection succeeded
-    - access_level: ADMIN for regular users, AGENT for agent_{uuid} pattern
-    - agent_run_id: Extracted UUID if agent pattern matched
-    - error: Error message if validation failed
-    """
+    """Validate credentials by attempting Postgres connection."""
     # First, try to extract agent run ID from username pattern
     agent_run_id = extract_agent_run_id_from_username(username)
 
@@ -168,10 +144,7 @@ def validate_postgres_credentials(username: str, password: str) -> CredentialVal
 
 
 def parse_basic_auth_header(authorization: str | None) -> tuple[str, str] | None:
-    """Parse Basic auth header into (username, password).
-
-    Returns None if header is missing or invalid.
-    """
+    """Parse Basic auth header into (username, password). Returns None if invalid."""
     if not authorization or not authorization.startswith("Basic "):
         return None
 
@@ -186,27 +159,13 @@ def parse_basic_auth_header(authorization: str | None) -> tuple[str, str] | None
 
 
 def is_localhost_request(request: Request) -> bool:
-    """Check if request is from localhost.
-
-    Checks the direct client address.
-    """
     client = request.client
     return bool(client and client.host in LOCALHOST_ADDRESSES)
 
 
 @dataclass
 class AuthContext:
-    """Authentication context attached to request.state.auth.
-
-    Attributes:
-        is_authenticated: True if valid credentials were provided or localhost admin
-        is_admin: True if authenticated as admin (non-agent user or localhost)
-        is_localhost_admin: True if authenticated via localhost without creds
-        username: Authenticated username (None if anonymous or localhost admin)
-        password: Authenticated password (None if anonymous or localhost admin)
-        agent_run_id: UUID if authenticated as agent (None for admin/anonymous)
-        error: Error message if auth failed (None if success or anonymous)
-    """
+    """Authentication context attached to request.state.auth."""
 
     is_authenticated: bool = False
     is_admin: bool = False
@@ -218,48 +177,37 @@ class AuthContext:
 
     @classmethod
     def anonymous(cls) -> AuthContext:
-        """Create anonymous (unauthenticated) context."""
         return cls(is_authenticated=False)
 
     @classmethod
     def localhost_admin(cls) -> AuthContext:
-        """Create localhost admin context (no creds needed)."""
         return cls(is_authenticated=True, is_admin=True, is_localhost_admin=True)
 
     @classmethod
     def admin(cls, username: str, password: str) -> AuthContext:
-        """Create admin context with credentials."""
         return cls(is_authenticated=True, is_admin=True, username=username, password=password)
 
     @classmethod
     def agent(cls, username: str, password: str, agent_run_id: UUID) -> AuthContext:
-        """Create agent context."""
         return cls(
             is_authenticated=True, is_admin=False, username=username, password=password, agent_run_id=agent_run_id
         )
 
     @classmethod
     def failed(cls, error: str) -> AuthContext:
-        """Create failed auth context."""
         return cls(is_authenticated=False, error=error)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """Middleware that parses and validates auth, attaching context to request.state.
 
-    After this middleware runs, request.state.auth will contain an AuthContext:
-    - Localhost Admin: if no auth AND request is from localhost (and ALLOW_LOCALHOST_ADMIN)
-    - Anonymous: if no Authorization header (and not localhost admin)
-    - Admin: if valid non-agent credentials
-    - Agent: if valid agent_{uuid} credentials
-    - Failed: if invalid credentials (error message in context)
-
-    Routes can then check request.state.auth and decide how to handle each case.
-    This middleware does NOT reject requests - it only parses and validates.
+    After this middleware runs, request.state.auth will contain an AuthContext with
+    one of: localhost_admin, anonymous, admin, agent, or failed. Routes check
+    request.state.auth and decide how to handle each case. This middleware does
+    NOT reject requests - it only parses and validates.
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """Parse auth header and attach context to request.state."""
         authorization = request.headers.get("authorization")
 
         if not authorization:
@@ -293,23 +241,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 
 def get_auth_context(request: Request) -> AuthContext:
-    """Get auth context from request.state.
-
-    Use this in route handlers to access the auth context set by middleware.
-    """
     return getattr(request.state, "auth", AuthContext.anonymous())
 
 
 def get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
-    """Determine caller type from auth context.
-
-    Returns (caller_type, agent_run_id).
-
-    Raises HTTPException if auth has an error.
-
-    This function does a database lookup for agent users to determine
-    the specific agent type (PO, PI, critic, grader).
-    """
+    """Determine caller type from auth context. Does DB lookup for agent users."""
     if auth.error:
         raise HTTPException(status_code=401, detail=auth.error)
 
@@ -342,11 +278,7 @@ def get_caller_type(auth: AuthContext) -> tuple[CallerType, UUID | None]:
 
 
 def require_registry_read(request: Request) -> tuple[CallerType, UUID | None]:
-    """FastAPI dependency that requires registry read permission.
-
-    Returns (caller_type, agent_run_id) if authorized.
-    Raises HTTPException 403 if caller is not allowed to read from registry.
-    """
+    """FastAPI dependency requiring registry read permission. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
     caller_type, agent_run_id = get_caller_type(auth)
     if caller_type not in ACL_CAN_READ_REGISTRY:
@@ -355,11 +287,7 @@ def require_registry_read(request: Request) -> tuple[CallerType, UUID | None]:
 
 
 def require_registry_push(request: Request) -> tuple[CallerType, UUID | None]:
-    """FastAPI dependency that requires registry push permission.
-
-    Returns (caller_type, agent_run_id) if authorized.
-    Raises HTTPException 403 if caller is not allowed to push to registry.
-    """
+    """FastAPI dependency requiring registry push permission. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
     caller_type, agent_run_id = get_caller_type(auth)
     if caller_type not in ACL_CAN_PUSH_REGISTRY:
@@ -368,11 +296,7 @@ def require_registry_push(request: Request) -> tuple[CallerType, UUID | None]:
 
 
 def require_eval_api_access(request: Request) -> tuple[CallerType, UUID | None]:
-    """FastAPI dependency that requires eval API access.
-
-    Returns (caller_type, agent_run_id) if authorized.
-    Raises HTTPException 403 if caller is not allowed to use eval API.
-    """
+    """FastAPI dependency requiring eval API access. Raises HTTPException 403 if not allowed."""
     auth = get_auth_context(request)
     caller_type, agent_run_id = get_caller_type(auth)
     if caller_type not in ACL_CAN_USE_EVAL_API:
@@ -381,13 +305,7 @@ def require_eval_api_access(request: Request) -> tuple[CallerType, UUID | None]:
 
 
 def require_admin_access(request: Request) -> None:
-    """FastAPI dependency that requires admin access.
-
-    For dashboard APIs (stats, runs, ground_truth) - only localhost admin or
-    authenticated admin users can access these endpoints.
-
-    Raises HTTPException 403 if caller is not admin.
-    """
+    """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
     auth = get_auth_context(request)
     caller_type, _ = get_caller_type(auth)
     if caller_type != CallerType.ADMIN:

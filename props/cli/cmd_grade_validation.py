@@ -149,7 +149,12 @@ async def cmd_grade_validation(
             try:
                 # Run critic using registry
                 critic_run_id = await registry.run_critic(
-                    image_ref=image_digest, example=example, model=critic_model, timeout_seconds=timeout_seconds
+                    image_ref=image_digest,
+                    example=example,
+                    model=critic_model,
+                    timeout_seconds=timeout_seconds,
+                    parent_run_id=None,
+                    budget_usd=None,
                 )
 
                 # Check if critic succeeded

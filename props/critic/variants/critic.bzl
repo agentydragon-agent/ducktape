@@ -80,5 +80,5 @@ def critic_variant(name, prompt_md):
         name = name + "_push",
         image = ":" + name,
         remote_tags = [name],
-        repository = "localhost:5050/critic",
+        repository = "localhost:8000/critic",
     )

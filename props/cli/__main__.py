@@ -492,6 +492,8 @@ async def cmd_run(
             example=example_spec,
             model=model,
             timeout_seconds=timeout_seconds,
+            parent_run_id=None,
+            budget_usd=None,
         )
 
         # Print results

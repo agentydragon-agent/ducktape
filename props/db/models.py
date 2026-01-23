@@ -41,7 +41,6 @@ from props.core.agent_types import (
     GraderTypeConfig,
     ImprovementTypeConfig,
     PromptOptimizerTypeConfig,
-    SnapshotGraderTypeConfig,
     TypeConfig,
 )
 from props.core.ids import SnapshotSlug, _SnapshotSlugBase
@@ -64,17 +63,9 @@ EXAMPLE_KIND_ENUM_TYPE = Enum(
 
 
 class StatsWithCI(BaseModel):
-    """Statistics with 95% confidence interval bounds.
+    """Statistics with 95% confidence interval bounds. Maps to PostgreSQL composite type stats_with_ci.
 
-    Maps to PostgreSQL composite type stats_with_ci.
-
-    Attributes:
-        n: sample count
-        mean: sample mean
-        min: minimum value
-        max: maximum value
-        lcb95: lower 95% confidence bound (mean - 1.96 * stddev/sqrt(n)); NULL if n < 2
-        ucb95: upper 95% confidence bound (mean + 1.96 * stddev/sqrt(n)); NULL if n < 2
+    lcb95/ucb95 are mean +/- 1.96 * stddev/sqrt(n); NULL if n < 2.
     """
 
     n: int
@@ -85,11 +76,7 @@ class StatsWithCI(BaseModel):
     ucb95: float | None
 
     def scaled(self, divisor: float) -> StatsWithCI:
-        """Return a new StatsWithCI with all values divided by divisor.
-
-        Use to convert raw count stats to ratio stats (e.g., credit -> recall).
-        Mirrors the PostgreSQL scale_stats(stats_with_ci, double precision) function.
-        """
+        """Scale by divisor to convert counts to ratios. Mirrors PostgreSQL scale_stats()."""
         if divisor == 0:
             return StatsWithCI(n=self.n, mean=0.0, min=0.0, max=0.0, lcb95=None, ucb95=None)
         return StatsWithCI(
@@ -141,10 +128,7 @@ class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
 
 
 class AgentRunStatus(StrEnum):
-    """Agent run status enumeration.
-
-    Unified status for all agent types (critic, grader, prompt_optimizer, etc.).
-    """
+    """Unified status for all agent types (critic, grader, prompt_optimizer, etc.)."""
 
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -176,16 +160,10 @@ class PydanticColumn(TypeDecorator[T]):
     cache_ok = True
 
     def __init__(self, pydantic_type: type[T] | Any):
-        """Initialize with a Pydantic type or TypeAlias.
-
-        Args:
-            pydantic_type: Can be a Pydantic BaseModel class, or a TypeAlias like Source
-        """
         super().__init__()
         self._adapter: TypeAdapter[T] = TypeAdapter(pydantic_type)
 
     def process_bind_param(self, value: T | None, dialect: Any) -> dict[str, Any] | None:
-        """Convert Pydantic model to dict for storage (Python → DB)."""
         if value is None:
             return None
         # Use TypeAdapter.dump_python for all types (handles BaseModel and unions)
@@ -193,7 +171,6 @@ class PydanticColumn(TypeDecorator[T]):
         return self._adapter.dump_python(value, mode="json", by_alias=True, warnings=False)  # type: ignore[no-any-return]
 
     def process_result_value(self, value: dict[str, Any] | None, dialect: Any) -> T | None:
-        """Convert dict to Pydantic model after loading (DB → Python)."""
         if value is None:
             return None
         return self._adapter.validate_python(value)
@@ -213,14 +190,12 @@ class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
         self._adapter: TypeAdapter[_SnapshotSlugBase] = TypeAdapter(_SnapshotSlugBase)
 
     def process_bind_param(self, value: SnapshotSlug | str | None, dialect: Any) -> str | None:
-        """Convert SnapshotSlug to string for storage (Python → DB)."""
         if value is None:
             return None
         # SnapshotSlug is a NewType over validated string, so it's already a string at runtime
         return str(value)
 
     def process_result_value(self, value: str | None, dialect: Any) -> SnapshotSlug | None:
-        """Convert string to SnapshotSlug after loading (DB → Python)."""
         if value is None:
             return None
         # Validate and wrap in NewType
@@ -273,24 +248,16 @@ class StrEnumColumn(TypeDecorator[E]):
     cache_ok = True
 
     def __init__(self, enum_class: type[E], name: str):
-        """Initialize StrEnumColumn.
-
-        Args:
-            enum_class: The StrEnum class to use
-            name: Name for the PostgreSQL enum type
-        """
         self._enum_class = enum_class
         # Derive SQL enum values from Python enum to keep them in sync
         super().__init__(*[e.value for e in enum_class], name=name, create_constraint=True, native_enum=True)
 
     def process_bind_param(self, value: E | str | None, dialect: Any) -> str | None:
-        """Convert enum to string for storage (Python → DB)."""
         if value is None:
             return None
         return value.value if isinstance(value, self._enum_class) else str(value)
 
     def process_result_value(self, value: str | None, dialect: Any) -> E | None:
-        """Convert string to enum after loading (DB → Python)."""
         if value is None:
             return None
         return self._enum_class(value)
@@ -870,8 +837,6 @@ class GradingPending(Base):
 
 
 class TpTarget(BaseModel):
-    """TP match target."""
-
     kind: Literal["tp"] = "tp"
     tp_id: str
     occurrence_id: str
@@ -879,8 +844,6 @@ class TpTarget(BaseModel):
 
 
 class FpTarget(BaseModel):
-    """FP match target."""
-
     kind: Literal["fp"] = "fp"
     fp_id: str
     occurrence_id: str
@@ -943,10 +906,7 @@ class GradingEdge(Base):
     grader_run: Mapped[AgentRun] = relationship(foreign_keys=[grader_run_id])
 
     def to_target(self) -> GradingTarget:
-        """Convert to grading target for API responses.
-
-        Every edge must target exactly one of TP or FP (enforced by DB constraint).
-        """
+        """Convert to grading target. Exactly one of TP or FP must be set (DB constraint)."""
         if self.tp_id is not None:
             assert self.tp_occurrence_id is not None, (
                 f"TP grading edge {self.critique_issue_id} missing tp_occurrence_id"
@@ -1203,8 +1163,6 @@ class RecallByExample(Base):
 
 
 class WinningDefinition(BaseModel):
-    """A definition that achieved best score on an example."""
-
     image_digest: str
     credit_stats: StatsWithCI
     n_runs: int
@@ -1253,17 +1211,14 @@ class ParetoFrontierByExample(Base):
 
     @property
     def winning_definitions(self) -> list[WinningDefinition]:
-        """Parse winning_definitions JSONB into typed WinningDefinition objects."""
         return _WinningDefinitionListAdapter.validate_python(self._winning_definitions_raw)
 
     @property
     def winning_image_digests(self) -> list[str]:
-        """Convenience: get just the image digests."""
         return [w.image_digest for w in self.winning_definitions]
 
     @property
     def best_mean_credit(self) -> float:
-        """Best mean credit (same for all winning definitions)."""
         return self.winning_definitions[0].credit_stats.mean
 
 
@@ -1439,61 +1394,26 @@ class AgentRun(Base):
 
     # Type-safe config accessors
     def critic_config(self) -> CriticTypeConfig:
-        """Get type_config as CriticTypeConfig or raise ValueError.
-
-        Use when this run is expected to be a critic run.
-        Raises ValueError if type_config is not CriticTypeConfig.
-        """
         if isinstance(self.type_config, CriticTypeConfig):
             return self.type_config
         raise ValueError(f"Expected CriticTypeConfig, got {type(self.type_config).__name__}")
 
     def grader_config(self) -> GraderTypeConfig:
-        """Get type_config as GraderTypeConfig or raise ValueError.
-
-        Use when this run is expected to be a grader run.
-        Raises ValueError if type_config is not GraderTypeConfig.
-        """
         if isinstance(self.type_config, GraderTypeConfig):
             return self.type_config
         raise ValueError(f"Expected GraderTypeConfig, got {type(self.type_config).__name__}")
 
-    def snapshot_grader_config(self) -> SnapshotGraderTypeConfig:
-        """Get type_config as SnapshotGraderTypeConfig or raise ValueError.
-
-        Use when this run is expected to be a snapshot grader daemon run.
-        Raises ValueError if type_config is not SnapshotGraderTypeConfig.
-        """
-        if isinstance(self.type_config, SnapshotGraderTypeConfig):
-            return self.type_config
-        raise ValueError(f"Expected SnapshotGraderTypeConfig, got {type(self.type_config).__name__}")
-
     def improvement_config(self) -> ImprovementTypeConfig:
-        """Get type_config as ImprovementTypeConfig or raise ValueError.
-
-        Use when this run is expected to be an improvement run.
-        Raises ValueError if type_config is not ImprovementTypeConfig.
-        """
         if isinstance(self.type_config, ImprovementTypeConfig):
             return self.type_config
         raise ValueError(f"Expected ImprovementTypeConfig, got {type(self.type_config).__name__}")
 
     def prompt_optimizer_config(self) -> PromptOptimizerTypeConfig:
-        """Get type_config as PromptOptimizerTypeConfig or raise ValueError.
-
-        Use when this run is expected to be a prompt optimizer run.
-        Raises ValueError if type_config is not PromptOptimizerTypeConfig.
-        """
         if isinstance(self.type_config, PromptOptimizerTypeConfig):
             return self.type_config
         raise ValueError(f"Expected PromptOptimizerTypeConfig, got {type(self.type_config).__name__}")
 
     def freeform_config(self) -> FreeformTypeConfig:
-        """Get type_config as FreeformTypeConfig or raise ValueError.
-
-        Use when this run is expected to be a freeform sub-agent run.
-        Raises ValueError if type_config is not FreeformTypeConfig.
-        """
         if isinstance(self.type_config, FreeformTypeConfig):
             return self.type_config
         raise ValueError(f"Expected FreeformTypeConfig, got {type(self.type_config).__name__}")

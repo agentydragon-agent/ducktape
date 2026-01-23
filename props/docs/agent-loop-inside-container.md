@@ -248,8 +248,8 @@ grading_pending view         ◄──────────  wait_until_grade
 **Current services in `props/compose.yaml`:**
 
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
-- `registry` (5050:5000) - on `props-internal` + `default`
-- `registry-proxy` (5051) - on `props-internal` + `props-agents`
+- `registry` (5000:5000) - on `props-internal` + `default`
+- `backend` (8000:8000) - on `props-internal` + `props-agents` (serves LLM proxy + registry proxy)
 
 **New service to add:**
 

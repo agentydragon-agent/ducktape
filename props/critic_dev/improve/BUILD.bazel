@@ -2,7 +2,7 @@
 
 Build targets:
     bazel run //props/critic_dev/improve:load  -- Load into local Docker
-    bazel run //props/critic_dev/improve:push  -- Push to local registry (localhost:5050)
+    bazel run //props/critic_dev/improve:push  -- Push to local registry (localhost:8000)
 
 The container runs an agent loop that:
 1. Queries LLM via proxy (OPENAI_BASE_URL)
@@ -137,5 +137,5 @@ oci_push(
     name = "push",
     image = ":image",
     remote_tags = ["latest"],
-    repository = "localhost:5050/improvement",
+    repository = "localhost:8000/improvement",
 )

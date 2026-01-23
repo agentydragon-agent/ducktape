@@ -23,7 +23,6 @@ snapshot_app = TyperDI(help="Snapshot commands")
 
 @async_run
 async def cmd_snapshot_list() -> None:
-    """List all valid snapshot slugs."""
     with get_session() as session:
         snapshots = session.query(Snapshot).all()
         slugs = sorted([s.slug for s in snapshots])
@@ -37,7 +36,7 @@ async def snapshot_dump(
     snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
 ) -> None:
-    """Dump a snapshot's full structure as JSON (manifest, all issues, occurrences)."""
+    """Dump a snapshot's full structure as JSON."""
     try:
         # Load snapshot and issues from database (no source hydration needed for dump)
         with get_session() as session:
@@ -93,15 +92,7 @@ def snapshot_fetch(
     slug: Annotated[str, typer.Argument(help="Snapshot slug (e.g., 'ducktape/2025-11-26-00')")],
     output: Annotated[Path, typer.Argument(help="Output directory to extract snapshot into")],
 ) -> None:
-    """Fetch snapshot from database and extract to filesystem.
-
-    Retrieves the tar archive from the snapshots table and extracts it
-    to the specified output directory. Used by agent init scripts to
-    fetch snapshots into containers.
-
-    Example:
-        props snapshot fetch ducktape/2025-11-26-00 /snapshots/ducktape/2025-11-26-00
-    """
+    """Fetch snapshot from database and extract to filesystem."""
     try:
         fetch_snapshot_to_path(slug, output)
     except ValueError as e:

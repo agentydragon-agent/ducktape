@@ -38,8 +38,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ContainerResult:
-    """Result of running an agent container."""
-
     exit_code: int
     stdout: str
     stderr: str
@@ -59,44 +57,9 @@ async def run_loop_agent(
 ) -> ContainerResult:
     """Run an agent container with in-container agent loop.
 
-    This function:
-    1. Creates a temporary database user
-    2. Starts the container with proper environment
-    3. Waits for container to exit
-    4. Captures logs and returns result
-    5. Cleans up temp user and container
-
-    The container should run its agent loop via CMD and exit 0 on success.
-
-    Args:
-        docker_client: Docker client instance
-        agent_run_id: UUID for this agent run
-        db_config: Database configuration
-        image: OCI image reference (e.g., "localhost:5050/critic@sha256:...")
-        llm_proxy_url: URL of the LLM proxy (e.g., "http://props-proxy:5050")
-        timeout_seconds: Max seconds before container is killed (None = no timeout, for daemons)
-        extra_env: Additional environment variables for the container
-        container_name: Optional container name (defaults to agent-{short_uuid})
-        extra_hosts: Additional host mappings (e.g., {"host.docker.internal": "host-gateway"})
-
-    Returns:
-        ContainerResult with exit_code, stdout, stderr (exit_code=-1 on timeout)
-
-    Example:
-        result = await run_loop_agent(
-            docker_client=docker_client,
-            agent_run_id=run_id,
-            db_config=db_config,
-            image="localhost:5050/critic@sha256:...",
-            llm_proxy_url="http://props-proxy:5050",
-            timeout_seconds=3600,
-        )
-        if result.exit_code == 0:
-            logger.info("Agent completed successfully")
-        elif result.exit_code == -1:
-            logger.error("Agent timed out")
-        else:
-            logger.error("Agent failed: %s", result.stderr)
+    Creates temp DB user, starts container, waits for exit, captures logs, cleans up.
+    Container should run its agent loop via CMD and exit 0 on success.
+    timeout_seconds=None means no timeout (for daemons). Returns exit_code=-1 on timeout.
     """
     # Resolve image from OCI reference
     image_id = await resolve_image_ref_async(docker_client, image)

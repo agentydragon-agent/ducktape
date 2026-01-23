@@ -25,7 +25,7 @@ from rich.table import Table
 
 from agent_pkg.runtime.output import render_agent_prompt
 from props.core.agent_helpers import get_current_agent_run
-from props.core.agent_types import GraderTypeConfig, SnapshotGraderTypeConfig
+from props.core.agent_types import GraderTypeConfig
 from props.core.display import short_uuid
 from props.db.models import (
     AgentRun,
@@ -87,7 +87,6 @@ app.add_typer(show_app, name="show")
 
 
 def _parse_run_id(run: str | None) -> UUID | None:
-    """Parse critic run ID from string, supporting short UUIDs."""
     if run is None:
         return None
     # If it looks like a full UUID, parse directly
@@ -406,21 +405,7 @@ def init_cmd() -> None:
     """Run bootstrap (called by /init script)."""
     with get_session() as session:
         agent_run = get_current_agent_run(session)
-        config = agent_run.type_config
-
-        if isinstance(config, SnapshotGraderTypeConfig):
-            helpers = {"is_daemon": True, "snapshot_slug": config.snapshot_slug}
-        elif isinstance(config, GraderTypeConfig):
-            graded_run = session.get(AgentRun, config.graded_agent_run_id)
-            if graded_run is None:
-                raise ValueError(f"Graded agent run not found: {config.graded_agent_run_id}")
-            critic_config = graded_run.critic_config()
-            helpers = {
-                "is_daemon": False,
-                "graded_agent_run_id": str(config.graded_agent_run_id),
-                "snapshot_slug": critic_config.example.snapshot_slug,
-            }
-        else:
-            raise ValueError(f"Unexpected config type for grader: {type(config).__name__}")
+        config = agent_run.grader_config()
+        helpers = {"is_daemon": True, "snapshot_slug": config.snapshot_slug}
 
     render_agent_prompt("props_core/docs/agents/grader.md.j2", helpers=helpers)

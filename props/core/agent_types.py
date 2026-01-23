@@ -12,6 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
 from props.critic_dev.shared import TargetMetric
 
@@ -27,8 +28,7 @@ class AgentType(StrEnum):
     """
 
     CRITIC = "critic"
-    GRADER = "grader"
-    SNAPSHOT_GRADER = "snapshot_grader"  # Persistent grader daemon per snapshot
+    GRADER = "grader"  # Grader daemon (grades all critiques for a snapshot)
     PROMPT_OPTIMIZER = "prompt_optimizer"
     IMPROVEMENT = "improvement"  # Analyzes runs and proposes improved prompts
     FREEFORM = "freeform"  # Ad-hoc sub-agents created by other agents
@@ -46,20 +46,18 @@ class CriticTypeConfig(BaseModel):
 
 
 class GraderTypeConfig(BaseModel):
-    """Grader-specific configuration.
+    """Grader daemon configuration.
 
-    Graders evaluate critic output against ground truth.
+    Persistent grader that reconciles all critiques for a snapshot. This daemon:
+    - Grades ALL critiques for the snapshot (not just one)
+    - Sleeps when no drift, wakes on pg_notify
+    - Maintains GT context for token efficiency
 
-    The snapshot_slug for RLS is derived at runtime from the graded critic's type_config
-    via SQL: (SELECT type_config->>'snapshot_slug' FROM agent_runs WHERE agent_run_id = graded_agent_run_id).
-
-    The canonical_issues_snapshot is populated at grading time and stores the TPs/FPs
-    used during grading. This enables detecting stale grader runs after editing issue files.
+    RLS uses current_grader_snapshot_slug() to extract snapshot_slug from type_config.
     """
 
     agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
-    graded_agent_run_id: UUID  # The critic agent run being graded (must be a critic run)
-    canonical_issues_snapshot: dict | None = None  # Populated at grading time (CanonicalIssuesSnapshot as dict)
+    snapshot_slug: SnapshotSlug  # Snapshot this daemon is responsible for
 
 
 class FreeformTypeConfig(BaseModel):
@@ -120,27 +118,10 @@ class ImprovementTypeConfig(BaseModel):
     grader_model: str = Field(description="Model used for grader evaluations")
 
 
-class SnapshotGraderTypeConfig(BaseModel):
-    """Snapshot grader daemon configuration.
-
-    Persistent grader that reconciles all critiques for a snapshot. Unlike per-critique
-    GraderTypeConfig, this daemon:
-    - Grades ALL critiques for the snapshot (not just one)
-    - Sleeps when no drift, wakes on pg_notify
-    - Maintains GT context for token efficiency
-
-    RLS uses current_grader_snapshot_slug() to extract snapshot_slug from type_config.
-    """
-
-    agent_type: Literal[AgentType.SNAPSHOT_GRADER] = AgentType.SNAPSHOT_GRADER
-    snapshot_slug: str = Field(description="Snapshot this daemon is responsible for")
-
-
 # Discriminated union for type-specific config
 TypeConfig = Annotated[
     CriticTypeConfig
     | GraderTypeConfig
-    | SnapshotGraderTypeConfig
     | FreeformTypeConfig
     | PromptOptimizerTypeConfig
     | ImprovementTypeConfig,
@@ -165,5 +146,4 @@ class AgentConfig(BaseModel):
 
     @property
     def agent_type(self) -> AgentType:
-        """Get the agent type from type_config discriminator."""
         return self.type_config.agent_type

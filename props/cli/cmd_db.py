@@ -21,28 +21,12 @@ db_app = typer.Typer(help="Database management commands")
 
 
 def ensure_databases_exist(config: DatabaseConfig) -> None:
-    """Ensure eval_results database exists.
-
-    Uses the unified helper from setup.py for database creation.
-    Tests create per-test databases (props_test_*), not a shared test database.
-    Note: agent_user role was deprecated - temporary users are now created per-agent instead.
-    """
+    """Ensure eval_results database exists."""
     ensure_database_exists(config, config.admin.database, drop_existing=False)
 
 
 def recreate_database_and_sync(*, use_staged: bool = False) -> FullSyncResult:
-    """Recreate database from scratch (destructive).
-
-    Drops all tables/views/policies, creates fresh schema, and syncs all data
-    (snapshots, issues, examples, model metadata, and agent definitions).
-
-    Args:
-        use_staged: If True, read agent definitions from staged files (index)
-                    instead of HEAD. Skips the dirty check for development.
-
-    Returns:
-        Combined results from all sync operations
-    """
+    """Recreate database from scratch (destructive). Drops all, creates fresh schema, syncs all data."""
     # Recreate schema (tables, RLS, roles)
     recreate_database()
 
@@ -52,12 +36,6 @@ def recreate_database_and_sync(*, use_staged: bool = False) -> FullSyncResult:
 
 
 def print_sync_result(console: Console, result: FullSyncResult) -> None:
-    """Print sync result summary table.
-
-    Args:
-        console: Rich console for output
-        result: Sync result to display
-    """
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Type", style="cyan")
     table.add_column("Stats")
@@ -125,7 +103,6 @@ def cmd_db_recreate(
 
 
 def get_default_backup_dir() -> Path:
-    """Get default backup directory (.devenv/state/pg_backups)."""
     return Path(".devenv/state/pg_backups")
 
 
@@ -140,13 +117,7 @@ BACKUP_PLAIN_OPT = typer.Option(False, "--plain", help="Output plain SQL instead
 
 
 def cmd_db_backup(output: Path | None = BACKUP_OUTPUT_OPT, plain: bool = BACKUP_PLAIN_OPT) -> None:
-    """Create a database backup.
-
-    By default, saves gzipped SQL to .devenv/state/pg_backups/.
-    Use --output to specify a custom path, --plain to skip compression.
-
-    Uses PG* environment variables set by devenv.
-    """
+    """Create a database backup. Uses PG* environment variables set by devenv."""
     console = Console()
 
     # Determine output path
@@ -182,13 +153,7 @@ RESTORE_YES_OPT = typer.Option(False, "--yes", "-y", help="Skip confirmation pro
 
 
 def cmd_db_restore(backup_file: Path = RESTORE_BACKUP_FILE_ARG, yes: bool = RESTORE_YES_OPT) -> None:
-    """Restore database from a backup file.
-
-    Accepts both plain .sql and gzipped .sql.gz files.
-    WARNING: This will overwrite all existing data!
-
-    Uses PG* environment variables set by devenv.
-    """
+    """Restore database from a backup file. Accepts .sql and .sql.gz. WARNING: Overwrites all data."""
     console = Console()
 
     if not backup_file.exists():
@@ -226,7 +191,6 @@ def cmd_db_restore(backup_file: Path = RESTORE_BACKUP_FILE_ARG, yes: bool = REST
 
 
 def cmd_db_list_backups() -> None:
-    """List available backups in the default backup directory."""
     console = Console()
     backup_dir = get_default_backup_dir()
 
