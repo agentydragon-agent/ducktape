@@ -2,13 +2,15 @@
   import { onMount, onDestroy } from "svelte";
   import { toast } from "svelte-sonner";
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
-  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { SvelteMap } from "svelte/reactivity";
   import BackButton from "./BackButton.svelte";
   import Breadcrumb from "./Breadcrumb.svelte";
+  import LLMRequestViewer from "./LLMRequestViewer.svelte";
   import {
     fetchRun,
     fetchSnapshotDetail,
     fetchSnapshotFile,
+    fetchLLMRequests,
     type AgentRunDetail,
     type CriticTypeConfig,
     type GraderTypeConfig,
@@ -18,6 +20,7 @@
     type FileContentResponse,
     type GradingEdgeInfo,
     type ReportedIssueInfo,
+    type LLMRequestInfo,
     isCriticRun,
     isGraderRun,
   } from "../lib/api/client";
@@ -43,6 +46,14 @@
   let snapshotDetail: SnapshotDetailResponse | null = $state(null);
   let fileContents = $state(new SvelteMap<string, FileContentResponse>());
   let loadingSnapshot = $state(false);
+
+  // LLM requests state
+  let llmRequests: LLMRequestInfo[] = $state([]);
+  let loadingLLMRequests = $state(false);
+
+  // Tab state for logs/LLM view
+  type LogTab = "stdout" | "stderr" | "llm";
+  let activeLogTab: LogTab = $state("llm");
 
   // --- Helpers ---
 
@@ -117,6 +128,21 @@
     }
   }
 
+  // Load LLM requests
+  async function loadLLMRequests() {
+    if (loadingLLMRequests || llmRequests.length > 0) return;
+    loadingLLMRequests = true;
+    try {
+      const response = await fetchLLMRequests(runId);
+      llmRequests = response.requests;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load LLM requests";
+      toast.error(message);
+    } finally {
+      loadingLLMRequests = false;
+    }
+  }
+
   // Load snapshot and file data for critique viewer
   async function loadSnapshotData(criticRun: AgentRunDetail) {
     if (getAgentType(criticRun) !== "critic") return;
@@ -185,7 +211,12 @@
   }
 
   onMount(() => {
-    loadData();
+    loadData().then(() => {
+      // Load LLM requests after run data is loaded (LLM tab is default)
+      if (run) {
+        loadLLMRequests();
+      }
+    });
     // Poll while in progress
     pollInterval = setInterval(() => {
       if (run?.status === "in_progress") {
@@ -414,6 +445,94 @@
         {/if}
       </div>
     {/if}
+
+    <!-- Logs and LLM Requests Section -->
+    <div class="border-t">
+      <div class="px-4 py-3 bg-gray-100 border-b flex items-center gap-4">
+        <h3 class="text-md font-medium">Logs & LLM Requests</h3>
+        <div class="flex gap-1">
+          <button
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'llm'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+            onclick={() => {
+              activeLogTab = "llm";
+              loadLLMRequests();
+            }}
+          >
+            LLM Requests ({run.llm_call_count})
+          </button>
+          <button
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'stdout'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+            onclick={() => (activeLogTab = "stdout")}
+          >
+            stdout
+          </button>
+          <button
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'stderr'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+            onclick={() => (activeLogTab = "stderr")}
+          >
+            stderr
+          </button>
+        </div>
+      </div>
+
+      {#if activeLogTab === "stdout"}
+        <div class="p-4">
+          {#if run.container_stdout}
+            <pre
+              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stdout}</pre>
+          {:else}
+            <p class="text-gray-500 italic">No stdout captured</p>
+          {/if}
+        </div>
+      {:else if activeLogTab === "stderr"}
+        <div class="p-4">
+          {#if run.container_stderr}
+            <pre
+              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stderr}</pre>
+          {:else}
+            <p class="text-gray-500 italic">No stderr captured</p>
+          {/if}
+        </div>
+      {:else if activeLogTab === "llm"}
+        <div class="p-4">
+          {#if run.llm_costs}
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4 pb-4 border-b">
+              <div>
+                <span class="text-gray-500">Requests:</span>
+                <span class="ml-1 font-medium">{run.llm_costs.total_requests.toLocaleString()}</span>
+              </div>
+              <div>
+                <span class="text-gray-500">Input:</span>
+                <span class="ml-1 font-medium">{run.llm_costs.total_input_tokens.toLocaleString()}</span>
+              </div>
+              <div>
+                <span class="text-gray-500">Cached:</span>
+                <span class="ml-1 font-medium">{run.llm_costs.total_cached_tokens.toLocaleString()}</span>
+              </div>
+              <div>
+                <span class="text-gray-500">Output:</span>
+                <span class="ml-1 font-medium">{run.llm_costs.total_output_tokens.toLocaleString()}</span>
+              </div>
+              <div>
+                <span class="text-gray-500">Cost:</span>
+                <span class="ml-1 font-medium text-green-600">${run.llm_costs.total_cost_usd.toFixed(4)}</span>
+              </div>
+            </div>
+          {/if}
+          {#if loadingLLMRequests}
+            <p class="text-gray-500">Loading LLM requests...</p>
+          {:else}
+            <LLMRequestViewer requests={llmRequests} />
+          {/if}
+        </div>
+      {/if}
+    </div>
   {:else}
     <div class="p-4">
       <p class="text-red-500">Failed to load run</p>

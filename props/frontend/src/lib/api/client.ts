@@ -112,7 +112,7 @@ export async function fetchJobs() {
 
 // Fetch run details
 export async function fetchRun(runId: string) {
-  const { data, error } = await api.GET("/api/runs/run/{run_id}", {
+  const { data, error } = await api.GET("/api/runs/{run_id}", {
     params: { path: { run_id: runId } },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch run"));
@@ -141,6 +141,7 @@ export async function fetchRuns(filters?: RunsFilters) {
 // Fetch definition detail with per-example stats
 export type DefinitionDetailResponse = components["schemas"]["DefinitionDetailResponse"];
 export type ExampleStats = components["schemas"]["ExampleStats"];
+export type LLMCostStats = components["schemas"]["LLMCostStats"];
 
 export async function fetchDefinitionDetail(definitionId: string) {
   const { data, error } = await api.GET("/api/stats/definitions/{image_digest}", {
@@ -183,6 +184,10 @@ export type ReportedIssueOccurrenceInfo = components["schemas"]["ReportedIssueOc
 export type FileLocationInfo = components["schemas"]["FileLocationInfo"];
 export type LineRange = components["schemas"]["LineRange"];
 
+// LLM request types
+export type LLMRequestInfo = components["schemas"]["LLMRequestInfo"];
+export type LLMRequestsResponse = components["schemas"]["LLMRequestsResponse"];
+
 export async function fetchSnapshots() {
   const { data, error } = await api.GET("/api/gt/snapshots");
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch snapshots"));
@@ -217,5 +222,14 @@ export async function fetchSnapshotFile(snapshotSlug: string, filePath: string) 
     params: { path: { snapshot_slug: snapshotSlug, file_path: filePath } },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch file"));
+  return data;
+}
+
+// Fetch LLM requests for an agent run
+export async function fetchLLMRequests(runId: string) {
+  const { data, error } = await api.GET("/api/runs/{run_id}/llm_requests", {
+    params: { path: { run_id: runId } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch LLM requests"));
   return data;
 }

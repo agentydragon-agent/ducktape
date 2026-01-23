@@ -26,7 +26,16 @@ from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
 from props.core.splits import Split
 from props.db.examples import Example
-from props.db.models import AgentRun, AgentRunStatus, FileSetMember, GradingEdge, GradingTarget, LLMRequest, Snapshot
+from props.db.models import (
+    AgentRun,
+    AgentRunStatus,
+    FileSetMember,
+    GradingEdge,
+    GradingTarget,
+    LLMRequest,
+    LLMRunCost,
+    Snapshot,
+)
 from props.db.session import get_session
 
 router = APIRouter(dependencies=[Depends(require_admin_access)])
@@ -161,6 +170,17 @@ class OtherRunSpecifics(BaseModel):
 RunSpecifics = Annotated[CriticRunSpecifics | GraderRunSpecifics | OtherRunSpecifics, Field(discriminator="agent_type")]
 
 
+class LLMCostStats(BaseModel):
+    """Aggregated LLM cost stats for an agent run."""
+
+    total_requests: int
+    total_input_tokens: int
+    total_cached_tokens: int
+    total_output_tokens: int
+    total_cost_usd: float
+    by_model: dict[str, dict]  # model -> {requests, input_tokens, cached_tokens, output_tokens, cost_usd}
+
+
 class AgentRunDetail(BaseModel):
     """Detailed view of an agent run with type-specific details nested."""
 
@@ -176,6 +196,13 @@ class AgentRunDetail(BaseModel):
     type_config: TypeConfig
     llm_call_count: int
     child_runs: list[ChildRunInfo]
+
+    # Container output (captured after container exits)
+    container_stdout: str | None
+    container_stderr: str | None
+
+    # LLM costs aggregated for this run
+    llm_costs: LLMCostStats | None
 
     # Type-specific details (discriminated union)
     details: RunSpecifics
@@ -202,6 +229,33 @@ class RunsListResponse(BaseModel):
     total_count: int
     offset: int
     limit: int
+
+
+# --- LLM Requests Models ---
+
+
+class LLMRequestInfo(BaseModel):
+    """LLM request information for API response.
+
+    Directly mirrors LLMRequest ORM model fields.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: int
+    model: str
+    request_body: dict
+    response_body: dict | None
+    error: str | None
+    latency_ms: int | None
+    created_at: datetime
+
+
+class LLMRequestsResponse(BaseModel):
+    """Response for LLM requests list."""
+
+    requests: list[LLMRequestInfo]
+    total_count: int
 
 
 # --- WebSocket Message Types (Discriminated Union) ---
@@ -493,7 +547,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
 # --- Run Detail Endpoints ---
 
 
-@router.get("/run/{run_id}")
+@router.get("/{run_id}")
 def get_run(run_id: UUID) -> AgentRunDetail:
     """Get details of a specific agent run."""
     with get_session() as session:
@@ -615,6 +669,44 @@ def get_run(run_id: UUID) -> AgentRunDetail:
         else:
             details = OtherRunSpecifics(agent_type=run.type_config.agent_type)
 
+        # Get LLM cost stats for this run
+        llm_cost_rows = session.query(LLMRunCost).filter(LLMRunCost.agent_run_id == run_id).all()
+
+        llm_costs: LLMCostStats | None = None
+        if llm_cost_rows:
+            by_model: dict[str, dict] = {}
+            total_requests = 0
+            total_input = 0
+            total_cached = 0
+            total_output = 0
+            total_cost = 0.0
+            for row in llm_cost_rows:
+                requests = row.request_count or 0
+                input_tokens = row.input_tokens or 0
+                cached = row.cached_input_tokens or 0
+                output_tokens = row.output_tokens or 0
+                cost = row.cost_usd or 0.0
+                by_model[row.model] = {
+                    "requests": requests,
+                    "input_tokens": input_tokens,
+                    "cached_tokens": cached,
+                    "output_tokens": output_tokens,
+                    "cost_usd": cost,
+                }
+                total_requests += requests
+                total_input += input_tokens
+                total_cached += cached
+                total_output += output_tokens
+                total_cost += cost
+            llm_costs = LLMCostStats(
+                total_requests=total_requests,
+                total_input_tokens=total_input,
+                total_cached_tokens=total_cached,
+                total_output_tokens=total_output,
+                total_cost_usd=total_cost,
+                by_model=by_model,
+            )
+
         # Return unified AgentRunDetail with nested type-specific details
         return AgentRunDetail(
             agent_run_id=run.agent_run_id,
@@ -628,7 +720,30 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             type_config=run.type_config,
             llm_call_count=llm_call_count,
             child_runs=child_runs,
+            container_stdout=run.container_stdout,
+            container_stderr=run.container_stderr,
+            llm_costs=llm_costs,
             details=details,
+        )
+
+
+@router.get("/{run_id}/llm_requests")
+def get_run_llm_requests(run_id: UUID) -> LLMRequestsResponse:
+    """Get LLM requests for a specific agent run."""
+    with get_session() as session:
+        run = session.get(AgentRun, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
+
+        requests = (
+            session.query(LLMRequest)
+            .filter(LLMRequest.agent_run_id == run_id)
+            .order_by(LLMRequest.created_at.asc())
+            .all()
+        )
+
+        return LLMRequestsResponse(
+            requests=[LLMRequestInfo.model_validate(req) for req in requests], total_count=len(requests)
         )
 
 
