@@ -2,23 +2,26 @@
 #
 # Hardware: 2x RTX 5090 (64GB total VRAM)
 #
-# 32B models (single GPU / lighter workloads):
-# - qwen3:32b - Best tool calling, recommended for agentic work
-# - deepseek-r1:32b - Good reasoning
+# Query model capabilities via local Ollama API (must pull model first):
+#   curl -s http://localhost:11434/api/show -d '{"name": "MODEL"}' | jq '.capabilities'
+#   Returns: ["completion", "tools", "thinking"] or subset
+# No remote registry API for capabilities - see github.com/ollama/ollama/issues/10097
 #
-# 70B models (dual GPU / best quality):
-# - llama3.3:70b - Best overall agentic, matches 405B performance
-# - deepseek-r1:70b - Best reasoning, approaches O3/Gemini 2.5 Pro
-# - krith/meta-llama-3.1-70b-instruct-abliterated - Uncensored, instruction-following
+# Capability matrix:
+#   Model                    | Reasoning | Tools | Notes
+#   -------------------------|-----------|-------|---------------------------
+#   gpt-oss-120b-32k         | ✓         | ✓     | OpenAI MoE (5.1B active), ~56GB, fits 2x5090
+#   gpt-oss-20b-32k          | ✓         | ✓     | OpenAI MoE, 14GB, reasoning + tools
+#   qwen3-coder:30b          | ✓         | ✓     | MoE (3.3B active), both work!
+#   qwen3:32b                | ✓         | ~     | Tools buggy in Ollama
+#   llama3.3:70b             | ✗         | ✓     | Reliable tools, no thinking
+#   llama3.1-abliterated:70b | ✗         | ✓     | Uncensored, reliable tools
+#   deepseek-r1:32b/70b      | ✓         | ✗     | Disabled - no tool support
 #
 # Context limits for 70B Q4 on 64GB:
 # - Model weights: ~40GB, KV cache budget: ~24GB
 # - Llama 3 70B KV: ~0.32 MB/token → max ~75k tokens
 # - Safe practical limit: 32k-64k (leaving headroom for activations)
-#
-# Reasoning support:
-# - Qwen3/DeepSeek R1 have thinking mode (reasoning_content field)
-# - Llama 3.3 does not have thinking mode
 {
   config,
   pkgs,
@@ -32,16 +35,68 @@ let
     "$schema" = "https://opencode.ai/config.json";
     provider = {
       ollama = {
-        npm = "@ai-sdk/openai-compatible";
+        # Use ollama-ai-provider-v2 for native reasoning/thinking support
+        # @ai-sdk/openai-compatible can't parse the non-standard 'reasoning' field
+        npm = "ollama-ai-provider-v2";
         name = "Ollama (local)";
         options = {
-          baseURL = "http://localhost:11434/v1";
+          baseURL = "http://localhost:11434/api";
         };
         models = {
-          # Primary: Qwen3 32B with 32k context - best for agentic/tool-calling work
-          # Has thinking mode - reasoning returned in reasoning_content field
-          "qwen3:32b-32k" = {
-            name = "Qwen3 32B 32k (local)";
+          # === GPT-OSS - OpenAI's open-weight MoE models ===
+          # Apache 2.0 license, reasoning + tools, configurable reasoning effort
+          # Docs: https://ollama.com/library/gpt-oss
+
+          # GPT-OSS 120B - OpenAI's flagship open model
+          # MoE: 117B total params, 5.1B active, MXFP4 quantized (~56GB weights)
+          # On 2x 5090 (64GB): fits cleanly, 32k context saturates VRAM
+          # IMPORTANT: Create variant first:
+          #   ollama run gpt-oss:120b
+          #   /set parameter num_ctx 32768
+          #   /save gpt-oss-120b-32k
+          #   /bye
+          "gpt-oss-120b-32k" = {
+            name = "GPT-OSS 120B 32k (local)";
+            reasoning = true;
+            tool_call = true;
+            options = {
+              extraBody = {
+                think = "high"; # enable reasoning mode
+              };
+            };
+            limit = {
+              context = 32768; # max for 64GB VRAM (model + KV cache)
+              output = 8192;
+            };
+          };
+          # GPT-OSS 20B - smaller variant, fits easily on 64GB
+          # MoE architecture, 14GB weights, excellent headroom for large context
+          # IMPORTANT: Create variant first:
+          #   ollama run gpt-oss:20b
+          #   /set parameter num_ctx 32768
+          #   /save gpt-oss-20b-32k
+          #   /bye
+          "gpt-oss-20b-32k" = {
+            name = "GPT-OSS 20B 32k (local)";
+            reasoning = true;
+            tool_call = true;
+            options = {
+              extraBody = {
+                think = "high"; # enable reasoning mode
+              };
+            };
+            limit = {
+              context = 32768;
+              output = 8192;
+            };
+          };
+
+          # === Qwen3-Coder - BOTH reasoning AND reliable tool calling ===
+
+          # Qwen3-Coder 30B - best for agentic work (reasoning + tools both work)
+          # Unsloth fixed tool calling in Aug 2025
+          "qwen3-coder:30b" = {
+            name = "Qwen3-Coder 30B (local)";
             reasoning = true;
             tool_call = true;
             interleaved = {
@@ -52,11 +107,29 @@ let
               output = 8192;
             };
           };
+
+          # === Qwen3 - reasoning works, tools BUGGY in Ollama ===
+
+          # Qwen3 32B with 32k context
+          # WARNING: Tool calling has parsing issues in Ollama
+          "qwen3:32b-32k" = {
+            name = "Qwen3 32B 32k (local)";
+            reasoning = true;
+            tool_call = true; # unreliable
+            interleaved = {
+              field = "reasoning_content";
+            };
+            limit = {
+              context = 32768;
+              output = 8192;
+            };
+          };
           # Base Qwen3 32B (4k default context)
+          # WARNING: Tool calling has parsing issues in Ollama
           "qwen3:32b" = {
             name = "Qwen3 32B (local)";
             reasoning = true;
-            tool_call = true;
+            tool_call = true; # unreliable
             interleaved = {
               field = "reasoning_content";
             };
@@ -79,10 +152,11 @@ let
           #   };
           # };
           # Qwen3 abliterated (uncensored) variant
+          # WARNING: Tool calling has parsing issues in Ollama
           "huihui_ai/qwen3-abliterated:32b" = {
             name = "Qwen3 32B Abliterated (local)";
             reasoning = true;
-            tool_call = true;
+            tool_call = true; # unreliable
             interleaved = {
               field = "reasoning_content";
             };
@@ -93,9 +167,9 @@ let
           };
 
           # === 70B models (require 2x 5090 / 64GB VRAM) ===
+          # === Llama - RELIABLE tools, NO reasoning/thinking ===
 
-          # Llama 3.3 70B - best overall agentic model, matches 405B performance
-          # No thinking mode, standard instruct model
+          # Llama 3.3 70B - best overall for tool use, matches 405B performance
           "llama3.3:70b" = {
             name = "Llama 3.3 70B (local)";
             reasoning = false;
@@ -105,7 +179,7 @@ let
               output = 8192;
             };
           };
-          # Llama 3.3 70B with extended context
+          # Llama 3.3 70B with extended context (no reasoning)
           "llama3.3:70b-64k" = {
             name = "Llama 3.3 70B 64k (local)";
             reasoning = false;
@@ -143,13 +217,12 @@ let
           #   };
           # };
 
-          # Llama 3.1 70B Abliterated - uncensored but instruction-following
-          # Based on Llama 3.1 with 128k native context
+          # Llama 3.1 70B Abliterated - uncensored, reliable tools, no reasoning
           # Pull via: ollama pull krith/meta-llama-3.1-70b-instruct-abliterated:IQ3_M
           "krith/meta-llama-3.1-70b-instruct-abliterated:IQ3_M" = {
             name = "Llama 3.1 70B Abliterated (local)";
-            reasoning = false;
-            tool_call = true;
+            reasoning = false; # no thinking mode
+            tool_call = true; # reliable
             limit = {
               context = 32768; # safe limit; model supports 128k native
               output = 8192;
