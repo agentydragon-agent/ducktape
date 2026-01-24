@@ -40,11 +40,15 @@
     '';
   };
 
-  # UV cache configuration for tankshare storage
-  # Uses shared cache across VMs for efficiency (safe with virtiofs + UV's file locking)
-  # Only applies when /mnt/tankshare exists (virtiofs mount from atlas)
-  home.sessionVariables = lib.mkIf (builtins.pathExists "/mnt/tankshare") {
-    UV_CACHE_DIR = "/mnt/tankshare/shared/uv-cache";
+  # Dev toolchains on HDD (saves ~11GB on root SSD)
+  # mkForce to override defaults from home.nix
+  home.sessionVariables = {
+    GOPATH = lib.mkForce "/wyrmhdd/go";
+    RUSTUP_HOME = "/wyrmhdd/rustup";
+    CARGO_HOME = "/wyrmhdd/cargo";
+    PNPM_HOME = lib.mkForce "/wyrmhdd/pnpm";
+    BUN_INSTALL = "/wyrmhdd/bun";
+    UV_CACHE_DIR = "/wyrmhdd/uv-cache";
   };
 
   # Bazel output directory on HDD (avoids filling up root SSD)

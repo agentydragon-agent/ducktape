@@ -120,6 +120,31 @@
       notify: Restart docker
       tags: [storage, docker]
 
+    # NVIDIA Container Toolkit for GPU passthrough in containers
+    - name: Set up NVIDIA Container Toolkit repository
+      ansible.builtin.deb822_repository:
+        name: nvidia-container-toolkit
+        uris: https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH)
+        suites: ["/"]
+        signed_by: https://nvidia.github.io/libnvidia-container/gpgkey
+      become: true
+      tags: [nvidia, docker, gpu]
+
+    - name: Install NVIDIA Container Toolkit
+      ansible.builtin.apt:
+        name: nvidia-container-toolkit
+        state: present
+        update_cache: true # deb822_repository doesn't reliably trigger apt cache update
+      become: true
+      tags: [nvidia, docker, gpu]
+
+    - name: Configure Docker to use NVIDIA runtime
+      ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
+      become: true
+      notify: Restart docker
+      tags: [nvidia, docker, gpu]
+      changed_when: true
+
     # pnpm is installed in dev_env-user.yml via github_release_install
     # Configuration is managed via dotfiles/npmrc
 
