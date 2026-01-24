@@ -1,11 +1,15 @@
-"""Pytest configuration and fixtures for Gatelet tests."""
+"""Pytest configuration and fixtures for Gatelet tests.
+
+Uses Testcontainers for hermetic PostgreSQL instances. Each test session gets
+a fresh PostgreSQL container.
+"""
 
 from __future__ import annotations
 
 import logging
-import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -16,6 +20,7 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from testcontainers.postgres import PostgresContainer
 
 from gatelet.server.app import app
 from gatelet.server.config import (
@@ -47,33 +52,48 @@ def pytest_configure(config: pytest.Config) -> None:
     config.pluginmanager.set_blocked("anyio")
 
 
-def _build_database_url(driver: str = "asyncpg") -> str:
-    """Build DATABASE_URL from standard PG* environment variables.
+@dataclass
+class PostgresConfig:
+    """PostgreSQL connection configuration from testcontainer."""
 
-    Expected env vars (set by CI workflow or local devenv):
-        PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
 
-    Args:
-        driver: SQLAlchemy driver suffix (e.g., "asyncpg" for async, empty for sync)
+    def url(self, driver: str = "asyncpg") -> str:
+        """Build SQLAlchemy connection URL."""
+        scheme = f"postgresql+{driver}" if driver else "postgresql"
+        return f"{scheme}://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
+
+
+@pytest.fixture(scope="session")
+def postgres_container() -> Generator[PostgresContainer]:
+    """Session-scoped PostgreSQL container.
+
+    Starts a fresh PostgreSQL 16 container for the entire test session.
     """
-    host = os.environ.get("PGHOST", "localhost")
-    port = os.environ.get("PGPORT", "5432")
-    user = os.environ.get("PGUSER", "postgres")
-    password = os.environ.get("PGPASSWORD", "postgres")
-    database = os.environ.get("PGDATABASE", "gatelet")
+    with PostgresContainer(image="postgres:16", username="postgres", password="postgres", dbname="gatelet") as postgres:
+        yield postgres
 
-    scheme = f"postgresql+{driver}" if driver else "postgresql"
-    if password:
-        return f"{scheme}://{user}:{password}@{host}:{port}/{database}"
-    return f"{scheme}://{user}@{host}:{port}/{database}"
+
+@pytest.fixture(scope="session")
+def postgres_config(postgres_container: PostgresContainer) -> PostgresConfig:
+    """Session-scoped database config from the testcontainer."""
+    return PostgresConfig(
+        host=postgres_container.get_container_host_ip(),
+        port=int(postgres_container.get_exposed_port(5432)),
+        user="postgres",
+        password="postgres",
+        database="gatelet",
+    )
 
 
 @pytest_asyncio.fixture
-async def db_engine() -> AsyncGenerator[AsyncEngine]:
+async def db_engine(postgres_config: PostgresConfig) -> AsyncGenerator[AsyncEngine]:
     """Create a database engine and initialize the schema."""
-
-    database_url = _build_database_url()
-    engine = create_async_engine(database_url, future=True)
+    engine = create_async_engine(postgres_config.url(), future=True)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -115,14 +135,14 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
 
 
 @pytest.fixture
-def test_settings(tmp_path: Path) -> Settings:
+def test_settings(tmp_path: Path, postgres_config: PostgresConfig) -> Settings:
     """Create test settings with explicit test values.
 
     Tests should use this fixture and override specific values as needed.
     This ensures tests don't depend on production config.
     """
     return Settings(
-        database=DatabaseSettings(dsn=_build_database_url(driver="")),
+        database=DatabaseSettings(dsn=postgres_config.url(driver="")),
         server=ServerSettings(log_file=str(tmp_path / "test.log")),
         auth=AuthSettings(
             key_in_url=KeyInUrlAuthSettings(enabled=True, key_valid_days=365),
