@@ -57,6 +57,11 @@ oci.pull(
 )
 use_repo(oci, "python_slim", "python_slim_linux_amd64")
 
+# Integration testing (rules_itest) - hermetic service provisioning for tests
+# Used for first-party services (Go, Node binaries). For postgres, use testcontainers
+# since postgres binaries are not readily available for Bazel (BCR module is libpq only).
+bazel_dep(name = "rules_itest", version = "0.0.49")
+
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_rules_js", version = "2.4.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.0")

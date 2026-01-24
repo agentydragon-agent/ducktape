@@ -1,0 +1,25 @@
+"""Integration test infrastructure.
+
+This package provides hermetic services for integration tests using rules_itest.
+
+rules_itest usage:
+- Best for first-party Go/Node/Python binaries as test services
+- Supports automatic port assignment, health checks, hot-reload with ibazel
+- See https://github.com/dzbarsky/rules_itest for docs
+
+For PostgreSQL tests:
+- Use testcontainers (see props/testing/fixtures/db.py)
+- BCR postgres module only provides libpq (client), not server binaries
+- rules_postgresql builds from source on Linux (slow) and isn't in BCR
+
+Example rules_itest service (when we have first-party services to test):
+
+    load("@rules_itest//:itest.bzl", "itest_service")
+
+    itest_service(
+        name = "my_service",
+        exe = "//path/to:binary",
+        autoassign_port = True,
+        http_health_check_address = "http://localhost:$${PORT}/health",
+    )
+"""

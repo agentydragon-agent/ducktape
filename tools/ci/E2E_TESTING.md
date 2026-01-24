@@ -2,6 +2,40 @@
 
 This document outlines the design for running complex E2E tests that require external infrastructure (PostgreSQL, Docker, registries) within a Bazel-based CI system.
 
+## Implementation Status
+
+### Testcontainers Migration (Completed)
+
+Props tests now use Testcontainers for PostgreSQL:
+
+- **`props/testing/fixtures/db.py`**: Session-scoped `postgres_container` fixture using `testcontainers.postgres.PostgresContainer`
+- **Tags simplified**: `requires_postgres` removed, only `requires_docker` needed (Testcontainers uses Docker)
+- **No hardcoded ports**: Testcontainers auto-assigns ports, fixtures read from container
+
+**Benefits**:
+
+- Hermetic: each test session gets fresh postgres
+- No external setup: just `bazel test` (with Docker available)
+- Consistent between local dev and CI
+
+### rules_itest (Available for First-Party Services)
+
+`rules_itest` is added to MODULE.bazel for hermetic service provisioning:
+
+- **Use case**: First-party Go/Node binaries as test services
+- **Not for postgres**: The BCR `postgres` module only provides libpq (client library), not server binaries
+- `rules_postgresql` builds postgres from source on Linux (slow) and isn't in the BCR
+
+**Why testcontainers for postgres?**
+
+| Approach         | Postgres Source  | Speed  | Complexity |
+| ---------------- | ---------------- | ------ | ---------- |
+| Testcontainers   | Docker image     | Fast ✓ | Low ✓      |
+| rules_postgresql | Source build     | Slow   | High       |
+| BCR postgres     | N/A (libpq only) | N/A    | N/A        |
+
+For database tests, Docker-based testcontainers is the practical choice. rules_itest shines for native binary services where you control the build.
+
 ## Current State
 
 ### Test Tag Usage
@@ -11,18 +45,14 @@ Tests declare infrastructure requirements via Bazel tags:
 | Tag                      | Meaning                         | Current Usage                              |
 | ------------------------ | ------------------------------- | ------------------------------------------ |
 | `requires_docker`        | Needs Docker daemon             | `agent_server/`, `editor_agent/`, `props/` |
-| `requires_postgres`      | Needs PostgreSQL                | `props/`, `gatelet/`                       |
 | `requires_runtime_image` | Needs pre-built container image | `agent_server/`                            |
 | `e2e`                    | Full end-to-end test            | `props/` E2E tests                         |
 | `visual`                 | Visual regression test          | `props/frontend/`                          |
 | `manual`                 | Excluded from `//...`           | Various                                    |
 
+**Note**: `requires_postgres` tag removed from props tests - postgres is now provided by Testcontainers (which requires Docker).
+
 ### Environment Variables Expected
-
-**PostgreSQL tests** (inconsistent ports):
-
-- `bazel-test.yml`: `PGHOST=localhost`, `PGPORT=5432` (GitHub service container)
-- `props-e2e-test.yml`: `PGHOST=127.0.0.1`, `PGPORT=5433` (docker-compose)
 
 **Docker tests**:
 
@@ -33,7 +63,6 @@ Tests declare infrastructure requirements via Bazel tags:
 
 - `PROPS_REGISTRY_PROXY_HOST`, `PROPS_REGISTRY_PROXY_PORT`
 - `PROPS_DOCKER_NETWORK`
-- Backend must be running with schema initialized
 
 ### Workflow Dispatch
 
@@ -186,29 +215,28 @@ service_test(
 
 ### Option 5: rules_postgresql (Hermetic PostgreSQL)
 
-[rules_postgresql](https://github.com/jacobshirley/rules_postgresql) downloads PostgreSQL binaries hermetically:
+[rules_postgresql](https://github.com/jacobshirley/rules_postgresql) provides hermetic PostgreSQL for Bazel:
 
 ```python
-# Downloads postgres binaries for Linux/macOS/Windows (x86_64/arm64)
 postgresql_server_test(
-    name = "db_test",
-    srcs = ["test_db.py"],
-    # Creates isolated cluster with separate data directory
+    name = "sql_query",
+    cmd = "psql -d postgres -c \"\\l\"",
 )
 ```
 
 **Pros**:
 
-- Zero local setup - PostgreSQL downloaded by Bazel
+- Zero local setup - PostgreSQL managed by Bazel
 - Isolated clusters per test
-- Cross-platform (Linux, macOS, Windows)
 
 **Cons**:
 
-- Only `postgresql_server_test` currently supported
+- **Not in BCR** - requires git_override or WORKSPACE setup
+- **Builds from source on Linux** - slow first build
+- Only `postgresql_server_test` supported (bash commands, not pytest)
 - Limited to PostgreSQL (no Redis, etc.)
 
-**Recommendation**: Consider rules_itest for new hermetic tests, especially if remote execution becomes important. Keep docker-compose for existing complex E2E flows.
+**Recommendation**: For this codebase, **testcontainers is preferred** for pytest-based postgres tests. rules_postgresql is better suited for simple SQL-only tests. Consider rules_itest for new hermetic tests with first-party services.
 
 ## Recommended Approach: Tag-Based Environment Dispatch
 
