@@ -85,7 +85,16 @@ jobs:
           PGDATABASE: eval_results
         run: bazel run //props/cli:cli -- db init -y
 
-      # Start backend (daemon manager requires schema to exist)
+      # Push agent images before backend starts (daemon manager needs grader image)
+      - name: Push agent images
+        run: |
+          bazel run //props/critic:push
+          bazel run //props/grader:push
+          bazel run //props/grader:daemon_push
+          bazel run //props/critic_dev/improve:push
+          bazel run //props/critic_dev/optimize:push
+
+      # Start backend (schema exists, grader image available)
       - name: Start backend
         working-directory: props
         run: |
@@ -102,15 +111,6 @@ jobs:
             sleep 1
           done
           echo "Backend ready"
-
-      # Push agent images via backend registry proxy
-      - name: Push agent images
-        run: |
-          bazel run //props/critic:push
-          bazel run //props/grader:push
-          bazel run //props/grader:daemon_push
-          bazel run //props/critic_dev/improve:push
-          bazel run //props/critic_dev/optimize:push
 
       # Sync snapshots (triggers pg_notify which starts grader daemons)
       - name: Sync snapshots
