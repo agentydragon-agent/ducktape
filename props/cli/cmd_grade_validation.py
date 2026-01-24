@@ -14,7 +14,6 @@ import typer
 from cli_util.decorators import async_run
 from props.cli import common_options as opt
 from props.cli.resources import get_database_config
-from props.core.agent_registry import AgentRegistry
 from props.core.agent_types import AgentType
 from props.core.display import short_uuid
 from props.core.models.examples import ExampleKind, ExampleSpec
@@ -22,6 +21,7 @@ from props.core.splits import Split
 from props.db.examples import Example
 from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, Snapshot
 from props.db.session import get_session
+from props.orchestration.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,7 @@ async def cmd_grade_validation(
 
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    registry = AgentRegistry(
-        docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url, max_parallel=max_parallel
-    )
+    registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
     try:
         # Phase 1: Find all work items (snapshot, scope, prompt) combinations
         with get_session() as session:
