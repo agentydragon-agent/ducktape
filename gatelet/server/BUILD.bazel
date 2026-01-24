@@ -93,8 +93,9 @@ _TEST_DEPS = [
     "@pypi//playwright",
     "@pypi//pyhamcrest",
     "@pypi//pytest",
-    "@pypi//pytest_bazel",
     "@pypi//pytest_asyncio",
+    "@pypi//pytest_bazel",
+    "@pypi//testcontainers",
 ]
 
 _TEST_DATA = ["//gatelet:gatelet.toml"]
@@ -111,6 +112,7 @@ py_test(
     data = _TEST_DATA,
     imports = ["../.."],
     main = "pytest_runner.py",
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
@@ -127,6 +129,7 @@ py_test(
     data = _TEST_DATA,
     imports = ["../.."],
     main = "pytest_runner.py",
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
@@ -144,6 +147,7 @@ py_test(
     data = _TEST_DATA,
     imports = ["../.."],
     main = "pytest_runner.py",
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
@@ -158,6 +162,7 @@ py_test(
     data = _TEST_DATA,
     imports = ["../.."],
     main = "pytest_runner.py",
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
@@ -174,6 +179,7 @@ py_test(
     data = _TEST_DATA,
     imports = ["../.."],
     main = "pytest_runner.py",
+    tags = ["requires_docker"],
     deps = _TEST_DEPS,
 )
 
