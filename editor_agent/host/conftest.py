@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from contextlib import suppress
-
-import docker
 import pytest
-
-from agent_pkg.host.builder import ensure_image
-from editor_agent.host.cli import _DOCKERFILE, _REPO_ROOT
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from mcp_infra.testing.fixtures import *  # noqa: F403
+from test_util.docker import load_bazel_image, skip_if_docker_unavailable
 
-EDITOR_IMAGE_TAG = "adgn-editor:test"
+EDITOR_IMAGE_TAG = "adgn-editor:latest"
+EDITOR_LOAD_SCRIPT = "editor_agent/runtime/load.sh"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -21,22 +17,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
     """Skip Docker tests when Docker daemon is not available."""
-    if item.get_closest_marker("requires_docker") is None:
-        return
-
-    client = None
-    try:
-        client = docker.from_env()
-        client.ping()
-    except docker.errors.DockerException as exc:
-        pytest.skip(f"Docker not available: {exc}")
-    finally:
-        if client is not None:
-            with suppress(Exception):
-                client.close()
+    skip_if_docker_unavailable(item)
 
 
-@pytest.fixture
-async def editor_image_id(async_docker_client):
-    """Build or retrieve editor agent image."""
-    return await ensure_image(async_docker_client, _REPO_ROOT, EDITOR_IMAGE_TAG, dockerfile=_DOCKERFILE)
+@pytest.fixture(scope="session")
+def editor_image_id():
+    """Load editor agent image from Bazel :load target."""
+    return load_bazel_image(EDITOR_LOAD_SCRIPT, EDITOR_IMAGE_TAG)

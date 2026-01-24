@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
@@ -40,6 +40,11 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from openai_utils.model import OpenAIModelProto
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from test_util.docker import load_bazel_image, pytest_runtest_setup, python_slim_image  # noqa: F401
+
+# Image tags and load scripts for Bazel-loaded images
+RUNTIME_IMAGE_TAG = "adgn-runtime:latest"
+RUNTIME_LOAD_SCRIPT = "agent_server/load.sh"
 
 # Test server mount name used in fixtures
 TEST_BACKEND_SERVER_NAME = "backend"
@@ -55,29 +60,6 @@ def pytest_configure(config: pytest.Config) -> None:
     config.option.asyncio_mode = "auto"
 
 
-def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Skip tests that require Docker or the runtime image."""
-    if item.get_closest_marker("requires_docker") is None and item.get_closest_marker("requires_runtime_image") is None:
-        return
-    try:
-        client = docker.from_env()
-        client.ping()
-    except docker.errors.DockerException as exc:
-        pytest.skip(f"Docker not available: {exc}")
-
-    # Check for runtime image if marker is present
-    if item.get_closest_marker("requires_runtime_image") is not None:
-        try:
-            client.images.get("adgn-runtime:latest")
-        except docker.errors.ImageNotFound:
-            with suppress(Exception):
-                client.close()
-            pytest.skip("Runtime image not loaded. Run: bazel run //agent_server:load")
-
-    with suppress(Exception):
-        client.close()
-
-
 # --- Pytest fixtures ---
 
 
@@ -87,10 +69,16 @@ def docker_client():
     return docker.from_env()
 
 
+@pytest.fixture(scope="session")
+def runtime_image():
+    """Load agent server runtime image from Bazel :load target."""
+    return load_bazel_image(RUNTIME_LOAD_SCRIPT, RUNTIME_IMAGE_TAG)
+
+
 @pytest.fixture
-async def docker_exec_server_py312slim(async_docker_client):
-    """Canonical Docker exec server using python:3.12-slim image."""
-    opts = make_container_opts("python:3.12-slim")
+async def docker_exec_server_py312slim(async_docker_client, python_slim_image):  # noqa: F811
+    """Canonical Docker exec server using python-slim image."""
+    opts = make_container_opts(python_slim_image)
     return ContainerExecServer(async_docker_client, opts)
 
 

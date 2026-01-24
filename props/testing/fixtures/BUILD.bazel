@@ -10,6 +10,7 @@ py_library(
         "db.py",
         "e2e.py",
         "e2e_container.py",
+        "e2e_infra.py",
         "ground_truth.py",
         "runs.py",
         "scopes.py",
@@ -48,7 +49,10 @@ py_library(
         "//props/testing:fake_openai_server",
         # props.backend for e2e_container (AuthMiddleware, llm routes)
         "//props/backend",
+        # test_util for load_bazel_image
+        "//test_util",
         "@pypi//aiodocker",
+        "@pypi//docker",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pytest",

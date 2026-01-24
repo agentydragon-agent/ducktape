@@ -1,212 +1,119 @@
-# CI workflow - calls reusable workflow files for each job
-#
-# Jobs (defined in separate files):
-# - pre-commit: Safety checks + Bazel aspects (lint, typecheck, format)
-# - bazel-build: Build all targets
-# - bazel-lint: Linting (Python ruff, JS/TS eslint)
-# - bazel-typecheck: Type checking (Python mypy)
-# - bazel-rust-lint: Rust linting (clippy)
-# - bazel-test: Run all tests (excludes e2e tests requiring Docker infra)
-# - props-e2e-test: Props e2e tests (requires Docker registry, proxy, postgres)
-# - editor-e2e-test: Editor agent e2e tests (requires Docker)
-# - agent-server-e2e-test: Agent server e2e tests (requires Docker and runtime image)
-# - claude-hooks: E2E tests + release (separate workflow, always runs)
-# - visual-regression: Puppeteer visual tests (hermetic Chromium via rules_playwright)
-# - ansible-lint-full: Ansible validation
-# - nix-flake-check: Verify NixOS and home-manager configurations evaluate
-#
-# Static analysis via Bazel aspects:
-# - Python: ruff (lint and formatting), mypy (types)
-# - JS/TS: ESLint (lint), prettier (formatting)
-# - Rust: clippy (lint), rustfmt (formatting)
-# - Shell: shfmt (formatting)
-# - Bazel: buildifier (formatting)
+# AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
+# Regenerate with: uv run tools/ci/generate_ci.py
 name: CI
-
-on:
+"on":
   push:
-    branches: [main, master, devel]
-  pull_request:
+    branches:
+      - main
+      - master
+      - devel
+  pull_request: null
   workflow_dispatch:
     inputs:
       enable_profiling:
-        description: "Enable Bazel profiling (generates downloadable artifacts)"
+        description: Enable Bazel profiling (generates downloadable artifacts)
         required: false
         type: boolean
         default: false
-
-# Cancel outdated workflow runs when new commits are pushed
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-# Least-privilege permissions
 permissions:
   contents: read
-
 jobs:
-  # Compute affected targets once, then run parallel downstream jobs
   compute-targets:
     name: Compute affected targets
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
-      bazel_targets: ${{ steps.bazel-diff.outputs.targets }}
-      has_bazel_changes: ${{ steps.bazel-diff.outputs.has_changes }}
-      has_props: ${{ steps.bazel-diff.outputs.has_props }}
-      has_editor_agent: ${{ steps.bazel-diff.outputs.has_editor_agent }}
-      has_agent_server: ${{ steps.bazel-diff.outputs.has_agent_server }}
-      has_finance: ${{ steps.bazel-diff.outputs.has_finance }}
-      has_props_frontend: ${{ steps.bazel-diff.outputs.has_props_frontend }}
-      has_nix_changes: ${{ steps.paths.outputs.nix }}
-      has_ansible_changes: ${{ steps.paths.outputs.ansible }}
+      targets: ${{ steps.decide.outputs.targets }}
+      workflows: ${{ steps.decide.outputs.workflows }}
+      infra_changed: ${{ steps.decide.outputs.infra_changed }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      - uses: astral-sh/setup-uv@v4
       - uses: bazelbuild/setup-bazelisk@v3
-
       - uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
+          distribution: temurin
           java-version: "21"
-
-      - uses: actions/setup-python@v5
+      - name: Cache bazel-diff JAR
+        id: cache-bazel-diff
+        uses: actions/cache@v4
         with:
-          python-version: "3.12"
-
-      - name: Compute Bazel targets
-        id: bazel-diff
-        run: python tools/ci/bazel_diff.py
-
-      - name: Check path changes
-        id: paths
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            BASE=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)
-          else
-            BASE=$(git rev-parse HEAD~1 2>/dev/null || echo "")
-          fi
-
-          if [[ -z "$BASE" ]]; then
-            echo "nix=true" >> $GITHUB_OUTPUT
-            echo "ansible=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          CHANGED=$(git diff --name-only "$BASE"...HEAD)
-
-          if echo "$CHANGED" | grep -qE '^nix/'; then
-            echo "nix=true" >> $GITHUB_OUTPUT
-          else
-            echo "nix=false" >> $GITHUB_OUTPUT
-          fi
-
-          if echo "$CHANGED" | grep -qE '^ansible/'; then
-            echo "ansible=true" >> $GITHUB_OUTPUT
-          else
-            echo "ansible=false" >> $GITHUB_OUTPUT
-          fi
-
-  # Always run - fast safety check
-  pre-commit:
-    uses: ./.github/workflows/pre-commit.yml
-
-  # Conditional - only when props/frontend changed
-  visual-regression:
-    needs: compute-targets
-    if: needs.compute-targets.outputs.has_props_frontend == 'true'
-    uses: ./.github/workflows/visual-regression.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Conditional - only when Bazel targets changed
+          path: bazel-diff.jar
+          key: bazel-diff-12.1.1
+      - name: Download bazel-diff
+        run: |-
+          curl -fsSL -o bazel-diff.jar \
+            "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
+        if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
+      - name: Cache bazel-diff hashes
+        uses: actions/cache@v4
+        with:
+          path: .bazel-diff-cache
+          key: bazel-diff-hashes-${{ github.sha }}
+          restore-keys: bazel-diff-hashes-
+      - name: Set bazel-diff env
+        run: |-
+          echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
+          echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
+      - name: Compute CI decision
+        id: decide
+        run: uv run tools/ci/ci_decide.py
   bazel-build:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')
     uses: ./.github/workflows/bazel-build.yml
     with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
+      targets: ${{ needs.compute-targets.outputs.targets }}
+    secrets: inherit
+  bazel-test:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-test')
+    uses: ./.github/workflows/bazel-test.yml
+    with:
+      targets: ${{ needs.compute-targets.outputs.targets }}
+    secrets: inherit
   bazel-lint:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-lint')
     uses: ./.github/workflows/bazel-lint.yml
     with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      targets: ${{ needs.compute-targets.outputs.targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
+    secrets: inherit
   bazel-typecheck:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-typecheck')
     uses: ./.github/workflows/bazel-typecheck.yml
     with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
+      targets: ${{ needs.compute-targets.outputs.targets }}
       enable_profiling: ${{ inputs.enable_profiling || false }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
+    secrets: inherit
   bazel-rust-lint:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_finance == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-rust-lint')
     uses: ./.github/workflows/bazel-rust-lint.yml
     with:
       enable_profiling: ${{ inputs.enable_profiling || false }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  bazel-test:
+    secrets: inherit
+  visual-regression:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_bazel_changes == 'true'
-    uses: ./.github/workflows/bazel-test.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.bazel_targets }}
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Props E2E tests - requires Docker infrastructure (registry, proxy, postgres)
-  # Only runs when props/ targets are affected
-  props-e2e-test:
-    needs: compute-targets
-    if: needs.compute-targets.outputs.has_props == 'true'
-    uses: ./.github/workflows/props-e2e-test.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Editor E2E tests - requires Docker
-  # Only runs when editor_agent/ targets are affected
-  editor-e2e-test:
-    needs: compute-targets
-    if: needs.compute-targets.outputs.has_editor_agent == 'true'
-    uses: ./.github/workflows/editor-e2e-test.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Agent Server E2E tests - requires Docker and runtime image
-  # Only runs when agent_server/ targets are affected
-  agent-server-e2e-test:
-    needs: compute-targets
-    if: needs.compute-targets.outputs.has_agent_server == 'true'
-    uses: ./.github/workflows/agent-server-e2e-test.yml
-    secrets:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-  # Claude Hooks tests are handled by claude-hooks-release.yml which runs on
-  # push to devel/main (for releases) and PRs that touch tools/claude_hooks/
-
-  # Conditional - only when nix/ changed
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'visual-regression')
+    uses: ./.github/workflows/visual-regression.yml
+    secrets: inherit
   nix-flake-check:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_nix_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'nix-flake-check')
     uses: ./.github/workflows/nix-flake-check.yml
-
-  # Conditional - only when ansible/ changed
-  ansible-lint-full:
+  ansible-lint:
     needs: compute-targets
-    if: needs.compute-targets.outputs.has_ansible_changes == 'true'
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'ansible-lint')
     uses: ./.github/workflows/ansible-lint.yml
+  pre-commit:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'pre-commit')
+    uses: ./.github/workflows/pre-commit.yml

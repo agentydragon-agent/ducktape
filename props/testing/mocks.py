@@ -1,14 +1,14 @@
 """Props-specific mock utilities."""
 
-import json
 from collections.abc import Generator
-from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import TypeAdapter
 
 from agent_core_testing.responses import DecoratorMock
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage
+from props.grader.tools import FillRemainingArgs, ListPendingArgs, PendingEdge
 
 
 def get_system_message_text(req: ResponsesRequest) -> str:
@@ -60,63 +60,35 @@ class GraderMock(DecoratorMock):
     """Mock with grader-specific tool helpers.
 
     Grader tools are registered directly (not via MCP), so they use simple names
-    like 'list_pending', 'fill_remaining', 'submit'.
+    like 'list_pending', 'fill_remaining'.
 
     Example:
         @GraderMock.mock()
         def mock(m: GraderMock) -> PlayGen:
             yield None  # First request
             pending = yield from m.list_pending_roundtrip()
-            for item in pending:
-                issue_id = item["critique_issue_id"]
-                run_id = item["critique_run_id"]
-                yield from m.fill_remaining_roundtrip(run_id, issue_id, 1, "No matches")
-            yield m.submit("Grading complete")
+            for edge in pending:
+                yield from m.fill_remaining_roundtrip(
+                    edge.critique_run_id, edge.critique_issue_id, 1, "No matches"
+                )
     """
 
-    def grader_tool_call(self, name: str, arguments: dict[str, Any] | BaseModel) -> FunctionCallItem:
-        """Create a grader tool call (tools registered directly, no MCP prefix)."""
-        args_dict = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
-        return self.tool_call(name, args_dict)
-
-    def list_pending_call(self, *, issue: str | None = None, run: str | None = None) -> FunctionCallItem:
-        """Create list_pending tool call."""
-        args: dict[str, Any] = {}
-        if issue is not None:
-            args["issue"] = issue
-        if run is not None:
-            args["run"] = run
-        return self.grader_tool_call("list_pending", args)
-
     def list_pending_roundtrip(
-        self, *, issue: str | None = None, run: str | None = None
-    ) -> Generator[FunctionCallItem, ResponsesRequest, list[dict[str, Any]]]:
-        """Yield list_pending call and return parsed result as list of dicts."""
-        call = self.list_pending_call(issue=issue, run=run)
+        self, *, issue: str | None = None, run: UUID | None = None
+    ) -> Generator[FunctionCallItem, ResponsesRequest, list[PendingEdge]]:
+        """Yield list_pending call and return parsed result as list of PendingEdge."""
+        call = self.tool_call("list_pending", ListPendingArgs(issue=issue, run=run))
         req = yield call
         raw = _extract_raw_output(req, call)
-        result: list[dict[str, Any]] = json.loads(raw)
-        return result
-
-    def fill_remaining_call(self, run: str, issue_id: str, expected_count: int, rationale: str) -> FunctionCallItem:
-        """Create fill_remaining tool call."""
-        return self.grader_tool_call(
-            "fill_remaining",
-            {"run": run, "issue_id": issue_id, "expected_count": expected_count, "rationale": rationale},
-        )
+        return TypeAdapter(list[PendingEdge]).validate_json(raw)
 
     def fill_remaining_roundtrip(
-        self, run: str, issue_id: str, expected_count: int, rationale: str
+        self, run: UUID, issue_id: str, expected_count: int, rationale: str
     ) -> Generator[FunctionCallItem, ResponsesRequest, str]:
         """Yield fill_remaining call and return result message."""
-        call = self.fill_remaining_call(run, issue_id, expected_count, rationale)
+        call = self.tool_call(
+            "fill_remaining",
+            FillRemainingArgs(run=run, issue_id=issue_id, expected_count=expected_count, rationale=rationale),
+        )
         req = yield call
         return _extract_raw_output(req, call)
-
-    def submit_call(self, summary: str) -> FunctionCallItem:
-        """Create submit tool call."""
-        return self.grader_tool_call("submit", {"summary": summary})
-
-    def submit(self, summary: str) -> FunctionCallItem:
-        """Create submit tool call (alias for convenience)."""
-        return self.submit_call(summary)

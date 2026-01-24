@@ -150,14 +150,18 @@ py_test(
 py_test(
     name = "test_docker",
     srcs = [
+        "conftest.py",
         "test_docker.py",
         "test_docker_unit.py",
     ],
+    data = ["//mcp_infra/testing:python_slim_load"],
     main = "test_docker.py",
+    tags = ["requires_docker"],
     deps = [
         ":docker",
         "//mcp_infra:test_support",
-        "@pypi//docker",
+        "//mcp_infra/testing:docker_fixtures",
+        "//test_util",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
