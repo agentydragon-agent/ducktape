@@ -2,30 +2,29 @@
 
 load("@rules_python//python:defs.bzl", "py_library")
 
+package(default_testonly = True)
+
 py_library(
     name = "testing",
-    testonly = True,
     srcs = ["mocks.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core_testing",
+        "//agent_core_testing:__init__",
         "//mcp_infra/exec:models",
-        "//openai_utils",
+        "//openai_utils:model",
         "//props/grader:tools",
-        "//props/testing/fixtures",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
     name = "fake_openai_server",
-    testonly = True,
     srcs = ["fake_openai_server.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//openai_utils",
+        "//openai_utils:model",
         "@pypi//fastapi",
         "@pypi//openai",
         "@pypi//pydantic",

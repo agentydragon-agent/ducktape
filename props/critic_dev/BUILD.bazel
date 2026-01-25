@@ -1,3 +1,7 @@
+# gazelle:python_library_naming_convention $package_name$_lib
+# gazelle:exclude cli.py
+# gazelle:exclude __main__.py
+
 """Critic development CLI and shared types.
 
 Shared infrastructure for prompt optimizer and improvement agents.
@@ -47,8 +51,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cli_helpers",
-        "//agent_pkg/runtime",
-        "//cli_util",
+        "//agent_pkg/runtime:mcp",
+        "//agent_pkg/runtime:output",
+        "//cli_util:decorators",
+        "//cli_util:logging",
         "//props/cli:cmd_stats",
         "//props/core:agent_helpers",
         "//props/core:agent_types",

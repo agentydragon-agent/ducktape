@@ -2,27 +2,40 @@
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-py_library(
-    name = "policy_eval",
-    srcs = [
-        "constants.py",
-        "container.py",
-        "runner.py",
-        "shim.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        "//agent_server/policies",
-        "//agent_server/runtime:images",
-        "@pypi//aiodocker",
-    ],
-)
-
 py_binary(
     name = "shim",
     srcs = ["shim.py"],
     main = "shim.py",
     visibility = ["//visibility:public"],
-    deps = [":policy_eval"],
+    deps = [":constants"],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "container",
+    srcs = ["container.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":runner",
+        "//agent_server/policies:policy_types",
+        "//agent_server/runtime:images",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        "//agent_server/policies:policy_types",
+        "//agent_server/runtime:images",
+        "@pypi//aiodocker",
+    ],
 )

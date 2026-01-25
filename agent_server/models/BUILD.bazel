@@ -3,12 +3,14 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "models",
-    srcs = [
-        "policy_error.py",
-        "proposal_status.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//agent_server:__subpackages__"],
+    name = "policy_error",
+    srcs = ["policy_error.py"],
+    visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "proposal_status",
+    srcs = ["proposal_status.py"],
+    visibility = ["//:__subpackages__"],
 )

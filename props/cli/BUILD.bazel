@@ -1,5 +1,8 @@
+# Props has complex inter-package dependencies that are manually configured
+
 """CLI module - per-file targets."""
 
+# gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -27,8 +30,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":types",
-        "//props/core:docker_env",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -50,7 +52,7 @@ py_library(
         "//props/core:runs_context",
         "//props/core/models:examples",
         "@pypi//tiktoken",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -64,10 +66,10 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core:agent_pkg_utils",
-        "//props/db:agent_definition_ids",
+        "//props/core:agent_types",
+        "//props/db:models",
         "//props/db:session",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -78,13 +80,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
-        "//openai_utils",
+        "//openai_utils:client_factory",
         "//props/core/noop_classifier:classifier",
-        "//props/db:models",
-        "//props/db:session",
         "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -101,7 +100,7 @@ py_library(
         "//props/db:setup",
         "//props/db/sync",
         "@pypi//rich",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -112,12 +111,13 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
-        "//props/core:splits",
+        "//cli_util:decorators",
+        "//openai_utils:client_factory",
+        "//props/core:agent_workspace",
         "//props/core/gepa:gepa_adapter",
-        "//props/core/gepa:warm_start",
         "//props/db:config",
-        "//props/db:session",
-        "@pypi//typer",
+        "@pypi//rich",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -129,7 +129,7 @@ py_library(
     deps = [
         ":common_options",
         ":resources",
-        "//cli_util",
+        "//cli_util:decorators",
         "//props/core:agent_types",
         "//props/core:display",
         "//props/core:splits",
@@ -139,7 +139,7 @@ py_library(
         "//props/db:session",
         "//props/orchestration:agent_registry",
         "@pypi//aiodocker",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -149,20 +149,12 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//agent_pkg/runtime",
-        "//cli_util",
-        "//props/core:agent_helpers",
         "//props/core:display",
-        "//props/db:config",
         "//props/db:models",
         "//props/db:session",
         "//props/grader:edge_helpers",
-        "//props/orchestration:agent_registry",
-        "//props/orchestration:grader_supervisor",
-        "@pypi//aiodocker",
         "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -173,13 +165,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
-        "//props/db:models",
         "//props/db:session",
-        "//props/db/sync",
         "//props/db/sync:export",
         "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -190,19 +179,14 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":common_options",
-        "//cli_util",
+        "//cli_util:decorators",
         "//props/core:ids",
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshot_io",
-        "//props/db/sync",
         "//props/db/sync:export",
-        "@pypi//pygit2",
-        "@pypi//pyyaml",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-        "@pypi//types_pyyaml",
+        "@pypi//typer_di",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -212,6 +196,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//props/core:agent_types",
         "//props/core:display",
         "//props/core:splits",
         "//props/core/models:examples",
@@ -222,7 +207,7 @@ py_library(
         "@pypi//plotext",
         "@pypi//rich",
         "@pypi//sqlalchemy",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -247,8 +232,9 @@ py_library(
         ":cmd_stats",
         ":common_options",
         ":shared",
-        "//cli_util",
-        "//openai_utils",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//openai_utils:model",
         "//props/core:agent_helpers",
         "//props/core:agent_types",
         "//props/core:agent_workspace",
@@ -278,9 +264,36 @@ py_binary(
     main = "__main__.py",
     visibility = ["//visibility:public"],
     deps = [
-        ":main",
+        ":cmd_agent_pkg",
+        ":cmd_classify_noops",
+        ":cmd_db",
+        ":cmd_gepa",
+        ":cmd_grade_validation",
+        ":cmd_grader_agent",
+        ":cmd_gt",
+        ":cmd_snapshot",
+        ":cmd_stats",
+        ":common_options",
+        ":shared",
+        "//cli_util:decorators",
+        "//cli_util:logging",
+        "//props/core:agent_helpers",
+        "//props/core:agent_types",
+        "//props/core:display",
+        "//props/core:ids",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/critic_dev:shared",
+        "//props/critic_dev/improve:main_lib",
+        "//props/db:config",
+        "//props/db:models",
+        "//props/db:query_builders",
+        "//props/db:session",
+        "//props/orchestration:agent_registry",
+        "@pypi//aiodocker",
         "@pypi//rich",
-        "@pypi//typer",
+        "@pypi//typer_di",
+        "@pypi//typer_slim",
     ],
 )
 
@@ -294,9 +307,10 @@ py_test(
     imports = ["../.."],
     deps = [
         ":cmd_agent_pkg",
+        "//props/core:agent_pkg_utils",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//typer",
+        "@pypi//typer_slim",
     ],
 )
 

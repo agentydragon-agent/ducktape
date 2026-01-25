@@ -3,20 +3,26 @@ load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
     name = "agent_core_testing",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = [".*/**"],
-    ),
+    srcs = [
+        "__init__.py",
+        "assertions.py",
+        "echo_server.py",
+        "fixtures.py",
+        "matchers.py",
+        "openai_mock.py",
+        "responses.py",
+        "steps.py",
+    ],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core",
+        "//agent_core:agent",
         "//agent_core:mcp_provider",
         "//agent_core:tool_provider",
-        "//mcp_infra",
-        "//mcp_infra/enhanced",
-        "//mcp_infra/testing",
-        "//openai_utils",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:simple",
+        "//mcp_infra/testing:fixtures",
+        "//openai_utils:model",
         "@pypi//anyio",
         "@pypi//cachetools",  # Required by fastmcp via py-key-value-aio[memory]
         "@pypi//fastmcp",
@@ -33,4 +39,117 @@ py_library(
 ruff_test(
     name = "ruff",
     srcs = [":agent_core_testing"],
+)
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "assertions",
+    srcs = ["assertions.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:agent",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "echo_server",
+    srcs = ["echo_server.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//mcp_infra:naming",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//openai_utils:pydantic_strict_mode",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":__init__",
+        ":echo_server",
+        ":openai_mock",
+        ":responses",
+        "//agent_core:agent",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:mcp_provider",
+        "//agent_core:tool_provider",
+        "//mcp_infra:flat_tool",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/testing:simple_servers",
+        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "matchers",
+    srcs = ["matchers.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:tool_provider",
+        "//openai_utils:model",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+py_library(
+    name = "openai_mock",
+    srcs = ["openai_mock.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "responses",
+    srcs = ["responses.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":__init__",
+        "//mcp_infra:mounted",
+        "//mcp_infra:naming",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//openai_utils:builders",
+        "//openai_utils:model",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "steps",
+    srcs = ["steps.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":__init__",
+        "//mcp_infra:prefix",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+        "@pypi//pydantic",
+        "@pypi//pyhamcrest",
+    ],
 )

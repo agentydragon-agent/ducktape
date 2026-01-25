@@ -1,21 +1,16 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "shared",
-    srcs = [
-        "config_file.py",
-        "configuration.py",
-        "constants.py",
-        "env.py",
-        "error_handling.py",
-        "fixtures.py",
-        "git_utils.py",
-        "github_models.py",
-        "models.py",
-        "protocol.py",
-    ],
-    imports = ["../.."],
-    visibility = ["//wt:__subpackages__"],
+    name = "config_file",
+    srcs = ["config_file.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "configuration",
+    srcs = ["configuration.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//click",
         "@pypi//pydantic",
@@ -23,16 +18,75 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_shared",
-    srcs = [
-        "test_layering.py",
-        "test_style.py",
-    ],
-    main = "test_layering.py",
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "error_handling",
+    srcs = ["error_handling.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//wt/testing",
-        "@pypi//pytest",
+        ":configuration",
+        ":github_models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "git_utils",
+    srcs = ["git_utils.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "github_models",
+    srcs = ["github_models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_layering",
+    srcs = ["test_layering.py"],
+    deps = [
+        "//wt/testing:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_style",
+    srcs = ["test_style.py"],
+    deps = [
+        "//wt/testing:conftest",
         "@pypi//pytest_bazel",
     ],
 )

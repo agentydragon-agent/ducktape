@@ -1,13 +1,13 @@
 """Agent server E2E tests (manual, require Playwright)."""
 
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 # Common E2E test dependencies (only what's actually needed)
 _E2E_COMMON_DEPS = [
     "//agent_core_testing",
     "@pypi//pytest",
     "@pypi//pytest_bazel",
-    "@pypi//pytest_asyncio",
+    "@pypi//pytest_asyncio",  # keep
     "@pypi//playwright",
 ]
 
@@ -17,56 +17,96 @@ _E2E_TEST_SUPPORT = [
 
 py_test(
     name = "test_abort",
-    srcs = _E2E_TEST_SUPPORT + ["test_abort.py"],
+    srcs = ["test_abort.py"],
     imports = ["../.."],
     tags = ["manual"],
-    deps = _E2E_COMMON_DEPS,
+    deps = [
+        ":conftest",
+        "//agent_core_testing:__init__",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
     name = "test_approvals",
-    srcs = _E2E_TEST_SUPPORT + ["test_approvals.py"],
+    srcs = ["test_approvals.py"],
     imports = ["../.."],
     tags = ["manual"],
-    deps = _E2E_COMMON_DEPS + [
-        "//mcp_infra",
+    deps = [
+        ":conftest",
+        "//agent_core_testing:__init__",
+        "//mcp_infra:constants",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
     name = "test_notifications_handler",
-    srcs = _E2E_TEST_SUPPORT + ["test_notifications_handler.py"],
+    srcs = ["test_notifications_handler.py"],
     imports = ["../.."],
     tags = ["manual"],
-    deps = _E2E_COMMON_DEPS + [
-        "//agent_server/mcp/approval_policy",
-        "//agent_server/runtime",
-        "//mcp_infra",
-        "//openai_utils",
+    deps = [
+        ":conftest",
+        "//agent_core_testing:__init__",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/runtime:container",
+        "//mcp_infra:constants",
+        "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
     name = "test_proposals_reject",
-    srcs = _E2E_TEST_SUPPORT + ["test_proposals_reject.py"],
+    srcs = ["test_proposals_reject.py"],
     imports = ["../.."],
     tags = ["manual"],
-    deps = _E2E_COMMON_DEPS + [
-        "//agent_server/mcp/approval_policy",
+    deps = [
+        ":conftest",
+        "//agent_core_testing:__init__",
+        "//agent_server/mcp/approval_policy:engine",
         "//agent_server/mcp/ui",
-        "//mcp_infra",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
     name = "test_ui",
-    srcs = _E2E_TEST_SUPPORT + ["test_ui.py"],
+    srcs = ["test_ui.py"],
     imports = ["../.."],
     tags = ["manual"],
-    deps = _E2E_COMMON_DEPS + [
+    deps = [
+        ":conftest",
+        "//agent_core_testing:__init__",
         "//agent_server/mcp/ui",
-        "//mcp_infra",
+        "//mcp_infra:constants",
+        "//mcp_infra:naming",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_server:agent_types",
+        "//agent_server/server:app",
+        "//agent_server/testing:helpers",
+        "@pypi//playwright",
+        "@pypi//pytest",
     ],
 )

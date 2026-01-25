@@ -1,42 +1,17 @@
-"""MCP servers aggregate and root-level tests."""
+"""MCP servers - root-level tests."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-
-# Aggregate target for all MCP servers
-py_library(
-    name = "mcp",
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agent_server/mcp/approval_policy",
-        "//agent_server/mcp/chat",
-        "//agent_server/mcp/loop",
-        "//agent_server/mcp/matrix",
-        "//agent_server/mcp/runtime:mcp_runtime",
-        "//agent_server/mcp/ui",
-    ],
-)
-
-# Root-level mcp tests
+load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
     name = "test_chat_notifications",
     srcs = ["test_chat_notifications.py"],
     imports = ["../.."],
     deps = [
-        "//agent_server:conftest",
         "//agent_server/mcp/chat",
-        "//agent_server/testing",
-        "//mcp_infra/notifications",
-        "//mcp_infra/testing",
-        "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//mcp",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -45,18 +20,16 @@ py_test(
     srcs = ["test_chat_server.py"],
     imports = ["../.."],
     deps = [
-        "//agent_server:conftest",
         "//agent_server/mcp/chat",
-        "//agent_server/testing",
-        "//mcp_infra/stubs",
-        "//mcp_infra/testing",
-        "@pypi//fastapi",
+        "//agent_server/testing:chat_stubs",
+        "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing:fixtures",
+        "//mcp_utils",
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -65,27 +38,20 @@ py_test(
     srcs = ["test_notifications_envelope.py"],
     imports = ["../.."],
     deps = [
-        "//agent_server:conftest",
         "//agent_server/notifications",
-        "//agent_server/testing",
-        "//mcp_infra/notifications",
-        "//mcp_infra/testing",
-        "@pypi//fastapi",
-        "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/testing:notifications",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
 py_test(
     name = "test_policy_gateway_middleware",
-    srcs = [
-        "test_policy_gateway_middleware.py",
-        "//agent_server:conftest.py",
-    ],
+    srcs = ["test_policy_gateway_middleware.py"],
     data = [
         "//agent_server:load",
         "//mcp_infra/testing:python_slim_load",
@@ -93,44 +59,30 @@ py_test(
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
-        "//agent_server:conftest",
-        "//agent_server/mcp/approval_policy",
-        "//agent_server/testing",
-        "//mcp_infra/notifications",
-        "//mcp_infra/testing",
-        "@pypi//docker",
-        "@pypi//fastapi",
+        "//agent_server/mcp/approval_policy:engine",
+        "//agent_server/policies:policy_types",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
+        "//mcp_infra/enhanced:flat_mixin",
         "@pypi//fastmcp",
         "@pypi//mcp",
-        "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
 py_test(
     name = "test_policy_gateway_middleware_unit",
-    srcs = [
-        "test_policy_gateway_middleware_unit.py",
-        "//agent_server:conftest.py",
-    ],
+    srcs = ["test_policy_gateway_middleware_unit.py"],
     imports = ["../.."],
     deps = [
-        "//agent_server:conftest",
-        "//agent_server/mcp/approval_policy",
-        "//agent_server/testing",
-        "//mcp_infra/notifications",
-        "//mcp_infra/testing",
-        "@pypi//fastapi",
-        "@pypi//fastmcp",
+        "//agent_server/mcp/approval_policy:engine",
         "@pypi//mcp",
-        "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -139,18 +91,14 @@ py_test(
     srcs = ["test_stdio_notifications_envelope.py"],
     imports = ["../.."],
     deps = [
-        "//agent_server:conftest",
         "//agent_server/notifications",
-        "//agent_server/testing",
-        "//mcp_infra/notifications",
-        "//mcp_infra/testing",
-        "@pypi//fastapi",
+        "//mcp_infra:naming",
+        "//mcp_infra:prefix",
+        "//mcp_infra/compositor:notifications_buffer",
+        "//mcp_infra/testing:notifications",
         "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -159,18 +107,13 @@ py_test(
     srcs = ["test_ui_server.py"],
     imports = ["../.."],
     deps = [
-        "//agent_server:conftest",
+        "//agent_core:loop_control",
         "//agent_server/mcp/ui",
-        "//agent_server/server:handlers",
-        "//agent_server/testing",
-        "//mcp_infra/notifications",
-        "//mcp_infra/testing",
-        "@pypi//fastapi",
-        "@pypi//fastmcp",
-        "@pypi//pyhamcrest",
+        "//agent_server/server:bus",
+        "//agent_server/server:mode_handler",
+        "//mcp_infra/notifications:types",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
