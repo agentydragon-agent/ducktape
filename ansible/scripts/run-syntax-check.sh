@@ -12,6 +12,12 @@ cd "$SCRIPT_DIR/.."
 # Export SKIP_VAULT to avoid password prompts
 export ANSIBLE_LINT_SKIP_VAULT=1
 
+# Add stub roles to ANSIBLE_ROLES_PATH for syntax checking.
+# This allows syntax check to pass without installing actual Galaxy roles.
+# Stubs satisfy role dependency resolution in meta/main.yml files.
+# The default roles paths are: ./roles, ~/.ansible/roles, /usr/share/ansible/roles, /etc/ansible/roles
+export ANSIBLE_ROLES_PATH="$SCRIPT_DIR/../stubs/galaxy_roles:$SCRIPT_DIR/../roles:${ANSIBLE_ROLES_PATH:-}"
+
 # Root-level YAML files that aren't playbooks (inventory, requirements, etc.)
 EXCLUDED_FILES=("galaxy.yaml" "requirements.yaml" "inventory.yaml")
 

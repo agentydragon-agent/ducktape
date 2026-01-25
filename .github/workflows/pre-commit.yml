@@ -66,7 +66,7 @@ jobs:
       # - No official status page (github.com/ansible/galaxy/issues/3508)
       # All required collections (community.docker, community.general, community.crypto,
       # ansible.netcommon, ansible.posix) are included in the ansible package.
-      # Roles from requirements.yaml are NOT needed for syntax checking.
+      # Galaxy roles are satisfied by stub roles in ansible/stubs/galaxy_roles/ for syntax checking.
       - name: Install Ansible
         run: pip install "ansible>=10"
 
