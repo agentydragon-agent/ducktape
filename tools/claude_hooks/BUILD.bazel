@@ -16,6 +16,7 @@ py_library(
         "podman_service.py",
         "proxy_credentials.py",
         "proxy_setup.py",
+        "proxy_vars.py",
         "resources.py",
         "session_start.py",
         "streaming.py",
@@ -104,11 +105,17 @@ py_test(
 py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
+    data = [
+        # The proxy binary is spawned as a subprocess by supervisor
+        "//tools/claude_hooks/proxy:run_auth_proxy",
+    ],
     imports = ["../.."],
     tags = ["integration"],
     deps = [
         ":claude_hooks",
+        "//:runfiles",
         "//net_util",
+        "//tools/claude_hooks/testing:runfiles_util",
         "@pypi//cryptography",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -141,11 +148,13 @@ py_test(
     ],
     deps = [
         ":claude_hooks",
+        "//:runfiles",
+        "//net_util",
         "//tools/claude_hooks/testing:forwarding_tls_proxy",
+        "//tools/claude_hooks/testing:runfiles_util",
         "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 

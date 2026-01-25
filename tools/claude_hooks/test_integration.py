@@ -13,7 +13,6 @@ import os
 import signal
 import socket
 import ssl
-import sys
 import threading
 import time
 from collections.abc import Generator
@@ -29,7 +28,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from net_util.net import pick_free_port
+from runfiles import get_required_path
 from tools.claude_hooks import proxy_setup, supervisor_setup
+from tools.claude_hooks.testing import runfiles_util
 
 # =============================================================================
 # Test Fixtures: Mock TLS-Inspecting Proxy
@@ -239,12 +240,8 @@ def isolated_env(tmp_path: Path, mock_tls_proxy: MockTLSProxy, monkeypatch: pyte
     monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_DIR", str(bazel_proxy_dir))
     monkeypatch.setenv("CLAUDE_HOOKS_BAZEL_PROXY_PORT", str(test_proxy_port))
 
-    # Set CLAUDE_AUTH_PROXY_CMD so proxy_setup can run the proxy in Bazel sandbox
-    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", f"{sys.executable} -m tools.claude_hooks.proxy.run_auth_proxy")
-
-    # Set PYTHONPATH so the subprocess can find the module (Bazel sets up sys.path but not PYTHONPATH)
-    pythonpath = os.pathsep.join(sys.path)
-    monkeypatch.setenv("PYTHONPATH", pythonpath)
+    # Set CLAUDE_AUTH_PROXY_CMD to use the runfiles binary (same approach as test_e2e)
+    monkeypatch.setenv("CLAUDE_AUTH_PROXY_CMD", str(get_required_path(runfiles_util.RUN_AUTH_PROXY)))
 
     # Set https_proxy env var pointing to mock proxy
     proxy_url = f"http://testuser:testpass@127.0.0.1:{mock_tls_proxy.port}"

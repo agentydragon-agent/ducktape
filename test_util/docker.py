@@ -9,36 +9,11 @@ from __future__ import annotations
 import os
 import subprocess
 from contextlib import suppress
-from pathlib import Path
 
 import docker
 import pytest
-from rules_python.python.runfiles import runfiles
 
-
-def get_runfiles_path(relative_path: str) -> Path:
-    """Get path to a file in Bazel runfiles.
-
-    Args:
-        relative_path: Path relative to repository root (e.g., "mcp_infra/testing/python_slim_load.sh")
-
-    Returns:
-        Absolute path to the file, either from runfiles or bazel-bin fallback.
-    """
-    r = runfiles.Create()
-    path = r.Rlocation(f"_main/{relative_path}")
-    if path:
-        return Path(path)
-
-    # Fallback: check bazel-bin for local dev (walk up to find repo root)
-    current = Path(__file__).parent
-    while current != current.parent:
-        if (current / "MODULE.bazel").exists():
-            return current / "bazel-bin" / relative_path
-        current = current.parent
-
-    # Last resort: assume 1 level up from this file
-    return Path(__file__).parent.parent / "bazel-bin" / relative_path
+import runfiles
 
 
 def load_bazel_image(load_script_path: str, image_tag: str) -> str:
@@ -54,7 +29,7 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
     Raises:
         RuntimeError: If loading the image fails.
     """
-    load_script = get_runfiles_path(load_script_path)
+    load_script = runfiles.get_required_path(f"_main/{load_script_path}")
 
     result = subprocess.run(
         [load_script],
