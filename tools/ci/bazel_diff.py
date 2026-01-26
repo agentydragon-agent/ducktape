@@ -31,15 +31,21 @@ Outputs to $GITHUB_OUTPUT:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Add repo root to path for tools.ci imports when running via uv
+_REPO_ROOT = Path(__file__).parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import os
 import re
 import subprocess
-import sys
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
 
-from bazel_query import run_query_with_file
+from tools.ci.bazel_query import run_query_with_file
 
 BAZEL_DIFF_VERSION = "12.1.1"
 BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"

@@ -15,16 +15,23 @@ Requires BAZEL_DIFF_JAR environment variable pointing to bazel-diff JAR.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Add repo root to path for tools.ci imports when running via uv
+_REPO_ROOT = Path(__file__).parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import json
 import os
 import re
 import subprocess
-from pathlib import Path
 
 import pygit2
-from bazel_query import check_bazel_intersection
-from models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
+from tools.ci.bazel_query import check_bazel_intersection
+from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
 INFRA_PATTERNS = [
