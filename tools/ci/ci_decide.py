@@ -30,7 +30,7 @@ import subprocess
 
 import pygit2
 from pydantic import BaseModel, Field
-from tools.ci.bazel_query import check_bazel_intersection
+from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
@@ -122,29 +122,7 @@ def filter_platform_incompatible(targets: list[str]) -> list[str]:
     if not targets:
         return targets
 
-    import tempfile
-
-    # Use cquery to filter - it respects target_compatible_with
-    targets_str = " ".join(targets)
-    query = f"set({targets_str})"
-
-    # cquery with --output=label only outputs compatible targets
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".query", delete_on_close=False) as f:
-        f.write(query)
-        f.flush()
-        result = subprocess.run(
-            ["bazelisk", "cquery", f"--query_file={f.name}", "--output=label"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-
-    if result.returncode != 0:
-        # cquery failed - fall back to returning all targets
-        print(f"Warning: cquery failed, skipping platform filter: {result.stderr[:200]}")
-        return targets
-
-    compatible = [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    compatible = filter_compatible_targets(targets)
     excluded = len(targets) - len(compatible)
     if excluded:
         print(f"Filtered out {excluded} platform-incompatible targets")
