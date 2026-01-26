@@ -44,6 +44,13 @@ INFRA_PATTERNS = [
     r"^WORKSPACE",
 ]
 
+# macOS-only packages that should be excluded from Linux CI runs
+# These use seatbelt (macOS sandbox) and won't build on Linux
+MACOS_ONLY_PATTERNS = [
+    r"^//sandboxed_jupyter[:/]",
+    r"^//mcp_infra/seatbelt[:/]",
+]
+
 
 class CIDecision(BaseModel):
     """Result of CI decision computation."""
@@ -112,6 +119,19 @@ def has_infra_changes(changed_files: list[str]) -> bool:
     """Check if any changed files match infrastructure patterns."""
     compiled = [re.compile(p) for p in INFRA_PATTERNS]
     return any(r.match(f) for r in compiled for f in changed_files)
+
+
+def filter_platform_incompatible(targets: list[str]) -> list[str]:
+    """Filter out targets that are incompatible with the CI platform (Linux).
+
+    GitHub Actions runners are Linux, so we exclude macOS-only targets.
+    """
+    compiled = [re.compile(p) for p in MACOS_ONLY_PATTERNS]
+    filtered = [t for t in targets if not any(r.match(t) for r in compiled)]
+    excluded = len(targets) - len(filtered)
+    if excluded:
+        print(f"Filtered out {excluded} macOS-only targets")
+    return filtered
 
 
 def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
@@ -261,6 +281,8 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
         print("No Bazel targets affected")
     else:
         print_truncated(f"Found {len(targets)} affected targets", targets)
+        # Filter out platform-incompatible targets for Linux CI
+        targets = filter_platform_incompatible(targets)
         if infra_changed:
             all_targets = True
 
