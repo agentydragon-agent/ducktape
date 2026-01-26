@@ -177,6 +177,8 @@ py_test(
     srcs = ["test_progress_bar.py"],
     deps = [
         ":__init__",
+        ":conftest",
+        ":progress_bar",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

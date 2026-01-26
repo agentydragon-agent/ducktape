@@ -29,6 +29,7 @@ py_library(
         "//gatelet/server/auth:dependencies",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
+        "@pypi//python_multipart",
         "@pypi//sqlalchemy",
     ],
 )

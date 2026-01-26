@@ -274,6 +274,7 @@ py_test(
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_core_testing:__init__",
+        "//agent_core_testing:responses",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/display:event_renderer",

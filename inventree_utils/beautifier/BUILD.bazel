@@ -31,7 +31,10 @@ py_library(
     name = "fix_lcsc_links",
     srcs = ["fix_lcsc_links.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//inventree"],
+    deps = [
+        ":cli_util",
+        "@pypi//inventree",
+    ],
 )
 
 py_library(

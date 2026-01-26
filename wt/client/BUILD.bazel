@@ -1,3 +1,12 @@
+# Layering: Client code must not depend on server code (//wt/server:*).
+# Both layers may depend on shared code (//wt/shared:*).
+# This visibility constraint enforces the layering at build time.
+# See also: wt/server/BUILD.bazel for the server-side constraint.
+package(default_visibility = [
+    "//wt/client:__subpackages__",
+    "//wt/testing:__pkg__",
+])
+
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -15,19 +24,16 @@ py_library(
 py_library(
     name = "__init__",
     srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "cd_utils",
     srcs = ["cd_utils.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "handlers",
     srcs = ["handlers.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":cd_utils",
         "@pypi//click",
@@ -38,14 +44,12 @@ py_library(
 py_library(
     name = "shell_utils",
     srcs = ["shell_utils.py"],
-    visibility = ["//:__subpackages__"],
     deps = ["@pypi//click"],
 )
 
 py_library(
     name = "view_formatter",
     srcs = ["view_formatter.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//click",
         "@pypi//colorama",
@@ -56,7 +60,6 @@ py_library(
 py_library(
     name = "wt_client",
     srcs = ["wt_client.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//wt/shared:error_handling",
         "@pypi//click",

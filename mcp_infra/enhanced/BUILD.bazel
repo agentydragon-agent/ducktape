@@ -88,6 +88,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -99,6 +100,7 @@ py_test(
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -109,6 +111,7 @@ py_test(
         ":server",
         "//mcp_infra:urls",
         "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -119,5 +122,6 @@ py_test(
         ":server",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

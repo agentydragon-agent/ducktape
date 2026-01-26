@@ -145,6 +145,20 @@
       tags: [nvidia, docker, gpu]
       changed_when: true
 
+    - name: Install podman
+      ansible.builtin.apt:
+        name:
+          - podman
+        state: present
+      become: true
+      tags: [podman, gpu]
+
+    - name: Configure podman to use NVIDIA runtime (CDI)
+      ansible.builtin.command: nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+      become: true
+      tags: [nvidia, podman, gpu]
+      changed_when: true
+
     # pnpm is installed in dev_env-user.yml via github_release_install
     # Configuration is managed via dotfiles/npmrc
 
