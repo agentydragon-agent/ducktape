@@ -5,11 +5,11 @@ from pathlib import Path
 import pygit2
 import pytest
 
-# Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from mcp_infra.testing.fixtures import *  # noqa: F403
-
 from git_commit_ai.testing import git_repo_utils
 from git_commit_ai.testing.git_repo_utils import RepoHelper
+
+# Import fixtures from testing modules (replaces deprecated pytest_plugins)
+from mcp_infra.testing.fixtures import *  # noqa: F403
 
 
 @pytest.fixture

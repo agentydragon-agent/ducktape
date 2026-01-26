@@ -142,6 +142,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//git_commit_ai/testing:git_repo_utils",
         "//mcp_infra/testing:fixtures",
         "@pypi//pygit2",
         "@pypi//pytest",
@@ -163,10 +164,12 @@ py_test(
 py_test(
     name = "test_editor",
     srcs = ["test_editor.py"],
+    data = ["__snapshots__/test_editor.ambr"],
     deps = [
         ":conftest",
         ":editor",
         "@pypi//pytest_bazel",
+        "@pypi//syrupy",
     ],
 )
 
@@ -175,6 +178,7 @@ py_test(
     srcs = ["test_stage_all.py"],
     deps = [
         ":conftest",
+        ":git_commit_ai",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],

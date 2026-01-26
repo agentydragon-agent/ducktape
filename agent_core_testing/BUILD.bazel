@@ -127,7 +127,7 @@ py_library(
     srcs = ["responses.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
+        ":echo_server",
         "//mcp_infra:mounted",
         "//mcp_infra:naming",
         "//mcp_infra/exec:docker",

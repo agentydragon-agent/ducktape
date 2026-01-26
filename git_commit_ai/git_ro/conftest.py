@@ -6,6 +6,12 @@ import pygit2
 import pytest
 
 from git_commit_ai.git_ro.server import GitRoServer
+from mcp_infra.testing.fixtures import *  # noqa: F403
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Configure pytest-asyncio auto mode."""
+    config.option.asyncio_mode = "auto"
 
 
 def _ensure_identity(repo: pygit2.Repository) -> None:

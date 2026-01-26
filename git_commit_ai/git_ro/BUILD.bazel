@@ -39,8 +39,10 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":server",
+        "//mcp_infra/testing:fixtures",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )
 

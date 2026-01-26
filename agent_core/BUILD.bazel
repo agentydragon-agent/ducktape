@@ -153,9 +153,12 @@ py_library(
         ":agent",
         ":loop_control",
         ":tool_provider",
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:fixtures",
+        "//agent_core_testing:openai_mock",
+        "//agent_core_testing:responses",
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -249,7 +252,8 @@ py_test(
         ":handler",
         ":loop_control",
         ":turn_limit",
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:assertions",
+        "//agent_core_testing:responses",
         "//mcp_infra:prefix",
         "//mcp_infra/bootstrap:__init__",
         "//openai_utils:model",
