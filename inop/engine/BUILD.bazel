@@ -1,0 +1,20 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "optimizer",
+    srcs = ["optimizer.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "runner_factory",
+    srcs = ["runner_factory.py"],
+    visibility = ["//:__subpackages__"],
+)

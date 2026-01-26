@@ -4,7 +4,7 @@ import shutil
 import pytest
 import pytest_bazel
 
-from ._markers import REQUIRES_SANDBOX_EXEC
+from sandboxed_jupyter._markers import REQUIRES_SANDBOX_EXEC
 
 # Run these stdio-handshake tests in a dedicated xdist group to avoid flakiness
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell, pytest.mark.xdist_group("sj_stdio")]

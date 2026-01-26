@@ -1,14 +1,26 @@
 """MCP servers - root-level tests."""
 
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server/mcp:__subpackages__"],
+    deps = [
+        "//mcp_infra/testing:fixtures",
+        "@pypi//pytest",
+    ],
+)
 
 py_test(
     name = "test_chat_notifications",
     srcs = ["test_chat_notifications.py"],
     imports = ["../.."],
     deps = [
+        ":conftest",
         "//agent_server/mcp/chat",
-        "//mcp_infra/testing:fixtures",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pytest_asyncio",  # keep

@@ -11,6 +11,8 @@ py_binary(
     srcs = ["server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":token_counter",
+        ":token_scheme",
         "@pypi//fastapi",
         "@pypi//jinja2",
         "@pypi//markdown",

@@ -6,7 +6,7 @@ import pytest_bazel
 sys.path.append(str(Path(__file__).parent))
 from django.utils.safestring import SafeString
 
-from .custom_tags import ParametersProcessor, shorten
+from inventree_utils.rai_plugin.templatetags.custom_tags import ParametersProcessor, shorten
 
 
 def test_parameters_processor():

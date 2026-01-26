@@ -36,7 +36,10 @@ py_library(
     name = "git_manager",
     srcs = ["git_manager.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pygit2"],
+    deps = [
+        "//wt/shared:git_utils",
+        "@pypi//pygit2",
+    ],
 )
 
 py_library(
@@ -158,6 +161,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//wt/shared:error_handling",
+        "//wt/shared:models",
         "@pypi//psutil",
         "@pypi//pygit2",
     ],

@@ -1,26 +1,28 @@
-# OpenCode configuration for local Ollama models
+# OpenCode configuration for local LLM inference (Ollama + vLLM)
 #
 # Hardware: 2x RTX 5090 (64GB total VRAM)
 #
-# Query model capabilities via local Ollama API (must pull model first):
-#   curl -s http://localhost:11434/api/show -d '{"name": "MODEL"}' | jq '.capabilities'
-#   Returns: ["completion", "tools", "thinking"] or subset
-# No remote registry API for capabilities - see github.com/ollama/ollama/issues/10097
+# RECOMMENDED: vLLM with AWQ quantization
+#   Start: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
+#   Model: qwen3-coder-awq (262K context, 8.5 GiB/GPU, FP8 KV cache)
+#
+# Critical vLLM fixes (see qwen3-coder-vram-analysis.md):
+#   - --max-num-seqs 32 (default 256 causes OOM during warmup)
+#   - --kv-cache-dtype fp8 (doubles context capacity)
+#   - Don't use --quantization awq (model auto-detects compressed-tensors)
+#
+# Two inference backends:
+#   - vLLM (port 8000): Tensor parallelism, 262K context, recommended
+#   - Ollama (port 11434): Easy setup, GGUF quantization
 #
 # Capability matrix:
-#   Model                    | Reasoning | Tools | Notes
-#   -------------------------|-----------|-------|---------------------------
-#   gpt-oss-*                | ✓         | ✓     | DISABLED - OpenCode ZodError (issue #7439)
-#   qwen3-coder-30b-32k      | ✓         | ✓     | MoE (3.3B active), both work!
-#   qwen3:32b                | ✓         | ~     | Tools buggy in Ollama
-#   llama3.3:70b             | ✗         | ✓     | Reliable tools, no thinking
-#   llama3.1-abliterated:70b | ✗         | ✓     | Uncensored, reliable tools
-#   deepseek-r1:32b/70b      | ✓         | ✗     | Disabled - no tool support
-#
-# Context limits for 70B Q4 on 64GB:
-# - Model weights: ~40GB, KV cache budget: ~24GB
-# - Llama 3 70B KV: ~0.32 MB/token → max ~75k tokens
-# - Safe practical limit: 32k-64k (leaving headroom for activations)
+#   Model                    | Reasoning | Tools | Context | Notes
+#   -------------------------|-----------|-------|---------|---------------------------
+#   qwen3-coder-awq (vLLM)   | ✓         | ✓     | 262k    | AWQ 4-bit, FP8 KV, RECOMMENDED
+#   qwen3-coder-long         | ✓         | ✓     | 131k    | Ollama, MoE (3.3B active)
+#   qwen3-coder-30b-32k      | ✓         | ✓     | 32k     | Ollama, lower VRAM
+#   llama3.3:70b             | ✗         | ✓     | 32k     | Reliable tools, no thinking
+#   llama3.1-abliterated:70b | ✗         | ✓     | 32k     | Uncensored, reliable tools
 {
   config,
   pkgs,
@@ -33,6 +35,35 @@ let
   opencodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
     provider = {
+      # === vLLM: Tensor parallelism for better throughput ===
+      # Start server: ~/code/ducktape/experimental/local-llm/start-vllm-awq.sh
+      vllm = {
+        npm = "@ai-sdk/openai-compatible";
+        name = "vLLM (local, tensor parallel)";
+        options = {
+          baseURL = "http://0.0.0.0:8000/v1";
+        };
+        models = {
+          # Qwen3-Coder 30B AWQ 4-bit with tensor parallelism across 2x 5090
+          # AWQ quantization: ~8.5 GB/GPU weights (vs 28.5 GB bf16)
+          # FP8 KV cache: ~23 GB available per GPU = 262K context
+          # See: experimental/local-llm/qwen3-coder-vram-analysis.md
+          "qwen3-coder-awq" = {
+            name = "Qwen3-Coder 30B AWQ (vLLM)";
+            reasoning = true;
+            tool_call = true;
+            interleaved = {
+              field = "reasoning_content";
+            };
+            limit = {
+              context = 262144;
+              output = 8192;
+            };
+          };
+        };
+      };
+
+      # === Ollama: Easy setup, GGUF quantization ===
       ollama = {
         # NOTE: gpt-oss models have streaming response format issues with OpenCode
         # The finishReason is returned as object instead of string
@@ -73,9 +104,28 @@ let
 
           # === Qwen3-Coder - BOTH reasoning AND reliable tool calling ===
 
-          # Qwen3-Coder 30B - best for agentic work (reasoning + tools both work)
+          # Qwen3-Coder 30B with 131k context - recommended for large codebases
+          # Q4_K_M (19GB) + FP16 KV cache supports ~218k context on 2x5090
+          # See: experimental/local-llm/qwen3-coder-vram-analysis.md
+          # Create variant:
+          #   cd ~/code/ducktape/experimental/local-llm
+          #   ollama create qwen3-coder-long -f Modelfile.qwen3-coder-long
+          "qwen3-coder-long" = {
+            name = "Qwen3-Coder 30B 131k (local)";
+            reasoning = true;
+            tool_call = true;
+            interleaved = {
+              field = "reasoning_content";
+            };
+            limit = {
+              context = 131072;
+              output = 8192;
+            };
+          };
+
+          # Qwen3-Coder 30B with 32k context - smaller memory footprint
           # Unsloth fixed tool calling in Aug 2025
-          # IMPORTANT: Create variant first:
+          # Create variant:
           #   ollama run qwen3-coder:30b
           #   /set parameter num_ctx 32768
           #   /save qwen3-coder-30b-32k

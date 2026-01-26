@@ -6,8 +6,8 @@ import pytest
 import pytest_bazel
 from starlette.testclient import TestClient
 
-from .server import app
-from .token_scheme import N_TAGS, TokenScheme
+from llm.html.llm_html.server import app
+from llm.html.llm_html.token_scheme import N_TAGS, TokenScheme
 
 
 @pytest.fixture

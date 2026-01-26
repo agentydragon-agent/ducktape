@@ -34,6 +34,7 @@ py_library(
     name = "error_handling",
     srcs = ["error_handling.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":constants"],
 )
 
 py_library(

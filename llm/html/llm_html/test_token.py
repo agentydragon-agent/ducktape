@@ -11,8 +11,8 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel, Field
 
-from .server import TIMEZONE
-from .token_scheme import TokenScheme, VerificationError
+from llm.html.llm_html.server import TIMEZONE
+from llm.html.llm_html.token_scheme import TokenScheme, VerificationError
 
 SECRET = b"hunter2"
 
