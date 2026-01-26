@@ -8,6 +8,33 @@
 let
   codexSettings = {
     model = "gpt-5.1-codex";
+
+    # Local model providers for GPT-OSS
+    model_providers = {
+      ollama = {
+        name = "Ollama Local";
+        base_url = "http://localhost:11434/v1";
+      };
+      vllm = {
+        name = "vLLM Local";
+        base_url = "http://localhost:8000/v1";
+      };
+    };
+
+    # Profiles for local models
+    profiles = {
+      # GPT-OSS-20B via Ollama (simpler setup)
+      gpt-oss-ollama = {
+        model_provider = "ollama";
+        model = "gpt-oss:20b"; # 128K native context
+      };
+      # GPT-OSS-20B via vLLM (better throughput)
+      gpt-oss-vllm = {
+        model_provider = "vllm";
+        model = "gpt-oss-20b";
+      };
+    };
+
     features = {
       streamable_shell = true;
       rmcp_client = true;

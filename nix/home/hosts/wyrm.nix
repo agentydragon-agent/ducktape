@@ -12,6 +12,7 @@
   imports = [
     ../home.nix
     ../opencode
+    ../codex
     ../modules/popos-bazel.nix
   ];
 
@@ -49,6 +50,7 @@
     PNPM_HOME = lib.mkForce "/wyrmhdd/pnpm";
     BUN_INSTALL = "/wyrmhdd/bun";
     UV_CACHE_DIR = "/wyrmhdd/uv-cache";
+    HF_HOME = "/wyrmhdd/huggingface";
   };
 
   # Bazel output directory on HDD (avoids filling up root SSD)
