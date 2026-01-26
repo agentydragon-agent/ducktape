@@ -4,7 +4,6 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "agent_core_testing",
     srcs = [
-        "__init__.py",
         "assertions.py",
         "echo_server.py",
         "fixtures.py",

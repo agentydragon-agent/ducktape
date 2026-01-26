@@ -84,7 +84,8 @@ py_test(
     deps = [
         ":__init__",
         ":conftest",
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:responses",
+        "//agent_core_testing:steps",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

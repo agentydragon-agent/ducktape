@@ -70,6 +70,7 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":progress_bar"],
 )
 
 py_library(
@@ -106,6 +107,10 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":config",
+        ":diff_tree",
+        ":parser",
+        ":progress_bar",
+        ":tree",
         "@pypi//pytest",
         "@pypi//rich",
     ],
@@ -114,7 +119,9 @@ py_library(
 py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
+    imports = [".."],
     deps = [
+        ":conftest",
         ":difftree_lib",
         "@pypi//click",
         "@pypi//pytest",
@@ -125,6 +132,7 @@ py_test(
 py_test(
     name = "test_config",
     srcs = ["test_config.py"],
+    imports = [".."],
     deps = [
         ":config",
         "@pypi//pytest",
@@ -135,8 +143,10 @@ py_test(
 py_test(
     name = "test_diff_tree",
     srcs = ["test_diff_tree.py"],
+    imports = [".."],
     deps = [
         ":config",
+        ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
@@ -146,6 +156,7 @@ py_test(
 py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
+    imports = [".."],
     deps = [
         ":config",
         ":conftest",
@@ -160,6 +171,7 @@ py_test(
 py_test(
     name = "test_parser",
     srcs = ["test_parser.py"],
+    imports = [".."],
     deps = [
         ":conftest",
         ":parser",
@@ -170,6 +182,7 @@ py_test(
 py_test(
     name = "test_progress_bar",
     srcs = ["test_progress_bar.py"],
+    imports = [".."],
     deps = [
         ":conftest",
         ":progress_bar",
@@ -181,18 +194,24 @@ py_test(
 py_test(
     name = "test_snapshots",
     srcs = ["test_snapshots.py"],
+    data = ["__snapshots__/test_snapshots.ambr"],
+    imports = [".."],
     deps = [
         ":config",
+        ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//syrupy",
     ],
 )
 
 py_test(
     name = "test_tree",
     srcs = ["test_tree.py"],
+    imports = [".."],
     deps = [
         ":config",
+        ":conftest",
         ":parser",
         ":tree",
         "@pypi//pyhamcrest",

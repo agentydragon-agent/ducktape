@@ -15,6 +15,7 @@ py_library(
     name = "cli_util",
     srcs = ["cli_util.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":iter_util"],
 )
 
 py_library(

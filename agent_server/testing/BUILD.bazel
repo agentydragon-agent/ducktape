@@ -66,7 +66,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core_testing:__init__",
+        "//agent_core_testing:responses",
+        "//agent_core_testing:steps",
         "//agent_server/mcp/approval_policy:engine",
         "//agent_server/mcp/ui",
         "//mcp_infra:constants",

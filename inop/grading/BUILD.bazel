@@ -12,7 +12,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":strategies",
-        "//inop:__init__",
         "//inop:config",
         "//openai_utils:model",
         "//openai_utils:types",
@@ -24,7 +23,6 @@ py_library(
     srcs = ["strategies.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//inop:__init__",
         "//inop:config",
     ],
 )
