@@ -133,6 +133,15 @@
         name: system_inspection_nopasswd
       tags: [sudo, system]
 
+    # Install resolvconf before tailscale so MagicDNS works automatically
+    # Proxmox uses isc-dhcp-client without systemd-resolved; resolvconf
+    # provides the integration layer that tailscale needs to manage DNS
+    - name: Install resolvconf for Tailscale MagicDNS integration
+      ansible.builtin.apt:
+        name: resolvconf
+        state: present
+      tags: [tailscale, dns]
+
     - name: Apply Tailscale client role
       ansible.builtin.import_role:
         name: tailscale_client
