@@ -234,6 +234,7 @@ py_test(
     ],
     deps = [
         ":splits",
+        "//props:conftest",
         "//props/db:config",
         "//props/db:models",
         "//props/db:session",

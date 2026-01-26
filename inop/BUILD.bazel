@@ -104,7 +104,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//agent_core_testing:__init__"],
+    deps = ["//agent_core_testing:responses"],
 )
 
 py_test(
@@ -132,8 +132,8 @@ py_test(
     name = "test_file_truncation",
     srcs = ["test_file_truncation.py"],
     deps = [
-        ":__init__",
         ":conftest",
+        "//inop/prompting:truncation_utils",
         "@pypi//pytest_bazel",
         "@pypi//tiktoken",
     ],

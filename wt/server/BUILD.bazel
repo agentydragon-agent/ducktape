@@ -52,7 +52,10 @@ py_library(
     name = "github_client",
     srcs = ["github_client.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pygithub"],
+    deps = [
+        "//wt/shared:env",
+        "@pypi//pygithub",
+    ],
 )
 
 py_library(

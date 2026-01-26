@@ -115,6 +115,7 @@ py_test(
         ":conftest",
         "@pypi//click",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -126,6 +127,7 @@ py_test(
         ":claude_linter",
         ":conftest",
         "@pypi//click",
+        "@pypi//pytest_bazel",
     ],
 )
 

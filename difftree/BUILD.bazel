@@ -153,7 +153,12 @@ py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     deps = [
-        ":__init__",
+        ":config",
+        ":conftest",
+        ":diff_tree",
+        ":parser",
+        ":progress_bar",
+        ":tree",
         "@pypi//pytest_bazel",
     ],
 )

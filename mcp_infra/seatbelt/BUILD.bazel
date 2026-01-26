@@ -17,6 +17,10 @@ py_library(
     name = "runner",
     srcs = ["runner.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":compile",
+        ":model",
+    ],
 )
 
 py_library(
