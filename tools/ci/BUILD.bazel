@@ -9,14 +9,14 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "bazel_query",
     srcs = ["bazel_query.py"],
-    imports = ["../.."],
+    imports = ["."],
     visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = ["../.."],
+    imports = ["."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pydantic",
@@ -29,7 +29,7 @@ py_library(
 py_library(
     name = "bazel_diff",
     srcs = ["bazel_diff.py"],
-    imports = ["../.."],
+    imports = ["."],
     visibility = ["//:__subpackages__"],
     deps = [":bazel_query"],
 )
@@ -38,7 +38,7 @@ py_library(
     name = "ci_decide",
     srcs = ["ci_decide.py"],
     data = ["workflows.yaml"],
-    imports = ["../.."],
+    imports = ["."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":bazel_query",
@@ -52,7 +52,7 @@ py_library(
     name = "generate_ci",
     srcs = ["generate_ci.py"],
     data = ["workflows.yaml"],
-    imports = ["../.."],
+    imports = ["."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":models",
