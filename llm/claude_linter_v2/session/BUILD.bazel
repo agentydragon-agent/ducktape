@@ -1,0 +1,27 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "manager",
+    srcs = ["manager.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "state",
+    srcs = ["state.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "violations",
+    srcs = ["violations.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)

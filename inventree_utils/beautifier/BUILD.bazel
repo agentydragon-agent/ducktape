@@ -6,6 +6,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":cli_util",
+        ":inventree_util",
+        ":lcsc_util",
         "@pypi//inventree",
         "@pypi//tqdm",
     ],
@@ -35,6 +37,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":cli_util",
+        ":inventree_util",
+        ":lcsc_util",
         "@pypi//inventree",
     ],
 )

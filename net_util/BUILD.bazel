@@ -6,7 +6,6 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "net_util",
     srcs = [
-        "__init__.py",
         "docker.py",
         "net.py",
     ],
@@ -21,12 +20,6 @@ py_library(
 ruff_test(
     name = "ruff",
     srcs = [":net_util"],
-)
-
-py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(

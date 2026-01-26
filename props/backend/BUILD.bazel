@@ -1,6 +1,3 @@
-# gazelle:exclude routes
-# Props has complex inter-package dependencies that are manually configured
-
 """Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
@@ -8,71 +5,63 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/lint:linters.bzl", "ruff_test")
 
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+#
+# Per-file targets in this directory:
+#   :app, :auth, :cli, :export_schema
+# Route targets in routes/:
+#   //props/backend/routes:eval, :ground_truth, :llm, :registry, :runs, :stats
+
+# =============================================================================
+# Per-file targets
+# =============================================================================
+
 py_library(
-    name = "backend",
-    srcs = [
-        "__init__.py",
-        "app.py",
-        "auth.py",
-        "cli.py",
-        "export_schema.py",
-        "routes/__init__.py",
-        "routes/eval.py",
-        "routes/ground_truth.py",
-        "routes/llm.py",
-        "routes/registry.py",
-        "routes/runs.py",
-        "routes/stats.py",
-    ],
+    name = "auth",
+    srcs = ["auth.py"],
     imports = ["../.."],
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
     deps = [
-        "//cli_util:decorators",
-        "//cli_util:logging",
-        "//mcp_infra:prefix",
-        "//mcp_utils",
-        "//openai_utils:model",
-        # props orchestration modules
-        "//props/orchestration:agent_registry",
-        "//props/core:agent_types",
-        "//props/core:agent_workspace",
-        "//props/core:eval_api_models",
-        "//props/core:exceptions",
-        "//props/core:ids",
-        "//props/core:oci_utils",
-        "//props/core:splits",
-        "//props/cli:common_options",
-        "//props/cli:resources",
-        "//props/critic:exceptions",
-        "//props/critic_dev:shared",
         "//props/db:config",
-        "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
-        "//props/orchestration:grader_supervisor",
-        "//props/core/models:examples",
-        "//props/core/models:true_positive",
-        "@pypi//aiodocker",
-        "@pypi//asyncpg",
         "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//mcp",
-        "@pypi//openai",
         "@pypi//psycopg",
-        "@pypi//pydantic",
         "@pypi//starlette",
-        "@pypi//typer",
-        "@pypi//uvicorn",
     ],
 )
 
-py_binary(
-    name = "backend_cli",
-    srcs = ["cli.py"],
-    main = "cli.py",
-    visibility = ["//props/frontend:__pkg__"],
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
+        ":auth",
+        "//cli_util:logging",
+        "//props/backend/routes:eval",
+        "//props/backend/routes:ground_truth",
+        "//props/backend/routes:llm",
+        "//props/backend/routes:registry",
+        "//props/backend/routes:runs",
+        "//props/backend/routes:stats",
+        "//props/cli:resources",
+        "//props/orchestration:agent_registry",
+        "//props/orchestration:grader_supervisor",
+        "@pypi//aiodocker",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":app",
         "//cli_util:logging",
         "//props/cli:common_options",
         "@pypi//typer_slim",
@@ -80,25 +69,60 @@ py_binary(
     ],
 )
 
-py_binary(
+py_library(
     name = "export_schema",
+    srcs = ["export_schema.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":app"],
+)
+
+# =============================================================================
+# Binaries
+# =============================================================================
+
+py_binary(
+    name = "backend_cli",
+    srcs = ["cli.py"],
+    main = "cli.py",
+    visibility = ["//props/frontend:__pkg__"],
+    deps = [":cli"],
+)
+
+py_binary(
+    name = "export_schema_bin",
     srcs = ["export_schema.py"],
     main = "export_schema.py",
     visibility = ["//:__subpackages__"],
-    deps = [":app"],
+    deps = [":export_schema"],
 )
 
 genrule(
     name = "openapi_schema",
     outs = ["openapi.json"],
-    cmd = "$(location :export_schema) > $@",
-    tools = [":export_schema"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
     visibility = ["//props/frontend:__pkg__"],
 )
 
+# =============================================================================
+# Linting
+# =============================================================================
+
 ruff_test(
     name = "ruff",
-    srcs = [":backend"],
+    srcs = [
+        ":app",
+        ":auth",
+        ":cli",
+        ":export_schema",
+        "//props/backend/routes:eval",
+        "//props/backend/routes:ground_truth",
+        "//props/backend/routes:llm",
+        "//props/backend/routes:registry",
+        "//props/backend/routes:runs",
+        "//props/backend/routes:stats",
+    ],
 )
 
 # =============================================================================
@@ -131,41 +155,4 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["props-backend:latest"],
-)
-
-py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "app",
-    srcs = ["app.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":__init__",
-        ":backend",
-        "//cli_util:logging",
-        "//props/cli:resources",
-        "//props/orchestration:agent_registry",
-        "//props/orchestration:grader_supervisor",
-        "@pypi//aiodocker",
-        "@pypi//asyncpg",
-        "@pypi//fastapi",
-    ],
-)
-
-py_library(
-    name = "auth",
-    srcs = ["auth.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//props/db:config",
-        "//props/db:models",
-        "//props/db:session",
-        "@pypi//fastapi",
-        "@pypi//psycopg",
-        "@pypi//starlette",
-    ],
 )

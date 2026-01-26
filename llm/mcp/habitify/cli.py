@@ -21,8 +21,12 @@ import habitify
 from habitify.habitify_client import HabitifyClient, HabitifyError
 from habitify.server import create_habitify
 from habitify.types import Status
-from habitify.utils import format_rich_status, get_api_key_from_param_or_env, get_status_color
-from habitify.utils.cli_utils import resolve_habit_for_cli
+from habitify.utils.cli_utils import (
+    format_rich_status,
+    get_api_key_from_param_or_env,
+    get_status_color,
+    resolve_habit_for_cli,
+)
 
 # Load environment variables
 load_dotenv()

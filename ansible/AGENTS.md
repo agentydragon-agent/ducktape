@@ -11,9 +11,3 @@ pre-commit run --all-files
 This automatically runs `prettier`, `ansible-playbook --syntax-check`, and other checks.
 
 Do not ship un-checked YAML. If any command fails, fix the reported issues first, then rerun until they succeed.
-
-**Optional**: For a targeted `ansible-lint` pass on specific files, use:
-
-```bash
-python ansible/tools/run_ansible_lint.py
-```

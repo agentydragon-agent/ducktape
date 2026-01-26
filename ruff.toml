@@ -144,6 +144,7 @@ known-first-party = [
     "py_detectors",
     "rspcache",
     "sandboxed_jupyter",
+    "sysrw",
     "tana",
     "tana_export",
     "tests",  # test packages (until colocated under main packages)

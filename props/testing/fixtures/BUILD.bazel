@@ -7,7 +7,6 @@ package(default_testonly = True)
 py_library(
     name = "fixtures",
     srcs = [
-        "__init__.py",
         "db.py",
         "e2e.py",
         "e2e_container.py",
@@ -20,7 +19,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core_testing",
+        "//agent_core_testing:openai_mock",
         "//mcp_infra:prefix",
         "//openai_utils:model",
         # props orchestration modules
@@ -49,7 +48,8 @@ py_library(
         # props.testing for fake_openai_server
         "//props/testing:fake_openai_server",
         # props.backend for e2e_container (AuthMiddleware, llm routes)
-        "//props/backend",
+        "//props/backend:auth",
+        "//props/backend/routes:llm",
         # test_util for load_bazel_image
         "//test_util",
         "@pypi//aiodocker",
@@ -61,19 +61,6 @@ py_library(
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
         "@pypi//uvicorn",
-    ],
-)
-
-py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":db",
-        ":e2e",
-        ":ground_truth",
-        ":runs",
-        ":scopes",
     ],
 )
 
@@ -112,8 +99,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//openai_utils:model",
-        "//props/backend",
-        "//props/backend:__init__",
+        "//props/backend:auth",
+        "//props/backend/routes:llm",
         "//props/db:config",
         "//props/orchestration:agent_registry",
         "//props/testing:fake_openai_server",

@@ -17,7 +17,7 @@ from props.db.examples import Example
 from props.db.models import AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
-from props.testing.fixtures import make_critic_run
+from props.testing.fixtures.runs import make_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

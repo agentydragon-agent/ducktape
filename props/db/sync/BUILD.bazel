@@ -38,6 +38,7 @@ py_library(
     visibility = ["//props/db:__subpackages__"],
     deps = [
         ":_models",
+        ":_yaml_models",
         "//props/core:ids",
         "@pypi//pyyaml",
     ],
@@ -97,7 +98,6 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        "//props:conftest",
         "//props/core:ids",
         "//props/core:splits",
         "//props/core/models:examples",

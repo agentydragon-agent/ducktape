@@ -10,7 +10,7 @@ from props.core.models.examples import WholeSnapshotExample
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from props.db.session import get_session
-from props.testing.fixtures import make_critic_run, make_grader_run
+from props.testing.fixtures.runs import make_critic_run, make_grader_run
 
 
 def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:

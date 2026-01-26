@@ -10,7 +10,7 @@ from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, GradingEdge, TruePositive
 from props.db.session import get_session
-from props.testing.fixtures import make_critic_run, make_grader_run, make_reported_issues
+from props.testing.fixtures.runs import make_critic_run, make_grader_run, make_reported_issues
 
 
 def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):

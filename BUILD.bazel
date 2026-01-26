@@ -14,9 +14,6 @@
 # gazelle:resolve py python.runfiles @rules_python//python/runfiles
 #
 # Non-standard import paths (import name doesn't match directory structure)
-# gazelle:resolve py ducktape_llm_common //llm/ducktape_llm_common:core
-# gazelle:resolve py ducktape_llm_common.claude_linter //llm/ducktape_llm_common/ducktape_llm_common/claude_linter
-# gazelle:resolve py ducktape_llm_common.claude_linter.cli //llm/ducktape_llm_common/ducktape_llm_common/claude_linter
 # gazelle:resolve py adgn_mcp_starter //mcp_starter/adgn_mcp_starter
 # gazelle:resolve py adgn_mcp_starter.server //mcp_starter/adgn_mcp_starter:server
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data

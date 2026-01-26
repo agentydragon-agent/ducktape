@@ -14,7 +14,7 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage, InjectItems, NoAc
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from agent_core_testing.assertions import is_all_function_calls
 from agent_core_testing.responses import EchoMock
-from mcp_infra.bootstrap import TypedBootstrapBuilder
+from mcp_infra.bootstrap.bootstrap import TypedBootstrapBuilder
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, UserMessage
 

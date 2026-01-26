@@ -332,11 +332,7 @@ async def run_tflint(files: list[Path], repo_root: Path) -> ValidationResult:
 
     # Initialize plugins (downloads terraform ruleset if not cached)
     init_proc = await asyncio.create_subprocess_exec(
-        tflint_bin,
-        "--init",
-        f"--config={config_path}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        tflint_bin, "--init", f"--config={config_path}", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     await init_proc.communicate()
 

@@ -18,17 +18,17 @@
 # Capability matrix:
 #   Model                         | Reasoning | Tools | Context | Size/GPU | Notes
 #   ------------------------------|-----------|-------|---------|----------|---------------------------
-#   === THINKING-CAPABLE (TODO: download & configure) ===
-#   deepseek-r1-distill-qwen-32b  | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning, single GPU
+#   === CONFIGURED (vLLM) ===
+#   deepseek-r1-32b               | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning, start-vllm-deepseek-r1.sh
+#   qwen3-coder-awq               | ✗         | ✓     | 262k    | ~8.5 GB  | AWQ removes thinking, start-vllm-awq.sh
+#   === CONFIGURED (Ollama) ===
+#   qwen3-coder-long              | ✗*        | ✓     | 131k    | ~19 GB   | *thinking untested
+#   llama3.3:70b                  | ✗         | ✓     | 32k     | ~38 GB   | Reliable tools, no thinking
+#   === DOWNLOADED (not yet configured) ===
 #   deepseek-r1-distill-llama-70b | ✓         | ✓     | 128k    | ~19 GB   | Best quality, needs TP=2
 #   qwen3-32b-awq                 | ✓         | ✓     | 128k    | ~17 GB   | General model, thinking works
-#   === CURRENTLY CONFIGURED ===
-#   qwen3-coder-awq (vLLM)        | ✗         | ✓     | 262k    | ~8.5 GB  | AWQ removes thinking
-#   qwen3-coder-long (Ollama)     | ✗*        | ✓     | 131k    | ~19 GB   | *thinking untested
-#   llama3.3:70b (Ollama)         | ✗         | ✓     | 32k     | ~38 GB   | Reliable tools, no thinking
 #
-# ⚠️ For thinking/reasoning: Download DeepSeek-R1-Distill models (see model-download-list.md)
-#    qwen3-coder-awq explicitly removes thinking support per model card.
+# See model-download-list.md for download status and benchmarks.
 {
   config,
   pkgs,
@@ -61,6 +61,22 @@ let
             tool_call = true;
             limit = {
               context = 262144;
+              output = 8192;
+            };
+          };
+
+          # DeepSeek R1 Distill Qwen 32B - reasoning + tools preserved
+          # Distilled from DeepSeek-R1, maintains thinking capability
+          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1.sh
+          "deepseek-r1-32b" = {
+            name = "DeepSeek R1 Distill Qwen 32B (vLLM)";
+            reasoning = true;
+            tool_call = true;
+            interleaved = {
+              field = "reasoning_content";
+            };
+            limit = {
+              context = 131072;
               output = 8192;
             };
           };

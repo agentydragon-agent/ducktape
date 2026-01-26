@@ -27,4 +27,13 @@ py_library(
     name = "summarizer",
     srcs = ["summarizer.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":prompt_engineer",
+        ":truncation_utils",
+        "//inop/engine:models",
+        "//inop/io:logging_utils",
+        "//openai_utils:model",
+        "//openai_utils:model_metadata",
+        "//openai_utils:text_extraction",
+    ],
 )

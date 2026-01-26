@@ -13,7 +13,6 @@ filegroup(
 py_library(
     name = "editor_agent_host",
     srcs = [
-        "__init__.py",
         "agent_runner.py",
         "cli.py",
         "runner.py",
@@ -50,7 +49,6 @@ py_binary(
     main = "cli.py",
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
         "//agent_pkg/host:builder",
         "//cli_util:decorators",
         "//cli_util:logging",
@@ -67,7 +65,6 @@ py_test(
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
-        ":__init__",
         ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -82,7 +79,6 @@ py_test(
     imports = ["../.."],
     tags = ["requires_docker"],
     deps = [
-        ":__init__",
         ":conftest",
         "//agent_core_testing:responses",
         "//agent_core_testing:steps",
@@ -98,7 +94,6 @@ py_test(
     srcs = ["test_submit_server.py"],
     imports = ["../.."],
     deps = [
-        ":__init__",
         ":conftest",
         "@pypi//fastmcp",
         "@pypi//pytest",
@@ -113,17 +108,10 @@ ruff_test(
 )
 
 py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
     name = "agent_runner",
     srcs = ["agent_runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:loop_control",
@@ -142,13 +130,13 @@ py_library(
     srcs = ["runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
         "//mcp_infra:constants",
         "//mcp_infra:mounted",
         "//mcp_infra/compositor",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/exec:docker",
-        "//net_util:__init__",
+        "//net_util:docker",
+        "//net_util:net",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
     ],
@@ -159,7 +147,7 @@ py_library(
     srcs = ["submit_server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//editor_agent/runtime:__init__",
+        "//editor_agent/runtime:constants",
         "//mcp_infra:flat_tool",
         "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",

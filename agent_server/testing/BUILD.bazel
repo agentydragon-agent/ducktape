@@ -54,7 +54,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//net_util:__init__",
+        "//net_util:net",
         "//openai_utils:model",
         "@pypi//uvicorn",
     ],

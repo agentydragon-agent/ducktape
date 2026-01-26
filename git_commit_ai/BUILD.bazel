@@ -94,12 +94,6 @@ py_wheel(
 )
 
 py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
     name = "agent_backend",
     srcs = ["agent_backend.py"],
     visibility = ["//:__subpackages__"],
@@ -112,7 +106,7 @@ py_library(
         "//mcp_infra:mcp_types",
         "//mcp_infra:mounted",
         "//mcp_infra:prefix",
-        "//mcp_infra/bootstrap:__init__",
+        "//mcp_infra/bootstrap",
         "//mcp_infra/compositor",
         "//mcp_infra/display:rich_display",
         "//mcp_infra/enhanced:simple",

@@ -89,7 +89,7 @@ py_binary(
         "//cli_util:decorators",
         "//cli_util:logging",
         "//mcp_infra:config_loader",
-        "//net_util:__init__",
+        "//net_util:net",
         "@pypi//typer_slim",
         "@pypi//uvicorn",
     ],

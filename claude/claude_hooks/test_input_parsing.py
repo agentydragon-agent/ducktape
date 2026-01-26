@@ -16,9 +16,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from claude_hooks.tool_models import BashInput, GlobInput, GrepInput, GrepOutputMode, LSInput, TaskInput
-
 from claude_hooks.test_helpers import assert_tool_input_parsing, load_test_json
+from claude_hooks.tool_models import BashInput, GlobInput, GrepInput, GrepOutputMode, LSInput, TaskInput
 
 
 @pytest.mark.parametrize(

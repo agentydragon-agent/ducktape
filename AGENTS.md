@@ -57,7 +57,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 ### What Nix Manages
 
 - **Shell configs**: `programs.bash`, `programs.zsh`, `programs.atuin`, `programs.direnv`, `programs.zoxide`, `programs.eza`
-- **Shell init scripts**: `nix/home/shell/*.sh` (bash-init.sh, zsh-init.zsh, common-init.sh)
+- **Shell init scripts**: `nix/home/shell/` (bash-init.sh, zsh-init.zsh, common-init.sh)
 - **Aliases**: `home.shellAliases`
 - **Environment variables**: `home.sessionVariables`
 - **Powerlevel10k**: `nix/home/p10k.zsh` → `~/.p10k.zsh`
@@ -74,7 +74,6 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 - **DO NOT modify dotfiles directly in `~/`** - edit source files in `dotfiles/` or `nix/home/`
 - **Shell configs are Nix-managed** - do not edit `~/.bashrc`, `~/.zshrc`, `~/.shellrc` directly
-- Host-specific rcm configs: `host-agentydragon/rcrc`, `host-gpd/rcrc`
 
 ### Deployment
 
@@ -127,7 +126,6 @@ These components exist but see minimal recent changes:
 
 - **InventTree** (`inventree_utils/`): Inventory management plugins
 - **Website** (`website/`): Personal website (Hakyll/Haskell)
-- **Kubernetes** (`k8s/`): k3s cluster configurations
 
 ## Build System
 
@@ -296,7 +294,7 @@ Also add `@pypi//pytest_bazel` to the test's deps in BUILD.bazel.
 
 #### pytest-asyncio auto mode
 
-pytest-asyncio is configured in **auto mode** via `pytest_configure(config)` hooks in package-level `conftest.py` files (e.g., `agent_core/conftest.py`, `mcp_infra/conftest.py`, `props/core/conftest.py`). This automatically detects and runs `async def test_*()` functions without requiring explicit `@pytest.mark.asyncio` decorators.
+pytest-asyncio is configured in **auto mode** via `pytest_configure(config)` hooks in package-level `conftest.py` files (e.g., `agent_core/conftest.py`, `mcp_infra/conftest.py`, `props/conftest.py`). This automatically detects and runs `async def test_*()` functions without requiring explicit `@pytest.mark.asyncio` decorators.
 
 **Do NOT add** `@pytest.mark.asyncio` decorators to new async tests - they are unnecessary and redundant with auto mode.
 

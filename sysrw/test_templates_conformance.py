@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from sysrw.templates import iter_templates, validate_template_text
+from sysrw.templates.loader import iter_templates, validate_template_text
 
 
 def _iter_templates_from_package() -> list[tuple[str, str]]:

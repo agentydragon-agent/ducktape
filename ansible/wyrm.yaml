@@ -5,6 +5,8 @@
     - vars/common_vars.yml
   vars:
     rcup_computer: wyrm
+    # Use system Python for modules requiring python3-debian (deb822_repository)
+    ansible_python_interpreter: /usr/bin/python3
   remote_user: "{{ my_user }}"
 
   handlers:
@@ -152,6 +154,33 @@
         state: present
       become: true
       tags: [podman, gpu]
+
+    # Pop!_OS 22.04 pins nvidia-container-toolkit to 1.12.1 (March 2023)
+    # which crashes with driver 580+ (RTX 5090). Override to use NVIDIA's repo.
+    - name: Pin NVIDIA container toolkit to NVIDIA repo (override Pop!_OS)
+      ansible.builtin.copy:
+        dest: /etc/apt/preferences.d/nvidia-container-toolkit
+        content: |
+          Package: nvidia-container*
+          Pin: origin nvidia.github.io
+          Pin-Priority: 1002
+
+          Package: libnvidia-container*
+          Pin: origin nvidia.github.io
+          Pin-Priority: 1002
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      tags: [nvidia, podman, gpu]
+
+    - name: Upgrade nvidia-container-toolkit from NVIDIA repo
+      ansible.builtin.apt:
+        name: nvidia-container-toolkit
+        state: latest
+        update_cache: true
+      become: true
+      tags: [nvidia, podman, gpu]
 
     - name: Configure podman to use NVIDIA runtime (CDI)
       ansible.builtin.command: nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml

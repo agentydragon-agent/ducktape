@@ -88,7 +88,7 @@ py_library(
     deps = [
         "//agent_core_testing:responses",
         "//openai_utils:model",
-        "//props/backend:__init__",
+        "//props/backend:app",
         "//props/db:config",
         "//props/orchestration:agent_registry",
         "//props/testing",

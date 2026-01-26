@@ -8,7 +8,6 @@
 - **DO NOT edit `~/.bashrc`, `~/.zshrc` directly** — they're Nix-generated
 - **For aliases/env vars**: Edit `home.shellAliases` or `home.sessionVariables` in Nix
 - **For PATH/conditionals**: Edit `dotfiles/profile` (still rcm-managed)
-- Host-specific rcm configs: `host-agentydragon/rcrc`, `host-gpd/rcrc`
 
 ## Shell Configuration
 

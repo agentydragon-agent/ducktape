@@ -258,7 +258,7 @@ py_test(
         "//agent_core_testing:assertions",
         "//agent_core_testing:responses",
         "//mcp_infra:prefix",
-        "//mcp_infra/bootstrap:__init__",
+        "//mcp_infra/bootstrap",
         "//openai_utils:model",
         "@pypi//fastmcp",
         "@pypi//pydantic",

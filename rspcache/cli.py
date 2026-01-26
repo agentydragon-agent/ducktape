@@ -30,7 +30,7 @@ def run(
     app_key = app_name.lower()
     if app_key not in DEFAULT_PORTS:
         raise typer.BadParameter("app must be 'proxy' or 'admin'")
-    target = "rspcache:APP" if app_key == "proxy" else "rspcache.admin_app:ADMIN_APP"
+    target = "rspcache.app:APP" if app_key == "proxy" else "rspcache.admin_app:ADMIN_APP"
     resolved_port = port or DEFAULT_PORTS[app_key]
     uvicorn.run(target, host=host, port=resolved_port, reload=reload)
 

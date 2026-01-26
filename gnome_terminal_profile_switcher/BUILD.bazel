@@ -4,8 +4,8 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//tools/lint:linters.bzl", "ruff_test")
 
 py_library(
-    name = "gnome_terminal_profile_switcher",
-    srcs = ["__init__.py"],
+    name = "main",
+    srcs = ["main.py"],
     imports = [".."],
     # Requires system libraries (libgirepository1.0-dev, libdbus-1-dev) - manual only
     tags = ["manual"],
@@ -20,16 +20,16 @@ py_library(
 
 py_binary(
     name = "switch_gnome_terminal_profile",
-    srcs = ["__init__.py"],
+    srcs = ["main.py"],
     imports = [".."],
-    main = "__init__.py",
+    main = "main.py",
     tags = ["manual"],
-    deps = [":gnome_terminal_profile_switcher"],
+    deps = [":main"],
 )
 
 ruff_test(
     name = "ruff",
-    srcs = [":gnome_terminal_profile_switcher"],
+    srcs = [":main"],
     tags = ["manual"],
 )
 
@@ -37,14 +37,14 @@ py_package(
     name = "gnome_terminal_profile_switcher_pkg",
     packages = ["gnome_terminal_profile_switcher"],
     tags = ["manual"],
-    deps = [":gnome_terminal_profile_switcher"],
+    deps = [":main"],
 )
 
 py_wheel(
     name = "gnome_terminal_profile_switcher_wheel",
     distribution = "gnome_terminal_profile_switcher",
     entry_points = {
-        "console_scripts": ["switch-gnome-terminal-profile = gnome_terminal_profile_switcher:main"],
+        "console_scripts": ["switch-gnome-terminal-profile = gnome_terminal_profile_switcher.main:main"],
     },
     python_requires = ">=3.11",
     requires = [

@@ -3,8 +3,8 @@ load("@rules_python//python:defs.bzl", "py_library")
 # Gazelle will create per-file py_library targets
 
 py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
+    name = "loader",
+    srcs = ["loader.py"],
     data = glob(["*.txt"]),
     visibility = ["//:__subpackages__"],
 )

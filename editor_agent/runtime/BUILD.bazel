@@ -6,8 +6,8 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "editor_agent_runtime",
     srcs = [
-        "__init__.py",
         "cli.py",
+        "constants.py",
     ],
     data = glob(["docs/**/*.md"]),
     imports = ["../.."],
@@ -28,7 +28,7 @@ py_binary(
     main = "cli.py",
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
+        ":constants",
         "//agent_pkg/runtime:mcp",
         "//agent_pkg/runtime:output",
         "//cli_util:decorators",
@@ -101,7 +101,7 @@ oci_load(
 )
 
 py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
+    name = "constants",
+    srcs = ["constants.py"],
     visibility = ["//:__subpackages__"],
 )

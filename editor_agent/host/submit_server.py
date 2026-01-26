@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp.exceptions import ToolError
 
-from editor_agent.runtime import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
+from editor_agent.runtime.constants import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel

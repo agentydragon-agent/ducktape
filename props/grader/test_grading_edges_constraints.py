@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from props.db.models import AgentRunStatus, GradingEdge
 from props.db.session import get_session
-from props.testing.fixtures import make_critic_run, make_grader_run, make_reported_issues
+from props.testing.fixtures.runs import make_critic_run, make_grader_run, make_reported_issues
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

@@ -1,98 +1,175 @@
 # Gazelle Python Integration Status
 
-## Current State
+## Current State (January 2026)
 
-Partial Gazelle Python configuration has been added to the repository, but full integration blocked by environment limitations.
+Gazelle Python is **fully configured and operational**. The repository has ~95% Gazelle-compatible BUILD files using the per-file pattern.
 
-## What Was Added
+### What Works
+
+- `//:gazelle` target builds and runs successfully
+- `//:modules_map` generates wheel metadata correctly
+- `gazelle_python.yaml` manifest is populated with 500+ module mappings
+- Go dependencies download without network issues
+- System packages are filtered via `filter_wheels.bzl`
+
+### Running Gazelle
+
+```bash
+# Preview changes
+bazel run //:gazelle -- --mode=diff
+
+# Apply changes
+bazel run //:gazelle
+
+# Update manifest after requirements changes
+bazel run //:gazelle_python_manifest.update
+```
+
+## Configuration
 
 1. **Dependencies** (`MODULE.bazel`):
    - `rules_python_gazelle_plugin` version 1.4.1
    - `gazelle` version 0.34.0
 
 2. **Configuration Files**:
-   - `gazelle_python.yaml` - marker file for Gazelle root
-   - `filter_wheels.bzl` - helper to filter system packages
+   - `gazelle_python.yaml` - generated manifest mapping imports to PyPI packages
+   - `filter_wheels.bzl` - filters system packages (pygobject, dbus-python, pycairo)
    - `//:gazelle` target in root `BUILD.bazel`
 
-3. **Known Issues**:
-   - Network blocks prevent downloading Gazelle's Go dependencies (`com_github_dougthor42_go_tree_sitter`)
-   - System packages (pygobject, dbus-python, pycairo) require libraries unavailable in Bazel sandbox
+3. **Directives** (in root `BUILD.bazel`):
+   - `# gazelle:python_generation_mode file` - per-file targets
+   - `# gazelle:exclude` for ansible, homeassistant, claude_hooks, k8s-old
+   - `# gazelle:resolve` for internal packages with non-standard paths
 
-## Blockers
+## BUILD File Conventions
 
-### 1. Network/Proxy Issues
+### Per-File Targets (Gazelle Pattern)
 
-Gazelle's Go dependencies fail to download:
+Each `.py` file should have its own `py_library` target with:
 
-```
-dial tcp: lookup storage.googleapis.com: connection refused
-```
+- `name` matching the file stem (e.g., `client.py` → `name = "client"`)
+- `srcs` containing only that file
+- `imports = [".."]` or appropriate path to enable package imports
 
-### 2. System Package Build Failures
+### No Aggregator Targets
 
-Packages requiring system libraries:
+Don't bundle multiple files into a single `py_library`:
 
-- `pygobject` → needs `girepository-2.0`
-- `dbus-python` → needs `dbus-1`
-- `pycairo` → needs `cairo`
+```python
+# ❌ WRONG: Aggregator pattern
+py_library(
+    name = "my_package",
+    srcs = ["client.py", "server.py", "utils.py"],
+    ...
+)
 
-These fail during `modules_mapping` wheel metadata extraction.
-
-## Alternative Approaches
-
-### Option 1: Manual BUILD Management (Current State)
-
-Continue maintaining BUILD.bazel files manually. This works well and has low overhead given:
-
-- Most BUILD files are already well-structured
-- Type checking via mypy aspect provides dependency validation
-- Lint checks catch common issues
-
-### Option 2: Local Gazelle Application
-
-Run Gazelle on a local development machine (not in Claude Code web):
-
-```bash
-# On local machine with network access:
-bazel run //:gazelle_python_manifest.update
-bazel run //:gazelle
-git commit -am "Apply gazelle to Python packages"
-git push
+# ✓ CORRECT: Per-file pattern
+py_library(name = "client", srcs = ["client.py"], ...)
+py_library(name = "server", srcs = ["server.py"], ...)
+py_library(name = "utils", srcs = ["utils.py"], ...)
 ```
 
-### Option 3: Gazelle with Partial Manifest
+### No `__init__` Targets
 
-Use Gazelle without full manifest generation:
+Don't create `py_library` targets for `__init__.py` files:
 
-- Skip `modules_mapping` and `gazelle_python_manifest`
-- Use `# gazelle:ignore` directives for system packages
-- Manually manage dependencies for packages not in manifest
+- Most `__init__.py` should not exist at all (Bazel generates stubs via `imports = [".."]`)
+- If `__init__.py` exists, it usually shouldn't have its own target
+- Exception: When `__init__.py` contains actual code (not just re-exports)
 
-This approach works but reduces automation benefits.
+### Import From Definition, Not Re-exports
 
-### Option 4: Remove Gazelle Configuration
+Depend on the target where code is defined, not where it's re-exported:
 
-Keep the repository as-is with manual BUILD files. The current approach:
+```python
+# ❌ WRONG: Depending on re-export
+from mypackage import MyClass  # if __init__.py re-exports from mypackage.client
+deps = ["//mypackage"]  # or "//mypackage:__init__"
 
-- Works reliably in all environments
-- Has good IDE support
-- Bazel's aspect system provides linting/type checking
-- Dependencies are explicit and traceable
+# ✓ CORRECT: Depend on the defining module
+from mypackage.client import MyClass
+deps = ["//mypackage:client"]
+```
 
-## Recommendation
+### BUILD Files Parallel to Sources
 
-Given the blockers and the repository's current good state, **Option 4 (remove Gazelle config)** or **Option 2 (local application)** are most practical.
+Each directory with `.py` files should have its own `BUILD.bazel`:
 
-If Gazelle is desired:
+```
+# ❌ WRONG: Root BUILD touching subdirectory files
+adgn/BUILD.bazel:
+    srcs = ["agent/cli.py", "testing/bootstrap.py"]
 
-1. Apply it from a local dev machine with full network access
-2. Check in the generated BUILD files
-3. Use Gazelle for new packages, keep existing ones manual
+# ✓ CORRECT: BUILD files in each directory
+adgn/BUILD.bazel           # only for files in adgn/
+adgn/agent/BUILD.bazel     # for agent/cli.py
+adgn/testing/BUILD.bazel   # for testing/bootstrap.py
+```
 
-## Files to Remove (if not proceeding with Gazelle)
+### Minimal Visibility
 
-- `gazelle_python.yaml`
-- `filter_wheels.bzl`
-- Gazelle-related sections in `/BUILD.bazel`
-- Gazelle dependencies from `MODULE.bazel`
+Omit `visibility` when the default is sufficient. Only add explicit visibility when needed:
+
+```python
+# ❌ WRONG: Unnecessary visibility
+py_library(
+    name = "internal_helper",
+    srcs = ["internal_helper.py"],
+    visibility = ["//:__subpackages__"],  # Often not needed
+)
+
+# ✓ CORRECT: Omit when default works
+py_library(
+    name = "internal_helper",
+    srcs = ["internal_helper.py"],
+)
+
+# ✓ CORRECT: Add only when actually needed
+py_library(
+    name = "public_api",
+    srcs = ["public_api.py"],
+    visibility = ["//visibility:public"],  # Intentionally public
+)
+```
+
+Default visibility is package-private. Only broaden when:
+
+- Target is used by other packages (use `//pkg:__subpackages__` or specific packages)
+- Target is a public API (use `//visibility:public`)
+
+## Completed Fixes
+
+### agent_core_testing ✅
+
+Removed aggregator target. Dependents updated to use specific targets:
+
+- `:fixtures`, `:responses`, `:steps`, `:openai_mock`, etc.
+
+### adgn ✅
+
+Removed aggregator. Created BUILD files in subdirectories:
+
+- `adgn/agent/BUILD.bazel` - `:cli`
+- `adgn/gitea_pr_gate/BUILD.bazel` - `:policy_common`, `:policy_server_fastapi`
+- `adgn/testing/BUILD.bazel` - `:bootstrap`
+- `adgn/tools/BUILD.bazel` - `:trivial_patterns`
+
+### props/backend ✅
+
+Removed aggregator. Created `props/backend/routes/BUILD.bazel` with per-file targets:
+
+- `:eval`, `:ground_truth`, `:llm`, `:registry`, `:runs`, `:stats`
+
+Main backend targets: `:app`, `:auth`, `:cli`, `:export_schema`
+
+### inop/engine ✅
+
+Renamed `py_library` from `:optimizer` to `:optimizer_lib` to avoid conflict with Gazelle-generated `py_binary`.
+
+## Summary
+
+All known Gazelle blockers have been fixed. Gazelle can be used opportunistically:
+
+1. Run `bazel run //:gazelle -- --mode=diff` to preview changes
+2. Manually apply sensible changes
+3. Fix any errors in excluded packages manually

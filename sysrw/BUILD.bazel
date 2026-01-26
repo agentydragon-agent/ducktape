@@ -11,7 +11,7 @@ py_test(
     srcs = ["test_templates_conformance.py"],
     deps = [
         ":conftest",
-        "//sysrw/templates:__init__",
+        "//sysrw/templates:loader",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -151,7 +151,7 @@ py_library(
         "//openai_utils:model",
         "//openai_utils:retry",
         "//sysrw/anthropic:types",
-        "//sysrw/templates:__init__",
+        "//sysrw/templates:loader",
         "@pypi//jinja2",
         "@pypi//openai",
         "@pypi//pydantic",

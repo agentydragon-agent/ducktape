@@ -11,7 +11,6 @@ Remaining dotfiles are managed with [rcm](https://github.com/thoughtbot/rcm), de
 | `profile`     | PATH modifications, CUDA, lesspipe, machine-specific |
 | `config/*`    | App configs not yet migrated to Nix                  |
 | `local/bin/*` | Utility scripts                                      |
-| `host-*/`     | Host-specific rcm overrides                          |
 
 ## What's in Nix Now
 

@@ -27,11 +27,6 @@ import pygit2
 from pydantic import BaseModel, Field
 from pygit2.enums import BranchType, FileStatus
 
-from mcp_infra.enhanced.simple import SimpleFastMCP
-from mcp_infra.flat_tool import FlatTool
-from mcp_infra.prefix import MCPMountPrefix
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-
 from git_commit_ai.git_ro.formatting import (
     ChangedFilesPage,
     DiffStatPage,
@@ -48,6 +43,10 @@ from git_commit_ai.git_ro.formatting import (
     diff_to_changed_files,
     diff_to_file_stats,
 )
+from mcp_infra.enhanced.simple import SimpleFastMCP
+from mcp_infra.flat_tool import FlatTool
+from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Shared mount prefix constant for clients/tests
 GIT_RO_MOUNT_PREFIX = MCPMountPrefix("git_ro")

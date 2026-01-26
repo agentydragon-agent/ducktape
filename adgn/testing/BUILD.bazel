@@ -1,0 +1,17 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "bootstrap",
+    srcs = ["bootstrap.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core:agent",
+        "//agent_core_testing:responses",
+        "//agent_core_testing:steps",
+        "//mcp_infra:naming",
+        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec:models",
+        "//openai_utils:model",
+    ],
+)

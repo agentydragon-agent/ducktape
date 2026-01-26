@@ -145,8 +145,8 @@ py_test(
     name = "test_admin_logs",
     srcs = ["test_admin_logs.py"],
     deps = [
-        "//gatelet/server:conftest",
         "//gatelet/server:config",
+        "//gatelet/server:conftest",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
@@ -169,8 +169,8 @@ py_test(
     srcs = ["test_challenge.py"],
     deps = [
         ":challenge",
-        "//gatelet/server:conftest",
         "//gatelet/server:config",
+        "//gatelet/server:conftest",
         "//gatelet/server:models",
         "@pypi//httpx",
         "@pypi//pytest_bazel",

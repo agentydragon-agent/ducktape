@@ -15,7 +15,7 @@ from props.db.models import AgentRunStatus
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
-from props.testing.fixtures import make_critic_run
+from props.testing.fixtures.runs import make_critic_run
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection

@@ -20,4 +20,3 @@ py_library(
         "@pypi//pydantic_core",
     ],
 )
-

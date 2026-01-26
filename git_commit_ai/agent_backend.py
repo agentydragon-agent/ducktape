@@ -22,7 +22,7 @@ from git_commit_ai.git_ro.server import (
     StatusInput,
     TextSlice,
 )
-from mcp_infra.bootstrap import TypedBootstrapBuilder
+from mcp_infra.bootstrap.bootstrap import TypedBootstrapBuilder
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from mcp_infra.enhanced.simple import SimpleFastMCP

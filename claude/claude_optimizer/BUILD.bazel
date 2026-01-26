@@ -4,7 +4,6 @@ load("//tools/lint:linters.bzl", "ruff_test")
 py_library(
     name = "claude_optimizer",
     srcs = [
-        "__init__.py",
         "generic_graders.py",
         "requirement_templates.py",
         "scoresheet.py",
@@ -19,12 +18,6 @@ py_library(
 ruff_test(
     name = "ruff",
     srcs = [":claude_optimizer"],
-)
-
-py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(

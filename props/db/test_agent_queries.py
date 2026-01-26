@@ -23,7 +23,7 @@ from props.db import query_builders as qb
 from props.db.examples import Example
 from props.db.models import FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
 from props.db.session import get_session
-from props.testing.fixtures import make_critic_run, make_grader_run
+from props.testing.fixtures.runs import make_critic_run, make_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
