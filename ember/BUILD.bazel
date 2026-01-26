@@ -47,7 +47,6 @@ py_test(
     data = [":data_files"],
     imports = [".."],
     deps = [
-        ":__init__",
         ":system_prompt",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -82,7 +81,6 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [
-        ":__init__",
         ":app",
         ":config",
         ":handlers",
@@ -122,12 +120,6 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["emberd:latest"],
-)
-
-py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(

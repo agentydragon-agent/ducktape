@@ -9,6 +9,7 @@ py_library(
 py_library(
     name = "server",
     srcs = ["server.py"],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//fastmcp",

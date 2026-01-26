@@ -30,11 +30,13 @@ py_test(
     srcs = ["test_list_resources_null_filters.py"],
     deps = [
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:conftest",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/enhanced:server",
         "//mcp_infra/testing:notifications",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -67,10 +69,12 @@ py_test(
     srcs = ["test_subscribe.py"],
     deps = [
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:conftest",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/enhanced:server",
         "//mcp_infra/testing:notifications",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -80,9 +84,11 @@ py_test(
     srcs = ["test_subscriptions_index.py"],
     deps = [
         "//mcp_infra:prefix",
+        "//mcp_infra/compositor:conftest",
         "//mcp_infra/compositor:resources_server",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

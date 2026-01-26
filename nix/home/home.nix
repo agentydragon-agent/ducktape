@@ -529,7 +529,7 @@ in
 
     # Interactive shell settings
     LESS = "-F -X -R"; # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
-    PYTHONSTARTUP = "$HOME/.config/pythonstartup.py";
+    # PYTHONSTARTUP: not used
 
     # Go workspace
     GOPATH = "$HOME/.go";

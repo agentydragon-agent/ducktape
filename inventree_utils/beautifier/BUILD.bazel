@@ -5,6 +5,7 @@ py_library(
     srcs = ["assign_jellybean.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":cli_util",
         "@pypi//inventree",
         "@pypi//tqdm",
     ],

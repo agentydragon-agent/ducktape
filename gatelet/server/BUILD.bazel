@@ -139,6 +139,7 @@ py_library(
         "//gatelet/server/endpoints:webhook_view",
         "//gatelet/server/tests:utils",
         "@pypi//asgi_lifespan",
+        "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

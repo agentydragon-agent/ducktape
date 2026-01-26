@@ -86,6 +86,13 @@ py_library(
     name = "rpc",
     srcs = ["rpc.py"],
     deps = [
+        ":git_manager",
+        ":git_refs_watcher",
+        ":github_watcher",
+        ":services",
+        ":worktree_service",
+        "//wt/shared:configuration",
+        "//wt/shared:protocol",
         "@pypi//punq",
         "@pypi//pydantic",
     ],

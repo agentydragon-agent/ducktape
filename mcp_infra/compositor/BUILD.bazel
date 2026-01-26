@@ -131,7 +131,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     imports = ["../.."],
-    visibility = ["//mcp_infra/compositor:__subpackages__"],
+    visibility = ["//mcp_infra:__subpackages__"],
     deps = [
         ":admin",
         "//mcp_infra:mounted",

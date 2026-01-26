@@ -36,7 +36,6 @@ py_test(
     imports = [".."],
     tags = ["no-mypy"],  # see comment on inop library
     deps = [
-        ":__init__",
         ":config",
         ":conftest",
         "//inop/runners:base",
@@ -54,12 +53,6 @@ py_test(
 ruff_test(
     name = "ruff",
     srcs = [":inop"],
-)
-
-py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
@@ -90,7 +83,6 @@ py_library(
     srcs = ["plots.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
         "@pypi//matplotlib",
         "@pypi//pandas",
         "@pypi//plotnine",

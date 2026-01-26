@@ -9,6 +9,7 @@ py_library(
     deps = [
         "//cli_util:decorators",
         "//cli_util:logging",
+        "//wt/client:cd_utils",
         "@pypi//click",
         "@pypi//colorama",
         "@pypi//typer_slim",

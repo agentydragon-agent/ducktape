@@ -42,12 +42,6 @@ ruff_test(
 )
 
 py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
     name = "assertions",
     srcs = ["assertions.py"],
     visibility = ["//:__subpackages__"],
@@ -75,7 +69,6 @@ py_library(
     srcs = ["fixtures.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
         ":echo_server",
         ":openai_mock",
         ":responses",
@@ -145,7 +138,6 @@ py_library(
     srcs = ["steps.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
         "//mcp_infra:prefix",
         "//mcp_infra/exec:models",
         "//openai_utils:model",

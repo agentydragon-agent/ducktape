@@ -67,12 +67,6 @@ ruff_test(
 )
 
 py_library(
-    name = "__init__",
-    srcs = ["__init__.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
     name = "config",
     srcs = ["config.py"],
     visibility = ["//:__subpackages__"],
@@ -111,7 +105,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":__init__",
+        ":config",
         "@pypi//pytest",
         "@pypi//rich",
     ],
@@ -121,7 +115,7 @@ py_test(
     name = "test_cli",
     srcs = ["test_cli.py"],
     deps = [
-        ":__init__",
+        ":difftree_lib",
         "@pypi//click",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -132,7 +126,6 @@ py_test(
     name = "test_config",
     srcs = ["test_config.py"],
     deps = [
-        ":__init__",
         ":config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -143,7 +136,7 @@ py_test(
     name = "test_diff_tree",
     srcs = ["test_diff_tree.py"],
     deps = [
-        ":__init__",
+        ":config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
@@ -168,7 +161,8 @@ py_test(
     name = "test_parser",
     srcs = ["test_parser.py"],
     deps = [
-        ":__init__",
+        ":conftest",
+        ":parser",
         "@pypi//pytest_bazel",
     ],
 )
@@ -177,7 +171,6 @@ py_test(
     name = "test_progress_bar",
     srcs = ["test_progress_bar.py"],
     deps = [
-        ":__init__",
         ":conftest",
         ":progress_bar",
         "@pypi//pytest",
@@ -189,7 +182,7 @@ py_test(
     name = "test_snapshots",
     srcs = ["test_snapshots.py"],
     deps = [
-        ":__init__",
+        ":config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -199,8 +192,8 @@ py_test(
     name = "test_tree",
     srcs = ["test_tree.py"],
     deps = [
-        ":__init__",
         ":config",
+        ":parser",
         ":tree",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
