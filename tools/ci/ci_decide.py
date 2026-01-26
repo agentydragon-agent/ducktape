@@ -22,9 +22,9 @@ import subprocess
 from pathlib import Path
 
 import pygit2
-from bazel_query import check_bazel_intersection
-from models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
+from tools.ci.bazel_query import check_bazel_intersection
+from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
 INFRA_PATTERNS = [

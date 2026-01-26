@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from models import WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
+from tools.ci.models import WorkflowConfig, WorkflowManifest
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent

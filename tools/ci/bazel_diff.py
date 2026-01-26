@@ -39,7 +39,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from bazel_query import run_query_with_file
+from tools.ci.bazel_query import run_query_with_file
 
 BAZEL_DIFF_VERSION = "12.1.1"
 BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
