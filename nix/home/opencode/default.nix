@@ -19,7 +19,9 @@
 #   Model                         | Reasoning | Tools | Context | Size/GPU | Notes
 #   ------------------------------|-----------|-------|---------|----------|---------------------------
 #   === CONFIGURED (vLLM) ===
-#   deepseek-r1-32b               | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning, start-vllm-deepseek-r1.sh
+#   deepseek-r1-32b               | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning 32B, start-vllm-deepseek-r1.sh
+#   deepseek-r1-70b               | ✓         | ✓     | 64k     | ~38 GB   | Best quality, start-vllm-deepseek-r1-70b.sh
+#   qwen3-32b                     | ✓         | ✓     | 40k     | ~17 GB   | General model, start-vllm-qwen3-32b.sh
 #   qwen3-coder-awq               | ✗         | ✓     | 262k    | ~8.5 GB  | AWQ removes thinking, start-vllm-awq.sh
 #   === CONFIGURED (Ollama) ===
 #   qwen3-coder-long              | ✗*        | ✓     | 131k    | ~19 GB   | *thinking untested
@@ -77,6 +79,38 @@ let
             };
             limit = {
               context = 131072;
+              output = 8192;
+            };
+          };
+
+          # DeepSeek R1 Distill Llama 70B - best quality distillation
+          # Requires TP=2 (both GPUs), ~38 GB total
+          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-deepseek-r1-70b.sh
+          "deepseek-r1-70b" = {
+            name = "DeepSeek R1 Distill Llama 70B (vLLM)";
+            reasoning = true;
+            tool_call = true;
+            interleaved = {
+              field = "reasoning_content";
+            };
+            limit = {
+              context = 65536; # Reduced to fit 64GB with 38GB weights
+              output = 8192;
+            };
+          };
+
+          # Qwen3 32B AWQ - general model with thinking + tools
+          # Good all-around model, not code-specialized
+          # Start: ~/code/ducktape/experimental/local-llm/start-vllm-qwen3-32b.sh
+          "qwen3-32b" = {
+            name = "Qwen3 32B AWQ (vLLM)";
+            reasoning = true;
+            tool_call = true;
+            interleaved = {
+              field = "reasoning_content";
+            };
+            limit = {
+              context = 40960; # Qwen3-32B-AWQ native limit
               output = 8192;
             };
           };
