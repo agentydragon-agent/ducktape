@@ -20,8 +20,6 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from python.runfiles import runfiles
-
 from tools.claude_hooks.settings import HookSettings
 
 logger = logging.getLogger(__name__)
@@ -135,26 +133,6 @@ def install_bazelisk(settings: HookSettings) -> Path:
     return bazelisk_path
 
 
-def _get_bazel_wrapper_from_runfiles() -> Path | None:
-    """Get bazel_wrapper binary path from Bazel runfiles.
-
-    Returns None if not in Bazel environment or binary not found.
-    """
-    try:
-        r = runfiles.Create()
-        if r is None:
-            return None
-        resolved = r.Rlocation("_main/tools/claude_hooks/bazel_wrapper")
-        if not resolved:
-            return None
-        path = Path(resolved)
-        if not path.exists():
-            return None
-        return path
-    except Exception:
-        return None
-
-
 def install_wrapper(settings: HookSettings) -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
@@ -165,29 +143,22 @@ def install_wrapper(settings: HookSettings) -> Path:
 
     The wrapper reads configuration from environment variables (set via get_env_script).
 
-    When running from Bazel runfiles (test mode), uses the runfiles binary.
-    When running from an installed wheel, invokes the bazel_wrapper module via Python.
+    Uses sys.executable -m to invoke the bazel_wrapper module. This works in both:
+    - Bazel mode: PYTHONPATH is set up by Bazel runfiles
+    - Wheel mode: The package is installed in the Python environment
     """
     wrapper_dir = settings.get_wrapper_dir()
     wrapper_path = settings.get_wrapper_path()
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
-    # Try runfiles first (Bazel test mode)
-    bazel_wrapper_bin = _get_bazel_wrapper_from_runfiles()
-    if bazel_wrapper_bin is not None:
-        wrapper_script = f"""#!/bin/sh
-exec "{bazel_wrapper_bin}" "$@"
+    # Use sys.executable -m for both Bazel and wheel mode
+    # This is more robust than using the runfiles binary path which may not be accessible
+    # from subprocesses that don't inherit runfiles manifest
+    wrapper_script = f"""#!/bin/sh
+exec "{sys.executable}" -m tools.claude_hooks.bazel_wrapper "$@"
 """
-        logger.info("Installed bazel wrapper at %s (runfiles mode)", wrapper_path)
-    else:
-        # Running from installed wheel - use Python module invocation
-        # This works because the wheel includes tools.claude_hooks.bazel_wrapper
-        python_path = sys.executable
-        wrapper_script = f"""#!/bin/sh
-exec "{python_path}" -m tools.claude_hooks.bazel_wrapper "$@"
-"""
-        logger.info("Installed bazel wrapper at %s (wheel mode)", wrapper_path)
+    logger.info("Installed bazel wrapper at %s (using %s)", wrapper_path, sys.executable)
 
     wrapper_path.write_text(wrapper_script)
     wrapper_path.chmod(0o755)

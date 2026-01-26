@@ -92,7 +92,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":settings",
-        "@rules_python//python/runfiles",
     ],
 )
 

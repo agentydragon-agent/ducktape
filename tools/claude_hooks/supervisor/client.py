@@ -6,6 +6,7 @@ Provides typed access to supervisor daemon via XML-RPC API.
 from __future__ import annotations
 
 import configparser
+import http.client
 import logging
 import os
 import shlex
@@ -25,6 +26,22 @@ if TYPE_CHECKING:
     from tools.claude_hooks.settings import HookSettings
 
 logger = logging.getLogger(__name__)
+
+# Timeout for XML-RPC calls to supervisor (seconds)
+XMLRPC_TIMEOUT = 30
+
+
+class TimeoutTransport(xmlrpc.client.Transport):
+    """XML-RPC transport with configurable timeout."""
+
+    def __init__(self, timeout: float = XMLRPC_TIMEOUT):
+        super().__init__()
+        self.timeout = timeout
+
+    def make_connection(self, host: str) -> http.client.HTTPConnection:
+        conn = super().make_connection(host)
+        conn.timeout = self.timeout
+        return conn
 
 
 # Supervisor process state names (see https://supervisord.org/subprocess.html#process-states)
@@ -72,10 +89,13 @@ def is_running(settings: HookSettings) -> bool:
     port = settings.get_supervisor_port()
     pidfile = settings.get_supervisor_pidfile()
 
+    logger.debug("is_running check: port=%d, pidfile=%s", port, pidfile)
+
     # Quick check: port must be listening
     if not is_port_in_use(port):
-        logger.debug("Supervisor port %d not listening", port)
+        logger.info("Supervisor port %d not listening", port)
         return False
+    logger.debug("Port %d is in use", port)
 
     # Check pidfile and if process is alive
     if pidfile.exists():
@@ -144,10 +164,12 @@ def write_service_config(
 class SupervisorClient:
     """Typed wrapper around supervisor XML-RPC client."""
 
-    def __init__(self, settings: HookSettings) -> None:
+    def __init__(self, settings: HookSettings, timeout: float = XMLRPC_TIMEOUT) -> None:
         self._settings = settings
         url = self._get_url()
-        self._proxy = xmlrpc.client.ServerProxy(url)
+        logger.info("SupervisorClient connecting to %s (timeout=%ds)", url, timeout)
+        transport = TimeoutTransport(timeout=timeout)
+        self._proxy = xmlrpc.client.ServerProxy(url, transport=transport)
 
     def _get_port(self) -> int:
         return self._settings.get_supervisor_port()
