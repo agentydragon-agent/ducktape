@@ -16,13 +16,19 @@
 #   - Ollama (port 11434): Easy setup, GGUF quantization
 #
 # Capability matrix:
-#   Model                    | Reasoning | Tools | Context | Notes
-#   -------------------------|-----------|-------|---------|---------------------------
-#   qwen3-coder-awq (vLLM)   | ✓         | ✓     | 262k    | AWQ 4-bit, FP8 KV, RECOMMENDED
-#   qwen3-coder-long         | ✓         | ✓     | 131k    | Ollama, MoE (3.3B active)
-#   qwen3-coder-30b-32k      | ✓         | ✓     | 32k     | Ollama, lower VRAM
-#   llama3.3:70b             | ✗         | ✓     | 32k     | Reliable tools, no thinking
-#   llama3.1-abliterated:70b | ✗         | ✓     | 32k     | Uncensored, reliable tools
+#   Model                         | Reasoning | Tools | Context | Size/GPU | Notes
+#   ------------------------------|-----------|-------|---------|----------|---------------------------
+#   === THINKING-CAPABLE (TODO: download & configure) ===
+#   deepseek-r1-distill-qwen-32b  | ✓         | ✓     | 128k    | ~17 GB   | Best reasoning, single GPU
+#   deepseek-r1-distill-llama-70b | ✓         | ✓     | 128k    | ~19 GB   | Best quality, needs TP=2
+#   qwen3-32b-awq                 | ✓         | ✓     | 128k    | ~17 GB   | General model, thinking works
+#   === CURRENTLY CONFIGURED ===
+#   qwen3-coder-awq (vLLM)        | ✗         | ✓     | 262k    | ~8.5 GB  | AWQ removes thinking
+#   qwen3-coder-long (Ollama)     | ✗*        | ✓     | 131k    | ~19 GB   | *thinking untested
+#   llama3.3:70b (Ollama)         | ✗         | ✓     | 32k     | ~38 GB   | Reliable tools, no thinking
+#
+# ⚠️ For thinking/reasoning: Download DeepSeek-R1-Distill models (see model-download-list.md)
+#    qwen3-coder-awq explicitly removes thinking support per model card.
 {
   config,
   pkgs,
@@ -47,14 +53,12 @@ let
           # Qwen3-Coder 30B AWQ 4-bit with tensor parallelism across 2x 5090
           # AWQ quantization: ~8.5 GB/GPU weights (vs 28.5 GB bf16)
           # FP8 KV cache: ~23 GB available per GPU = 262K context
+          # ⚠️ AWQ model does NOT support thinking mode (per model card)
           # See: experimental/local-llm/qwen3-coder-vram-analysis.md
           "qwen3-coder-awq" = {
             name = "Qwen3-Coder 30B AWQ (vLLM)";
-            reasoning = true;
+            reasoning = false; # AWQ model removes thinking support
             tool_call = true;
-            interleaved = {
-              field = "reasoning_content";
-            };
             limit = {
               context = 262144;
               output = 8192;
