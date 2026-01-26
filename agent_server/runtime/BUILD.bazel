@@ -23,6 +23,7 @@ py_library(
     srcs = ["container.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":handlers",
         ":images",
         "//agent_core:agent",
         "//agent_core:loop_control",

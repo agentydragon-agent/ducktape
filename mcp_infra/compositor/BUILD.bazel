@@ -228,6 +228,7 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra:resource_utils",
         "//mcp_infra:snapshots",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -240,6 +241,7 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra:resource_utils",
         "//mcp_infra:snapshots",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

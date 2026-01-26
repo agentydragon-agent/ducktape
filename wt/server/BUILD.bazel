@@ -139,6 +139,7 @@ py_library(
     srcs = ["worktree_service.py"],
     deps = [
         ":copy_strategies",
+        ":worktree_ids",
         "//wt/shared:error_handling",
         "//wt/shared:models",
         "@pypi//psutil",
