@@ -19,10 +19,10 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pygit2
+from bazel_query import check_bazel_intersection
 from models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
 
@@ -176,26 +176,6 @@ def run_bazel_diff(
     except subprocess.CalledProcessError as e:
         print(f"bazel-diff failed: {e.stderr or e.stdout or e}")
         return None
-
-
-def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
-    """Check if affected targets intersect with a Bazel pattern.
-
-    Uses --query_file to avoid "Argument list too long" errors with large target sets.
-    """
-    if not targets:
-        return False
-
-    targets_str = " ".join(targets)
-    query = f"set({targets_str}) intersect {pattern}"
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".query", delete_on_close=False) as f:
-        f.write(query)
-        f.flush()
-        result = subprocess.run(
-            ["bazelisk", "query", f"--query_file={f.name}"], check=False, capture_output=True, text=True
-        )
-    return bool(result.stdout.strip())
 
 
 def should_trigger(name: str, config: WorkflowConfig, targets: list[str], changed_files: list[str]) -> bool:
