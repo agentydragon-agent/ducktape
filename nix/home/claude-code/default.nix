@@ -21,7 +21,7 @@
 #   showTurnDuration          : boolean  : Show "Cooked for Xm Ys" messages (default: true)
 #   spinnerTipsEnabled        : boolean  : Show tips while Claude works (default: true)
 #   terminalProgressBarEnabled: boolean  : Terminal progress bar (default: true)
-#   cleanupPeriodDays         : integer  : Days before session cleanup (0 = disable, default: 30)
+#   cleanupPeriodDays         : integer  : Days before session cleanup (0 = IMMEDIATE deletion, default: 30, use 9999 to disable)
 #   plansDirectory            : string   : Plan file storage (default: "~/.claude/plans")
 #   respectGitignore          : boolean  : File picker respects .gitignore (default: true)
 #
@@ -248,6 +248,7 @@ let
     "docs.python.org"
     "json.schemastore.org"
     "www.schemastore.org"
+    "code.claude.com" # Claude Code documentation
   ]
   ++ cfg.extraAllowedWebFetchDomains;
 
@@ -311,7 +312,8 @@ in
       theme = "dark";
       attribution.commit = ""; # Disable "Co-authored-by" in commits
       attribution.pr = ""; # Disable attribution in PR descriptions
-      cleanupPeriodDays = 0;
+      # 9999 = effectively disable cleanup (0 = delete immediately, which is wrong)
+      cleanupPeriodDays = 9999;
       promptSuggestions = true;
       statusLine = {
         type = "command";
