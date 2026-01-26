@@ -44,14 +44,6 @@ INFRA_PATTERNS = [
     r"^WORKSPACE",
 ]
 
-# macOS-only packages that should be excluded from Linux CI runs
-# These use seatbelt (macOS sandbox) and won't build on Linux
-MACOS_ONLY_PATTERNS = [
-    r"^//sandboxed_jupyter[:/]",
-    r"^//mcp_infra/seatbelt[:/]",
-]
-
-
 class CIDecision(BaseModel):
     """Result of CI decision computation."""
 
@@ -122,16 +114,41 @@ def has_infra_changes(changed_files: list[str]) -> bool:
 
 
 def filter_platform_incompatible(targets: list[str]) -> list[str]:
-    """Filter out targets that are incompatible with the CI platform (Linux).
+    """Filter out targets that are incompatible with the CI platform.
 
-    GitHub Actions runners are Linux, so we exclude macOS-only targets.
+    Uses bazel cquery to check target_compatible_with constraints.
+    Targets incompatible with the current platform are excluded.
     """
-    compiled = [re.compile(p) for p in MACOS_ONLY_PATTERNS]
-    filtered = [t for t in targets if not any(r.match(t) for r in compiled)]
-    excluded = len(targets) - len(filtered)
+    if not targets:
+        return targets
+
+    import tempfile
+
+    # Use cquery to filter - it respects target_compatible_with
+    targets_str = " ".join(targets)
+    query = f"set({targets_str})"
+
+    # cquery with --output=label only outputs compatible targets
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".query", delete_on_close=False) as f:
+        f.write(query)
+        f.flush()
+        result = subprocess.run(
+            ["bazelisk", "cquery", f"--query_file={f.name}", "--output=label"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    if result.returncode != 0:
+        # cquery failed - fall back to returning all targets
+        print(f"Warning: cquery failed, skipping platform filter: {result.stderr[:200]}")
+        return targets
+
+    compatible = [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    excluded = len(targets) - len(compatible)
     if excluded:
-        print(f"Filtered out {excluded} macOS-only targets")
-    return filtered
+        print(f"Filtered out {excluded} platform-incompatible targets")
+    return compatible
 
 
 def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
