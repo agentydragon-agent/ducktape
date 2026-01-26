@@ -8,8 +8,8 @@ import pytest
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from mcp_infra.testing.fixtures import *  # noqa: F403
 
-from .testing import git_repo_utils
-from .testing.git_repo_utils import RepoHelper
+from git_commit_ai.testing import git_repo_utils
+from git_commit_ai.testing.git_repo_utils import RepoHelper
 
 
 @pytest.fixture

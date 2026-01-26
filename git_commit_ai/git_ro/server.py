@@ -32,7 +32,7 @@ from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
-from .formatting import (
+from git_commit_ai.git_ro.formatting import (
     ChangedFilesPage,
     DiffStatPage,
     ListSlice,

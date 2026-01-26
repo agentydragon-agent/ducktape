@@ -22,6 +22,7 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":formatting",
         "//mcp_infra:flat_tool",
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:simple",

@@ -7,8 +7,8 @@ from pathlib import Path
 import pygit2
 import pytest_bazel
 
-from .cli import stage_tracked_changes
-from .testing.git_repo_utils import RepoHelper
+from git_commit_ai.cli import stage_tracked_changes
+from git_commit_ai.testing.git_repo_utils import RepoHelper
 
 
 def test_stage_all_includes_modified_files(temp_repo: RepoHelper) -> None:
