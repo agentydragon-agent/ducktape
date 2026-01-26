@@ -31,14 +31,21 @@ Outputs to $GITHUB_OUTPUT:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Add repo root to path for tools.ci imports when running via uv
+_REPO_ROOT = Path(__file__).parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import os
 import re
 import subprocess
-import sys
-import tempfile
 import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
+
+from tools.ci.bazel_query import run_query_with_file
 
 BAZEL_DIFF_VERSION = "12.1.1"
 BAZEL_DIFF_URL = f"https://github.com/Tinder/bazel-diff/releases/download/{BAZEL_DIFF_VERSION}/bazel-diff_deploy.jar"
@@ -251,15 +258,16 @@ def run_bazel_diff(jar_path: Path, workspace: str, base_sha: str) -> list[str] |
 
 
 def check_intersection(targets: str, pattern: str) -> bool:
-    """Check if affected targets intersect with a pattern using bazel query."""
+    """Check if affected targets intersect with a pattern using bazel query.
+
+    Uses --query_file to avoid "Argument list too long" errors with large target sets.
+    """
     if not targets:
         return False
 
     # Full build checks pattern directly; otherwise compute set intersection
     query = pattern if targets == "//..." else f"set({targets}) intersect {pattern}"
-
-    result = run_cmd(["bazelisk", "query", query], check=False)
-    # Non-empty output means intersection exists
+    result = run_query_with_file(query)
     return bool(result.stdout.strip())
 
 
@@ -415,7 +423,7 @@ def run_release_mode() -> None:
 
     # Check if any targets match the pattern
     query = f"set({' '.join(targets)}) intersect {target_pattern}"
-    result = run_cmd(["bazelisk", "query", query], check=False)
+    result = run_query_with_file(query)
 
     if result.stdout.strip():
         matching = result.stdout.strip().split("\n")

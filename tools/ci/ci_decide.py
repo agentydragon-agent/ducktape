@@ -15,16 +15,23 @@ Requires BAZEL_DIFF_JAR environment variable pointing to bazel-diff JAR.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Add repo root to path for tools.ci imports when running via uv
+_REPO_ROOT = Path(__file__).parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import json
 import os
 import re
 import subprocess
-import tempfile
-from pathlib import Path
 
 import pygit2
-from models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 from pydantic import BaseModel, Field
+from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets
+from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
 # Infrastructure patterns that affect all targets (caching may be invalid)
 INFRA_PATTERNS = [
@@ -36,7 +43,6 @@ INFRA_PATTERNS = [
     r"^tools/bazel",
     r"^WORKSPACE",
 ]
-
 
 class CIDecision(BaseModel):
     """Result of CI decision computation."""
@@ -105,6 +111,22 @@ def has_infra_changes(changed_files: list[str]) -> bool:
     """Check if any changed files match infrastructure patterns."""
     compiled = [re.compile(p) for p in INFRA_PATTERNS]
     return any(r.match(f) for r in compiled for f in changed_files)
+
+
+def filter_platform_incompatible(targets: list[str]) -> list[str]:
+    """Filter out targets that are incompatible with the CI platform.
+
+    Uses bazel cquery to check target_compatible_with constraints.
+    Targets incompatible with the current platform are excluded.
+    """
+    if not targets:
+        return targets
+
+    compatible = filter_compatible_targets(targets)
+    excluded = len(targets) - len(compatible)
+    if excluded:
+        print(f"Filtered out {excluded} platform-incompatible targets")
+    return compatible
 
 
 def checkout_commit(repo: pygit2.Repository, commit: pygit2.Commit) -> None:
@@ -176,26 +198,6 @@ def run_bazel_diff(
     except subprocess.CalledProcessError as e:
         print(f"bazel-diff failed: {e.stderr or e.stdout or e}")
         return None
-
-
-def check_bazel_intersection(targets: list[str], pattern: str) -> bool:
-    """Check if affected targets intersect with a Bazel pattern.
-
-    Uses --query_file to avoid "Argument list too long" errors with large target sets.
-    """
-    if not targets:
-        return False
-
-    targets_str = " ".join(targets)
-    query = f"set({targets_str}) intersect {pattern}"
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".query", delete_on_close=False) as f:
-        f.write(query)
-        f.flush()
-        result = subprocess.run(
-            ["bazelisk", "query", f"--query_file={f.name}"], check=False, capture_output=True, text=True
-        )
-    return bool(result.stdout.strip())
 
 
 def should_trigger(name: str, config: WorkflowConfig, targets: list[str], changed_files: list[str]) -> bool:
@@ -274,6 +276,8 @@ def compute_decision(workflows: dict[str, WorkflowConfig], workspace: Path) -> C
         print("No Bazel targets affected")
     else:
         print_truncated(f"Found {len(targets)} affected targets", targets)
+        # Filter out platform-incompatible targets for Linux CI
+        targets = filter_platform_incompatible(targets)
         if infra_changed:
             all_targets = True
 

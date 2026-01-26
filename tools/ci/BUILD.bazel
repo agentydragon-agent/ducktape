@@ -1,0 +1,75 @@
+# NOTE: No aggregator target - use specific per-file targets like :models, :bazel_query
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/lint:linters.bzl", "ruff_test")
+
+# === Base modules (no internal deps) ===
+
+py_library(
+    name = "bazel_query",
+    srcs = ["bazel_query.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+# === Modules with internal deps ===
+
+py_library(
+    name = "bazel_diff",
+    srcs = ["bazel_diff.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [":bazel_query"],
+)
+
+py_library(
+    name = "ci_decide",
+    srcs = ["ci_decide.py"],
+    data = ["workflows.yaml"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":bazel_query",
+        ":models",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "generate_ci",
+    srcs = ["generate_ci.py"],
+    data = ["workflows.yaml"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+# === Linting ===
+
+ruff_test(
+    name = "ruff",
+    srcs = [
+        ":bazel_diff",
+        ":bazel_query",
+        ":ci_decide",
+        ":generate_ci",
+        ":models",
+    ],
+)
