@@ -147,13 +147,32 @@
       tags: [nvidia, docker, gpu]
       changed_when: true
 
-    - name: Install podman
-      ansible.builtin.apt:
-        name:
-          - podman
-        state: present
+    # Podman 4.x from upstream Kubic repo (Pop!_OS 22.04 ships 3.4.4 which lacks CDI)
+    - name: Add Kubic podman repository for podman 4.x
+      ansible.builtin.deb822_repository:
+        name: devel_kubic_libcontainers_unstable
+        types: [deb]
+        uris: https://download.opensuse.org/repositories/devel:kubic:libcontainers:unstable/xUbuntu_22.04/
+        suites: [./]
+        signed_by: https://download.opensuse.org/repositories/devel:kubic:libcontainers:unstable/xUbuntu_22.04/Release.key
       become: true
       tags: [podman, gpu]
+
+    - name: Install podman from Kubic repo
+      ansible.builtin.apt:
+        name: podman
+        state: latest
+        update_cache: true
+      become: true
+      tags: [podman, gpu]
+
+    - name: Migrate podman database (3.x to 4.x)
+      ansible.builtin.command: podman system migrate
+      become: true
+      become_user: "{{ my_user }}"
+      tags: [podman, gpu]
+      changed_when: true
+      failed_when: false
 
     # Pop!_OS 22.04 pins nvidia-container-toolkit to 1.12.1 (March 2023)
     # which crashes with driver 580+ (RTX 5090). Override to use NVIDIA's repo.
