@@ -21,8 +21,8 @@ Requirements:
 import argparse
 import datetime
 import json
+import random
 import shutil
-import string
 import subprocess
 import sys
 import tempfile
@@ -103,23 +103,27 @@ def run_clock(stop_event: threading.Event) -> None:
     sys.stdout.flush()
 
 
-MARKER_CHARS = string.ascii_lowercase + string.ascii_uppercase
+# Non-confusable characters for markers, excluding visually ambiguous pairs
+# (0/O, 1/l/I, 5/S, 2/Z, 8/B, etc.).
+# Shuffled per-run so vision models aren't primed by alphabetical sequence.
+_MARKER_POOL = list("acdefghjkmnpqrtuvwxyACDEFGHJKLMNPQRTUVWXY3467")
 
 
-def marker_char(index: int) -> str:
-    if index >= len(MARKER_CHARS):
-        raise ValueError(f"Max {len(MARKER_CHARS)} samples supported")
-    return MARKER_CHARS[index]
+def _pick_markers(n: int) -> list[str]:
+    """Pick n unique shuffled markers from the pool."""
+    if n > len(_MARKER_POOL):
+        raise ValueError(f"Max {len(_MARKER_POOL)} samples supported (requested {n})")
+    return random.sample(_MARKER_POOL, n)
 
 
-def type_marker(index: int) -> str:
+def type_marker(char: str) -> str:
     """Type a single-char marker via ydotool. Returns the timestamp at send time.
 
     Uses default ydotool delays (20ms hold + 20ms inter-key), which adds ~40ms
     to measured latency for the single character.
     """
     ts = _now_str()
-    subprocess.run(["ydotool", "type", marker_char(index)], check=True, capture_output=True)
+    subprocess.run(["ydotool", "type", char], check=True, capture_output=True)
     return ts
 
 
@@ -173,14 +177,16 @@ def main():
 
     time.sleep(1.0)
 
+    markers = _pick_markers(args.samples)
+
     sent_timestamps = []
     keystroke_perf_times = []
-    for i in range(args.samples):
-        ts = type_marker(i)
+    for i, char in enumerate(markers):
+        ts = type_marker(char)
         perf_time = time.perf_counter()
         sent_timestamps.append(ts)
         keystroke_perf_times.append(perf_time)
-        sys.stdout.write(f"\n  [{i + 1}/{args.samples}] Marker '{marker_char(i)}' sent at {ts}\n")
+        sys.stdout.write(f"\n  [{i + 1}/{args.samples}] sent at {ts}\n")
         sys.stdout.flush()
         if i < args.samples - 1:
             time.sleep(args.delay)
@@ -205,7 +211,6 @@ def main():
     frame_count = extract_frames(actual_path, frame_dir)
     print(f"  {frame_count} frames extracted")
 
-    markers = [marker_char(i) for i in range(args.samples)]
     metadata = {
         "markers": markers,
         "sent_timestamps": sent_timestamps,

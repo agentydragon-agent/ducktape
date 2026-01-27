@@ -29,19 +29,25 @@ import openai
 from PIL import Image
 
 VISION_PROMPT = (
-    "This is a screenshot of a desktop with two windows side by side.\n\n"
-    "LEFT: a terminal showing a measurement script with a 'Clock: HH:MM:SS.mmm' line.\n"
-    "RIGHT: a SPICE remote desktop window showing vim/nvim in INSERT mode (dark background). "
-    "The first line of the vim buffer contains a growing sequence of lowercase letters "
-    "(e.g. 'abcde') being typed one at a time as test markers.\n\n"
-    "IMPORTANT: vim shows a block cursor AFTER the last typed character. "
-    "The block cursor is NOT a typed character - do NOT include it in the text. "
-    "To verify: read the column number from the vim status bar (e.g. '1,6' means 5 characters typed, "
-    "cursor is at position 6). The number of characters in your answer must equal column minus 1.\n\n"
+    "This is a screenshot of a desktop showing two windows.\n\n"
+    "One window is a terminal running a measurement script that prints 'Clock: HH:MM:SS.mmm' lines.\n"
+    "The other window is a SPICE remote desktop viewer showing vim/nvim in INSERT mode "
+    "(dark background, green '-- INSERT --' at bottom).\n\n"
+    "The windows may be side by side or overlapping, in any order. "
+    "Identify them by their content, not position.\n\n"
+    "CRITICAL: Report ONLY what you can actually see rendered in the vim buffer. "
+    "Do NOT guess, predict, or infer what text should be there. "
+    "If the vim buffer line 1 appears empty (no visible characters before the cursor), "
+    "report vim_text as empty string and vim_col as 1.\n\n"
+    "The vim status bar shows the cursor position (e.g. '1,6' means row 1, column 6). "
+    "Column 1 means no text typed yet. Column N means N-1 characters on the line. "
+    "The block cursor itself is NOT a character - do not count it.\n\n"
+    "IMPORTANT: vim_col from the status bar is the authoritative source of truth. "
+    "Read it first, then verify the text matches (length must equal col minus 1).\n\n"
     "Output JSON with:\n"
     '- "clock": the time on the most recent Clock: line (e.g. "02:34:56.789"), or null\n'
-    '- "vim_text": the exact text on vim line 1 (letters only, no cursor), or "" if empty\n'
-    '- "vim_col": the column number from the vim status bar (the number after the comma in e.g. "1,6"), or null'
+    '- "vim_text": the exact text on vim line 1 (only characters you can see, no cursor), or "" if empty\n'
+    '- "vim_col": the column number from the vim status bar (number after comma in e.g. "1,6"), or null'
 )
 
 VISION_SCHEMA = {
@@ -221,7 +227,15 @@ async def analyze_vision(
     frame_interval_ms = recording_duration * 1000.0 / len(frame_files)
 
     def _vim_text(fr: dict) -> str:
-        return fr.get("vim_text", "".join(fr.get("vim_buffer_text", [])))
+        text = fr.get("vim_text", "".join(fr.get("vim_buffer_text", [])))
+        # Cross-validate with vim_col: col=N means N-1 characters typed.
+        # If col disagrees with text length, trust col (vision hallucinates text).
+        col = fr.get("vim_col")
+        if col is not None:
+            expected_len = col - 1
+            if expected_len >= 0 and len(text) != expected_len:
+                text = text[:expected_len]
+        return text
 
     # Build expected cumulative strings: "a", "ab", "abc", ...
     cumulative = []

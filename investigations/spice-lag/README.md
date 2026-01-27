@@ -70,20 +70,73 @@ than VT (58ms adjusted), attributable to the compositor + llvmpipe path.
 
 Recording: `results/2026-01-27T04:41_gnome/`
 
+#### 2026-01-27: GNOME burst typing (the real problem)
+
+40 markers at 200ms intervals (burst typing) under GNOME/SPICE. This simulates
+actual typing rather than isolated keystrokes with long pauses.
+
+```
+Samples: 40/40
+Average: 462ms [458-465ms]
+Min: -74ms, Max: 764ms
+Frame interval: ±25.3ms (39.6 fps actual)
+```
+
+The first 5 keystrokes land at ~160ms (matching steady-state), then latency
+jumps to **500-750ms** as something in the desktop rendering pipeline saturates.
+The last few markers drain the queue (354ms, 140ms, then negative = multiple
+characters rendered in a single catch-up frame).
+
+Recording: `results/2026-01-27T04:51_gnome_burst/`
+
+#### 2026-01-27: VT burst typing (partial — layout disrupted)
+
+40 markers at ~200ms intervals in a bare VT over SPICE. The recording window
+layout changed mid-recording (around marker v/w), causing a stall and
+unreliable data in the second half.
+
+```
+Samples: 39/40
+Average: 159ms [155-164ms]  (misleading — bimodal)
+```
+
+- **First half (a-v, 22 markers)**: ~91-121ms, consistent with VT steady-state
+- **Layout disruption (w-z)**: Display stalled, 4 markers batched into 2 frames,
+  producing negative/nonsensical values
+- **Second half (A-N)**: ~254-322ms, consistently elevated
+
+The first half confirms VT handles burst typing without degradation (~100ms,
+same as steady-state). The second half is unreliable due to the mid-recording
+layout change. A clean re-recording is needed.
+
+Recording: `results/2026-01-27T04:55_vt_burst/`
+
 #### Comparison
 
-| Setup             | Raw avg | Adjusted (minus ~40ms ydotool) |
-| ----------------- | ------- | ------------------------------ |
-| VT over SPICE     | 98ms    | ~58ms                          |
-| GNOME over SPICE  | 147ms   | ~107ms                         |
-| **Delta (GNOME)** |         | **~49ms**                      |
+| Setup                    | Raw avg | Adjusted | Notes                      |
+| ------------------------ | ------- | -------- | -------------------------- |
+| VT over SPICE            | 98ms    | ~58ms    | Smooth, consistent         |
+| VT burst (first half)    | ~100ms  | ~60ms    | 22 markers, no degradation |
+| GNOME over SPICE (slow)  | 147ms   | ~107ms   | One keystroke every 3s     |
+| GNOME over SPICE (burst) | 462ms   | ~422ms   | One keystroke every 200ms  |
 
-The GNOME compositor + llvmpipe adds ~49ms. Both cases share the same SPICE
-transport, so the difference is purely the in-VM rendering pipeline. The
-subjective "laggy" feel of GNOME-over-SPICE likely comes from this extra
-latency compounding with the already-present ~58ms base, plus potential frame
-drops or jitter from llvmpipe under load that this steady-state test doesn't
-capture.
+The steady-state GNOME test (one key every 3 seconds) only adds ~49ms over VT.
+But under sustained typing, the desktop pipeline can't keep up, causing
+queueing and latency ballooning to 500-750ms.
+
+VT burst typing (first 22 markers before recording disruption) shows no
+degradation — latency stays at ~100ms, same as steady-state. This suggests the
+sustained-typing problem is specific to the desktop path, not SPICE itself.
+However, the VT burst recording was disrupted and needs a clean re-recording to
+fully confirm this.
+
+The bottleneck in the desktop path could be in:
+
+- llvmpipe (software OpenGL compositing)
+- SPICE video encoding (`videostreaming=all`)
+- QXL driver overhead
+- Wayland compositor frame scheduling
+- Some combination of the above
 
 ### Ruled out: SPICE routing through VPS
 
@@ -157,5 +210,5 @@ but complex setup.
 
 ## Next Steps
 
-1. Record GNOME-over-SPICE latency for comparison with VT baseline
+1. Re-record VT burst without layout disruption for clean comparison
 2. Try solutions and re-measure to quantify improvement
