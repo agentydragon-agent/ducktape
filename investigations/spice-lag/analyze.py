@@ -226,32 +226,26 @@ async def analyze_vision(
     frame_results = await _analyze_vision_async(frame_files)
     frame_interval_ms = recording_duration * 1000.0 / len(frame_files)
 
-    def _vim_text(fr: dict) -> str:
-        text = fr.get("vim_text", "".join(fr.get("vim_buffer_text", [])))
-        # Cross-validate with vim_col: col=N means N-1 characters typed.
-        # If col disagrees with text length, trust col (vision hallucinates text).
+    def _vim_col(fr: dict) -> int:
+        """Number of characters typed, derived from vim_col (col=N means N-1 chars)."""
         col = fr.get("vim_col")
-        if col is not None:
-            expected_len = col - 1
-            if expected_len >= 0 and len(text) != expected_len:
-                text = text[:expected_len]
-        return text
+        if col is not None and col >= 1:
+            return col - 1
+        # Fall back to text length if col missing.
+        text = fr.get("vim_text", "".join(fr.get("vim_buffer_text", [])))
+        return len(text)
 
-    # Build expected cumulative strings: "a", "ab", "abc", ...
-    cumulative = []
-    s = ""
-    for m in markers:
-        s += m
-        cumulative.append(s)
-
+    # Detect each marker by vim_col transition: marker N appears when char count
+    # goes from N-1 to N (or higher). This only requires reading one integer per
+    # frame, avoiding character-perfect transcription of random strings.
     results = []
-    for marker, expected, ts in zip(markers, cumulative, sent_timestamps, strict=True):
+    for marker_idx, (marker, ts) in enumerate(zip(markers, sent_timestamps, strict=True)):
+        target_chars = marker_idx + 1  # after Nth marker, N chars should be visible
         found_frame = None
         for i, fr in enumerate(frame_results):
-            text = _vim_text(fr)
-            if len(text) >= len(expected) and text[: len(expected)] == expected:
-                prev_text = _vim_text(frame_results[i - 1]) if i > 0 else ""
-                if len(prev_text) < len(expected):
+            if _vim_col(fr) >= target_chars:
+                prev_chars = _vim_col(frame_results[i - 1]) if i > 0 else 0
+                if prev_chars < target_chars:
                     found_frame = i
                     break
 
@@ -277,7 +271,7 @@ async def analyze_vision(
             latency_ms = (upper_ms + lower_ms) / 2
             print(
                 f"  Marker '{marker}' (sent {ts}) first in frame {found_frame + 1}: "
-                f"prev_clock={prev_clock}, clock={this_clock} → "
+                f"prev_clock={prev_clock}, clock={this_clock} -> "
                 f"{lower_ms:.0f}-{upper_ms:.0f}ms (mid={latency_ms:.0f}ms)"
             )
             results.append(
