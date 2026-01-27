@@ -204,11 +204,9 @@ def main():
         description="Measure SPICE input-to-display latency (Wayland/GNOME)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--samples", type=int, default=10, help="Number of measurements")
+    parser.add_argument("--samples", type=int, default=3, help="Number of measurements")
     parser.add_argument("--fps", type=int, default=60, help="Recording framerate")
     parser.add_argument("--key", type=str, default="x", help="Key to press")
-    parser.add_argument("--keep-video", action="store_true", help="Keep video files for debugging")
-
     args = parser.parse_args()
 
     # Preflight checks
@@ -263,10 +261,7 @@ def main():
     else:
         print("  No successful measurements")
 
-    if not args.keep_video:
-        shutil.rmtree(work_dir, ignore_errors=True)
-    else:
-        print(f"\nVideo files kept in: {work_dir}")
+    print(f"\nVideo files kept in: {work_dir}")
 
 
 if __name__ == "__main__":
