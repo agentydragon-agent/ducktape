@@ -22,6 +22,7 @@ import argparse
 import datetime
 import json
 import shutil
+import string
 import subprocess
 import sys
 import tempfile
@@ -102,10 +103,23 @@ def run_clock(stop_event: threading.Event) -> None:
     sys.stdout.flush()
 
 
+MARKER_CHARS = string.ascii_lowercase + string.ascii_uppercase
+
+
+def marker_char(index: int) -> str:
+    if index >= len(MARKER_CHARS):
+        raise ValueError(f"Max {len(MARKER_CHARS)} samples supported")
+    return MARKER_CHARS[index]
+
+
 def type_marker(index: int) -> str:
-    """Type a short marker into focused window via ydotool. Returns the timestamp at send time."""
+    """Type a single-char marker via ydotool. Returns the timestamp at send time.
+
+    Uses default ydotool delays (20ms hold + 20ms inter-key), which adds ~40ms
+    to measured latency for the single character.
+    """
     ts = _now_str()
-    subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", f"{index}\n"], check=True, capture_output=True)
+    subprocess.run(["ydotool", "type", marker_char(index)], check=True, capture_output=True)
     return ts
 
 
@@ -142,6 +156,7 @@ def main():
     print("SPICE Latency Recording")
     print("=======================")
     print(f"Samples: {args.samples}, FPS: {args.fps}, Output: {work_dir}")
+    print("Note: ydotool default delays (20ms hold + 20ms inter-key) add ~40ms to measurements")
     print()
     print("Focus the SPICE window now. Starting in 5 seconds...")
     time.sleep(5.0)
@@ -165,7 +180,7 @@ def main():
         perf_time = time.perf_counter()
         sent_timestamps.append(ts)
         keystroke_perf_times.append(perf_time)
-        sys.stdout.write(f"\n  [{i + 1}/{args.samples}] Marker '{i}' sent at {ts}\n")
+        sys.stdout.write(f"\n  [{i + 1}/{args.samples}] Marker '{marker_char(i)}' sent at {ts}\n")
         sys.stdout.flush()
         if i < args.samples - 1:
             time.sleep(args.delay)
@@ -190,7 +205,7 @@ def main():
     frame_count = extract_frames(actual_path, frame_dir)
     print(f"  {frame_count} frames extracted")
 
-    markers = [str(i) for i in range(args.samples)]
+    markers = [marker_char(i) for i in range(args.samples)]
     metadata = {
         "markers": markers,
         "sent_timestamps": sent_timestamps,
