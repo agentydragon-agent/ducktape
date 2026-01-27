@@ -46,25 +46,26 @@ def _dbus_call(
     params: GLib.Variant | None = None,
     reply_type: GLib.VariantType | None = None,
 ) -> GLib.Variant:
-    return bus.call_sync(
-        bus_name, object_path, interface, method,
-        params, reply_type,
-        Gio.DBusCallFlags.NONE, -1, None,
-    )
+    return bus.call_sync(bus_name, object_path, interface, method, params, reply_type, Gio.DBusCallFlags.NONE, -1, None)
 
 
 def start_screencast(bus: Gio.DBusConnection, fps: int, output_path: Path) -> str:
     """Start GNOME Shell full-screen screencast. Returns filename."""
-    options = GLib.Variant("a{sv}", {
-        "framerate": GLib.Variant("i", fps),
-        "draw-cursor": GLib.Variant("b", False),
-    })
+    builder = GLib.VariantBuilder.new(GLib.VariantType("(sa{sv})"))
+    builder.add_value(GLib.Variant("s", str(output_path)))
+    options_builder = GLib.VariantBuilder.new(GLib.VariantType("a{sv}"))
+    options_builder.add_value(GLib.Variant("{sv}", ("framerate", GLib.Variant("i", fps))))
+    options_builder.add_value(GLib.Variant("{sv}", ("draw-cursor", GLib.Variant("b", False))))
+    builder.add_value(options_builder.end())
+    params = builder.end()
 
     result = _dbus_call(
         bus,
-        "org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast",
-        "org.gnome.Shell.Screencast", "Screencast",
-        GLib.Variant("(sa{sv})", (str(output_path), options)),
+        "org.gnome.Shell.Screencast",
+        "/org/gnome/Shell/Screencast",
+        "org.gnome.Shell.Screencast",
+        "Screencast",
+        params,
         GLib.VariantType("(bs)"),
     )
 
@@ -78,9 +79,7 @@ def start_screencast(bus: Gio.DBusConnection, fps: int, output_path: Path) -> st
 def stop_screencast(bus: Gio.DBusConnection) -> None:
     """Stop an active GNOME Shell screencast."""
     _dbus_call(
-        bus,
-        "org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast",
-        "org.gnome.Shell.Screencast", "StopScreencast",
+        bus, "org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast", "org.gnome.Shell.Screencast", "StopScreencast"
     )
 
 
@@ -158,12 +157,7 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
     return {"keystroke_frame": keystroke_frame, "change_frame": change_frame, "latency_ms": latency_ms, "fps": fps}
 
 
-def measure_once(
-    bus: Gio.DBusConnection,
-    key: str = "x",
-    fps: int = 60,
-    work_dir: Path | None = None,
-) -> float | None:
+def measure_once(bus: Gio.DBusConnection, key: str = "x", fps: int = 60, work_dir: Path | None = None) -> float | None:
     """Perform one latency measurement. Returns latency in ms, or None on failure."""
     if work_dir is None:
         work_dir = Path(tempfile.mkdtemp(prefix="spice_latency_"))
