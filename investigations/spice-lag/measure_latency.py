@@ -18,7 +18,6 @@ Requirements:
 """
 
 import argparse
-import json
 import shutil
 import subprocess
 import sys
@@ -54,40 +53,8 @@ def _dbus_call(
     )
 
 
-def find_spice_window_rect(bus: Gio.DBusConnection) -> tuple[int, int, int, int] | None:
-    """Find SPICE window rectangle via GNOME Shell eval. Returns (x, y, w, h) or None."""
-    js = """
-    (function() {
-        let found = global.get_window_actors().find(
-            a => a.meta_window.title.includes("remote-viewer") ||
-                 a.meta_window.title.includes("SPICE") ||
-                 a.meta_window.title.includes("virt-viewer")
-        );
-        if (!found) return "null";
-        let r = found.meta_window.get_frame_rect();
-        return JSON.stringify({x: r.x, y: r.y, width: r.width, height: r.height});
-    })()
-    """
-
-    result = _dbus_call(
-        bus, "org.gnome.Shell", "/org/gnome/Shell", "org.gnome.Shell",
-        "Eval", GLib.Variant("(s)", (js,)), GLib.VariantType("(bs)"),
-    )
-
-    success = result.get_child_value(0).get_boolean()
-    value = result.get_child_value(1).get_string()
-    if not success or value == "null":
-        return None
-
-    rect = json.loads(value)
-    return rect["x"], rect["y"], rect["width"], rect["height"]
-
-
-def start_screencast_area(
-    bus: Gio.DBusConnection, fps: int, output_path: Path, region: tuple[int, int, int, int]
-) -> str:
-    """Start GNOME Shell screencast. Returns filename."""
-    x, y, w, h = region
+def start_screencast(bus: Gio.DBusConnection, fps: int, output_path: Path) -> str:
+    """Start GNOME Shell full-screen screencast. Returns filename."""
     options = GLib.Variant("a{sv}", {
         "framerate": GLib.Variant("i", fps),
         "draw-cursor": GLib.Variant("b", False),
@@ -96,8 +63,8 @@ def start_screencast_area(
     result = _dbus_call(
         bus,
         "org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast",
-        "org.gnome.Shell.Screencast", "ScreencastArea",
-        GLib.Variant("(iiiisa{sv})", (x, y, w, h, str(output_path), options)),
+        "org.gnome.Shell.Screencast", "Screencast",
+        GLib.Variant("(sa{sv})", (str(output_path), options)),
         GLib.VariantType("(bs)"),
     )
 
@@ -195,7 +162,6 @@ def measure_once(
     bus: Gio.DBusConnection,
     key: str = "x",
     fps: int = 60,
-    region: tuple[int, int, int, int] = (0, 0, 1920, 1080),
     work_dir: Path | None = None,
 ) -> float | None:
     """Perform one latency measurement. Returns latency in ms, or None on failure."""
@@ -205,7 +171,7 @@ def measure_once(
     video_path = work_dir / "recording.webm"
 
     print(f"  Starting screencast at {fps}fps...")
-    filename = start_screencast_area(bus, fps, video_path, region=region)
+    filename = start_screencast(bus, fps, video_path)
     recording_start = time.perf_counter()
 
     # Wait for recording to stabilize
@@ -259,27 +225,17 @@ def main():
 
     print("SPICE Latency Measurement (Wayland/GNOME)")
     print("==========================================")
-
-    bus = _session_bus()
-
-    # Find SPICE window
-    print("Looking for SPICE window...")
-    region = find_spice_window_rect(bus)
-    if not region:
-        print("Error: SPICE window not found. Make sure remote-viewer or virt-viewer is running.")
-        sys.exit(1)
-    x, y, w, h = region
-    print(f"Found SPICE window: {w}x{h} at ({x},{y})")
-
+    print("Maximize the SPICE window before running.")
     print(f"Samples: {args.samples}, FPS: {args.fps}, Key: {args.key}")
     print()
 
+    bus = _session_bus()
     latencies = []
     work_dir = Path(tempfile.mkdtemp(prefix="spice_latency_"))
 
     for i in range(args.samples):
         print(f"Measurement {i + 1}/{args.samples}:")
-        latency = measure_once(bus, key=args.key, fps=args.fps, region=region, work_dir=work_dir)
+        latency = measure_once(bus, key=args.key, fps=args.fps, work_dir=work_dir)
 
         if latency is not None:
             latencies.append(latency)
