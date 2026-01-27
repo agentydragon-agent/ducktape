@@ -6,6 +6,7 @@ without requiring the full proxy infrastructure.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Generator
 from pathlib import Path
 
@@ -15,9 +16,8 @@ import pytest_bazel
 from net_util.net import pick_free_port
 from tools.claude_hooks import settings
 from tools.claude_hooks.settings import HookSettings
-from tools.claude_hooks.supervisor.client import is_running as supervisor_is_running
 from tools.claude_hooks.supervisor.setup import start as supervisor_start
-from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup
+from tools.claude_hooks.testing.supervisor_cleanup import supervisor_cleanup, supervisor_is_running
 
 
 @pytest.fixture
@@ -53,52 +53,54 @@ def cleanup_supervisor_fixture(isolated_supervisor_env: Path) -> Generator[None]
         yield
 
 
-class TestSupervisorLifecycle:
-    """Tests for supervisor start/stop lifecycle."""
+async def test_supervisor_lifecycle(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+    """Test supervisor start/stop lifecycle."""
+    assert not await supervisor_is_running(hook_settings)
 
-    def test_supervisor_lifecycle(self, isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
-        """Test supervisor start/stop lifecycle."""
-        assert not supervisor_is_running(hook_settings)
+    await supervisor_start(hook_settings)
+    assert await supervisor_is_running(hook_settings)
 
-        supervisor_start(hook_settings)
-        assert supervisor_is_running(hook_settings)
-
-        # Start again should be idempotent
-        supervisor_start(hook_settings)
-        assert supervisor_is_running(hook_settings)
+    # Start again should be idempotent
+    await supervisor_start(hook_settings)
+    assert await supervisor_is_running(hook_settings)
 
 
-class TestSupervisorServices:
-    """Tests for supervisor service management."""
+async def test_add_and_check_service(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+    """Test adding a service to supervisor."""
+    supervisor_result = await supervisor_start(hook_settings)
 
-    def test_add_and_check_service(self, isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
-        """Test adding a service to supervisor."""
-        supervisor_result = supervisor_start(hook_settings)
+    await supervisor_result.client.add_service(
+        name="test-service", command="sleep 3600", directory=isolated_supervisor_env
+    )
 
-        supervisor_result.client.add_service(
-            name="test-service", command="sleep 3600", directory=isolated_supervisor_env
-        )
+    # Poll until service transitions from STARTING to RUNNING (CI can be slow)
+    for _ in range(20):
+        if await supervisor_result.client.is_service_running("test-service"):
+            break
+        await asyncio.sleep(0.25)
+    else:
+        state = await supervisor_result.client.get_service_state("test-service")
+        raise AssertionError(f"test-service not running after 5s (state={state})")
 
-        assert supervisor_result.client.is_service_running("test-service")
 
-    def test_update_service(self, isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
-        """Test updating a service config."""
-        supervisor_result = supervisor_start(hook_settings)
+async def test_update_service(isolated_supervisor_env: Path, hook_settings: HookSettings) -> None:
+    """Test updating a service config."""
+    supervisor_result = await supervisor_start(hook_settings)
 
-        supervisor_result.client.add_service(
-            name="test-service", command="sleep 3600", directory=isolated_supervisor_env
-        )
+    await supervisor_result.client.add_service(
+        name="test-service", command="sleep 3600", directory=isolated_supervisor_env
+    )
 
-        initial_info = supervisor_result.client.get_process_info("test-service")
-        initial_pid = initial_info.pid
+    initial_info = await supervisor_result.client.get_process_info("test-service")
+    initial_pid = initial_info.pid
 
-        supervisor_result.client.update_service(
-            name="test-service", command="sleep 7200", directory=isolated_supervisor_env
-        )
+    await supervisor_result.client.update_service(
+        name="test-service", command="sleep 7200", directory=isolated_supervisor_env
+    )
 
-        # Verify restarted (PID should have changed)
-        new_info = supervisor_result.client.get_process_info("test-service")
-        assert new_info.pid != initial_pid, f"Service should have been restarted (PID unchanged: {initial_pid})"
+    # Verify restarted (PID should have changed)
+    new_info = await supervisor_result.client.get_process_info("test-service")
+    assert new_info.pid != initial_pid, f"Service should have been restarted (PID unchanged: {initial_pid})"
 
 
 if __name__ == "__main__":
