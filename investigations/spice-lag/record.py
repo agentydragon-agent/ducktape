@@ -105,7 +105,7 @@ def run_clock(stop_event: threading.Event) -> None:
 def type_marker(index: int) -> str:
     """Type a short marker into focused window via ydotool. Returns the timestamp at send time."""
     ts = _now_str()
-    subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", f"{index}\n"], check=True, capture_output=True)
+    subprocess.run(["ydotool", "type", "-d", "1", "-H", "1", f"{index}\n"], check=True, capture_output=True)
     return ts
 
 
