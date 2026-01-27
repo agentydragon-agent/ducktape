@@ -292,7 +292,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--samples", type=int, default=3, help="Number of measurements")
-    parser.add_argument("--fps", type=int, default=120, help="Recording framerate (requested)")
+    parser.add_argument("--fps", type=int, default=60, help="Recording framerate (requested)")
     parser.add_argument("--vision", action="store_true", help="Use OpenAI vision API for frame analysis")
     parser.add_argument("--delay", type=float, default=3.0, help="Seconds between keystrokes")
     args = parser.parse_args()
