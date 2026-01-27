@@ -29,24 +29,29 @@ import openai
 from PIL import Image
 
 VISION_PROMPT = (
-    "This is a screenshot of a desktop with two windows side by side. "
-    "LEFT: a terminal running a measurement script that displays a Clock line like 'Clock: HH:MM:SS.mmm'. "
-    "RIGHT: a SPICE remote desktop window showing vim/nvim (dark background). "
-    "The vim buffer may contain short numeric markers (0, 1, 2, ...) typed as test input, one per line.\n\n"
-    "Read BOTH windows carefully. Ignore vim ~ (tilde) empty-line markers, status bar, and mode indicator.\n\n"
+    "This is a screenshot of a desktop with two windows side by side.\n\n"
+    "LEFT: a terminal showing a measurement script with a 'Clock: HH:MM:SS.mmm' line.\n"
+    "RIGHT: a SPICE remote desktop window showing vim/nvim in INSERT mode (dark background). "
+    "The first line of the vim buffer contains a growing sequence of lowercase letters "
+    "(e.g. 'abcde') being typed one at a time as test markers.\n\n"
+    "IMPORTANT: vim shows a block cursor AFTER the last typed character. "
+    "The block cursor is NOT a typed character - do NOT include it in the text. "
+    "To verify: read the column number from the vim status bar (e.g. '1,6' means 5 characters typed, "
+    "cursor is at position 6). The number of characters in your answer must equal column minus 1.\n\n"
     "Output JSON with:\n"
-    '- "clock": the CURRENT time shown on the Clock: line in the left terminal (e.g. "02:34:56.789"), or null if not visible. '
-    "The clock updates rapidly; if you see multiple overlapping values, read the most recent one.\n"
-    '- "vim_buffer_text": array of actual text lines in the vim buffer (exclude ~ lines)'
+    '- "clock": the time on the most recent Clock: line (e.g. "02:34:56.789"), or null\n'
+    '- "vim_text": the exact text on vim line 1 (letters only, no cursor), or "" if empty\n'
+    '- "vim_col": the column number from the vim status bar (the number after the comma in e.g. "1,6"), or null'
 )
 
 VISION_SCHEMA = {
     "type": "object",
     "properties": {
         "clock": {"type": ["string", "null"]},
-        "vim_buffer_text": {"type": "array", "items": {"type": "string"}},
+        "vim_text": {"type": "string"},
+        "vim_col": {"type": ["integer", "null"]},
     },
-    "required": ["clock", "vim_buffer_text"],
+    "required": ["clock", "vim_text", "vim_col"],
     "additionalProperties": False,
 }
 
@@ -182,7 +187,8 @@ async def _analyze_vision_async(frame_files: list[Path]) -> list[dict]:
     for i, frame_file in enumerate(frame_files):
         cp = _cache_path(frame_file)
         if cp.exists():
-            results[i] = json.loads(cp.read_text())
+            cached = json.loads(cp.read_text())
+            results[i] = cached.get("result", cached)
             cache_hits += 1
         else:
             to_query.append((i, frame_file))
@@ -195,7 +201,14 @@ async def _analyze_vision_async(frame_files: list[Path]) -> list[dict]:
 
         for (i, frame_file), result in zip(to_query, query_results, strict=True):
             results[i] = result
-            _cache_path(frame_file).write_text(json.dumps(result, indent=2))
+            cache_entry = {
+                "prompt": VISION_PROMPT,
+                "schema": VISION_SCHEMA,
+                "model": "gpt-4o",
+                "frame": frame_file.name,
+                "result": result,
+            }
+            _cache_path(frame_file).write_text(json.dumps(cache_entry, indent=2))
 
     return results  # type: ignore[return-value]
 
@@ -207,14 +220,26 @@ async def analyze_vision(
     frame_results = await _analyze_vision_async(frame_files)
     frame_interval_ms = recording_duration * 1000.0 / len(frame_files)
 
+    def _vim_text(fr: dict) -> str:
+        return fr.get("vim_text", "".join(fr.get("vim_buffer_text", [])))
+
+    # Build expected cumulative strings: "a", "ab", "abc", ...
+    cumulative = []
+    s = ""
+    for m in markers:
+        s += m
+        cumulative.append(s)
+
     results = []
-    for marker, ts in zip(markers, sent_timestamps, strict=True):
+    for marker, expected, ts in zip(markers, cumulative, sent_timestamps, strict=True):
         found_frame = None
         for i, fr in enumerate(frame_results):
-            vim_lines = fr.get("vim_buffer_text", [])
-            if marker in vim_lines:
-                found_frame = i
-                break
+            text = _vim_text(fr)
+            if len(text) >= len(expected) and text[: len(expected)] == expected:
+                prev_text = _vim_text(frame_results[i - 1]) if i > 0 else ""
+                if len(prev_text) < len(expected):
+                    found_frame = i
+                    break
 
         if found_frame is None:
             print(f"  Marker '{marker}' (sent {ts}) not found in any frame")
