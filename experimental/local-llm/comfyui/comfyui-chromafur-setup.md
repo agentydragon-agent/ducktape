@@ -26,7 +26,7 @@ cd experimental/local-llm/comfyui
 
 ## Part 1: Installing ComfyUI
 
-### Option A: Docker with start script (Recommended)
+### Option A: Podman with start script (Recommended)
 
 Uses [yanwk/comfyui-boot:cu128-slim](https://hub.docker.com/r/yanwk/comfyui-boot) - CUDA 12.8 for RTX 5090.
 
@@ -38,19 +38,19 @@ Uses [yanwk/comfyui-boot:cu128-slim](https://hub.docker.com/r/yanwk/comfyui-boot
 ./start-comfyui.sh
 ```
 
-### Option B: Manual Docker run
+### Option B: Manual Podman run
 
 ```bash
-docker run -it --rm \
+podman run -it --rm \
   --name comfyui \
-  --gpus all \
+  --device nvidia.com/gpu=all \
   -p 8188:8188 \
   -v /wyrmhdd/comfyui/models:/root/ComfyUI/models \
   -v /wyrmhdd/comfyui/output:/root/ComfyUI/output \
   -v /wyrmhdd/comfyui/input:/root/ComfyUI/input \
   -v /wyrmhdd/comfyui/custom_nodes:/root/ComfyUI/custom_nodes \
   -v /wyrmhdd/huggingface/hub:/root/.cache/huggingface/hub:ro \
-  yanwk/comfyui-boot:cu128-slim
+  docker.io/yanwk/comfyui-boot:cu128-slim
 ```
 
 ### Option C: Native Installation (pip)
@@ -257,14 +257,22 @@ ComfyUI doesn't automatically parallelize across GPUs, but you can:
 2. **Specify GPU** via command line: `python main.py --cuda-device 1`
 3. **Run multiple ComfyUI instances** on different ports/GPUs for parallel batch rendering
 
-### Running Two Instances
+### Running Two Instances (Podman)
 
 ```bash
 # Terminal 1 - GPU 0
-CUDA_VISIBLE_DEVICES=0 python main.py --port 8188
+podman run -it --rm --name comfyui-gpu0 \
+  --device nvidia.com/gpu=0 -p 8188:8188 \
+  -v /wyrmhdd/comfyui/models:/root/ComfyUI/models \
+  -v /wyrmhdd/comfyui/output:/root/ComfyUI/output \
+  docker.io/yanwk/comfyui-boot:cu128-slim
 
 # Terminal 2 - GPU 1
-CUDA_VISIBLE_DEVICES=1 python main.py --port 8189
+podman run -it --rm --name comfyui-gpu1 \
+  --device nvidia.com/gpu=1 -p 8189:8188 \
+  -v /wyrmhdd/comfyui/models:/root/ComfyUI/models \
+  -v /wyrmhdd/comfyui/output:/root/ComfyUI/output \
+  docker.io/yanwk/comfyui-boot:cu128-slim
 ```
 
 ### Memory Optimization (Not Needed with 64GB)
@@ -298,7 +306,7 @@ To use GGUF models:
 
 ## Quick Start Checklist
 
-1. [ ] Install ComfyUI (Docker or native)
+1. [ ] Install ComfyUI (Podman or native)
 2. [ ] Create symlinks or configure `extra_model_paths.yaml`
 3. [ ] Download T5 encoder (`t5xxl_fp16.safetensors`)
 4. [ ] Download FLUX VAE (`ae.safetensors`)
