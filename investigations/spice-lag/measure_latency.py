@@ -1,126 +1,100 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pillow"]
+# dependencies = ["pillow", "dbus-python"]
 # ///
 """
-SPICE input-to-display latency measurement.
+SPICE input-to-display latency measurement (Wayland/GNOME).
 
 Measures end-to-end latency: keystroke on client → character visible in SPICE window.
 
 Setup:
     1. Open SPICE client to VM on atlas
-    2. In VM: switch to VT (Ctrl+Alt+F1), open vim or similar text buffer
+    2. In VM: switch to VT, open nvim in insert mode:
+       nvim --clean -c "set guicursor=a:blinkon0" -c "startinsert"
     3. Run this script on atlas
 
 Requirements:
-    - ffmpeg, xdotool (apt install ffmpeg xdotool)
+    - ffmpeg, ydotool (installed via ansible/atlas.yaml)
+    - ydotoold running (systemd service)
     - uv (for automatic Python dependency management)
 """
 
 import argparse
+import json
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-
-def find_spice_window() -> str | None:
-    """Find SPICE/remote-viewer window ID."""
-    patterns = ["remote-viewer", "SPICE", "virt-viewer", "wyrm"]
-
-    for pattern in patterns:
-        result = subprocess.run(["xdotool", "search", "--name", pattern], check=False, capture_output=True, text=True)
-        if result.stdout.strip():
-            window_id = result.stdout.strip().split("\n")[0]
-            # Verify it exists
-            name_result = subprocess.run(
-                ["xdotool", "getwindowname", window_id], check=False, capture_output=True, text=True
-            )
-            if name_result.returncode == 0:
-                return window_id
-    return None
+import dbus
+from PIL import Image
 
 
-def get_window_geometry(window_id: str) -> tuple[int, int, int, int]:
-    """Get window position and size: (x, y, width, height)."""
-    result = subprocess.run(
-        ["xdotool", "getwindowgeometry", "--shell", window_id], check=False, capture_output=True, text=True
-    )
+def find_spice_window_rect() -> tuple[int, int, int, int] | None:
+    """Find SPICE window rectangle via GNOME Shell eval. Returns (x, y, w, h) or None."""
+    bus = dbus.SessionBus()
+    shell = bus.get_object("org.gnome.Shell", "/org/gnome/Shell")
+    shell_iface = dbus.Interface(shell, "org.gnome.Shell")
 
-    geo = {}
-    for line in result.stdout.strip().split("\n"):
-        if "=" in line:
-            key, val = line.split("=", 1)
-            geo[key] = int(val)
-
-    return geo["X"], geo["Y"], geo["WIDTH"], geo["HEIGHT"]
-
-
-def record_window(
-    window_id: str,
-    output_path: Path,
-    duration: float,
-    fps: int = 60,
-    crop_margins: tuple[int, int, int, int] = (0, 0, 0, 0),
-) -> subprocess.Popen:
+    js = """
+    (function() {
+        let found = global.get_window_actors().find(
+            a => a.meta_window.title.includes("remote-viewer") ||
+                 a.meta_window.title.includes("SPICE") ||
+                 a.meta_window.title.includes("virt-viewer")
+        );
+        if (!found) return "null";
+        let r = found.meta_window.get_frame_rect();
+        return JSON.stringify({x: r.x, y: r.y, width: r.width, height: r.height});
+    })()
     """
-    Start recording a window with ffmpeg.
 
-    crop_margins: (top, bottom, left, right) pixels to exclude
-    """
-    x, y, w, h = get_window_geometry(window_id)
+    success, result = shell_iface.Eval(js)
+    if not success or result == "null":
+        return None
 
-    # Apply crop margins
-    top, bottom, left, right = crop_margins
-    x += left
-    y += top
-    w -= left + right
-    h -= top + bottom
-
-    cmd = [
-        "ffmpeg",
-        "-y",  # Overwrite
-        "-f",
-        "x11grab",
-        "-framerate",
-        str(fps),
-        "-video_size",
-        f"{w}x{h}",
-        "-i",
-        f":0.0+{x},{y}",
-        "-t",
-        str(duration),
-        "-c:v",
-        "ffv1",  # Lossless for accurate frame analysis
-        str(output_path),
-    ]
-
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rect = json.loads(result)
+    return rect["x"], rect["y"], rect["width"], rect["height"]
 
 
-def send_keystroke(window_id: str, key: str = "x") -> float:
-    """Send keystroke to window, return timestamp."""
-    # Focus window first
-    subprocess.run(["xdotool", "windowactivate", "--sync", window_id], check=False, capture_output=True)
-    time.sleep(0.05)  # Small delay for focus
+def start_screencast(
+    bus: dbus.SessionBus, fps: int, output_path: Path, region: tuple[int, int, int, int] | None = None
+) -> tuple:
+    """Start GNOME Shell screencast via D-Bus. Returns (iface, filename)."""
+    screencast_obj = bus.get_object("org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast")
+    iface = dbus.Interface(screencast_obj, "org.gnome.Shell.Screencast")
 
+    options = {"framerate": dbus.Int32(fps), "draw-cursor": dbus.Boolean(False)}
+
+    if region:
+        x, y, w, h = region
+        success, filename = iface.ScreencastArea(x, y, w, h, str(output_path), options)
+    else:
+        success, filename = iface.Screencast(str(output_path), options)
+
+    if not success:
+        raise RuntimeError("Failed to start GNOME screencast")
+
+    return iface, str(filename)
+
+
+def stop_screencast(iface) -> None:
+    """Stop an active GNOME Shell screencast."""
+    iface.StopScreencast()
+
+
+def send_keystroke(key: str = "x") -> float:
+    """Send keystroke via ydotool, return timestamp."""
     timestamp = time.perf_counter()
-    subprocess.run(["xdotool", "key", "--window", window_id, key], check=False, capture_output=True)
+    subprocess.run(["ydotool", "key", key], check=True, capture_output=True)
     return timestamp
 
 
 def analyze_frames(video_path: Path, keystroke_time: float, recording_start: float, fps: int) -> dict:
-    """
-    Analyze video frames to find when display changed after keystroke.
-
-    Returns dict with timing info.
-    """
-
-    from PIL import Image
-
-    # Extract frames using ffmpeg
+    """Analyze video frames to find when display changed after keystroke."""
     frame_dir = video_path.parent / "frames"
     frame_dir.mkdir(exist_ok=True)
 
@@ -130,16 +104,15 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
         capture_output=True,
     )
 
-    # Load frames and compute diffs
     frame_files = sorted(frame_dir.glob("frame_*.png"))
     if len(frame_files) < 2:
-        return {"error": "Not enough frames extracted"}
+        return {"error": f"Not enough frames extracted ({len(frame_files)})"}
 
-    # Calculate which frame corresponds to keystroke
     keystroke_offset = keystroke_time - recording_start
     keystroke_frame = int(keystroke_offset * fps)
 
     print(f"  Keystroke at {keystroke_offset:.3f}s into recording (frame ~{keystroke_frame})")
+    print(f"  Total frames extracted: {len(frame_files)}")
 
     # Compute frame diffs
     diffs = []
@@ -149,20 +122,17 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
         img = Image.open(frame_file).convert("L")  # Grayscale
 
         if prev_img is not None:
-            # Compute absolute difference
-            diff = sum(abs(a - b) for a, b in zip(img.tobytes(), prev_img.tobytes()))
+            diff = sum(abs(a - b) for a, b in zip(img.tobytes(), prev_img.tobytes(), strict=True))
             diff_normalized = diff / (img.width * img.height)
             diffs.append((i, diff_normalized))
 
         prev_img = img
 
-    # Find first significant change after keystroke frame
-    # "Significant" = diff > 2x median diff (to filter out noise)
     if not diffs:
         return {"error": "No frame diffs computed"}
 
     median_diff = sorted(d[1] for d in diffs)[len(diffs) // 2]
-    threshold = max(median_diff * 3, 0.5)  # At least 0.5 to catch real changes
+    threshold = max(median_diff * 3, 0.5)
 
     print(f"  Median frame diff: {median_diff:.2f}, threshold: {threshold:.2f}")
 
@@ -174,12 +144,10 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
             break
 
     if change_frame is None:
-        # Show top diffs for debugging
         top_diffs = sorted(diffs, key=lambda x: x[1], reverse=True)[:5]
         print(f"  No change detected. Top diffs: {top_diffs}")
         return {"error": "No display change detected after keystroke"}
 
-    # Calculate latency
     change_time = change_frame / fps
     latency_sec = change_time - keystroke_offset
     latency_ms = latency_sec * 1000
@@ -193,43 +161,45 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
 
 
 def measure_once(
-    window_id: str,
+    bus: dbus.SessionBus,
     key: str = "x",
     fps: int = 60,
-    crop_margins: tuple[int, int, int, int] = (0, 0, 0, 0),
+    region: tuple[int, int, int, int] | None = None,
     work_dir: Path | None = None,
 ) -> float | None:
-    """
-    Perform one latency measurement.
-
-    Returns latency in milliseconds, or None on failure.
-    """
+    """Perform one latency measurement. Returns latency in ms, or None on failure."""
     if work_dir is None:
         work_dir = Path(tempfile.mkdtemp(prefix="spice_latency_"))
 
-    video_path = work_dir / "recording.mkv"
-    duration = 3.0
+    video_path = work_dir / "recording.webm"
 
-    print(f"  Recording {duration}s at {fps}fps...")
-
-    # Start recording
+    print(f"  Starting screencast at {fps}fps...")
+    iface, filename = start_screencast(bus, fps, video_path, region=region)
     recording_start = time.perf_counter()
-    recorder = record_window(window_id, video_path, duration, fps, crop_margins)
 
-    # Wait a bit, then send keystroke
+    # Wait for recording to stabilize
     time.sleep(1.0)
-    print("  Sending keystroke...")
-    keystroke_time = send_keystroke(window_id, key)
 
-    # Wait for recording to finish
-    recorder.wait()
+    print("  Sending keystroke...")
+    keystroke_time = send_keystroke(key)
+
+    # Wait for the change to be captured
+    time.sleep(1.0)
+
+    print("  Stopping screencast...")
+    stop_screencast(iface)
     recording_end = time.perf_counter()
 
-    print(f"  Recording complete ({recording_end - recording_start:.1f}s)")
+    actual_path = Path(filename)
+    print(f"  Recording complete ({recording_end - recording_start:.1f}s), file: {actual_path}")
+
+    if not actual_path.exists():
+        print(f"  Error: recording file not found at {actual_path}")
+        return None
 
     # Analyze
     print("  Analyzing frames...")
-    result = analyze_frames(video_path, keystroke_time, recording_start, fps)
+    result = analyze_frames(actual_path, keystroke_time, recording_start, fps)
 
     if "error" in result:
         print(f"  Error: {result['error']}")
@@ -240,63 +210,46 @@ def measure_once(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Measure SPICE input-to-display latency",
+        description="Measure SPICE input-to-display latency (Wayland/GNOME)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        epilog="""
-Setup:
-  1. Open SPICE client to your VM
-  2. In VM: switch to a VT and open vim (or any text editor)
-  3. Run this script
-
-Example:
-  python3 measure_latency.py --samples 5
-        """,
     )
     parser.add_argument("--samples", type=int, default=10, help="Number of measurements")
     parser.add_argument("--fps", type=int, default=60, help="Recording framerate")
     parser.add_argument("--key", type=str, default="x", help="Key to press")
-    parser.add_argument("--crop", type=str, default="0,0,0,0", help="Crop margins: top,bottom,left,right")
-    parser.add_argument("--window-id", type=str, help="Window ID (auto-detected if not specified)")
     parser.add_argument("--keep-video", action="store_true", help="Keep video files for debugging")
 
     args = parser.parse_args()
 
-    # Parse crop margins
-    crop_margins = tuple(int(x) for x in args.crop.split(","))
-    if len(crop_margins) != 4:
-        print("Error: --crop must be 4 comma-separated values")
+    # Preflight checks
+    if not shutil.which("ydotool"):
+        print("Error: ydotool not found. Install via: sudo apt install ydotool")
+        sys.exit(1)
+    if not shutil.which("ffmpeg"):
+        print("Error: ffmpeg not found. Install via: sudo apt install ffmpeg")
         sys.exit(1)
 
-    # Find window
-    if args.window_id:
-        window_id = args.window_id
-    else:
-        print("Looking for SPICE window...")
-        window_id = find_spice_window()
-        if not window_id:
-            print("Error: Could not find SPICE window.")
-            print("Make sure remote-viewer or virt-viewer is running.")
-            sys.exit(1)
+    print("SPICE Latency Measurement (Wayland/GNOME)")
+    print("==========================================")
 
-    window_name = subprocess.run(
-        ["xdotool", "getwindowname", window_id], check=False, capture_output=True, text=True
-    ).stdout.strip()
-    print(f"Found window: {window_id} ({window_name})")
+    # Find SPICE window
+    print("Looking for SPICE window...")
+    region = find_spice_window_rect()
+    if not region:
+        print("Error: SPICE window not found. Make sure remote-viewer or virt-viewer is running.")
+        sys.exit(1)
+    x, y, w, h = region
+    print(f"Found SPICE window: {w}x{h} at ({x},{y})")
 
-    geo = get_window_geometry(window_id)
-    print(f"Geometry: {geo[2]}x{geo[3]} at ({geo[0]},{geo[1]})")
+    print(f"Samples: {args.samples}, FPS: {args.fps}, Key: {args.key}")
     print()
 
-    # Run measurements
+    bus = dbus.SessionBus()
     latencies = []
     work_dir = Path(tempfile.mkdtemp(prefix="spice_latency_"))
 
-    print(f"Running {args.samples} measurements...")
-    print()
-
     for i in range(args.samples):
         print(f"Measurement {i + 1}/{args.samples}:")
-        latency = measure_once(window_id, key=args.key, fps=args.fps, crop_margins=crop_margins, work_dir=work_dir)
+        latency = measure_once(bus, key=args.key, fps=args.fps, region=region, work_dir=work_dir)
 
         if latency is not None:
             latencies.append(latency)
@@ -305,7 +258,6 @@ Example:
             print("  Measurement failed")
         print()
 
-        # Small delay between measurements
         time.sleep(0.5)
 
     # Summary
@@ -331,10 +283,7 @@ Example:
     else:
         print("  No successful measurements")
 
-    # Cleanup
     if not args.keep_video:
-        import shutil
-
         shutil.rmtree(work_dir, ignore_errors=True)
     else:
         print(f"\nVideo files kept in: {work_dir}")
