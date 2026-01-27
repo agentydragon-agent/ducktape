@@ -23,9 +23,8 @@ From Proxmox (`/etc/pve/qemu-server/100.conf`):
 - **SPICE**: `spice_enhancements: videostreaming=all`
 - **vga**: `qxl`
 
-Note: `nvidia-smi` fails on wyrm — `/dev/nvidia*` devices are missing despite
-PCI passthrough. The NVIDIA driver isn't loading. This is a separate issue from
-SPICE lag but means the 5090s aren't usable for compute either.
+Both 5090s are functional — `nvidia-smi` shows them idle with CUDA 13.0,
+driver 580.82.09. Xorg has a small allocation on each (4MiB).
 
 ### History: virtio-gpu to QXL switch
 
@@ -50,11 +49,14 @@ The VT console writes directly to the framebuffer. QXL efficiently encodes
 the small changed region (a few characters). No compositor, no OpenGL, no
 video encoding overhead. ~58ms end-to-end (after subtracting ydotool overhead).
 
-### GNOME/Wayland path (slow, ~107ms steady / ~422ms burst)
+### GNOME/Xorg path (slow, ~107ms steady / ~422ms burst)
+
+The desktop session is actually **Xorg** (confirmed via `loginctl` and
+`nvidia-smi` showing `/usr/lib/xorg/Xorg`), not Wayland.
 
 ```
-Keystroke → SPICE input channel → VM kernel → Wayland client (terminal)
-→ Wayland compositor (GNOME Shell / Mutter)
+Keystroke → SPICE input channel → VM kernel → X11 client (terminal)
+→ Mutter compositor (GNOME Shell on Xorg)
 → OpenGL compositing via llvmpipe (CPU software rendering!)
 → Composited framebuffer → QXL driver
 → SPICE grabs changed region → video encoding (videostreaming=all)
@@ -67,12 +69,15 @@ Every frame goes through:
 2. **Video encoding**: `videostreaming=all` tells SPICE to encode
    frequently-changing regions as MJPEG/VP8 video. This adds encoding latency
    on top of the already-slow software rendering.
-3. **Wayland compositor frame scheduling**: Mutter batches damage and
-   composites on vsync boundaries, adding scheduling latency.
+3. **Mutter frame scheduling**: Mutter batches damage and composites on vsync
+   boundaries, adding scheduling latency.
 
 Under sustained typing, the pipeline can't keep up: frames queue, latency
 balloons from ~107ms to 500-750ms, and eventually multiple keystrokes appear
 in a single catch-up frame.
+
+Since we're already on Xorg, the "switch to Xorg" bisection step is moot.
+The remaining bottlenecks are llvmpipe and videostreaming.
 
 ## Findings
 
@@ -101,9 +106,9 @@ Frame interval: ±30.2ms (33.2 fps actual)
 Adjusted for ~40ms ydotool overhead: **~58ms** actual SPICE latency.
 Recording: `results/2026-01-27T04:19_baseline/`
 
-#### 2026-01-27: GNOME desktop over SPICE (steady-state)
+#### 2026-01-27: GNOME/Xorg desktop over SPICE (steady-state)
 
-vim in terminal inside GNOME. One keystroke every 3 seconds.
+vim in terminal inside GNOME on Xorg. One keystroke every 3 seconds.
 
 ```
 Samples: 10/10
@@ -155,10 +160,20 @@ Recording: `results/2026-01-27T06:17_vt_burst_clean/`
 | GNOME over SPICE (slow)  | 147ms   | ~107ms   | One keystroke every 3s        |
 | GNOME over SPICE (burst) | 462ms   | ~422ms   | One keystroke every 200ms     |
 
-### Ruled out: SPICE routing through VPS
+### Ruled out
 
-`atlas.agentydragon.com` resolves to Atlas's Tailscale IP (100.64.1.30), and
-all SPICE connections stay on localhost. VPS proxy is not involved.
+**SPICE routing through VPS**: Early hypothesis was that SPICE traffic might
+round-trip through the VPS (Atlas → Internet → VPS nginx → Headscale tunnel →
+Atlas). Verified this is NOT happening — `ss -tnp | grep spice` shows
+connections on `[::1]:3128` (localhost IPv6). `atlas.agentydragon.com` resolves
+to Atlas's Tailscale IP (100.64.1.30) via Headscale `extra_records`, and all
+SPICE connections stay local.
+
+**Browser SPICE client**: Using native `remote-viewer` (virt-viewer), not the
+browser-based spice-html5 client. Native client is significantly faster.
+
+**Network latency**: All local, no network hop involved. Connection path:
+`remote-viewer → SPICE proxy (localhost:3128) → QEMU (local)`.
 
 ## Known Issues (from research)
 
@@ -199,19 +214,13 @@ Each step should be tested independently with `record.py`/`analyze.py` burst
 mode (40 markers, 200ms intervals). The GNOME burst test is the critical
 benchmark — it's the one that shows the problem.
 
-### Step 1: Switch GNOME to Xorg session (highest expected impact)
+### ~~Step 1: Switch GNOME to Xorg session~~ (already done)
 
-On the GDM login screen, select the gear icon and choose "GNOME on Xorg"
-instead of "GNOME" (Wayland).
+The guest is already running GNOME on Xorg (`loginctl` shows `Type=x11`,
+`nvidia-smi` shows `/usr/lib/xorg/Xorg`). The host (atlas) runs Wayland.
+This step is moot — the measured latency already reflects Xorg on the guest.
 
-**Expected impact**: Large improvement. Wayland+SPICE is a known-bad combo.
-Xorg GNOME still composites with llvmpipe but avoids Wayland-specific overhead.
-
-**How to verify**: `echo $XDG_SESSION_TYPE` should show `x11` not `wayland`.
-
-**Observation**: _(not yet tested)_
-
-### Step 2: Disable videostreaming
+### Step 1: Disable videostreaming
 
 In Proxmox web UI or `/etc/pve/qemu-server/100.conf`, change:
 ```
@@ -227,7 +236,7 @@ as video content, not all screen updates.
 
 **Observation**: _(not yet tested)_
 
-### Step 3: Switch from QXL to virtio-gpu with VirGL
+### Step 2: Switch from QXL to virtio-gpu with VirGL
 
 In Proxmox config, change `vga: qxl` to `vga: virtio-gl`. This enables VirGL,
 which forwards OpenGL commands to the host GPU (AMD iGPU on atlas) for
@@ -281,7 +290,7 @@ Look for `-display egl-headless,rendernode=/dev/dri/renderDN` in the args.
 
 **Observation**: _(not yet tested)_
 
-### Step 4: Try non-compositing WM (if VirGL unavailable)
+### Step 3: Try non-compositing WM (if VirGL unavailable)
 
 If VirGL can't be made to work, try a window manager that doesn't require
 OpenGL compositing:
@@ -295,27 +304,30 @@ path avoids OpenGL entirely.
 
 **Observation**: _(not yet tested)_
 
-### Step 5: Looking Glass or Sunshine/Moonlight (advanced)
+### Step 4: Sunshine/Moonlight (advanced, replaces SPICE)
 
-Use one of the passed-through 5090s for display output, captured via shared
-memory (Looking Glass) or network streaming (Sunshine/Moonlight).
+Use one of the passed-through 5090s for display output via network streaming.
 
-- **Looking Glass**: Shared memory framebuffer, lowest possible latency,
-  requires IVSHMEM setup and guest-side capture agent
-- **Sunshine/Moonlight**: NVENC hardware encoding on the 5090, decoded on
-  client. Requires NVIDIA driver working (currently broken — see above).
+- **Sunshine** (host, runs in guest VM) + **Moonlight** (client, runs on atlas)
+- NVENC hardware encoding on the 5090, decoded on client
+- NVIDIA driver is working (580.82.09, CUDA 13.0)
+- Sunshine supports Linux hosts (guests). Active development, works well on
+  Ubuntu LTS. May need manual build on non-LTS distros.
+- Requires a dummy HDMI plug or virtual display on the 5090 (no physical
+  monitor connected)
+- Single-monitor only (Sunshine limitation)
 
-**Expected impact**: Potentially sub-16ms latency (Looking Glass) or
-~30-50ms (Sunshine/Moonlight with hardware encode).
+**Expected impact**: ~30-50ms with hardware encode, potentially better.
 
-**Prerequisites**: NVIDIA driver must be loading (`nvidia-smi` currently
-fails). Fix GPU passthrough first.
+**~~Looking Glass~~**: Not viable — the guest-side host application only
+supports Windows guests. Linux guest support is described as "incomplete and
+not ready for usage" in both B6 and B7 docs.
 
 **References**:
-- https://looking-glass.io/docs/B6/install/
-- https://github.com/gnif/LookingGlass
+- https://github.com/LizardByte/Sunshine
+- https://moonlight-stream.org/
 - https://forum.proxmox.com/threads/trying-proxmox-with-sunshine.125200/
-- https://forum.proxmox.com/threads/gpu-passthrough-with-nvidia-in-linux-vm-improve-stability.166766/
+- https://looking-glass.io/docs/B7/faq/ (Linux guest: not supported)
 
 **Observation**: _(not yet tested)_
 
@@ -334,12 +346,20 @@ glxinfo | grep renderer   # llvmpipe = software, virgl = hardware
 lspci | grep -i 'vga\|3d\|display'
 
 # NVIDIA driver status
-nvidia-smi                # currently fails
-ls /dev/nvidia*           # currently empty
-dmesg | grep -i nvidia    # check for driver load errors
+nvidia-smi
+dmesg | grep -i nvidia
 
-# SPICE agent
+# SPICE agent (optimization, dynamic resolution)
 systemctl status spice-vdagentd
+
+# QXL module loaded?
+lsmod | grep qxl
+
+# Xorg driver in use
+grep -i driver /var/log/Xorg.0.log
+
+# Display resolution (4K through SPICE is demanding)
+xrandr
 ```
 
 ### On atlas (Proxmox host)
@@ -370,6 +390,18 @@ ls /var/log/pve/tasks/
 # virglrenderer availability
 dpkg -l | grep virgl
 apt list --installed 2>/dev/null | grep -i virgl
+
+# SPICE proxy config and TLS
+cat /etc/pve/datacenter.cfg
+grep -i spice /etc/pve/datacenter.cfg
+
+# Verify SPICE is local during active session
+ss -tnp | grep spice
+
+# Resource contention during SPICE session
+htop
+top -p $(pgrep -f 'qemu.*100')
+iostat -x 1
 ```
 
 ### Venus (Vulkan over virtio-gpu) — future option
@@ -436,18 +468,15 @@ gi/PIL + installs openai)
 
 ## Priority-Ordered Action Items
 
-1. **Switch to Xorg session** — Zero-cost change, largest expected single
-   improvement. Just select "GNOME on Xorg" at GDM login.
-2. **Disable videostreaming** — Set `videostreaming=off` in Proxmox config.
-   Requires VM restart.
-3. **Enable VirGL** — Switch `vga: virtio-gl`. Run host-side checks first
+1. **Disable videostreaming** — Set `videostreaming=off` in Proxmox config.
+   Requires VM restart. (Guest is already on Xorg, so that's not the issue.)
+2. **Enable VirGL** — Switch `vga: virtio-gl`. Run host-side checks first
    (see diagnostic commands). Requires VM restart.
-4. **Try non-compositing WM** — Install xfce4 or i3 as fallback if VirGL
+3. **Try non-compositing WM** — Install xfce4 or i3 as fallback if VirGL
    can't be made to work.
-5. **Fix NVIDIA driver** — Separate from SPICE lag but needed for compute.
-   Investigate why `/dev/nvidia*` is missing despite PCI passthrough.
-6. **Sunshine/Moonlight** — Once NVIDIA driver works, this could replace
-   SPICE entirely for desktop use.
+4. **Sunshine/Moonlight** — NVIDIA driver works (580.82.09, CUDA 13.0).
+   Could replace SPICE entirely. Looking Glass is not viable (no Linux
+   guest support).
 
 ## Session Notes
 
