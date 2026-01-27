@@ -684,8 +684,7 @@ class Agent:
             try:
                 parsed = json.loads(args_json) if args_json else {}
             except json.JSONDecodeError as e:
-                # Lowercase the error message for consistent matching
-                return ToolCallOutcome(result=ToolResult.error(f"Invalid JSON in tool arguments: {str(e).lower()}"))
+                return ToolCallOutcome(result=ToolResult.error(f"Invalid JSON in tool arguments: {e!s}"))
             if not isinstance(parsed, dict):
                 return ToolCallOutcome(
                     result=ToolResult.error(f"Tool arguments must be a JSON object, got {type(parsed).__name__}")

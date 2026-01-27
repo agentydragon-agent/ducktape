@@ -133,6 +133,7 @@ Despite QXL being configured and the qxl kernel module loaded, OpenGL rendering 
 **Why is QXL not providing hardware acceleration?**
 
 QXL is a paravirtualized 2D graphics adapter - it accelerates 2D operations but does NOT provide OpenGL/3D acceleration. For 3D, you need either:
+
 1. **virtio-gpu with virgl** - requires host GPU (Atlas has AMD iGPU available)
 2. **GPU passthrough** - but then SPICE can't see the output
 3. **Accept software rendering** - current state, causes lag
@@ -144,6 +145,7 @@ This setting encodes ALL screen updates as video streams, adding encoding overhe
 ### Key Insight
 
 The NVIDIAs are passed through for compute (correct), but the display stack is:
+
 - QXL virtual GPU → qxl kernel module → Mesa → **llvmpipe (software)**
 
 QXL only accelerates 2D. Any 3D/compositing (like GNOME Shell, Firefox, etc.) hits llvmpipe.
@@ -209,12 +211,14 @@ Pass through one GPU but use Looking Glass to capture its framebuffer and displa
 `measure_latency.py` - Automated input-to-display latency measurement.
 
 **How it works:**
+
 1. Records SPICE window at 60fps with ffmpeg
 2. Sends keystroke at known time via xdotool
 3. Frame-diffs consecutive frames to detect when character appears
 4. Reports latency in milliseconds
 
 **Setup on atlas (SPICE client machine):**
+
 ```bash
 # xdotool is installed via ansible/atlas.yaml
 # If not yet installed, run:
@@ -222,18 +226,21 @@ cd ~/code/ducktape/ansible && ansible-playbook atlas.yaml --tags packages
 ```
 
 **Setup in VM (wyrm) via SPICE:**
+
 ```bash
 # Switch to VT (Ctrl+Alt+F1), then open nvim with no config, no cursor blink, insert mode
 nvim --clean -c "set guicursor=a:blinkon0" -c "startinsert"
 ```
 
 **Run measurement:**
+
 ```bash
 cd ~/code/ducktape
 ./investigations/spice-lag/measure_latency.py
 ```
 
 **Options:**
+
 - `--samples N` - Number of measurements
 - `--fps N` - Recording framerate (higher = more precision)
 - `--crop T,B,L,R` - Crop margins to exclude clock/notifications

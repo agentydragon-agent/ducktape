@@ -190,6 +190,7 @@ Install via ComfyUI-Manager after it's set up:
 ## Part 5: Chromafur Alpha Workflow
 
 The model includes a ComfyUI workflow at:
+
 ```
 /wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/fd65eabc28536705605059f5caef2a947af8fd0e/comfy-workflow.json
 ```
@@ -220,29 +221,32 @@ If you prefer to build from scratch, here are the key nodes:
 
 ### Recommended Settings (from Chromafur docs)
 
-| Setting | Value | Notes |
-|---------|-------|-------|
-| Resolution | 1024x1024 | Quality degrades at non-square ratios |
-| Steps | 15-30 | 15 for fast, 30 for quality |
-| CFG | 1 or 2-4 | CFG 1 = faster, CFG 2-4 = more coherent |
-| Guidance | 4 | FLUX-specific guidance scale |
-| CFG Skip Steps | 4 | **Critical when using CFG 2-4** |
-| Sampler | euler | Default from workflow |
+| Setting        | Value     | Notes                                   |
+| -------------- | --------- | --------------------------------------- |
+| Resolution     | 1024x1024 | Quality degrades at non-square ratios   |
+| Steps          | 15-30     | 15 for fast, 30 for quality             |
+| CFG            | 1 or 2-4  | CFG 1 = faster, CFG 2-4 = more coherent |
+| Guidance       | 4         | FLUX-specific guidance scale            |
+| CFG Skip Steps | 4         | **Critical when using CFG 2-4**         |
+| Sampler        | euler     | Default from workflow                   |
 
 ### Prompting Format
 
 **CLIP Box (tags):**
+
 ```
 image tags: anthro, wolf, male, blue fur, detailed, masterpiece
 ```
 
 **T5 Box (natural language + tags):**
+
 ```
 image tags: anthro, wolf, male, blue fur, detailed, masterpiece
 image captions: "A majestic anthropomorphic wolf with vibrant blue fur, standing confidently in a forest clearing. The character has expressive amber eyes and detailed musculature."
 ```
 
 **Negatives** (only work with CFG > 1):
+
 ```
 image tags: human, blurry, low quality, watermark, text
 ```
@@ -278,6 +282,7 @@ podman run -it --rm --name comfyui-gpu1 \
 ### Memory Optimization (Not Needed with 64GB)
 
 With 64GB total VRAM, you can:
+
 - Use FP16 models without quantization
 - Run larger batch sizes
 - Enable model caching for faster subsequent generations
@@ -289,15 +294,16 @@ In ComfyUI settings, you can leave memory optimization disabled since you have a
 
 Your Chromafur download includes GGUF quantized versions for lower VRAM usage:
 
-| File | Size | Use Case |
-|------|------|----------|
-| chromafur-alpha_model-BF16.gguf | 24 GB | Full quality |
-| chromafur-alpha_model-Q8_0.gguf | ~13 GB | Near-lossless |
-| chromafur-alpha_model-Q6_K.gguf | ~10 GB | Good quality |
-| chromafur-alpha_model-Q5_K_S.gguf | ~8.5 GB | Balanced |
-| chromafur-alpha_model-Q4_K_S.gguf | ~7 GB | Lower quality, much faster |
+| File                              | Size    | Use Case                   |
+| --------------------------------- | ------- | -------------------------- |
+| chromafur-alpha_model-BF16.gguf   | 24 GB   | Full quality               |
+| chromafur-alpha_model-Q8_0.gguf   | ~13 GB  | Near-lossless              |
+| chromafur-alpha_model-Q6_K.gguf   | ~10 GB  | Good quality               |
+| chromafur-alpha_model-Q5_K_S.gguf | ~8.5 GB | Balanced                   |
+| chromafur-alpha_model-Q4_K_S.gguf | ~7 GB   | Lower quality, much faster |
 
 To use GGUF models:
+
 1. Install ComfyUI-GGUF via Manager
 2. Use the GGUF Loader node instead of standard diffusion model loader
 3. Point to files in: `/wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/.../GGUF/`
@@ -306,25 +312,25 @@ To use GGUF models:
 
 ## Quick Start Checklist
 
-1. [ ] Install ComfyUI (Podman or native)
-2. [ ] Create symlinks or configure `extra_model_paths.yaml`
-3. [ ] Download T5 encoder (`t5xxl_fp16.safetensors`)
-4. [ ] Download FLUX VAE (`ae.safetensors`)
-5. [ ] Install ComfyUI-Manager
-6. [ ] Load the included workflow (`comfy-workflow.json`)
-7. [ ] Configure model paths in workflow nodes
-8. [ ] Generate!
+1. [x] Install ComfyUI (Podman or native)
+2. [x] Create symlinks or configure `extra_model_paths.yaml`
+3. [x] Download T5 encoder (`t5xxl_fp16.safetensors`)
+4. [x] Download FLUX VAE (`ae.safetensors`)
+5. [x] Install ComfyUI-Manager
+6. [x] Load the included workflow (`comfy-workflow.json`)
+7. [x] Configure model paths in workflow nodes
+8. [x] Generate!
 
 ## File Locations Summary
 
-| Component | Path |
-|-----------|------|
-| Chromafur UNET | `/wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/.../chromafur-alpha_model.safetensors` |
-| Chromafur CLIP | `/wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/.../chromafur-alpha_CLIP_L.safetensors` |
-| Chromafur Workflow | `/wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/.../comfy-workflow.json` |
-| T5 Encoder | Download to `$COMFYUI_DIR/models/clip/t5xxl_fp16.safetensors` |
-| FLUX VAE | Download to `$COMFYUI_DIR/models/vae/ae.safetensors` |
-| Pony Diffusion | `/wyrmhdd/huggingface/hub/models--LyliaEngine--Pony_Diffusion_V6_XL/snapshots/.../ponyDiffusionV6XL_v6StartWithThisOne.safetensors` |
+| Component          | Path                                                                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Chromafur UNET     | `/wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/.../chromafur-alpha_model.safetensors`               |
+| Chromafur CLIP     | `/wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/.../chromafur-alpha_CLIP_L.safetensors`              |
+| Chromafur Workflow | `/wyrmhdd/huggingface/hub/models--lodestone-horizon--chromafur-alpha/snapshots/.../comfy-workflow.json`                             |
+| T5 Encoder         | Download to `$COMFYUI_DIR/models/clip/t5xxl_fp16.safetensors`                                                                       |
+| FLUX VAE           | Download to `$COMFYUI_DIR/models/vae/ae.safetensors`                                                                                |
+| Pony Diffusion     | `/wyrmhdd/huggingface/hub/models--LyliaEngine--Pony_Diffusion_V6_XL/snapshots/.../ponyDiffusionV6XL_v6StartWithThisOne.safetensors` |
 
 ## Sources
 

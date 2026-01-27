@@ -31,18 +31,12 @@ def find_spice_window() -> str | None:
     patterns = ["remote-viewer", "SPICE", "virt-viewer", "wyrm"]
 
     for pattern in patterns:
-        result = subprocess.run(
-            ["xdotool", "search", "--name", pattern],
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(["xdotool", "search", "--name", pattern], check=False, capture_output=True, text=True)
         if result.stdout.strip():
-            window_id = result.stdout.strip().split('\n')[0]
+            window_id = result.stdout.strip().split("\n")[0]
             # Verify it exists
             name_result = subprocess.run(
-                ["xdotool", "getwindowname", window_id],
-                capture_output=True,
-                text=True,
+                ["xdotool", "getwindowname", window_id], check=False, capture_output=True, text=True
             )
             if name_result.returncode == 0:
                 return window_id
@@ -52,18 +46,16 @@ def find_spice_window() -> str | None:
 def get_window_geometry(window_id: str) -> tuple[int, int, int, int]:
     """Get window position and size: (x, y, width, height)."""
     result = subprocess.run(
-        ["xdotool", "getwindowgeometry", "--shell", window_id],
-        capture_output=True,
-        text=True,
+        ["xdotool", "getwindowgeometry", "--shell", window_id], check=False, capture_output=True, text=True
     )
 
     geo = {}
-    for line in result.stdout.strip().split('\n'):
-        if '=' in line:
-            key, val = line.split('=', 1)
+    for line in result.stdout.strip().split("\n"):
+        if "=" in line:
+            key, val = line.split("=", 1)
             geo[key] = int(val)
 
-    return geo['X'], geo['Y'], geo['WIDTH'], geo['HEIGHT']
+    return geo["X"], geo["Y"], geo["WIDTH"], geo["HEIGHT"]
 
 
 def record_window(
@@ -90,12 +82,18 @@ def record_window(
     cmd = [
         "ffmpeg",
         "-y",  # Overwrite
-        "-f", "x11grab",
-        "-framerate", str(fps),
-        "-video_size", f"{w}x{h}",
-        "-i", f":0.0+{x},{y}",
-        "-t", str(duration),
-        "-c:v", "ffv1",  # Lossless for accurate frame analysis
+        "-f",
+        "x11grab",
+        "-framerate",
+        str(fps),
+        "-video_size",
+        f"{w}x{h}",
+        "-i",
+        f":0.0+{x},{y}",
+        "-t",
+        str(duration),
+        "-c:v",
+        "ffv1",  # Lossless for accurate frame analysis
         str(output_path),
     ]
 
@@ -105,13 +103,11 @@ def record_window(
 def send_keystroke(window_id: str, key: str = "x") -> float:
     """Send keystroke to window, return timestamp."""
     # Focus window first
-    subprocess.run(["xdotool", "windowactivate", "--sync", window_id],
-                   capture_output=True)
+    subprocess.run(["xdotool", "windowactivate", "--sync", window_id], check=False, capture_output=True)
     time.sleep(0.05)  # Small delay for focus
 
     timestamp = time.perf_counter()
-    subprocess.run(["xdotool", "key", "--window", window_id, key],
-                   capture_output=True)
+    subprocess.run(["xdotool", "key", "--window", window_id, key], check=False, capture_output=True)
     return timestamp
 
 
@@ -121,19 +117,18 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
 
     Returns dict with timing info.
     """
+
     from PIL import Image
-    import io
 
     # Extract frames using ffmpeg
     frame_dir = video_path.parent / "frames"
     frame_dir.mkdir(exist_ok=True)
 
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", str(video_path),
-        "-vsync", "0",
-        str(frame_dir / "frame_%05d.png"),
-    ], capture_output=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(video_path), "-vsync", "0", str(frame_dir / "frame_%05d.png")],
+        check=False,
+        capture_output=True,
+    )
 
     # Load frames and compute diffs
     frame_files = sorted(frame_dir.glob("frame_*.png"))
@@ -151,7 +146,7 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
     prev_img = None
 
     for i, frame_file in enumerate(frame_files):
-        img = Image.open(frame_file).convert('L')  # Grayscale
+        img = Image.open(frame_file).convert("L")  # Grayscale
 
         if prev_img is not None:
             # Compute absolute difference
@@ -194,12 +189,7 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
         f.unlink()
     frame_dir.rmdir()
 
-    return {
-        "keystroke_frame": keystroke_frame,
-        "change_frame": change_frame,
-        "latency_ms": latency_ms,
-        "fps": fps,
-    }
+    return {"keystroke_frame": keystroke_frame, "change_frame": change_frame, "latency_ms": latency_ms, "fps": fps}
 
 
 def measure_once(
@@ -262,18 +252,12 @@ Example:
   python3 measure_latency.py --samples 5
         """,
     )
-    parser.add_argument("--samples", type=int, default=10,
-                        help="Number of measurements")
-    parser.add_argument("--fps", type=int, default=60,
-                        help="Recording framerate")
-    parser.add_argument("--key", type=str, default="x",
-                        help="Key to press")
-    parser.add_argument("--crop", type=str, default="0,0,0,0",
-                        help="Crop margins: top,bottom,left,right")
-    parser.add_argument("--window-id", type=str,
-                        help="Window ID (auto-detected if not specified)")
-    parser.add_argument("--keep-video", action="store_true",
-                        help="Keep video files for debugging")
+    parser.add_argument("--samples", type=int, default=10, help="Number of measurements")
+    parser.add_argument("--fps", type=int, default=60, help="Recording framerate")
+    parser.add_argument("--key", type=str, default="x", help="Key to press")
+    parser.add_argument("--crop", type=str, default="0,0,0,0", help="Crop margins: top,bottom,left,right")
+    parser.add_argument("--window-id", type=str, help="Window ID (auto-detected if not specified)")
+    parser.add_argument("--keep-video", action="store_true", help="Keep video files for debugging")
 
     args = parser.parse_args()
 
@@ -295,8 +279,7 @@ Example:
             sys.exit(1)
 
     window_name = subprocess.run(
-        ["xdotool", "getwindowname", window_id],
-        capture_output=True, text=True,
+        ["xdotool", "getwindowname", window_id], check=False, capture_output=True, text=True
     ).stdout.strip()
     print(f"Found window: {window_id} ({window_name})")
 
@@ -312,14 +295,8 @@ Example:
     print()
 
     for i in range(args.samples):
-        print(f"Measurement {i+1}/{args.samples}:")
-        latency = measure_once(
-            window_id,
-            key=args.key,
-            fps=args.fps,
-            crop_margins=crop_margins,
-            work_dir=work_dir,
-        )
+        print(f"Measurement {i + 1}/{args.samples}:")
+        latency = measure_once(window_id, key=args.key, fps=args.fps, crop_margins=crop_margins, work_dir=work_dir)
 
         if latency is not None:
             latencies.append(latency)
@@ -357,6 +334,7 @@ Example:
     # Cleanup
     if not args.keep_video:
         import shutil
+
         shutil.rmtree(work_dir, ignore_errors=True)
     else:
         print(f"\nVideo files kept in: {work_dir}")

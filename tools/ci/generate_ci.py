@@ -28,6 +28,7 @@ from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
+
 from tools.ci.models import WorkflowConfig, WorkflowManifest
 
 SCRIPT_DIR = Path(__file__).parent

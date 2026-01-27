@@ -1,6 +1,7 @@
 # Codex configuration module
 {
   pkgs,
+  pkgsUnstable,
   lib,
   config,
   ...
@@ -40,7 +41,34 @@ let
       rmcp_client = true;
       unified_exec = true;
       view_image_tool = true;
-      web_search_request = true;
+      shell_tool = true; # enable `/shell`
+      apply_patch_freeform = true; # freeform patch syntax
+      # shell_snapshot ?  (keep off unless you want offline TUI snapshots)
+    };
+    # Multiple profiles let you switch between open‑source and OpenAI models.
+    # The UI can pick a profile via the `/select_profile` command or by setting
+    # `--config profile=NAME` when launching Codex.
+    profiles = {
+      openai = {
+        model = "gpt-5.1-codex";
+        # Web search requires OpenAI backend.
+        features = {
+          web_search_request = true;
+        };
+      };
+      oss = {
+        model = "gpt-oss-20b";
+        model_provider = "vllm";
+        model_reasoning_effort = "high";
+        # TODO: Consider enabling local web‑search (`web_search_cached`) feature:
+        # features = { web_search_cached = true; };
+        # web_search = "cached";
+      };
+    };
+    # Persist command history to disk.
+    # "save-all" will write every turn to ~/.codex/history.jsonl
+    history = {
+      persistence = "save-all";
     };
     shell_environment_policy = {
       "inherit" = "all";
@@ -102,7 +130,8 @@ in
 {
   programs.codex = {
     enable = true;
-    package = pkgs.codex;
+    # Prefer the unstable codex package if available.
+    package = pkgsUnstable.codex;
     # Avoid letting the upstream module overwrite ~/.codex/config.toml.
     # The activation script below handles merging our desired settings.
   };

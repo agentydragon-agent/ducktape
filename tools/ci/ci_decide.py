@@ -30,6 +30,7 @@ import subprocess
 
 import pygit2
 from pydantic import BaseModel, Field
+
 from tools.ci.bazel_query import check_bazel_intersection, filter_compatible_targets
 from tools.ci.models import AlwaysTrigger, BazelPatternTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
 
@@ -43,6 +44,7 @@ INFRA_PATTERNS = [
     r"^tools/bazel",
     r"^WORKSPACE",
 ]
+
 
 class CIDecision(BaseModel):
     """Result of CI decision computation."""
