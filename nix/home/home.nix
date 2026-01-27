@@ -320,9 +320,9 @@ in
           pydeps
           black
           isort
-          pandas
-          torch
-          numpy
+          # pandas
+          # torch
+          # numpy
         ]
       ))
 
