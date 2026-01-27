@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --system --python /usr/bin/python3 --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["openai", "pillow"]
-# ///
+#!/usr/bin/python3
 """
 SPICE input-to-display latency measurement (Wayland/GNOME).
 
@@ -11,17 +7,18 @@ contains both the clock reading (host time) and the SPICE window state.
 The vision API reads both from the same frame to compute latency.
 
 Setup:
-    1. Open SPICE client to VM on atlas, place window on right half of screen
-    2. In VM: open nvim in insert mode:
+    1. cd investigations/spice-lag (direnv creates venv with system-site-packages + openai)
+    2. Open SPICE client to VM on atlas, place window on right half of screen
+    3. In VM: open nvim in insert mode:
        nvim --clean -c "set guicursor=a:blinkon0" -c "startinsert"
-    3. Open a terminal on atlas for this script, place on left half
-    4. Run this script
+    4. Open a terminal on atlas for this script, place on left half
+    5. Run: python measure_latency.py [--vision]
 
 Requirements:
     - ffmpeg, ydotool (installed via ansible/atlas.yaml)
     - ydotoold running
-    - python3-gi (system package, installed with GNOME)
-    - For --vision: OPENAI_API_KEY in environment
+    - python3-gi, python3-pil (system packages, installed with GNOME)
+    - For --vision: OPENAI_API_KEY in environment, openai package (installed by direnv)
 """
 
 import argparse
