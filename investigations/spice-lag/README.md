@@ -53,11 +53,37 @@ responsive in practice.
 
 Recording: `results/2026-01-27T04:19_baseline/`
 
-#### TODO: GNOME desktop over SPICE (the laggy case)
+#### 2026-01-27: GNOME desktop over SPICE (the laggy case)
 
-Same measurement setup, but vim running in a terminal inside the GNOME desktop
-session on wyrm. This adds the Wayland/X compositor + llvmpipe rendering in the
-path. Expected to be significantly slower.
+vim running in a terminal inside the GNOME desktop session on wyrm. This adds
+the Wayland compositor + llvmpipe software rendering in the path.
+
+```
+Samples: 10/10
+Average: 147ms [143-152ms]
+Min: 120ms, Max: 159ms
+Frame interval: ±29.7ms (33.6 fps actual)
+```
+
+Adjusted for ydotool overhead: **~107ms** actual latency. That's ~50ms more
+than VT (58ms adjusted), attributable to the compositor + llvmpipe path.
+
+Recording: `results/2026-01-27T04:41_gnome/`
+
+#### Comparison
+
+| Setup             | Raw avg | Adjusted (minus ~40ms ydotool) |
+| ----------------- | ------- | ------------------------------ |
+| VT over SPICE     | 98ms    | ~58ms                          |
+| GNOME over SPICE  | 147ms   | ~107ms                         |
+| **Delta (GNOME)** |         | **~49ms**                      |
+
+The GNOME compositor + llvmpipe adds ~49ms. Both cases share the same SPICE
+transport, so the difference is purely the in-VM rendering pipeline. The
+subjective "laggy" feel of GNOME-over-SPICE likely comes from this extra
+latency compounding with the already-present ~58ms base, plus potential frame
+drops or jitter from llvmpipe under load that this steady-state test doesn't
+capture.
 
 ### Ruled out: SPICE routing through VPS
 
