@@ -49,7 +49,8 @@ VISION_PROMPT = (
     "The vim buffer may contain timestamp strings typed as test input.\n\n"
     "Read BOTH windows carefully. Ignore vim ~ (tilde) empty-line markers, status bar, and mode indicator.\n\n"
     "Output JSON with:\n"
-    '- "clock": the time shown on the Clock: line in the left terminal (e.g. "02:34:56.789"), or null if not visible\n'
+    '- "clock": the CURRENT time shown on the Clock: line in the left terminal (e.g. "02:34:56.789"), or null if not visible. '
+    "The clock updates rapidly; if you see multiple overlapping values, read the most recent one.\n"
     '- "vim_buffer_text": array of actual text lines in the vim buffer (exclude ~ lines)'
 )
 
@@ -304,9 +305,10 @@ def main():
 
     print("SPICE Latency Measurement (Wayland/GNOME)")
     print("==========================================")
-    print("Place measurement terminal on LEFT, SPICE window on RIGHT.")
     print(f"Samples: {args.samples}, FPS: {args.fps}, Vision: {args.vision}")
     print()
+    print("Focus the SPICE window now. Starting in 5 seconds...")
+    time.sleep(5.0)
 
     bus = _session_bus()
     work_dir = Path(tempfile.mkdtemp(prefix="spice_latency_"))
