@@ -15,11 +15,13 @@ Requirements:
 """
 
 import argparse
+import asyncio
 import base64
 import datetime
 import hashlib
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +32,7 @@ VISION_PROMPT = (
     "This is a screenshot of a desktop with two windows side by side. "
     "LEFT: a terminal running a measurement script that displays a Clock line like 'Clock: HH:MM:SS.mmm'. "
     "RIGHT: a SPICE remote desktop window showing vim/nvim (dark background). "
-    "The vim buffer may contain timestamp strings typed as test input.\n\n"
+    "The vim buffer may contain short numeric markers (0, 1, 2, ...) typed as test input, one per line.\n\n"
     "Read BOTH windows carefully. Ignore vim ~ (tilde) empty-line markers, status bar, and mode indicator.\n\n"
     "Output JSON with:\n"
     '- "clock": the CURRENT time shown on the Clock: line in the left terminal (e.g. "02:34:56.789"), or null if not visible. '
@@ -50,6 +52,16 @@ VISION_SCHEMA = {
 
 VISION_CACHE_DIR = Path.home() / ".cache" / "spice-latency" / "vision"
 
+MAX_CONCURRENT = 20
+
+
+@dataclass
+class LatencyMeasurement:
+    latency_ms: float
+    lower_ms: float
+    upper_ms: float
+    frame_interval_ms: float
+
 
 def _vision_cache_key(image_path: Path) -> str:
     """Cache key from prompt hash + image content hash."""
@@ -58,16 +70,27 @@ def _vision_cache_key(image_path: Path) -> str:
     return f"{prompt_hash}_{image_hash}"
 
 
+def _cache_path(frame_file: Path) -> Path:
+    return VISION_CACHE_DIR / f"{_vision_cache_key(frame_file)}.json"
+
+
+def _parse_clock(clock_str: str) -> datetime.datetime:
+    """Parse HH:MM:SS.mmm clock string."""
+    padded = clock_str + "000" if len(clock_str.split(".")[-1]) == 3 else clock_str
+    return datetime.datetime.strptime(padded, "%H:%M:%S.%f")
+
+
 def analyze_pixeldiff(
     frame_files: list[Path], keystroke_times: list[float], recording_start: float, recording_duration: float
-) -> list[float | None]:
-    """Pixel-diff analysis. Returns list of latencies (ms) per keystroke, None on failure."""
+) -> list[LatencyMeasurement | None]:
+    """Pixel-diff analysis."""
     if len(frame_files) < 2:
         print(f"  Not enough frames ({len(frame_files)})")
         return [None] * len(keystroke_times)
 
     actual_fps = len(frame_files) / recording_duration
-    print(f"  Pixel-diff: {actual_fps:.1f} actual fps ({len(frame_files)} frames in {recording_duration:.1f}s)")
+    frame_interval_ms = 1000.0 / actual_fps
+    print(f"  Pixel-diff: {actual_fps:.1f} fps ({len(frame_files)} frames, {frame_interval_ms:.1f}ms/frame)")
 
     diffs = []
     prev_arr = None
@@ -101,84 +124,136 @@ def analyze_pixeldiff(
         else:
             change_time = change_frame / actual_fps
             latency_ms = (change_time - keystroke_offset) * 1000
-            results.append(latency_ms)
+            results.append(
+                LatencyMeasurement(
+                    latency_ms=latency_ms,
+                    lower_ms=latency_ms - frame_interval_ms,
+                    upper_ms=latency_ms,
+                    frame_interval_ms=frame_interval_ms,
+                )
+            )
 
     return results
 
 
-def analyze_vision(frame_files: list[Path], sent_timestamps: list[str]) -> list[float | None]:
-    """Vision API analysis. Returns list of latencies (ms) per keystroke, None on failure."""
-    client = openai.OpenAI()
-    VISION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+async def _query_frame(client: openai.AsyncOpenAI, frame_file: Path, sem: asyncio.Semaphore) -> dict:
+    """Query vision API for a single frame. Returns parsed result dict."""
+    image_b64 = base64.b64encode(frame_file.read_bytes()).decode()
+    async with sem:
+        resp = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": VISION_PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{image_b64}", "detail": "high"},
+                        },
+                    ],
+                }
+            ],
+            max_tokens=256,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "frame_analysis", "strict": True, "schema": VISION_SCHEMA},
+            },
+        )
+    content = resp.choices[0].message.content
+    if content is None:
+        raise RuntimeError(
+            f"API returned no content for {frame_file.name}: "
+            f"finish_reason={resp.choices[0].finish_reason}, refusal={resp.choices[0].message.refusal}"
+        )
+    return json.loads(content)
 
-    frame_results = []
+
+async def _analyze_vision_async(frame_files: list[Path]) -> list[dict]:
+    """Query all uncached frames concurrently, return results in order."""
+    VISION_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    client = openai.AsyncOpenAI()
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+
+    results: list[dict | None] = [None] * len(frame_files)
+    to_query: list[tuple[int, Path]] = []
     cache_hits = 0
+
     for i, frame_file in enumerate(frame_files):
-        cache_key = _vision_cache_key(frame_file)
-        cache_file = VISION_CACHE_DIR / f"{cache_key}.json"
-        if cache_file.exists():
-            result = json.loads(cache_file.read_text())
+        cp = _cache_path(frame_file)
+        if cp.exists():
+            results[i] = json.loads(cp.read_text())
             cache_hits += 1
         else:
-            image_b64 = base64.b64encode(frame_file.read_bytes()).decode()
-            resp = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": VISION_PROMPT},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{image_b64}", "detail": "high"},
-                            },
-                        ],
-                    }
-                ],
-                max_tokens=256,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {"name": "frame_analysis", "strict": True, "schema": VISION_SCHEMA},
-                },
-            )
-            result = json.loads(resp.choices[0].message.content)
-            cache_file.write_text(json.dumps(result, indent=2))
+            to_query.append((i, frame_file))
 
-        frame_results.append(result)
-        if (i + 1) % 10 == 0 or i == len(frame_files) - 1:
-            print(f"  Vision: analyzed {i + 1}/{len(frame_files)} frames ({cache_hits} cache hits)")
+    print(f"  {cache_hits} cached, {len(to_query)} to query (concurrency={MAX_CONCURRENT})")
+
+    if to_query:
+        tasks = [_query_frame(client, frame_file, sem) for _, frame_file in to_query]
+        query_results = await asyncio.gather(*tasks)
+
+        for (i, frame_file), result in zip(to_query, query_results, strict=True):
+            results[i] = result
+            _cache_path(frame_file).write_text(json.dumps(result, indent=2))
+
+    return results  # type: ignore[return-value]
+
+
+async def analyze_vision(
+    frame_files: list[Path], markers: list[str], sent_timestamps: list[str], recording_duration: float
+) -> list[LatencyMeasurement | None]:
+    """Vision API analysis."""
+    frame_results = await _analyze_vision_async(frame_files)
+    frame_interval_ms = recording_duration * 1000.0 / len(frame_files)
 
     results = []
-    for ts in sent_timestamps:
-        first_clock = None
+    for marker, ts in zip(markers, sent_timestamps, strict=True):
+        found_frame = None
         for i, fr in enumerate(frame_results):
-            vim_text = " ".join(fr.get("vim_buffer_text", []))
-            if ts in vim_text:
-                first_clock = fr.get("clock")
-                print(f"  Timestamp '{ts}' first seen in frame {i + 1}, clock={first_clock}")
+            vim_lines = fr.get("vim_buffer_text", [])
+            if marker in vim_lines:
+                found_frame = i
                 break
 
-        if first_clock is None:
-            print(f"  Timestamp '{ts}' not found in any frame")
+        if found_frame is None:
+            print(f"  Marker '{marker}' (sent {ts}) not found in any frame")
             results.append(None)
             continue
 
+        this_clock = frame_results[found_frame].get("clock")
+        prev_clock = frame_results[found_frame - 1].get("clock") if found_frame > 0 else None
+
         try:
-            fmt = "%H:%M:%S.%f"
-            clock_padded = first_clock + "000" if len(first_clock.split(".")[-1]) == 3 else first_clock
-            ts_padded = ts + "000" if len(ts.split(".")[-1]) == 3 else ts
-            t_display = datetime.datetime.strptime(clock_padded, fmt)
-            t_sent = datetime.datetime.strptime(ts_padded, fmt)
-            latency_ms = (t_display - t_sent).total_seconds() * 1000
-            results.append(latency_ms)
+            t_sent = _parse_clock(ts)
+            t_upper = _parse_clock(this_clock)
+            upper_ms = (t_upper - t_sent).total_seconds() * 1000
+
+            if prev_clock is not None:
+                t_lower = _parse_clock(prev_clock)
+                lower_ms = (t_lower - t_sent).total_seconds() * 1000
+            else:
+                lower_ms = upper_ms - frame_interval_ms
+
+            latency_ms = (upper_ms + lower_ms) / 2
+            print(
+                f"  Marker '{marker}' (sent {ts}) first in frame {found_frame + 1}: "
+                f"prev_clock={prev_clock}, clock={this_clock} → "
+                f"{lower_ms:.0f}-{upper_ms:.0f}ms (mid={latency_ms:.0f}ms)"
+            )
+            results.append(
+                LatencyMeasurement(
+                    latency_ms=latency_ms, lower_ms=lower_ms, upper_ms=upper_ms, frame_interval_ms=frame_interval_ms
+                )
+            )
         except (ValueError, TypeError) as e:
-            print(f"  Failed to parse timestamps: clock={first_clock}, sent={ts}: {e}")
+            print(f"  Failed to parse: clock={this_clock}, sent={ts}: {e}")
             results.append(None)
 
     return results
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(
         description="Analyze SPICE latency measurement recordings",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -194,51 +269,49 @@ def main():
 
     metadata = json.loads(metadata_path.read_text())
     sent_timestamps = metadata["sent_timestamps"]
+    markers = metadata.get("markers", [str(i) for i in range(len(sent_timestamps))])
+    recording_duration = metadata["recording_duration"]
     frame_dir = args.recording_dir / "frames"
     frame_files = sorted(frame_dir.glob("frame_*.png"))
+    frame_interval_ms = recording_duration * 1000.0 / len(frame_files) if frame_files else 0
 
     print(f"Recording: {args.recording_dir}")
     print(f"  {len(frame_files)} frames, {len(sent_timestamps)} samples")
+    print(f"  {len(frame_files) / recording_duration:.1f} fps, {frame_interval_ms:.1f}ms frame interval")
     print()
 
     if args.vision:
         print("Analyzing with vision API...")
-        latencies = analyze_vision(frame_files, sent_timestamps)
+        latencies = await analyze_vision(frame_files, markers, sent_timestamps, recording_duration)
     else:
         print("Analyzing with pixel-diff...")
         latencies = analyze_pixeldiff(
-            frame_files, metadata["keystroke_perf_times"], metadata["recording_start"], metadata["recording_duration"]
+            frame_files, metadata["keystroke_perf_times"], metadata["recording_start"], recording_duration
         )
 
     print()
     print("=" * 50)
     print("Results:")
-    valid_latencies = []
-    for i, (ts, lat) in enumerate(zip(sent_timestamps, latencies, strict=True)):
-        if lat is not None:
-            valid_latencies.append(lat)
-            print(f"  [{i + 1}] {ts} \u2192 {lat:.1f}ms")
+    valid: list[LatencyMeasurement] = []
+    for i, (marker, ts, m) in enumerate(zip(markers, sent_timestamps, latencies, strict=True)):
+        if m is not None:
+            valid.append(m)
+            print(f"  [{i + 1}] marker={marker} sent={ts} → {m.latency_ms:.0f}ms [{m.lower_ms:.0f}-{m.upper_ms:.0f}ms]")
         else:
-            print(f"  [{i + 1}] {ts} \u2192 FAILED")
+            print(f"  [{i + 1}] marker={marker} sent={ts} → FAILED")
 
-    if valid_latencies:
-        avg = sum(valid_latencies) / len(valid_latencies)
-        print(f"\n  Successful: {len(valid_latencies)}/{len(sent_timestamps)}")
-        print(f"  Average: {avg:.1f}ms")
-        print(f"  Min: {min(valid_latencies):.1f}ms")
-        print(f"  Max: {max(valid_latencies):.1f}ms")
-
-        if avg < 50:
-            print("  Rating: Excellent (<50ms)")
-        elif avg < 100:
-            print("  Rating: Good (50-100ms)")
-        elif avg < 200:
-            print("  Rating: Noticeable (100-200ms)")
-        else:
-            print("  Rating: Laggy (>200ms)")
+    if valid:
+        avg = sum(m.latency_ms for m in valid) / len(valid)
+        avg_lower = sum(m.lower_ms for m in valid) / len(valid)
+        avg_upper = sum(m.upper_ms for m in valid) / len(valid)
+        print(f"\n  Samples: {len(valid)}/{len(sent_timestamps)}")
+        print(f"  Average: {avg:.0f}ms [{avg_lower:.0f}-{avg_upper:.0f}ms]")
+        print(f"  Min: {min(m.latency_ms for m in valid):.0f}ms")
+        print(f"  Max: {max(m.latency_ms for m in valid):.0f}ms")
+        print(f"  Frame interval: ±{frame_interval_ms:.1f}ms")
     else:
         print("  No successful measurements")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

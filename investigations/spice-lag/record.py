@@ -102,10 +102,10 @@ def run_clock(stop_event: threading.Event) -> None:
     sys.stdout.flush()
 
 
-def type_timestamp() -> str:
-    """Type current timestamp into focused window via ydotool. Returns the timestamp string."""
+def type_marker(index: int) -> str:
+    """Type a short marker into focused window via ydotool. Returns the timestamp at send time."""
     ts = _now_str()
-    subprocess.run(["ydotool", "type", ts + "\n"], check=True, capture_output=True)
+    subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", f"{index}\n"], check=True, capture_output=True)
     return ts
 
 
@@ -161,11 +161,11 @@ def main():
     sent_timestamps = []
     keystroke_perf_times = []
     for i in range(args.samples):
-        ts = type_timestamp()
+        ts = type_marker(i)
         perf_time = time.perf_counter()
         sent_timestamps.append(ts)
         keystroke_perf_times.append(perf_time)
-        sys.stdout.write(f"\n  [{i + 1}/{args.samples}] Sent: {ts}\n")
+        sys.stdout.write(f"\n  [{i + 1}/{args.samples}] Marker '{i}' sent at {ts}\n")
         sys.stdout.flush()
         if i < args.samples - 1:
             time.sleep(args.delay)
@@ -190,7 +190,9 @@ def main():
     frame_count = extract_frames(actual_path, frame_dir)
     print(f"  {frame_count} frames extracted")
 
+    markers = [str(i) for i in range(args.samples)]
     metadata = {
+        "markers": markers,
         "sent_timestamps": sent_timestamps,
         "keystroke_perf_times": keystroke_perf_times,
         "recording_start": recording_start,
