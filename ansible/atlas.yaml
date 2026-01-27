@@ -133,13 +133,6 @@
       notify: Reload udev rules
       tags: [ydotool]
 
-    - name: Enable ydotoold service
-      ansible.builtin.systemd:
-        name: ydotoold
-        enabled: true
-        state: started
-      tags: [ydotool]
-
     - name: Enable GDM display manager
       ansible.builtin.systemd:
         name: gdm3
