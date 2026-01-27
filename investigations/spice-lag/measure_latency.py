@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["pillow", "dasbus"]
-# ///
+#!/usr/bin/python3
 """
 SPICE input-to-display latency measurement (Wayland/GNOME).
 
@@ -16,8 +12,9 @@ Setup:
 
 Requirements:
     - ffmpeg, ydotool (installed via ansible/atlas.yaml)
-    - ydotoold running (systemd service)
-    - uv (for automatic Python dependency management)
+    - ydotoold running
+    - python3-gi (system package, installed with GNOME)
+    - python3-pil: sudo apt install python3-pil
 """
 
 import argparse
@@ -29,15 +26,36 @@ import tempfile
 import time
 from pathlib import Path
 
-from dasbus.connection import SessionMessageBus
-from PIL import Image
+import gi
+
+gi.require_version("Gio", "2.0")
+gi.require_version("GLib", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+from PIL import Image  # noqa: E402
 
 
-def find_spice_window_rect() -> tuple[int, int, int, int] | None:
+def _session_bus() -> Gio.DBusConnection:
+    return Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+
+def _dbus_call(
+    bus: Gio.DBusConnection,
+    bus_name: str,
+    object_path: str,
+    interface: str,
+    method: str,
+    params: GLib.Variant | None = None,
+    reply_type: GLib.VariantType | None = None,
+) -> GLib.Variant:
+    return bus.call_sync(
+        bus_name, object_path, interface, method,
+        params, reply_type,
+        Gio.DBusCallFlags.NONE, -1, None,
+    )
+
+
+def find_spice_window_rect(bus: Gio.DBusConnection) -> tuple[int, int, int, int] | None:
     """Find SPICE window rectangle via GNOME Shell eval. Returns (x, y, w, h) or None."""
-    bus = SessionMessageBus()
-    shell = bus.get_proxy("org.gnome.Shell", "/org/gnome/Shell")
-
     js = """
     (function() {
         let found = global.get_window_actors().find(
@@ -51,37 +69,52 @@ def find_spice_window_rect() -> tuple[int, int, int, int] | None:
     })()
     """
 
-    success, result = shell.Eval(js)
-    if not success or result == "null":
+    result = _dbus_call(
+        bus, "org.gnome.Shell", "/org/gnome/Shell", "org.gnome.Shell",
+        "Eval", GLib.Variant("(s)", (js,)), GLib.VariantType("(bs)"),
+    )
+
+    success = result.get_child_value(0).get_boolean()
+    value = result.get_child_value(1).get_string()
+    if not success or value == "null":
         return None
 
-    rect = json.loads(result)
+    rect = json.loads(value)
     return rect["x"], rect["y"], rect["width"], rect["height"]
 
 
-def start_screencast(
-    bus: SessionMessageBus, fps: int, output_path: Path, region: tuple[int, int, int, int] | None = None
-) -> tuple:
-    """Start GNOME Shell screencast via D-Bus. Returns (proxy, filename)."""
-    screencast = bus.get_proxy("org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast")
+def start_screencast_area(
+    bus: Gio.DBusConnection, fps: int, output_path: Path, region: tuple[int, int, int, int]
+) -> str:
+    """Start GNOME Shell screencast. Returns filename."""
+    x, y, w, h = region
+    options = GLib.Variant("a{sv}", {
+        "framerate": GLib.Variant("i", fps),
+        "draw-cursor": GLib.Variant("b", False),
+    })
 
-    options = {"framerate": fps, "draw-cursor": False}
+    result = _dbus_call(
+        bus,
+        "org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast",
+        "org.gnome.Shell.Screencast", "ScreencastArea",
+        GLib.Variant("(iiiisa{sv})", (x, y, w, h, str(output_path), options)),
+        GLib.VariantType("(bs)"),
+    )
 
-    if region:
-        x, y, w, h = region
-        success, filename = screencast.ScreencastArea(x, y, w, h, str(output_path), options)
-    else:
-        success, filename = screencast.Screencast(str(output_path), options)
-
+    success = result.get_child_value(0).get_boolean()
+    filename = result.get_child_value(1).get_string()
     if not success:
         raise RuntimeError("Failed to start GNOME screencast")
+    return filename
 
-    return screencast, str(filename)
 
-
-def stop_screencast(screencast) -> None:
+def stop_screencast(bus: Gio.DBusConnection) -> None:
     """Stop an active GNOME Shell screencast."""
-    screencast.StopScreencast()
+    _dbus_call(
+        bus,
+        "org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast",
+        "org.gnome.Shell.Screencast", "StopScreencast",
+    )
 
 
 def send_keystroke(key: str = "x") -> float:
@@ -159,10 +192,10 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
 
 
 def measure_once(
-    bus: SessionMessageBus,
+    bus: Gio.DBusConnection,
     key: str = "x",
     fps: int = 60,
-    region: tuple[int, int, int, int] | None = None,
+    region: tuple[int, int, int, int] = (0, 0, 1920, 1080),
     work_dir: Path | None = None,
 ) -> float | None:
     """Perform one latency measurement. Returns latency in ms, or None on failure."""
@@ -172,7 +205,7 @@ def measure_once(
     video_path = work_dir / "recording.webm"
 
     print(f"  Starting screencast at {fps}fps...")
-    screencast, filename = start_screencast(bus, fps, video_path, region=region)
+    filename = start_screencast_area(bus, fps, video_path, region=region)
     recording_start = time.perf_counter()
 
     # Wait for recording to stabilize
@@ -185,7 +218,7 @@ def measure_once(
     time.sleep(1.0)
 
     print("  Stopping screencast...")
-    stop_screencast(screencast)
+    stop_screencast(bus)
     recording_end = time.perf_counter()
 
     actual_path = Path(filename)
@@ -219,19 +252,19 @@ def main():
     args = parser.parse_args()
 
     # Preflight checks
-    if not shutil.which("ydotool"):
-        print("Error: ydotool not found. Install via: sudo apt install ydotool")
-        sys.exit(1)
-    if not shutil.which("ffmpeg"):
-        print("Error: ffmpeg not found. Install via: sudo apt install ffmpeg")
-        sys.exit(1)
+    for tool in ["ydotool", "ffmpeg"]:
+        if not shutil.which(tool):
+            print(f"Error: {tool} not found")
+            sys.exit(1)
 
     print("SPICE Latency Measurement (Wayland/GNOME)")
     print("==========================================")
 
+    bus = _session_bus()
+
     # Find SPICE window
     print("Looking for SPICE window...")
-    region = find_spice_window_rect()
+    region = find_spice_window_rect(bus)
     if not region:
         print("Error: SPICE window not found. Make sure remote-viewer or virt-viewer is running.")
         sys.exit(1)
@@ -241,7 +274,6 @@ def main():
     print(f"Samples: {args.samples}, FPS: {args.fps}, Key: {args.key}")
     print()
 
-    bus = SessionMessageBus()
     latencies = []
     work_dir = Path(tempfile.mkdtemp(prefix="spice_latency_"))
 
