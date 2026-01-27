@@ -97,6 +97,10 @@
           - zsh
           - spice-client-gtk # For SPICE console connections
           - ydotool # For input automation on Wayland (SPICE latency measurement)
+          - ydotoold # ydotool daemon (separate package on bookworm)
+          - libdbus-1-dev # For building dbus-python (SPICE latency measurement)
+          - libglib2.0-dev # For building dbus-python (SPICE latency measurement)
+          - libsystemd-dev # Runtime dependency of dbus-python
           - gstreamer1.0-pipewire # For GNOME screencast recording
           - gstreamer1.0-plugins-good # For GNOME screencast recording
         state: present
