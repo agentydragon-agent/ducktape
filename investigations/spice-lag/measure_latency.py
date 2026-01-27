@@ -1,7 +1,7 @@
-#!/usr/bin/env -S uv run --script --python python3.11
+#!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["pillow", "dbus-python"]
+# dependencies = ["pillow", "dasbus"]
 # ///
 """
 SPICE input-to-display latency measurement (Wayland/GNOME).
@@ -29,15 +29,14 @@ import tempfile
 import time
 from pathlib import Path
 
-import dbus
+from dasbus.connection import SessionMessageBus
 from PIL import Image
 
 
 def find_spice_window_rect() -> tuple[int, int, int, int] | None:
     """Find SPICE window rectangle via GNOME Shell eval. Returns (x, y, w, h) or None."""
-    bus = dbus.SessionBus()
-    shell = bus.get_object("org.gnome.Shell", "/org/gnome/Shell")
-    shell_iface = dbus.Interface(shell, "org.gnome.Shell")
+    bus = SessionMessageBus()
+    shell = bus.get_proxy("org.gnome.Shell", "/org/gnome/Shell")
 
     js = """
     (function() {
@@ -52,7 +51,7 @@ def find_spice_window_rect() -> tuple[int, int, int, int] | None:
     })()
     """
 
-    success, result = shell_iface.Eval(js)
+    success, result = shell.Eval(js)
     if not success or result == "null":
         return None
 
@@ -61,29 +60,28 @@ def find_spice_window_rect() -> tuple[int, int, int, int] | None:
 
 
 def start_screencast(
-    bus: dbus.SessionBus, fps: int, output_path: Path, region: tuple[int, int, int, int] | None = None
+    bus: SessionMessageBus, fps: int, output_path: Path, region: tuple[int, int, int, int] | None = None
 ) -> tuple:
-    """Start GNOME Shell screencast via D-Bus. Returns (iface, filename)."""
-    screencast_obj = bus.get_object("org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast")
-    iface = dbus.Interface(screencast_obj, "org.gnome.Shell.Screencast")
+    """Start GNOME Shell screencast via D-Bus. Returns (proxy, filename)."""
+    screencast = bus.get_proxy("org.gnome.Shell.Screencast", "/org/gnome/Shell/Screencast")
 
-    options = {"framerate": dbus.Int32(fps), "draw-cursor": dbus.Boolean(False)}
+    options = {"framerate": fps, "draw-cursor": False}
 
     if region:
         x, y, w, h = region
-        success, filename = iface.ScreencastArea(x, y, w, h, str(output_path), options)
+        success, filename = screencast.ScreencastArea(x, y, w, h, str(output_path), options)
     else:
-        success, filename = iface.Screencast(str(output_path), options)
+        success, filename = screencast.Screencast(str(output_path), options)
 
     if not success:
         raise RuntimeError("Failed to start GNOME screencast")
 
-    return iface, str(filename)
+    return screencast, str(filename)
 
 
-def stop_screencast(iface) -> None:
+def stop_screencast(screencast) -> None:
     """Stop an active GNOME Shell screencast."""
-    iface.StopScreencast()
+    screencast.StopScreencast()
 
 
 def send_keystroke(key: str = "x") -> float:
@@ -161,7 +159,7 @@ def analyze_frames(video_path: Path, keystroke_time: float, recording_start: flo
 
 
 def measure_once(
-    bus: dbus.SessionBus,
+    bus: SessionMessageBus,
     key: str = "x",
     fps: int = 60,
     region: tuple[int, int, int, int] | None = None,
@@ -174,7 +172,7 @@ def measure_once(
     video_path = work_dir / "recording.webm"
 
     print(f"  Starting screencast at {fps}fps...")
-    iface, filename = start_screencast(bus, fps, video_path, region=region)
+    screencast, filename = start_screencast(bus, fps, video_path, region=region)
     recording_start = time.perf_counter()
 
     # Wait for recording to stabilize
@@ -187,7 +185,7 @@ def measure_once(
     time.sleep(1.0)
 
     print("  Stopping screencast...")
-    stop_screencast(iface)
+    stop_screencast(screencast)
     recording_end = time.perf_counter()
 
     actual_path = Path(filename)
@@ -243,7 +241,7 @@ def main():
     print(f"Samples: {args.samples}, FPS: {args.fps}, Key: {args.key}")
     print()
 
-    bus = dbus.SessionBus()
+    bus = SessionMessageBus()
     latencies = []
     work_dir = Path(tempfile.mkdtemp(prefix="spice_latency_"))
 
