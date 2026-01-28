@@ -21,6 +21,7 @@ Requirements:
 import argparse
 import datetime
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -123,7 +124,13 @@ def type_marker(char: str) -> str:
     to measured latency for the single character.
     """
     ts = _now_str()
-    subprocess.run(["ydotool", "type", char], check=True, capture_output=True)
+    result = subprocess.run(["ydotool", "type", char], capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ydotool failed (exit {result.returncode}):\n"
+            f"  stdout: {result.stdout.decode(errors='replace')}\n"
+            f"  stderr: {result.stderr.decode(errors='replace')}"
+        )
     return ts
 
 
@@ -150,8 +157,21 @@ def main():
 
     for tool in ["ydotool", "ffmpeg"]:
         if not shutil.which(tool):
-            print(f"Error: {tool} not found")
-            sys.exit(1)
+            raise RuntimeError(f"{tool} not found in PATH")
+
+    ydotool_socket = Path("/tmp/.ydotool_socket")
+    if not ydotool_socket.exists():
+        raise RuntimeError(
+            "ydotoold not running (/tmp/.ydotool_socket not found)\n"
+            "Start it with: sudo ydotoold --socket-path=/tmp/.ydotool_socket --socket-perm=0666"
+        )
+
+    uinput = Path("/dev/uinput")
+    if uinput.exists() and not os.access(uinput, os.W_OK):
+        raise RuntimeError(
+            "/dev/uinput not writable by current user\n"
+            "Fix with: sudo chmod 0666 /dev/uinput"
+        )
 
     work_dir = args.output_dir or Path(tempfile.mkdtemp(prefix="spice_latency_"))
     work_dir.mkdir(parents=True, exist_ok=True)
