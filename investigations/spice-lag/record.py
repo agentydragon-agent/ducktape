@@ -124,7 +124,7 @@ def type_marker(char: str) -> str:
     to measured latency for the single character.
     """
     ts = _now_str()
-    result = subprocess.run(["ydotool", "type", char], capture_output=True)
+    result = subprocess.run(["ydotool", "type", char], check=False, capture_output=True)
     if result.returncode != 0:
         raise RuntimeError(
             f"ydotool failed (exit {result.returncode}):\n"
@@ -132,17 +132,6 @@ def type_marker(char: str) -> str:
             f"  stderr: {result.stderr.decode(errors='replace')}"
         )
     return ts
-
-
-def extract_frames(video_path: Path, frame_dir: Path) -> int:
-    """Extract all frames from video as PNGs. Returns frame count."""
-    frame_dir.mkdir(exist_ok=True)
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", str(video_path), "-vsync", "0", str(frame_dir / "frame_%05d.png")],
-        check=False,
-        capture_output=True,
-    )
-    return len(list(frame_dir.glob("frame_*.png")))
 
 
 def main():
@@ -168,10 +157,7 @@ def main():
 
     uinput = Path("/dev/uinput")
     if uinput.exists() and not os.access(uinput, os.W_OK):
-        raise RuntimeError(
-            "/dev/uinput not writable by current user\n"
-            "Fix with: sudo chmod 0666 /dev/uinput"
-        )
+        raise RuntimeError("/dev/uinput not writable by current user\nFix with: sudo chmod 0666 /dev/uinput")
 
     work_dir = args.output_dir or Path(tempfile.mkdtemp(prefix="spice_latency_"))
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -226,11 +212,6 @@ def main():
         print(f"Error: recording file not found at {actual_path}")
         sys.exit(1)
 
-    print("Extracting frames...")
-    frame_dir = work_dir / "frames"
-    frame_count = extract_frames(actual_path, frame_dir)
-    print(f"  {frame_count} frames extracted")
-
     metadata = {
         "markers": markers,
         "sent_timestamps": sent_timestamps,
@@ -238,7 +219,6 @@ def main():
         "recording_start": recording_start,
         "recording_duration": recording_duration,
         "fps_requested": args.fps,
-        "frame_count": frame_count,
     }
     metadata_path = work_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2))

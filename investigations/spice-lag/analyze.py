@@ -20,6 +20,8 @@ import base64
 import datetime
 import hashlib
 import json
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -286,6 +288,19 @@ async def analyze_vision(
     return results
 
 
+def extract_frames(video_path: Path, frame_dir: Path) -> int:
+    """Extract all frames from video as PNGs. Returns frame count."""
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg not found in PATH")
+    frame_dir.mkdir(exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(video_path), "-vsync", "0", str(frame_dir / "frame_%05d.png")],
+        check=True,
+        capture_output=True,
+    )
+    return len(list(frame_dir.glob("frame_*.png")))
+
+
 async def main():
     parser = argparse.ArgumentParser(
         description="Analyze SPICE latency measurement recordings",
@@ -305,6 +320,16 @@ async def main():
     markers = metadata.get("markers", [str(i) for i in range(len(sent_timestamps))])
     recording_duration = metadata["recording_duration"]
     frame_dir = args.recording_dir / "frames"
+
+    if not frame_dir.exists() or not any(frame_dir.glob("frame_*.png")):
+        video_path = args.recording_dir / "recording.webm"
+        if not video_path.exists():
+            print(f"Error: no frames/ directory and no recording.webm in {args.recording_dir}")
+            sys.exit(1)
+        print("Extracting frames from recording.webm...")
+        count = extract_frames(video_path, frame_dir)
+        print(f"  {count} frames extracted")
+
     frame_files = sorted(frame_dir.glob("frame_*.png"))
     frame_interval_ms = recording_duration * 1000.0 / len(frame_files) if frame_files else 0
 

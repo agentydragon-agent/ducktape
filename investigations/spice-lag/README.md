@@ -64,6 +64,7 @@ Keystroke → SPICE input channel → VM kernel → X11 client (terminal)
 ```
 
 Every frame goes through:
+
 1. **llvmpipe**: CPU-based OpenGL. Compositing the entire desktop in software
    is slow, especially under sustained updates.
 2. **Video encoding**: `videostreaming=all` tells SPICE to encode
@@ -151,14 +152,34 @@ Latency is flat across all 40 keystrokes — zero degradation under sustained
 typing. Confirms the burst problem is desktop-specific, not SPICE transport.
 Recording: `results/2026-01-27T06:17_vt_burst_clean/`
 
+#### 2026-01-27: GNOME burst, videostreaming=off
+
+40 markers at ~280ms intervals under GNOME/SPICE with `videostreaming=off`
+(QXL display, Xorg session — same as previous GNOME tests except streaming
+disabled).
+
+```
+Samples: 40/40
+Average: 152ms [159-146ms]
+Min: 34ms, Max: 578ms
+Frame interval: ±26.2ms (38.2 fps actual)
+```
+
+Adjusted: **~112ms**. Latency is flat across all 40 keystrokes — no pipeline
+saturation, no degradation under sustained typing. The 578ms max is a single
+outlier (likely a vision API clock misread given the wide range on that sample).
+This eliminates the burst degradation problem entirely.
+Recording: `results/2026-01-27T16:23_gnome_novideostream_burst/`
+
 #### Comparison
 
-| Setup                    | Raw avg | Adjusted | Notes                         |
-| ------------------------ | ------- | -------- | ----------------------------- |
-| VT over SPICE            | 98ms    | ~58ms    | Smooth, consistent            |
-| VT burst                 | ~93ms   | ~53ms    | 40 markers, no degradation    |
-| GNOME over SPICE (slow)  | 147ms   | ~107ms   | One keystroke every 3s        |
-| GNOME over SPICE (burst) | 462ms   | ~422ms   | One keystroke every 200ms     |
+| Desktop | Videostreaming | Mode  | Raw avg | Adjusted | Notes                       |
+| ------- | -------------- | ----- | ------- | -------- | --------------------------- |
+| VT      | all            | slow  | 98ms    | ~58ms    | Smooth, consistent          |
+| VT      | all            | burst | ~93ms   | ~53ms    | No degradation              |
+| GNOME   | all            | slow  | 147ms   | ~107ms   | 1 keystroke / 3s            |
+| GNOME   | all            | burst | 462ms   | ~422ms   | Saturates after 5 keys      |
+| GNOME   | off            | burst | 152ms   | ~112ms   | Flat latency, no saturation |
 
 ### Ruled out
 
@@ -220,73 +241,65 @@ The guest is already running GNOME on Xorg (`loginctl` shows `Type=x11`,
 `nvidia-smi` shows `/usr/lib/xorg/Xorg`). The host (atlas) runs Wayland.
 This step is moot — the measured latency already reflects Xorg on the guest.
 
-### Step 1: Disable videostreaming
+### ~~Step 1: Disable videostreaming~~ (done)
 
-In Proxmox web UI or `/etc/pve/qemu-server/100.conf`, change:
-```
-spice_enhancements: videostreaming=off
-```
-Or remove `spice_enhancements` entirely. Requires VM restart.
+Changed `videostreaming` from `all` to `off` via Proxmox UI. Burst latency
+dropped from 462ms to 152ms (adjusted ~422ms → ~112ms). Latency stays flat
+across all 40 keystrokes — pipeline saturation eliminated. The remaining
+~112ms adjusted latency (vs ~53ms for VT) is llvmpipe compositing overhead.
 
-**Expected impact**: Moderate improvement. Removes MJPEG/VP8 encoding overhead
-from every frame update. Most beneficial when combined with software rendering.
+Current config has no `spice_enhancements` line (videostreaming off).
 
-**Alternative**: `videostreaming=filter` — only encodes regions SPICE detects
-as video content, not all screen updates.
+Not yet tested with video playback (e.g. YouTube). If video performance suffers,
+`videostreaming=filter` is worth trying — it only encodes regions SPICE detects
+as video content, leaving text updates uncompressed.
 
-**Observation**: _(not yet tested)_
+### Step 2: Switch from QXL to virtio-gpu with VirGL — NEXT
 
-### Step 2: Switch from QXL to virtio-gpu with VirGL
+Change `vga: qxl` to `vga: virtio-gl` in `/etc/pve/qemu-server/100.conf`.
+Requires VM restart.
 
-In Proxmox config, change `vga: qxl` to `vga: virtio-gl`. This enables VirGL,
-which forwards OpenGL commands to the host GPU (AMD iGPU on atlas) for
-hardware-accelerated compositing.
+This forwards guest OpenGL commands to the host AMD iGPU via virglrenderer,
+replacing llvmpipe (CPU) compositing. Expected to eliminate the remaining
+~59ms gap between GNOME and VT.
 
-**Prerequisites** (check on atlas before attempting):
-```bash
-# Check render nodes exist (need /dev/dri/renderD128 or similar)
-ls -la /dev/dri/
+**Prerequisites** (all verified 2026-01-27):
 
-# Check amdgpu module is loaded
-lsmod | grep amdgpu
+- `/dev/dri/renderD128` exists (AMD Granite Ridge iGPU, `7a:00.0`)
+- `amdgpu` module loaded and bound to iGPU
+- No amdgpu blacklists in `/etc/modprobe.d/`
+- `libegl-mesa0` 22.3.6 installed
+- `libvirglrenderer1` 0.10.4 installed
+- QEMU 9.2.0 (supports virtio-gpu)
+- Both 5090s (`01:00.0`, `03:00.0`) on VFIO — not competing with iGPU
 
-# Check amdgpu is NOT blacklisted
-grep -r amdgpu /etc/modprobe.d/
+Note: the `pre-reboot` snapshot used `vga: virtio` (plain virtio without
+VirGL); the correct setting is `vga: virtio-gl`.
 
-# Check EGL libraries are installed
-dpkg -l | grep libegl
+**To do:**
 
-# Check virglrenderer is available
-dpkg -l | grep virgl
-```
-
-**Expected impact**: Large improvement if it works. Compositing moves from
-llvmpipe (CPU) to AMD iGPU (hardware). This is what wyrm used before the
-5090s were added.
-
-**Known risks**:
-- Previously broke when 5090s were added — may need VFIO configuration that
-  doesn't interfere with VirGL
-- Need to ensure amdgpu driver is loaded for the iGPU while 5090s use vfio-pci
-- Check `/etc/modprobe.d/` for blacklists that might block amdgpu
-- virglrenderer needs to be installed on the host
-- NVIDIA proprietary drivers on host don't support GBM, so VirGL must use
-  the AMD iGPU, not the NVIDIA GPUs
-
-**References**:
-- https://forum.proxmox.com/threads/can-i-use-one-of-two-gpus-for-passthrough-and-the-other-for-virgl.141866/
-- https://forum.proxmox.com/threads/difference-between-virtio-gpu-and-virgl-gpu.113619/
-- https://forum.proxmox.com/threads/no-drm-render-node-detected-dev-dri-renderd-no-gpu-needed-for-virtio-gl-display.146092/
-- https://www.collabora.com/news-and-blog/blog/2025/01/15/the-state-of-gfx-virtualization-using-virglrenderer/
-- https://wiki.archlinux.org/title/QEMU/Guest_graphics_acceleration
+1. `ssh root@atlas` and edit `/etc/pve/qemu-server/100.conf`: change `vga: qxl` to `vga: virtio-gl`
+2. Restart VM from Proxmox UI
+3. Reconnect via SPICE, verify GNOME starts
+4. Run burst measurement, compare to previous results
 
 **If it fails**: Check `journalctl -u qemu-server` and
 `/var/log/pve/tasks/` on atlas. Also check the QEMU command line:
+
 ```bash
 # On atlas:
 ps aux | grep 'qemu.*100' | head -1
 ```
+
 Look for `-display egl-headless,rendernode=/dev/dri/renderDN` in the args.
+
+**References**:
+
+- <https://forum.proxmox.com/threads/can-i-use-one-of-two-gpus-for-passthrough-and-the-other-for-virgl.141866/>
+- <https://forum.proxmox.com/threads/difference-between-virtio-gpu-and-virgl-gpu.113619/>
+- <https://forum.proxmox.com/threads/no-drm-render-node-detected-dev-dri-renderd-no-gpu-needed-for-virtio-gl-display.146092/>
+- <https://www.collabora.com/news-and-blog/blog/2025/01/15/the-state-of-gfx-virtualization-using-virglrenderer/>
+- <https://wiki.archlinux.org/title/QEMU/Guest_graphics_acceleration>
 
 **Observation**: _(not yet tested)_
 
@@ -324,6 +337,7 @@ supports Windows guests. Linux guest support is described as "incomplete and
 not ready for usage" in both B6 and B7 docs.
 
 **References**:
+
 - https://github.com/LizardByte/Sunshine
 - https://moonlight-stream.org/
 - https://forum.proxmox.com/threads/trying-proxmox-with-sunshine.125200/
@@ -461,7 +475,8 @@ column number from each frame. Marker detection uses vim_col transitions
 random/shuffled marker strings.
 
 Results are cached in `~/.cache/spice-latency/vision/` (keyed by prompt hash
-+ image content hash, so prompt changes invalidate cache automatically).
+
+- image content hash, so prompt changes invalidate cache automatically).
 
 **Requirements:** direnv (`.envrc` creates venv with system-site-packages for
 gi/PIL + installs openai)
@@ -484,3 +499,7 @@ This investigation is running on wyrm itself. Config changes (display adapter,
 SPICE settings, session type) require restarting the VM or at minimum logging
 out, which means pausing/restarting the investigation session. The measurement
 scripts run on atlas (the host), not wyrm.
+
+Recordings are stored in `results/` in this directory (on wyrm VM at
+`~/code/ducktape/investigations/spice-lag/results/`). They are copied from
+atlas's `/tmp/spice_latency_*/` after each run.
