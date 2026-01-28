@@ -17,24 +17,20 @@ feels smooth and responsive.
 
 From Proxmox (`/etc/pve/qemu-server/100.conf`):
 
-- **Display**: QXL at PCI `00:01.0`
-- **GPUs**: Two NVIDIA RTX 5090 (10de:2b85) passed through via VFIO at
-  `01:00.0` and `02:00.0`
-- **SPICE**: `spice_enhancements: videostreaming=all`
-- **vga**: `qxl`
+- **Display**: virtio-gl (VirGL — GPU-accelerated via host AMD iGPU)
+- **GPUs**: Two NVIDIA RTX 5090 passed through via VFIO
+- **SPICE**: videostreaming off (no `spice_enhancements` line)
+- **vga**: `virtio-gl`
 
 Both 5090s are functional — `nvidia-smi` shows them idle with CUDA 13.0,
 driver 580.82.09. Xorg has a small allocation on each (4MiB).
 
-### History: virtio-gpu to QXL switch
+### History: virtio-gpu → QXL → virtio-gl
 
-wyrm previously used `vga: virtio-gl` (VirGL). This broke ~3-4 weeks ago when
+wyrm originally used `vga: virtio-gl` (VirGL). This broke ~3-4 weeks ago when
 the two 5090s were added for GPU passthrough, and was switched to QXL as a
-workaround. The ansible config (`ansible/inventory.yaml`) still has a comment
-referencing the old `vga=virtio-gl` setting.
-
-No journal evidence of the switch exists — `journalctl` on wyrm only goes back
-to Jan 19, 2026 (journals rotated).
+workaround. After identifying QXL's llvmpipe overhead as a latency contributor,
+virtio-gl was re-enabled (2026-01-27) and is now working correctly.
 
 ## Rendering Stack Explanation
 
@@ -171,15 +167,39 @@ outlier (likely a vision API clock misread given the wide range on that sample).
 This eliminates the burst degradation problem entirely.
 Recording: `results/2026-01-27T16:23_gnome_novideostream_burst/`
 
+#### 2026-01-27: GNOME burst, virtio-gl (VirGL)
+
+40 markers at ~280ms intervals under GNOME/SPICE with `vga: virtio-gl`
+(VirGL GPU acceleration via host AMD iGPU, videostreaming off).
+
+```
+Samples: 40/40
+Average: 157ms [141-174ms]
+Min: 68ms, Max: 553ms
+Frame interval: ±27.9ms (35.8 fps actual)
+```
+
+Adjusted: **~117ms**. Latency is flat across all 40 keystrokes — no pipeline
+saturation. The 553ms max is a single outlier (marker 'X', likely a vision API
+clock misread given the wide uncertainty range [138-968ms] on that sample).
+Excluding that outlier, the range is 68-177ms with consistent ~150ms raw.
+
+This is comparable to the videostreaming=off result on QXL (~112ms adjusted),
+confirming that VirGL works but doesn't significantly improve latency beyond
+what disabling videostreaming already achieved. The ~59ms gap between GNOME
+and VT persists — this is Mutter compositing + frame scheduling overhead.
+Recording: `results/spice_latency_9qbkb_c8/`
+
 #### Comparison
 
-| Desktop | Videostreaming | Mode  | Raw avg | Adjusted | Notes                       |
-| ------- | -------------- | ----- | ------- | -------- | --------------------------- |
-| VT      | all            | slow  | 98ms    | ~58ms    | Smooth, consistent          |
-| VT      | all            | burst | ~93ms   | ~53ms    | No degradation              |
-| GNOME   | all            | slow  | 147ms   | ~107ms   | 1 keystroke / 3s            |
-| GNOME   | all            | burst | 462ms   | ~422ms   | Saturates after 5 keys      |
-| GNOME   | off            | burst | 152ms   | ~112ms   | Flat latency, no saturation |
+| Desktop | Display   | Videostreaming | Mode  | Raw avg | Adjusted | Notes                       |
+| ------- | --------- | -------------- | ----- | ------- | -------- | --------------------------- |
+| VT      | QXL       | all            | slow  | 98ms    | ~58ms    | Smooth, consistent          |
+| VT      | QXL       | all            | burst | ~93ms   | ~53ms    | No degradation              |
+| GNOME   | QXL       | all            | slow  | 147ms   | ~107ms   | 1 keystroke / 3s            |
+| GNOME   | QXL       | all            | burst | 462ms   | ~422ms   | Saturates after 5 keys      |
+| GNOME   | QXL       | off            | burst | 152ms   | ~112ms   | Flat latency, no saturation |
+| GNOME   | virtio-gl | off            | burst | 157ms   | ~117ms   | Flat, VirGL up and running  |
 
 ### Ruled out
 
@@ -254,54 +274,21 @@ Not yet tested with video playback (e.g. YouTube). If video performance suffers,
 `videostreaming=filter` is worth trying — it only encodes regions SPICE detects
 as video content, leaving text updates uncompressed.
 
-### Step 2: Switch from QXL to virtio-gpu with VirGL — NEXT
+### ~~Step 2: Switch from QXL to virtio-gpu with VirGL~~ (done)
 
-Change `vga: qxl` to `vga: virtio-gl` in `/etc/pve/qemu-server/100.conf`.
-Requires VM restart.
+Changed `vga: qxl` to `vga: virtio-gl` in `/etc/pve/qemu-server/100.conf`.
+VirGL forwards guest OpenGL to the host AMD iGPU via virglrenderer, replacing
+llvmpipe (CPU) compositing.
 
-This forwards guest OpenGL commands to the host AMD iGPU via virglrenderer,
-replacing llvmpipe (CPU) compositing. Expected to eliminate the remaining
-~59ms gap between GNOME and VT.
+Burst latency: 157ms raw (~117ms adjusted) — flat across all 40 keystrokes.
+This is comparable to QXL with videostreaming=off (~112ms adjusted). VirGL
+eliminates the CPU-bound llvmpipe bottleneck, but the ~59ms gap between GNOME
+and VT remains. This gap is Mutter compositor overhead (frame scheduling,
+damage batching, vsync boundaries) — not the rendering backend.
 
-**Prerequisites** (all verified 2026-01-27):
-
-- `/dev/dri/renderD128` exists (AMD Granite Ridge iGPU, `7a:00.0`)
-- `amdgpu` module loaded and bound to iGPU
-- No amdgpu blacklists in `/etc/modprobe.d/`
-- `libegl-mesa0` 22.3.6 installed
-- `libvirglrenderer1` 0.10.4 installed
-- QEMU 9.2.0 (supports virtio-gpu)
-- Both 5090s (`01:00.0`, `03:00.0`) on VFIO — not competing with iGPU
-
-Note: the `pre-reboot` snapshot used `vga: virtio` (plain virtio without
-VirGL); the correct setting is `vga: virtio-gl`.
-
-**To do:**
-
-1. `ssh root@atlas` and edit `/etc/pve/qemu-server/100.conf`: change `vga: qxl` to `vga: virtio-gl`
-2. Restart VM from Proxmox UI
-3. Reconnect via SPICE, verify GNOME starts
-4. Run burst measurement, compare to previous results
-
-**If it fails**: Check `journalctl -u qemu-server` and
-`/var/log/pve/tasks/` on atlas. Also check the QEMU command line:
-
-```bash
-# On atlas:
-ps aux | grep 'qemu.*100' | head -1
-```
-
-Look for `-display egl-headless,rendernode=/dev/dri/renderDN` in the args.
-
-**References**:
-
-- <https://forum.proxmox.com/threads/can-i-use-one-of-two-gpus-for-passthrough-and-the-other-for-virgl.141866/>
-- <https://forum.proxmox.com/threads/difference-between-virtio-gpu-and-virgl-gpu.113619/>
-- <https://forum.proxmox.com/threads/no-drm-render-node-detected-dev-dri-renderd-no-gpu-needed-for-virtio-gl-display.146092/>
-- <https://www.collabora.com/news-and-blog/blog/2025/01/15/the-state-of-gfx-virtualization-using-virglrenderer/>
-- <https://wiki.archlinux.org/title/QEMU/Guest_graphics_acceleration>
-
-**Observation**: _(not yet tested)_
+**Conclusion**: The remaining latency delta is compositor overhead, not GPU.
+Switching to a non-compositing WM (Step 3) or replacing SPICE entirely
+(Step 4) are the remaining options to close the gap.
 
 ### Step 3: Try non-compositing WM (if VirGL unavailable)
 
@@ -483,12 +470,11 @@ gi/PIL + installs openai)
 
 ## Priority-Ordered Action Items
 
-1. **Disable videostreaming** — Set `videostreaming=off` in Proxmox config.
-   Requires VM restart. (Guest is already on Xorg, so that's not the issue.)
-2. **Enable VirGL** — Switch `vga: virtio-gl`. Run host-side checks first
-   (see diagnostic commands). Requires VM restart.
-3. **Try non-compositing WM** — Install xfce4 or i3 as fallback if VirGL
-   can't be made to work.
+1. ~~**Disable videostreaming**~~ — Done. Burst latency dropped from 462ms → 152ms.
+2. ~~**Enable VirGL**~~ — Done. `vga: virtio-gl` working. Burst latency 157ms
+   (~117ms adjusted), flat. No further improvement over videostreaming=off.
+3. **Try non-compositing WM** — Install xfce4 or i3 to eliminate Mutter's
+   ~59ms compositor overhead. Expected to close remaining gap to VT latency.
 4. **Sunshine/Moonlight** — NVIDIA driver works (580.82.09, CUDA 13.0).
    Could replace SPICE entirely. Looking Glass is not viable (no Linux
    guest support).
