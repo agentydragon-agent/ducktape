@@ -30,3 +30,17 @@ events=TICK_60
 ```
 
 Script uses socket to test port, writes READY/RESULT per supervisor protocol.
+
+## Wheel Mode Test: Detect Undeclared Dependencies
+
+**Problem**: The CI wheel-mode test (`wheel-test` job in `claude-hooks-release.yml`) builds the wheel, installs it via `uv tool install`, then runs Bazel tests against the installed package. But this didn't catch a missing `httpx` dependency in the wheel's `requires` list because:
+
+1. The Bazel test environment already has `httpx` available via `@pypi//httpx` (transitive dep), so the import succeeds even though the wheel doesn't declare it.
+2. The wheel is installed into a uv-managed venv, but the test runs inside Bazel which has its own dependency resolution.
+
+**Potential Solutions**:
+
+- **Import smoke test in isolated venv**: After `uv tool install`, run `claude-session-start --help` (or a lightweight import check) *outside* Bazel in the uv venv. This would fail immediately on missing deps since uv only installs declared `requires`.
+- **Automated `requires` audit**: Script that compares actual imports in wheel-packaged modules against the wheel's `requires` list. Could use `importlib.metadata` or AST parsing to find all third-party imports and diff against declared deps.
+- **`pip check` / `uv pip check`**: After installing the wheel, run dependency consistency checks to surface missing or conflicting deps.
+- **`pipdeptree --warn fail`**: Detect missing transitive dependencies post-install.
