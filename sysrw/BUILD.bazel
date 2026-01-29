@@ -46,7 +46,13 @@ py_binary(
     srcs = ["cli.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":compare_eval_vs_ccr",
+        ":extract_dataset_ccr",
+        ":extract_dataset_crush",
+        ":leaderboard",
+        ":run_eval",
         "//openai_utils:client_factory",
+        "//sysrw/templates:loader",
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
@@ -68,12 +74,20 @@ py_library(
     name = "extract_common",
     srcs = ["extract_common.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":openai_typing",
+    ],
 )
 
 py_binary(
     name = "extract_dataset",
     srcs = ["extract_dataset.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":extract_common",
+        ":extract_dataset_ccr",
+    ],
 )
 
 py_library(
@@ -93,6 +107,7 @@ py_binary(
     srcs = ["leaderboard.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//sysrw/templates:loader",
         "@pypi//pydantic",
         "@pypi//rich",
     ],
