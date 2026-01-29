@@ -30,11 +30,3 @@ events=TICK_60
 ```
 
 Script uses socket to test port, writes READY/RESULT per supervisor protocol.
-
-## Wheel Mode Test: Detect Undeclared Dependencies (fixed)
-
-**Problem**: The CI wheel-mode test runs `claude-session-start` as a subprocess when `DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1`. The subprocess uses the uv venv's Python, which only has declared `requires`. However, Bazel's test runner sets `PYTHONPATH` to include all runfiles paths (including `@pypi//httpx`). The subprocess inherited this `PYTHONPATH`, so undeclared deps like `httpx` were importable via Bazel's leaked dependency tree despite not being in the wheel's `requires`.
-
-**Root cause**: `subprocess.run()` in `run_session_start_hook` inherited `os.environ` including Bazel's `PYTHONPATH`. Confirmed via CI artifact `hook-stdout.log` which showed `sys.path` containing `pypi_313_httpx/site-packages` from runfiles.
-
-**Fix**: Clear `PYTHONPATH` from the subprocess environment when `USE_WHEEL=1`, so the process only sees packages from the wheel's venv.

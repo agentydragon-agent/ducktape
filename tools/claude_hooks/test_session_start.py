@@ -287,9 +287,10 @@ def run_session_start_hook(
 
     env = dict(os.environ)
     if use_wheel:
-        # Clear PYTHONPATH so the subprocess only sees packages from the wheel's
-        # venv, not Bazel's runfiles. Without this, Bazel leaks its entire
-        # dependency tree via PYTHONPATH, masking missing wheel requires.
+        # Bazel's test runner sets PYTHONPATH to all runfiles site-packages.
+        # The subprocess inherits this, so it can import packages (like httpx)
+        # from Bazel's deps even though they're missing from the wheel's
+        # requires list. Clear it so only the wheel venv's packages are visible.
         env.pop("PYTHONPATH", None)
 
     result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, timeout=300, env=env)
