@@ -77,7 +77,7 @@ py_test(
         ":conftest",
         ":submit_server",
         "//agent_core_testing:responses",
-        "//agent_core_testing:steps",
+        "//mcp_infra/exec:matchers",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -91,6 +91,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":conftest",
+        ":submit_server",
         "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -103,6 +104,8 @@ py_library(
     srcs = ["agent_runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":runner",
+        ":submit_server",
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:loop_control",
@@ -121,6 +124,7 @@ py_library(
     srcs = ["runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":submit_server",
         "//mcp_infra:constants",
         "//mcp_infra:mounted",
         "//mcp_infra/compositor",

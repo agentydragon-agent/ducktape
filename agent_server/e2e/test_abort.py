@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_bazel
 
-from agent_core_testing.openai_mock import make_mock
+from openai_utils.testing.openai_mock import make_mock
 
 pytestmark = pytest.mark.usefixtures()
 

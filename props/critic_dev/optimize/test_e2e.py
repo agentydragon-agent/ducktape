@@ -29,7 +29,7 @@ import pytest_bazel
 from hamcrest import all_of, assert_that
 
 from agent_core_testing.responses import PlayGen, tool_roundtrip
-from agent_core_testing.steps import exited_successfully, stdout_contains
+from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.core.agent_types import AgentType
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug

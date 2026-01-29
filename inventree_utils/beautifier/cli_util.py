@@ -1,4 +1,4 @@
-from .iter_util import unwrap_singleton
+from inventree_utils.beautifier.iter_util import unwrap_singleton
 
 
 def build_table(rows, header=None):

@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from .compile import compile_sbpl
-from .model import SBPLPolicy, TraceConfig
+from mcp_infra.seatbelt.compile import compile_sbpl
+from mcp_infra.seatbelt.model import SBPLPolicy, TraceConfig
 
 
 @dataclass(frozen=True)

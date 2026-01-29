@@ -10,7 +10,7 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 
-from .schemas import AssistantMessage
+from sysrw.schemas import AssistantMessage
 
 GRADER_SYSTEM_PROMPT = """You are an evaluator of AI coding assistants.
 

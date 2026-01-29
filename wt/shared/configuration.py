@@ -19,8 +19,8 @@ import click
 import yaml
 from pydantic import ValidationError
 
-from .config_file import ConfigFile
-from .env import is_test_mode
+from wt.shared.config_file import ConfigFile
+from wt.shared.env import is_test_mode
 
 MAX_SOCK_PATH_LEN = 100
 

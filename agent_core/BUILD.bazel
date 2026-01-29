@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//openai_utils/testing:testing.bzl", "live_py_test")
 
 py_library(
     name = "tool_provider",
@@ -153,9 +154,9 @@ py_library(
         ":loop_control",
         ":tool_provider",
         "//agent_core_testing:fixtures",
-        "//agent_core_testing:openai_mock",
         "//agent_core_testing:responses",
         "//mcp_infra/testing:fixtures",
+        "//openai_utils/testing:openai_mock",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],
@@ -168,7 +169,7 @@ py_test(
         ":agent",
         ":conftest",
         ":loop_control",
-        "//agent_core_testing:matchers",
+        "//agent_core/testing:matchers",
         "//agent_core_testing:responses",
         "//mcp_infra:prefix",
         "//mcp_infra/exec:docker",
@@ -190,13 +191,19 @@ py_test(
         ":handler",
         ":loop_control",
         ":tool_provider",
-        "//agent_core_testing:matchers",
+        "//agent_core/testing:matchers",
+        "//agent_core_testing:fixtures",
+        "//agent_core_testing:responses",
+        "//mcp_infra:flat_tool",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
         "//mcp_infra/testing:simple_servers",
         "//openai_utils:model",
         "//openai_utils:pydantic_strict_mode",
+        "//openai_utils/testing:openai_mock",
+        "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
@@ -214,8 +221,8 @@ py_test(
         ":events",
         ":handler",
         ":loop_control",
+        "//agent_core/testing:matchers",
         "//agent_core_testing:echo_server",
-        "//agent_core_testing:matchers",
         "//agent_core_testing:responses",
         "//mcp_infra:naming",
         "//openai_utils:model",
@@ -235,7 +242,7 @@ py_test(
         ":handler",
         ":loop_control",
         ":turn_limit",
-        "//agent_core_testing:assertions",
+        "//agent_core/testing:assertions",
         "//agent_core_testing:responses",
         "//mcp_infra:prefix",
         "//mcp_infra/bootstrap",
@@ -247,7 +254,7 @@ py_test(
     ],
 )
 
-py_test(
+live_py_test(
     name = "test_testing_infrastructure",
     srcs = ["test_testing_infrastructure.py"],
     deps = [
@@ -255,10 +262,10 @@ py_test(
         ":conftest",
         ":events",
         ":loop_control",
-        "//agent_core_testing:matchers",
-        "//agent_core_testing:openai_mock",
+        "//agent_core/testing:matchers",
         "//agent_core_testing:responses",
         "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
         "@pypi//mcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",

@@ -15,7 +15,7 @@ from typing import Annotated, Literal, NewType, cast
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .github_models import PRData
+from wt.shared.github_models import PRData
 
 # WorktreeID: Deliberately scrambled identifier to prevent accidental misuse
 WorktreeID = NewType("WorktreeID", str)  # Opaque to clients; server owns parsing

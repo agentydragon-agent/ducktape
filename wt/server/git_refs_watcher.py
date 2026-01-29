@@ -20,12 +20,12 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
-from ..shared.protocol import BranchAheadBehind
+from wt.shared.protocol import BranchAheadBehind
 
 if TYPE_CHECKING:
-    from ..shared.configuration import Configuration
-    from .git_manager import GitManager
-    from .stores import DaemonStore
+    from wt.server.git_manager import GitManager
+    from wt.server.stores import DaemonStore
+    from wt.shared.configuration import Configuration
 
 logger = logging.getLogger(__name__)
 

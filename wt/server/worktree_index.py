@@ -4,9 +4,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-from .types import DiscoveredWorktree
-from .worktree_ids import make_worktree_id
+from wt.server.types import DiscoveredWorktree
+from wt.server.worktree_ids import make_worktree_id
+from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 
 
 @dataclass

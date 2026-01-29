@@ -11,9 +11,9 @@ import subprocess
 from github import Github
 from github.Repository import Repository
 
-from ..shared.env import is_test_mode
-from ..shared.error_handling import GitHubUnavailableError, handle_github_errors
-from ..shared.github_models import GitHubPRResponse, HasBasicPR, PRState, PullRequestList
+from wt.shared.env import is_test_mode
+from wt.shared.error_handling import GitHubUnavailableError, handle_github_errors
+from wt.shared.github_models import GitHubPRResponse, HasBasicPR, PRState, PullRequestList
 
 logger = logging.getLogger(__name__)
 

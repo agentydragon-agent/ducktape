@@ -17,6 +17,7 @@ py_library(
     deps = [
         ":base",
         ":containerized_claude",
+        "//inop/engine:models",
         "//inop/io:file_utils",
         "@pypi//claude_code_sdk",
         "@pypi//structlog",
@@ -28,6 +29,7 @@ py_library(
     srcs = ["containerized_claude.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//inop/engine:models",
         "@pypi//claude_code_sdk",
         "@pypi//docker",
         "@pypi//pathspec",
@@ -45,6 +47,8 @@ py_library(
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_core:transcript_handler",
+        "//inop/engine:models",
+        "//inop/io:file_utils",
         "//mcp_infra:constants",
         "//mcp_infra:mcp_types",
         "//mcp_infra:prefix",

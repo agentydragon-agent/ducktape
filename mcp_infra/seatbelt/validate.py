@@ -14,7 +14,7 @@ import shutil
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .model import Action, DefaultBehavior, FileOp, SBPLPolicy, Subpath
+from mcp_infra.seatbelt.model import Action, DefaultBehavior, FileOp, SBPLPolicy, Subpath
 
 
 @dataclass(frozen=True)

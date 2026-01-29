@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from ..shared.protocol import WorktreeID
+from wt.shared.protocol import WorktreeID
 
 
 @dataclass(frozen=True, slots=True)

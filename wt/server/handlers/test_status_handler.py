@@ -43,6 +43,7 @@ def status_deps(repo_factory, config_factory) -> ServiceDependencies:
         git_refs_watcher=git_refs_watcher,
         discovery=discovery,
         coordinator=Mock(),
+        worktree_service=Mock(),
     )
 
 

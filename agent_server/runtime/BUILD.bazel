@@ -82,6 +82,7 @@ py_library(
     srcs = ["registry.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":container",
         "//agent_server/persist:sqlite",
         "//openai_utils:model",
         "@pypi//aiodocker",

@@ -15,7 +15,7 @@ from typing import Any
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict
 
-from .scoresheet import GradeResult, GraderScoresheet, TestCase
+from claude.claude_optimizer.scoresheet import GradeResult, GraderScoresheet, TestCase
 
 
 class Action(BaseModel):

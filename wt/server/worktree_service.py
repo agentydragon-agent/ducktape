@@ -13,16 +13,16 @@ from pathlib import Path
 import psutil
 import pygit2
 
-from ..shared.configuration import Configuration
-from ..shared.error_handling import ErrorContext, validate_worktree_name
+from wt.server.copy_strategies import get_copy_strategy
+from wt.server.git_manager import GitManager
+from wt.server.github_client import GitHubInterface
+from wt.server.worktree_ids import wtid_to_path
+from wt.shared.configuration import Configuration
+from wt.shared.error_handling import ErrorContext, validate_worktree_name
 
 # PR types are referenced by protocol layer; not needed here directly
-from ..shared.models import ProcessInfo
-from ..shared.protocol import WorktreeID
-from .copy_strategies import get_copy_strategy
-from .git_manager import GitManager
-from .github_client import GitHubInterface
-from .worktree_ids import wtid_to_path
+from wt.shared.models import ProcessInfo
+from wt.shared.protocol import WorktreeID
 
 logger = logging.getLogger(__name__)
 

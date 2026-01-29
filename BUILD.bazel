@@ -20,10 +20,6 @@
 # gazelle:resolve py adgn_mcp_starter.server //mcp_starter/adgn_mcp_starter:server
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
 #
-# Packages with both py_library and py_binary for the same source (disambiguate for Gazelle)
-# gazelle:resolve py props.critic_dev.improve.main //props/critic_dev/improve:main_lib
-# gazelle:resolve py props.critic_dev.optimize.main //props/critic_dev/optimize:main_lib
-#
 # Root-level targets
 # gazelle:resolve py bazel_util //:bazel_util
 # gazelle:resolve py fmt_util.fmt_util //fmt_util:fmt_util
@@ -115,12 +111,6 @@ js_library(
     ],
 )
 
-# Single consolidated pyproject.toml for all Python dependencies
-# Per-package pyproject.toml files are no longer used - all deps are in root pyproject.toml
-_PYPROJECT_SRCS = [
-    "//:pyproject.toml",
-]
-
 # Generate requirements_bazel.txt from all pyproject.toml files
 # Run: bazel run //:requirements.update
 #
@@ -133,7 +123,7 @@ _PYPROJECT_SRCS = [
 # Locally: empty dict. On CC web: proxy settings from AUTH_PROXY_PORT env.
 lock(
     name = "requirements",
-    srcs = _PYPROJECT_SRCS,
+    srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
     args = ["--all-extras"],
     env = PROXY_ENV,

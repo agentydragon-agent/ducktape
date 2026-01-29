@@ -8,9 +8,11 @@ from pathlib import Path
 import click
 import psutil
 
-from ..shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
-from ..shared.env import is_test_mode
-from ..shared.protocol import (
+from wt.client.cd_utils import emit_cd_command
+from wt.client.wt_client import WtClient, read_daemon_pid
+from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME, RESERVED_NAMES
+from wt.shared.env import is_test_mode
+from wt.shared.protocol import (
     HookOutputEvent,
     HookStream,
     ProgressEvent,
@@ -20,8 +22,6 @@ from ..shared.protocol import (
     TeleportCdThere,
     WorktreeCreateStep,
 )
-from .cd_utils import emit_cd_command
-from .wt_client import WtClient, read_daemon_pid
 
 
 @dataclass(frozen=True)

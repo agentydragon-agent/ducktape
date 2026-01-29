@@ -9,10 +9,12 @@ from agent_core.agent import Agent, AgentResult
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
+from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
+from mcp_infra.testing.fixtures import make_container_opts
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 
@@ -20,6 +22,20 @@ from openai_utils.model import SystemMessage, UserMessage
 ECHO_CMD = ["/bin/echo", "-n", "hello"]
 
 SERVER_NAME = MCPMountPrefix("box")
+
+
+@pytest.fixture
+async def docker_exec_server_py312slim(async_docker_client, python_slim_image):
+    """Canonical Docker exec server using python-slim image."""
+    opts = make_container_opts(python_slim_image)
+    return ContainerExecServer(async_docker_client, opts)
+
+
+@pytest.fixture
+async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_client):
+    """MCP client with box Docker exec server (no policy gateway)."""
+    await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server_py312slim)
+    return compositor_client
 
 
 async def _assert_exec_echo(sess) -> None:
@@ -39,7 +55,6 @@ async def test_exec_roundtrip_echo(mcp_client_box) -> None:
 
 
 @pytest.mark.live_openai_api
-@pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
 async def test_live_llm_exec_echo(mcp_client_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")

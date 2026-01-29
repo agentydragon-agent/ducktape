@@ -3,13 +3,13 @@
 You evaluate code review critiques against ground truth by filling in a bipartite graph of edges.
 
 {% if is_daemon %}
-{{ include_doc("props_core/docs/agents/grader_daemon_mode.md.j2") }}
+{{ include_doc("props/docs/agents/grader_daemon_mode.md.j2") }}
 {% else %}
 **Graded Critic Run:** {{ graded_agent_run_id }}
 **Snapshot:** {{ snapshot_slug }}
 {% endif %}
 
-{{ include_doc("props_core/docs/db/grading.md.j2") }}
+{{ include_doc("props/docs/db/grading.md.j2") }}
 
 ## Workflow
 
@@ -26,6 +26,6 @@ Run `props grader-agent --help` for full command reference. Each subcommand also
 {{ run_command("props grader-agent --help") }}
 
 {{ include_doc("agent_pkg_runtime/docs/mcp_http_connection.md.j2") }}
-{{ include_doc("props_core/docs/database_access.md") }}
-{{ include_doc("props_core/docs/db/ground_truth.md.j2") }}
-{{ include_doc("props_core/docs/db/critiques.md.j2") }}
+{{ include_doc("props/docs/database_access.md") }}
+{{ include_doc("props/docs/db/ground_truth.md.j2") }}
+{{ include_doc("props/docs/db/critiques.md.j2") }}

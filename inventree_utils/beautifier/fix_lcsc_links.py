@@ -1,9 +1,9 @@
 from inventree.api import InvenTreeAPI
 from inventree.part import Part
 
-from .cli_util import choose
-from .inventree_util import part_url
-from .lcsc_util import lcsc_product_link, parse_url_for_lcsc_id
+from inventree_utils.beautifier.cli_util import choose
+from inventree_utils.beautifier.inventree_util import part_url
+from inventree_utils.beautifier.lcsc_util import lcsc_product_link, parse_url_for_lcsc_id
 
 
 def normalize_url(url: str) -> str:

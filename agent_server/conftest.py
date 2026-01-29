@@ -4,42 +4,27 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
 import docker
-import mcp.types
 import pytest
 from fastmcp.client import Client
-from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
-from pydantic import BaseModel
-from starlette.testclient import TestClient
 
-from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
-from agent_server.persist.events import EventRecord
 from agent_server.persist.sqlite import SQLitePersistence
 from agent_server.persist.types import AgentMetadata
 from agent_server.policies.loader import approve_all_policy_text
 from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest
 from agent_server.policy_eval.container import ContainerPolicyEvaluator
 from agent_server.runtime.container import AgentContainerCompositor
-from agent_server.server.app import create_app
-from agent_server.server.protocol import FunctionCallOutput
-from agent_server.server.state import new_state
-from agent_server.testing.approval_policy_testdata import fetch_policy, make_policy
 from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.testing.fixtures import make_container_opts
-from openai_utils.model import OpenAIModelProto
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from test_util.docker import load_bazel_image, pytest_runtest_setup, python_slim_image  # noqa: F401
 
 # Image tags and load scripts for Bazel-loaded images
@@ -73,20 +58,6 @@ def docker_client():
 def runtime_image():
     """Load agent server runtime image from Bazel :load target."""
     return load_bazel_image(RUNTIME_LOAD_SCRIPT, RUNTIME_IMAGE_TAG)
-
-
-@pytest.fixture
-async def docker_exec_server_py312slim(async_docker_client, python_slim_image):  # noqa: F811
-    """Canonical Docker exec server using python-slim image."""
-    opts = make_container_opts(python_slim_image)
-    return ContainerExecServer(async_docker_client, opts)
-
-
-@pytest.fixture
-async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_client):
-    """MCP client with box Docker exec server (no policy gateway)."""
-    await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server_py312slim)
-    return compositor_client
 
 
 @pytest.fixture
@@ -179,54 +150,6 @@ def policy_allow_all() -> str:
     return approve_all_policy_text()
 
 
-@pytest.fixture
-def policy_ui_send_message_allow() -> str:
-    result: str = make_policy(
-        decision_expr="ApprovalDecision.ALLOW",
-        server="ui",
-        tool="send_message",
-        default=ApprovalDecision.ASK,
-        doc="Allow UI send_message; ask otherwise.",
-    )
-    return result
-
-
-@pytest.fixture
-def policy_failing_tests() -> str:
-    return str(fetch_policy("failing_tests"))
-
-
-# --- Missing fixtures for default policy tests ---
-
-
-@pytest.fixture
-def policy_version_test() -> str:
-    result: str = make_policy(
-        decision_expr="ApprovalDecision.ALLOW",
-        server="ui",
-        tool="send_message",
-        default=ApprovalDecision.ASK,
-        doc="Version bump check policy used in tests.",
-    )
-    return result
-
-
-@pytest.fixture
-def policy_invalid_syntax() -> str:
-    # Intentionally invalid Python
-    return "class ApprovalPolicy:\n    '''invalid'''\n    def decide(self, ctx):\n        return (ApprovalDecision.ALLOW, 'ok'\n"
-
-
-@pytest.fixture
-def policy_context_checking() -> str:
-    return str(fetch_policy("context_checking"))
-
-
-@pytest.fixture
-def policy_const() -> str:
-    return str(fetch_policy("const"))
-
-
 # ---- PolicyRequest test helper ----
 
 
@@ -244,220 +167,6 @@ def make_policy_request(server: MCPMountPrefix, tool: str, arguments: dict[str, 
     return PolicyRequest(
         name=build_mcp_function(server, tool), arguments_json=json.dumps(arguments) if arguments is not None else None
     )
-
-
-# ---- Shared ContainerOptions fixtures and in-proc docker exec specs ----
-# Kept here so all tests can reuse the same settings consistently.
-
-
-# Helper: create a live agent via HTTP on a TestClient and return its id
-@pytest.fixture
-def create_live_agent():
-    def _create(client, *, specs: McpServerSpecs | None = None) -> str:
-        specs = specs or {}
-        # Split into typed JSON specs vs runtime slot specs
-        typed: dict[str, MCPServerTypes] = {}
-        inproc: dict[str, FastMCP] = {}
-        for k, v in list(specs.items()):
-            if isinstance(v, FastMCP):
-                inproc[k] = v
-                continue
-            # Must be MCPServerTypes at this point
-            assert isinstance(v, BaseModel), f"Expected MCPServerTypes or FastMCP, got {type(v)}"
-            typed[k] = v
-        # Create agent via API using a preset
-        resp = client.post("/api/agents", json={"preset": "default"})
-        assert resp.status_code == 200, resp.text
-        agent_id = str(resp.json()["id"])
-        # Attach typed specs via HTTP reconfigure, then runtime slots in-process
-        if typed:
-            # Enforce one format: ALL typed specs must be Pydantic models (MCPServerTypes).
-            if not all(isinstance(v, BaseModel) for v in typed.values()):
-                raise AssertionError("Typed MCP specs must be provided as Pydantic models only")
-            # Send over HTTP; server rehydrates to typed MCPServerTypes (TestClient handles Pydantic serialization)
-            r = client.patch(f"/api/agents/{agent_id}/mcp", json={"attach": typed})
-            assert r.status_code == 200, r.text
-        if inproc:
-
-            async def _attach_async() -> None:
-                reg = client.app.state.registry
-                c = await reg.ensure_live(agent_id, with_ui=True)
-                comp = c._compositor
-                if comp is None:
-                    raise AssertionError("compositor not initialized on container")
-                for name, server in inproc.items():
-                    await comp.mount_inproc(MCPMountPrefix(name), server)
-                await c._push_snapshot_and_status()
-
-            client.portal.call(_attach_async)
-        return agent_id
-
-    return _create
-
-
-@pytest.fixture
-def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch) -> Callable[[OpenAIModelProto], None]:
-    """Return a function to patch container.build_client to a provided fake client.
-
-    Keeps model patching independent from agent creation, so tests can opt-in.
-    """
-
-    def _patch(fake_model: OpenAIModelProto) -> None:
-        monkeypatch.setattr("agent_server.runtime.container.build_client", lambda *a, **k: fake_model)
-
-    return _patch
-
-
-@pytest.fixture
-def agent_app_client():
-    """Yield a (app, client) pair for the UI server with static assets not required.
-
-    Ensures a consistent pattern across tests, avoiding repeated create_app/TestClient boilerplate.
-    """
-    app = create_app(require_static_assets=False)
-    with TestClient(app) as client:
-        yield app, client
-
-
-@pytest.fixture
-def agent_test_client(agent_app_client):
-    """Return just the TestClient for agent server tests.
-
-    Use this when you only need the client and not the app.
-    """
-    _app, client = agent_app_client
-    return client
-
-
-# ---- Server fixtures for tool error and parallel tests ------------------------
-
-
-class _FailInput(OpenAIStrictModeBaseModel):
-    """Input for fail tool (test fixture)."""
-
-    x: int
-
-
-@pytest.fixture
-def failing_server() -> EnhancedFastMCP:
-    """EnhancedFastMCP server with a tool that returns an error payload."""
-    # Workaround: Pass version="test" to skip slow importlib.metadata.version() lookup
-    # that hangs on os.stat() in Nix environment. Without this, MCP server initialization
-    # would call pkg_version("mcp") which triggers filesystem operations that timeout.
-    mcp = EnhancedFastMCP("editor", version="test")
-
-    @mcp.flat_model()
-    def fail(input: _FailInput) -> dict[str, Any]:
-        # Return error payload in structured_content (not raise ToolError)
-        # The test expects ok=False, error="boom" in structured_content
-        return {"ok": False, "error": "boom"}
-
-    return mcp
-
-
-# ---- UI reducer/history test fixtures ----------------------------------------
-
-
-@pytest.fixture
-def fresh_ui_state():
-    """Fresh UI state for reducer tests."""
-    return new_state()
-
-
-@pytest.fixture
-def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult]:
-    """Factory for MCP CallToolResult."""
-
-    def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> mcp.types.CallToolResult:
-        return mcp.types.CallToolResult(content=[], structuredContent=structured_content or {}, isError=is_error)
-
-    return _make
-
-
-@pytest.fixture
-def make_tool_call_output(
-    make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
-) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
-    """Factory for ToolCallOutput events."""
-
-    def _make(call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolCallOutput:
-        return ToolCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
-
-    return _make
-
-
-@pytest.fixture
-def make_function_output(
-    make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
-) -> Callable[[str, dict[str, Any] | None, bool], FunctionCallOutput]:
-    """Factory for protocol FunctionCallOutput (not EventRecord)."""
-
-    def _make(
-        call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False
-    ) -> FunctionCallOutput:
-        return FunctionCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
-
-    return _make
-
-
-# --- EventRecord factories for history tests ---
-
-
-@pytest.fixture
-def event_ts() -> datetime:
-    """Shared timestamp for EventRecord tests."""
-    return datetime.now(UTC)
-
-
-@pytest.fixture
-def make_event_record(event_ts: datetime) -> Callable[[EventType, int | None], EventRecord]:
-    """Wrap any EventType in an EventRecord with auto-sequencing."""
-    seq_counter = {"count": 0}
-
-    def _wrap(payload: EventType, seq: int | None = None) -> EventRecord:
-        if seq is None:
-            seq_counter["count"] += 1
-            seq = seq_counter["count"]
-        return EventRecord(seq=seq, ts=event_ts, payload=payload)
-
-    return _wrap
-
-
-@pytest.fixture
-def make_user_text_event(
-    make_event_record: Callable[[EventType, int | None], EventRecord],
-) -> Callable[[int, str], EventRecord]:
-    """Factory for UserText EventRecord."""
-
-    def _make(seq: int, text: str) -> EventRecord:
-        return make_event_record(UserText(text=text), seq)
-
-    return _make
-
-
-@pytest.fixture
-def make_tool_call_event(
-    make_event_record: Callable[[EventType, int | None], EventRecord], make_tool_call: Callable[..., ToolCall]
-) -> Callable[..., EventRecord]:
-    """Factory for ToolCall EventRecord."""
-
-    def _make(seq: int, server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> EventRecord:
-        return make_event_record(make_tool_call(server, tool, args=args), seq)
-
-    return _make
-
-
-@pytest.fixture
-def make_function_output_event(
-    make_event_record: Callable[[EventType, int | None], EventRecord],
-    make_tool_call_output: Callable[[str, dict[str, Any] | None, bool], ToolCallOutput],
-) -> Callable[[int, str, dict[str, Any] | None], EventRecord]:
-    """Factory for ToolCallOutput EventRecord."""
-
-    def _make(seq: int, call_id: str, structured_content: dict[str, Any] | None = None) -> EventRecord:
-        return make_event_record(make_tool_call_output(call_id, structured_content, False), seq)
-
-    return _make
 
 
 # --- Policy gateway fixtures (for MCP middleware tests) ---

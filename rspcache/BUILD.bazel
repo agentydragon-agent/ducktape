@@ -12,6 +12,7 @@ py_binary(
     main = "cli.py",
     visibility = ["//:__subpackages__"],
     deps = [
+        ":admin_app",
         ":cli",
     ],
 )
@@ -63,6 +64,8 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":models",
+        ":responses_db",
         "@pypi//canonicaljson",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -78,6 +81,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
+        ":models",
+        ":responses_db",
         "//openai_utils:model",
         "@pypi//asyncpg",
         "@pypi//fastapi",
@@ -143,6 +148,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
+        ":events",
+        ":models",
         "@pypi//asyncpg",
         "@pypi//openai",
         "@pypi//pydantic",

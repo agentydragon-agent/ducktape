@@ -9,7 +9,7 @@ each requirement to specify only its unique characteristics.
 from dataclasses import dataclass
 from typing import Any
 
-from .generic_graders import BehavioralRequirement
+from claude.claude_optimizer.generic_graders import BehavioralRequirement
 
 
 @dataclass

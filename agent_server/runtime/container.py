@@ -29,6 +29,7 @@ from agent_server.persist.handler import RunPersistenceHandler
 from agent_server.persist.sqlite import SQLitePersistence
 from agent_server.persist.types import ApprovalOutcome
 from agent_server.presets import discover_presets
+from agent_server.runtime.handlers import build_handlers
 from agent_server.runtime.images import resolve_runtime_image
 from agent_server.server.bus import ServerBus
 from agent_server.server.runtime import AgentSession, UiEventHandler
@@ -42,8 +43,6 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
 from openai_utils.client_factory import build_client
 from openai_utils.model import OpenAIModelProto, SystemMessage
-
-from .handlers import build_handlers
 
 if TYPE_CHECKING:
     from agent_server.mcp.approval_policy.engine import PolicyProposerServer, PolicyReaderServer

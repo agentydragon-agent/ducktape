@@ -6,12 +6,12 @@
 
 See @../AGENTS.md for standard Bazel workflow (`bazel build --config=check //...`, `bazel test //...`).
 
-Requirements: Bazel (via bazelisk), Python **3.13**+. `gitstatusd` must be installed separately for integration tests.
+Requirements: Bazel (via bazelisk), Python **3.13**+.
 
 ### Extra dependencies / binaries
 
 - `libgit2` is provided via system packages or Nix.
-- `gitstatusd` **is not bundled**; install it separately and ensure it is on `PATH` (`which gitstatusd`). Without it, daemon/integration tests fail quickly.
+- `gitstatusd` is provided by Bazel via `//third_party/gitstatusd` (test `data` dep). Tests discover it through runfiles automatically. The `config.gitstatusd_path` setting takes precedence over runfiles autodiscovery, which in turn takes precedence over PATH lookup.
 
 ## Development Commands
 

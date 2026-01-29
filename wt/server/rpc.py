@@ -6,21 +6,18 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from inspect import signature
-from typing import TYPE_CHECKING, Any, Protocol, get_origin, get_type_hints
+from typing import Any, Protocol, get_origin, get_type_hints
 
 from punq import Container
 from pydantic import BaseModel, ValidationError
 
-from ..shared.configuration import Configuration
-from ..shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
-from .git_manager import GitManager
-from .git_refs_watcher import GitRefsWatcher
-from .github_watcher import GitHubWatcher
-from .services import DiscoveryService, GitstatusdService, WorktreeCoordinator, WorktreeIndexService
-from .worktree_service import WorktreeService
-
-if TYPE_CHECKING:
-    from .wt_server import WtDaemon
+from wt.server.git_manager import GitManager
+from wt.server.git_refs_watcher import GitRefsWatcher
+from wt.server.github_watcher import GitHubWatcher
+from wt.server.services import DiscoveryService, GitstatusdService, WorktreeCoordinator, WorktreeIndexService
+from wt.server.worktree_service import WorktreeService
+from wt.shared.configuration import Configuration
+from wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +58,12 @@ class ServiceDependencies:
     git_refs_watcher: GitRefsWatcher
     discovery: DiscoveryService
     coordinator: WorktreeCoordinator
+    worktree_service: WorktreeService
 
 
 @dataclass(frozen=True)
 class InvocationContext:
-    daemon: WtDaemon
+    deps: ServiceDependencies
     params_obj: BaseModel | None
     writer: Any
     start_time: datetime
@@ -75,12 +73,12 @@ class InvocationContext:
 class RpcRegistry:
     def __init__(self) -> None:
         self._handlers: dict[
-            str, Callable[[Request, WtDaemon, Any, datetime], Awaitable[Response | ErrorResponse]]
+            str, Callable[[Request, ServiceDependencies, Any, datetime], Awaitable[Response | ErrorResponse]]
         ] = {}
         self._stream_methods: set[str] = set()
 
     def _build_args(self, fn, *, context: InvocationContext):
-        daemon = context.daemon
+        deps = context.deps
         params_obj = context.params_obj
         start_time = context.start_time
         stream_obj = context.stream_obj
@@ -88,32 +86,19 @@ class RpcRegistry:
         c = Container()
 
         # Core config and per-request context
-        c.register(Configuration, instance=daemon.config)
+        c.register(Configuration, instance=deps.config)
         c.register(datetime, instance=start_time)
-        # Service singletons wired from daemon
-        c.register(GitManager, instance=daemon.git_manager)
-        c.register(WorktreeIndexService, instance=daemon.index_service)
-        c.register(GitstatusdService, instance=daemon.gitstatusd_service)
-        if daemon.github_watcher:
-            c.register(GitHubWatcher, instance=daemon.github_watcher)
-        c.register(GitRefsWatcher, instance=daemon.git_refs_watcher)
-        c.register(DiscoveryService, instance=daemon.discovery_service)
-        c.register(WorktreeCoordinator, instance=daemon)  # WtDaemon implements WorktreeCoordinator
-        # Also expose WorktreeService for orchestration flows (imported at module level)
-        c.register(WorktreeService, instance=daemon.worktree_service)
-        c.register(
-            ServiceDependencies,
-            instance=ServiceDependencies(
-                config=daemon.config,
-                git_manager=daemon.git_manager,
-                index=daemon.index_service,
-                gitstatusd=daemon.gitstatusd_service,
-                github_watcher=daemon.github_watcher,
-                git_refs_watcher=daemon.git_refs_watcher,
-                discovery=daemon.discovery_service,
-                coordinator=daemon,
-            ),
-        )
+        # Service singletons
+        c.register(GitManager, instance=deps.git_manager)
+        c.register(WorktreeIndexService, instance=deps.index)
+        c.register(GitstatusdService, instance=deps.gitstatusd)
+        if deps.github_watcher:
+            c.register(GitHubWatcher, instance=deps.github_watcher)
+        c.register(GitRefsWatcher, instance=deps.git_refs_watcher)
+        c.register(DiscoveryService, instance=deps.discovery)
+        c.register(WorktreeCoordinator, instance=deps.coordinator)
+        c.register(WorktreeService, instance=deps.worktree_service)
+        c.register(ServiceDependencies, instance=deps)
         args = []
         type_hints = get_type_hints(fn)
         for p in sig.parameters.values():
@@ -128,7 +113,9 @@ class RpcRegistry:
         return args
 
     def _wrap_method[ParamsT: BaseModel](self, method: str, params_model: type[ParamsT] | None, handler) -> None:
-        async def _wrapped(req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
+        async def _wrapped(
+            req: Request, deps: ServiceDependencies, writer, start_time: datetime
+        ) -> Response | ErrorResponse:
             try:
                 params = params_model.model_validate(req.params) if params_model is not None else None
             except ValidationError as e:
@@ -137,7 +124,7 @@ class RpcRegistry:
             try:
                 args = self._build_args(
                     handler,
-                    context=InvocationContext(daemon=daemon, params_obj=params, writer=writer, start_time=start_time),
+                    context=InvocationContext(deps=deps, params_obj=params, writer=writer, start_time=start_time),
                 )
                 result = await handler(*args)
                 return Response(result=result, id=req.id)
@@ -150,7 +137,9 @@ class RpcRegistry:
         self._handlers[method] = _wrapped
 
     def _wrap_stream[ParamsT: BaseModel](self, method: str, params_model: type[ParamsT], handler) -> None:
-        async def _wrapped(req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
+        async def _wrapped(
+            req: Request, deps: ServiceDependencies, writer, start_time: datetime
+        ) -> Response | ErrorResponse:
             try:
                 params = params_model.model_validate(req.params)
             except ValidationError as e:
@@ -160,7 +149,7 @@ class RpcRegistry:
                 args = self._build_args(
                     handler,
                     context=InvocationContext(
-                        daemon=daemon, params_obj=params, writer=writer, start_time=start_time, stream_obj=stream
+                        deps=deps, params_obj=params, writer=writer, start_time=start_time, stream_obj=stream
                     ),
                 )
                 result = await handler(*args)
@@ -194,11 +183,13 @@ class RpcRegistry:
     def list_methods(self) -> list[str]:
         return list(self._handlers.keys())
 
-    async def dispatch(self, req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
+    async def dispatch(
+        self, req: Request, deps: ServiceDependencies, writer, start_time: datetime
+    ) -> Response | ErrorResponse:
         wrapped = self._handlers.get(req.method)
         if not wrapped:
             return create_error_response(ErrorCodes.METHOD_NOT_FOUND, f"Method '{req.method}' not found", req.id)
-        return await wrapped(req, daemon, writer, start_time)
+        return await wrapped(req, deps, writer, start_time)
 
 
 rpc = RpcRegistry()

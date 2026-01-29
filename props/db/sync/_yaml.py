@@ -10,9 +10,8 @@ from pathlib import Path
 import yaml
 
 from props.core.ids import SnapshotSlug, split_snapshot_slug
-
-from ._models import FalsePositive, TruePositive
-from ._yaml_models import YAMLIssue
+from props.db.sync._models import FalsePositive, TruePositive
+from props.db.sync._yaml_models import YAMLIssue
 
 
 def load_yaml_issues(slug: SnapshotSlug, specimens_dir: Path) -> tuple[list[TruePositive], list[FalsePositive]]:

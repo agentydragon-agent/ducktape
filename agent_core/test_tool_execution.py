@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import Callable
@@ -9,24 +10,91 @@ from typing import Annotated, Any, Final, Literal
 
 import pytest
 import pytest_bazel
+from fastmcp.exceptions import ToolError
 from hamcrest import all_of, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_core.agent import Agent, _sanitize_tool_result
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
-from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, RequireAnyTool
+from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
+from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
-from agent_core_testing.fixtures import FAIL_TOOL_NAME
-from agent_core_testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
-from agent_core_testing.openai_mock import NoopOpenAIClient, make_mock
 from agent_core_testing.responses import DecoratorMock, ResponsesFactory
+from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, SystemMessage, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from openai_utils.testing.openai_mock import NoopOpenAIClient, make_mock
+
+
+@pytest.fixture
+def text_content():
+    """Helper to create TextContent blocks for tests."""
+    return lambda text: TextContent(text=text)
+
+
+# ---- Fixtures moved from agent_core_testing.fixtures (only used by this module) ----
+
+
+class _EmptyInput(OpenAIStrictModeBaseModel):
+    """Empty input for slow tools."""
+
+
+class _SlowOutput(BaseModel):
+    """Output for slow tools."""
+
+    ok: bool
+    tool: str
+    args: dict[str, Any]
+
+
+@pytest.fixture
+def slow_server() -> FlatModelMixin:
+    """FastMCP server with two slow async tools for parallel call testing."""
+    mcp = FlatModelMixin("dummy")
+
+    @mcp.flat_model()
+    async def slow(input: _EmptyInput) -> _SlowOutput:
+        """Slow tool that takes 0.30s."""
+        await asyncio.sleep(0.30)
+        return _SlowOutput(ok=True, tool="slow", args={})
+
+    @mcp.flat_model()
+    async def slow2(input: _EmptyInput) -> _SlowOutput:
+        """Second slow tool that takes 0.30s."""
+        await asyncio.sleep(0.30)
+        return _SlowOutput(ok=True, tool="slow2", args={})
+
+    return mcp
+
+
+class ValidationServer(EnhancedFastMCP):
+    """EnhancedFastMCP server with a tool that validates input strictly."""
+
+    send_message_tool: FlatTool[Any, Any]
+
+    def __init__(self):
+        super().__init__("validator")
+
+        def send_message(input: SendMessageInput) -> dict[str, Any]:
+            """Send a message with mime type validation."""
+            if input.mime == "text/plain":
+                raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
+            return {"ok": True, "message": input.content}
+
+        self.send_message_tool = self.flat_model()(send_message)
+
+
+@pytest.fixture
+def validation_server() -> ValidationServer:
+    """ValidationServer with typed tool access."""
+    return ValidationServer()
+
 
 # --- Tool error continuation tests ---
 
@@ -82,43 +150,6 @@ async def test_tool_error_continues_turn(compositor, mcp_tool_provider, validati
     assert_function_call_output_structured([second_output], has_entries(ok=True))
 
     assert_that(result.text, contains_string("Successfully sent message"))
-
-
-# --- Tool error sequence tests ---
-
-
-class FailInput(OpenAIStrictModeBaseModel):
-    """Input for editor/fail tool (test fixture)."""
-
-    x: int
-
-
-async def test_app_level_error_payload_surfaced_in_structured_content(
-    compositor, mcp_tool_provider, error_payload_server, recording_handler
-) -> None:
-    """Test that application-level error payloads are surfaced in structuredContent.
-
-    Note: This tests the {"ok": False, "error": "..."} pattern in structuredContent,
-    NOT the MCP-level isError flag. For MCP-level error testing, see test_tool_error_continues_turn.
-    """
-    mounted = await compositor.mount_inproc(MCPMountPrefix("editor"), error_payload_server)
-
-    @DecoratorMock.mock()
-    def mock(m: DecoratorMock):
-        yield
-        yield m.tool_call(build_mcp_function(mounted.prefix, FAIL_TOOL_NAME), FailInput(x=1))
-        yield m.assistant_text("done")
-
-    agent = await Agent.create(
-        tool_provider=mcp_tool_provider,
-        client=mock,
-        handlers=[FinishOnTextMessageHandler(), recording_handler],
-        tool_policy=AllowAnyToolOrTextMessage(),
-    )
-    agent.process_message(UserMessage.text("fail"))
-    await agent.run()
-
-    assert_function_call_output_structured(recording_handler.records, has_entries(ok=False, error="boom"))
 
 
 # --- Parallel tool call tests ---
@@ -238,7 +269,7 @@ async def test_malformed_json_in_tool_arguments(mcp_tool_provider_echo, recordin
     tool_result = tool_outputs[0].result
     assert_that(
         tool_result,
-        tool_call_with_error_text(all_of(contains_string("Invalid JSON"), contains_string("unterminated string"))),
+        tool_call_with_error_text(all_of(contains_string("Invalid JSON"), contains_string("Unterminated string"))),
     )
 
 

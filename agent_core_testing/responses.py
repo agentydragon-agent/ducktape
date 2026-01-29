@@ -2,7 +2,6 @@
 
 Provides declarative test response building:
 - ResponsesFactory: Builds mock ResponsesResult objects
-- StepRunner: Executes declarative test steps as an OpenAIModelProto
 - GeneratorMock + DockerExecMock: Class-based generator mocks with yield from
 - PendingCall: Typed tool call wrapper for roundtrip patterns
 - extract_call_output: Extract typed tool outputs from requests
@@ -14,9 +13,9 @@ import json
 import logging
 import os
 from abc import abstractmethod
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pytest
 from fastmcp import FastMCP
@@ -41,10 +40,6 @@ from openai_utils.model import (
     ResponsesResult,
     ResponseUsage,
 )
-
-if TYPE_CHECKING:
-    from agent_core_testing.steps import Step
-
 
 logger = logging.getLogger(__name__)
 
@@ -129,44 +124,6 @@ class ResponsesFactory(ItemFactory):
         derives the fully-qualified tool name from the Tool attribute.
         """
         return self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"), call_id)
-
-
-class StepRunner(OpenAIModelProto):
-    """Step-based OpenAI mock that executes declarative test steps.
-
-    Implements OpenAIModelProto directly, so can be used as the client parameter
-    to agent functions without any wrapping.
-
-    Usage:
-        runner = make_step_runner(steps=[AssistantMessage("Done")])
-        result = await agent.run(..., client=runner)
-
-    Debug logging:
-        To see step execution with timestamps (for timeout tuning):
-            pytest --log-cli-level=DEBUG tests/path/to/test.py
-    """
-
-    def __init__(self, factory: ResponsesFactory, steps: Sequence[Step]) -> None:
-        self.factory: ResponsesFactory = factory
-        self.steps: Sequence[Step] = steps
-        self.turn: int = 0
-        self.model = "test-model"
-
-    @property
-    def current_step_index(self) -> int:
-        """Current step index (0-based). Alias for turn for clarity."""
-        return self.turn
-
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        """Execute current step and advance. Implements OpenAIModelProto."""
-        if self.turn >= len(self.steps):
-            pytest.fail(f"Exceeded {len(self.steps)} expected turns (got turn {self.turn + 1})")
-        step = self.steps[self.turn]
-        step_type = type(step).__name__
-        logger.debug("Step %d/%d (%s)", self.turn + 1, len(self.steps), step_type)
-        result = step.execute(req, self.factory)
-        self.turn += 1
-        return result
 
 
 # Type for generator that yields responses and receives requests
@@ -484,16 +441,3 @@ def reasoning_model() -> str:
 @pytest.fixture(scope="session")
 def responses_factory(reasoning_model: str) -> ResponsesFactory:
     return ResponsesFactory(reasoning_model)
-
-
-@pytest.fixture
-def make_step_runner(responses_factory: ResponsesFactory):
-    """Factory fixture that creates step runners.
-
-    Returns a factory function that creates StepRunner instances.
-    """
-
-    def _make(steps: Sequence[Step]) -> StepRunner:
-        return StepRunner(factory=responses_factory, steps=steps)
-
-    return _make

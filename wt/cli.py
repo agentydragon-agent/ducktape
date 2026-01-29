@@ -14,9 +14,8 @@ from typer.main import get_command
 
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, configure_logging
-
-from .client.cd_utils import emit_cd_command
-from .client.handlers import (
+from wt.client.cd_utils import emit_cd_command
+from wt.client.handlers import (
     CreateWorktreeOptions,
     handle_copy_worktree,
     handle_create_worktree,
@@ -28,11 +27,11 @@ from .client.handlers import (
     handle_status,
     handle_status_single,
 )
-from .client.view_formatter import ViewFormatter
-from .client.wt_client import WtClient
-from .plugins import get_manager, get_plugin_commands
-from .shared.configuration import Configuration, load_config
-from .shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
+from wt.client.view_formatter import ViewFormatter
+from wt.client.wt_client import WtClient
+from wt.plugins import get_manager, get_plugin_commands
+from wt.shared.configuration import Configuration, load_config
+from wt.shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
 
 COPY_MAX_ARGS = 2
 

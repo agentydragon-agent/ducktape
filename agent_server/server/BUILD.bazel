@@ -2,12 +2,33 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server:__subpackages__"],
+    deps = [
+        ":protocol",
+        ":state",
+        "//agent_core:events",
+        "//agent_server/persist:events",
+        "//mcp_infra:prefix",
+        "@pypi//mcp",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_end_turn_ui_integration",
-    srcs = ["test_end_turn_ui_integration.py"],
+    srcs = [
+        "conftest.py",
+        "test_end_turn_ui_integration.py",
+    ],
     imports = ["../.."],
     deps = [
         ":bus",
+        ":conftest",
         ":protocol",
         ":reducer",
         ":state",
@@ -19,9 +40,13 @@ py_test(
 
 py_test(
     name = "test_history_fold_typed",
-    srcs = ["test_history_fold_typed.py"],
+    srcs = [
+        "conftest.py",
+        "test_history_fold_typed.py",
+    ],
     imports = ["../.."],
     deps = [
+        ":conftest",
         ":reducer",
         "//agent_server/testing:typed_asserts",
         "//mcp_infra:prefix",
@@ -31,10 +56,14 @@ py_test(
 
 py_test(
     name = "test_reducer",
-    srcs = ["test_reducer.py"],
+    srcs = [
+        "conftest.py",
+        "test_reducer.py",
+    ],
     imports = ["../.."],
     deps = [
         ":bus",
+        ":conftest",
         ":protocol",
         ":reducer",
         ":state",

@@ -14,6 +14,7 @@ py_library(
         "//props/db:examples",
         "//props/db:models",
         "//props/db:session",
+        "//props/orchestration:agent_registry",
         "@pypi//fastapi",
         "@pypi//sqlalchemy",
     ],

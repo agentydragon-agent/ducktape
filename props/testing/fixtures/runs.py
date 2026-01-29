@@ -25,7 +25,7 @@ from props.db.models import (
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 
-from .ground_truth import get_tp_occurrences_for_snapshot
+from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 
 # Props-specific constants
 EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])

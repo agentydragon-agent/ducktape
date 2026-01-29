@@ -15,33 +15,16 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "main_lib",
+    name = "main",
     srcs = ["main.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core:agent",
         "//agent_core:direct_provider",
-        "//mcp_infra/exec:direct",
-        "//openai_utils:model",
-        "//props/core:eval_client",
-        "//props/core:ids",
-        "//props/core:loop_utils",
-        "//props/core/models:examples",
-        "@pypi//pydantic",
-    ],
-)
-
-py_binary(
-    name = "main_bin",
-    srcs = ["main.py"],
-    main = "main.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agent_core:agent",
-        "//agent_core:direct_provider",
         "//agent_core:handler",
         "//agent_core:loop_control",
+        "//mcp_infra/exec:direct",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
         "//openai_utils:model",
@@ -53,9 +36,19 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "optimize",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
+    ],
+)
+
 pkg_tar(
     name = "main_tar",
-    srcs = [":main_bin"],
+    srcs = [":optimize"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
@@ -115,10 +108,10 @@ py_test(
         "requires_docker",
     ],
     deps = [
-        ":main_lib",
+        ":main",
         ":orchestration_fixtures",
         "//agent_core_testing:responses",
-        "//agent_core_testing:steps",
+        "//mcp_infra/exec:matchers",
         "//props/core:agent_types",
         "//props/core:eval_api_models",
         "//props/core:ids",
@@ -141,7 +134,7 @@ py_test(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    cmd = ["/app/main_bin"],
+    cmd = ["/app/optimize"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",

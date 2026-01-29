@@ -11,9 +11,9 @@ from inventree.base import Parameter, ParameterTemplate
 from inventree.part import Part
 from tqdm import tqdm
 
-from .cli_util import build_table, choose
-from .inventree_util import part_url
-from .iter_util import unwrap_singleton
+from inventree_utils.beautifier.cli_util import build_table, choose
+from inventree_utils.beautifier.inventree_util import part_url
+from inventree_utils.beautifier.iter_util import unwrap_singleton
 
 JELLYBEAN_PARAM_NAME = "Jellybean P/N"
 

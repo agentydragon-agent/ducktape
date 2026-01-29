@@ -8,12 +8,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
-
-from .definitions import ScenarioSuite
-from .kubernetes import ExecResult, NamespacedKubernetes
-from .matrix import MatrixHarness, MatrixMessage
-from .steps import (
+from experimental.ember_evals.kubernetes import ExecResult, NamespacedKubernetes
+from experimental.ember_evals.matrix import MatrixHarness, MatrixMessage
+from experimental.ember_evals.steps import (
     ExpectMatrixReplyResult,
     KillProcessResult,
     ProbeHttpResult,
@@ -29,9 +26,12 @@ from .steps import (
     WaitForMatrixResponseResult,
     WaitSecondsResult,
 )
+from pydantic import BaseModel
+
+from experimental.ember_evals.definitions import ScenarioSuite
 
 if TYPE_CHECKING:
-    from .models import EvalRunRequest
+    from experimental.ember_evals.models import EvalRunRequest
 
 DEFAULT_AGENT_CONTAINER = "emberd"
 

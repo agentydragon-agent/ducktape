@@ -23,8 +23,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..shared.configuration import Configuration, load_config
-from ..shared.protocol import (
+from wt.server.git_manager import GitManager
+from wt.server.git_refs_watcher import GitRefsWatcher
+from wt.server.github_client import GitHubInterface
+from wt.server.github_watcher import GitHubWatcher
+from wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
+from wt.server.gitstatusd_listener import GitstatusdListener
+
+# Force import of handlers to register RPC methods
+from wt.server.handlers import (
+    path_handler,  # noqa: F401
+    pr_handler,  # noqa: F401
+    status_handler,  # noqa: F401
+    worktree_handler,  # noqa: F401
+)
+from wt.server.repo_status import RepoStatus
+from wt.server.rpc import ServiceDependencies, rpc
+from wt.server.services import DiscoveryService, GitstatusdService, WorktreeIndexService, scan_worktrees
+from wt.server.stores import DaemonStore
+from wt.server.types import DiscoveredWorktree
+from wt.server.watcher import start_watcher
+from wt.server.worktree_index import WorktreeIndex
+from wt.server.worktree_registry import WorktreeRegistry
+from wt.server.worktree_service import WorktreeService
+from wt.shared.configuration import Configuration, load_config
+from wt.shared.protocol import (
     ErrorCodes,
     ErrorResponse,
     GitstatusdAvailable,
@@ -36,29 +59,6 @@ from ..shared.protocol import (
     create_error_response,
     parse_request,
 )
-from .git_manager import GitManager
-from .git_refs_watcher import GitRefsWatcher
-from .github_client import GitHubInterface
-from .github_watcher import GitHubWatcher
-from .gitstatus_refresh import DebouncedGitstatusRefresh
-from .gitstatusd_listener import GitstatusdListener
-
-# Force import of handlers to register RPC methods
-from .handlers import (
-    path_handler,  # noqa: F401
-    pr_handler,  # noqa: F401
-    status_handler,  # noqa: F401
-    worktree_handler,  # noqa: F401
-)
-from .repo_status import RepoStatus
-from .rpc import rpc
-from .services import DiscoveryService, GitstatusdService, WorktreeIndexService, scan_worktrees
-from .stores import DaemonStore
-from .types import DiscoveredWorktree
-from .watcher import start_watcher
-from .worktree_index import WorktreeIndex
-from .worktree_registry import WorktreeRegistry
-from .worktree_service import WorktreeService
 
 logger = logging.getLogger(__name__)
 
@@ -381,7 +381,18 @@ class WtDaemon:
                 self._discovery_kick = asyncio.create_task(self._run_discovery_once())
 
             # Handle request via RPC registry only
-            response = await self._method_handlers.dispatch(request, self, writer, start_time)
+            deps = ServiceDependencies(
+                config=self.config,
+                git_manager=self.git_manager,
+                index=self.index_service,
+                gitstatusd=self.gitstatusd_service,
+                github_watcher=self.github_watcher,
+                git_refs_watcher=self.git_refs_watcher,
+                discovery=self.discovery_service,
+                coordinator=self,
+                worktree_service=self.worktree_service,
+            )
+            response = await self._method_handlers.dispatch(request, deps, writer, start_time)
             await self._send_response(writer, response)
             return
 

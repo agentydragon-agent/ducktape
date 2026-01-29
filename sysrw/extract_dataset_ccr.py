@@ -26,8 +26,8 @@ import json
 import time
 from pathlib import Path
 
-from .constants import BAD_MARKER
-from .extract_common import (
+from sysrw.constants import BAD_MARKER
+from sysrw.extract_common import (
     find_last_user_text_from_msg as find_last_user_text,
     sys_has_tools_header,
     write_jsonl_batches,

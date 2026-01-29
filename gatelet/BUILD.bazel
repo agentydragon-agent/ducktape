@@ -24,7 +24,10 @@ py_binary(
     imports = [".."],
     main = "reporter_main.py",
     visibility = ["//:__subpackages__"],
-    deps = [":reporter_lib"],
+    deps = [
+        ":reporter",
+        ":reporter_lib",
+    ],
 )
 
 # Management utility - depends on server
@@ -48,7 +51,10 @@ py_binary(
     imports = [".."],
     main = "manage_main.py",
     visibility = ["//:__subpackages__"],
-    deps = [":manage_lib"],
+    deps = [
+        ":manage",
+        ":manage_lib",
+    ],
 )
 
 # --- OCI Image ---

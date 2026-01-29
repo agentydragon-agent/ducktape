@@ -22,6 +22,7 @@ py_library(
     srcs = ["__main__.py"],
     imports = ["../.."],
     visibility = ["//gatelet:__subpackages__"],
+    deps = [":app"],
 )
 
 py_library(
@@ -161,6 +162,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
+        "//gatelet:manage",
         "//gatelet:manage_lib",
         "@pypi//playwright",
         "@pypi//pytest",
@@ -175,6 +177,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
+        "//gatelet:reporter",
         "//gatelet:reporter_lib",
         "//gatelet/server/tests:utils",
         "@pypi//httpx",
@@ -189,6 +192,7 @@ py_test(
     deps = [
         ":conftest",
         ":models",
+        "//gatelet:reporter",
         "//gatelet:reporter_lib",
         "//gatelet/server/tests:utils",
         "@pypi//httpx",

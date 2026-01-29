@@ -11,7 +11,7 @@ from llm.claude_linter_v2.config.models import Violation
 from llm.claude_linter_v2.types import SessionID
 
 if TYPE_CHECKING:
-    from .manager import SessionManager
+    from llm.claude_linter_v2.session.manager import SessionManager
 
 logger = logging.getLogger(__name__)
 

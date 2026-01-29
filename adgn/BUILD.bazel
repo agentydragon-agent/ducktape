@@ -7,5 +7,4 @@
 #   //adgn/agent:cli - Agent CLI
 #   //adgn/gitea_pr_gate:policy_common - Gitea PR gate policy
 #   //adgn/gitea_pr_gate:policy_server_fastapi - Gitea PR gate server
-#   //adgn/testing:bootstrap - Testing bootstrap utilities
 #   //adgn/tools:trivial_patterns - Trivial patterns linter

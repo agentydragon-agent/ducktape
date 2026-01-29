@@ -110,6 +110,7 @@ py_library(
         "//mcp_infra:constants",
         "//mcp_infra:mcp_types",
         "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
         "//mcp_infra/enhanced:simple",
         "@pypi//aiodocker",
@@ -117,6 +118,17 @@ py_library(
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//typer_di",
+    ],
+)
+
+py_library(
+    name = "matchers",
+    srcs = ["matchers.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+        "@pypi//pyhamcrest",
     ],
 )
 

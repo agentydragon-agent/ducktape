@@ -110,7 +110,13 @@ py_binary(
     srcs = ["cli.py"],
     main = "cli.py",
     deps = [
+        ":checker",
         ":cli",
+        "//llm:claude_code_api",
+        "//llm/claude_linter_v2/config:models",
+        "//llm/claude_linter_v2/hooks:exceptions",
+        "//llm/claude_linter_v2/hooks:handler",
+        "//llm/claude_linter_v2/session:manager",
         "@pypi//click",
         "@pypi//humanize",
     ],

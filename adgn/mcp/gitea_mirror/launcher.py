@@ -8,7 +8,7 @@ import argparse
 import os
 from pathlib import Path
 
-from .server import GiteaMirrorServer
+from adgn.mcp.gitea_mirror.server import GiteaMirrorServer
 
 
 def build_parser() -> argparse.ArgumentParser:

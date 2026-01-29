@@ -5,7 +5,7 @@ import traceback
 
 from ipykernel.kernelapp import launch_new_instance
 
-from .kernel_shim import log  # reuse shared logging helper
+from sandboxed_jupyter.kernel_shim import log  # reuse shared logging helper
 
 # Early bootstrap to capture import/startup failures for ipykernel
 

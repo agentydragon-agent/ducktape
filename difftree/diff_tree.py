@@ -16,9 +16,9 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from .config import DEFAULT_CONFIG, Column, RenderConfig
-from .progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
-from .tree import TreeNode
+from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
+from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
+from difftree.tree import TreeNode
 
 
 class DiffTree:

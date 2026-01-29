@@ -7,10 +7,10 @@ from inventree.api import InvenTreeAPI
 from inventree.company import Company, SupplierPart
 from inventree.part import Part
 
-from .cli_util import choose
-from .inventree_util import part_url
-from .iter_util import unwrap_singleton
-from .lcsc_util import lcsc_product_link, parse_url_for_lcsc_id
+from inventree_utils.beautifier.cli_util import choose
+from inventree_utils.beautifier.inventree_util import part_url
+from inventree_utils.beautifier.iter_util import unwrap_singleton
+from inventree_utils.beautifier.lcsc_util import lcsc_product_link, parse_url_for_lcsc_id
 
 logger = structlog.get_logger()
 

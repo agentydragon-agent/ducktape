@@ -85,7 +85,11 @@ py_binary(
     srcs = ["cli.py"],
     main = "cli.py",
     visibility = ["//props/frontend:__pkg__"],
-    deps = [":cli"],
+    deps = [
+        ":app",
+        ":cli",
+        "//cli_util:logging",
+    ],
 )
 
 py_binary(
@@ -93,7 +97,10 @@ py_binary(
     srcs = ["export_schema.py"],
     main = "export_schema.py",
     visibility = ["//:__subpackages__"],
-    deps = [":export_schema"],
+    deps = [
+        ":app",
+        ":export_schema",
+    ],
 )
 
 genrule(

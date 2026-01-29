@@ -13,8 +13,8 @@ from agent_core.compaction import CompactionHandler
 from agent_core.events import AssistantText, GroundTruthUsage, Response, SystemText, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage, Compact, NoAction, RequireAnyTool
+from agent_core.testing.matchers import assert_items_exclude_instance, assert_items_include_instances
 from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
-from agent_core_testing.matchers import assert_items_exclude_instance, assert_items_include_instances
 from agent_core_testing.responses import DecoratorMock, EchoMock
 from mcp_infra.naming import build_mcp_function
 from openai_utils.model import (
@@ -27,6 +27,19 @@ from openai_utils.model import (
     SystemMessage,
     UserMessage,
 )
+from openai_utils.testing.openai_mock import NoopOpenAIClient
+
+
+@pytest.fixture
+async def noop_agent(mcp_tool_provider, recording_handler):
+    """Agent with NoopOpenAIClient for testing message processing without sampling."""
+    return await Agent.create(
+        tool_provider=mcp_tool_provider,
+        client=NoopOpenAIClient(),
+        handlers=[recording_handler],
+        tool_policy=AllowAnyToolOrTextMessage(),
+    )
+
 
 # --- Process message event tests ---
 

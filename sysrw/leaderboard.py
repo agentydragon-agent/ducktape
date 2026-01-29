@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from rich.console import Console
 from rich.table import Table
 
-from .templates.loader import load_known_templates, validate_template_file
+from sysrw.templates.loader import load_known_templates, validate_template_file
 
 
 @dataclass

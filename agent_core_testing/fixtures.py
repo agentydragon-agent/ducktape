@@ -12,16 +12,13 @@ For compositor fixtures, also register:
 
 from __future__ import annotations
 
-import asyncio
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from typing import Any
 
 import pytest
-from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
-from pydantic import BaseModel
 
 from agent_core.agent import Agent
 from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
@@ -30,16 +27,10 @@ from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.tool_provider import ToolProvider
 from agent_core_testing.echo_server import make_echo_server
-from agent_core_testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from agent_core_testing.responses import ResponsesFactory
-from mcp_infra.enhanced.flat_mixin import FlatModelMixin
-from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.testing.simple_servers import SendMessageInput
-from openai_utils.model import ResponsesResult
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from openai_utils.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 
 # ---- Recording handler ----
 
@@ -85,37 +76,6 @@ def test_handlers(recording_handler: RecordingHandler) -> list:
 
 
 # ---- OpenAI model factories ----
-
-
-@pytest.fixture
-def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]:
-    """Factory to create FakeOpenAIModel instances from response sequences.
-
-    Usage:
-        client = make_fake_openai([responses_factory.make_assistant_message("ok")])
-    """
-
-    def _make(outputs: Iterable[ResponsesResult]) -> FakeOpenAIModel:
-        return FakeOpenAIModel(list(outputs))
-
-    return _make
-
-
-@pytest.fixture
-def make_capturing_client():
-    """Factory to create a CapturingOpenAIModel wrapping FakeOpenAIModel.
-
-    Usage:
-        client = make_capturing_client([responses_factory.make_assistant_message("done")])
-        # Use client with agent...
-        assert client.calls == 1
-    """
-
-    def _make(responses):
-        fake_client = FakeOpenAIModel(responses)
-        return CapturingOpenAIModel(fake_client)
-
-    return _make
 
 
 @pytest.fixture
@@ -197,41 +157,6 @@ def mcp_tool_provider_echo(mcp_client_echo) -> ToolProvider:
     return MCPToolProvider(mcp_client_echo)
 
 
-# ---- Slow server for parallel call testing ----
-
-
-class _EmptyInput(OpenAIStrictModeBaseModel):
-    """Empty input for slow tools."""
-
-
-class _SlowOutput(BaseModel):
-    """Output for slow tools."""
-
-    ok: bool
-    tool: str
-    args: dict[str, Any]
-
-
-@pytest.fixture
-def slow_server() -> FlatModelMixin:
-    """FastMCP server with two slow async tools for parallel call testing."""
-    mcp = FlatModelMixin("dummy")
-
-    @mcp.flat_model()
-    async def slow(input: _EmptyInput) -> _SlowOutput:
-        """Slow tool that takes 0.30s."""
-        await asyncio.sleep(0.30)
-        return _SlowOutput(ok=True, tool="slow", args={})
-
-    @mcp.flat_model()
-    async def slow2(input: _EmptyInput) -> _SlowOutput:
-        """Second slow tool that takes 0.30s."""
-        await asyncio.sleep(0.30)
-        return _SlowOutput(ok=True, tool="slow2", args={})
-
-    return mcp
-
-
 # ---- Event/call factories ----
 
 
@@ -279,58 +204,3 @@ def live_openai(request):
         pass
 
     return _Noop()
-
-
-# ---- Validation and failing server fixtures ----
-# TODO: Consider merging ValidationServer into simple_servers.py with a fail-on-condition tool
-
-
-class ValidationServer(EnhancedFastMCP):
-    """EnhancedFastMCP server with a tool that validates input strictly."""
-
-    send_message_tool: FlatTool[Any, Any]
-
-    def __init__(self):
-        super().__init__("validator")
-
-        def send_message(input: SendMessageInput) -> dict[str, Any]:
-            """Send a message with mime type validation."""
-            if input.mime == "text/plain":
-                raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
-            return {"ok": True, "message": input.content}
-
-        self.send_message_tool = self.flat_model()(send_message)
-
-
-@pytest.fixture
-def validation_server() -> ValidationServer:
-    """ValidationServer with typed tool access."""
-    return ValidationServer()
-
-
-class _FailInput(OpenAIStrictModeBaseModel):
-    """Input for fail tool (test fixture)."""
-
-    x: int
-
-
-# Tool name constant for test assertions
-FAIL_TOOL_NAME = "fail"
-
-
-@pytest.fixture
-def error_payload_server() -> EnhancedFastMCP:
-    """Server with a tool that returns an application-level error in structuredContent.
-
-    Note: This does NOT set the MCP-level isError flag. It returns a successful
-    MCP response containing {"ok": False, "error": "boom"} in structuredContent.
-    Use ToolError to signal MCP-level errors (see validation_server).
-    """
-    mcp = EnhancedFastMCP("editor", version="test")
-
-    @mcp.flat_model()
-    def fail(input: _FailInput) -> dict[str, Any]:
-        # Application-level error payload, not MCP isError
-        return {"ok": False, "error": "boom"}
-
-    return mcp

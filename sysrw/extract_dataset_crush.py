@@ -37,8 +37,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .constants import BAD_MARKER
-from .extract_common import (
+from sysrw.constants import BAD_MARKER
+from sysrw.extract_common import (
     find_last_user_text_from_messages,
     iter_wire_lines,
     maybe_extract_payload,

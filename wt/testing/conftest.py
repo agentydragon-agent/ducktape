@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 
 from wt.server import github_client
 from wt.server.git_manager import GitManager
+from wt.server.gitstatusd_listener import find_gitstatusd_in_runfiles
 from wt.server.worktree_service import WorktreeService
 from wt.shared.config_file import ConfigFile
 from wt.shared.configuration import Configuration
@@ -353,13 +354,17 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
 
 @pytest.fixture(scope="session")
 def require_gitstatusd():
-    """Fixture that skips test if gitstatusd is not on PATH.
+    """Fixture that skips test if gitstatusd is not available.
 
+    Checks Bazel runfiles first (hermetic test execution), then PATH.
     Integration tests that need gitstatusd should depend on this fixture.
     Not autouse - unit tests can run without gitstatusd.
     """
-    if not shutil.which("gitstatusd"):
-        pytest.skip("gitstatusd not available on PATH")
+    if find_gitstatusd_in_runfiles():
+        return
+    if shutil.which("gitstatusd"):
+        return
+    pytest.skip("gitstatusd not available (not in runfiles or PATH)")
 
 
 @pytest.fixture

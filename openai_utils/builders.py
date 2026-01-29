@@ -14,7 +14,7 @@ from typing import Any
 import pydantic_core
 from pydantic import BaseModel
 
-from .model import AssistantMessageOut, FunctionCallItem, OutputText, ReasoningItem
+from openai_utils.model import AssistantMessageOut, FunctionCallItem, OutputText, ReasoningItem
 
 
 def make_item_tool_call(*, call_id: str, name: str, arguments: dict[str, Any] | BaseModel) -> FunctionCallItem:

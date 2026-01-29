@@ -6,8 +6,8 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, TextIO
 
-from .constants import TOOLS_HEADER
-from .openai_typing import (
+from sysrw.constants import TOOLS_HEADER
+from sysrw.openai_typing import (
     MessageRole,
     ResponseContentPart,
     ResponseOutputMessage,

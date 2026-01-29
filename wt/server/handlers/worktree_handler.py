@@ -3,9 +3,15 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from ...shared.configuration import Configuration
-from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-from ...shared.protocol import (
+from wt.server.git_manager import GitManager
+from wt.server.rpc import RpcError, ServiceDependencies, Stream, rpc
+from wt.server.services import WorktreeCoordinator, WorktreeIndexService
+from wt.server.types import DiscoveredWorktree
+from wt.server.worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
+from wt.server.worktree_service import WorktreeService
+from wt.shared.configuration import Configuration
+from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from wt.shared.protocol import (
     ErrorCodes,
     HookOutputEvent,
     HookRunResult,
@@ -24,12 +30,6 @@ from ...shared.protocol import (
     WorktreeInfo,
     WorktreeListResult,
 )
-from ..git_manager import GitManager
-from ..rpc import RpcError, ServiceDependencies, Stream, rpc
-from ..services import WorktreeCoordinator, WorktreeIndexService
-from ..types import DiscoveredWorktree
-from ..worktree_ids import make_worktree_id, parse_worktree_id, wtid_to_path
-from ..worktree_service import WorktreeService
 
 logger = logging.getLogger(__name__)
 

@@ -7,6 +7,7 @@ py_library(
     deps = [
         ":strategies",
         "//inop:config",
+        "//inop/engine:models",
         "//inop/io:logging_utils",
         "//openai_utils:model",
         "//openai_utils:types",
@@ -19,6 +20,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//inop:config",
+        "//inop/engine:models",
+        "//inop/io:yaml_loader",
         "//inop/prompting:truncation_utils",
     ],
 )

@@ -44,7 +44,10 @@ py_binary(
     srcs = ["check_pytest_main.py"],
     main = "check_pytest_main.py",
     visibility = ["//visibility:public"],
-    deps = [":check_pytest_main"],
+    deps = [
+        ":check_pytest_main",
+        "//:bazel_util",
+    ],
 )
 
 # Validate all test files in repository

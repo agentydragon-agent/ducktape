@@ -19,10 +19,10 @@ from textwrap import dedent
 
 import structlog
 
-from .assign_jellybean import assign_jellybean
-from .config import api_from_config
-from .fix_lcsc_links import fix_lcsc_links
-from .upload_lcsc_images import upload_lcsc_images
+from inventree_utils.beautifier.assign_jellybean import assign_jellybean
+from inventree_utils.beautifier.config import api_from_config
+from inventree_utils.beautifier.fix_lcsc_links import fix_lcsc_links
+from inventree_utils.beautifier.upload_lcsc_images import upload_lcsc_images
 
 logger = structlog.get_logger()
 

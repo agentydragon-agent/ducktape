@@ -420,7 +420,7 @@ Tests (update):
 
 Documentation:
 
-- `props/core/docs/db/events.md.j2` - remove
+- `props/docs/db/events.md.j2` - remove
 
 ### To Simplify
 

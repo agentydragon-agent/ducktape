@@ -12,6 +12,8 @@ py_library(
     srcs = ["configuration.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":config_file",
+        ":env",
         "@pypi//click",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -34,7 +36,10 @@ py_library(
     name = "error_handling",
     srcs = ["error_handling.py"],
     visibility = ["//:__subpackages__"],
-    deps = [":constants"],
+    deps = [
+        ":constants",
+        ":github_models",
+    ],
 )
 
 py_library(
@@ -65,13 +70,17 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":constants"],
 )
 
 py_library(
     name = "protocol",
     srcs = ["protocol.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":github_models",
+        "@pypi//pydantic",
+    ],
 )
 
 py_test(

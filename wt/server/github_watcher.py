@@ -21,14 +21,14 @@ from typing import TYPE_CHECKING
 
 from reaktiv import Effect, Signal
 
-from ..shared.env import is_test_mode
-from ..shared.fixtures import load_pr_fixture
-from ..shared.github_models import PRData, PRState
-from ..shared.protocol import Collector
+from wt.shared.env import is_test_mode
+from wt.shared.fixtures import load_pr_fixture
+from wt.shared.github_models import PRData, PRState
+from wt.shared.protocol import Collector
 
 if TYPE_CHECKING:
-    from ..shared.configuration import Configuration
-    from .github_client import GitHubInterface
+    from wt.server.github_client import GitHubInterface
+    from wt.shared.configuration import Configuration
 
 logger = logging.getLogger(__name__)
 

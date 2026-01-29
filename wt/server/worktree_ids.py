@@ -6,8 +6,8 @@ These operations are server-authority-only to maintain the security model.
 
 from pathlib import Path
 
-from ..shared.configuration import Configuration
-from ..shared.protocol import WorktreeID
+from wt.shared.configuration import Configuration
+from wt.shared.protocol import WorktreeID
 
 
 def make_worktree_id(dirname: str) -> WorktreeID:

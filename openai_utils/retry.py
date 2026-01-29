@@ -12,8 +12,8 @@ from openai.types.chat import ChatCompletion, CompletionCreateParams
 from openai.types.responses import Response
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
-from .errors import translate_context_length
-from .model import OpenAIModelProto, ResponsesRequest, ResponsesResult
+from openai_utils.errors import translate_context_length
+from openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 
 if TYPE_CHECKING:
     pass

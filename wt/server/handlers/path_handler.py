@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...shared.configuration import Configuration
-from ...shared.constants import MAIN_WORKTREE_DISPLAY_NAME
-from ...shared.protocol import (
+from wt.server.rpc import RpcError, rpc
+from wt.server.services import WorktreeIndexService
+from wt.shared.configuration import Configuration
+from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
+from wt.shared.protocol import (
     ErrorCodes,
     TeleportCdThere,
     TeleportDoesNotExist,
@@ -12,8 +14,6 @@ from ...shared.protocol import (
     WorktreeResolvePathResult,
     WorktreeTeleportTargetParams,
 )
-from ..rpc import RpcError, rpc
-from ..services import WorktreeIndexService
 
 
 def _find_target_worktree(index: WorktreeIndexService, worktree_name: str | None, current_path: Path):

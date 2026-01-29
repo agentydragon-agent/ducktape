@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//openai_utils/testing:testing.bzl", "live_py_test")
 
 py_library(
     name = "types",
@@ -91,6 +92,8 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":errors",
+        ":model",
         "@pypi//httpx",
         "@pypi//openai",
         "@pypi//tenacity",
@@ -145,54 +148,28 @@ py_test(
     ],
 )
 
-py_test(
+live_py_test(
     name = "test_pydantic_strict_mode",
     srcs = ["test_pydantic_strict_mode.py"],
     imports = [".."],
-    deps = [
-        ":conftest",
-        ":json_schema",
-        ":pydantic_strict_mode",
-        "//openai_utils/testing",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_pydantic_strict_mode_live",
-    srcs = ["test_pydantic_strict_mode_live.py"],
-    env_inherit = [
-        "OPENAI_API_KEY",
-        "OPENAI_MODEL",
-    ],
-    imports = [".."],
-    tags = ["live_openai_api"],
     deps = [
         ":client_factory",
         ":conftest",
         ":json_schema",
         ":model",
         ":pydantic_strict_mode",
-        "//openai_utils/testing",
+        "//openai_utils/testing:strict_mode_models",
         "@pypi//openai",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
 
-py_test(
-    name = "test_context_length_live",
-    srcs = ["test_context_length_live.py"],
-    env_inherit = [
-        "OPENAI_API_KEY",
-        "OPENAI_MODEL",
-    ],
+live_py_test(
+    name = "test_context_length",
+    srcs = ["test_context_length.py"],
     imports = [".."],
-    tags = ["live_openai_api"],
     deps = [
         ":client_factory",
         ":conftest",
@@ -200,25 +177,18 @@ py_test(
         ":model",
         ":retry",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
 
-py_test(
-    name = "test_responses_api_live",
-    srcs = ["test_responses_api_live.py"],
-    env_inherit = [
-        "OPENAI_API_KEY",
-        "OPENAI_MODEL",
-    ],
+live_py_test(
+    name = "test_responses_api",
+    srcs = ["test_responses_api.py"],
     imports = [".."],
-    tags = ["live_openai_api"],
     deps = [
         ":conftest",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

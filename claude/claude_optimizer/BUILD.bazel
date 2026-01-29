@@ -9,6 +9,8 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":generic_graders",
+        ":scoresheet",
         "@pypi//openai",
         "@pypi//pydantic",
     ],

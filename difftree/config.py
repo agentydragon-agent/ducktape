@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from .progress_bar import BlockChars
+from difftree.progress_bar import BlockChars
 
 
 class Column(StrEnum):

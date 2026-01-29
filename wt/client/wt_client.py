@@ -23,10 +23,10 @@ import psutil
 import pygit2
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from ..shared.configuration import Configuration
-from ..shared.env import is_test_mode
-from ..shared.error_handling import validate_worktree_name
-from ..shared.protocol import (
+from wt.shared.configuration import Configuration
+from wt.shared.env import is_test_mode
+from wt.shared.error_handling import validate_worktree_name
+from wt.shared.protocol import (
     ErrorCodes,
     ErrorResponse,
     HookOutputEvent,

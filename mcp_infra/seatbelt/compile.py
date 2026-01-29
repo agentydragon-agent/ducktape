@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .model import FileRule, LiteralFilter, NetworkRule, SBPLPolicy, Subpath
+from mcp_infra.seatbelt.model import FileRule, LiteralFilter, NetworkRule, SBPLPolicy, Subpath
 
 
 def _q(s: str) -> str:

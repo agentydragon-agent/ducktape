@@ -28,6 +28,7 @@ py_library(
     name = "validate",
     srcs = ["validate.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":model"],
 )
 
 py_library(

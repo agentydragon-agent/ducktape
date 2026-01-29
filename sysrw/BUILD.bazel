@@ -94,12 +94,20 @@ py_library(
     name = "extract_dataset_ccr",
     srcs = ["extract_dataset_ccr.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":extract_common",
+    ],
 )
 
 py_binary(
     name = "extract_dataset_crush",
     srcs = ["extract_dataset_crush.py"],
     visibility = ["//:__subpackages__"],
+    deps = [
+        ":constants",
+        ":extract_common",
+    ],
 )
 
 py_binary(
@@ -127,7 +135,10 @@ py_library(
     name = "prompts",
     srcs = ["prompts.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//openai"],
+    deps = [
+        ":schemas",
+        "@pypi//openai",
+    ],
 )
 
 py_library(

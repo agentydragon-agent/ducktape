@@ -3,7 +3,7 @@
 import shlex
 from pathlib import Path
 
-from .shell_utils import emit_command
+from wt.client.shell_utils import emit_command
 
 
 def emit_cd_command(dest_repo: Path, *, main_repo: Path) -> None:

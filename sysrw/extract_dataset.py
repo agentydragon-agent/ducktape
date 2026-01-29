@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from .extract_common import write_jsonl_batches
-from .extract_dataset_ccr import process_file as process_ccr_file
+from sysrw.extract_common import write_jsonl_batches
+from sysrw.extract_dataset_ccr import process_file as process_ccr_file
 
 TRACE_DIR = Path.home() / ".claude-code-router" / "logs"
 OUTPUT_PATH = Path(__file__).parent / "data" / "dataset.jsonl"

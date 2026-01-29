@@ -10,8 +10,8 @@ View-level rendering logic (path collapsing, tree decoration styling) lives in d
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import SortMode
-from .parser import FileChange
+from difftree.config import SortMode
+from difftree.parser import FileChange
 
 
 @dataclass(frozen=True)

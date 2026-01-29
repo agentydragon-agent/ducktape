@@ -15,8 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.core.models.types import Rationale
-
-from ._models import FalsePositive, TruePositive
+from props.db.sync._models import FalsePositive, TruePositive
 
 
 class YAMLOccurrence(BaseModel):

@@ -4,7 +4,7 @@ import platform
 
 import pytest
 
-from ._markers import REQUIRES_SANDBOX_EXEC
+from sandboxed_jupyter._markers import REQUIRES_SANDBOX_EXEC
 
 pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 

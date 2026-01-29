@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable, Sequence
 
-from .policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 
 
 def run(

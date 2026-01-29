@@ -5,12 +5,12 @@ from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import Protocol, cast, runtime_checkable
 
-from ..shared.protocol import Collector, GitstatusdData
-from .gitstatus_refresh import DebouncedGitstatusRefresh
-from .gitstatusd_listener import GitstatusdListener
-from .types import DiscoveredWorktree
-from .worktree_ids import make_worktree_id
-from .worktree_index import WorktreeIndex
+from wt.server.gitstatus_refresh import DebouncedGitstatusRefresh
+from wt.server.gitstatusd_listener import GitstatusdListener
+from wt.server.types import DiscoveredWorktree
+from wt.server.worktree_ids import make_worktree_id
+from wt.server.worktree_index import WorktreeIndex
+from wt.shared.protocol import Collector, GitstatusdData
 
 
 class WorktreeIndexService:

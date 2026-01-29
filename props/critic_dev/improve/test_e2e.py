@@ -25,7 +25,7 @@ import pytest_bazel
 from hamcrest import all_of, assert_that
 
 from agent_core_testing.responses import PlayGen
-from agent_core_testing.steps import exited_successfully, stdout_contains
+from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.examples import Example
 from props.db.models import AgentRun

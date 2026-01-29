@@ -5,7 +5,7 @@ import pytest_bazel
 from hamcrest import assert_that
 
 from agent_core_testing.responses import DecoratorMock, PlayGen
-from agent_core_testing.steps import exited_successfully
+from mcp_infra.exec.matchers import exited_successfully
 from editor_agent.host.agent_runner import run_editor_docker_agent
 from editor_agent.host.submit_server import SubmitStateSuccess
 

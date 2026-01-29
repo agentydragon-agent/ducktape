@@ -4,19 +4,6 @@ load("@rules_python//python:defs.bzl", "py_library")
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
-    name = "assertions",
-    srcs = ["assertions.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//agent_core:agent",
-        "//openai_utils:model",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "echo_server",
     srcs = ["echo_server.py"],
     imports = [".."],
@@ -35,7 +22,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":echo_server",
-        ":openai_mock",
         ":responses",
         "//agent_core:agent",
         "//agent_core:events",
@@ -43,42 +29,13 @@ py_library(
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
         "//agent_core:tool_provider",
-        "//mcp_infra:flat_tool",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
-        "//mcp_infra/enhanced:flat_mixin",
-        "//mcp_infra/enhanced:server",
-        "//mcp_infra/testing:simple_servers",
         "//openai_utils:model",
-        "//openai_utils:pydantic_strict_mode",
+        "//openai_utils/testing:openai_mock",
         "@pypi//fastmcp",
         "@pypi//openai",
-        "@pypi//pydantic",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "matchers",
-    srcs = ["matchers.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//agent_core:events",
-        "//agent_core:tool_provider",
-        "//openai_utils:model",
-        "@pypi//pyhamcrest",
-    ],
-)
-
-py_library(
-    name = "openai_mock",
-    srcs = ["openai_mock.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//openai_utils:model",
-        "@pypi//pydantic",
     ],
 )
 
@@ -107,13 +64,6 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":assertions",
-        ":echo_server",
-        ":responses",
-        "//mcp_infra:prefix",
-        "//mcp_infra/exec:models",
-        "//openai_utils:model",
         "@pypi//pydantic",
-        "@pypi//pyhamcrest",
     ],
 )

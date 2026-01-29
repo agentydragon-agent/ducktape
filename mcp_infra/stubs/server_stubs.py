@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
     from fastmcp.client import Client
 
-from .typed_stubs import TypedClient
+from mcp_infra.stubs.typed_stubs import TypedClient
 
 TServerStub = TypeVar("TServerStub", bound="ServerStub")
 

@@ -9,7 +9,7 @@ py_test(
     tags = ["manual"],
     deps = [
         ":conftest",
-        "//agent_core_testing:openai_mock",
+        "//openai_utils/testing:openai_mock",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -18,8 +18,8 @@ from jinja2 import Environment, FileSystemLoader
 from markdownify import markdownify
 from pydantic import BaseModel, ConfigDict
 
-from .token_counter import count_tokens_for_models
-from .token_scheme import TokenScheme, VerificationError
+from llm.html.llm_html.token_counter import count_tokens_for_models
+from llm.html.llm_html.token_scheme import TokenScheme, VerificationError
 
 
 class StatsCache(BaseModel):

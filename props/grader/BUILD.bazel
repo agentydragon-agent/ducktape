@@ -65,26 +65,10 @@ py_library(
 # =============================================================================
 
 py_library(
-    name = "main_lib",
+    name = "main",
     srcs = ["main.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        ":drift_handler",
-        ":loop",
-        "//props/core:agent_helpers",
-        "//props/core:ids",
-        "//props/db:session",
-        "@pypi//asyncpg",
-        "@pypi//jinja2",
-    ],
-)
-
-py_binary(
-    name = "main",
-    srcs = ["main.py"],
-    main = "main.py",
-    visibility = ["//visibility:public"],
     deps = [
         ":drift_handler",
         ":loop",
@@ -95,12 +79,23 @@ py_binary(
         "//props/db:config",
         "//props/db:session",
         "@pypi//asyncpg",
+        "@pypi//jinja2",
+    ],
+)
+
+py_binary(
+    name = "grader",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main",
     ],
 )
 
 pkg_tar(
     name = "main_tar",
-    srcs = [":main"],
+    srcs = [":grader"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
@@ -242,7 +237,7 @@ py_test(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    cmd = ["/app/main"],
+    cmd = ["/app/grader"],
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",

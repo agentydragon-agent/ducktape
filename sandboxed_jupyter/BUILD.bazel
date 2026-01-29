@@ -21,6 +21,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "//mcp_infra:constants",
         "//mcp_infra:prefix",
         "//mcp_infra/seatbelt:compile",
         "//mcp_infra/seatbelt:model",
@@ -40,6 +41,8 @@ py_binary(
     main = "wrapper.py",
     deps = [
         ":sandboxed_jupyter",
+        "//mcp_infra:constants",
+        "//net_util:net",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
@@ -51,6 +54,8 @@ py_binary(
     main = "sandboxer.py",
     deps = [
         ":sandboxed_jupyter",
+        "//mcp_infra/seatbelt:compile",
+        "//mcp_infra/seatbelt:model",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],

@@ -28,10 +28,10 @@ py_library(
     srcs = ["e2e.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//agent_core_testing:openai_mock",
+        "//openai_utils/testing:openai_mock",
         "//openai_utils:model",
         "//props/core:ids",
-        "//props/critic_dev/improve:main_lib",
+        "//props/critic_dev/improve:main",
         "@pypi//pytest",
     ],
 )
@@ -85,6 +85,7 @@ py_library(
     srcs = ["runs.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":ground_truth",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core/models:examples",

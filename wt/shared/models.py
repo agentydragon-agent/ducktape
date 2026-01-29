@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .constants import MAIN_WORKTREE_DISPLAY_NAME
+from wt.shared.constants import MAIN_WORKTREE_DISPLAY_NAME
 
 
 @dataclass

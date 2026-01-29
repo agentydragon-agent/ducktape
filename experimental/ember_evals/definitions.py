@@ -6,10 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
-
-from .executor import ScenarioExecutionError, ScenarioSkippedError
-from .steps import (
+from experimental.ember_evals.steps import (
     EvalResult,
     ExpectMatrixReplyResult,
     KillProcessResult,
@@ -26,9 +23,12 @@ from .steps import (
     WaitForMatrixResponseResult,
     WaitSecondsResult,
 )
+from pydantic import BaseModel
+
+from experimental.ember_evals.executor import ScenarioExecutionError, ScenarioSkippedError
 
 if TYPE_CHECKING:
-    from .executor import ScenarioExecutor
+    from experimental.ember_evals.executor import ScenarioExecutor
 
 
 class Scenario(ABC):

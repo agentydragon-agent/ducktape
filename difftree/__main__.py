@@ -8,10 +8,10 @@ import sys
 import click
 from rich.console import Console
 
-from .config import Column, RenderConfig, SortMode, parse_columns
-from .diff_tree import DiffTree
-from .parser import parse_git_diff, parse_unified_diff
-from .tree import build_tree, sort_tree
+from difftree.config import Column, RenderConfig, SortMode, parse_columns
+from difftree.diff_tree import DiffTree
+from difftree.parser import parse_git_diff, parse_unified_diff
+from difftree.tree import build_tree, sort_tree
 
 
 def validate_columns(ctx, param, value):

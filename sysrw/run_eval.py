@@ -38,9 +38,8 @@ from openai_utils.model import (
 )
 from openai_utils.retry import chat_create_with_retries, responses_create_with_retries
 from sysrw.anthropic.types import Message as AnthropicMessage, MessageRole as AnthropicMessageRole
-
-from .constants import TOOLS_HEADER
-from .openai_typing import (
+from sysrw.constants import TOOLS_HEADER
+from sysrw.openai_typing import (
     MessageRole,
     chat_param_message_content_as_text,
     chat_param_message_role,
@@ -52,8 +51,8 @@ from .openai_typing import (
     response_message_content_as_text,
     response_message_role,
 )
-from .prompts import build_grader_prompt
-from .schemas import (
+from sysrw.prompts import build_grader_prompt
+from sysrw.schemas import (
     CCRSample,
     ChatAssistantMessage,
     CrushSample,
@@ -63,8 +62,8 @@ from .schemas import (
     ResponsesAssistantMessage,
     Sample,
 )
-from .templates.loader import validate_template_file
-from .translation import anthropic_messages_to_standard, anthropic_to_chat_messages
+from sysrw.templates.loader import validate_template_file
+from sysrw.translation import anthropic_messages_to_standard, anthropic_to_chat_messages
 
 # Config
 DEFAULT_DATASET_PATH = Path(__file__).parent / "data" / "dataset.jsonl"

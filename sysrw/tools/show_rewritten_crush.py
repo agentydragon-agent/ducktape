@@ -8,8 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ..extract_common import iter_wire_lines
-from ..openai_typing import (
+from sysrw.extract_common import iter_wire_lines
+from sysrw.openai_typing import (
     MessageRole,
     dump_response_messages,
     parse_response_messages,

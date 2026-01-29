@@ -1,6 +1,6 @@
 import sys
 
-from . import wrapper
+from sandboxed_jupyter import wrapper
 
 
 def main() -> int:

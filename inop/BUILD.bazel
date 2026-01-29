@@ -40,8 +40,10 @@ py_test(
     deps = [
         ":config",
         ":conftest",
+        "//inop/engine:models",
         "//inop/engine:optimizer",
         "//inop/engine:runner_factory",
+        "//inop/io:jsonl_logger",
         "//inop/runners:base",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
@@ -82,6 +84,7 @@ py_library(
     srcs = ["plots.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//inop/io:logging_utils",
         "@pypi//matplotlib",
         "@pypi//pandas",
         "@pypi//plotnine",

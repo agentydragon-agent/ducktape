@@ -14,9 +14,7 @@ Makes switching between git worktrees feel like `git switch` while adding copy-o
 ## Requirements
 
 - **Python 3.13+**
-- **gitstatusd** (for fast git status queries): installed and available on `PATH`
-
-Tests will fail immediately if gitstatusd is missing.
+- **gitstatusd** (for fast git status queries): provided by Bazel via `//third_party/gitstatusd` for tests. For non-Bazel usage, install separately and ensure it is on `PATH` or set `gitstatusd_path` in config.
 
 ## Development
 

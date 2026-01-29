@@ -1,12 +1,12 @@
 # Agent-Facing Documentation
 
-This directory (`props/core/docs/`) is the **single source of truth** for agent-facing documentation.
+This directory (`props/docs/`) is the **single source of truth** for agent-facing documentation.
 
 ## SSOT Principle
 
 When writing documentation that agents see at runtime:
 
-1. **Write it ONCE here** — in `props/core/docs/`
+1. **Write it ONCE here** — in `props/docs/`
 2. **Reference or transclude** into other locations (developer docs, AGENTS.md files)
 3. **Do NOT duplicate** content between agent docs and other locations
 
@@ -22,7 +22,7 @@ Example violation:
 ```jinja2
 {# grader.md.j2 #}
 {{ describe_relation("true_positives") }}           {# WRONG - already in ground_truth.md.j2 #}
-{{ include_doc("props_core/docs/db/ground_truth.md.j2") }}  {# includes describe_relation("true_positives") #}
+{{ include_doc("props/docs/db/ground_truth.md.j2") }}  {# includes describe_relation("true_positives") #}
 ```
 
 The grader would see the `true_positives` schema twice.

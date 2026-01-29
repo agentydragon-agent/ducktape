@@ -28,6 +28,7 @@ from agent_core.events import (
     ToolCallOutput,
     UserText,
 )
+from agent_core.handler import BaseHandler
 from agent_core.loop_control import (
     Abort,
     AllowAnyToolOrTextMessage,
@@ -60,8 +61,6 @@ from openai_utils.model import (
     UserMessage,
 )
 from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
-
-from .handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 

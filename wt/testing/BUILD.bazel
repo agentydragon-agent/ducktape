@@ -88,6 +88,7 @@ py_library(
         ":utils",
         "//wt/server:git_manager",
         "//wt/server:github_client",
+        "//wt/server:gitstatusd_listener",
         "//wt/server:worktree_service",
         "//wt/shared:config_file",
         "//wt/shared:configuration",

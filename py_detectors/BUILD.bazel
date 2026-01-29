@@ -248,14 +248,20 @@ py_binary(
     srcs = ["__main__.py"],
     main = "__main__.py",
     visibility = ["//:__subpackages__"],
-    deps = [":__main__"],
+    deps = [
+        ":__main__",
+        ":registry",
+    ],
 )
 
 py_binary(
     name = "py_detectors_custom",
     srcs = ["cli_custom.py"],
     main = "cli_custom.py",
-    deps = [":cli_custom"],
+    deps = [
+        ":cli_custom",
+        ":registry",
+    ],
 )
 
 py_test(

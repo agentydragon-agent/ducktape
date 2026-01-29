@@ -25,12 +25,7 @@ from mcp_infra.exec.docker.server import ContainerOptions
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
-from mcp_infra.testing.notifications import (
-    ResourceUpdatedCapture,
-    SubscriptionRecorder,
-    enable_resources_caps,
-    install_subscription_recorder,
-)
+from mcp_infra.testing.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
 
 
@@ -97,12 +92,6 @@ def make_typed_mcp():
             yield client, sess
 
     return _open
-
-
-@pytest.fixture
-def resource_capture() -> ResourceUpdatedCapture:
-    """Fresh ResourceUpdatedCapture instance for each test."""
-    return ResourceUpdatedCapture()
 
 
 @pytest.fixture

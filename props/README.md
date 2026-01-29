@@ -14,8 +14,7 @@ props/
 │   ├── agent_registry.py     # Agent execution registry
 │   ├── agent_types.py        # Agent type definitions
 │   ├── models/               # Data models
-│   ├── gepa/                 # GEPA prompt optimization
-│   └── docs/                 # Core documentation
+│   └── gepa/                 # GEPA prompt optimization
 ├── cli/                      # Command-line interface
 │   ├── __main__.py           # CLI entry point
 │   ├── cmd_db.py             # Database commands

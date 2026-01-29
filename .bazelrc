@@ -72,5 +72,4 @@ test --test_env=PROPS_REGISTRY_PROXY_HOST
 test --test_env=PROPS_REGISTRY_PROXY_PORT
 test --test_env=PROPS_DOCKER_NETWORK
 test --test_env=PROPS_E2E_HOST_HOSTNAME
-test --test_env=OPENAI_API_KEY
 test --test_env=DOCKER_HOST

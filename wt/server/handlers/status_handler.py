@@ -6,9 +6,14 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from ...shared.configuration import Configuration
-from ...shared.env import is_test_mode
-from ...shared.protocol import (
+from wt.server.git_manager import GitManager, NoSuchRefError
+from wt.server.github_watcher import GitHubWatcher
+from wt.server.rpc import ServiceDependencies, rpc
+from wt.server.services import GitstatusdService
+from wt.server.worktree_ids import make_worktree_id, parse_worktree_id
+from wt.shared.configuration import Configuration
+from wt.shared.env import is_test_mode
+from wt.shared.protocol import (
     BranchAheadBehind,
     CommitInfo,
     ComponentsStatus,
@@ -30,11 +35,6 @@ from ...shared.protocol import (
     StatusResultOk,
     WorktreeID,
 )
-from ..git_manager import GitManager, NoSuchRefError
-from ..github_watcher import GitHubWatcher
-from ..rpc import ServiceDependencies, rpc
-from ..services import GitstatusdService
-from ..worktree_ids import make_worktree_id, parse_worktree_id
 
 logger = logging.getLogger(__name__)
 

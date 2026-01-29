@@ -19,7 +19,10 @@ py_library(
     srcs = ["server_stubs.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//fastmcp"],
+    deps = [
+        ":typed_stubs",
+        "@pypi//fastmcp",
+    ],
 )
 
 py_library(
