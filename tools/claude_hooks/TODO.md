@@ -33,14 +33,15 @@ Script uses socket to test port, writes READY/RESULT per supervisor protocol.
 
 ## Wheel Mode Test: Detect Undeclared Dependencies
 
-**Problem**: The CI wheel-mode test (`wheel-test` job in `claude-hooks-release.yml`) builds the wheel, installs it via `uv tool install`, then runs Bazel tests against the installed package. But this didn't catch a missing `httpx` dependency in the wheel's `requires` list because:
+**Problem**: The CI wheel-mode test (`wheel-test` job) builds the wheel, installs it via `uv tool install`, then runs e2e tests that invoke `claude-session-start` as a subprocess. When `DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1`, the subprocess runs the uv-installed console script, which uses the uv venv's Python. This **should** have caught the missing `httpx` dependency — the uv venv doesn't have it (confirmed: `httpx` is not a transitive dep of any declared requires). Yet a release was tagged from commit `2c7a302` with `httpx` missing.
 
-1. The Bazel test environment already has `httpx` available via `@pypi//httpx` (transitive dep), so the import succeeds even though the wheel doesn't declare it.
-2. The wheel is installed into a uv-managed venv, but the test runs inside Bazel which has its own dependency resolution.
+**Possible explanations** (not yet confirmed):
+- Remote cache hit from BuildBuddy returned a passing result from before `httpx` was introduced (despite `--nocache_test_results`)
+- E2e tests were skipped by a `skipif` condition (keytool, bazel) that wasn't met in CI
+- Some other CI environment artifact
 
-**Potential Solutions**:
+**Fix**: Added a "Verify wheel imports" CI step that runs `uv tool run --from claude_hooks python -c "from tools.claude_hooks import session_start"` outside Bazel. This is a fast, explicit check that fails immediately on undeclared deps.
 
-- **Import smoke test in isolated venv**: After `uv tool install`, run `claude-session-start --help` (or a lightweight import check) *outside* Bazel in the uv venv. This would fail immediately on missing deps since uv only installs declared `requires`.
-- **Automated `requires` audit**: Script that compares actual imports in wheel-packaged modules against the wheel's `requires` list. Could use `importlib.metadata` or AST parsing to find all third-party imports and diff against declared deps.
-- **`pip check` / `uv pip check`**: After installing the wheel, run dependency consistency checks to surface missing or conflicting deps.
-- **`pipdeptree --warn fail`**: Detect missing transitive dependencies post-install.
+**Future improvements**:
+- Investigate why the subprocess-based e2e test didn't catch the missing dep
+- **Automated `requires` audit**: AST-parse wheel-packaged modules and diff third-party imports against declared deps
