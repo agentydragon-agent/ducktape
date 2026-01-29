@@ -166,13 +166,6 @@ jobs:
       - name: Install wheel
         run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
 
-      - name: Verify wheel imports (catches undeclared dependencies)
-        run: |
-          # Import the entry point module outside Bazel, in the uv venv.
-          # This fails immediately if the wheel is missing a declared dependency
-          # (e.g. httpx) since uv only installs what requires= lists.
-          uv tool run --from claude_hooks python -c "from tools.claude_hooks import session_start"
-
       - name: Test installed wheel (including podman integration)
         run: |
           # E2E tests run against the installed wheel (DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1).

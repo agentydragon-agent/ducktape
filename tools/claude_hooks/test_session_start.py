@@ -276,14 +276,23 @@ def run_session_start_hook(
     """
     hook_input = make_hook_input(project_dir, source)
 
-    if os.environ.get(settings.ENV_USE_WHEEL) == "1":
+    use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
+
+    if use_wheel:
         # Run installed console script (tests wheel packaging)
         cmd = "claude-session-start"
     else:
         # Run via runfiles binary (Bazel test mode)
         cmd = str(get_required_path(shell_helpers.SESSION_START))
 
-    result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, timeout=300)
+    env = dict(os.environ)
+    if use_wheel:
+        # Clear PYTHONPATH so the subprocess only sees packages from the wheel's
+        # venv, not Bazel's runfiles. Without this, Bazel leaks its entire
+        # dependency tree via PYTHONPATH, masking missing wheel requires.
+        env.pop("PYTHONPATH", None)
+
+    result = subprocess.run([cmd], check=False, input=hook_input, capture_output=True, text=True, timeout=300, env=env)
 
     # Write hook output to log files for debugging (collected as CI artifacts)
     stdout_log = _write_output_log("hook-stdout.log", result.stdout)

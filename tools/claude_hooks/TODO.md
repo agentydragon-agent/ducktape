@@ -31,17 +31,10 @@ events=TICK_60
 
 Script uses socket to test port, writes READY/RESULT per supervisor protocol.
 
-## Wheel Mode Test: Detect Undeclared Dependencies
+## Wheel Mode Test: Detect Undeclared Dependencies (fixed)
 
-**Problem**: The CI wheel-mode test (`wheel-test` job) builds the wheel, installs it via `uv tool install`, then runs e2e tests that invoke `claude-session-start` as a subprocess. When `DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1`, the subprocess runs the uv-installed console script, which uses the uv venv's Python. This **should** have caught the missing `httpx` dependency — the uv venv doesn't have it (confirmed: `httpx` is not a transitive dep of any declared requires). Yet a release was tagged from commit `2c7a302` with `httpx` missing.
+**Problem**: The CI wheel-mode test runs `claude-session-start` as a subprocess when `DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1`. The subprocess uses the uv venv's Python, which only has declared `requires`. However, Bazel's test runner sets `PYTHONPATH` to include all runfiles paths (including `@pypi//httpx`). The subprocess inherited this `PYTHONPATH`, so undeclared deps like `httpx` were importable via Bazel's leaked dependency tree despite not being in the wheel's `requires`.
 
-**Possible explanations** (not yet confirmed):
-- Remote cache hit from BuildBuddy returned a passing result from before `httpx` was introduced (despite `--nocache_test_results`)
-- E2e tests were skipped by a `skipif` condition (keytool, bazel) that wasn't met in CI
-- Some other CI environment artifact
+**Root cause**: `subprocess.run()` in `run_session_start_hook` inherited `os.environ` including Bazel's `PYTHONPATH`. Confirmed via CI artifact `hook-stdout.log` which showed `sys.path` containing `pypi_313_httpx/site-packages` from runfiles.
 
-**Fix**: Added a "Verify wheel imports" CI step that runs `uv tool run --from claude_hooks python -c "from tools.claude_hooks import session_start"` outside Bazel. This is a fast, explicit check that fails immediately on undeclared deps.
-
-**Future improvements**:
-- Investigate why the subprocess-based e2e test didn't catch the missing dep
-- **Automated `requires` audit**: AST-parse wheel-packaged modules and diff third-party imports against declared deps
+**Fix**: Clear `PYTHONPATH` from the subprocess environment when `USE_WHEEL=1`, so the process only sees packages from the wheel's venv.
