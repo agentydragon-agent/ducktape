@@ -35,7 +35,6 @@ from openai_utils.testing.strict_mode_models import (
     SimpleValidModel,
 )
 
-
 # ---------------------------------------------------------------------------
 # Test models specific to this file
 # ---------------------------------------------------------------------------
