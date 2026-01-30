@@ -124,7 +124,6 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":app",
         ":models",
         "@pypi//pydantic",
     ],
@@ -147,7 +146,6 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":app",
         ":events",
         ":models",
         "@pypi//asyncpg",
