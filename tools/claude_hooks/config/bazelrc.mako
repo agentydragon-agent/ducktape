@@ -27,6 +27,9 @@ build --action_env=NODE_EXTRA_CA_CERTS=${combined_ca_path | sh}
 # Use local execution instead of sandbox (sandbox has /dev/null issues in CC web)
 build --spawn_strategy=local
 test --spawn_strategy=local
+
+# Skip live OpenAI tests in wildcard expansion (no API key available)
+test --test_tag_filters=-live_openai_api
 % if local_registry_path:
 
 # Local registry with patched ape module (native ELF instead of APE binaries)

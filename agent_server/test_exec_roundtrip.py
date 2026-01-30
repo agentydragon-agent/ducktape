@@ -1,3 +1,9 @@
+"""Dual mock/live tests for LLM-driven Docker exec roundtrip.
+
+Mock test scripts the LLM to call box__exec; live test uses a real OpenAI model.
+Both need Docker (the exec tool runs in a real container).
+"""
+
 from __future__ import annotations
 
 import os
@@ -9,18 +15,16 @@ from agent_core.agent import Agent, AgentResult
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
+from agent_core_testing.responses import DecoratorMock, tool_roundtrip
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from mcp_infra.stubs.typed_stubs import ToolStub
 from mcp_infra.testing.fixtures import make_container_opts
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 
-# Use /bin/echo -n for portability and to avoid trailing newline
 ECHO_CMD = ["/bin/echo", "-n", "hello"]
-
 SERVER_NAME = MCPMountPrefix("box")
 
 
@@ -38,20 +42,36 @@ async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_cl
     return compositor_client
 
 
-async def _assert_exec_echo(sess) -> None:
-    # Call via compositor using namespaced tool key
-    stub = ToolStub(sess, build_mcp_function(SERVER_NAME, "exec"), BaseExecResult)
-    res = await stub(make_exec_input(ECHO_CMD))
-    assert isinstance(res.exit, Exited)
-    assert res.exit.exit_code == 0
-    assert (res.stdout or "") == "hello"
-    assert (res.stderr or "") == ""
+# --- Mock test ---
 
 
 @pytest.mark.requires_docker
-async def test_exec_roundtrip_echo(mcp_client_box) -> None:
-    """Spin up real Docker container and roundtrip an echo via exec without policy gateway."""
-    await _assert_exec_echo(mcp_client_box)
+async def test_mock_llm_exec_echo(mcp_client_box) -> None:
+    """Mock LLM scripts box__exec to echo hello, verifies agent returns stdout."""
+
+    @DecoratorMock.mock()
+    def mock(m: DecoratorMock):
+        yield  # receive initial request
+        # Script: call box__exec with echo command
+        call = m.mcp_tool_call(SERVER_NAME, "exec", make_exec_input(ECHO_CMD))
+        result: BaseExecResult = yield from tool_roundtrip(call, BaseExecResult)
+        assert isinstance(result.exit, Exited)
+        assert result.exit.exit_code == 0
+        assert (result.stdout or "") == "hello"
+        yield m.assistant_text("hello")
+
+    agent = await Agent.create(
+        tool_provider=MCPToolProvider(mcp_client_box),
+        client=mock,
+        handlers=[BaseHandler()],
+        tool_policy=RequireAnyTool(),
+    )
+    agent.process_message(UserMessage.text("Run echo"))
+    res: AgentResult = await agent.run()
+    assert (res.text or "").strip() == "hello"
+
+
+# --- Live test ---
 
 
 @pytest.mark.live_openai_api

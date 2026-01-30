@@ -66,5 +66,3 @@ sys.exit(1 if err else 0)
     cfg = chdir_tmp_path / ".pre-commit-config.yaml"
     cfg.write_text(yaml.dump(config))
     return cfg
-
-

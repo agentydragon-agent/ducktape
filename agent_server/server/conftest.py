@@ -16,6 +16,7 @@ from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_server.persist.events import EventRecord
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
+from mcp_infra.prefix import MCPMountPrefix
 
 
 @pytest.fixture
@@ -100,7 +101,6 @@ def make_tool_call_event(
     make_event_record: Callable[[EventType, int | None], EventRecord], make_tool_call: Callable[..., ToolCall]
 ) -> Callable[..., EventRecord]:
     """Factory for ToolCall EventRecord."""
-    from mcp_infra.prefix import MCPMountPrefix
 
     def _make(seq: int, server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> EventRecord:
         return make_event_record(make_tool_call(server, tool, args=args), seq)

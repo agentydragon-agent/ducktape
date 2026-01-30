@@ -1,5 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//openai_utils/testing:testing.bzl", "live_openai_only_py_test", "live_openai_py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 py_library(
     name = "types",
@@ -135,6 +135,22 @@ py_library(
 )
 
 py_test(
+    name = "test_errors",
+    srcs = ["test_errors.py"],
+    imports = [".."],
+    deps = [
+        ":conftest",
+        ":model",
+        ":retry",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_json_schema",
     srcs = ["test_json_schema.py"],
     imports = [".."],
@@ -166,7 +182,7 @@ live_openai_py_test(
     ],
 )
 
-live_openai_only_py_test(
+live_openai_py_test(
     name = "test_live_api",
     srcs = ["test_live_api.py"],
     imports = [".."],
@@ -176,8 +192,10 @@ live_openai_only_py_test(
         ":errors",
         ":model",
         ":retry",
+        "@pypi//httpx",
         "@pypi//openai",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

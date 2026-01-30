@@ -68,8 +68,12 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
             pytest.skip("PGHOST not set - PostgreSQL not configured")
 
     # LLM API key requirements
+    # fail() not skip(): pytest.skip surfaces as success at the Bazel level, hiding
+    # the missing key. fail() ensures explicitly-run live targets fail loudly.
+    # Wildcard runs (bazel test //...) exclude live targets via --test_tag_filters
+    # in CI and Claude Code web bazelrc, so this only fires on explicit invocations.
     if item.get_closest_marker("live_openai_api") is not None and not os.getenv("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set")
+        pytest.fail("OPENAI_API_KEY not set — cannot run live OpenAI test")
 
     if item.get_closest_marker("live_anthropic_api") is not None and not os.getenv("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")

@@ -14,7 +14,6 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from fmt_util import format_truncation_suffix
 from fmt_util.fmt_util import format_truncation_suffix
 from gmail_archiver.gmail_api_models import (
     CreateFilterRequest,

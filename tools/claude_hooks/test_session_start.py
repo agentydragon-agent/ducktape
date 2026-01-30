@@ -278,12 +278,7 @@ def run_session_start_hook(
 
     use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
 
-    if use_wheel:
-        # Run installed console script (tests wheel packaging)
-        cmd = "claude-session-start"
-    else:
-        # Run via runfiles binary (Bazel test mode)
-        cmd = str(get_required_path(shell_helpers.SESSION_START))
+    cmd = "claude-session-start" if use_wheel else str(get_required_path(shell_helpers.SESSION_START))
 
     env = dict(os.environ)
     if use_wheel:

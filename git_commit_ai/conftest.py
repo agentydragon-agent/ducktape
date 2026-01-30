@@ -34,5 +34,3 @@ def git_repo(author_name: str, author_email: str, tmp_path: Path) -> pygit2.Repo
 def temp_repo(git_repo: pygit2.Repository) -> RepoHelper:
     """Test helper wrapping git_repo with write/stage/commit methods."""
     return RepoHelper(git_repo)
-
-
