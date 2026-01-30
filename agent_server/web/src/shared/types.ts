@@ -12,22 +12,10 @@ export type AgentRow = {
 
 export type AgentListResponse = { agents: AgentRow[] };
 export type McpServerState = "initializing" | "running" | "failed";
-export type McpState = { entries: Record<string, ServerEntry> };
-export type PolicyState = { version?: number | null };
-export type UiStateLite = { ready: boolean };
-export type ContainerState = { present: boolean; id?: string | null };
 
 export type AgentStatus = {
   id: string;
   live: boolean;
-  lifecycle?: "persisted_only" | "starting" | "ready" | "closing" | "closed" | "error";
-  run_phase?: "idle" | "sampling" | "waiting_tool" | "tools_running" | "waiting_approval" | "sending_output" | "error";
-  policy?: PolicyState;
-  ui?: UiStateLite;
-  mcp?: McpState;
-  container?: ContainerState;
-  pending_approvals?: number | null;
-  last_event_at?: string | null;
 };
 export type DeleteResponse = { ok: boolean; error?: string };
 

@@ -56,29 +56,7 @@
   <div class="status">Phase: {$agentPhaseStore}</div>
   {#if $agentStatusStore}
     <div class="row" style="gap: 0.5rem; font-size: 0.85rem; margin-top: 0.25rem;">
-      <span title="Lifecycle"
-        >Lifecycle: {$agentStatusStore.lifecycle ?? ($agentStatusStore.live ? "ready" : "persisted_only")}</span
-      >
-
-      {#if $agentStatusStore.policy}
-        <span title="Policy">
-          Policy: {typeof $agentStatusStore.policy.version === "number"
-            ? `v${$agentStatusStore.policy.version}`
-            : "unavailable"}
-        </span>
-      {/if}
-      {#if $agentStatusStore.mcp}
-        <span title="MCP servers"
-          >MCP: {Object.values($agentStatusStore.mcp.entries || {}).filter((e: any) => e?.state !== "running").length} failed</span
-        >
-      {/if}
-      {#if $agentStatusStore.container}
-        <span
-          title={$agentStatusStore.container.id ? `Container ${$agentStatusStore.container.id}` : "Runtime container"}
-        >
-          Runtime: {$agentStatusStore.container.id ? "active" : "starting"}
-        </span>
-      {/if}
+      <span title="Lifecycle">Lifecycle: {$agentStatusStore.live ? "ready" : "persisted_only"}</span>
     </div>
     <!-- Live mounts summary (derived from snapshots; updates on MCP notifications) -->
     {#if Array.isArray($mcpServerEntriesStore) && $mcpServerEntriesStore.length}
