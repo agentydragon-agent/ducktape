@@ -1,7 +1,21 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
-# NOTE: No aggregator target - use specific per-file targets like :strict_mode_models, :openai_mock
+# NOTE: No aggregator target - use specific per-file targets like :fixtures, :strict_mode_models, :openai_mock
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = ["fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pytest",
+    ],
+)
 
 py_library(
     name = "openai_mock",

@@ -10,7 +10,7 @@ from props.core.models.examples import WholeSnapshotExample
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from props.db.session import get_session
-from props.testing.fixtures.runs import make_critic_run, make_grader_run
+from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
 
 def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:
@@ -28,8 +28,7 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:
         # Merge example into this session if it's detached from another session
         example = session.merge(example)
 
-        # Create critic run
-        critic_run = make_critic_run(example=example, status=AgentRunStatus.COMPLETED)
+        critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.COMPLETED)
         session.add(critic_run)
         session.flush()
 
@@ -63,8 +62,7 @@ def make_test_grader_run(critic_run_id: UUID, status: AgentRunStatus = AgentRunS
         critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
         snapshot_slug = critic_run.critic_config().example.snapshot_slug
 
-        # Use centralized factory
-        grader_run = make_grader_run(snapshot_slug=snapshot_slug, status=status)
+        grader_run = make_fake_grader_run(session=session, snapshot_slug=snapshot_slug, status=status)
         session.add(grader_run)
         session.commit()
         return grader_run.agent_run_id

@@ -3,6 +3,8 @@ load("@rules_python//python:defs.bzl", "py_library")
 # NOTE: No aggregator target - use specific per-file targets like :assertions, :matchers
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
+package(default_testonly = True)
+
 py_library(
     name = "assertions",
     srcs = ["assertions.py"],
@@ -12,6 +14,18 @@ py_library(
         "//agent_core:agent",
         "//openai_utils:model",
         "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//agent_core:handler",
         "@pypi//pytest",
     ],
 )

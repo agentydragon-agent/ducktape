@@ -6,8 +6,6 @@ Both need Docker (the exec tool runs in a real container).
 
 from __future__ import annotations
 
-import os
-
 import pytest
 import pytest_bazel
 
@@ -22,7 +20,8 @@ from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from openai_utils.client_factory import build_client
-from openai_utils.model import SystemMessage, UserMessage
+from openai_utils.model import OpenAIModelProto, UserMessage
+from openai_utils.testing.fixtures import ClientMode, mock_and_live
 
 ECHO_CMD = ["/bin/echo", "-n", "hello"]
 SERVER_NAME = MCPMountPrefix("box")
@@ -42,43 +41,26 @@ async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_cl
     return compositor_client
 
 
-# --- Mock test ---
-
-
+@mock_and_live
 @pytest.mark.requires_docker
-async def test_mock_llm_exec_echo(mcp_client_box) -> None:
-    """Mock LLM scripts box__exec to echo hello, verifies agent returns stdout."""
+async def test_llm_exec_echo(mode: ClientMode, mcp_client_box, live_openai_model) -> None:
+    """LLM calls box__exec to echo hello, agent returns stdout."""
+    if mode is ClientMode.MOCK:
 
-    @DecoratorMock.mock()
-    def mock(m: DecoratorMock):
-        yield  # receive initial request
-        # Script: call box__exec with echo command
-        call = m.mcp_tool_call(SERVER_NAME, "exec", make_exec_input(ECHO_CMD))
-        result: BaseExecResult = yield from tool_roundtrip(call, BaseExecResult)
-        assert isinstance(result.exit, Exited)
-        assert result.exit.exit_code == 0
-        assert (result.stdout or "") == "hello"
-        yield m.assistant_text("hello")
+        @DecoratorMock.mock()
+        def mock(m: DecoratorMock):
+            yield
+            call = m.mcp_tool_call(SERVER_NAME, "exec", make_exec_input(ECHO_CMD))
+            result: BaseExecResult = yield from tool_roundtrip(call, BaseExecResult)
+            assert isinstance(result.exit, Exited)
+            assert result.exit.exit_code == 0
+            assert (result.stdout or "") == "hello"
+            yield m.assistant_text("hello")
 
-    agent = await Agent.create(
-        tool_provider=MCPToolProvider(mcp_client_box),
-        client=mock,
-        handlers=[BaseHandler()],
-        tool_policy=RequireAnyTool(),
-    )
-    agent.process_message(UserMessage.text("Run echo"))
-    res: AgentResult = await agent.run()
-    assert (res.text or "").strip() == "hello"
+        client: OpenAIModelProto = mock
+    else:
+        client = build_client(live_openai_model)
 
-
-# --- Live test ---
-
-
-@pytest.mark.live_openai_api
-async def test_live_llm_exec_echo(mcp_client_box) -> None:
-    """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
-    model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
-    client = build_client(model_name)
     agent = await Agent.create(
         tool_provider=MCPToolProvider(mcp_client_box),
         client=client,
@@ -86,17 +68,14 @@ async def test_live_llm_exec_echo(mcp_client_box) -> None:
         tool_policy=RequireAnyTool(),
     )
     agent.process_message(
-        SystemMessage.text(
-            "You are testing an MCP exec tool.\n"
+        UserMessage.text(
             "Call the tool "
             f"{build_mcp_function(SERVER_NAME, 'exec')} "
             f"with cmd={ECHO_CMD!r} and return exactly the stdout."
         )
     )
-    agent.process_message(UserMessage.text("Run the command now and output exactly the stdout value."))
     res: AgentResult = await agent.run()
-    text = (res.text or "").strip()
-    assert text == "hello"
+    assert (res.text or "").strip() == "hello"
 
 
 if __name__ == "__main__":

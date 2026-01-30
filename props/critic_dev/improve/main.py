@@ -99,7 +99,7 @@ def check_termination_condition(
             SELECT
                 oc.critic_image_digest AS agent_definition_id,
                 SUM(oc.found_credit) as total_issues
-            FROM occurrence_credits oc
+            FROM tp_occurrence_credits oc
             JOIN allowed_examples ae ON (
                 oc.snapshot_slug = ae.snapshot_slug
                 AND oc.example_kind::text = ae.example_kind
@@ -151,7 +151,7 @@ def check_termination_condition(
                 COUNT(DISTINCT (oc.snapshot_slug, oc.example_kind, COALESCE(oc.files_hash, ''))) as covered_examples,
                 SUM(oc.found_credit) as total_issues
             FROM candidate_defs cd
-            LEFT JOIN occurrence_credits oc ON oc.critic_image_digest = cd.agent_definition_id
+            LEFT JOIN tp_occurrence_credits oc ON oc.critic_image_digest = cd.agent_definition_id
             LEFT JOIN allowed_examples ae ON (
                 oc.snapshot_slug = ae.snapshot_slug
                 AND oc.example_kind::text = ae.example_kind
@@ -212,13 +212,13 @@ def check_termination_condition(
         ),
         baseline_coverage AS (
             SELECT
-                critic_definition_id AS agent_definition_id,
+                critic_image_digest AS agent_definition_id,
                 snapshot_slug,
                 example_kind,
                 files_hash
-            FROM occurrence_credits
+            FROM tp_occurrence_credits
             WHERE critic_image_digest = ANY(:baseline_ids)
-            GROUP BY critic_definition_id, snapshot_slug, example_kind, files_hash
+            GROUP BY critic_image_digest, snapshot_slug, example_kind, files_hash
         )
         SELECT COUNT(*) as missing_count
         FROM (

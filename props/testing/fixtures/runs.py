@@ -1,4 +1,8 @@
-"""Run fixtures (critic runs, grader runs) for props tests."""
+"""Run fixtures (critic runs, grader runs) for props tests.
+
+Uses fake agent definitions with synthetic digests. These are DB-level test
+helpers — they don't exercise the real OCI registry flow.
+"""
 
 from uuid import UUID, uuid4
 
@@ -6,14 +10,14 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from props.core.agent_types import CriticTypeConfig, GraderTypeConfig
+from props.core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind
 from props.core.models.types import Rationale
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF, GRADER_IMAGE_REF
 from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import (
+    AgentDefinition,
     AgentRun,
     AgentRunStatus,
     CanonicalIssuesSnapshot,
@@ -27,19 +31,44 @@ from props.db.snapshots import DBLocationAnchor
 
 from props.testing.fixtures.ground_truth import get_tp_occurrences_for_snapshot
 
+# Synthetic digests for DB-level tests (not real OCI images)
+FAKE_CRITIC_DIGEST = "sha256:" + "0" * 64
+FAKE_GRADER_DIGEST = "sha256:" + "1" * 64
+FAKE_PROMPT_OPTIMIZER_DIGEST = "sha256:" + "2" * 64
+
 # Props-specific constants
 EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])
 
 
-def make_critic_run(
+def ensure_fake_agent_definitions(session: Session) -> None:
+    """Insert fake agent_definitions rows if not already present.
+
+    Idempotent — safe to call multiple times per session.
+    """
+    for digest, agent_type in [
+        (FAKE_CRITIC_DIGEST, AgentType.CRITIC),
+        (FAKE_GRADER_DIGEST, AgentType.GRADER),
+        (FAKE_PROMPT_OPTIMIZER_DIGEST, AgentType.PROMPT_OPTIMIZER),
+    ]:
+        if session.query(AgentDefinition).filter_by(digest=digest).first() is None:
+            session.add(AgentDefinition(digest=digest, agent_type=agent_type))
+    session.flush()
+
+
+def make_fake_critic_run(
     *,
+    session: Session,
     example: Example,
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     agent_run_id: UUID | None = None,
-    image_digest: str = CRITIC_IMAGE_REF,
 ) -> AgentRun:
-    """Build AgentRun for critic from Example."""
+    """Build AgentRun for critic with fake image digest.
+
+    Automatically ensures fake agent_definitions rows exist.
+    """
+    ensure_fake_agent_definitions(session)
+
     if agent_run_id is None:
         agent_run_id = uuid4()
 
@@ -47,25 +76,39 @@ def make_critic_run(
     type_config = CriticTypeConfig(example=example_spec)
 
     return AgentRun(
-        agent_run_id=agent_run_id, image_digest=image_digest, model=model, status=status, type_config=type_config
+        agent_run_id=agent_run_id,
+        image_digest=FAKE_CRITIC_DIGEST,
+        model=model,
+        status=status,
+        type_config=type_config,
     )
 
 
-def make_grader_run(
+def make_fake_grader_run(
     *,
+    session: Session,
     snapshot_slug: SnapshotSlug,
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:
-    """Build AgentRun for daemon-based grader (one per snapshot)."""
+    """Build AgentRun for daemon-based grader with fake image digest.
+
+    Automatically ensures fake agent_definitions rows exist.
+    """
+    ensure_fake_agent_definitions(session)
+
     if agent_run_id is None:
         agent_run_id = uuid4()
 
     type_config = GraderTypeConfig(snapshot_slug=snapshot_slug)
 
     return AgentRun(
-        agent_run_id=agent_run_id, image_digest=GRADER_IMAGE_REF, model=model, status=status, type_config=type_config
+        agent_run_id=agent_run_id,
+        image_digest=FAKE_GRADER_DIGEST,
+        model=model,
+        status=status,
+        type_config=type_config,
     )
 
 
@@ -92,16 +135,16 @@ def make_reported_issues(
     return issues
 
 
-def make_critic_and_grader_run(
+def make_fake_critic_and_grader_run(
     *, example: Example, tp_occurrences: list[tuple[str, str]], credit: float, session: Session
 ) -> tuple[AgentRun, AgentRun]:
     """One-stop helper: Creates complete critic+grader run with normalized tables."""
-    critic_run = make_critic_run(example=example, status=AgentRunStatus.COMPLETED)
+    critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.COMPLETED)
     session.add(critic_run)
     session.flush()
 
-    grader_run = make_grader_run(
-        snapshot_slug=example.snapshot_slug, model="test-grader", status=AgentRunStatus.COMPLETED
+    grader_run = make_fake_grader_run(
+        session=session, snapshot_slug=example.snapshot_slug, model="test-grader", status=AgentRunStatus.COMPLETED
     )
     session.add(grader_run)
     session.flush()
@@ -136,7 +179,7 @@ def make_critic_and_grader_run(
     return critic_run, grader_run
 
 
-def make_grader_run_with_credit(
+def make_fake_grader_run_with_credit(
     *,
     session: Session,
     critic_run: AgentRun,
@@ -159,7 +202,7 @@ def make_grader_run_with_credit(
     session.add(occ)
 
     snapshot_slug = critic_run.critic_config().example.snapshot_slug
-    grader_run = make_grader_run(snapshot_slug=snapshot_slug, model=model)
+    grader_run = make_fake_grader_run(session=session, snapshot_slug=snapshot_slug, model=model)
     session.add(grader_run)
     session.flush()
 
@@ -192,12 +235,12 @@ def _make_example_with_runs(slug: SnapshotSlug, credit: float) -> tuple[Example,
             f"Mismatch: {len(tp_occs)} TP occurrences vs {example.recall_denominator} expected"
         )
 
-        critic_run, grader_run = make_critic_and_grader_run(
+        critic_run, grader_run = make_fake_critic_and_grader_run(
             example=example, tp_occurrences=tp_occs, credit=credit, session=session
         )
 
         # Create second pair for UCB/LCB computation which requires COUNT(*) > 1
-        make_critic_and_grader_run(example=example, tp_occurrences=tp_occs, credit=credit * 0.9, session=session)
+        make_fake_critic_and_grader_run(example=example, tp_occurrences=tp_occs, credit=credit * 0.9, session=session)
 
         session.commit()
 

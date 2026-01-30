@@ -962,30 +962,22 @@ class LLMRunCost(Base):
     request_count: Mapped[int] = mapped_column(nullable=True)
 
 
-class OccurrenceCredit(Base):
-    """Occurrence credits from occurrence_credits database VIEW (not a table).
+class TpOccurrenceCredit(Base):
+    """Per-(critique_run, tp, occurrence) credit from tp_occurrence_credits VIEW.
 
-    Detailed view with one row per (grader_run, occurrence), fully denormalized for filtering/grouping:
-    - Run identification (grader_run_id, graded_at)
-    - Snapshot/Example context (snapshot_slug, split, files_hash, example_kind)
-    - Critique provenance (critic_run_id, critic_image_digest)
-    - Models (critic_model, grader_model)
-    - Occurrence details (tp_id, occurrence_id, found_credit, matched_by_json, grader_rationale)
-
-    The view is created by migration 20251223000000_schema_squashed.py.
+    One row per (critic_run, tp_id, occurrence_id). found_credit is the SUM of all
+    grading edge credits for that combination (≤ 1.0 enforced by DB trigger).
+    grader_run_id is not exposed — it is provenance, not an aggregation dimension.
     """
 
-    __tablename__ = "occurrence_credits"
+    __tablename__ = "tp_occurrence_credits"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key (grader_run_id, tp_id, occurrence_id)
-    grader_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    # Composite primary key (critic_run_id, tp_id, occurrence_id)
+    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-
-    # Run identification
-    graded_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
 
     # Snapshot/Example context
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
@@ -993,31 +985,21 @@ class OccurrenceCredit(Base):
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
     files_hash: Mapped[str | None] = mapped_column(String, nullable=True)  # NULL for whole_snapshot
 
-    # Critique provenance
-    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    # Critic provenance
     critic_image_digest: Mapped[str] = mapped_column(String, nullable=False)
-
-    # Models
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
-    grader_model: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # Occurrence details
+    # Credit (sum of all grading edges for this critique+occurrence, ≤ 1.0)
     found_credit: Mapped[float] = mapped_column(nullable=False)
-    matched_by_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    grader_rationale: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class RecallByRun(Base):
-    """Per-critic-run recall statistics from recall_by_run database VIEW.
+    """Per-critic-run recall from recall_by_run database VIEW.
 
-    Base view that aggregates occurrence metrics per critic run, across all graders.
-    Feeds into recall_by_definition_example which groups by (definition, model, example).
+    Scalar total_credit (sum of all TP occurrence credits) and scalar recall
+    (total_credit / recall_denominator). Feeds into recall_by_definition_example.
 
-    - recall_denominator: Ground truth count (denominator for recall)
-    - credit_stats: Stats over grader total credits (numerator; not normalized)
-    - recall_stats: credit_stats / recall_denominator
-
-    Failed critic runs (max_turns/context_length) contribute 0 credit via COALESCE.
+    Failed critic runs (max_turns/context_length) contribute 0 credit.
     """
 
     __tablename__ = "recall_by_run"
@@ -1039,11 +1021,11 @@ class RecallByRun(Base):
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
     critic_status: Mapped[AgentRunStatus] = mapped_column(nullable=False)
 
-    # Credit stats (numerator for recall)
-    credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
+    # Scalar credit (sum of all TP occurrence credits for this critic run)
+    total_credit: Mapped[float] = mapped_column(nullable=False)
 
-    # Recall statistics (credit_stats / recall_denominator)
-    recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
+    # Scalar recall (total_credit / recall_denominator)
+    recall: Mapped[float] = mapped_column(nullable=False)
 
 
 class RecallByDefinitionExample(Base):
@@ -1223,10 +1205,10 @@ class ParetoFrontierByExample(Base):
 
 
 class OccurrenceStatistics(Base):
-    """Occurrence statistics from occurrence_statistics database VIEW (not a table).
+    """Per-occurrence statistics across critic runs from occurrence_statistics VIEW.
 
-    Aggregated statistics per occurrence across all runs, using stats_with_ci.
-    Groups by: example identification → ground truth → critic-specific → grader-specific.
+    Aggregated credit statistics per occurrence. credit_stats.n = number of critic runs,
+    credit_stats.mean = average credit across runs.
 
     Use cases:
     - Identify "hard" occurrences (low credit_stats.mean, high variance)
@@ -1242,7 +1224,7 @@ class OccurrenceStatistics(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
-    trigger_set_id: Mapped[int | None] = mapped_column(Integer, primary_key=True)  # NULL for whole_snapshot
+    files_hash: Mapped[str | None] = mapped_column(String, primary_key=True)
 
     # Ground truth identification
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -1252,10 +1234,7 @@ class OccurrenceStatistics(Base):
     critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Grader-specific
-    grader_model: Mapped[str] = mapped_column(String, primary_key=True)
-
-    # Credit statistics (stats_with_ci: .n = grader count, .mean = avg credit, etc.)
+    # Credit statistics across critic runs (stats_with_ci: .n = critic run count, .mean = avg credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -1268,6 +1247,7 @@ class AgentDefinition(Base):
 
     __tablename__ = "agent_definitions"
 
+    # TODO: Add CHECK constraint validating digest format (sha256:[0-9a-f]{64})
     digest: Mapped[str] = mapped_column(String, primary_key=True, comment="OCI image digest (sha256:...)")
     agent_type: Mapped[AgentType] = mapped_column(String, nullable=False, comment="Agent type enum")
     created_by_agent_run_id: Mapped[UUID | None] = mapped_column(

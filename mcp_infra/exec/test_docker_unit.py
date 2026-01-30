@@ -10,9 +10,9 @@ from mcp_infra.testing.fixtures import make_container_opts
 
 
 @pytest.fixture
-def exec_server(async_docker_client):
+def exec_server(async_docker_client, python_slim_image):
     """Container exec server for docker exec tests."""
-    return ContainerExecServer(async_docker_client, make_container_opts("python:3.12-slim"))
+    return ContainerExecServer(async_docker_client, make_container_opts(python_slim_image))
 
 
 @pytest.fixture

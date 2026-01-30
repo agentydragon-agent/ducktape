@@ -267,6 +267,7 @@ py_test(
         ":ids",
         "//agent_core_testing:responses",
         "//mcp_infra/exec:matchers",
+        "//props:conftest",
         "//props/core/models:examples",
         "//props/critic_dev:shared",
         "//props/critic_dev/optimize:main",

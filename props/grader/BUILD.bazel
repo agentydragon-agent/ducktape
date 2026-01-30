@@ -180,6 +180,7 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        "//props:conftest",
         "//props/db:models",
         "//props/db:session",
         "//props/testing/fixtures:runs",
@@ -197,6 +198,7 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        "//props:conftest",
         "//props/db:session",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
@@ -219,6 +221,7 @@ py_test(
     deps = [
         ":conftest",
         "//agent_core_testing:responses",
+        "//props:conftest",
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshots",

@@ -18,6 +18,7 @@ py_library(
     deps = [
         "//wt/testing:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )
 

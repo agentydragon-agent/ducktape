@@ -37,9 +37,7 @@ from collections import defaultdict
 from sqlalchemy import text
 
 from props.core.ids import SnapshotSlug
-from props.core.splits import Split
 from props.db.examples import Example
-from props.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -141,106 +139,3 @@ def build_historical_gepa_state(valset: list[Example], critic_model: str, grader
         "Starting from empty state."
     )
     return None
-
-    # pylint: disable=unreachable
-    with get_session() as session:
-        # Query per-run recalls from occurrence_run_credits view
-        # This view computes recall as: SUM(avg_credit) / NULLIF(COUNT(*), 0)
-        # which is equivalent to compute_fitness() but computed in SQL
-        historical_runs = session.execute(
-            text("""
-                WITH per_run_recalls AS (
-                    SELECT
-                        orc.snapshot_slug,
-                        orc.scope_hash,
-                        orc.prompt_sha256,
-                        p.prompt_text,
-                        SUM(orc.avg_credit) / NULLIF(COUNT(*), 0) AS recall
-                    FROM occurrence_run_credits orc
-                    JOIN prompts p ON orc.prompt_sha256 = p.prompt_sha256
-                    WHERE orc.split = :split
-                      AND orc.critic_model = :critic_model
-                    GROUP BY orc.snapshot_slug, orc.scope_hash, orc.prompt_sha256,
-                             orc.critic_run_id, p.prompt_text
-                )
-                SELECT prompt_text, prompt_sha256, snapshot_slug, scope_hash, recall
-                FROM per_run_recalls
-            """),
-            {"split": Split.VALID, "critic_model": critic_model},
-        ).fetchall()
-
-        logger.info(f"Loaded {len(historical_runs)} historical validation evaluations from database")
-
-        # Build sparse validation scores per prompt
-        prompt_to_scores: dict[str, dict[int, float]] = defaultdict(dict)
-        unique_prompts: dict[str, str] = {}  # sha256 -> text
-        skipped_unknown_examples = 0
-
-        for prompt_text, prompt_sha, snapshot_slug, scope_hash, recall in historical_runs:
-            # recall is computed by SQL view (per-run recall)
-            unique_prompts[prompt_sha] = prompt_text
-
-            # Map (snapshot_slug, scope_hash) to validation dataset index (GEPA DataId)
-            val_idx = valset_idx_by_key.get((snapshot_slug, scope_hash))  # type: ignore[name-defined]  # noqa: F821
-            if val_idx is None:
-                # Training example not in current validation set (e.g., split changed or scope changed)
-                skipped_unknown_examples += 1
-                continue
-
-            # Store score keyed by valset index (will become DataId in GEPA checkpoint)
-            prompt_to_scores[prompt_sha][val_idx] = recall
-
-        if skipped_unknown_examples > 0:
-            logger.warning(
-                f"Skipped {skipped_unknown_examples} evaluations from training examples not in current validation set"
-            )
-
-        # Filter out prompts with no validation scores (all snapshots were skipped)
-        prompt_to_scores = {sha: scores for sha, scores in prompt_to_scores.items() if scores}
-
-        logger.info(f"Found {len(prompt_to_scores)} unique prompts with validation scores")
-
-        if not prompt_to_scores:
-            logger.warning("No historical validation scores found - starting from empty state")
-            return None
-
-        # Build program_candidates in a consistent order (sorted by SHA for determinism)
-        sorted_shas = sorted(prompt_to_scores.keys())
-        program_candidates = [{"system_prompt": unique_prompts[sha]} for sha in sorted_shas]
-        prog_candidate_val_subscores = [prompt_to_scores[sha] for sha in sorted_shas]
-
-        # Build mapping from SHA to program index (for Pareto frontier lookup)
-        sha_to_prog_idx = {sha: idx for idx, sha in enumerate(sorted_shas)}
-
-        # Compute Pareto frontier from SQL view
-        pareto_front_valset, program_at_pareto_front_valset = _compute_pareto_frontier_from_sql(
-            session,
-            critic_model,
-            Split.VALID,
-            valset_idx_by_key,  # type: ignore[name-defined]  # noqa: F821
-            sha_to_prog_idx,
-        )
-
-    logger.info(
-        f"Built Pareto frontier: {len(pareto_front_valset)} validation examples with best scores, "
-        f"{sum(len(progs) for progs in program_at_pareto_front_valset.values())} program-example pairs"
-    )
-
-    # Build GEPAState dict (matches GEPAState.__dict__ structure)
-    # Schema version 2 (sparse validation scores)
-    return {
-        "program_candidates": program_candidates,
-        "prog_candidate_val_subscores": prog_candidate_val_subscores,
-        "pareto_front_valset": pareto_front_valset,
-        "program_at_pareto_front_valset": {k: set(v) for k, v in program_at_pareto_front_valset.items()},
-        "list_of_named_predictors": ["system_prompt"],
-        "named_predictor_id_to_update_next_for_program_candidate": [0] * len(program_candidates),
-        "parent_program_for_candidate": [[None]] * len(program_candidates),  # Unknown parentage for historical
-        "i": -1,  # Next iteration will be 0
-        "num_full_ds_evals": 0,  # No full dataset evals yet in this run
-        "total_num_evals": 0,  # Budget applies to this run only
-        "num_metric_calls_by_discovery": [0] * len(program_candidates),  # Unknown discovery cost for historical
-        "full_program_trace": [],
-        "best_outputs_valset": None,  # Don't track outputs for historical runs
-        "validation_schema_version": 2,
-    }

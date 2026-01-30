@@ -206,6 +206,7 @@ py_test(
         ":inputs",
         ":precommit_autofix",
         ":tool_models",
+        "@pypi//pre_commit",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

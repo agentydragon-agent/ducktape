@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import itertools
-import os
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -382,15 +381,6 @@ def _test_id(val):
     return None
 
 
-@pytest.fixture
-async def openai_client():
-    """Create OpenAI Responses client with our wrappers."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        pytest.skip("OPENAI_API_KEY not set")
-    return build_client("gpt-5.1-codex-mini")
-
-
 @pytest.mark.parametrize(("model_class", "schema_generator", "expected", "gen_name"), TEST_SCHEMAS, ids=_test_id)
 def test_validator_prediction_matches_expectation(
     model_class: type[BaseModel],
@@ -417,7 +407,7 @@ def test_validator_prediction_matches_expectation(
 @pytest.mark.live_openai_api
 @pytest.mark.parametrize(("model_class", "schema_generator", "expected", "gen_name"), TEST_SCHEMAS, ids=_test_id)
 async def test_validator_matches_openai_reality(
-    openai_client,
+    live_openai_model: str,
     model_class: type[BaseModel],
     schema_generator: type[GenerateJsonSchema],
     expected: Literal["accept", "reject"],
@@ -439,9 +429,10 @@ async def test_validator_matches_openai_reality(
         validator_error = e
 
     # Check OpenAI API
+    client = build_client(live_openai_model)
     openai_error = None
     try:
-        result = await openai_client.responses_create(
+        result = await client.responses_create(
             ResponsesRequest(
                 input=[UserMessage.text("Test")],
                 tools=[

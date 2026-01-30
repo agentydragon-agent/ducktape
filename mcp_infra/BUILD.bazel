@@ -181,5 +181,6 @@ py_library(
         "//agent_core_testing:fixtures",
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )

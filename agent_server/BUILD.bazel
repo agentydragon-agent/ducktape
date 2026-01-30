@@ -35,6 +35,7 @@ py_library(
         "//agent_server/mcp/approval_policy:engine",
         "//agent_server/persist:sqlite",
         "//agent_server/persist:types",
+        "//agent_server/policies:approve_all",
         "//agent_server/policies:loader",
         "//agent_server/policies:policy_types",
         "//agent_server/policy_eval:container",
@@ -44,6 +45,7 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
         "//mcp_infra/testing:fixtures",
+        "//openai_utils/testing:fixtures",
         "//test_util",
         "@pypi//docker",
         "@pypi//fastmcp",
@@ -221,6 +223,7 @@ live_openai_py_test(
         "//mcp_infra/testing:fixtures",
         "//openai_utils:client_factory",
         "//openai_utils:model",
+        "//openai_utils/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -420,7 +423,10 @@ py_library(
     name = "approvals",
     srcs = ["approvals.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//agent_server/policies:default_policy",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(

@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from props.db.models import AgentRunStatus, GradingEdge
 from props.db.session import get_session
-from props.testing.fixtures.runs import make_critic_run, make_grader_run, make_reported_issues
+from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run, make_reported_issues
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -29,7 +29,7 @@ def session(synced_test_db):
 @pytest.fixture
 def test_critic_run(session, example_subtract_orm):
     """Create a completed critic run for testing."""
-    critic_run = make_critic_run(example=example_subtract_orm, status=AgentRunStatus.COMPLETED)
+    critic_run = make_fake_critic_run(session=session, example=example_subtract_orm, status=AgentRunStatus.COMPLETED)
     session.add(critic_run)
     session.commit()
     return critic_run
@@ -38,7 +38,7 @@ def test_critic_run(session, example_subtract_orm):
 @pytest.fixture
 def test_grader_run(session, example_subtract_orm):
     """Create a grader run for testing edges."""
-    grader_run = make_grader_run(snapshot_slug=example_subtract_orm.snapshot_slug, status=AgentRunStatus.IN_PROGRESS)
+    grader_run = make_fake_grader_run(session=session, snapshot_slug=example_subtract_orm.snapshot_slug, status=AgentRunStatus.IN_PROGRESS)
     session.add(grader_run)
     session.commit()
     return grader_run

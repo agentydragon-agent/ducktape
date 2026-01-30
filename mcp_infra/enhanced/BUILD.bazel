@@ -70,6 +70,7 @@ py_test(
     srcs = ["test_flat_decorator.py"],
     deps = [
         ":server",
+        "//mcp_infra:conftest",
         "//mcp_infra/stubs:typed_stubs",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
@@ -84,6 +85,7 @@ py_test(
     srcs = ["test_flat_helper.py"],
     deps = [
         ":server",
+        "//mcp_infra:conftest",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
         "@pypi//pydantic",
@@ -97,6 +99,7 @@ py_test(
     srcs = ["test_oob_broadcast.py"],
     deps = [
         ":server",
+        "//mcp_infra:conftest",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
@@ -109,6 +112,7 @@ py_test(
     srcs = ["test_oob_session_capturing.py"],
     deps = [
         ":server",
+        "//mcp_infra:conftest",
         "//mcp_infra:urls",
         "@pypi//fastmcp",
         "@pypi//pytest_bazel",

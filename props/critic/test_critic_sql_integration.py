@@ -17,7 +17,7 @@ from props.db.examples import Example
 from props.db.models import AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
-from props.testing.fixtures.runs import make_critic_run
+from props.testing.fixtures.runs import make_fake_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -37,7 +37,7 @@ async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, temp_eng
         )
         assert other_example is not None, "Need another example for RLS test"
 
-        other_run = make_critic_run(example=other_example, status=AgentRunStatus.IN_PROGRESS)
+        other_run = make_fake_critic_run(session=session,example=other_example, status=AgentRunStatus.IN_PROGRESS)
         session.add(other_run)
         session.commit()
         other_run_id = other_run.agent_run_id

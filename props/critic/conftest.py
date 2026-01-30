@@ -15,7 +15,7 @@ from props.db.models import AgentRunStatus
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
-from props.testing.fixtures.runs import make_critic_run
+from props.testing.fixtures.runs import make_fake_critic_run
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
@@ -34,7 +34,7 @@ def test_critic_run(synced_test_db, test_snapshot):
         # Create critic run using whole-snapshot example (exists after sync)
         example = Example.from_spec(session, WholeSnapshotExample(snapshot_slug=test_snapshot))
 
-        critic_run = make_critic_run(example=example, status=AgentRunStatus.IN_PROGRESS)
+        critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.IN_PROGRESS)
         session.add(critic_run)
         session.commit()
 

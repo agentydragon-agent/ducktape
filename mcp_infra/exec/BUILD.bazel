@@ -142,6 +142,7 @@ py_test(
         ":subprocess",
         "//mcp_infra/testing:exec_stubs",
         "@pypi//fastmcp",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -158,6 +159,7 @@ py_test(
         "//mcp_infra/testing:exec_stubs",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -172,6 +174,7 @@ py_test(
         "//mcp_infra/testing:exec_stubs",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -186,6 +189,7 @@ py_test(
         ":conftest",
         ":models",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -216,6 +220,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra/testing:docker_fixtures",
+        "//mcp_infra/testing:fixtures",
         "//test_util",
         "@pypi//pytest",
     ],
@@ -224,6 +229,8 @@ py_library(
 py_test(
     name = "test_docker_unit",
     srcs = ["test_docker_unit.py"],
+    data = ["//mcp_infra/testing:python_slim_load"],
+    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":docker",
@@ -231,6 +238,7 @@ py_test(
         "//mcp_infra/testing:fixtures",
         "@pypi//fastmcp",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

@@ -27,7 +27,7 @@ from props.db.models import (
     FalsePositive,
     FalsePositiveOccurrenceORM,
     LLMRunCost,
-    OccurrenceCredit,
+    TpOccurrenceCredit,
     OccurrenceRangeORM,
     Snapshot,
     TruePositive,
@@ -451,7 +451,7 @@ def query_recall_by_example(
 ) -> list[RecallByExampleRow]:
     """Query occurrence-weighted recall grouped by (example, critic_image_digest).
 
-    Computes AVG(found_credit) from occurrence_credits view, grouped by
+    Computes AVG(found_credit) from tp_occurrence_credits view, grouped by
     (snapshot_slug, example_kind, files_hash, critic_image_digest).
 
     This is the canonical way to compute recall for cross-run aggregation.
@@ -476,27 +476,27 @@ def query_recall_by_example(
         for row in results:
             print(f"{row.example}: {row.recall * 100:.1f}%")
     """
-    # Query OccurrenceCredit VIEW (uses example_kind + files_hash composite key)
+    # Query TpOccurrenceCredit VIEW (uses example_kind + files_hash composite key)
     query = session.query(
-        OccurrenceCredit.snapshot_slug,
-        OccurrenceCredit.example_kind,
-        OccurrenceCredit.files_hash,
-        OccurrenceCredit.critic_image_digest,
-        func.avg(OccurrenceCredit.found_credit).label("avg_credit_per_occurrence"),
+        TpOccurrenceCredit.snapshot_slug,
+        TpOccurrenceCredit.example_kind,
+        TpOccurrenceCredit.files_hash,
+        TpOccurrenceCredit.critic_image_digest,
+        func.avg(TpOccurrenceCredit.found_credit).label("avg_credit_per_occurrence"),
     )
 
     if split is not None:
-        query = query.filter(OccurrenceCredit.split == split)
+        query = query.filter(TpOccurrenceCredit.split == split)
     if critic_image_digest is not None:
-        query = query.filter(OccurrenceCredit.critic_image_digest == critic_image_digest)
+        query = query.filter(TpOccurrenceCredit.critic_image_digest == critic_image_digest)
     if snapshot_slugs is not None:
-        query = query.filter(OccurrenceCredit.snapshot_slug.in_(snapshot_slugs))
+        query = query.filter(TpOccurrenceCredit.snapshot_slug.in_(snapshot_slugs))
 
     query = query.group_by(
-        OccurrenceCredit.snapshot_slug,
-        OccurrenceCredit.example_kind,
-        OccurrenceCredit.files_hash,
-        OccurrenceCredit.critic_image_digest,
+        TpOccurrenceCredit.snapshot_slug,
+        TpOccurrenceCredit.example_kind,
+        TpOccurrenceCredit.files_hash,
+        TpOccurrenceCredit.critic_image_digest,
     )
 
     results = query.all()

@@ -27,7 +27,7 @@ from agent_core_testing.responses import PlayGen
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
-from props.testing.fixtures.runs import make_critic_run
+from props.testing.fixtures.runs import make_fake_critic_run
 from props.testing.mocks import GraderMock
 
 logger = logging.getLogger(__name__)
@@ -84,9 +84,8 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
         # Create drift: insert a completed critic run with reported issues
         critic_run_id = uuid4()
         with get_session() as session:
-            # Create critic run
-            critic_run = make_critic_run(
-                example=all_files_scope, model=stack.model, status=AgentRunStatus.COMPLETED, agent_run_id=critic_run_id
+            critic_run = make_fake_critic_run(
+                session=session, example=all_files_scope, model=stack.model, status=AgentRunStatus.COMPLETED, agent_run_id=critic_run_id
             )
             session.add(critic_run)
             session.flush()

@@ -18,7 +18,7 @@ from agent_server.mcp.chat.server import (
 )
 from agent_server.testing.chat_stubs import ChatServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
-from mcp_infra.testing.fixtures import ResourceUpdatedCapture
+from mcp_infra.testing.notifications import ResourceUpdatedCapture
 from mcp_utils.resources import extract_single_text_content
 
 

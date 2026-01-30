@@ -18,58 +18,16 @@ from typing import Any
 
 import pytest
 from fastmcp.server import FastMCP
-from openai import AsyncOpenAI
 
-from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
-from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
+from agent_core.events import ToolCall
 from agent_core.mcp_provider import MCPToolProvider
+
+# Re-export from new canonical location
+from agent_core.testing.fixtures import RecordingHandler, recording_handler, test_handlers  # noqa: F401
 from agent_core.tool_provider import ToolProvider
 from agent_core_testing.echo_server import make_echo_server
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-
-# ---- Recording handler ----
-
-
-class RecordingHandler(BaseHandler):
-    """Handler that records all events for test assertions."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.records: list[ToolCall | ToolCallOutput | SystemText | UserText | AssistantText] = []
-
-    def on_tool_call_event(self, evt: ToolCall, /) -> None:
-        self.records.append(evt)
-
-    def on_tool_result_event(self, evt: ToolCallOutput, /) -> None:
-        self.records.append(evt)
-
-    def on_system_text_event(self, evt: SystemText, /) -> None:
-        self.records.append(evt)
-
-    def on_user_text_event(self, evt: UserText, /) -> None:
-        self.records.append(evt)
-
-    def on_assistant_text_event(self, evt: AssistantText, /) -> None:
-        self.records.append(evt)
-
-
-@pytest.fixture
-def recording_handler() -> RecordingHandler:
-    """Fresh RecordingHandler for capturing agent events during tests."""
-    return RecordingHandler()
-
-
-@pytest.fixture
-def test_handlers(recording_handler: RecordingHandler) -> list:
-    """Standard handler list for agent tests.
-
-    Includes:
-    - FinishOnTextMessageHandler: Abort loop on text messages (test mocks often return text)
-    - RecordingHandler: Capture events for assertions
-    """
-    return [FinishOnTextMessageHandler(), recording_handler]
-
 
 # ---- OpenAI model factories ----
 
@@ -144,24 +102,3 @@ def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
     return _make
 
 
-# ---- Live OpenAI fixture ----
-
-
-@pytest.fixture
-def live_openai(request):
-    """Provide a live AsyncOpenAI client for tests marked with `live_openai_api`.
-
-    - For non-`live_openai_api` tests that include this fixture in the signature but
-      do not actually use it (e.g., parameterized tests with a mock branch),
-      return a lightweight no-op placeholder to avoid network work and keep
-      those tests running.
-    - For `live_openai_api` tests, construct AsyncOpenAI (marker skip logic
-      ensures OPENAI_API_KEY is set).
-    """
-    if request.node.get_closest_marker("live_openai_api") is not None:
-        return AsyncOpenAI()
-
-    class _Noop:
-        pass
-
-    return _Noop()

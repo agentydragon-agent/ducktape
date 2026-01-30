@@ -99,6 +99,8 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
+        "//props:conftest",
+        "//props/db:conftest",
         "//props/core:ids",
         "//props/core:splits",
         "//props/core/models:examples",
@@ -116,6 +118,8 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":loader",
+        "//props:conftest",
+        "//props/db:conftest",
         "//props/core:ids",
         "@pypi//pydantic",
         "@pypi//pytest",

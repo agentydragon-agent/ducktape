@@ -23,7 +23,7 @@ from props.db import query_builders as qb
 from props.db.examples import Example
 from props.db.models import FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
 from props.db.session import get_session
-from props.testing.fixtures.runs import make_critic_run, make_grader_run
+from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -66,25 +66,25 @@ def query_test_data(synced_test_db):
         assert len(valid_examples) >= 2, "Need at least 2 valid examples from git fixtures"
 
         # Create critic runs using factory (uses attached Example objects directly)
-        critic_run_train = make_critic_run(example=train_examples[0])
+        critic_run_train = make_fake_critic_run(session=session,example=train_examples[0])
         session.add(critic_run_train)
 
-        critic_run_valid_1 = make_critic_run(example=valid_examples[0])
+        critic_run_valid_1 = make_fake_critic_run(session=session,example=valid_examples[0])
         session.add(critic_run_valid_1)
 
-        critic_run_valid_2 = make_critic_run(example=valid_examples[1])
+        critic_run_valid_2 = make_fake_critic_run(session=session,example=valid_examples[1])
         session.add(critic_run_valid_2)
 
         session.flush()
 
         # Create grader runs using factory (one per snapshot)
-        grader_run_train = make_grader_run(snapshot_slug=train_examples[0].snapshot_slug)
+        grader_run_train = make_fake_grader_run(session=session,snapshot_slug=train_examples[0].snapshot_slug)
         session.add(grader_run_train)
 
-        grader_run_valid_1 = make_grader_run(snapshot_slug=valid_examples[0].snapshot_slug)
+        grader_run_valid_1 = make_fake_grader_run(session=session,snapshot_slug=valid_examples[0].snapshot_slug)
         session.add(grader_run_valid_1)
 
-        grader_run_valid_2 = make_grader_run(snapshot_slug=valid_examples[1].snapshot_slug)
+        grader_run_valid_2 = make_fake_grader_run(session=session,snapshot_slug=valid_examples[1].snapshot_slug)
         session.add(grader_run_valid_2)
 
         session.flush()

@@ -19,7 +19,7 @@ from props.db.examples import Example
 from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
-from props.testing.fixtures.runs import make_critic_run
+from props.testing.fixtures.runs import make_fake_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -33,7 +33,7 @@ def test_critic_run(synced_test_db):
         assert example is not None, "Expected test-fixtures/train1 example to exist"
 
         # Create critic run
-        critic_run = make_critic_run(example=example)
+        critic_run = make_fake_critic_run(session=session,example=example)
         session.add(critic_run)
         session.commit()
 

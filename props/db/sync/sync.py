@@ -206,8 +206,17 @@ def create_snapshot_archive(content_dir: Path, bundle_filter: BundleFilter | Non
                 if bundle_filter.exclude and any(_matches_bundle_pattern(rel_str, p) for p in bundle_filter.exclude):
                     continue
 
+            # TODO: Symlink support was removed because Bazel runfiles are symlinks,
+            # causing tar to store them as symlink entries which break snapshot_files
+            # extraction. To restore relative symlink support: check if the resolved
+            # target is under content_dir — if so, keep as symlink; otherwise dereference.
+            source_path = str(path)
+            if path.is_symlink():
+                logger.warning(f"Dereferencing symlink in snapshot archive: {rel_str}")
+                source_path = str(path.resolve())
+
             # Add file to archive with deterministic mtime
-            info = tar.gettarinfo(str(path), arcname=rel_str)
+            info = tar.gettarinfo(source_path, arcname=rel_str)
             info.mtime = 0  # Deterministic for reproducibility
             with path.open("rb") as f:
                 tar.addfile(info, f)

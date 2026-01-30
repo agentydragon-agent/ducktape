@@ -10,6 +10,7 @@ package(default_testonly = True)
 py_library(
     name = "db",
     srcs = ["db.py"],
+    data = glob(["testdata/specimens/**"]),
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
@@ -90,7 +91,6 @@ py_library(
         "//props/core:ids",
         "//props/core/models:examples",
         "//props/core/models:types",
-        "//props/db:agent_definition_ids",
         "//props/db:config",
         "//props/db:examples",
         "//props/db:models",

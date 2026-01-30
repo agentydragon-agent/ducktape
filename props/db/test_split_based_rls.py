@@ -39,13 +39,12 @@ from sqlalchemy.orm import Session
 
 from props.core.agent_types import PromptOptimizerTypeConfig
 from props.critic_dev.shared import TargetMetric
-from props.db.agent_definition_ids import PROMPT_OPTIMIZER_IMAGE_REF
 from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
 from props.db.session import get_session
 from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
-from props.testing.fixtures.runs import make_critic_run
+from props.testing.fixtures.runs import FAKE_PROMPT_OPTIMIZER_DIGEST, ensure_fake_agent_definitions, make_fake_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -66,6 +65,8 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
     # This must happen BEFORE the agent role is created, so RLS policies can
     # identify this user as a prompt_optimizer via current_agent_type()
     with get_session() as session:
+        ensure_fake_agent_definitions(session)
+
         type_config = PromptOptimizerTypeConfig(
             target_metric=TargetMetric.TARGETED,
             optimizer_model="test-optimizer-model",
@@ -75,7 +76,7 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
         )
         agent_run = AgentRun(
             agent_run_id=run_id,
-            image_digest=PROMPT_OPTIMIZER_IMAGE_REF,
+            image_digest=FAKE_PROMPT_OPTIMIZER_DIGEST,
             model="test-model",
             status=AgentRunStatus.COMPLETED,
             type_config=type_config.model_dump(),
@@ -212,7 +213,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
         assert example, "test-split-test fixture not found"
 
         # Create a critic run for the test specimen using fixture factory
-        test_run = make_critic_run(example=example, status=AgentRunStatus.COMPLETED)
+        test_run = make_fake_critic_run(session=session,example=example, status=AgentRunStatus.COMPLETED)
         session.add(test_run)
         session.commit()
 
@@ -249,7 +250,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
         assert example, "test-trivial fixture not found"
 
         # Create a critic run for the train specimen using fixture factory
-        train_run = make_critic_run(example=example, agent_run_id=train_agent_run_id, status=AgentRunStatus.COMPLETED)
+        train_run = make_fake_critic_run(session=session,example=example, agent_run_id=train_agent_run_id, status=AgentRunStatus.COMPLETED)
         session.add(train_run)
         session.commit()
 
@@ -279,7 +280,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
         assert example, "test-validation fixture not found"
 
         # Create a critic run for the valid specimen
-        valid_run = make_critic_run(example=example, agent_run_id=valid_agent_run_id, status=AgentRunStatus.COMPLETED)
+        valid_run = make_fake_critic_run(session=session,example=example, agent_run_id=valid_agent_run_id, status=AgentRunStatus.COMPLETED)
         session.add(valid_run)
         session.commit()
 
@@ -312,7 +313,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
         assert example, "test-validation fixture not found"
 
         # Create a critic run for the valid specimen
-        valid_run = make_critic_run(example=example, agent_run_id=valid_agent_run_id, status=AgentRunStatus.COMPLETED)
+        valid_run = make_fake_critic_run(session=session,example=example, agent_run_id=valid_agent_run_id, status=AgentRunStatus.COMPLETED)
         session.add(valid_run)
         session.flush()
 
@@ -351,7 +352,7 @@ async def test_prompt_optimizer_can_see_train_split_llm_requests(
         assert example, "test-trivial fixture not found"
 
         # Create a critic run for the train specimen
-        train_run = make_critic_run(example=example, agent_run_id=train_agent_run_id, status=AgentRunStatus.COMPLETED)
+        train_run = make_fake_critic_run(session=session,example=example, agent_run_id=train_agent_run_id, status=AgentRunStatus.COMPLETED)
         session.add(train_run)
         session.flush()
 

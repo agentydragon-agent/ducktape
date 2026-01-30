@@ -13,6 +13,7 @@ import mcp.types
 import pytest
 
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
+from agent_core.tool_provider import ToolResult
 from agent_server.persist.events import EventRecord
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
@@ -26,8 +27,18 @@ def fresh_ui_state():
 
 
 @pytest.fixture
+def make_tool_result() -> Callable[[dict[str, Any] | None, bool], ToolResult]:
+    """Factory for ToolResult (agent_core internal type)."""
+
+    def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolResult:
+        return ToolResult(structured_content=structured_content or {}, is_error=is_error)
+
+    return _make
+
+
+@pytest.fixture
 def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult]:
-    """Factory for MCP CallToolResult."""
+    """Factory for MCP CallToolResult (protocol type)."""
 
     def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> mcp.types.CallToolResult:
         return mcp.types.CallToolResult(content=[], structuredContent=structured_content or {}, isError=is_error)
@@ -37,12 +48,12 @@ def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.Call
 
 @pytest.fixture
 def make_tool_call_output(
-    make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
+    make_tool_result: Callable[[dict[str, Any] | None, bool], ToolResult],
 ) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
     """Factory for ToolCallOutput events."""
 
     def _make(call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolCallOutput:
-        return ToolCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
+        return ToolCallOutput(call_id=call_id, result=make_tool_result(structured_content, is_error))
 
     return _make
 

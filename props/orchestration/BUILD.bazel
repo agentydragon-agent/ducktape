@@ -16,6 +16,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
+        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )

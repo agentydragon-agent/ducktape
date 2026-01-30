@@ -11,6 +11,7 @@ py_library(
     deps = [
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -33,10 +34,11 @@ py_test(
     srcs = ["test_chat_server.py"],
     imports = ["../.."],
     deps = [
+        ":conftest",
         "//agent_server/mcp/chat",
         "//agent_server/testing:chat_stubs",
         "//mcp_infra/stubs:typed_stubs",
-        "//mcp_infra/testing:fixtures",
+        "//mcp_infra/testing:notifications",
         "//mcp_utils",
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",

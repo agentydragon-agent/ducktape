@@ -86,6 +86,7 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        "//props:conftest",
         "//props/core:ids",
         "//props/db:examples",
         "//props/db:models",
@@ -106,6 +107,7 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        "//props:conftest",
         "//props/core:ids",
         "//props/db:examples",
         "//props/db:models",
@@ -140,6 +142,7 @@ py_test(
         ":conftest",
         "//agent_core_testing:responses",
         "//mcp_infra/exec:matchers",
+        "//props:conftest",
         "//props/db:agent_definition_ids",
         "//props/db:models",
         "//props/db:session",
@@ -194,6 +197,7 @@ py_library(
         "//props/db:snapshots",
         "//props/orchestration:agent_credentials",
         "//props/testing/fixtures:runs",
+        "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],

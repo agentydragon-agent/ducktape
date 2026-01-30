@@ -1,4 +1,4 @@
-"""Test that the occurrence_credits view correctly extracts fields from GraderOutput."""
+"""Test that the tp_occurrence_credits view correctly extracts fields from grading edges."""
 
 from uuid import uuid4
 
@@ -10,7 +10,7 @@ from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRunStatus, GradingEdge, TruePositive
 from props.db.session import get_session
-from props.testing.fixtures.runs import make_critic_run, make_grader_run, make_reported_issues
+from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run, make_reported_issues
 
 
 def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
@@ -50,7 +50,7 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         assert matching_occ_id is not None
 
         # Insert critic run (required for view join) using fixture factory
-        critic_run = make_critic_run(example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED)
+        critic_run = make_fake_critic_run(session=session, example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED)
         session.add(critic_run)
         session.flush()
 
@@ -59,8 +59,8 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
 
         # Insert grader run with output using fixture factory
-        grader_run = make_grader_run(
-            snapshot_slug=example.snapshot_slug, model="test-grader-model", agent_run_id=grader_agent_run_id
+        grader_run = make_fake_grader_run(
+            session=session, snapshot_slug=example.snapshot_slug, model="test-grader-model", agent_run_id=grader_agent_run_id
         )
         session.add(grader_run)
         session.flush()
@@ -82,18 +82,18 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
 
         session.commit()
 
-        # Query the occurrence_credits view - verify the run appears with occurrence results
+        # Query the tp_occurrence_credits view - verify the run appears with occurrence results
         result = session.execute(
             text("""
-                SELECT grader_run_id, tp_id, occurrence_id, found_credit
-                FROM occurrence_credits
+                SELECT critic_run_id, tp_id, occurrence_id, found_credit
+                FROM tp_occurrence_credits
                 WHERE snapshot_slug = :slug
             """),
             {"slug": str(snapshot_slug)},
         ).fetchone()
 
-        assert result is not None, "View should return a row for the grader run"
-        assert result.grader_run_id == grader_run.agent_run_id, "Should match the grader run ID"
+        assert result is not None, "View should return a row for the critic run"
+        assert result.critic_run_id == critic_run.agent_run_id, "Should match the critic run ID"
         assert result.tp_id == matching_tp.tp_id, "Should extract tp_id from grading_edges"
         assert result.occurrence_id == matching_occ_id, "Should extract occurrence_id from grading_edges"
         assert result.found_credit == 1.0, "Should extract credit from grading_edges"

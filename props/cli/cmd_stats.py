@@ -32,7 +32,7 @@ from props.db.models import (
     AgentDefinition,
     AgentRun,
     AgentRunStatus,
-    OccurrenceCredit,
+    TpOccurrenceCredit,
     OccurrenceStatistics,
     RecallByDefinitionSplitKind,
     RecallByExample,
@@ -522,7 +522,6 @@ def cmd_stats_example(
 def cmd_stats_occurrence(
     split: Split | None = None,
     critic_model: str | None = None,
-    grader_model: str | None = None,
     top: int | None = typer.Option(None, help="Show top N results by mean credit"),
     bottom: int | None = typer.Option(None, help="Show bottom N results by mean credit"),
 ) -> None:
@@ -544,9 +543,6 @@ def cmd_stats_occurrence(
             base_query = base_query.filter(OccurrenceStatistics.split == split)
         if critic_model:
             base_query = base_query.filter(OccurrenceStatistics.critic_model == critic_model)
-        if grader_model:
-            base_query = base_query.filter(OccurrenceStatistics.grader_model == grader_model)
-
         # Fetch top and/or bottom results
         sections_to_show: list[tuple[str, list[OccurrenceStatistics]]] = []
 
@@ -574,7 +570,6 @@ def cmd_stats_occurrence(
                 ColumnDef("Occ ID", lambda r: r.occurrence_id[:15], width=15),
                 ColumnDef("Split", lambda r: r.split, width=6),
                 ColumnDef("Critic", lambda r: r.critic_model, fmt_model, width=12),
-                ColumnDef("Grader", lambda r: r.grader_model, fmt_model, width=12),
                 ColumnDef(
                     "Mean",
                     lambda r: r.credit_stats.mean if r.credit_stats else None,
@@ -682,13 +677,13 @@ def cmd_stats(ctx: typer.Context) -> None:
             # Get TP counts per sample (constant per example, not per prompt/run)
             tp_count_results = (
                 session.query(
-                    OccurrenceCredit.snapshot_slug,
-                    OccurrenceCredit.example_kind,
-                    OccurrenceCredit.files_hash,
-                    func.count(func.distinct(OccurrenceCredit.occurrence_id)).label("n_occurrences"),
+                    TpOccurrenceCredit.snapshot_slug,
+                    TpOccurrenceCredit.example_kind,
+                    TpOccurrenceCredit.files_hash,
+                    func.count(func.distinct(TpOccurrenceCredit.occurrence_id)).label("n_occurrences"),
                 )
-                .filter(OccurrenceCredit.split == split)
-                .group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.example_kind, OccurrenceCredit.files_hash)
+                .filter(TpOccurrenceCredit.split == split)
+                .group_by(TpOccurrenceCredit.snapshot_slug, TpOccurrenceCredit.example_kind, TpOccurrenceCredit.files_hash)
                 .all()
             )
 

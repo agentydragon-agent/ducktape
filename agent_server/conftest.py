@@ -38,6 +38,7 @@ TEST_BACKEND_SERVER_NAME = "backend"
 from agent_core_testing.fixtures import *  # noqa: E402, F403
 from agent_core_testing.responses import *  # noqa: E402, F403
 from mcp_infra.testing.fixtures import *  # noqa: E402, F403
+from openai_utils.testing.fixtures import *  # noqa: E402, F403
 
 
 def pytest_configure(config: pytest.Config) -> None:

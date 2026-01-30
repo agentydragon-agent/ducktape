@@ -160,6 +160,7 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        "//props:conftest",
         ":examples",
         ":models",
         ":query_builders",
@@ -179,8 +180,8 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":agent_definition_ids",
         ":conftest",
+        "//props:conftest",
         ":examples",
         ":models",
         "//props/core:splits",
@@ -200,6 +201,7 @@ py_test(
     tags = ["requires_docker"],
     deps = [
         ":conftest",
+        "//props:conftest",
         ":models",
         ":session",
         "@pypi//pydantic",
@@ -217,9 +219,9 @@ py_test(
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
-        ":agent_definition_ids",
         ":config",
         ":conftest",
+        "//props:conftest",
         ":examples",
         ":models",
         ":session",
@@ -227,6 +229,7 @@ py_test(
         "//props/critic_dev:shared",
         "//props/orchestration:agent_credentials",
         "//props/testing/fixtures:runs",
+        "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -242,6 +245,7 @@ py_test(
     deps = [
         ":config",
         ":conftest",
+        "//props:conftest",
         ":examples",
         ":models",
         ":session",

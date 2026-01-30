@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
 import pytest_bazel
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 from hamcrest.core.base_matcher import BaseMatcher
@@ -17,6 +16,7 @@ from agent_core.loop_control import RequireAnyTool
 from agent_core.testing.matchers import assert_function_call_output_structured
 from agent_core_testing.responses import EchoMock
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
+from openai_utils.testing.fixtures import ClientMode, mock_and_live
 
 # --- Hamcrest matchers ---
 
@@ -133,45 +133,29 @@ def assert_function_call_output_structured_local(
     assert_that(records, has_item(entry_matcher))
 
 
-# --- Mock execution tests ---
+# --- Mock/live execution tests ---
 
 
-async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
-    responses_factory, live_openai, mcp_tool_provider_echo, test_handlers, recording_handler
+@mock_and_live
+async def test_minicodex_executes_tool_and_returns_text(
+    mode: ClientMode,
+    responses_factory,
+    mcp_tool_provider_echo,
+    test_handlers,
+    recording_handler,
+    live_openai,
 ) -> None:
-    # Responses sequence:
-    # 1) Model asks to call echo.echo with {"text": "hi"}
-    # 2) Model returns a final assistant message "done"
+    if mode is ClientMode.MOCK:
 
-    @EchoMock.mock()
-    def mock(m: EchoMock):
-        yield
-        yield from m.echo_roundtrip("hi")
-        yield m.assistant_text("done")
+        @EchoMock.mock()
+        def mock(m: EchoMock):
+            yield
+            yield from m.echo_roundtrip("hi")
+            yield m.assistant_text("done")
 
-    client: OpenAIModelProto = mock
-
-    agent = await Agent.create(
-        tool_provider=mcp_tool_provider_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
-    )
-    agent.process_message(UserMessage.text("say hi"))
-
-    res = await agent.run()
-
-    # Verify final text returned
-    assert res.text.strip() == "done"
-    # Verify the handler saw a function_call_output with the expected structured content
-    assert_function_call_output_structured(recording_handler.records, has_entries(echo="hi"))
-
-
-# --- Live execution tests ---
-
-
-@pytest.mark.live_openai_api
-async def test_minicodex_with_live_api_executes_tool_and_returns_text(
-    responses_factory, live_openai, mcp_tool_provider_echo, test_handlers, recording_handler
-) -> None:
-    client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
+        client: OpenAIModelProto = mock
+    else:
+        client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
     agent = await Agent.create(
         tool_provider=mcp_tool_provider_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
