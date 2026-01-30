@@ -112,6 +112,7 @@ py_test(
         ":orchestration_fixtures",
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
+        "//props:conftest",
         "//props/core:agent_types",
         "//props/core:eval_api_models",
         "//props/core:ids",

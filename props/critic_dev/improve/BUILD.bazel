@@ -78,6 +78,7 @@ py_test(
     deps = [
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
+        "//props:conftest",
         "//props/db:agent_definition_ids",
         "//props/db:examples",
         "//props/db:models",

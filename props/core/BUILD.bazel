@@ -52,7 +52,6 @@ py_library(
     deps = [
         ":agent_types",
         "@pypi//aiodocker",
-        "@pypi//requests",
     ],
 )
 

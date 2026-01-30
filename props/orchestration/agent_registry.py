@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,6 +46,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 import aiodocker
+import requests
 from pydantic import BaseModel, Field
 
 from props.core.agent_types import (
@@ -57,7 +59,7 @@ from props.core.agent_types import (
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
-from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, resolve_image_ref
+from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, is_digest
 from props.core.splits import Split
 from props.critic_dev.improve.main import TerminationSuccess
 from props.critic_dev.shared import TargetMetric
@@ -135,6 +137,54 @@ class AgentRegistry:
     ) -> None:
         await self.close()
 
+    # --- Image Resolution ---
+
+    # TODO: Consider consolidating with resolve_image_ref_async in oci_utils.py
+    # (that one resolves via Docker daemon inspect/pull; this one resolves tags
+    # to digests via the registry proxy).
+
+    def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
+        """Resolve image reference to digest via registry proxy.
+
+        Uses self._db_config credentials for HTTP basic auth to the proxy.
+
+        Returns:
+            Digest (sha256:...) - either the provided digest or resolved from tag
+
+        Raises:
+            ValueError: If tag doesn't exist or proxy returns error
+        """
+        if is_digest(ref):
+            logger.debug(f"Reference {ref} is already a digest, returning as-is")
+            return ref
+
+        repository = str(agent_type)
+
+        proxy_url = os.environ.get("PROPS_REGISTRY_PROXY_URL", "http://localhost:8000")
+        manifest_url = f"{proxy_url}/v2/{repository}/manifests/{ref}"
+        headers = {"Accept": "application/vnd.oci.image.manifest.v1+json"}
+        auth = (self._db_config.user, self._db_config.password)
+
+        logger.info(f"Resolving tag {repository}:{ref} via proxy at {proxy_url}")
+
+        try:
+            resp = requests.head(manifest_url, headers=headers, auth=auth, timeout=10)
+        except requests.RequestException as e:
+            raise ValueError(f"Failed to resolve tag {repository}:{ref}: {e}")
+
+        if resp.status_code == 404:
+            raise ValueError(f"Image not found: {repository}:{ref}")
+
+        if resp.status_code != 200:
+            raise ValueError(f"Proxy returned error {resp.status_code} for {repository}:{ref}: {resp.text}")
+
+        digest = resp.headers.get("Docker-Content-Digest")
+        if not digest:
+            raise ValueError(f"Proxy didn't return Docker-Content-Digest header for {repository}:{ref}")
+
+        logger.info(f"Resolved {repository}:{ref} → {digest}")
+        return str(digest)
+
     # --- Execution Methods ---
 
     async def run_critic(
@@ -152,7 +202,7 @@ class AgentRegistry:
         agent_run_id = uuid4()
 
         # Resolve image reference to digest, then build full OCI reference
-        image_digest = resolve_image_ref(AgentType.CRITIC, image_ref)
+        image_digest = self._resolve_image_ref(AgentType.CRITIC, image_ref)
         image = build_oci_reference(AgentType.CRITIC, image_digest)
         logger.info(f"Resolved critic image {image_ref} → {image_digest}")
 
@@ -228,7 +278,7 @@ class AgentRegistry:
         logger.info(f"Prompt optimizer agent_run_id: {agent_run_id}")
 
         # Resolve image reference to digest and construct full OCI reference
-        image_digest = resolve_image_ref(AgentType.PROMPT_OPTIMIZER, image_ref)
+        image_digest = self._resolve_image_ref(AgentType.PROMPT_OPTIMIZER, image_ref)
         image = build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
         logger.info(f"Resolved prompt-optimizer image {image_ref} → {image}")
 
@@ -333,7 +383,7 @@ class AgentRegistry:
         logger.info(f"Output directory: {output_dir}")
 
         # Always use builtin improvement image
-        image_digest = resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
+        image_digest = self._resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
         image = build_oci_reference(AgentType.IMPROVEMENT, image_digest)
         logger.info(f"Using builtin improvement image: {image_digest}")
 
@@ -477,7 +527,7 @@ class AgentRegistry:
         agent_run_id = uuid4()
 
         # Resolve image reference to digest
-        image_digest = resolve_image_ref(AgentType.GRADER, image_ref)
+        image_digest = self._resolve_image_ref(AgentType.GRADER, image_ref)
         image = build_oci_reference(AgentType.GRADER, image_digest)
         logger.info(f"Resolved grader image {image_ref} → {image_digest}")
 
