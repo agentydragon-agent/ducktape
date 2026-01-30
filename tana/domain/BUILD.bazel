@@ -14,9 +14,7 @@ py_library(
     srcs = ["nodes.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":constants",
         ":types",
-        "//tana/graph:workspace",
         "@pypi//pydantic",
     ],
 )
