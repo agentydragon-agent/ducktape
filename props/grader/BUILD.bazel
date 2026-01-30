@@ -79,6 +79,7 @@ py_library(
         "//props/db:config",
         "//props/db:session",
         "@pypi//asyncpg",
+        "@pypi//asyncpg_stubs",
         "@pypi//jinja2",
     ],
 )
@@ -143,6 +144,7 @@ py_library(
         "//props/core:ids",
         "//props/db:config",
         "@pypi//asyncpg",
+        "@pypi//asyncpg_stubs",
     ],
 )
 
