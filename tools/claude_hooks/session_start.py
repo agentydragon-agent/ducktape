@@ -199,43 +199,56 @@ def format_environment_summary() -> str:
     return "\n".join(lines)
 
 
-def emit_session_context(collector: LogCollector, log_file: Path) -> None:
+def emit_session_context(
+    collector: LogCollector,
+    log_file: Path,
+    settings: HookSettings,
+    proxy: proxy_setup.ProxySetup,
+    podman: podman_service.PodmanSetup | None,
+) -> None:
     """Emit compact context summary for Claude Code transcript.
 
-    This goes to stdout and gets injected as context for the agent.
-    Includes any warnings/errors that occurred during setup.
+    This is the single place that renders agent-visible output from
+    structured setup results. Keep this tight — every line costs agent
+    context window.
     """
     has_errors = len(collector.errors) > 0
     has_warnings = len(collector.warnings) > 0
 
+    status = "ERRORS" if has_errors else "OK with warnings" if has_warnings else "OK"
     lines = [
-        f"Claude Code on the web (gVisor sandbox) [build: {BUILD_COMMIT}]",
-        "Status: " + ("ERRORS" if has_errors else "OK with warnings" if has_warnings else "OK"),
-        "Constraints:",
-        "  - TLS-inspecting proxy (custom CA configured)",
-        "  - No overlay filesystem (use vfs for containers)",
-        "  - Network via proxy only (no direct DNS)",
-        "  - 9p filesystem (no hard links on Unix sockets)",
+        f"Claude Code session start hook [build: {BUILD_COMMIT}] — {status}",
+        "Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs",
     ]
 
+    # Services — rendered here from structured data, not in each service module
+    lines.append(f"Bazel: wrapper adds auth proxy (port {proxy.port}, {proxy.ca_status})")
+    if podman:
+        lines.append(
+            f"Podman: {podman.status}, DOCKER_HOST={podman.socket_url}."
+            " Use fully qualified image names (docker.io/library/...)"
+        )
+
     if collector.errors:
-        lines.append("Errors:")
-        lines.extend(f"  - {msg}" for msg in collector.errors)
+        lines.append("ERRORS:")
+        lines.extend(f"  {msg}" for msg in collector.errors)
 
     if collector.warnings:
         lines.append("Warnings:")
-        lines.extend(f"  - {msg}" for msg in collector.warnings)
+        lines.extend(f"  {msg}" for msg in collector.warnings)
 
-    # Check for GitHub CI token
     if os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN"):
-        lines.append("GitHub CI Access:")
-        lines.append("  DUCKTAPE_CI_READ_GITHUB_TOKEN is set - GitHub PAT with read access to ducktape repo.")
+        lines.append("GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (PAT for agentydragon/ducktape).")
         lines.append(
-            "  Use via: curl -H 'Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN' https://api.github.com/..."
+            '  curl -s -H "Authorization: Bearer $DUCKTAPE_CI_READ_GITHUB_TOKEN"'
+            ' -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/...'
         )
-        lines.append("  Capabilities: read repo, read CI logs, list workflow runs, view PR status.")
+        lines.append(
+            "  Works: runs, jobs, run logs (zip), artifacts, PRs, issues."
+            " Does NOT work: /actions/jobs/{id}/logs (empty); use run-level zip."
+        )
 
-    lines.append(f"Full log: {log_file}")
+    lines.append(f"Setup log: {log_file}")
 
     print("\n".join(lines))
     sys.stdout.flush()
@@ -332,13 +345,10 @@ def setup_logging(settings: HookSettings) -> LogCollector:
     collector = LogCollector()
     collector.setFormatter(formatter)
 
-    # Configure root logger so all child loggers (proxy_setup, bazelisk_setup, etc.) inherit
+    # Configure root logger so all child loggers (proxy_setup, bazelisk_setup, etc.) inherit.
+    # Logs go to file only — stdout is reserved for structured agent context.
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(formatter)
-    root_logger.addHandler(stdout_handler)
 
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
@@ -558,35 +568,21 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     env_file.write_env_file(env_file_path, env_vars)
     logger.info("Wrote environment to %s", env_file_path)
 
-    # Emit status
+    # Emit status to log
     if isinstance(bazelisk_result, SkipError):
         bazel_status = "skipped"
     elif isinstance(bazelisk_result, BaseException):
         bazel_status = "not installed"
     else:
         bazel_status = bazelisk_result.status
-    # proxy_result is already narrowed to ProxySetup after the check above
-    proxy_status = proxy_result.status
-    ca_status = proxy_result.ca_status
-    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_status, ca_status)
+    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_result.status, proxy_result.ca_status)
     logger.info("Nix: %s", get_nix_status())
     if not isinstance(podman_result, BaseException):
         logger.info("Podman: %s", podman_result.status)
 
-    # Emit all collected guidance
-    if not isinstance(supervisor_task.result(), BaseException):
-        print(supervisor_task.result().guidance)
-        sys.stdout.flush()
-    # proxy_result is already narrowed to ProxySetup
-    proxy_guidance = proxy_result.guidance
-    if proxy_guidance:
-        print(proxy_guidance)
-        sys.stdout.flush()
-    if not isinstance(podman_result, BaseException):
-        print(podman_result.guidance)
-        sys.stdout.flush()
-
-    emit_session_context(collector, log_file)
+    # Render agent context from structured results
+    podman = None if isinstance(podman_result, BaseException) else podman_result
+    emit_session_context(collector=collector, log_file=log_file, settings=settings, proxy=proxy_result, podman=podman)
 
 
 async def async_main() -> None:
