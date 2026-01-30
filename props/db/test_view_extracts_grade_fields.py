@@ -50,7 +50,9 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         assert matching_occ_id is not None
 
         # Insert critic run (required for view join) using fixture factory
-        critic_run = make_fake_critic_run(session=session, example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED)
+        critic_run = make_fake_critic_run(
+            session=session, example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED
+        )
         session.add(critic_run)
         session.flush()
 
@@ -60,7 +62,10 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
 
         # Insert grader run with output using fixture factory
         grader_run = make_fake_grader_run(
-            session=session, snapshot_slug=example.snapshot_slug, model="test-grader-model", agent_run_id=grader_agent_run_id
+            session=session,
+            snapshot_slug=example.snapshot_slug,
+            model="test-grader-model",
+            agent_run_id=grader_agent_run_id,
         )
         session.add(grader_run)
         session.flush()

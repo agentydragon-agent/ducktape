@@ -93,17 +93,6 @@ py_test(
 )
 
 py_library(
-    name = "clients",
-    srcs = ["clients.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":engine",
-        "//agent_server/policies:policy_types",
-        "//mcp_infra/stubs:server_stubs",
-    ],
-)
-
-py_library(
     name = "engine",
     srcs = ["engine.py"],
     data = ["instructions.j2.md"],

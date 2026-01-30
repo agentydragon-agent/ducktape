@@ -80,7 +80,6 @@ dependencies = [
 
     # wt (worktree)
     "colorama>=0.4",
-    "pluggy>=1.3",
     "psutil>=5.9",
     "punq>=0.6.2",
     "reaktiv>=0.20",

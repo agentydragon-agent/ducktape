@@ -57,8 +57,8 @@ py_test(
     srcs = ["test_handlers.py"],
     deps = [
         ":handlers",
-        "//gatelet/server:conftest",
         "//gatelet/server:config",
+        "//gatelet/server:conftest",
         "//gatelet/server:models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -85,8 +85,8 @@ py_test(
     srcs = ["test_key_path_auth.py"],
     deps = [
         ":handlers",
-        "//gatelet/server:conftest",
         "//gatelet/server:config",
+        "//gatelet/server:conftest",
         "//gatelet/server:models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -99,8 +99,8 @@ py_test(
     srcs = ["test_webhook_auth.py"],
     deps = [
         ":webhook_auth",
-        "//gatelet/server:conftest",
         "//gatelet/server:config",
+        "//gatelet/server:conftest",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -4,8 +4,6 @@ load("@rules_python//python:defs.bzl", "py_library")
 
 # gazelle:map_kind py_binary py_library approve_all.py
 # gazelle:map_kind py_binary py_library default_policy.py
-# gazelle:map_kind py_binary py_library presets.py
-
 py_library(
     name = "approve_all",
     srcs = ["approve_all.py"],
@@ -39,16 +37,6 @@ py_library(
     srcs = ["policy_types.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "presets",
-    srcs = ["presets.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":approve_all",
-        ":scaffold",
-    ],
 )
 
 py_library(

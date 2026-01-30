@@ -88,7 +88,9 @@ def db_with_historical_runs(synced_test_db, sample_subtract_py_scope, calculator
         make_fake_critic_and_grader_run(example=example2, tp_occurrences=tp_occs2, credit=0.6, session=session)
         # train_example (test-trivial/add.py) - evaluated but in TRAIN split
         tp_occs_train = get_tp_occurrences_for_snapshot(train_example.snapshot_slug, session)
-        make_fake_critic_and_grader_run(example=train_example, tp_occurrences=tp_occs_train, credit=0.5, session=session)
+        make_fake_critic_and_grader_run(
+            example=train_example, tp_occurrences=tp_occs_train, credit=0.5, session=session
+        )
 
         session.commit()
 

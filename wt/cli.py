@@ -1,11 +1,8 @@
 """Thin CLI layer - just argument parsing and handler coordination (async Typer commands)."""
 
 import asyncio
-import inspect
-import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
 
 import click
 import typer
@@ -29,7 +26,6 @@ from wt.client.handlers import (
 )
 from wt.client.view_formatter import ViewFormatter
 from wt.client.wt_client import WtClient
-from wt.plugins import get_manager, get_plugin_commands
 from wt.shared.configuration import Configuration, load_config
 from wt.shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
 
@@ -115,16 +111,10 @@ def _root(
     ctx.obj["verbose"] = effective_verbose
     if ctx.invoked_subcommand is None:
         if ctx.args:
-            config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=effective_verbose)
+            config, formatter, daemon_client = _create_cli_dependencies(verbose=effective_verbose)
             asyncio.run(
                 _async_sh_main(
-                    ShellDispatchContext(
-                        daemon_client=daemon_client,
-                        formatter=formatter,
-                        config=config,
-                        plugin_manager=plugin_manager,
-                        ctx=ctx,
-                    ),
+                    ShellDispatchContext(daemon_client=daemon_client, formatter=formatter, config=config, ctx=ctx),
                     list(ctx.args) if ctx.args is not None else [],
                 )
             )
@@ -138,8 +128,7 @@ def _create_cli_dependencies(verbose: bool = False):
     formatter = ViewFormatter(daemon_log_path=config.daemon_log_file)
     configure_logging(log_level=LogLevel.INFO if verbose else LogLevel.WARNING)
     daemon_client = WtClient(config, verbose=verbose)
-    plugin_manager = get_manager(config)
-    return config, formatter, daemon_client, plugin_manager
+    return config, formatter, daemon_client
 
 
 @dataclass(frozen=True)
@@ -147,13 +136,12 @@ class ShellDispatchContext:
     daemon_client: WtClient
     formatter: ViewFormatter
     config: Configuration
-    plugin_manager: Any
     ctx: typer.Context
 
 
 async def _async_main(verbose: bool = False):
     """Async main function."""
-    _config, formatter, daemon_client, _plugin_manager = _create_cli_dependencies(verbose=verbose)
+    _config, formatter, daemon_client = _create_cli_dependencies(verbose=verbose)
     await handle_status(daemon_client, formatter)
 
 
@@ -243,22 +231,12 @@ async def _async_sh_main(dispatch_ctx: ShellDispatchContext, filtered_args):
     daemon_client = dispatch_ctx.daemon_client
     formatter = dispatch_ctx.formatter
     config = dispatch_ctx.config
-    plugin_manager = dispatch_ctx.plugin_manager
     ctx = dispatch_ctx.ctx
     if not filtered_args:
         await handle_status(daemon_client, formatter)
         return
 
     cmd, *remaining_args = filtered_args
-
-    # Plugin subcommand dispatch: wt <plugin> <args>
-    if (plugin_callable := get_plugin_commands(plugin_manager).get(cmd)) is not None:
-        result = plugin_callable(remaining_args, daemon_client, config)
-        if inspect.isawaitable(result):
-            result = await result
-        if isinstance(result, int):
-            sys.exit(result)
-        return
 
     # Handle special worktree names
     if cmd in MAIN_REPO_ALIASES:
@@ -290,11 +268,9 @@ async def cmd_sh(ctx: typer.Context):
     This enables shell operations like cd that can only be executed by the parent shell.
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
+    config, formatter, daemon_client = _create_cli_dependencies(verbose=verbose)
     await _async_sh_main(
-        ShellDispatchContext(
-            daemon_client=daemon_client, formatter=formatter, config=config, plugin_manager=plugin_manager, ctx=ctx
-        ),
+        ShellDispatchContext(daemon_client=daemon_client, formatter=formatter, config=config, ctx=ctx),
         (list(ctx.args) if ctx.args is not None else []),
     )
 

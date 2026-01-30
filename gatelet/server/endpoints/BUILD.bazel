@@ -100,8 +100,8 @@ py_test(
     srcs = ["test_activitywatch.py"],
     deps = [
         ":activitywatch",
-        "//gatelet/server:conftest",
         "//gatelet/server:config",
+        "//gatelet/server:conftest",
         "//gatelet/server/tests:activitywatch_sample",
         "@pypi//pytest_bazel",
     ],

@@ -6,7 +6,6 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":plugins",
         "//cli_util:decorators",
         "//cli_util:logging",
         "//wt/client:cd_utils",
@@ -27,17 +26,4 @@ py_binary(
     main = "__main__.py",
     visibility = ["//visibility:public"],
     deps = [":cli"],
-)
-
-py_library(
-    name = "demo_plugin",
-    srcs = ["demo_plugin.py"],
-    visibility = ["//:__subpackages__"],
-)
-
-py_library(
-    name = "plugins",
-    srcs = ["plugins.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pluggy"],
 )

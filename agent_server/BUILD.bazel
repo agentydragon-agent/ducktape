@@ -7,19 +7,6 @@ load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 exports_files(["conftest.py"])
 
-# UI assertion helpers for agent_server tests
-py_library(
-    name = "ui_asserts",
-    testonly = True,
-    srcs = ["ui_asserts.py"],
-    imports = [".."],
-    visibility = ["//agent_server:__subpackages__"],
-    deps = [
-        "//agent_server/server:state",
-        "@pypi//pyhamcrest",
-    ],
-)
-
 # Shared test fixtures for agent_server tests (requires Docker)
 # Subdirectory tests can depend on this to get access to conftest fixtures
 py_library(

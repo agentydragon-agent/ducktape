@@ -37,7 +37,7 @@ async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, temp_eng
         )
         assert other_example is not None, "Need another example for RLS test"
 
-        other_run = make_fake_critic_run(session=session,example=other_example, status=AgentRunStatus.IN_PROGRESS)
+        other_run = make_fake_critic_run(session=session, example=other_example, status=AgentRunStatus.IN_PROGRESS)
         session.add(other_run)
         session.commit()
         other_run_id = other_run.agent_run_id

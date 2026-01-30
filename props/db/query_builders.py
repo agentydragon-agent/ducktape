@@ -27,9 +27,9 @@ from props.db.models import (
     FalsePositive,
     FalsePositiveOccurrenceORM,
     LLMRunCost,
-    TpOccurrenceCredit,
     OccurrenceRangeORM,
     Snapshot,
+    TpOccurrenceCredit,
     TruePositive,
     TruePositiveOccurrenceORM,
 )

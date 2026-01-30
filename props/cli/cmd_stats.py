@@ -32,11 +32,11 @@ from props.db.models import (
     AgentDefinition,
     AgentRun,
     AgentRunStatus,
-    TpOccurrenceCredit,
     OccurrenceStatistics,
     RecallByDefinitionSplitKind,
     RecallByExample,
     Snapshot,
+    TpOccurrenceCredit,
 )
 from props.db.query_builders import query_recall_by_example
 from props.db.session import get_session
@@ -683,7 +683,9 @@ def cmd_stats(ctx: typer.Context) -> None:
                     func.count(func.distinct(TpOccurrenceCredit.occurrence_id)).label("n_occurrences"),
                 )
                 .filter(TpOccurrenceCredit.split == split)
-                .group_by(TpOccurrenceCredit.snapshot_slug, TpOccurrenceCredit.example_kind, TpOccurrenceCredit.files_hash)
+                .group_by(
+                    TpOccurrenceCredit.snapshot_slug, TpOccurrenceCredit.example_kind, TpOccurrenceCredit.files_hash
+                )
                 .all()
             )
 
