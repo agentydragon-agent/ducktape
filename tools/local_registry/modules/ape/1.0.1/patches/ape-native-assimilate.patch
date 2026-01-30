@@ -15,9 +15,9 @@ diff -ruN ape-v1.0.1/MODULE.bazel ape-v1.0.1-patched/MODULE.bazel
 +    },
 +)
 +
- 
+
  resolved = use_repo_rule("@toolchain_utils//toolchain/resolved:defs.bzl", "toolchain_resolved")
- 
+
 diff -ruN ape-v1.0.1/ape/assimilate/rule.bzl ape-v1.0.1-patched/ape/assimilate/rule.bzl
 --- ape-v1.0.1/ape/assimilate/rule.bzl	2025-02-12 16:53:31.000000000 +0000
 +++ ape-v1.0.1-patched/ape/assimilate/rule.bzl	2026-01-02 07:37:12.569036344 +0000

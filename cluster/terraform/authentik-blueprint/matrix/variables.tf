@@ -26,4 +26,3 @@ variable "matrix_url" {
   type        = string
   default     = "https://matrix.test-cluster.agentydragon.com"
 }
-

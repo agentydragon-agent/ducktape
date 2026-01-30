@@ -14,7 +14,7 @@
   [2m└── [0m[1;34mtests[0m               [32m+110[0m [31m-7[0m [32m               ▐████[0m[31m██                  [0m [36m 21.5%[0m
   [2m    [0m[2m├── [0mtest_main.py     [32m+40[0m [31m-2[0m [32m                  ▐█[0m[31m▌                   [0m [36m  7.7%[0m
   [2m    [0m[2m└── [0mtest_models.py   [32m+70[0m [31m-5[0m [32m                 ███[0m[31m█▍                  [0m [36m 13.8%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_config_variants[custom_bar_width-size-config6][custom_bar_width]
@@ -32,7 +32,7 @@
   [2m│   [0m[2m└── [0mtest_main.py     [32m+40[0m [31m-2[0m [32m                           ▐██[0m[31m▉                             [0m [36m  7.7%[0m
   [2m├── [0mdocs/api.md          [32m+25[0m    [32m                            ▐█[0m[31m                              [0m [36m  4.6%[0m
   [2m└── [0mREADME.md            [32m+20[0m [31m-3[0m [32m                            ▕█[0m[31m█▎                            [0m [36m  4.2%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_config_variants[default_rendering-size-None][default_rendering]
@@ -50,25 +50,25 @@
   [2m│   [0m[2m└── [0mtest_main.py     [32m+40[0m [31m-2[0m [32m                  ▐█[0m[31m▌                   [0m [36m  7.7%[0m
   [2m├── [0mdocs/api.md          [32m+25[0m    [32m                   █[0m[31m                    [0m [36m  4.6%[0m
   [2m└── [0mREADME.md            [32m+20[0m [31m-3[0m [32m                   ▉[0m[31m▉                   [0m [36m  4.2%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_config_variants[minimal-size-config5][minimal]
   '''
-  [1;34m_main[0m                  
-  [2m├── [0m[1;34msrc[0m                
-  [2m│   [0m[2m├── [0m[1;34mmodels[0m         
-  [2m│   [0m[2m│   [0m[2m├── [0muser.py    
-  [2m│   [0m[2m│   [0m[2m└── [0mpost.py    
-  [2m│   [0m[2m├── [0mapi/routes.py  
-  [2m│   [0m[2m├── [0mmain.py        
-  [2m│   [0m[2m└── [0mutils.py       
-  [2m├── [0m[1;34mtests[0m              
-  [2m│   [0m[2m├── [0mtest_models.py 
-  [2m│   [0m[2m└── [0mtest_main.py   
-  [2m├── [0mdocs/api.md        
-  [2m└── [0mREADME.md          
-  
+  [1;34m_main[0m
+  [2m├── [0m[1;34msrc[0m
+  [2m│   [0m[2m├── [0m[1;34mmodels[0m
+  [2m│   [0m[2m│   [0m[2m├── [0muser.py
+  [2m│   [0m[2m│   [0m[2m└── [0mpost.py
+  [2m│   [0m[2m├── [0mapi/routes.py
+  [2m│   [0m[2m├── [0mmain.py
+  [2m│   [0m[2m└── [0mutils.py
+  [2m├── [0m[1;34mtests[0m
+  [2m│   [0m[2m├── [0mtest_models.py
+  [2m│   [0m[2m└── [0mtest_main.py
+  [2m├── [0mdocs/api.md
+  [2m└── [0mREADME.md
+
   '''
 # ---
 # name: test_snapshot_config_variants[no_bars-size-config2][no_bars]
@@ -86,7 +86,7 @@
   [2m│   [0m[2m└── [0mtest_main.py     [32m+40[0m [31m-2[0m  [36m  7.7%[0m
   [2m├── [0mdocs/api.md          [32m+25[0m     [36m  4.6%[0m
   [2m└── [0mREADME.md            [32m+20[0m [31m-3[0m  [36m  4.2%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_config_variants[no_counts-size-config3][no_counts]
@@ -104,7 +104,7 @@
   [2m│   [0m[2m└── [0mtest_main.py   [32m                  ▐█[0m[31m▌                   [0m [36m  7.7%[0m
   [2m├── [0mdocs/api.md        [32m                   █[0m[31m                    [0m [36m  4.6%[0m
   [2m└── [0mREADME.md          [32m                   ▉[0m[31m▉                   [0m [36m  4.2%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_config_variants[no_percentages-size-config4][no_percentages]
@@ -122,7 +122,7 @@
   [2m│   [0m[2m└── [0mtest_main.py     [32m+40[0m [31m-2[0m [32m                  ▐█[0m[31m▌                   [0m
   [2m├── [0mdocs/api.md          [32m+25[0m    [32m                   █[0m[31m                    [0m
   [2m└── [0mREADME.md            [32m+20[0m [31m-3[0m [32m                   ▉[0m[31m▉                   [0m
-  
+
   '''
 # ---
 # name: test_snapshot_scenarios[binary_file-changes4][binary_file]
@@ -131,9 +131,9 @@
   [2m├── [0msrc/code.py         [32m+10[0m [31m-2[0m[32m      ▕█████████████[0m[31m█████████████▎      [0m [36m 66.7%[0m
   [2m├── [0mREADME.md            [32m+5[0m [31m-1[0m[32m             ▐██████[0m[31m██████▋             [0m [36m 33.3%[0m
   [2m└── [0m[1;34massets[0m                    [32m                    [0m[31m                    [0m [36m  0.0%[0m
-  [2m    [0m[2m├── [0mimage.png  [2m[Binary][0m   [32m                    [0m[31m                    [0m       
-  [2m    [0m[2m└── [0mdata.bin   [2m[Binary][0m   [32m                    [0m[31m                    [0m       
-  
+  [2m    [0m[2m├── [0mimage.png  [2m[Binary][0m   [32m                    [0m[31m                    [0m
+  [2m    [0m[2m└── [0mdata.bin   [2m[Binary][0m   [32m                    [0m[31m                    [0m
+
   '''
 # ---
 # name: test_snapshot_scenarios[deep_nesting-changes1][deep_nesting]
@@ -143,7 +143,7 @@
   [2m│   [0m[2m├── [0md/e/file.py  [32m+20[0m [31m-5[0m [32m           █████████[0m[31m██████████          [0m [36m 45.5%[0m
   [2m│   [0m[2m└── [0mx/y/file.py  [32m+15[0m [31m-3[0m [32m             ▐██████[0m[31m██████              [0m [36m 32.7%[0m
   [2m└── [0mfile.py          [32m+10[0m [31m-2[0m [32m               ▐████[0m[31m████                [0m [36m 21.8%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_scenarios[only_additions-changes2][only_additions]
@@ -152,7 +152,7 @@
   [2m├── [0mnew_file1.py       [32m+50[0m [32m          ██████████[0m[31m                    [0m [36m 50.0%[0m
   [2m├── [0mnew_file2.py       [32m+30[0m [32m              ██████[0m[31m                    [0m [36m 30.0%[0m
   [2m└── [0mdir/new_file3.py   [32m+20[0m [32m                ████[0m[31m                    [0m [36m 20.0%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_scenarios[only_deletions-changes3][only_deletions]
@@ -161,7 +161,7 @@
   [2m├── [0mold_file1.py       [31m-50[0m [32m                    [0m[31m██████████          [0m [36m 50.0%[0m
   [2m├── [0mold_file2.py       [31m-30[0m [32m                    [0m[31m██████              [0m [36m 30.0%[0m
   [2m└── [0mdir/old_file3.py   [31m-20[0m [32m                    [0m[31m████                [0m [36m 20.0%[0m
-  
+
   '''
 # ---
 # name: test_snapshot_scenarios[small_tree-changes0][small_tree]
@@ -169,6 +169,6 @@
   [1;34m_main[0m         [32m+15[0m [31m-3[0m[32m████████████████████[0m[31m████████████████████[0m [36m100.0%[0m
   [2m├── [0mmain.py   [32m+10[0m [31m-2[0m[32m      ▕█████████████[0m[31m█████████████▎      [0m [36m 66.7%[0m
   [2m└── [0mutils.py   [32m+5[0m [31m-1[0m[32m             ▐██████[0m[31m██████▋             [0m [36m 33.3%[0m
-  
+
   '''
 # ---

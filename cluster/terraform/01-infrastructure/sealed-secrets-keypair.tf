@@ -33,4 +33,3 @@ resource "random_string" "key_suffix" {
   special = false
   upper   = false
 }
-

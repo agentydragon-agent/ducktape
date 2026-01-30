@@ -39,9 +39,8 @@ repos:
       # 'main' and 'master' are protected by default.
       - id: no-commit-to-branch
 
-      # XXX: disable for tanapaste
-      # - id: trailing-whitespace
-      # - id: end-of-file-fixer  # files end always in newline
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
 
       - id: check-merge-conflict
 
