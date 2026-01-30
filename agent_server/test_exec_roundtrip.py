@@ -13,7 +13,8 @@ from agent_core.agent import Agent, AgentResult
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core_testing.responses import DecoratorMock, tool_roundtrip
+from agent_core.testing.mcp.responses import MCPDecoratorMock
+from agent_core.testing.responses import tool_roundtrip
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
 from mcp_infra.naming import build_mcp_function
@@ -47,8 +48,8 @@ async def test_llm_exec_echo(mode: ClientMode, mcp_client_box, live_openai_model
     """LLM calls box__exec to echo hello, agent returns stdout."""
     if mode is ClientMode.MOCK:
 
-        @DecoratorMock.mock()
-        def mock(m: DecoratorMock):
+        @MCPDecoratorMock.mock()
+        def mock(m: MCPDecoratorMock):
             yield
             call = m.mcp_tool_call(SERVER_NAME, "exec", make_exec_input(ECHO_CMD))
             result: BaseExecResult = yield from tool_roundtrip(call, BaseExecResult)

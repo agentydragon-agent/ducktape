@@ -1,20 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
-py_library(
-    name = "claude_optimizer",
-    srcs = [
-        "generic_graders.py",
-        "requirement_templates.py",
-        "scoresheet.py",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":generic_graders",
-        ":scoresheet",
-        "@pypi//openai",
-        "@pypi//pydantic",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets like :generic_graders, :scoresheet
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "generic_graders",
@@ -25,13 +12,6 @@ py_library(
         "@pypi//openai",
         "@pypi//pydantic",
     ],
-)
-
-py_library(
-    name = "requirement_templates",
-    srcs = ["requirement_templates.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":generic_graders"],
 )
 
 py_library(

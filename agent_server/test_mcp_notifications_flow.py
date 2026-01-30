@@ -10,7 +10,7 @@ from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core_testing.responses import ResponsesFactory
+from agent_core.testing.mcp.responses import MCPResponsesFactory
 from agent_server.notifications.handler import NotificationsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mcp_types import SimpleOk
@@ -95,7 +95,7 @@ async def _make_agent_with_notifications(mcp_client, buf, client):
 
 
 async def test_notifications_pre_sampling_out_of_band(
-    server: FastMCP, responses_factory: ResponsesFactory, make_buffered_client
+    server: FastMCP, responses_factory: MCPResponsesFactory, make_buffered_client
 ) -> None:
     # Buffered client path via shared fixture
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
@@ -123,7 +123,7 @@ async def test_notifications_pre_sampling_out_of_band(
 
 
 async def test_notifications_within_turn_from_tool(
-    server: FastMCP, responses_factory: ResponsesFactory, make_buffered_client
+    server: FastMCP, responses_factory: MCPResponsesFactory, make_buffered_client
 ):
     # Build notifier server and manager
     stage = {"n": 0}
@@ -155,7 +155,7 @@ async def test_notifications_within_turn_from_tool(
         )
 
 
-async def test_notifications_broadcast_outside_tool(responses_factory: ResponsesFactory, make_buffered_client):
+async def test_notifications_broadcast_outside_tool(responses_factory: MCPResponsesFactory, make_buffered_client):
     # Server that can broadcast notifications outside a tool
     # Pass explicit version to avoid importlib.metadata.version() call which hangs under pytest-xdist
     server = EnhancedFastMCP(name="notifier", instructions="Notifier test", version="1.0.0-test")

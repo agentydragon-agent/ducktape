@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_bazel
 
-from agent_core_testing.responses import EchoMock
-from agent_core_testing.steps import EmptyArgs
+from agent_core.direct_provider import EmptyArgs
+from agent_core.testing.mcp.responses import EchoMock
 from mcp_infra.constants import UI_MOUNT_PREFIX
 
 # Skip if Playwright is not installed

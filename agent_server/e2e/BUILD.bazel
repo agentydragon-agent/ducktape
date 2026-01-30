@@ -23,8 +23,8 @@ py_test(
     tags = ["manual"],
     deps = [
         ":conftest",
-        "//agent_core_testing:responses",
-        "//agent_core_testing:steps",
+        "//agent_core:direct_provider",
+        "//agent_core/testing/mcp:responses",
         "//mcp_infra:constants",
         "@pypi//playwright",
         "@pypi//pytest",
@@ -39,7 +39,7 @@ py_test(
     tags = ["manual"],
     deps = [
         ":conftest",
-        "//agent_core_testing:responses",
+        "//agent_core/testing/mcp:responses",
         "//agent_server/mcp/approval_policy:engine",
         "//agent_server/runtime:container",
         "//mcp_infra:constants",
@@ -58,7 +58,7 @@ py_test(
     tags = ["manual"],
     deps = [
         ":conftest",
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
         "//agent_server/mcp/approval_policy:engine",
         "//agent_server/mcp/ui",
         "//mcp_infra:constants",
@@ -76,7 +76,7 @@ py_test(
     tags = ["manual"],
     deps = [
         ":conftest",
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
         "//agent_server/mcp/ui",
         "//mcp_infra:constants",
         "//mcp_infra:naming",

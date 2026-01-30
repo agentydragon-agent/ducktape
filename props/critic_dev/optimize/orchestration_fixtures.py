@@ -20,7 +20,7 @@ from uuid import UUID
 import aiodocker
 import uvicorn
 
-from agent_core_testing.responses import PlayGen
+from agent_core.testing.responses import PlayGen
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import app as backend_app
 from props.db.config import DatabaseConfig

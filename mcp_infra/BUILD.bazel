@@ -9,7 +9,8 @@ py_library(
     deps = [
         ":_markers",
         ":conftest",
-        "//agent_core_testing:fixtures",
+        "//agent_core/testing:fixtures",
+        "//agent_core/testing/mcp:fixtures",
         "//mcp_infra/exec:docker",
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
@@ -36,16 +37,6 @@ py_library(
     srcs = ["_markers.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//pytest"],
-)
-
-py_library(
-    name = "calltool",
-    srcs = ["calltool.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//mcp",
-        "@pypi//pydantic",
-    ],
 )
 
 py_library(
@@ -178,7 +169,8 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
-        "//agent_core_testing:fixtures",
+        "//agent_core/testing:fixtures",
+        "//agent_core/testing/mcp:fixtures",
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

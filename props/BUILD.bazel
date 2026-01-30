@@ -14,8 +14,10 @@ py_library(
     imports = [".."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//agent_core_testing:fixtures",
-        "//agent_core_testing:responses",
+        "//agent_core/testing:fixtures",
+        "//agent_core/testing:responses",
+        "//agent_core/testing/mcp:fixtures",
+        "//agent_core/testing/mcp:responses",
         "//mcp_infra/testing:fixtures",
         "//props/testing",
         "//props/testing/fixtures:db",

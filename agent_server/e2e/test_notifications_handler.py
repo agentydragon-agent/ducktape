@@ -9,7 +9,7 @@ from hamcrest import assert_that, has_item
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 
-from agent_core_testing.responses import DecoratorMock
+from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_server.mcp.approval_policy.engine import SetPolicyTextArgs
 from agent_server.runtime.container import build_container
 from mcp_infra.constants import APPROVAL_ADMIN_MOUNT_PREFIX
@@ -40,8 +40,8 @@ class IsSystemNotification(BaseMatcher):
 async def test_notifications_handler_in_container_inserts_system_message(
     docker_client, async_docker_client, sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str
 ) -> None:
-    @DecoratorMock.mock()
-    def mock(m: DecoratorMock):
+    @MCPDecoratorMock.mock()
+    def mock(m: MCPDecoratorMock):
         # First turn: receive request, return admin_set_policy tool call
         _ = yield
         set_policy_call = m.mcp_tool_call(

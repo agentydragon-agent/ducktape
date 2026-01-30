@@ -13,24 +13,8 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 # Gazelle manages grading/ and runners/ subpackages
 
-# Aggregate target combining all subpackages - for backwards compatibility
-py_library(
-    name = "inop",
-    imports = [".."],
-    tags = ["no-mypy"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":config",
-        ":model_factory",
-        ":plots",
-        "//inop/grading:grader",
-        "//inop/grading:strategies",
-        "//inop/runners:base",
-        "//inop/runners:claude_runner",
-        "//inop/runners:containerized_claude",
-        "//inop/runners:openai_runner",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets like :config, :model_factory, etc.
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_test(
     name = "test_optimizer_two_iters",
@@ -99,7 +83,8 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
+        "//agent_core/testing/mcp:responses",
         "//inop:config",
         "@pypi//pytest",
     ],

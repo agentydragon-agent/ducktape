@@ -265,7 +265,7 @@ py_test(
     deps = [
         ":eval_api_models",
         ":ids",
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
         "//props/core/models:examples",

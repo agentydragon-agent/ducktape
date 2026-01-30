@@ -30,14 +30,7 @@ class EchoOutput(OpenAIStrictModeBaseModel):
 
 
 def make_echo_server(name: str = "echo") -> FlatModelMixin:
-    """Create a FastMCP server with an echo tool.
-
-    Args:
-        name: Server name (default: "echo")
-
-    Returns:
-        FastMCP server instance with echo tool registered
-    """
+    """Create a FastMCP server with an echo tool."""
     server = FlatModelMixin(name)
 
     @server.flat_model()

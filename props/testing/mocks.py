@@ -5,7 +5,8 @@ from uuid import UUID
 
 from pydantic import TypeAdapter
 
-from agent_core_testing.responses import DecoratorMock
+from agent_core.testing.mcp.responses import MCPDecoratorMock
+from agent_core.testing.responses import DecoratorMock
 from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage
 from props.grader.tools import FillRemainingArgs, ListPendingArgs, PendingEdge
@@ -35,7 +36,7 @@ def get_system_message_text(req: ResponsesRequest) -> str:
     return "\n".join(parts)
 
 
-class PropsMock(DecoratorMock):
+class PropsMock(MCPDecoratorMock):
     """Mock with props-specific helpers (psql, etc.)."""
 
     def psql_roundtrip(

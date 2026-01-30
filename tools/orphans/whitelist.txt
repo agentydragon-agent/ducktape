@@ -65,14 +65,11 @@ found/**
 ansible/**
 nix/**
 dotfiles/**
-cluster/**
 k8s-old/**
 # finance/worthy uses Go, not Bazelized for Go yet
 finance/worthy/**
-finance/reconcile/**
 
-# Experimental/investigation directories
-experimental/**
+# investigations/ - ad-hoc analysis, not buildable
 investigations/**
 
 # Website (Hakyll, not Bazelized)
@@ -124,31 +121,16 @@ flake.lock
 # === Legacy/Archived Directories ===
 nonrcm-dotfiles/**
 terraform/**
-tana/**
 trilium/**
-sysrw/**
-
-# === Intentionally Outside Bazel (external ecosystems) ===
-homeassistant/**
-inventree_utils/**
 
 # === Partially Bazelized - specific orphan files ===
-# ember/ - OCI image migrated, but core Python not yet in BUILD
+# ember/ - most Python Bazelized, these remain outside BUILD
 ember/__init__.py
-ember/__main__.py
-ember/app.py
-ember/config.py
-ember/handlers.py
 ember/integrations/__init__.py
 ember/integrations/gitea.py
-ember/matrix_client.py
-ember/mcp_tools.py
 ember/resources/examples/matrix-client/quickstart.py
 ember/runtime/__init__.py
 ember/runtime/python_session.py
-ember/secrets.py
-ember/system_prompt.py
-ember/test_*.py
 
 # llm/ - mostly bazelized, these specific files are examples/scripts
 llm/ducktape_llm_common/examples/complex_predicate.py
@@ -188,15 +170,23 @@ TODO
 **/todo-*
 **/pytest-todo
 
-# === Not-yet-Bazelized packages ===
-# gatelet/ - server/ is bazelized, root files are orphans
-gatelet/aw_summary.py
-gatelet/tasks.py
+# finance/reconcile - partially Bazelized, one file remains
+finance/reconcile/external_expense.py
+
+# gatelet Makefile (not Python, but tracked here)
 gatelet/Makefile
 
-openai_utils/**
-sandboxed_jupyter/**
+# cluster/ - Bazelized for validation scripts, but terraform scripts are standalone
+cluster/terraform/**
 
-# Root conftest.py (pytest autodiscovery)
-conftest.py
-*/conftest.py
+# Extensionless scripts and misc non-code files
+*.service
+*.hcl
+**/README
+cluster/k8s/agents/devbot/docker/desktop/xstartup
+cluster/scripts/get-passwords
+experimental/make-grid-pdf
+experimental/prompt
+experimental/webcam-record
+inventree_utils/rescap
+inventree_utils/server-post-receive

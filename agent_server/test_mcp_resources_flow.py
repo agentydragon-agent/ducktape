@@ -9,7 +9,7 @@ from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core_testing.responses import DecoratorMock
+from agent_core.testing.mcp.responses import MCPDecoratorMock
 from mcp_infra.compositor.resources_server import ResourcesReadArgs
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.prefix import MCPMountPrefix
@@ -27,8 +27,8 @@ async def test_model_reads_container_info_with_stubbed_openai(
     # Get container info URI from server instance (convert to string)
     container_info_uri = str(docker_exec_server_py312slim.container_info_resource.uri)
 
-    @DecoratorMock.mock()
-    def mock(m: DecoratorMock):
+    @MCPDecoratorMock.mock()
+    def mock(m: MCPDecoratorMock):
         # First turn: receive request, return tool call
         _ = yield
         tool_call = m.mcp_tool_call(

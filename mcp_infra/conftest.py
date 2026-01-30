@@ -3,7 +3,8 @@
 import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from agent_core_testing.fixtures import *  # noqa: F403
+from agent_core.testing.fixtures import *  # noqa: F403
+from agent_core.testing.mcp.fixtures import *  # noqa: F403
 from mcp_infra.testing.fixtures import *  # noqa: F403
 
 

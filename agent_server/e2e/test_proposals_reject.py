@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 import pytest_bazel
 
-from agent_core_testing.responses import DecoratorMock
+from agent_core.testing.responses import DecoratorMock
 from agent_server.mcp.approval_policy.engine import CreateProposalArgs
 from agent_server.mcp.ui.server import EndTurnInput
 from mcp_infra.constants import POLICY_PROPOSER_MOUNT_PREFIX, UI_MOUNT_PREFIX

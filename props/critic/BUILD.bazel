@@ -140,7 +140,7 @@ py_test(
     ],
     deps = [
         ":conftest",
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
         "//props/db:agent_definition_ids",

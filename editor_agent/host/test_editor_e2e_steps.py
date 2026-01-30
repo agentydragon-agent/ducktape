@@ -4,7 +4,8 @@ import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
-from agent_core_testing.responses import DecoratorMock, PlayGen
+from agent_core.testing.mcp.responses import MCPDecoratorMock
+from agent_core.testing.responses import PlayGen
 from editor_agent.host.agent_runner import run_editor_docker_agent
 from editor_agent.host.submit_server import SubmitStateSuccess
 from mcp_infra.exec.matchers import exited_successfully
@@ -17,8 +18,8 @@ async def test_editor_step_sequence(tmp_path, async_docker_client, editor_image_
     target = tmp_path / fname
     target.write_text("hello", encoding="utf-8")
 
-    @DecoratorMock.mock()
-    def mock(m: DecoratorMock) -> PlayGen:
+    @MCPDecoratorMock.mock()
+    def mock(m: MCPDecoratorMock) -> PlayGen:
         yield None  # First request
         # Edit the file
         result = yield from m.docker_exec_roundtrip(["sh", "-c", f"echo 'modified content' > /workspace/{fname}"])

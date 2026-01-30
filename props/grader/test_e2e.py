@@ -23,7 +23,7 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from agent_core_testing.responses import PlayGen
+from agent_core.testing.responses import PlayGen
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
@@ -85,7 +85,11 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
         critic_run_id = uuid4()
         with get_session() as session:
             critic_run = make_fake_critic_run(
-                session=session, example=all_files_scope, model=stack.model, status=AgentRunStatus.COMPLETED, agent_run_id=critic_run_id
+                session=session,
+                example=all_files_scope,
+                model=stack.model,
+                status=AgentRunStatus.COMPLETED,
+                agent_run_id=critic_run_id,
             )
             session.add(critic_run)
             session.flush()

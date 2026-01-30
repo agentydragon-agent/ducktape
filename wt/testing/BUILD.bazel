@@ -20,11 +20,6 @@ py_library(
 )
 
 py_library(
-    name = "constants",
-    srcs = ["constants.py"],
-)
-
-py_library(
     name = "data",
     srcs = ["data.py"],
     deps = ["@pypi//pygit2"],

@@ -1,13 +1,7 @@
-"""Portable pytest fixtures for agent tests.
+"""MCP-dependent pytest fixtures for agent tests.
 
-Register in downstream packages via:
-    pytest_plugins = [
-        "agent_core_testing.fixtures",
-        "agent_core_testing.responses",
-    ]
-
-For compositor fixtures, also register:
-    pytest_plugins = ["mcp_infra.testing.fixtures"]
+Register in downstream packages via conftest.py:
+    from agent_core.testing.mcp.fixtures import *  # noqa: F403
 """
 
 from __future__ import annotations
@@ -21,16 +15,10 @@ from fastmcp.server import FastMCP
 
 from agent_core.events import ToolCall
 from agent_core.mcp_provider import MCPToolProvider
-
-# Re-export from new canonical location
-from agent_core.testing.fixtures import RecordingHandler, recording_handler, test_handlers  # noqa: F401
+from agent_core.testing.mcp.echo_server import make_echo_server
 from agent_core.tool_provider import ToolProvider
-from agent_core_testing.echo_server import make_echo_server
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-
-# ---- OpenAI model factories ----
-
 
 # ---- MCP fixtures ----
 # Note: compositor and compositor_client fixtures are in mcp_infra.testing.fixtures
@@ -80,18 +68,6 @@ def mcp_tool_provider_echo(mcp_client_echo) -> ToolProvider:
 
 
 @pytest.fixture
-def call_id_gen() -> Callable[[], str]:
-    """Lightweight call_id generator for tests."""
-    counter = {"count": 0}
-
-    def _gen() -> str:
-        counter["count"] += 1
-        return f"test_call:{counter['count']}"
-
-    return _gen
-
-
-@pytest.fixture
 def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
     """Factory for ToolCall events with auto call_id generation."""
 
@@ -100,5 +76,3 @@ def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
         return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
 
     return _make
-
-

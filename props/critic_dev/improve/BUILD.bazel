@@ -61,16 +61,6 @@ pkg_tar(
     visibility = ["//props:__subpackages__"],
 )
 
-py_library(
-    name = "improve_agent",
-    srcs = ["improve_agent.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/orchestration:agent_registry",
-    ],
-)
-
 py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
@@ -86,7 +76,7 @@ py_test(
         "requires_docker",
     ],
     deps = [
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props/db:agent_definition_ids",
         "//props/db:examples",

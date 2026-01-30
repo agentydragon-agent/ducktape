@@ -1,18 +1,7 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary")
 
-py_library(
-    name = "ultra_long_cot_lib",
-    srcs = [
-        "ultra_long_cot.py",
-        "ultra_long_cot_o4.py",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//openai",
-        "@pypi//pydantic",
-        "@pypi//tiktoken",
-    ],
-)
+# NOTE: No aggregator target - use specific per-file targets like :ultra_long_cot, :ultra_long_cot_o4
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_binary(
     name = "ultra_long_cot",

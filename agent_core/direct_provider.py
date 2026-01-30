@@ -47,7 +47,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, get_type_hints, overload
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from pydantic_core import to_jsonable_python
 
 from agent_core.tool_provider import ToolResult, ToolSchema
@@ -58,8 +58,10 @@ ToolReturn = ToolResult | str | BaseModel | list | None
 ToolFn = Callable[..., ToolReturn | Awaitable[ToolReturn]]
 
 
-class _EmptyArgs(BaseModel):
-    """Singleton empty args model for zero-arg tools."""
+class EmptyArgs(BaseModel):
+    """Empty args model for zero-parameter tools."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 @dataclass(slots=True)
@@ -111,7 +113,7 @@ class DirectToolProvider:
 
             if not params:
                 # Zero-arg tool - use singleton empty args model
-                param_type: type[BaseModel] = _EmptyArgs
+                param_type: type[BaseModel] = EmptyArgs
             else:
                 first_param = params[0]
                 param_type_hint = hints.get(first_param.name)
@@ -155,7 +157,7 @@ class DirectToolProvider:
 
         # Call tool function, wrapping errors as ToolResult.error
         try:
-            result = tool.fn() if tool.parameters is _EmptyArgs else tool.fn(validated_args)
+            result = tool.fn() if tool.parameters is EmptyArgs else tool.fn(validated_args)
             if isinstance(result, Awaitable):
                 result = await result
         except Exception as e:

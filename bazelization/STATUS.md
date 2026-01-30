@@ -77,14 +77,14 @@ Unified Bazel build system for all Python packages:
 
 ### Multi-Language Coverage Summary
 
-| Language   | Total | In Bazel | Whitelisted | Orphan | Coverage |
-| ---------- | ----- | -------- | ----------- | ------ | -------- |
-| Python     | 1030  | 976      | 53          | 1      | 94.8%    |
-| Rust       | 21    | 21       | 0           | 0      | 100%     |
-| TypeScript | 36    | -        | 36          | -      | -        |
-| JavaScript | 14    | -        | 14          | -      | -        |
+| Language   | Total | In Bazel | Whitelisted | Orphan | Coverage                                                                                |
+| ---------- | ----- | -------- | ----------- | ------ | --------------------------------------------------------------------------------------- |
+| Python     | 1036  | 944      | 69          | 23     | 91.1% (unchanged — whitelist cleanup reclassified orphans, didn't change Bazel targets) |
+| Rust       | 21    | 21       | 0           | 0      | 100%                                                                                    |
+| TypeScript | 36    | -        | 36          | -      | -                                                                                       |
+| JavaScript | 14    | -        | 14          | -      | -                                                                                       |
 
-**Bazel Targets:** 183 py_library, 115 py_test
+**Bazel Targets:** 634 py_library, 234 py_test
 
 Run `bazel run //tools/orphans:find_orphans` to list orphaned files.
 
@@ -118,25 +118,28 @@ Run `bazel run //tools/orphans:find_orphans` to list orphaned files.
 
 ### In Progress / Partial
 
-- Docker images: 7 migrated to rules_oci, 4 pending (see inventory below)
+- Docker images: 14 migrated to rules_oci, 1 pending (see inventory below)
 - Website uses Hakyll/stack (very slow Haskell builds)
 
 ### Docker Images Inventory
 
-| Image               | Location                                   | Status      | Notes                                                      |
-| ------------------- | ------------------------------------------ | ----------- | ---------------------------------------------------------- |
-| `editor_agent`      | `editor_agent/runtime/`                    | ✅ Migrated | `bazel build //editor_agent/runtime:image`                 |
-| `runtime`           | `docker/runtime/`                          | ✅ Migrated | `bazel build //docker/runtime:image`                       |
-| `rspcache`          | `rspcache/`                                | ✅ Migrated | `bazel build //rspcache:image`                             |
-| `gatelet`           | `gatelet/`                                 | ✅ Migrated | `bazel build //gatelet:image`                              |
-| `webhook_inbox`     | `experimental/webhook_inbox/`              | ✅ Migrated | `bazel build //experimental/webhook_inbox:image`           |
-| `ember`             | `ember/`                                   | ✅ Migrated | `bazel build //ember:image`                                |
-| `html`              | `llm/html/`                                | ✅ Migrated | `bazel build //llm/html:image`                             |
-| `properties-critic` | `docker/llm/properties-critic/`            | ❌ Deleted  | Orphaned, never used                                       |
-| `openai_utils`      | `openai_utils/docker/`                     | ❌ Deleted  | Probe module never implemented                             |
-| `claude_optimizer`  | `claude/claude_optimizer/docker/`          | Pending     | 8 variant images                                           |
-| `props agents`      | `props/core/agent_defs/`                   | ✅ Migrated | critic (5 variants), grader, improvement, prompt_optimizer |
-| `molecule`          | `ansible/molecule/github_release_plugins/` | Skip        | Ansible testing                                            |
+| Image              | Location                                   | Status      | Notes                                            |
+| ------------------ | ------------------------------------------ | ----------- | ------------------------------------------------ |
+| `editor_agent`     | `editor_agent/runtime/`                    | ✅ Migrated | `bazel build //editor_agent/runtime:image`       |
+| `agent_server`     | `agent_server/`                            | ✅ Migrated | `bazel build //agent_server:image`               |
+| `rspcache`         | `rspcache/`                                | ✅ Migrated | `bazel build //rspcache:image`                   |
+| `gatelet`          | `gatelet/`                                 | ✅ Migrated | `bazel build //gatelet:image`                    |
+| `webhook_inbox`    | `experimental/webhook_inbox/`              | ✅ Migrated | `bazel build //experimental/webhook_inbox:image` |
+| `ember`            | `ember/`                                   | ✅ Migrated | `bazel build //ember:image`                      |
+| `html`             | `llm/html/`                                | ✅ Migrated | `bazel build //llm/html:image`                   |
+| `props backend`    | `props/backend/`                           | ✅ Migrated | `bazel build //props/backend:image`              |
+| `props cli`        | `props/cli/`                               | ✅ Migrated | `bazel build //props/cli:image`                  |
+| `props critic`     | `props/critic/`                            | ✅ Migrated | `bazel build //props/critic:image`               |
+| `props grader`     | `props/grader/`                            | ✅ Migrated | `bazel build //props/grader:image`               |
+| `props improve`    | `props/critic_dev/improve/`                | ✅ Migrated | `bazel build //props/critic_dev/improve:image`   |
+| `props optimize`   | `props/critic_dev/optimize/`               | ✅ Migrated | `bazel build //props/critic_dev/optimize:image`  |
+| `claude_optimizer` | `claude/claude_optimizer/docker/`          | Pending     | 8 variant Dockerfiles (go, node, python, etc.)   |
+| `molecule`         | `ansible/molecule/github_release_plugins/` | Skip        | Ansible testing                                  |
 
 **Migration notes:**
 
@@ -155,14 +158,12 @@ Run `bazel run //tools/orphans:find_orphans` to list orphaned files.
 
 ### Manual Targets (require special environment)
 
-| Target                                       | Reason                             |
-| -------------------------------------------- | ---------------------------------- |
-| `//claude/claude_optimizer:test_integration` | Requires docker/external resources |
-| `//experimental/cotrl:test_llm_rl_minimal`   | Requires OPENAI_API_KEY            |
-| `//gnome-terminal-profile-switcher:*`        | Requires DBUS/GNOME session        |
-| `//homeassistant/iaqi:requirements*`         | Separate requirements lock         |
-| `//mcp_starter:test_integration`             | Requires running MCP server        |
-| `//website:*`                                | Haskell/stack build system         |
+| Target                                     | Reason                      |
+| ------------------------------------------ | --------------------------- |
+| `//experimental/cotrl:test_llm_rl_minimal` | Requires OPENAI_API_KEY     |
+| `//gnome_terminal_profile_switcher:*`      | Requires DBUS/GNOME session |
+| `//mcp_starter:integration_test`           | Requires running MCP server |
+| `//website:*`                              | Haskell/stack build system  |
 
 ### Pending Migration Tasks
 
@@ -180,7 +181,7 @@ Non-Bazelized shell scripts that are intentionally outside the build system:
 
 #### Docker Images Pending (from inventory above)
 
-- `claude_optimizer` (8 variant images)
+- `claude_optimizer` (8 variant Dockerfiles: claude-base, go, node, python, python-data, ruby, rust, system)
 
 ## Package Structure
 
@@ -349,7 +350,7 @@ Ruff is managed via `rules_multitool` with a custom lockfile:
 
 **Location:** `tools/multitool/lockfile.json`
 
-**Current version:** 0.14.0 (aspect_rules_lint bundles 0.8.3, we override for newer features)
+**Current version:** 0.14.0 in multitool lockfile, 0.14.6 in pre-commit hook (aspect_rules_lint bundles 0.8.3, we override for newer features)
 
 **Lockfile format:**
 
@@ -629,9 +630,9 @@ Benefits (once working):
 
 ## Non-Bazel Infrastructure Inventory
 
-### pyproject.toml Files (39 packages)
+### pyproject.toml Files (2 remaining)
 
-Each package has a pyproject.toml with varying content:
+Most per-package pyproject.toml files have been removed. Remaining:
 
 | Content Type          | Purpose              | Target State                        |
 | --------------------- | -------------------- | ----------------------------------- |
@@ -668,26 +669,28 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 
 - Safety checks (no-commit-to-branch, check-merge-conflict, syntax validation)
 - Ansible syntax checking (ansible-syntax-check)
-- Bazel lint via `tools/hooks/lint-staged.sh` (runs `bazel lint` on staged files)
+- Bazel format/lint via `bazel-precommit` local hook
+- Ruff check with autofix
 
-**Migration status for pre-commit hooks:**
+**Current pre-commit hooks:**
 
-| Hook                   | Purpose               | Bazel Equivalent                                | Status             |
-| ---------------------- | --------------------- | ----------------------------------------------- | ------------------ |
-| `no-commit-to-branch`  | Block commits to main | N/A (git hook)                                  | Keep in pre-commit |
-| `check-ast`            | Valid Python syntax   | `bazel build` catches                           | Redundant          |
-| `check-yaml`           | Valid YAML            | N/A                                             | Keep in pre-commit |
-| `check-toml`           | Valid TOML            | N/A                                             | Keep in pre-commit |
-| `yamllint`             | YAML style            | `bazel test //ansible:yamllint_test`            | ✅ Migrated        |
-| `ansible-syntax-check` | Ansible validation    | N/A                                             | Keep in pre-commit |
-| `ruff-check`           | Linting               | `bazel lint //...`                              | ✅ Migrated        |
-| `ruff-format`          | Formatting            | `bazel lint //...`                              | ✅ Migrated        |
-| `mypy` (12 configs)    | Type checking         | `bazel build --config=typecheck`                | ✅ Migrated        |
-| `buildifier`           | BUILD formatting      | `bazel run //tools/lint:buildifier`             | ✅ Migrated        |
-| `nixfmt-nix`           | Nix formatting        | Pre-commit hook (`nix run nixpkgs#nixfmt`)      | Keep in pre-commit |
-| `eslint`               | JS/TS linting         | `bazel lint //...`                              | ✅ Migrated        |
-| `prettier`             | JS/TS formatting      | `bazel test //props/frontend:prettier_test`     | ✅ Migrated        |
-| `svelte-check`         | Svelte types          | `bazel test //props/frontend:svelte_check_test` | ✅ Migrated        |
+| Hook                   | Purpose               | Bazel Equivalent                           | Status             |
+| ---------------------- | --------------------- | ------------------------------------------ | ------------------ |
+| `no-commit-to-branch`  | Block commits to main | N/A (git hook)                             | Keep in pre-commit |
+| `check-merge-conflict` | Detect conflict marks | N/A                                        | Keep in pre-commit |
+| `check-ast`            | Valid Python syntax   | `bazel build` catches                      | Redundant          |
+| `check-yaml`           | Valid YAML            | N/A                                        | Keep in pre-commit |
+| `check-toml`           | Valid TOML            | N/A                                        | Keep in pre-commit |
+| `ansible-syntax-check` | Ansible validation    | N/A                                        | Keep in pre-commit |
+| `ruff-check`           | Linting + autofix     | `bazel lint //...`                         | Both               |
+| `nixfmt-nix`           | Nix formatting        | Pre-commit hook (`nix run nixpkgs#nixfmt`) | Keep in pre-commit |
+| `bazel-precommit`      | Bazel format/lint     | `bazel lint //...`                         | Local hook         |
+| `markdownlint-cli2`    | Markdown linting      | N/A                                        | Keep in pre-commit |
+| `kubeconform`          | K8s manifest validate | N/A                                        | Keep in pre-commit |
+
+**Hooks removed from pre-commit (migrated to Bazel):**
+
+- `ruff-format`, `buildifier`, `yamllint`, `mypy` (12 configs), `eslint`, `prettier`, `svelte-check`
 
 ### Other Configuration Files
 
@@ -703,7 +706,7 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 
 1. **Ruff config**: `ruff.toml` and `pyproject.toml [tool.ruff]` both exist
 2. **First-party packages**: Listed in both `ruff.toml` and `pyproject.toml`
-3. **mypy deps**: Duplicated across 12 pre-commit hook configs
+3. **Ruff version**: 0.14.0 in multitool lockfile vs 0.14.6 in pre-commit hook
 
 ## Pure Bazel Structure Recommendations
 
@@ -724,7 +727,7 @@ The pre-commit framework manages all git hooks. Install with `pre-commit install
 2. Use `bazel run` for all Python scripts
 3. Consolidate all Python deps to single `requirements_bazel.txt`
 4. Replace shell scripts with `sh_binary` targets where appropriate
-5. Migrate mypy to aspect_rules_lint
+5. ~~Migrate mypy~~ (done — runs via rules_mypy `--config=typecheck`)
 6. Remove duplicate ruff config from pyproject.toml
 
 ## Repo Health Recommendations

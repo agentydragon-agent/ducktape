@@ -35,8 +35,10 @@ RUNTIME_LOAD_SCRIPT = "agent_server/load.sh"
 TEST_BACKEND_SERVER_NAME = "backend"
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from agent_core_testing.fixtures import *  # noqa: E402, F403
-from agent_core_testing.responses import *  # noqa: E402, F403
+from agent_core.testing.fixtures import *  # noqa: E402, F403
+from agent_core.testing.mcp.fixtures import *  # noqa: E402, F403
+from agent_core.testing.mcp.responses import *  # noqa: E402, F403
+from agent_core.testing.responses import *  # noqa: E402, F403
 from mcp_infra.testing.fixtures import *  # noqa: E402, F403
 from openai_utils.testing.fixtures import *  # noqa: E402, F403
 

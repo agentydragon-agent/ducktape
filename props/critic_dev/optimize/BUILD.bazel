@@ -79,7 +79,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
         "//openai_utils:model",
         "//props/backend:app",
         "//props/db:config",
@@ -110,7 +110,7 @@ py_test(
     deps = [
         ":main",
         ":orchestration_fixtures",
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props/core:agent_types",
         "//props/core:eval_api_models",

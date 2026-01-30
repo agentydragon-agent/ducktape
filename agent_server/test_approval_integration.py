@@ -10,7 +10,7 @@ from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core_testing.responses import EchoMock
+from agent_core.testing.mcp.responses import EchoMock
 from agent_server.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
 from agent_server.policies.policy_types import ApprovalDecision
 from agent_server.testing.approval_policy_testdata import make_policy

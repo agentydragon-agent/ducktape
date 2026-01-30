@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from agent_core_testing.responses import DecoratorMock
+from agent_core.testing.responses import DecoratorMock
 from agent_server.mcp.ui.server import EndTurnInput, SendMessageInput
 from mcp_infra.constants import UI_MOUNT_PREFIX
 from mcp_infra.naming import build_mcp_function

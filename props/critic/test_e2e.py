@@ -20,7 +20,7 @@ import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
-from agent_core_testing.responses import PlayGen
+from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.models import AgentRun, AgentRunStatus

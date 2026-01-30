@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing.matchers import assert_function_call_output_structured, has_json_arguments
-from agent_core_testing.responses import EchoMock, ResponsesFactory
+from agent_core.testing.mcp.responses import EchoMock
+from agent_core.testing.responses import ResponsesFactory
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME

@@ -14,7 +14,7 @@ from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing.matchers import assert_function_call_output_structured
-from agent_core_testing.responses import EchoMock
+from agent_core.testing.mcp.responses import EchoMock
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 from openai_utils.testing.fixtures import ClientMode, mock_and_live
 
@@ -138,12 +138,7 @@ def assert_function_call_output_structured_local(
 
 @mock_and_live
 async def test_minicodex_executes_tool_and_returns_text(
-    mode: ClientMode,
-    responses_factory,
-    mcp_tool_provider_echo,
-    test_handlers,
-    recording_handler,
-    live_openai,
+    mode: ClientMode, responses_factory, mcp_tool_provider_echo, test_handlers, recording_handler, live_openai
 ) -> None:
     if mode is ClientMode.MOCK:
 

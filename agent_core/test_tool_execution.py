@@ -19,8 +19,8 @@ from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
 from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
+from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
-from agent_core_testing.responses import DecoratorMock, ResponsesFactory
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.flat_tool import FlatTool
@@ -38,7 +38,7 @@ def text_content():
     return lambda text: TextContent(text=text)
 
 
-# ---- Fixtures moved from agent_core_testing.fixtures (only used by this module) ----
+# ---- Local fixtures (only used by this module) ----
 
 
 class _EmptyInput(OpenAIStrictModeBaseModel):

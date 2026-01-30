@@ -1,10 +1,10 @@
-"""Response factories and mock runners for agent tests.
+"""Response factories and mock runners for agent tests (non-MCP).
 
 Provides declarative test response building:
 - ResponsesFactory: Builds mock ResponsesResult objects
-- GeneratorMock + DockerExecMock: Class-based generator mocks with yield from
-- PendingCall: Typed tool call wrapper for roundtrip patterns
-- extract_call_output: Extract typed tool outputs from requests
+- GeneratorRunner + openai_mock: Function-based generator mocks
+- GeneratorMock + DecoratorMock: Class-based generator mocks
+- extract_call_output / tool_roundtrip: Typed tool output extraction
 """
 
 from __future__ import annotations
@@ -14,19 +14,11 @@ import logging
 import os
 from abc import abstractmethod
 from collections.abc import Callable, Generator
-from pathlib import Path
 from typing import Any
 
 import pytest
-from fastmcp import FastMCP
-from fastmcp.tools.tool import Tool
 from pydantic import BaseModel, TypeAdapter
 
-from agent_core_testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput, EchoOutput
-from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.models import BaseExecResult, ExecInput, make_exec_input
-from mcp_infra.mounted import Mounted
-from mcp_infra.naming import MCPMountPrefix, build_mcp_function
 from openai_utils.builders import ItemFactory
 from openai_utils.model import (
     AssistantMessageOut,
@@ -48,6 +40,8 @@ class ResponsesFactory(ItemFactory):
     """Convenience adapter response builders bound to a model name.
 
     Provides methods to build mock ResponsesResult objects for testing.
+    For MCP-aware methods (mcp_tool_call, docker_exec, mounted_tool_call),
+    use MCPResponsesFactory from agent_core.testing.mcp.responses.
     """
 
     def __init__(self, model: str):
@@ -70,20 +64,6 @@ class ResponsesFactory(ItemFactory):
     def make_tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> ResponsesResult:
         return self.make(self.tool_call(name, arguments, call_id))
 
-    def make_mcp_tool_call(self, server: MCPMountPrefix, tool: str, arguments: BaseModel) -> ResponsesResult:
-        """Create tool call response for MCP server/tool with automatic naming."""
-        return self.make(self.mcp_tool_call(server, tool, arguments))
-
-    # ---- Low-level item builders (compose with make(...items)) ----
-
-    def mcp_tool_call(
-        self, server: MCPMountPrefix, tool: str, arguments: BaseModel, call_id: str | None = None
-    ) -> FunctionCallItem:
-        """Create tool call for MCP server/tool with automatic naming."""
-        return self.tool_call(build_mcp_function(server, tool), arguments.model_dump(mode="json"), call_id)
-
-    # ---- Message/response constructors (compose items) ----
-
     def make(self, *items: ResponseOutItem) -> ResponsesResult:
         out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
         return ResponsesResult(
@@ -101,30 +81,6 @@ class ResponsesFactory(ItemFactory):
     def make_final_assistant(self, text: str) -> ResponsesResult:
         return self.make(self.assistant_text(text))
 
-    def docker_exec(
-        self,
-        cmd: list[str],
-        *,
-        timeout_ms: int = 30000,
-        cwd: Path | None = None,
-        env: list[str] | None = None,
-        user: str | None = None,
-        tool_name: str = "exec",
-    ) -> FunctionCallItem:
-        """Create docker exec tool call with sensible defaults."""
-        exec_input = ExecInput(cmd=cmd, cwd=str(cwd) if cwd else None, env=env, user=user, timeout_ms=timeout_ms)
-        return self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
-
-    def mounted_tool_call[S: FastMCP](
-        self, mounted: Mounted[S], tool: Tool, arguments: BaseModel, call_id: str | None = None
-    ) -> FunctionCallItem:
-        """Create tool call from Mounted server + tool attribute.
-
-        Preferred over mcp_tool_call when you have a Mounted wrapper, as it
-        derives the fully-qualified tool name from the Tool attribute.
-        """
-        return self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"), call_id)
-
 
 # Type for generator that yields responses and receives requests
 MockScriptGen = Generator[ResponsesResult | ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest]
@@ -138,7 +94,7 @@ class GeneratorRunner(OpenAIModelProto):
         @openai_mock
         def mock(factory):
             req = yield  # Receive first request
-            call = factory.docker_exec(["ls"])
+            call = factory.tool_call("my_tool", {"arg": "val"})
             req = yield call  # Send response, receive next request
             yield factory.assistant_text("Done")
 
@@ -190,7 +146,7 @@ def openai_mock(fn: MockScriptFn) -> GeneratorRunner:
         @openai_mock
         def mock(factory):
             req = yield  # First request
-            call = factory.docker_exec(["ls"])
+            call = factory.tool_call("my_tool", {"arg": "val"})
             req = yield call
             yield factory.assistant_text("Done")
     """
@@ -204,17 +160,6 @@ def extract_call_output[T: BaseModel](req: ResponsesRequest, call: FunctionCallI
 
     Finds the FunctionCallOutputItem matching call.call_id in the request's input,
     parses its structuredContent as output_type.
-
-    Args:
-        req: The request containing tool outputs
-        call: The FunctionCallItem whose output to extract
-        output_type: Pydantic model type for the output
-
-    Returns:
-        Parsed output as output_type
-
-    Raises:
-        ValueError: If not exactly one matching output, or if output is not string type
     """
     matches = [item for item in req.input if isinstance(item, FunctionCallOutputItem) and item.call_id == call.call_id]
 
@@ -251,6 +196,8 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
     OpenAIModelProto for use as a mock client.
 
     Subclass and override play() to provide the generator.
+    For MCP-aware methods (call_roundtrip, mcp_tool_call, docker_exec_roundtrip),
+    use MCPDecoratorMock from agent_core.testing.mcp.responses.
     """
 
     _check_consumed: bool = True
@@ -313,37 +260,16 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
             output=list(items),
         )
 
-    def call_roundtrip[S: FastMCP, U: BaseModel](
-        self, mounted: Mounted[S], tool: Tool, arguments: BaseModel, output_type: type[U]
-    ) -> Generator[FunctionCallItem, ResponsesRequest, U]:
-        """Create tool call and yield roundtrip generator."""
-        call = self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"))
-        return tool_roundtrip(call, output_type)
-
-    def mcp_tool_call(
-        self, server: MCPMountPrefix, tool: str, arguments: BaseModel, call_id: str | None = None
-    ) -> FunctionCallItem:
-        """Create tool call for MCP server/tool with automatic naming."""
-        return self.tool_call(build_mcp_function(server, tool), arguments, call_id)
-
-    def docker_exec_roundtrip(
-        self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None, tool_name: str = "exec"
-    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
-        """Yield docker exec call, receive response, return typed result."""
-        exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
-        call = self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
-        return tool_roundtrip(call, BaseExecResult)
-
 
 class DecoratorMock(GeneratorMock):
     """GeneratorMock that delegates play() to a function passed at init.
 
     Use the @Subclass.mock() decorator pattern:
 
-        @EchoMock.mock()
-        def my_mock(m: EchoMock):
+        @DecoratorMock.mock()
+        def my_mock(m: DecoratorMock):
             req = yield
-            yield from m.echo_roundtrip("hello")
+            yield m.assistant_text("Done")
 
     By default, assert_consumed() is called automatically after the test to
     verify all steps were executed. Use check_consumed=False to disable.
@@ -373,57 +299,6 @@ class DecoratorMock(GeneratorMock):
             return cls(fn, check_consumed, *args, **kwargs)  # type: ignore[arg-type]
 
         return decorator
-
-
-class DockerExecMock(DecoratorMock):
-    """Mock with docker exec helpers.
-
-    Example:
-        @DockerExecMock.mock(runtime)
-        def mock(m: DockerExecMock):
-            req = yield
-            result = yield from m.exec(["ls", "-la"])
-            assert result.exit.exit_code == 0
-            yield from m.exec(["submit"])
-    """
-
-    def __init__(
-        self, play_fn: Callable[[DockerExecMock], PlayGen], check_consumed: bool, runtime: Mounted[ContainerExecServer]
-    ) -> None:
-        self._runtime = runtime
-        # Safe: play() only calls play_fn with self which is DockerExecMock
-        super().__init__(play_fn, check_consumed)  # type: ignore[arg-type]
-
-    def exec(
-        self, cmd: list[str], timeout_ms: int = 30000, cwd: str | None = None
-    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
-        """Yield exec call, receive response, return typed result."""
-        return self.call_roundtrip(
-            self._runtime,
-            self._runtime.server.exec_tool,
-            make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd),
-            BaseExecResult,
-        )
-
-
-class EchoMock(DecoratorMock):
-    """Mock with echo server helpers.
-
-    Example:
-        @EchoMock.mock()
-        def mock(m: EchoMock):
-            req = yield
-            result = yield from m.echo_roundtrip("hello")
-            assert result.echo == "hello"
-    """
-
-    def echo_call(self, text: str) -> FunctionCallItem:
-        """Create echo tool call item."""
-        return self.tool_call(build_mcp_function(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME), EchoInput(text=text))
-
-    def echo_roundtrip(self, text: str) -> Generator[FunctionCallItem, ResponsesRequest, EchoOutput]:
-        """Yield echo call, receive response, return typed result."""
-        return tool_roundtrip(self.echo_call(text), EchoOutput)
 
 
 # ---- Pytest fixtures ----

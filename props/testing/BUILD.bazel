@@ -10,7 +10,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core_testing:responses",
+        "//agent_core/testing:responses",
+        "//agent_core/testing/mcp:responses",
         "//mcp_infra/exec:models",
         "//openai_utils:model",
         "//props/grader:tools",
