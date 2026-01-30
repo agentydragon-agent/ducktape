@@ -69,7 +69,6 @@
         example_kind: selectedKind,
         n_samples: nSamples,
         critic_model: "gpt-5.1-codex-mini",
-        grader_model: "gpt-5.1-codex-mini",
       });
       toast.success(result.message);
       onClose();

@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { toast } from "svelte-sonner";
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
-  import { SvelteMap } from "svelte/reactivity";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import BackButton from "./BackButton.svelte";
   import Breadcrumb from "./Breadcrumb.svelte";
   import LLMRequestViewer from "./LLMRequestViewer.svelte";
@@ -300,8 +300,8 @@
       {:else if getAgentType(run) === "grader"}
         {@const config = run.type_config as GraderTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <span class="text-gray-500">Grading critic:</span>
-          <RunIdLink id={config.graded_agent_run_id} />
+          <span class="text-gray-500">Snapshot:</span>
+          {config.snapshot_slug}
         </div>
       {:else if getAgentType(run) === "improvement"}
         {@const config = run.type_config as ImprovementTypeConfig}
@@ -325,8 +325,7 @@
           <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
           <span><span class="text-gray-500">Budget:</span> ${config.budget_limit}</span>
           <span
-            ><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model},
-            grader={config.grader_model}</span
+            ><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model}</span
           >
         </div>
       {:else}

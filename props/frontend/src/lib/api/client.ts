@@ -34,8 +34,8 @@ export type GraderTypeConfig = components["schemas"]["GraderTypeConfig"];
 export type FreeformTypeConfig = components["schemas"]["FreeformTypeConfig"];
 export type PromptOptimizerTypeConfig = components["schemas"]["PromptOptimizerTypeConfig"];
 export type ImprovementTypeConfig = components["schemas"]["ImprovementTypeConfig"];
-export type WholeSnapshotExample = components["schemas"]["WholeSnapshotExample"];
-export type SingleFileSetExample = components["schemas"]["SingleFileSetExample"];
+export type WholeSnapshotExample = components["schemas"]["WholeSnapshotExample-Output"];
+export type SingleFileSetExample = components["schemas"]["SingleFileSetExample-Output"];
 export type Split = components["schemas"]["Split"];
 export type ExampleKind = components["schemas"]["ExampleKind"];
 export type ChildRunInfo = components["schemas"]["ChildRunInfo"];
@@ -51,6 +51,7 @@ export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
   "completed",
   "max_turns_exceeded",
   "context_length_exceeded",
+  "timed_out",
   "reported_failure",
 ];
 
