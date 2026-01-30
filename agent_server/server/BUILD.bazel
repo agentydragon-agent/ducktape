@@ -213,14 +213,6 @@ py_library(
 )
 
 py_library(
-    name = "status_shared",
-    srcs = ["status_shared.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "system_message",
     srcs = ["system_message.py"],
     imports = ["../.."],
