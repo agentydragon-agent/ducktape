@@ -3,7 +3,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//openai_utils/testing:testing.bzl", "live_py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 exports_files(["conftest.py"])
 
@@ -181,7 +181,7 @@ py_test(
 )
 
 # Tests requiring Docker (python-slim only)
-live_py_test(
+live_openai_py_test(
     name = "test_exec_roundtrip",
     srcs = ["test_exec_roundtrip.py"],
     data = ["//mcp_infra/testing:python_slim_load"],

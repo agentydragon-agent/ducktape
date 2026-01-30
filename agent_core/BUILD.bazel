@@ -1,5 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//openai_utils/testing:testing.bzl", "live_py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 py_library(
     name = "tool_provider",
@@ -254,7 +254,7 @@ py_test(
     ],
 )
 
-live_py_test(
+live_openai_py_test(
     name = "test_testing_infrastructure",
     srcs = ["test_testing_infrastructure.py"],
     deps = [

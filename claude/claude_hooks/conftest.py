@@ -160,17 +160,6 @@ def autofixer_hook():
 
 
 @pytest.fixture
-def mock_context(tmp_path: Path) -> HookContext:
-    """Create a mock HookContext for testing."""
-    return HookContext(
-        hook_name="test_hook",
-        hook_event="PostToolUse",
-        session_id=UUID("12345678-1234-5678-9abc-123456789abc"),
-        cwd=tmp_path,
-    )
-
-
-@pytest.fixture
 def hook_context(precommit_repo: Path) -> HookContext:
     """Create HookContext for precommit integration tests."""
     return HookContext(

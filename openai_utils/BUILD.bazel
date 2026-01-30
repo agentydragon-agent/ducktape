@@ -1,5 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//openai_utils/testing:testing.bzl", "live_py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_only_py_test", "live_openai_py_test")
 
 py_library(
     name = "types",
@@ -148,7 +148,7 @@ py_test(
     ],
 )
 
-live_py_test(
+live_openai_py_test(
     name = "test_pydantic_strict_mode",
     srcs = ["test_pydantic_strict_mode.py"],
     imports = [".."],
@@ -166,9 +166,9 @@ live_py_test(
     ],
 )
 
-live_py_test(
-    name = "test_context_length",
-    srcs = ["test_context_length.py"],
+live_openai_only_py_test(
+    name = "test_live_api",
+    srcs = ["test_live_api.py"],
     imports = [".."],
     deps = [
         ":client_factory",
@@ -176,17 +176,6 @@ live_py_test(
         ":errors",
         ":model",
         ":retry",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-live_py_test(
-    name = "test_responses_api",
-    srcs = ["test_responses_api.py"],
-    imports = [".."],
-    deps = [
-        ":conftest",
         "@pypi//openai",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

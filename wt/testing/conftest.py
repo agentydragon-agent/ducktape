@@ -34,7 +34,6 @@ from wt.shared.protocol import (
     StatusResultOk,
 )
 from wt.testing.config_factory import ConfigFactory
-from wt.testing.data import TestData
 from wt.testing.mock_factory import MockFactory, ServiceBuilder
 from wt.testing.repo_factory import GitRepoFactory
 from wt.testing.utils import run_cli_command, wait_until
@@ -118,17 +117,6 @@ def mock_factory():
 def service_builder():
     """Lowercase alias for ServiceBuilder to match legacy tests."""
     return ServiceBuilder
-
-
-@pytest.fixture(name="TestData")
-def test_data():
-    """Fixture exposing the TestData constants class.
-
-    Tests that previously imported TestData from tests.test_data can now
-    request a TestData fixture parameter to receive the class.
-    """
-
-    return TestData
 
 
 @pytest.fixture

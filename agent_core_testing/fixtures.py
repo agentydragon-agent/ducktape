@@ -20,17 +20,13 @@ import pytest
 from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
 
-from agent_core.agent import Agent
 from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
-from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.tool_provider import ToolProvider
 from agent_core_testing.echo_server import make_echo_server
-from agent_core_testing.responses import ResponsesFactory
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from openai_utils.testing.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 
 # ---- Recording handler ----
 
@@ -76,41 +72,6 @@ def test_handlers(recording_handler: RecordingHandler) -> list:
 
 
 # ---- OpenAI model factories ----
-
-
-@pytest.fixture
-def make_test_agent(responses_factory: ResponsesFactory):
-    """Factory to create Agent backed by FakeOpenAIModel with canned responses.
-
-    Returns (agent, fake_client) tuple so tests can inspect the client after run.
-
-    Usage:
-        agent, client = await make_test_agent(
-            mcp_client,
-            [responses_factory.make_assistant_message("done")],
-        )
-        result = await agent.run("hi")
-        assert client.calls == 1
-    """
-
-    async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
-        fake_model = FakeOpenAIModel(list(responses))
-        client = CapturingOpenAIModel(fake_model)  # Wrap to enable .captured
-        # Minimal defaults - tests should be explicit about their needs
-        if not handlers:
-            handlers = [BaseHandler()]  # Minimal no-op handler (Agent requires at least one)
-        if tool_policy is None:
-            tool_policy = RequireAnyTool()
-        agent = await Agent.create(
-            tool_provider=MCPToolProvider(mcp_client),
-            client=client,
-            handlers=handlers,
-            tool_policy=tool_policy,
-            **kwargs,
-        )
-        return agent, client
-
-    return _make
 
 
 # ---- MCP fixtures ----

@@ -310,6 +310,49 @@ async def my_fixture():
     # async teardown
 ```
 
+#### Live OpenAI API tests
+
+Tests that call the real OpenAI API use the `@pytest.mark.live_openai_api` marker and Bazel macros from `//openai_utils/testing:testing.bzl`.
+
+**Two-tier pattern: mock + live in one file.** A single test file can contain both mock tests (verifying our code behaves correctly given expected OpenAI responses) and live tests (verifying OpenAI actually responds as we expect). Use `live_openai_py_test` in BUILD.bazel — it generates `.mock` and `.live` Bazel targets from one declaration:
+
+```python
+# test_foo.py
+async def test_our_logic_with_mock(mock_client):
+    ...
+
+@pytest.mark.live_openai_api
+async def test_our_logic_against_real_api(live_openai):
+    ...
+```
+
+```python
+# BUILD.bazel
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+
+live_openai_py_test(
+    name = "test_foo",
+    srcs = ["test_foo.py"],
+    deps = [...],
+)
+# Generates: test_foo.mock (runs non-live tests) and test_foo.live (runs live tests with API key)
+```
+
+**Live-only files.** For files where every test calls the real API (no mock counterpart), use `live_openai_only_py_test` — it generates a single unsuffixed target with the `live_openai_api` tag and `env_inherit`:
+
+```python
+# BUILD.bazel
+load("//openai_utils/testing:testing.bzl", "live_openai_only_py_test")
+
+live_openai_only_py_test(
+    name = "test_live_api",
+    srcs = ["test_live_api.py"],
+    deps = [...],
+)
+```
+
+**Gating:** `.live` / `live_openai_only_py_test` targets get `OPENAI_API_KEY` via `env_inherit` and the `live_openai_api` tag. CI excludes them with `--test_tag_filters=-live_openai_api`. The root `conftest.py` also skips live-marked tests at runtime when the key is absent.
+
 ### Deployment
 
 ```bash
