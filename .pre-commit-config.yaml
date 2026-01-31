@@ -28,7 +28,7 @@ exclude: |
     finance/reconcile/README\.md|
     mcp_infra/docs/eliminating-class-constants-analysis\.md|
     nix/home/(README\.md|claude-code/commands/.*\.md)|
-    sandboxed_jupyter/docs/TODO.*\.md|
+    experimental/sandboxed_jupyter/docs/TODO.*\.md|
     website/posts/.*\.markdown
   )$
 repos:

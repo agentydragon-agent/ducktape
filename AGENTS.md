@@ -34,7 +34,6 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 | `agent_pkg/`    | Agent package infrastructure     |
 | `tana/`         | Tana export toolkit              |
 | `wt/`           | Worktree management              |
-| `gatelet/`      | Gateway/tunneling                |
 | `ansible/`      | System configuration             |
 | `docker/`       | Container images                 |
 | `dotfiles/`     | Shell configs, scripts           |

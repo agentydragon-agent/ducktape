@@ -5,6 +5,5 @@
 #
 # Targets are defined in subdirectory BUILD files:
 #   //adgn/agent:cli - Agent CLI
-#   //adgn/gitea_pr_gate:policy_common - Gitea PR gate policy
-#   //adgn/gitea_pr_gate:policy_server_fastapi - Gitea PR gate server
+#   Gitea PR gate moved to //experimental/gitea/pr_gate
 #   //adgn/tools:trivial_patterns - Trivial patterns linter
