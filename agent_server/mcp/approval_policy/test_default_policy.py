@@ -1,6 +1,7 @@
 """Test default approval policy via container evaluator."""
 
 import pytest
+import pytest_bazel
 
 from agent_server.policies.policy_types import ApprovalDecision
 from agent_server.testing.fixtures import make_policy_request
@@ -55,4 +56,4 @@ async def test_other_tools_require_approval(policy_evaluator):
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    pytest_bazel.main()

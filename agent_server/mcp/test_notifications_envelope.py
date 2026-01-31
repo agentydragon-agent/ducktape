@@ -2,66 +2,81 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
+from fastmcp.client import Client
 
 from agent_server.notifications.handler import format_notifications_message
+from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.notifications import parse_system_notification_payload
 
 
-@pytest.fixture
-def make_notifier():
-    """Factory for EnhancedFastMCP servers with emit tool."""
+def _make_inproc_notifier() -> EnhancedFastMCP:
+    m = EnhancedFastMCP("child")
 
-    def _make():
-        m = EnhancedFastMCP("child")
+    @m.tool(name="emit")
+    async def emit():
+        await m.broadcast_resource_list_changed()
+        await m.broadcast_resource_updated("resource://dummy")
+        return True
 
-        @m.tool(name="emit")
-        async def emit():
-            await m.broadcast_resource_list_changed()
-            await m.broadcast_resource_updated("resource://dummy")
-            return True
+    return m
 
-        return m
 
-    return _make
+CHILD_PREFIX = MCPMountPrefix("child")
 
 
 @pytest.fixture
-def notifier(make_notifier):
-    """EnhancedFastMCP server for testing notification envelopes."""
-    return make_notifier()
+def child_prefix():
+    return CHILD_PREFIX
 
 
-async def test_notifications_envelope_with_real_mcp(make_buffered_client, notifier):
-    child_prefix = MCPMountPrefix("child")
-    async with make_buffered_client({"child": notifier}) as (sess, _comp, buf):
+@pytest.fixture
+def notifications_buffer(compositor):
+    return NotificationsBuffer(compositor=compositor)
+
+
+@pytest.fixture(params=["inproc", "stdio"])
+async def envelope_session(request, compositor, notifications_buffer, child_prefix, stdio_notifier_spec):
+    """Yield an MCP client session with a notifier child mounted (inproc or stdio)."""
+    if request.param == "inproc":
+        await compositor.mount_inproc(child_prefix, _make_inproc_notifier())
+    else:
+        await compositor.mount_server(child_prefix, stdio_notifier_spec)
+
+    async with Client(compositor, message_handler=notifications_buffer.handler) as sess:
+        yield sess
+
+
+async def test_notifications_envelope(envelope_session, notifications_buffer, child_prefix):
+    await envelope_session.call_tool(name=build_mcp_function(child_prefix, "emit"), arguments={})
+    batch = notifications_buffer.poll()
+    msg = format_notifications_message(batch)
+    assert msg is not None
+    payload = parse_system_notification_payload(msg)
+    resources = payload.get("resources")
+    assert isinstance(resources, dict)
+    assert "child" in resources
+    child_obj = resources["child"]
+    assert isinstance(child_obj, dict)
+    assert child_obj.get("list_changed") is True
+    assert "resource://dummy" in (child_obj.get("updated") or [])
+
+
+async def test_notifications_envelope_after_remount(compositor, notifications_buffer, child_prefix):
+    """Remount-specific test: notifications work after unmount/remount cycle."""
+    await compositor.mount_inproc(child_prefix, _make_inproc_notifier())
+
+    async with Client(compositor, message_handler=notifications_buffer.handler) as sess:
         await sess.call_tool(name=build_mcp_function(child_prefix, "emit"), arguments={})
-        batch = buf.poll()
-        msg = format_notifications_message(batch)
-        assert msg is not None
-        payload = parse_system_notification_payload(msg)
-        resources = payload.get("resources")
-        assert isinstance(resources, dict)
-        assert "child" in resources
-        child_obj = resources["child"]
-        assert isinstance(child_obj, dict)
-        assert child_obj.get("list_changed") is True
+        _ = notifications_buffer.poll()
 
-
-async def test_notifications_envelope_after_remount(make_buffered_client, notifier, make_notifier):
-    child_prefix = MCPMountPrefix("child")
-    async with make_buffered_client({"child": notifier}) as (sess, comp, buf):
-        await sess.call_tool(name=build_mcp_function(child_prefix, "emit"), arguments={})
-        _ = buf.poll()
-
-        # Unmount and re-mount a fresh notifier to simulate reconnect/new client path
-        await comp.unmount_server(child_prefix)
-        await comp.mount_inproc(child_prefix, make_notifier())
+        await compositor.unmount_server(child_prefix)
+        await compositor.mount_inproc(child_prefix, _make_inproc_notifier())
 
         await sess.call_tool(name=build_mcp_function(child_prefix, "emit"), arguments={})
-        batch = buf.poll()
+        batch = notifications_buffer.poll()
         msg = format_notifications_message(batch)
         assert msg is not None
         payload = parse_system_notification_payload(msg)

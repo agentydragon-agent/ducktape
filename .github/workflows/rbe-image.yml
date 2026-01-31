@@ -1,6 +1,6 @@
 # Build and push the BuildBuddy RBE worker image to GHCR.
 #
-# The image provides git, ca-certificates, and podman for remote execution.
+# The image provides git, ca-certificates, and Docker for remote execution.
 # Python comes from Bazel's hermetic toolchain (bootstrap_impl=script).
 name: RBE Worker Image
 
@@ -9,7 +9,6 @@ on:
     branches: [main, devel]
     paths:
       - "tools/rbe_image/**"
-      - "tools/claude_hooks/config/podman/**"
       - ".github/workflows/rbe-image.yml"
   workflow_dispatch:
 

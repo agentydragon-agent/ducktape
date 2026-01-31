@@ -79,8 +79,5 @@ async def test_approval_system_wired_and_blocks_on_ask(
         assert result.text.strip() == "done"
 
 
-# Note: server availability and resources are tested under tests/mcp/approval_policy
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
