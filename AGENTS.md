@@ -253,7 +253,7 @@ Alternatively, run `tools/setup-buildbuddy.sh` to generate the file interactivel
 
 When BuildBuddy is configured via `setup-buildbuddy.sh`, remote execution is enabled automatically. Build and test actions run on BuildBuddy workers (falling back to local), using the `//:rbe_linux_x64` platform.
 
-The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rbe_image/Dockerfile> and includes git, ca-certificates, and podman. It shares podman config files with `tools/claude_hooks/config/podman/` (VFS storage driver, host user namespace). The image is built and pushed by the `rbe-image.yml` CI workflow.
+The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rbe_image/Dockerfile>, based on BuildBuddy's `rbe-ubuntu24-04` image (which provides Docker CE, iptables-legacy for Firecracker compatibility, build-essential, python3, git, etc.). We layer on Rust toolchain deps, GHC's libtinfo5, and Chromium shared libraries. The image is built and pushed by the `rbe-image.yml` CI workflow.
 
 ## Development Practices
 

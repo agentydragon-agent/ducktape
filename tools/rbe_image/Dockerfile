@@ -1,29 +1,21 @@
-# BuildBuddy RBE worker image with Docker support.
+# BuildBuddy RBE worker image with extra tooling for this repo.
 #
-# Provides system tools needed by Bazel remote actions: python3 (for py_binary
-# shebang bootstrap), build-essential (C linker for Rust toolchain bootstrap),
-# git, ca-certificates, file/zip (for Bazel test-setup.sh), libtinfo5 (for
-# GHC toolchain), Docker for container-based tests (Firecracker init-dockerd),
-# and Chromium shared libraries for visual regression tests (headless_shell
-# from rules_playwright).
-FROM docker.io/library/ubuntu:24.04
+# Based on BuildBuddy's rbe-ubuntu24-04 image which provides: build-essential,
+# python3, git, curl, file, zip, Docker CE, iptables-legacy (required for
+# Firecracker init-dockerd — the guest kernel lacks nftables support), and a
+# non-root "buildbuddy" user with passwordless sudo.
+#
+# We layer on: libssl-dev + pkg-config (Rust toolchain), libtinfo5 (GHC
+# toolchain), and Chromium shared libraries (headless_shell from
+# rules_playwright for visual regression tests).
+FROM gcr.io/flame-public/rbe-ubuntu24-04:latest
 
-# Enable universe repo and install dependencies.
+# Enable universe repo and install additional dependencies.
 RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.list.d/ubuntu.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        curl \
-        docker.io \
-        file \
-        git \
-        # iptables is a Recommends dep of docker.io, needed for dockerd networking
-        iptables \
         libssl-dev \
         pkg-config \
-        python3 \
-        zip \
         # Chromium headless shell shared library dependencies
         libasound2t64 \
         libatk-bridge2.0-0t64 \

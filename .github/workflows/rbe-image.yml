@@ -1,7 +1,7 @@
 # Build and push the BuildBuddy RBE worker image to GHCR.
 #
-# The image provides git, ca-certificates, and Docker for remote execution.
-# Python comes from Bazel's hermetic toolchain (bootstrap_impl=script).
+# Based on BuildBuddy's rbe-ubuntu24-04 image, with extra deps for Rust, GHC,
+# and Chromium headless shell. See tools/rbe_image/Dockerfile.
 name: RBE Worker Image
 
 on:
