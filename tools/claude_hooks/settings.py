@@ -19,7 +19,7 @@ from platformdirs import user_cache_dir, user_config_dir
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Config files bundled with the package (templates, etc.)
+# Config files bundled with the package (infrastructure config: bazelrc, env, podman)
 CONFIG_FILES: Traversable = importlib.resources.files("tools.claude_hooks.config")
 
 # Environment variable prefix (matches model_config.env_prefix)

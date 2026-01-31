@@ -154,6 +154,7 @@ py_library(
 py_library(
     name = "session_start_lib",
     srcs = ["session_start.py"],
+    data = ["templates/session_context.mako"],
     imports = ["../.."],
     deps = [
         ":bazelisk_setup",
@@ -169,6 +170,7 @@ py_library(
         "//tools:build_info",
         "//tools:env_utils",
         "//tools/claude_hooks/supervisor:setup",
+        "@pypi//mako",
         "@pypi//pydantic",
     ],
 )
