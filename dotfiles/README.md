@@ -18,14 +18,6 @@ Shell configs (`~/.bashrc`, `~/.zshrc`), aliases, environment variables, Powerle
 
 See `docs/shell-configuration.md` for migration status and loading order.
 
-## User Scripts (.local/bin)
-
-Utility scripts symlinked to `~/.local/bin/`:
-
-- Backup utilities (`duplicity`)
-
-Theme switchers (`set_dark_theme`, `set_light_theme`) migrated to Nix (`nix/home/modules/solarized.nix`).
-
 ## Commands
 
 ```bash
