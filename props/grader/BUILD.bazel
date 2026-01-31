@@ -21,7 +21,8 @@ The containers run an agent loop that:
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
 # In-container agent loop
@@ -165,11 +166,10 @@ py_library(
 # Tests
 # =============================================================================
 
-py_test(
+docker_py_test(
     name = "test_grading_edges_constraints",
     srcs = ["test_grading_edges_constraints.py"],
     imports = ["../.."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//props:conftest",
@@ -183,11 +183,10 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_matchable_occurrences",
     srcs = ["test_matchable_occurrences.py"],
     imports = ["../.."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//props:conftest",
@@ -199,7 +198,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
@@ -208,7 +207,6 @@ py_test(
     imports = ["../.."],
     tags = [
         "e2e",
-        "requires_docker",
     ],
     deps = [
         ":conftest",

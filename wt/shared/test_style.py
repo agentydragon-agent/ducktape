@@ -15,7 +15,7 @@ BANNED_PATTERNS = {
     r"except\s*:": "bare except is banned; catch specific exceptions",
 }
 
-EXCLUDE_DIRS = {".benchmarks", "wt.egg-info", "tests", "testing"}
+EXCLUDE_DIRS = {".benchmarks", "wt.egg-info", "tests", "testing", ".venv"}
 
 
 def iter_python_files(base: Path):
@@ -25,6 +25,9 @@ def iter_python_files(base: Path):
             continue
         # Exclude test files (which may define banned patterns as test data)
         if p.name.startswith("test_"):
+            continue
+        # Exclude Bazel-generated files
+        if p.name.startswith("_") and (p.name.endswith("_bootstrap.py") or p.name == "_bazel_site_init.py"):
             continue
         yield p
 

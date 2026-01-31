@@ -8,6 +8,7 @@ TODO: This package is being phased out. Remaining modules should move to:
 """
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
 # Leaf modules (no props.core deps)
@@ -218,13 +219,12 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_production_specimens",
     srcs = ["test_production_specimens.py"],
     imports = ["../.."],
     tags = [
         "integration",
-        "requires_docker",
         "requires_production_specimens",
     ],
     deps = [
@@ -243,7 +243,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_agent_pkg_e2e",
     srcs = ["test_agent_pkg_e2e.py"],
     data = [
@@ -255,7 +255,6 @@ py_test(
     tags = [
         "e2e",
         "integration",
-        "requires_docker",
         "slow",
     ],
     deps = [

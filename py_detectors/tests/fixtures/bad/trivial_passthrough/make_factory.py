@@ -1,23 +1,21 @@
-# Trivial passthrough pattern - the function just calls a constructor and forwards args
-# This is modeled after the removed make_compositor_meta_server function
+# Trivial passthrough - forwards all args to a constructor
 
 
-class CompositorMetaServer:
-    def __init__(self, *, compositor):
-        self.compositor = compositor
+class Thing:
+    def __init__(self, *, name):
+        self.name = name
 
 
-def make_compositor_meta_server(*, compositor) -> CompositorMetaServer:
-    """Create a CompositorMetaServer."""
-    return CompositorMetaServer(compositor=compositor)
+def make_thing(*, name) -> Thing:
+    """Create a Thing."""
+    return Thing(name=name)
 
 
-# Another example - simple factory with no transformation
-class Foo:
-    def __init__(self, bar, baz):
-        self.bar = bar
-        self.baz = baz
+class Widget:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
 
-def make_foo(bar, baz):
-    return Foo(bar, baz)
+def make_widget(x, y):
+    return Widget(x, y)

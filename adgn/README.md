@@ -29,7 +29,6 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for markers and timeout sett
 
 - Packaging: name `adgn`, Python `>=3.13`
 - Agent CLI (`adgn/agent/`) — simple stdin/stdout REPL
-- Tools (`adgn/tools/`) — `trivial_patterns` linter, arg0 utilities
 - Utilities (`adgn/util/`) — shared utilities
 
 **Moved to separate packages:**
@@ -48,7 +47,6 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for markers and timeout sett
 See `[project.scripts]` in `pyproject.toml` for the full list of CLI entry points.
 
 - `adgn-agent` — Agent REPL
-- `adgn-trivial-patterns` — Trivial patterns linter
 - `adgn-mcp-gitea-mirror` — Gitea mirror MCP server
 
 ## Agent CLI

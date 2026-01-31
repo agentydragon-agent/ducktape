@@ -1,6 +1,7 @@
 """Gatelet server endpoints."""
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
     name = "activitywatch",
@@ -95,7 +96,7 @@ py_library(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_activitywatch",
     srcs = ["test_activitywatch.py"],
     deps = [
@@ -107,7 +108,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_admin_cr_sessions",
     srcs = ["test_admin_cr_sessions.py"],
     deps = [
@@ -119,7 +120,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_admin_keys",
     srcs = ["test_admin_keys.py"],
     deps = [
@@ -131,7 +132,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_admin_login",
     srcs = ["test_admin_login.py"],
     deps = [
@@ -142,7 +143,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_admin_logs",
     srcs = ["test_admin_logs.py"],
     deps = [
@@ -153,7 +154,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_admin_sessions",
     srcs = ["test_admin_sessions.py"],
     deps = [
@@ -165,7 +166,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_challenge",
     srcs = ["test_challenge.py"],
     deps = [
@@ -189,7 +190,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_homeassistant",
     srcs = ["test_homeassistant.py"],
     deps = [
@@ -200,7 +201,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_webhook_receive",
     srcs = ["test_webhook_receive.py"],
     deps = [
@@ -214,7 +215,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_webhook_view",
     srcs = ["test_webhook_view.py"],
     deps = [

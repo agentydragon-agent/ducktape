@@ -152,7 +152,6 @@ Removed aggregator. Created BUILD files in subdirectories:
 - `adgn/agent/BUILD.bazel` - `:cli`
 - `adgn/gitea_pr_gate/BUILD.bazel` - `:policy_common`, `:policy_server_fastapi`
 - `adgn/testing/BUILD.bazel` - `:bootstrap`
-- `adgn/tools/BUILD.bazel` - `:trivial_patterns`
 
 ### props/backend ✅
 

@@ -1,6 +1,7 @@
 """Database sync module - per-file targets."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
 # Library targets
@@ -94,11 +95,10 @@ py_library(
 # Tests
 # =============================================================================
 
-py_test(
+docker_py_test(
     name = "test_example_generation",
     srcs = ["test_example_generation.py"],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         "//props:conftest",
         "//props/core:ids",
@@ -112,11 +112,10 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_manifest_loading",
     srcs = ["test_manifest_loading.py"],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":loader",
         "//props:conftest",

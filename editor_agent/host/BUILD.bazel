@@ -1,6 +1,7 @@
 """Editor agent host package."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 # Init script for the container image (called as /init)
 filegroup(
@@ -39,12 +40,11 @@ py_binary(
     deps = [":cli"],
 )
 
-py_test(
+docker_py_test(
     name = "test_runner_session",
     srcs = ["test_runner_session.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":runner",
@@ -55,12 +55,11 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_editor_e2e_steps",
     srcs = ["test_editor_e2e_steps.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
-    tags = ["requires_docker"],
     deps = [
         ":agent_runner",
         ":conftest",

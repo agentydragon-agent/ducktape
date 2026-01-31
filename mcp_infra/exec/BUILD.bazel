@@ -181,12 +181,11 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_docker",
     srcs = ["test_docker.py"],
     data = ["//third_party/python_slim:load"],
     main = "test_docker.py",
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":models",
@@ -229,11 +228,10 @@ py_library(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_docker_unit",
     srcs = ["test_docker_unit.py"],
     data = ["//third_party/python_slim:load"],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":docker",

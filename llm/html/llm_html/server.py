@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,10 @@ logger = logging.getLogger(__name__)
 # Global configuration
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "hunter2").encode()
 
+# Content directory: where .md, .html, .css files live.
+# Defaults to parent of this module's directory (i.e., llm/html/).
+CONTENT_DIR = Path(os.environ.get("CONTENT_DIR", str(Path(__file__).resolve().parent.parent)))
+
 # List of markdown pages to serve (without .md extension)
 MARKDOWN_PAGES = ["tana", "coding"]
 
@@ -64,11 +69,8 @@ HEADERS = {
 SITE_URL = os.environ.get("SITE_URL", "http://llm.agentydragon.com")
 TIMEZONE = ZoneInfo("America/Los_Angeles")
 
-# FastAPI setup
-app = FastAPI(title="LLM Instructions Server")
-
 # Jinja2 setup
-env = Environment(loader=FileSystemLoader("."), trim_blocks=True, lstrip_blocks=True)
+env = Environment(loader=FileSystemLoader(str(CONTENT_DIR)), trim_blocks=True, lstrip_blocks=True)
 
 
 def create_markdown_converter() -> markdown.Markdown:
@@ -80,7 +82,7 @@ def load_page_titles():
     """Load titles from frontmatter of all markdown pages."""
     for page in MARKDOWN_PAGES:
         try:
-            text = Path(f"{page}.md").read_text()
+            text = (CONTENT_DIR / f"{page}.md").read_text()
             md = create_markdown_converter()
             md.convert(text)
             if hasattr(md, "Meta") and "title" in md.Meta:
@@ -92,8 +94,15 @@ def load_page_titles():
             raise
 
 
-# Load page titles at startup
-load_page_titles()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load page titles on startup."""
+    load_page_titles()
+    yield
+
+
+# Re-assign app with lifespan (must be done before route registration below)
+app = FastAPI(title="LLM Instructions Server", lifespan=lifespan)
 
 
 def handle_page_rendering_error(error: Exception, page_name: str = "page") -> None:
@@ -126,7 +135,7 @@ def render_html_page(title: str, content: str, active_page: str = "index") -> st
 async def index():
     """Serve the main page with rendered markdown."""
     try:
-        text = await asyncio.to_thread(Path("index.md").read_text)
+        text = await asyncio.to_thread((CONTENT_DIR / "index.md").read_text)
         ts = TokenScheme(TOKEN_SECRET, text)
 
         # Use configured timezone
@@ -156,7 +165,7 @@ for page_name in MARKDOWN_PAGES:
     async def serve_markdown_page(page: str = page_name):
         """Serve a markdown documentation page."""
         try:
-            text = await asyncio.to_thread(Path(f"{page}.md").read_text)
+            text = await asyncio.to_thread((CONTENT_DIR / f"{page}.md").read_text)
 
             # Convert to HTML with frontmatter support
             md = create_markdown_converter()
@@ -228,13 +237,13 @@ async def stats_api():
     pages_stats = []
 
     # Analyze index page
-    if stats := await analyze_page_tokens("index", Path("index.md"), "LLM Instructions", "/", is_index=True):
+    if stats := await analyze_page_tokens("index", CONTENT_DIR / "index.md", "LLM Instructions", "/", is_index=True):
         pages_stats.append(stats)
 
     # Analyze other markdown pages
     for page in MARKDOWN_PAGES:
         title = PAGE_TITLES.get(page, page)
-        if stats := await analyze_page_tokens(page, Path(f"{page}.md"), title, f"/{page}"):
+        if stats := await analyze_page_tokens(page, CONTENT_DIR / f"{page}.md", title, f"/{page}"):
             pages_stats.append(stats)
 
     # Calculate totals
@@ -267,7 +276,7 @@ async def stats_page():
 @app.get("/style.css")
 async def style_css():
     """Serve the CSS file."""
-    file_path = Path("style.css")
+    file_path = CONTENT_DIR / "style.css"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="style.css not found")
 
@@ -286,7 +295,7 @@ async def verify_token(request: Request, token: str = ""):
     if token:
         try:
             # Read the source index.md file (not rendered)
-            text = await asyncio.to_thread(Path("index.md").read_text)
+            text = await asyncio.to_thread((CONTENT_DIR / "index.md").read_text)
             ts = TokenScheme(TOKEN_SECRET, text)
 
             ts.verify_token(token)

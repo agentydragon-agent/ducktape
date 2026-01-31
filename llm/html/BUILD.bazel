@@ -3,7 +3,27 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 # Gazelle manages llm_html/ subpackage
 
+filegroup(
+    name = "content_files",
+    srcs = [
+        "base.html",
+        "coding.md",
+        "index.md",
+        "stats.html",
+        "style.css",
+        "tana.md",
+        "verify.html",
+    ],
+    visibility = ["//llm/html:__subpackages__"],
+)
+
 # --- OCI Image ---
+
+pkg_tar(
+    name = "content_tar",
+    srcs = [":content_files"],
+    package_dir = "/app/content",
+)
 
 pkg_tar(
     name = "server_tar",
@@ -18,11 +38,15 @@ oci_image(
     base = "@python_slim_linux_amd64",
     entrypoint = ["/app/server"],
     env = {
+        "CONTENT_DIR": "/app/content",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
     exposed_ports = ["9000/tcp"],
-    tars = [":server_tar"],
+    tars = [
+        ":content_tar",
+        ":server_tar",
+    ],
     workdir = "/app",
 )
 

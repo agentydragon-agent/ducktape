@@ -1,6 +1,7 @@
 """Database module - per-file targets."""
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
 # Leaf modules (no db/ deps)
@@ -151,13 +152,12 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_agent_queries",
     srcs = [
         "test_agent_queries.py",
     ],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":examples",
@@ -172,13 +172,12 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_failed_critic_runs_as_zero_recall",
     srcs = [
         "test_failed_critic_runs_as_zero_recall.py",
     ],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":examples",
@@ -192,13 +191,12 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_pydantic_column_null",
     srcs = [
         "test_pydantic_column_null.py",
     ],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         ":models",
@@ -211,13 +209,12 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_split_based_rls",
     srcs = [
         "test_split_based_rls.py",
     ],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":config",
         ":conftest",
@@ -237,11 +234,10 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_view_extracts_grade_fields",
     srcs = ["test_view_extracts_grade_fields.py"],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":config",
         ":conftest",

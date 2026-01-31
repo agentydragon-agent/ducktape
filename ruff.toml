@@ -161,7 +161,6 @@ split-on-trailing-comma = false
 "py_detectors/tests/fixtures/**" = ["ALL"]
 # Vendored third-party code - don't lint
 "**/third_party/**" = ["ALL"]
-"adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]
 # Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
 "props/core/db/sync/sync.py" = ["PLC0415"]

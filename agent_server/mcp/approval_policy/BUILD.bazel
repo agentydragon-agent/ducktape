@@ -1,6 +1,6 @@
 """MCP Approval Policy server - policy engine and middleware."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
@@ -33,7 +33,7 @@ py_library(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_engine",
     srcs = ["test_engine.py"],
     data = [
@@ -41,7 +41,6 @@ py_test(
         "//third_party/python_slim:load",
     ],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":engine",
         "//agent_server:conftest",
@@ -56,7 +55,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_gateway_middleware",
     srcs = ["test_gateway_middleware.py"],
     data = [
@@ -64,7 +63,6 @@ py_test(
         "//third_party/python_slim:load",
     ],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":engine",
         "//agent_server/policies:policy_types",
@@ -80,12 +78,11 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     data = ["//third_party/python_slim:load"],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         "//agent_core:agent",
         "//agent_core:handler",
