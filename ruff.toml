@@ -100,7 +100,7 @@ known-first-party = [
     "agent_core",
     "agent_pkg",
     "agent_server",
-    "arg0_runner",
+    "experimental",
     "bazel_util",
     "props",
     "claude_history",
@@ -119,7 +119,6 @@ known-first-party = [
     "editor_util",
     "ember",
     "finance",
-    "gatelet",
     "git_commit_ai",
     "gmail_archiver",
     "gnome_terminal_profile_switcher",
@@ -141,8 +140,6 @@ known-first-party = [
     "props_backend",
     "props_core",
     "py_detectors",
-    "rspcache",
-    "sandboxed_jupyter",
     "sysrw",
     "tana",
     "tana_export",
@@ -155,9 +152,9 @@ split-on-trailing-comma = false
 
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
-"gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
-"rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
-"gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
+"experimental/gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
+"experimental/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
+"experimental/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "py_detectors/det_*.py" = ["N802"]

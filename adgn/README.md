@@ -29,14 +29,14 @@ See `[tool.pytest.ini_options]` in `pyproject.toml` for markers and timeout sett
 
 - Packaging: name `adgn`, Python `>=3.13`
 - Agent CLI (`adgn/agent/`) — simple stdin/stdout REPL
-- MCP servers (`adgn/mcp/`) — Gitea mirror server
 - Tools (`adgn/tools/`) — `trivial_patterns` linter, arg0 utilities
-- Testing (`adgn/testing/`) — test fixtures, bootstrap helpers
 - Utilities (`adgn/util/`) — shared utilities
 
 **Moved to separate packages:**
 
-- Response cache → `rspcache/`
+- Response cache → `experimental/rspcache/`
+- Gitea PR gate → `experimental/gitea/pr_gate/`
+- Gitea mirror MCP → `experimental/gitea/mcp_mirror/`
 - Properties/specimens → `props/`
 - Instruction optimizer → `inop/`
 - System rewriter → `sysrw/`
