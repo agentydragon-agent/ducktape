@@ -1,15 +1,19 @@
 """Test macros for tests with mock and live OpenAI API variants."""
 
 load("@rules_python//python:defs.bzl", "py_test")
-load("//tools/testing:docker.bzl", "DOCKER_EXEC_PROPERTIES")
+load("//tools/testing:docker.bzl", "merge_docker_exec_properties")
 
+# TODO: Consider removing Docker awareness from live_openai_*_py_test entirely.
+# Options:
+#   1. Have callers pass exec_properties=merge_docker_exec_properties() explicitly
+#      (only mcp_infra/exec:test_exec_roundtrip currently needs this).
+#   2. Compose with docker_py_test by having _maybe_docker_props callers use
+#      docker_py_test directly — but Starlark macros can't wrap each other.
+# Current approach: _maybe_docker_props delegates to shared merge_docker_exec_properties.
 def _maybe_docker_props(tags, exec_properties):
-    """Merge DOCKER_EXEC_PROPERTIES if requires_docker is in tags."""
+    """Merge Docker exec properties if requires_docker is in tags."""
     if tags and "requires_docker" in tags:
-        merged = dict(DOCKER_EXEC_PROPERTIES)
-        if exec_properties:
-            merged.update(exec_properties)
-        return merged
+        return merge_docker_exec_properties(exec_properties)
     return exec_properties
 
 def live_openai_only_py_test(name, srcs, deps, live_env = None, tags = None, exec_properties = None, **kwargs):
@@ -30,7 +34,7 @@ def live_openai_only_py_test(name, srcs, deps, live_env = None, tags = None, exe
     """
     live_env = live_env or ["OPENAI_API_KEY", "OPENAI_MODEL"]
     base_tags = tags or []
-    live_tags = base_tags + ["live_openai_api"]
+    live_tags = base_tags + ["live_openai_api", "no-remote-exec"]
     props = _maybe_docker_props(live_tags, exec_properties)
 
     if props:
@@ -66,7 +70,7 @@ def live_openai_py_test(name, srcs, deps, live_env = None, tags = None, exec_pro
     """
     live_env = live_env or ["OPENAI_API_KEY", "OPENAI_MODEL"]
     base_tags = tags or []
-    live_tags = base_tags + ["live_openai_api"]
+    live_tags = base_tags + ["live_openai_api", "no-remote-exec"]
 
     mock_props = _maybe_docker_props(base_tags, exec_properties)
     live_props = _maybe_docker_props(live_tags, exec_properties)

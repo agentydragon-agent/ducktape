@@ -15,6 +15,20 @@ DOCKER_EXEC_PROPERTIES = {
     "test.EstimatedComputeUnits": "3",
 }
 
+def merge_docker_exec_properties(exec_properties = None):
+    """Merge caller exec_properties with Docker defaults.
+
+    Args:
+        exec_properties: Extra exec properties to merge on top of Docker defaults.
+
+    Returns:
+        Merged dict with DOCKER_EXEC_PROPERTIES as base.
+    """
+    merged = dict(DOCKER_EXEC_PROPERTIES)
+    if exec_properties:
+        merged.update(exec_properties)
+    return merged
+
 def docker_py_test(name, tags = None, exec_properties = None, **kwargs):
     """py_test wrapper that adds Firecracker Docker exec properties.
 
@@ -31,13 +45,9 @@ def docker_py_test(name, tags = None, exec_properties = None, **kwargs):
     if "requires_docker" not in base_tags:
         base_tags = base_tags + ["requires_docker"]
 
-    merged_props = dict(DOCKER_EXEC_PROPERTIES)
-    if exec_properties:
-        merged_props.update(exec_properties)
-
     py_test(
         name = name,
         tags = base_tags,
-        exec_properties = merged_props,
+        exec_properties = merge_docker_exec_properties(exec_properties),
         **kwargs
     )

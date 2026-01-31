@@ -1,6 +1,7 @@
 """GEPA module - per-file targets."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
 # Library targets
@@ -50,11 +51,10 @@ py_library(
 # Tests
 # =============================================================================
 
-py_test(
+docker_py_test(
     name = "test_warm_start",
     srcs = ["test_warm_start.py"],
     imports = ["../../.."],
-    tags = ["requires_docker"],
     deps = [
         ":warm_start",
         "//props/db:examples",
