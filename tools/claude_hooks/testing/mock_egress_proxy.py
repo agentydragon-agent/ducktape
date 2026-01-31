@@ -14,7 +14,6 @@ import base64
 import contextlib
 import logging
 import os
-import select
 import socket
 import ssl
 import tempfile
@@ -256,19 +255,19 @@ class MockEgressProxy:
         *,
         upstream_proxy: EgressProxyConfig | None,
         listen_port: int = 0,
-        require_auth: bool = True,
         username: str = "testuser",
         password: str = "testpass",
         temp_dir: Path | None = None,
         max_workers: int = 100,
+        verify_target_certs: bool = True,
     ):
         self.listen_port = listen_port
-        self.require_auth = require_auth
         self.username = username
         self.password = password
         self.temp_dir = temp_dir
         self.max_workers = max_workers
         self.upstream_proxy = upstream_proxy
+        self.verify_target_certs = verify_target_certs
 
         self.server_socket: socket.socket | None = None
         self.port: int = 0
@@ -397,6 +396,9 @@ class MockEgressProxy:
         server_sock = socket.create_connection((target_host, target_port), timeout=60)
         server_sock.settimeout(60)
         server_ctx = ssl.create_default_context()
+        if not self.verify_target_certs:
+            server_ctx.check_hostname = False
+            server_ctx.verify_mode = ssl.CERT_NONE
         return server_ctx.wrap_socket(server_sock, server_hostname=target_host)
 
     def _connect_via_upstream(self, target_host: str, target_port: int) -> ssl.SSLSocket:
@@ -510,23 +512,22 @@ class MockEgressProxy:
             conn_id = self.stats.total_connections
             logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
 
-            # Check auth header
-            if self.require_auth:
-                auth_ok = False
-                for line in request.split(b"\r\n"):
-                    if line.lower().startswith(b"proxy-authorization: basic "):
-                        encoded = line.split(b" ", 2)[2]
-                        decoded = base64.b64decode(encoded).decode()
-                        if ":" in decoded:
-                            user, passwd = decoded.split(":", 1)
-                            if user == self.username and passwd == self.password:
-                                auth_ok = True
-                        break
+            # Check auth header (always required, matching real egress proxy)
+            auth_ok = False
+            for line in request.split(b"\r\n"):
+                if line.lower().startswith(b"proxy-authorization: basic "):
+                    encoded = line.split(b" ", 2)[2]
+                    decoded = base64.b64decode(encoded).decode()
+                    if ":" in decoded:
+                        user, passwd = decoded.split(":", 1)
+                        if user == self.username and passwd == self.password:
+                            auth_ok = True
+                    break
 
-                if not auth_ok:
-                    client_sock.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
-                    self.stats.record_failure(f"Auth failed for {target_host}:{target_port}")
-                    return
+            if not auth_ok:
+                client_sock.sendall(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+                self.stats.record_failure(f"Auth failed for {target_host}:{target_port}")
+                return
 
             # Connect to real target BEFORE sending 200 (so we can return error if connection fails)
             # Use semaphore to limit concurrent outbound connections and prevent overwhelming targets
@@ -597,52 +598,43 @@ class MockEgressProxy:
     def _forward_bidirectional(self, client_ssl: ssl.SSLSocket, server_ssl: ssl.SSLSocket, target_host: str) -> int:
         """Forward data bidirectionally between client and server.
 
+        Uses a thread per direction with blocking sockets. A previous
+        non-blocking select() implementation silently dropped data when
+        sendall() raised SSLWantWriteError, corrupting the TLS record
+        stream and causing BAD_LENGTH errors on large transfers.
+
         Returns total bytes forwarded.
         """
-        sockets = [client_ssl, server_ssl]
         bytes_forwarded = 0
+        lock = threading.Lock()
 
-        # Set non-blocking for select
-        client_ssl.setblocking(False)
-        server_ssl.setblocking(False)
-
-        try:
-            while True:
-                try:
-                    readable, _, errored = select.select(sockets, [], sockets, 30.0)
-                except (ValueError, OSError) as e:
-                    # Socket closed during select
-                    logger.warning("Select error for %s: %s", target_host, e)
-                    break
-
-                if errored:
-                    logger.warning("Socket error condition for %s", target_host)
-                    break
-
-                if not readable:
-                    # Timeout - check if connection is still alive
-                    continue
-
-                for sock in readable:
-                    try:
-                        data = sock.recv(65536)
-                        if not data:
-                            return bytes_forwarded  # Connection closed gracefully
-
-                        # Forward to the other socket
-                        other = server_ssl if sock is client_ssl else client_ssl
-                        other.sendall(data)
+        def forward(src: ssl.SSLSocket, dst: ssl.SSLSocket, direction: str) -> None:
+            nonlocal bytes_forwarded
+            try:
+                while True:
+                    data = src.recv(65536)
+                    if not data:
+                        break
+                    dst.sendall(data)
+                    with lock:
                         bytes_forwarded += len(data)
-                    except ssl.SSLWantReadError:
-                        continue
-                    except ssl.SSLWantWriteError:
-                        continue
-                    except (OSError, ssl.SSLError) as e:
-                        logger.warning("Forward error for %s: %s", target_host, e)
-                        return bytes_forwarded
+            except (OSError, ssl.SSLError) as e:
+                logger.debug("Forward %s finished for %s: %s", direction, target_host, e)
+            finally:
+                # Shut down write side so the other direction's recv() returns empty
+                with contextlib.suppress(OSError):
+                    dst.shutdown(socket.SHUT_WR)
 
-        except (OSError, ssl.SSLError) as e:
-            logger.warning("Bidirectional forward error for %s: %s", target_host, e)
+        # Both sockets stay in blocking mode (default)
+        client_ssl.settimeout(30.0)
+        server_ssl.settimeout(30.0)
+
+        t_c2s = threading.Thread(target=forward, args=(client_ssl, server_ssl, "c2s"), daemon=True)
+        t_s2c = threading.Thread(target=forward, args=(server_ssl, client_ssl, "s2c"), daemon=True)
+        t_c2s.start()
+        t_s2c.start()
+        t_c2s.join(timeout=120)
+        t_s2c.join(timeout=120)
 
         return bytes_forwarded
 
