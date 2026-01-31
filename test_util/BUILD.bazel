@@ -11,7 +11,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//:runfiles",
-        "@pypi//docker",
         "@pypi//pytest",
     ],
 )

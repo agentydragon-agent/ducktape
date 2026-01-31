@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import platform
-from contextlib import suppress
 
 import pytest
 
@@ -48,18 +47,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     # sandbox-exec requires macOS
     if item.get_closest_marker("requires_sandbox_exec") is not None and platform.system() != "Darwin":
         pytest.skip("sandbox-exec requires macOS")
-
-    # Docker availability check
-    if item.get_closest_marker("requires_docker") is not None:
-        try:
-            import docker  # noqa: PLC0415 - optional dependency, lazy import
-
-            client = docker.from_env()
-            client.ping()
-            with suppress(Exception):
-                client.close()
-        except Exception as exc:
-            pytest.skip(f"Docker not available: {exc}")
 
     # PostgreSQL availability check
     if item.get_closest_marker("requires_postgres") is not None:

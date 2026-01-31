@@ -25,15 +25,13 @@ Docker test utilities are consolidated in `//test_util`:
 from test_util.docker import (
     load_bazel_image,       # Load OCI image from Bazel oci_load target
     python_slim_image,       # Session fixture for python-slim image
-    pytest_runtest_setup,    # Hook for skipping unavailable Docker tests
 )
 ```
 
 **Pattern for Docker tests:**
 
 1. Add `tags = ["requires_docker"]` to the Bazel test target
-2. Import `pytest_runtest_setup` in conftest.py (auto-skips if Docker unavailable)
-3. Use fixtures from `test_util.docker` or `mcp_infra/testing/docker_fixtures.py`
+2. Use fixtures from `test_util.docker` or `mcp_infra/testing/docker_fixtures.py`
 
 ### Props E2E Tests (Testcontainers)
 

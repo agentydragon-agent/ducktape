@@ -25,7 +25,7 @@ from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.mcp_types import McpServerSpecs
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
-from test_util.docker import load_bazel_image, pytest_runtest_setup, python_slim_image
+from test_util.docker import load_bazel_image, python_slim_image
 
 # Image tags and load scripts for Bazel-loaded images
 RUNTIME_IMAGE_TAG = "adgn-runtime:latest"
