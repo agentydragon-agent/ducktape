@@ -65,10 +65,12 @@ def live_openai_model() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
-@pytest.fixture(params=[
-    pytest.param(ClientMode.MOCK, id="mock"),
-    pytest.param(ClientMode.LIVE, id="live", marks=pytest.mark.live_openai_api),
-])
+@pytest.fixture(
+    params=[
+        pytest.param(ClientMode.MOCK, id="mock"),
+        pytest.param(ClientMode.LIVE, id="live", marks=pytest.mark.live_openai_api),
+    ]
+)
 def mock_or_live(request, live_openai_model):
     """Parametrized fixture that replaces @mock_and_live + if/else branching.
 
