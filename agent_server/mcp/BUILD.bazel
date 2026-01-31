@@ -70,7 +70,7 @@ py_test(
     srcs = ["test_policy_gateway_middleware.py"],
     data = [
         "//agent_server:load",
-        "//mcp_infra/testing:python_slim_load",
+        "//third_party/python_slim:load",
     ],
     imports = ["../.."],
     tags = ["requires_docker"],

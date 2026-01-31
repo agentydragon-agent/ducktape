@@ -127,7 +127,7 @@ py_test(
     srcs = ["test_approval_integration.py"],
     data = [
         "//agent_server:load",
-        "//mcp_infra/testing:python_slim_load",
+        "//third_party/python_slim:load",
     ],
     imports = [".."],
     tags = ["requires_docker"],
@@ -155,7 +155,7 @@ py_test(
     srcs = ["test_default_approval_policy.py"],
     data = [
         "//agent_server:load",
-        "//mcp_infra/testing:python_slim_load",
+        "//third_party/python_slim:load",
     ],
     imports = [".."],
     tags = ["requires_docker"],
@@ -175,7 +175,7 @@ py_test(
 py_test(
     name = "test_exec_stub",
     srcs = ["test_exec_stub.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = [".."],
     tags = ["requires_docker"],
     deps = [
@@ -195,7 +195,7 @@ py_test(
 live_openai_py_test(
     name = "test_exec_roundtrip",
     srcs = ["test_exec_roundtrip.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = [".."],
     tags = ["requires_docker"],
     deps = [
@@ -223,7 +223,7 @@ live_openai_py_test(
 py_test(
     name = "test_mcp_integration",
     srcs = ["test_mcp_integration.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = [".."],
     tags = ["requires_docker"],
     deps = [
@@ -246,7 +246,7 @@ py_test(
 py_test(
     name = "test_mcp_notifications_flow",
     srcs = ["test_mcp_notifications_flow.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = [".."],
     tags = ["requires_docker"],
     deps = [
@@ -277,7 +277,7 @@ py_test(
 py_test(
     name = "test_mcp_resources_flow",
     srcs = ["test_mcp_resources_flow.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = [".."],
     tags = ["requires_docker"],
     deps = [
@@ -302,7 +302,7 @@ py_test(
 py_test(
     name = "test_policy_eval_abort_on_error",
     srcs = ["test_policy_eval_abort_on_error.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = [".."],
     tags = ["requires_docker"],
     deps = [
@@ -320,7 +320,7 @@ py_test(
 py_test(
     name = "test_runtime_timeout",
     srcs = ["test_runtime_timeout.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = [".."],
     tags = ["requires_docker"],
     deps = [
