@@ -1,17 +1,55 @@
 # Building Dockerfiles in gVisor
 
-`podman build` does not work in gVisor due to two independent issues:
+`podman build` requires specific flags to work in gVisor:
 
-- **OCI isolation**: crun calls `deny_setgroups()` which opens `/proc/<pid>/setgroups` — this file doesn't exist in gVisor.
-- **Chroot isolation**: `/dev/null` is read-only, breaking apt-get/gpg.
+```bash
+podman build --network=host --isolation=chroot --cap-add=SYS_ADMIN \
+  -f Dockerfile .
+```
 
-## Workaround: podman run + commit
+**Every `RUN` step that may touch `/dev/null`** (apt-get, most package installs)
+must begin with `mount -o remount,rw /dev &&`. Since each `RUN` step gets a
+fresh container, the remount does not persist across steps.
 
-Simulate Dockerfile steps using `podman run` + `podman commit`:
+## Why these flags
+
+| Flag                  | Reason                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--network=host`      | gVisor doesn't support CNI/netavark networking                                                                                                                |
+| `--isolation=chroot`  | OCI isolation fails: crun 1.14.1 lacks `/proc/self/setgroups`; crun 1.25.1+ has a SIGPIPE race in buildah's stdio relay (see <podman-build-investigation.md>) |
+| `--cap-add=SYS_ADMIN` | Chroot isolation bind-mounts host `/dev` read-only; `CAP_SYS_ADMIN` lets the `mount -o remount,rw /dev` workaround succeed                                    |
+
+## Example: building a Dockerfile
+
+```dockerfile
+FROM docker.io/library/ubuntu:24.04
+
+# Remount /dev rw so apt post-install scripts can use /dev/null.
+# Must be in the SAME RUN step as apt-get (mount state doesn't persist).
+RUN mount -o remount,rw /dev \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl git \
+    && rm -rf /var/lib/apt/lists/*
+
+# COPY works normally
+COPY myfile.conf /etc/myfile.conf
+
+# Steps that don't touch /dev/null don't need the remount
+RUN echo "hello" > /tmp/greeting
+```
+
+```bash
+podman build --no-cache --network=host --isolation=chroot --cap-add=SYS_ADMIN \
+  -t my-image:latest -f Dockerfile .
+```
+
+## Fallback: podman run + commit
+
+If `podman build` doesn't work for a specific case, simulate Dockerfile steps
+manually:
 
 ```bash
 # FROM
-podman pull docker.io/library/ubuntu:24.04
 IMAGE=docker.io/library/ubuntu:24.04
 
 # RUN
@@ -45,6 +83,15 @@ No output means all libraries resolve.
 
 ## Root cause details
 
-**OCI isolation path**: `podman run --network=host` works because `containers.conf` sets `userns=host`, which skips user namespace creation entirely. `podman build` creates intermediate containers for each `RUN` step that don't inherit this setting, so crun tries to set up a user namespace and fails when writing to `/proc/<pid>/setgroups`.
+See <podman-build-investigation.md> for detailed investigation notes.
 
-**Chroot isolation path**: buildah's chroot mode creates a minimal `/dev` on a devtmpfs that gVisor mounts read-only. Volume mounts (`--volume /dev/null:/dev/null:rw`) don't override this because the devtmpfs layer takes precedence.
+**Why `/dev/null` is read-only in chroot**: The host `/dev` is a writable tmpfs, but buildah's chroot isolation explicitly bind-mounts it read-only into the container (hardcoded in `chroot/run_linux.go:421`: `devFlags := commonFlags | unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_RDONLY`). With `CAP_SYS_ADMIN`, the container can `mount -o remount,rw /dev` to undo this.
+
+**OCI isolation path**: Two independent issues:
+
+1. crun 1.14.1 (system version): `can_setgroups()` opens `/proc/self/setgroups` which doesn't exist in gVisor. The `run.oci.keep_original_groups=1` annotation works for `podman run` but buildah doesn't propagate it to intermediate build containers.
+2. crun 1.25.1+ (fixes setgroups): Introduces a race condition in buildah's stdio relay — the pipe read-end is closed before forked child processes finish writing, causing SIGPIPE. This is a timing-dependent interaction between buildah's poll-based I/O relay and gVisor's scheduling. Shell builtins work but any fork+exec (external commands, subshells) fails.
+
+**Chroot isolation path**: buildah bind-mounts host `/dev` read-only. Solvable with `CAP_SYS_ADMIN` + `mount -o remount,rw /dev` in each RUN step.
+
+**Why `podman run` works without workarounds**: Uses conmon for stdio management (not buildah's poll loop), and respects `containers.conf` annotations for `keep_original_groups`.
