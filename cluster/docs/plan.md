@@ -95,7 +95,23 @@ Move GPU from standalone VM (wyrm) to k8s cluster for LLM inference.
 - Ingress/TLS handled by existing infrastructure
 - API key rotation via Vault/ESO
 
-### Branch C: DNS Stack Migration
+### Branch C: BuildBuddy Remote Executor
+
+Remote build execution via BuildBuddy Cloud.
+
+**Status**: Deployed (pending cluster bring-up for verification)
+
+**Implementation**:
+
+- [x] HelmRelease using official `buildbuddy-executor` chart from `https://helm.buildbuddy.io`
+- [x] API key sealed as SealedSecret, injected via Flux `valuesFrom`
+- [x] Pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`)
+- [x] 2 replicas, 2 CPU / 8Gi limits each
+- [ ] Verify executor connects to BuildBuddy Cloud after cluster bootstrap
+
+**Location**: `k8s/applications/buildbuddy-executor/`
+
+### Branch D: DNS Stack Migration
 
 Migrate from current single-instance MariaDB to replicated Galera cluster.
 

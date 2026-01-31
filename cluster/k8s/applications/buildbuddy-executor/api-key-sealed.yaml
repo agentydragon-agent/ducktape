@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: buildbuddy-api-key
+  namespace: buildbuddy-executor
+spec:
+  encryptedData:
+    api-key: AgBRhg5b4/RoQeYc2E2gmrXj7txCVoVhzSk663XZKpy4mYvgI8tyk7azRmn1Z+xtq7ao/yQ64MEUHPfyXZWezYdpowRwgr1+Wb+pzPWOMUUBSDjIxLBbkipbUBkzZN7OgAdkc7mzNLgvGd0x7T98OTn4qyvi6QtvIaVsVbc3EreInhdccoZhCg75vkNxufuEEdnIHFZoKoHrzjHxs7zI0ci3AWupF7aLKSrc038GRWAdPlEs4bYVCFuZKEvw+CvOH9MbAe7TAk0n23gbGL6okHKfEbmQ4mKWkkcWvfFcjCMtHw/5nBQq/Sa6HXjG5CH8H2sD12cwK3iI/l16+cvhHtddi0RkkLMvyvT0nGYzowBfC6AGJENFHmWFz/+pPX9fZLXpY+y+Yib+94C6QM5cWpzcs6HopgKtALvfWGiZkGuqESA7AIu5vHdcU/2lDEFp+TfVou+Q5Lldma59+qfkQ6J+ktr3ZxDU1kHlN1fztr+hGSRkg1mh1OpLbTiZJrF1iggdSr8Gr7mzQfUl6T1kNh1vZwqocUMJE6vvQrBllhDkkyTAPWXB8k53/HjzBqZ04IfzM7a1kzOMC8zJfGJZmgqWuAYfG6K1PX2uwvpDTK7CTAyMj+pf6xZUBGkv5uxk3VZB5IRenS0+h75SNyFyZG+xflQhafIj4LUW/P/WKVIxKQOqiYKnZT038H5ETbZL+5KGOzqVjxJ0nhEqBytUG1BHnKwY0w==
+  template:
+    metadata:
+      name: buildbuddy-api-key
+      namespace: buildbuddy-executor

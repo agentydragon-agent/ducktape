@@ -143,6 +143,6 @@ CERTEOF
 # Run: git add k8s/storage/proxmox-csi-sealed.yaml && git commit -m "chore: update sealed secret"
 #
 # The seal-secret.sh helper script reads the cert directly from terraform state
-# via `terraform output -raw sealed_secrets_public_key_pem`
+# via `terraform output -raw sealed_secrets_cert_pem`
 
 # NOTE: No cleanup provisioner here - persistent tokens only destroyed when this layer is explicitly destroyed

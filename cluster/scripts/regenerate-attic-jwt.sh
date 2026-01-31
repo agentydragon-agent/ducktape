@@ -16,7 +16,7 @@ JWT_TOKEN_BASE64=$(echo -n "$RAW_TOKEN" | base64)
 
 # Get sealed-secrets public key from terraform state
 cd "$PERSISTENT_AUTH_DIR"
-CERT=$(terraform output -raw sealed_secrets_public_key)
+CERT=$(terraform output -raw sealed_secrets_cert_pem)
 cd - >/dev/null
 
 # Create and seal the secret

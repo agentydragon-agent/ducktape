@@ -443,7 +443,7 @@ kubectl create secret generic proxmox-csi-plugin \
   --namespace=csi-proxmox \
   --from-file=config.yaml=/tmp/csi-config.yaml \
   --dry-run=client -o yaml | \
-kubeseal --cert <(terraform output -raw sealed_secrets_public_key) \
+kubeseal --cert <(terraform output -raw sealed_secrets_cert_pem) \
   --format=yaml | kubectl apply -f -
 
 rm /tmp/csi-config.yaml
@@ -523,12 +523,12 @@ git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ```bash
 # Check if stable keypair exists in terraform state
 cd terraform/00-persistent-auth
-terraform output sealed_secrets_public_key >/dev/null && echo "✅ Keypair exists in terraform state"
+terraform output sealed_secrets_cert_pem >/dev/null && echo "✅ Keypair exists in terraform state"
 
 # Check if cluster is using stable keypair (serial numbers should match)
 kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
   base64 -d | openssl x509 -text -noout | grep -A2 "Serial Number"
-terraform output -raw sealed_secrets_public_key | openssl x509 -text -noout | grep -A2 "Serial Number"
+terraform output -raw sealed_secrets_cert_pem | openssl x509 -text -noout | grep -A2 "Serial Number"
 cd -
 ```
 

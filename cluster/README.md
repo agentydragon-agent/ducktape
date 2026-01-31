@@ -84,7 +84,7 @@ persists in terraform state and survives cluster destroy/recreate cycles.
 ```bash
 # Get public cert from terraform state
 cd terraform/00-persistent-auth
-terraform output -raw sealed_secrets_public_key > /tmp/sealed-secrets.crt
+terraform output -raw sealed_secrets_cert_pem > /tmp/sealed-secrets.crt
 kubeseal --cert /tmp/sealed-secrets.crt < secret.yaml > sealed-secret.yaml
 ```
 

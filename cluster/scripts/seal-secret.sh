@@ -38,8 +38,8 @@ if [[ ! -f "$TF_DIR/terraform.tfstate" ]]; then
 fi
 
 # Get certificate from terraform state
-CERT=$(cd "$TF_DIR" && terraform output -raw sealed_secrets_public_key_pem 2>/dev/null) || {
-  echo "❌ Could not read sealed_secrets_public_key_pem from terraform state"
+CERT=$(cd "$TF_DIR" && terraform output -raw sealed_secrets_cert_pem 2>/dev/null) || {
+  echo "❌ Could not read sealed_secrets_cert_pem from terraform state"
   echo "   Run 'cd terraform/00-persistent-auth && terraform apply' first"
   exit 1
 }
