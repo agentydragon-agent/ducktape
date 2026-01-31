@@ -8,6 +8,7 @@ import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from itertools import batched
 from pathlib import Path
 
 from google.oauth2.credentials import Credentials
@@ -167,8 +168,7 @@ class GmailClient:
 
             return callback
 
-        for i in range(0, len(message_ids), batch_size):
-            batch = message_ids[i : i + batch_size]
+        for batch in batched(message_ids, batch_size, strict=False):
             batch_results: list[GmailMessageWithHeaders] = []
             batch_errors: list[tuple[str, str]] = []
 
@@ -209,8 +209,7 @@ class GmailClient:
 
             return callback
 
-        for i in range(0, len(message_ids), batch_size):
-            batch = message_ids[i : i + batch_size]
+        for batch in batched(message_ids, batch_size, strict=False):
             batch_results: list[GmailMessageMinimal] = []
             batch_errors: list[tuple[str, str]] = []
 
@@ -267,9 +266,7 @@ class GmailClient:
             return callback
 
         # Process in batches (API allows 100, but 50 recommended to avoid rate limits)
-        for i in range(0, len(message_ids), batch_size):
-            batch = message_ids[i : i + batch_size]
-
+        for batch in batched(message_ids, batch_size, strict=False):
             # Retry logic for the entire batch if rate limited
             max_retries = 10
             batch_succeeded = False
@@ -405,8 +402,7 @@ class GmailClient:
 
         # Process in batches
         all_errors = []
-        for i in range(0, len(message_ids), batch_size):
-            batch = message_ids[i : i + batch_size]
+        for batch in batched(message_ids, batch_size, strict=False):
             batch_emails: list[Email] = []
             batch_errors: list[tuple[str, str]] = []
 
@@ -453,15 +449,13 @@ class GmailClient:
         """Add label to multiple messages. Returns (successful_ids, failed_ids_with_errors)."""
         label_id = self.get_or_create_label(label_name)
 
-        successful = []
-        failed = []
+        successful: list[str] = []
+        failed: list[tuple[str, str]] = []
 
         # Process in batches
-        for i in range(0, len(message_ids), batch_size):
-            batch = message_ids[i : i + batch_size]
-
+        for batch in batched(message_ids, batch_size, strict=False):
             try:
-                body = {"ids": batch, "addLabelIds": [label_id]}
+                body = {"ids": list(batch), "addLabelIds": [label_id]}
                 if archive:
                     body["removeLabelIds"] = [SystemLabel.INBOX]
 

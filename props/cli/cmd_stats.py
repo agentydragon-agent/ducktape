@@ -7,10 +7,12 @@ from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import pairwise
 from typing import Any
 
 import plotext as plt
 import typer
+from more_itertools import mark_ends
 from rich import box
 from rich.console import Console
 from rich.table import Table
@@ -183,21 +185,17 @@ def _generate_buckets(
 
     # Create bucket tuples with labels
     buckets = []
-    for i in range(len(unique_bounds) - 1):
-        low = unique_bounds[i]
-        high = unique_bounds[i + 1]
-
+    for _is_first, is_last, (low, high) in mark_ends(pairwise(unique_bounds)):
         # Format label based on value type and range
         if isinstance(low, int) and isinstance(high, int):
             label = str(low) if low == high - 1 else f"{low}-{high - 1}"
         else:
             label = f"{low:.1f}-{high:.1f}"
 
-        # Adjust high boundary to be exclusive for the last bucket
-        if i == len(unique_bounds) - 2:
-            high = max_val + 1  # Make last bucket inclusive
+        # Make last bucket inclusive
+        effective_high = max_val + 1 if is_last else high
 
-        buckets.append((label, low, high))
+        buckets.append((label, low, effective_high))
 
     return buckets
 

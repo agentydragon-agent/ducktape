@@ -76,6 +76,7 @@ py_library(
         "//props/core/models:true_positive",
         "//props/db:examples",
         "//props/db:models",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],

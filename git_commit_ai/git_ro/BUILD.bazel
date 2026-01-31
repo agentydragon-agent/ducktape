@@ -21,6 +21,7 @@ py_library(
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:simple",
         "//openai_utils:pydantic_strict_mode",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pygit2",
     ],

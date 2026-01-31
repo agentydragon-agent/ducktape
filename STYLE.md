@@ -97,6 +97,11 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **No string forward references**: Avoid string-based forward references in type annotations. Reorder classes or split files to remove cycles. When cross-module cycles exist, use `if TYPE_CHECKING:` imports with real symbols (not quoted names). Do not rely on `model_rebuild()` where reordering can avoid forward refs.
 - **No unnecessary `__init__.py`**: Do not create `__init__.py` files for packages that only contain Bazel targets. Bazel auto-generates stub `__init__.py` files via `imports = [...]` in `py_library`/`py_test` rules. Only create `__init__.py` when you need to expose a public API or configure the package namespace.
 - **Prefer sets for unordered collections**: When a collection's order is semantically irrelevant (changed files, unique IDs, tags), use `set[T]` instead of `list[T]`. Sets make the "no duplicates, order doesn't matter" intent explicit and provide O(1) membership testing. Use lists only when order matters or duplicates are valid.
+- **Prefer `more_itertools` over manual iterator patterns**: Use `more_itertools` when it expresses intent more clearly than raw Python. Key utilities:
+  - `one(iterable)` — extract the single element, raise if zero or multiple. Use instead of `next(iter(x))` when exactly one item is expected. Prefer over length checks followed by indexing.
+  - `first(iterable)` / `first(iterable, default=...)` — get the first element. Use instead of `next(iter(x))` or `next(iter(x), default)` when taking the first of potentially many.
+  - Use `itertools.batched` (stdlib since 3.12) instead of `for i in range(0, len(x), n): batch = x[i:i+n]`.
+  - Choose `one()` vs `first()` based on semantics: if receiving multiple items is a bug, use `one()` to enforce the invariant. If multiple items are valid and you want the first, use `first()`.
 
 ## Build System (Bazel)
 
@@ -186,4 +191,22 @@ See the [architecture guide](docs/architecture.md) for details.
 # Bad - duplicates path
 
 See [docs/schema.md](docs/schema.md) for details.
+```
+
+### Inline Code in Prose
+
+Use backtick inline code (`` `...` ``) or fenced code blocks for any code-like token in markdown prose: variable names, function names, CLI flags, file paths, config keys, env vars, glob patterns, hostnames, and similar. Do not write code tokens as plain text — formatters like prettier will escape special characters (e.g., `*` → `\*`), and unformatted code tokens are harder to read.
+
+```markdown
+# Good
+
+- Reduce `file-read*` to the minimum required
+- Set `JUPYTER_*` dirs and `HOME`
+- Map `fs.read_paths` → ro binds
+
+# Bad — code tokens as plain text (prettier will mangle the \*)
+
+- Reduce file-read\* to the minimum required
+- Set JUPYTER\_\* dirs and HOME
+- Map fs.read_paths → ro binds
 ```

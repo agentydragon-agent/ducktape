@@ -13,6 +13,7 @@ import asyncio
 import importlib.resources
 import json
 import logging
+from itertools import batched
 from typing import Any
 
 from fastmcp.client import Client
@@ -202,18 +203,15 @@ async def classify_patterns_parallel(
     Returns:
         Combined classifications from all workers
     """
-    # Create batches
-    batches = [patterns[i : i + batch_size] for i in range(0, len(patterns), batch_size)]
-
     # Create shared queues
-    batch_queue: asyncio.Queue[list[str]] = asyncio.Queue()
+    batch_queue: asyncio.Queue[tuple[str, ...]] = asyncio.Queue()
     results_queue: asyncio.Queue[list[Classification]] = asyncio.Queue()
 
     # Fill batch queue
-    for batch in batches:
+    for batch in batched(patterns, batch_size, strict=False):
         await batch_queue.put(batch)
 
-    logger.info(f"Starting {num_workers} workers to process {len(batches)} batches")
+    logger.info(f"Starting {num_workers} workers to process {batch_queue.qsize()} batches")
 
     # Start workers in parallel
     workers = [classify_worker(i, batch_queue, results_queue, client, verbose) for i in range(num_workers)]
@@ -226,6 +224,6 @@ async def classify_patterns_parallel(
         batch_results = await results_queue.get()
         all_results.extend(batch_results)
 
-    logger.info(f"Completed: {len(all_results)} classifications from {len(batches)} batches")
+    logger.info(f"Completed: {len(all_results)} classifications")
 
     return all_results

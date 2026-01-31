@@ -21,6 +21,7 @@ from typing import IO, cast
 import click
 import psutil
 import pygit2
+from more_itertools import one
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from wt.shared.configuration import Configuration
@@ -318,7 +319,7 @@ class WtClient:
             return set(), set()
 
         # Extract the single result
-        item = next(iter(status_response.items.values()))
+        item = one(status_response.items.values())
         if isinstance(item.result, StatusResultError):
             raise RpcError(ErrorCodes.INTERNAL_ERROR, item.result.error)
 

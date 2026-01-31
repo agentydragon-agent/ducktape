@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pygit2
+from more_itertools import first
 
 # FastMCP-only: no TokenVerifier in server construction
 from pydantic import BaseModel, Field
@@ -251,7 +252,7 @@ class GitRoServer(SimpleFastMCP):
                 if i >= input.limit:
                     break
             # Peek one more to determine truncation
-            more = next(iter(walker), None)
+            more = first(walker, default=None)
             truncated = more is not None
             next_offset = input.offset + input.limit if truncated else None
             return LogEntriesPage(entries=entries, truncated=truncated, next_offset=next_offset)

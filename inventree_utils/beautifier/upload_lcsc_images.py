@@ -6,10 +6,10 @@ from bs4 import BeautifulSoup
 from inventree.api import InvenTreeAPI
 from inventree.company import Company, SupplierPart
 from inventree.part import Part
+from more_itertools import one
 
 from inventree_utils.beautifier.cli_util import choose
 from inventree_utils.beautifier.inventree_util import part_url
-from inventree_utils.beautifier.iter_util import unwrap_singleton
 from inventree_utils.beautifier.lcsc_util import lcsc_product_link, parse_url_for_lcsc_id
 
 logger = structlog.get_logger()
@@ -48,7 +48,7 @@ def upload_lcsc_images(api: InvenTreeAPI):
     # API calls are slow, frontload them.
     all_parts = Part.list(api)
     all_supplier_parts = SupplierPart.list(api)
-    lcsc = unwrap_singleton(Company.list(api, name="LCSC"))
+    lcsc = one(Company.list(api, name="LCSC"))
 
     # Skip parts that have an image.
     candidate_parts = [

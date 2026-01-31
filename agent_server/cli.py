@@ -8,6 +8,7 @@ from urllib.parse import urlencode, urlunparse
 
 import typer
 import uvicorn
+from more_itertools import first
 from typer.main import get_command
 
 from agent_server.mcp_bridge.auth import TokensConfig
@@ -49,14 +50,18 @@ def _build_cfg_and_print(mcp_configs: list[Path]):
     return cfg
 
 
-def _print_auth_url(host: str, port: int) -> None:
-    """Print the authenticated URL for accessing the UI."""
+def _auth_url(host: str, port: int) -> str | None:
+    """Return the authenticated URL for the first configured user token, or None."""
     config = TokensConfig.from_yaml_file()
     if user_tokens := config.user_tokens():
-        # Use first user token
-        token = next(iter(user_tokens.keys()))
+        token = first(user_tokens.keys())
         query = urlencode({"token": token})
-        url = urlunparse(("http", f"{host}:{port}", "", "", query, ""))
+        return urlunparse(("http", f"{host}:{port}", "", "", query, ""))
+    return None
+
+
+def _print_auth_url(host: str, port: int) -> None:
+    if url := _auth_url(host, port):
         print(f"\nAuthenticated URL: {url}")
     else:
         print("\nNo user tokens found. Create ~/.config/adgn/tokens.yaml with:")
@@ -134,16 +139,9 @@ def dev(
         typer.echo(f"Backend (MCP): {backend_url}")
         _print_auth_url(host, frontend_dev_port)
         if open_browser:
-            # Try to open authenticated URL if token available
-            config = TokensConfig.from_yaml_file()
-            if user_tokens := config.user_tokens():
-                token = next(iter(user_tokens.keys()))
-                query = urlencode({"token": token})
-                auth_url = urlunparse(("http", f"{host}:{frontend_dev_port}", "", "", query, ""))
-            else:
-                auth_url = url
+            browser_url = _auth_url(host, frontend_dev_port) or url
             with contextlib.suppress(Exception):
-                subprocess.Popen(["open", auth_url])
+                subprocess.Popen(["open", browser_url])
 
         # Build FastAPI app; agent lifecycle is handled by the runtime container (registry)
         app_fastapi = create_app()

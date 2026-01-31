@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import anyio
 import pydantic_core
+from more_itertools import one
 from pydantic import TypeAdapter
 
 from agent_core.events import (
@@ -334,9 +335,7 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
     if isinstance(policy, ForbidAllTools):
         return "none"
     if isinstance(policy, RequireSpecific):
-        if len(policy.names) == 1:
-            return ToolChoiceFunction(name=policy.names[0])
-        raise ValueError("RequireSpecific with multiple names is not supported for Responses.tool_choice")
+        return ToolChoiceFunction(name=one(policy.names))
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 

@@ -1,4 +1,4 @@
-from inventree_utils.beautifier.iter_util import unwrap_singleton
+from more_itertools import one
 
 
 def build_table(rows, header=None):
@@ -7,7 +7,7 @@ def build_table(rows, header=None):
     """
     if header:
         rows = [header, *rows[:]]
-    column_count = unwrap_singleton({len(row) for row in rows})
+    column_count = one({len(row) for row in rows})
     column_widths = [max(len(row[i]) for row in rows) for i in range(column_count)]
 
     lines = [" ".join(cell.ljust(width) for cell, width in zip(row, column_widths, strict=False)) for row in rows]

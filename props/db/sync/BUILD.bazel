@@ -28,6 +28,7 @@ py_library(
         "//props/core:ids",
         "//props/core/models:true_positive",
         "//props/core/models:types",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )

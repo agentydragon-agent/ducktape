@@ -204,6 +204,7 @@ py_library(
         "//props/db:models",
         "//props/db:query_builders",
         "//props/db:session",
+        "@pypi//more_itertools",
         "@pypi//plotext",
         "@pypi//rich",
         "@pypi//sqlalchemy",

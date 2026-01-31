@@ -7,6 +7,7 @@ from unittest.mock import Mock
 import pygit2
 import pytest
 import pytest_bazel
+from more_itertools import one
 
 from wt.server.handlers.status_handler import get_status
 from wt.server.rpc import ServiceDependencies
@@ -54,8 +55,7 @@ async def test_get_status_returns_error_on_git_failure(status_deps: ServiceDepen
 
     response = await get_status(status_deps, StatusParams())
 
-    assert len(response.items) == 1
-    item = next(iter(response.items.values()))
+    item = one(response.items.values())
 
     assert isinstance(item.result, StatusResultError)
     assert "repository not found" in item.result.error
@@ -72,8 +72,7 @@ async def test_get_status_returns_ok_on_success(status_deps: ServiceDependencies
 
     response = await get_status(status_deps, StatusParams())
 
-    assert len(response.items) == 1
-    item = next(iter(response.items.values()))
+    item = one(response.items.values())
 
     assert isinstance(item.result, StatusResultOk)
     assert item.result.status.branch_name == "feature-branch"

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from more_itertools import first
 
 
 def load_trajectories(filename):
@@ -40,7 +41,7 @@ def analyze_action_distribution(trajectories):
 def plot_action_heatmap(action_counts):
     """Plot heatmap of action distributions."""
     models = sorted(action_counts.keys())
-    envs = sorted(next(iter(action_counts.values())).keys())
+    envs = sorted(first(action_counts.values()).keys())
 
     fig, axes = plt.subplots(len(models), len(envs), figsize=(2.5 * len(envs), 2.5 * len(models)))
     if len(models) == 1:

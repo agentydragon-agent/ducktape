@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from functools import singledispatch
 
+from more_itertools import one, unique_everseen
+
 from tana.domain.constants import EVENT_TYPE_ID, MEETING_TYPE_ID
 from tana.domain.nodes import BaseNode
 from tana.domain.search import (
@@ -166,12 +168,8 @@ class SearchEvaluator:
 
         if operator == BooleanOperator.OR:
             # Union of all operand results
-            seen: set[NodeId] = set()
-            for operand in operands:
-                for node in _evaluate_dispatch(operand, self):
-                    if node.id not in seen:
-                        seen.add(node.id)
-                        yield node
+            all_nodes = (node for operand in operands for node in _evaluate_dispatch(operand, self))
+            yield from unique_everseen(all_nodes, key=lambda node: node.id)
 
         elif operator == BooleanOperator.AND:
             # Intersection of all operand results
@@ -191,10 +189,7 @@ class SearchEvaluator:
 
         elif operator == BooleanOperator.NOT:
             # All nodes except those matching the operand
-            if len(operands) != 1:
-                raise ValueError(f"NOT operator requires exactly 1 operand, got {len(operands)}")
-
-            excluded_ids = {node.id for node in _evaluate_dispatch(operands[0], self)}
+            excluded_ids = {node.id for node in _evaluate_dispatch(one(operands), self)}
 
             def not_excluded(node: BaseNode) -> bool:
                 return node.id not in excluded_ids

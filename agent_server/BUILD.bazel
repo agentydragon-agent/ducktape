@@ -68,6 +68,7 @@ py_binary(
         "//cli_util:logging",
         "//mcp_infra:config_loader",
         "//net_util:net",
+        "@pypi//more_itertools",
         "@pypi//typer_slim",
         "@pypi//uvicorn",
     ],

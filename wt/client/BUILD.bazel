@@ -42,6 +42,7 @@ py_library(
         "//wt/shared:env",
         "//wt/shared:protocol",
         "@pypi//click",
+        "@pypi//more_itertools",
         "@pypi//psutil",
     ],
 )
@@ -73,6 +74,7 @@ py_library(
         "//wt/shared:error_handling",
         "//wt/shared:protocol",
         "@pypi//click",
+        "@pypi//more_itertools",
         "@pypi//psutil",
         "@pypi//pydantic",
         "@pypi//pygit2",

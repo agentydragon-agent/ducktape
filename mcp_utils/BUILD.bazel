@@ -9,5 +9,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//mcp",
+        "@pypi//more_itertools",
     ],
 )

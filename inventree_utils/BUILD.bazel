@@ -26,13 +26,6 @@ py_binary(
 )
 
 py_library(
-    name = "make_prompt",
-    srcs = ["make_prompt.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pyperclip"],
-)
-
-py_library(
     name = "tasks",
     srcs = ["tasks.py"],
     visibility = ["//:__subpackages__"],

@@ -49,6 +49,7 @@ py_library(
         ":config",
         ":progress_bar",
         ":tree",
+        "@pypi//more_itertools",
         "@pypi//rich",
     ],
 )

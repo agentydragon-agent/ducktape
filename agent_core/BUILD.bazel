@@ -113,6 +113,7 @@ py_library(
         "//openai_utils:model",
         "//openai_utils:types",
         "@pypi//anyio",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pydantic_core",
     ],

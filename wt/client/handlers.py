@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 import psutil
+from more_itertools import one
 
 from wt.client.cd_utils import emit_cd_command
 from wt.client.wt_client import WtClient, read_daemon_pid
@@ -101,7 +102,7 @@ async def handle_status_single(daemon_client, formatter, worktree_name: str) -> 
     if not resp.items:
         click.echo(f"❌ No status available for '{worktree_name}'")
         return
-    item = next(iter(resp.items.values()))
+    item = one(resp.items.values())
     status = item.status
     formatter.render_worktree_status_single(status.name, status, status.pr_info)
 

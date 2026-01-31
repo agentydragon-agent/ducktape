@@ -4,6 +4,7 @@ import hmac
 import math
 from datetime import datetime
 from hashlib import blake2b, sha256
+from itertools import batched
 
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -77,7 +78,7 @@ class TokenScheme:
 
         assert self._DOC_LEN + self._PUB_LEN + self._AUTH_LEN == N_TAGS * TAG_LEN
 
-        return prefix, [suffix[i : i + 2] for i in range(0, len(suffix), 2)]
+        return prefix, ["".join(pair) for pair in batched(suffix, 2, strict=False)]
 
     def _public_auth(self, date: str) -> str:
         size = _digest_size(self._PUB_LEN)

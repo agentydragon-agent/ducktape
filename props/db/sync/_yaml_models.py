@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from more_itertools import one
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from props.core.ids import SnapshotSlug
@@ -200,15 +201,8 @@ class YAMLIssue(BaseModel):
         if self.should_flag:
             for occ in self.occurrences:
                 if occ.critic_scopes_expected_to_recall is None:
-                    files = list(occ.files.keys())
-                    if len(files) == 1:
-                        # Auto-infer: single file → [[that_file]]
-                        occ.critic_scopes_expected_to_recall = [[files[0]]]
-                    else:
-                        raise ValueError(
-                            f"Multi-file TP occurrence {occ.occurrence_id} requires "
-                            f"explicit critic_scopes_expected_to_recall (found files: {files})"
-                        )
+                    # Auto-infer: single file → [[that_file]]
+                    occ.critic_scopes_expected_to_recall = [[one(occ.files.keys())]]
         return self
 
     @model_validator(mode="after")

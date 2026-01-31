@@ -70,6 +70,7 @@ py_test(
         "//wt/server:conftest",
         "//wt/server:rpc",
         "//wt/shared:protocol",
+        "@pypi//more_itertools",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

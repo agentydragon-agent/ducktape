@@ -15,6 +15,7 @@ import sys
 import time
 import zlib
 from datetime import datetime
+from itertools import batched
 from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -162,7 +163,7 @@ class EncryptedEncoder:
         # 2. break into ≤50-char chunks and tag each line “# line i/N” for
         #    readability when embedded into documentation.
         width = 60
-        chunks = [ciphertext[i : i + width] for i in range(0, len(ciphertext), width)]
+        chunks = ["".join(chunk) for chunk in batched(ciphertext, width, strict=False)]
         total = len(chunks)
         body = "\n".join(f"  {chunk!r}  # line {i + 1}/{total}" for i, chunk in enumerate(chunks))
 

@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from uuid import UUID
 
+from more_itertools import one
 from pydantic import TypeAdapter
 
 from agent_core.testing.mcp.responses import MCPDecoratorMock
@@ -48,10 +49,9 @@ class PropsMock(MCPDecoratorMock):
 
 def _extract_raw_output(req: ResponsesRequest, call: FunctionCallItem) -> str:
     """Extract raw string output for a function call from request."""
-    matches = [item for item in req.input if isinstance(item, FunctionCallOutputItem) and item.call_id == call.call_id]
-    if len(matches) != 1:
-        raise ValueError(f"Expected exactly 1 output for call_id={call.call_id}, got {len(matches)}")
-    output = matches[0].output
+    output = one(
+        item for item in req.input if isinstance(item, FunctionCallOutputItem) and item.call_id == call.call_id
+    ).output
     if not isinstance(output, str):
         raise ValueError(f"Expected string output for call_id={call.call_id}, got list")
     return output

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from itertools import batched
 from typing import Any
 
 from fastmcp import FastMCP
@@ -35,11 +36,10 @@ def create_mcp_server(debug_mcp: bool = False) -> FastMCP[Any]:
         if len(text) > 1000000:
             raise ValueError("text too long (max 1MB)")
 
+        chunks = list(batched(text, chunk_size, strict=False))
         return [
-            ContentChunk(
-                chunk_id=i // chunk_size, content=text[i : i + chunk_size], is_final=(i + chunk_size >= len(text))
-            )
-            for i in range(0, len(text), chunk_size)
+            ContentChunk(chunk_id=idx, content="".join(chunk), is_final=(idx == len(chunks) - 1))
+            for idx, chunk in enumerate(chunks)
         ]
 
     @mcp.tool

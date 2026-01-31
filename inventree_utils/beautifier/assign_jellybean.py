@@ -9,11 +9,11 @@ from textwrap import dedent
 from inventree.api import InvenTreeAPI
 from inventree.base import Parameter, ParameterTemplate
 from inventree.part import Part
+from more_itertools import one
 from tqdm import tqdm
 
 from inventree_utils.beautifier.cli_util import build_table, choose
 from inventree_utils.beautifier.inventree_util import part_url
-from inventree_utils.beautifier.iter_util import unwrap_singleton
 
 JELLYBEAN_PARAM_NAME = "Jellybean P/N"
 
@@ -147,7 +147,7 @@ def assign_jellybean(api: InvenTreeAPI):
     Implementation for the "assign-jellybean" command.
     """
     # Find the parameter template.
-    param_template = unwrap_singleton(ParameterTemplate.list(api, name=JELLYBEAN_PARAM_NAME))
+    param_template = one(ParameterTemplate.list(api, name=JELLYBEAN_PARAM_NAME))
     edited_parts = get_parts_without_parameter(api, param_template)
     if not edited_parts:
         print(f"All parts already have {param_template.name}.")

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from more_itertools import first
 import pytest
 from sqlalchemy.orm import Session
 
@@ -33,7 +34,7 @@ def make_tp_occurrence(
         files = {Path("test.py"): None}
 
     if critic_scopes_expected_to_recall is None:
-        first_file = next(iter(files.keys()))
+        first_file = first(files.keys())
         critic_scopes_expected_to_recall = {frozenset([first_file])}
 
     return TruePositiveOccurrence(
@@ -56,7 +57,7 @@ def make_fp_occurrence(
         files = {Path("test.py"): None}
 
     if relevant_files is None:
-        first_file = next(iter(files.keys()))
+        first_file = first(files.keys())
         relevant_files = {first_file}
 
     return FalsePositiveOccurrence(

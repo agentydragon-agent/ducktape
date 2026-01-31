@@ -2,11 +2,11 @@
 
 import asyncio
 import base64
-import itertools
 import re
 from datetime import UTC, datetime
 from email.parser import BytesParser
 from email.policy import default
+from itertools import batched
 from pathlib import Path
 from typing import Annotated
 
@@ -123,7 +123,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
             add_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_add]
             remove_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_remove]
 
-            for batch in itertools.batched(msg_ids, batch_size, strict=False):
+            for batch in batched(msg_ids, batch_size, strict=False):
                 body: dict = {"ids": list(batch)}
                 if add_ids:
                     body["addLabelIds"] = add_ids
@@ -263,10 +263,10 @@ def download_matching(
     ) as progress:
         task = progress.add_task("Downloading emails...", total=len(to_download))
 
-        for i in range(0, len(to_download), batch_size):
-            batch_ids = to_download[i : i + batch_size]
-
-            raw_messages, errors = client.get_messages_raw_batch(batch_ids, batch_size=batch_size, retry_failures=True)
+        for batch_ids in batched(to_download, batch_size, strict=False):
+            raw_messages, errors = client.get_messages_raw_batch(
+                list(batch_ids), batch_size=batch_size, retry_failures=True
+            )
 
             all_successful.extend(raw_messages)
             all_failed.extend(errors)
