@@ -1,5 +1,9 @@
 common --enable_bzlmod
 
+# Use hermetic LLVM CC toolchain instead of auto-detected host toolchain.
+# Prevents Nix store paths from leaking into RBE actions.
+build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
 # Disable MODULE.bazel.lock to avoid churn between environments.
 # The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
 # has platform-specific resolution that causes the lockfile to differ between local

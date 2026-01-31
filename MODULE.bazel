@@ -190,6 +190,18 @@ use_repo(types, "pip_types")
 uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
 uv.configure(version = "0.6.2")
 
+# Hermetic CC toolchain (LLVM/Clang) — prevents Nix store paths from leaking into RBE actions
+bazel_dep(name = "toolchains_llvm", version = "1.6.0")
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+llvm.toolchain(
+    name = "llvm_toolchain",
+    llvm_version = "19.1.4",
+)
+use_repo(llvm, "llvm_toolchain", "llvm_toolchain_llvm")
+
+register_toolchains("@llvm_toolchain//:all")
+
 # Rust rules
 bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fix bzlmod ctve repo naming
 
