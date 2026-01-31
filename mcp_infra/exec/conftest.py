@@ -5,6 +5,7 @@ import pytest
 # Import fixtures from source modules
 from mcp_infra.testing.docker_fixtures import docker_exec_server_py312slim
 from mcp_infra.testing.fixtures import *  # noqa: F403
+from openai_utils.testing.fixtures import mock_or_live
 from test_util.docker import python_slim_image
 
 

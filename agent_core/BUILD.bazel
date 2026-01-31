@@ -267,7 +267,6 @@ live_openai_py_test(
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
         "//openai_utils/testing:fixtures",
-        "//openai_utils/testing:openai_mock",
         "@pypi//mcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",

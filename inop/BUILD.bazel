@@ -66,6 +66,7 @@ py_library(
 py_library(
     name = "plots",
     srcs = ["plots.py"],
+    tags = ["no-mypy"],  # statsmodels (transitive dep of plotnine) breaks mypy module discovery
     visibility = ["//:__subpackages__"],
     deps = [
         "//inop/io:logging_utils",

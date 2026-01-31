@@ -10,6 +10,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//openai_utils:client_factory",
         "//openai_utils:model",
         "@pypi//httpx",
         "@pypi//openai",

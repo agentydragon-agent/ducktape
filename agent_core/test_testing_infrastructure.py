@@ -15,8 +15,7 @@ from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing.matchers import assert_function_call_output_structured
 from agent_core.testing.mcp.responses import EchoMock
-from openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
-from openai_utils.testing.fixtures import ClientMode, mock_and_live
+from openai_utils.model import UserMessage
 
 # --- Hamcrest matchers ---
 
@@ -136,21 +135,14 @@ def assert_function_call_output_structured_local(
 # --- Mock/live execution tests ---
 
 
-@mock_and_live
 async def test_minicodex_executes_tool_and_returns_text(
-    mode: ClientMode, responses_factory, mcp_tool_provider_echo, test_handlers, recording_handler, live_openai
+    mock_or_live, mcp_tool_provider_echo, test_handlers, recording_handler
 ) -> None:
-    if mode is ClientMode.MOCK:
-
-        @EchoMock.mock()
-        def mock(m: EchoMock):
-            yield
-            yield from m.echo_roundtrip("hi")
-            yield m.assistant_text("done")
-
-        client: OpenAIModelProto = mock
-    else:
-        client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
+    @mock_or_live(EchoMock)
+    def client(m: EchoMock):
+        yield
+        yield from m.echo_roundtrip("hi")
+        yield m.assistant_text("done")
 
     agent = await Agent.create(
         tool_provider=mcp_tool_provider_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()

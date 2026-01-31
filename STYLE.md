@@ -134,6 +134,7 @@ Style and convention rules for this repository. Package-specific elaborations be
 ## Testing
 
 - **DRY test fixtures**: Extract shared setup logic into pytest fixtures. Avoid duplicating fixture definitions across test files. Prefer conftest.py for fixtures used by multiple test modules.
+- **Fixture imports belong in conftest.py, not test files**: Never import pytest fixtures directly in `test_*.py` files. Instead, add fixture imports to the nearest `conftest.py`. Ruff ignores F401 in conftest files via `per-file-ignores` in `ruff.toml` (`"**/conftest.py" = ["F401"]`), so no `# noqa` comments are needed. Importing fixtures in test files causes F811 (redefinition) when the same name appears as a test function parameter.
 - **Concise test bodies**: Keep test functions focused on assertions. Delegate setup to fixtures.
 - **Update tests with production code**: When editing production code, check what tests use the interfaces you touched and propagate edits. Type signature changes, parameter changes, renamed functions, or changed behavior require corresponding test updates.
 - **No lint silencing without approval**: Do not add ignore rules or silence individual lint errors unless explicitly approved.

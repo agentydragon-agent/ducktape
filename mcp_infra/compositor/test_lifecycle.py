@@ -299,6 +299,18 @@ async def test_get_child_client_validates_state(compositor, make_simple_mcp):
         compositor.get_child_client("backend")
 
 
+async def test_unmount_pinned_server_errors_and_kept(compositor, make_simple_mcp):
+    """Test that explicit unmount of a pinned server raises and keeps it mounted."""
+    backend_prefix = MCPMountPrefix("backend")
+    await compositor.mount_inproc(backend_prefix, make_simple_mcp, pinned=True)
+
+    with pytest.raises(RuntimeError, match="Cannot unmount pinned server"):
+        await compositor.unmount_server(backend_prefix)
+
+    entries = await compositor.server_entries()
+    assert backend_prefix in entries, "pinned server should remain mounted after failed unmount"
+
+
 async def test_pinned_server_survives_close(make_simple_mcp):
     """Test that pinned servers survive close() but not __aexit__()."""
     pinned = make_simple_mcp

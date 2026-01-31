@@ -132,7 +132,6 @@ known-first-party = [
     "llm",
     "llm_html",
     "mcp_infra",
-    "mcp_starter",
     "mcp_utils",
     "net_util",
     "openai_utils",

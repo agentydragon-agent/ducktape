@@ -10,6 +10,7 @@ import httpx
 import openai
 import pytest
 
+from openai_utils.client_factory import build_client
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
 
 
@@ -62,3 +63,34 @@ def live_openai(request: pytest.FixtureRequest) -> openai.AsyncOpenAI:
 def live_openai_model() -> str:
     """Return the model to use for live tests."""
     return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+
+@pytest.fixture(params=[
+    pytest.param(ClientMode.MOCK, id="mock"),
+    pytest.param(ClientMode.LIVE, id="live", marks=pytest.mark.live_openai_api),
+])
+def mock_or_live(request, live_openai_model):
+    """Parametrized fixture that replaces @mock_and_live + if/else branching.
+
+    In MOCK mode, delegates to mock_cls.mock() so the generator runs.
+    In LIVE mode, returns a live OpenAI client; the generator is never executed.
+
+    Usage::
+
+        async def test_foo(mock_or_live, ...):
+            @mock_or_live(MCPDecoratorMock)
+            def client(m: MCPDecoratorMock):
+                yield
+                yield m.assistant_text("done")
+
+            agent = await Agent.create(client=client, ...)
+    """
+    mode = request.param
+
+    def factory(mock_cls, *args, check_consumed=True, **kwargs):
+        if mode is ClientMode.LIVE:
+            live_client = build_client(live_openai_model)
+            return lambda fn: live_client
+        return mock_cls.mock(*args, check_consumed=check_consumed, **kwargs)
+
+    return factory

@@ -38,7 +38,10 @@ jobs:
           extra_hash: ${{ hashFiles('props/frontend/pnpm-lock.yaml') }}
 
       - name: Run visual regression tests
-        run: bazel test //props/frontend:visual_test --test_output=errors
+        run: |
+          # --remote_download_all: ensure undeclared test outputs (diff PNGs)
+          # are downloaded from remote workers for artifact extraction
+          bazel test //props/frontend:visual_test --test_output=errors --remote_download_all
 
       - name: Extract visual regression artifacts
         if: failure()

@@ -204,12 +204,12 @@ async def classify_patterns_parallel(
         Combined classifications from all workers
     """
     # Create shared queues
-    batch_queue: asyncio.Queue[tuple[str, ...]] = asyncio.Queue()
+    batch_queue: asyncio.Queue[list[str]] = asyncio.Queue()
     results_queue: asyncio.Queue[list[Classification]] = asyncio.Queue()
 
-    # Fill batch queue
+    # Fill batch queue (batched yields tuples, convert to lists for ClassifierState)
     for batch in batched(patterns, batch_size, strict=False):
-        await batch_queue.put(batch)
+        await batch_queue.put(list(batch))
 
     logger.info(f"Starting {num_workers} workers to process {batch_queue.qsize()} batches")
 
