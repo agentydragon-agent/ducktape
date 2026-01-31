@@ -26,12 +26,10 @@ build --bes_backend=grpcs://remote.buildbuddy.io
 common --remote_cache=grpcs://remote.buildbuddy.io
 common --remote_timeout=10m
 common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
-common --experimental_remote_cache_compression
-common --experimental_remote_cache_compression_threshold=100
+common --remote_cache_compression
 build --noslim_profile
 build --experimental_profile_include_target_label
 build --experimental_profile_include_primary_output
-build --nolegacy_important_outputs
 
 # Remote execution: actions run on BuildBuddy workers, falling back to local.
 # The //:rbe_linux_x64 platform tells BuildBuddy which container to use.
