@@ -59,6 +59,26 @@ build:ci-profile --execution_log_json_file=execution-log.json
 # Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
 build --stamp --workspace_status_command=tools/stamp.sh
 
+# Prevent stdlib shadowing on RBE workers.
+#
+# The rules_python stage1 bootstrap (bootstrap_impl=system_python, the default)
+# starts as `#!/usr/bin/env python3`, which on RBE workers is system Python 3.12.
+# Without PYTHONSAFEPATH, Python prepends the script's directory to sys.path.
+# Since the bootstrap lives inside the package dir (e.g., .../openai_utils/test_errors),
+# files like `types.py` in that package shadow stdlib `types`, causing circular imports
+# (enum.py -> types -> enum -> crash). Setting PYTHONSAFEPATH=1 tells Python not to
+# prepend the script directory, matching the behavior of the hermetic Python 3.13
+# interpreter that the bootstrap re-execs into.
+#
+# The alternative `--bootstrap_impl=script` (shell-based stage1) avoids system Python
+# entirely but breaks tests that spawn subprocesses via `sys.executable -m` because
+# the child process doesn't inherit the venv sys.path.
+#
+# TODO: Migrate to `bootstrap_impl=script` and remove this workaround. Requires
+# fixing tests that spawn Python subprocesses to either use py_binary entrypoints
+# or a central subprocess helper that propagates PYTHONPATH to child processes.
+test --test_env=PYTHONSAFEPATH=1
+
 # Props e2e test environment passthrough
 # These only pass through when the vars are set in the environment
 # For props e2e tests: set up infrastructure, export vars, then run bazel test
