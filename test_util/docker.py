@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from contextlib import suppress
 
-import docker
 import pytest
 
 import runfiles
@@ -42,35 +40,6 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
         raise RuntimeError(f"Failed to load image {image_tag}: {result.stderr}")
 
     return image_tag
-
-
-def skip_if_docker_unavailable(item: pytest.Item) -> None:
-    """Skip test if Docker daemon is not available.
-
-    Used by pytest_runtest_setup for tests marked with @pytest.mark.requires_docker.
-    """
-    if item.get_closest_marker("requires_docker") is None:
-        return
-
-    client = None
-    try:
-        client = docker.from_env()
-        client.ping()
-    except docker.errors.DockerException as exc:
-        pytest.skip(f"Docker not available: {exc}")
-    finally:
-        if client is not None:
-            with suppress(Exception):
-                client.close()
-
-
-def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Pytest hook to skip Docker tests when Docker daemon is not available.
-
-    Import this function in conftest.py to enable automatic Docker test skipping:
-        from test_util.docker import pytest_runtest_setup  # noqa: F401
-    """
-    skip_if_docker_unavailable(item)
 
 
 # Image tags and load scripts for shared test images
