@@ -7,7 +7,7 @@ py_test(
     srcs = ["test_policy_validation.py"],
     data = [
         "//agent_server:load",
-        "//mcp_infra/testing:python_slim_load",
+        "//third_party/python_slim:load",
     ],
     imports = ["../../.."],
     tags = ["requires_docker"],
@@ -24,7 +24,7 @@ py_test(
 py_test(
     name = "test_preset_policy_loading",
     srcs = ["test_preset_policy_loading.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
@@ -43,7 +43,7 @@ py_test(
 py_test(
     name = "test_schema",
     srcs = ["test_schema.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
@@ -58,7 +58,7 @@ py_test(
 py_test(
     name = "test_server",
     srcs = ["test_server.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [
@@ -74,7 +74,7 @@ py_test(
 py_test(
     name = "test_server_available",
     srcs = ["test_server_available.py"],
-    data = ["//mcp_infra/testing:python_slim_load"],
+    data = ["//third_party/python_slim:load"],
     imports = ["../../.."],
     tags = ["requires_docker"],
     deps = [

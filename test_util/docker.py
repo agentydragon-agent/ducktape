@@ -18,7 +18,7 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
     """Load an OCI image from a Bazel oci_load target.
 
     Args:
-        load_script_path: Relative path to the load.sh script (e.g., "mcp_infra/testing/python_slim_load.sh")
+        load_script_path: Relative path to the load.sh script (e.g., "third_party/python_slim/load.sh")
         image_tag: The expected image tag after loading (e.g., "python-slim:test")
 
     Returns:
@@ -44,10 +44,10 @@ def load_bazel_image(load_script_path: str, image_tag: str) -> str:
 
 # Image tags and load scripts for shared test images
 PYTHON_SLIM_IMAGE_TAG = "python-slim:test"
-PYTHON_SLIM_LOAD_SCRIPT = "mcp_infra/testing/python_slim_load.sh"
+PYTHON_SLIM_LOAD_SCRIPT = "third_party/python_slim/load.sh"
 
 
 @pytest.fixture(scope="session")
 def python_slim_image():
-    """Load python-slim image from Bazel :python_slim_load target."""
+    """Load python-slim image from Bazel //third_party/python_slim:load target."""
     return load_bazel_image(PYTHON_SLIM_LOAD_SCRIPT, PYTHON_SLIM_IMAGE_TAG)
