@@ -61,4 +61,3 @@ data "external" "nix_cache_key" {
 locals {
   nix_cache_keys = data.external.nix_cache_key.result
 }
-
