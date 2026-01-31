@@ -6,6 +6,7 @@
   enableGui,
   enableKube,
   isNixOS,
+  isPopOS,
   enableHeavyPackages,
   nix-colors,
   solarizedLight,
@@ -617,31 +618,26 @@ in
         # Enable user extensions
         disable-user-extensions = false;
 
-        # IMPORTANT: This REPLACES the entire enabled-extensions list, not appends!
-        # This list is a union of:
-        # 1. Current system extensions (Pop!_OS defaults)
-        # 2. Extensions from Ansible configuration
-        # 3. Minus the problematic ones we disable below
-        enabled-extensions = [
-          # Pop!_OS system extensions (keep these!)
-          "ding@rastersoft.com" # Desktop Icons NG (DING)
-          "pop-cosmic@system76.com" # Pop COSMIC
-          "pop-shell@system76.com" # Pop Shell (tiling)
-          "system76-power@system76.com" # System76 Power
-          "ubuntu-appindicators@ubuntu.com" # Ubuntu AppIndicators (system tray)
-          "cosmic-dock@system76.com" # COSMIC Dock
-          # Note: cosmic-workspaces and popx11gestures excluded (problematic)
-
-          # Extensions from Ansible (petermosmans.customize-gnome)
-          "panel-date-format@keiii.github.com" # Panel Date Format
-          # nightthemeswitcher managed by solarized module
-          "vertical-workspaces@G-dH.github.com" # V-Shell (replaces cosmic-workspaces)
-          "cronomix@zagortenay333" # Cronomix (note: different UUID than expected)
-          # Note: Desaturate All extension not currently installed
-        ];
+        enabled-extensions =
+          # Extensions shared across all hosts
+          [
+            "panel-date-format@keiii.github.com" # Panel Date Format
+            # nightthemeswitcher managed by solarized module
+            "vertical-workspaces@G-dH.github.com" # V-Shell (replaces cosmic-workspaces)
+            "cronomix@zagortenay333" # Cronomix
+          ]
+          # Pop!_OS system extensions (only on Pop!_OS hosts)
+          ++ lib.optionals isPopOS [
+            "ding@rastersoft.com" # Desktop Icons NG (DING)
+            "pop-cosmic@system76.com" # Pop COSMIC
+            "pop-shell@system76.com" # Pop Shell (tiling)
+            "system76-power@system76.com" # System76 Power
+            "ubuntu-appindicators@ubuntu.com" # Ubuntu AppIndicators (system tray)
+            "cosmic-dock@system76.com" # COSMIC Dock
+          ];
 
         # Disable problematic Pop!_OS extensions
-        disabled-extensions = [
+        disabled-extensions = lib.optionals isPopOS [
           "cosmic-workspaces@system76.com"
           "popx11gestures@system76.com"
         ];

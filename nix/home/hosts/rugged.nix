@@ -15,5 +15,11 @@
 {
   imports = [ ../home.nix ];
 
+  # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
+  home.packages = [ pkgs.gnomeExtensions.appindicator ];
+  dconf.settings."org/gnome/shell".enabled-extensions = [
+    "appindicatorsupport@rgcjonas.gmail.com"
+  ];
+
   home.stateVersion = "25.11";
 }

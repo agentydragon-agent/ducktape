@@ -185,9 +185,6 @@
   when: common_dpkg_arch == "amd64"
   tags: appimagelauncher
 
-# login_event_webhook_reporter is now managed by Nix home-manager
-# See: nix/home/services/login-event-webhook-reporter.nix
-
 # ActivityWatch is now managed by Nix home-manager
 # See: nix/home/services/activitywatch.nix
 # This task uninstalls the old system-level .deb package

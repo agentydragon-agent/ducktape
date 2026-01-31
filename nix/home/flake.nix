@@ -50,6 +50,7 @@
           enableGui ? true,
           enableKube ? true,
           isNixOS ? false, # Whether this is a NixOS system (uses system packages for heavy apps)
+          isPopOS ? false, # Whether this is a Pop!_OS system (has system76/ubuntu extensions)
           enableHeavyPackages ? true, # Whether to install heavy creative/CAD packages
           extraModules ? [ ],
         }:
@@ -84,6 +85,7 @@
                   enableGui
                   enableKube
                   isNixOS
+                  isPopOS
                   enableHeavyPackages
                   nix-colors
                   solarizedLight
@@ -106,6 +108,7 @@
           enableGui = true;
           enableKube = true;
           isNixOS = false;
+          isPopOS = true;
           enableHeavyPackages = false;
         };
 
@@ -115,6 +118,7 @@
           enableGui = true;
           enableKube = true;
           isNixOS = false;
+          isPopOS = true;
           enableHeavyPackages = true;
         };
 
