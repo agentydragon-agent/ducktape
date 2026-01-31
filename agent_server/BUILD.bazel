@@ -4,6 +4,7 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files(["conftest.py"])
 
@@ -97,7 +98,7 @@ py_binary(
 # --- Root-level Tests ---
 
 # Tests requiring Docker and runtime image
-py_test(
+docker_py_test(
     name = "test_approval_integration",
     srcs = ["test_approval_integration.py"],
     data = [
@@ -105,7 +106,6 @@ py_test(
         "//third_party/python_slim:load",
     ],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//agent_core:agent",
@@ -125,7 +125,7 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_default_approval_policy",
     srcs = ["test_default_approval_policy.py"],
     data = [
@@ -133,7 +133,6 @@ py_test(
         "//third_party/python_slim:load",
     ],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//agent_server/policies:policy_types",
@@ -147,12 +146,11 @@ py_test(
 )
 
 # Docker exec stub test (no OpenAI)
-py_test(
+docker_py_test(
     name = "test_exec_stub",
     srcs = ["test_exec_stub.py"],
     data = ["//third_party/python_slim:load"],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//mcp_infra:naming",
@@ -195,12 +193,11 @@ live_openai_py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_mcp_integration",
     srcs = ["test_mcp_integration.py"],
     data = ["//third_party/python_slim:load"],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//mcp_infra:naming",
@@ -218,12 +215,11 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_mcp_notifications_flow",
     srcs = ["test_mcp_notifications_flow.py"],
     data = ["//third_party/python_slim:load"],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//agent_core:agent",
@@ -249,12 +245,11 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_mcp_resources_flow",
     srcs = ["test_mcp_resources_flow.py"],
     data = ["//third_party/python_slim:load"],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//agent_core:agent",
@@ -274,12 +269,11 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_policy_eval_abort_on_error",
     srcs = ["test_policy_eval_abort_on_error.py"],
     data = ["//third_party/python_slim:load"],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//agent_server/mcp/approval_policy:engine",
@@ -292,12 +286,11 @@ py_test(
     ],
 )
 
-py_test(
+docker_py_test(
     name = "test_runtime_timeout",
     srcs = ["test_runtime_timeout.py"],
     data = ["//third_party/python_slim:load"],
     imports = [".."],
-    tags = ["requires_docker"],
     deps = [
         ":conftest",
         "//mcp_infra:naming",

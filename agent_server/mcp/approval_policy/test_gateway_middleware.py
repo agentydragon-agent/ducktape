@@ -13,6 +13,7 @@ from fastmcp.server import FastMCP
 from mcp import McpError, types as mtypes
 
 from agent_server.mcp.approval_policy.engine import (
+    POLICY_BACKEND_RESERVED_MISUSE_CODE,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
     POLICY_DENIED_ABORT_CODE,
     POLICY_DENIED_ABORT_MSG,
@@ -20,6 +21,7 @@ from agent_server.mcp.approval_policy.engine import (
     POLICY_GATEWAY_STAMP_KEY,
     CallDecision,
     PendingCallsResponse,
+    _raise_if_reserved_code,
 )
 from agent_server.policies.policy_types import ApprovalDecision
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
@@ -162,6 +164,20 @@ async def test_policy_gateway_middleware_ask_then_allow(
         res = await call_task
         assert not res.is_error
         assert call_ids, "pending call should have been recorded"
+
+
+async def test_raise_if_reserved_code_remaps_stamped_upstream() -> None:
+    e = McpError(
+        mtypes.ErrorData(code=-32000, message="upstream_error", data={POLICY_GATEWAY_STAMP_KEY: True, "note": "spoof"})
+    )
+
+    with pytest.raises(McpError) as ei:
+        _raise_if_reserved_code(e, name="backend__raise")
+
+    err = ei.value
+    assert getattr(err, "error", None) is not None
+    assert err.error.code == POLICY_BACKEND_RESERVED_MISUSE_CODE
+    assert err.error.message == POLICY_BACKEND_RESERVED_MISUSE_MSG
 
 
 if __name__ == "__main__":
