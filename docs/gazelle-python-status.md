@@ -97,13 +97,12 @@ Each directory with `.py` files should have its own `BUILD.bazel`:
 
 ```
 # ❌ WRONG: Root BUILD touching subdirectory files
-adgn/BUILD.bazel:
-    srcs = ["agent/cli.py", "testing/bootstrap.py"]
+pkg/BUILD.bazel:
+    srcs = ["sub/client.py", "sub/server.py"]
 
 # ✓ CORRECT: BUILD files in each directory
-adgn/BUILD.bazel           # only for files in adgn/
-adgn/agent/BUILD.bazel     # for agent/cli.py
-adgn/testing/BUILD.bazel   # for testing/bootstrap.py
+pkg/BUILD.bazel        # only for files in pkg/
+pkg/sub/BUILD.bazel    # for sub/client.py, sub/server.py
 ```
 
 ### Minimal Visibility
@@ -149,7 +148,7 @@ Removed aggregator target. Dependents updated to use specific targets:
 
 Removed aggregator. Created BUILD files in subdirectories:
 
-- `adgn/agent/BUILD.bazel` - `:cli`
+- `agent_cli/BUILD.bazel` - `:cli` (moved from `adgn/agent/`)
 - `adgn/gitea_pr_gate/BUILD.bazel` - `:policy_common`, `:policy_server_fastapi`
 - `adgn/testing/BUILD.bazel` - `:bootstrap`
 

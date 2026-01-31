@@ -27,7 +27,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 | Directory       | Purpose                          |
 | --------------- | -------------------------------- |
-| `adgn/`         | LLM agent framework              |
+| `agent_cli/`    | Agent REPL CLI                   |
 | `agent_server/` | FastAPI backend, runtime, policy |
 | `cluster/`      | k8s cluster                      |
 | `mcp_infra/`    | MCP compositor and utilities     |
@@ -136,7 +136,7 @@ This repository uses **Bazel** as the unified build system for all Python packag
 ducktape/
 ├── MODULE.bazel             # Bazel module definition
 ├── requirements_bazel.txt   # Single source of truth for Python deps
-├── adgn/BUILD.bazel         # Main LLM/agent package
+├── agent_cli/BUILD.bazel    # Agent REPL CLI
 ├── agent_core/BUILD.bazel   # Core agent loop machinery
 ├── mcp_infra/BUILD.bazel    # MCP infrastructure
 └── ...                      # Other packages with BUILD.bazel files
