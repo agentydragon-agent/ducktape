@@ -7,6 +7,10 @@
 - **gVisor environment**: Claude Code web runs on gVisor, not real Linux. Some syscalls behave differently.
 - **9p filesystem limitation**: Root `/` is 9p. Supervisor uses TCP socket (`127.0.0.1:19001`) instead of Unix socket to avoid 9p hard link issues (EOPNOTSUPP).
 
+## Building Dockerfiles in gVisor
+
+@docs/gvisor-dockerfile-build.md
+
 ## Debugging Commands
 
 ```bash
