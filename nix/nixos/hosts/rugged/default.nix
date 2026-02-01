@@ -72,6 +72,9 @@
     telegram-desktop
   ];
 
+  # Steam
+  programs.steam.enable = true;
+
   # Zsh as default shell
   programs.zsh.enable = true;
 
