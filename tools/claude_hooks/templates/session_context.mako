@@ -3,8 +3,8 @@ Environment: gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
 Bazel: wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
 % if podman:
 Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified image names (docker.io/library/...)
-  `podman run` works (with --network=host). `podman build` does NOT work in gVisor.
-  See tools/claude_hooks/docs/gvisor-dockerfile-build.md for workaround (podman run+commit).
+  `podman run` works (with --network=host). `podman build` works (gVisor workarounds are pre-configured).
+  See tools/claude_hooks/docs/gvisor-dockerfile-build.md for details. Note: RUN steps producing >~3MB stdout may hit a buildah SIGPIPE bug — redirect output if needed.
 % endif
 % for record in log_entries:
 % if record.levelno >= WARNING:
