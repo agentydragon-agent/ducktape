@@ -346,20 +346,7 @@ live_openai_py_test(
 # Generates: test_foo.mock (runs non-live tests) and test_foo.live (runs live tests with API key)
 ```
 
-**Live-only files.** For files where every test calls the real API (no mock counterpart), use `live_openai_only_py_test` — it generates a single unsuffixed target with the `live_openai_api` tag and `env_inherit`:
-
-```python
-# BUILD.bazel
-load("//openai_utils/testing:testing.bzl", "live_openai_only_py_test")
-
-live_openai_only_py_test(
-    name = "test_live_api",
-    srcs = ["test_live_api.py"],
-    deps = [...],
-)
-```
-
-**Gating:** `.live` / `live_openai_only_py_test` targets get `OPENAI_API_KEY` via `env_inherit` and the `live_openai_api` tag. CI excludes them with `--test_tag_filters=-live_openai_api`. The root `conftest.py` also skips live-marked tests at runtime when the key is absent.
+**Gating:** `.live` targets get `OPENAI_API_KEY` via `env_inherit` and the `live_openai_api` tag. CI excludes them with `--test_tag_filters=-live_openai_api`. The root `conftest.py` also skips live-marked tests at runtime when the key is absent.
 
 ### Deployment
 

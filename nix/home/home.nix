@@ -192,6 +192,12 @@ in
       clean.requireForce = true;
       branch.autosetuprebase = "always";
       rebase.autostash = true;
+      # Disable fork-point detection during pull --rebase. Fork-point uses
+      # the remote-tracking reflog to guess which local commits are "already
+      # upstream" after a force-push, and silently drops them. This caused
+      # a local commit to be lost after push + immediate pull when the remote
+      # was force-updated between the two operations.
+      rebase.forkPoint = false;
       rerere.enabled = true;
       init.defaultBranch = "main";
       merge.tool = "vimdiff";
