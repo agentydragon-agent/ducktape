@@ -174,13 +174,21 @@
         nix_trusted_users: "root {{ my_user }}"
 
     # GPU Passthrough Configuration
-    - name: Configure GRUB for IOMMU
-      ansible.builtin.lineinfile:
-        path: /etc/default/grub
-        regexp: "^GRUB_CMDLINE_LINUX_DEFAULT="
-        line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet amd_iommu=on iommu=pt"'
+    #
+    # Atlas boots via systemd-boot (UEFI), NOT GRUB. Kernel cmdline lives in
+    # /etc/kernel/cmdline and is applied via `proxmox-boot-tool refresh`.
+    #
+    # pcie_aspm=off: Disable PCIe Active State Power Management to prevent
+    # passed-through GPUs from entering low-power states that VFIO can't
+    # recover from, causing "RC watchdog: GPU is probably locked!" errors.
+    # See investigations/wyrm-gpu-lockup.md for details.
+    - name: Configure kernel cmdline for IOMMU and GPU passthrough
+      ansible.builtin.copy:
+        dest: /etc/kernel/cmdline
+        content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off"
+        mode: "0644"
         backup: true
-      notify: Update grub
+      notify: Refresh proxmox boot
       tags: [gpu_passthrough, iommu]
 
     - name: Add VFIO modules to /etc/modules
@@ -227,15 +235,15 @@
     # TODO: Manage Proxmox VM configurations in Ansible
     # Currently VM configs live only in /etc/pve/qemu-server/*.conf
     # Key VM to manage:
-    # - VM 100 (wyrm): vga=virtio-gl, hostpci0=01:00 (NVIDIA 5090), 32 cores, 64GB RAM
+    # - VM 100 (wyrm): vga=virtio-gl, hostpci0=01:00,hostpci1=03:00 (2x NVIDIA 5090), 32 cores, 64GB RAM
     # Consider using community.general.proxmox_kvm module or templating .conf files
 
   handlers:
-    - name: Update grub
+    - name: Refresh proxmox boot
       ansible.builtin.command:
-        cmd: update-grub
-      register: grub_result
-      changed_when: grub_result.rc == 0
+        cmd: proxmox-boot-tool refresh
+      register: boot_result
+      changed_when: boot_result.rc == 0
 
     - name: Reload udev rules
       ansible.builtin.command:
