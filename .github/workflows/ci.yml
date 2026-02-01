@@ -83,65 +83,65 @@ jobs:
   bazel-build:
     needs:
       - compute-targets
-      - rbe-image-ci
+      - rbe-image
     if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-build')
     uses: ./.github/workflows/bazel-build.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image-ci.outputs.rbe_image }}
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   bazel-test:
     needs:
       - compute-targets
-      - rbe-image-ci
+      - rbe-image
     if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-test')
     uses: ./.github/workflows/bazel-test.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image-ci.outputs.rbe_image }}
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   bazel-lint:
     needs:
       - compute-targets
-      - rbe-image-ci
+      - rbe-image
     if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-lint')
     uses: ./.github/workflows/bazel-lint.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image-ci.outputs.rbe_image }}
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   bazel-typecheck:
     needs:
       - compute-targets
-      - rbe-image-ci
+      - rbe-image
     if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-typecheck')
     uses: ./.github/workflows/bazel-typecheck.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image-ci.outputs.rbe_image }}
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   bazel-rust-lint:
     needs:
       - compute-targets
-      - rbe-image-ci
+      - rbe-image
     if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'bazel-rust-lint')
     uses: ./.github/workflows/bazel-rust-lint.yml
     with:
-      rbe_image: ${{ needs.rbe-image-ci.outputs.rbe_image }}
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
   visual-regression:
     needs:
       - compute-targets
-      - rbe-image-ci
+      - rbe-image
     if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows), 'visual-regression')
     uses: ./.github/workflows/visual-regression.yml
     with:
-      rbe_image: ${{ needs.rbe-image-ci.outputs.rbe_image }}
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
-  rbe-image-ci:
+  rbe-image:
     needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'rbe-image-ci')
-    uses: ./.github/workflows/rbe-image-ci.yml
+    if: contains(fromJson(needs.compute-targets.outputs.workflows), 'rbe-image')
+    uses: ./.github/workflows/rbe-image.yml
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows), 'nix-flake-check')
