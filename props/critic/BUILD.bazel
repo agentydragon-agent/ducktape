@@ -16,6 +16,7 @@ The container runs an agent loop that:
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/oci:defs.bzl", "dedup_python_tar")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
@@ -58,11 +59,16 @@ py_binary(
 )
 
 pkg_tar(
-    name = "main_tar",
+    name = "main_tar_raw",
     srcs = [":critic"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
+)
+
+dedup_python_tar(
+    name = "main_tar",
+    src = ":main_tar_raw",
     visibility = ["//props:__subpackages__"],
 )
 

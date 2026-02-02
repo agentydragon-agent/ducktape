@@ -1,0 +1,16 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "dedup_python",
+    srcs = ["dedup_python.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "dedup_python_bin",
+    imports = ["../.."],
+    main_module = "tools.oci.dedup_python",
+    visibility = ["//visibility:public"],
+    deps = [":dedup_python"],
+)

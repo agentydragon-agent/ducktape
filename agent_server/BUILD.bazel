@@ -3,6 +3,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/oci:defs.bzl", "dedup_python_tar")
 
 exports_files(["conftest.py"])
 
@@ -98,13 +99,18 @@ py_binary(
 # --- OCI Runtime Image ---
 
 pkg_tar(
-    name = "runtime_image_tar",
+    name = "runtime_image_tar_raw",
     srcs = [
         "//agent_server/policy_eval:shim",
     ],
     include_runfiles = True,
     package_dir = "/opt/adgn",
     strip_prefix = ".",
+)
+
+dedup_python_tar(
+    name = "runtime_image_tar",
+    src = ":runtime_image_tar_raw",
 )
 
 oci_image(

@@ -3,6 +3,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/oci:defs.bzl", "dedup_python_tar")
 
 # NOTE: No aggregator target - use specific per-file targets
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -115,11 +116,16 @@ genrule(
 # =============================================================================
 
 pkg_tar(
-    name = "app_tar",
+    name = "app_tar_raw",
     srcs = [":backend_cli"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
+)
+
+dedup_python_tar(
+    name = "app_tar",
+    src = ":app_tar_raw",
 )
 
 oci_image(

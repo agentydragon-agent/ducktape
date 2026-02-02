@@ -1,6 +1,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//tools/oci:defs.bzl", "dedup_python_tar")
 
 # NOTE: No aggregator target - use specific per-file targets like :app, :cli, :models
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
@@ -18,11 +19,16 @@ py_binary(
 # --- OCI Image ---
 
 pkg_tar(
-    name = "cli_tar",
+    name = "cli_tar_raw",
     srcs = [":rspcache_cli"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
+)
+
+dedup_python_tar(
+    name = "cli_tar",
+    src = ":cli_tar_raw",
 )
 
 oci_image(

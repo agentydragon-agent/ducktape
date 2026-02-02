@@ -2,6 +2,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/oci:defs.bzl", "dedup_python_tar")
 
 py_library(
     name = "webhook_inbox",
@@ -51,11 +52,16 @@ py_binary(
 )
 
 pkg_tar(
-    name = "server_tar",
+    name = "server_tar_raw",
     srcs = [":server"],
     include_runfiles = True,
     package_dir = "/app",
     strip_prefix = ".",
+)
+
+dedup_python_tar(
+    name = "server_tar",
+    src = ":server_tar_raw",
 )
 
 oci_image(
