@@ -246,6 +246,7 @@ docker_py_test(
         "//props/db:models",
         "//props/db:session",
         "//props/testing",
+        "//props/testing/fixtures:e2e_container",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

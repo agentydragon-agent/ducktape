@@ -45,6 +45,7 @@ py_library(
         "//props/backend/routes:registry",
         "//props/backend/routes:runs",
         "//props/backend/routes:stats",
+        "//props/core:oci_utils",
         "//props/db:config",
         "//props/orchestration:agent_registry",
         "//props/orchestration:grader_supervisor",

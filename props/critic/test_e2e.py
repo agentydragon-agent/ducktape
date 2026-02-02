@@ -44,11 +44,12 @@ def make_critic_mock_zero_issues() -> PropsMock:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope):
+async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, critic_image):
     """Test critic successfully submits zero issues."""
     mock = make_critic_mock_zero_issues()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(critic_image)
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,
@@ -90,11 +91,12 @@ def make_critic_mock_with_issues() -> PropsMock:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_scope):
+async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_scope, critic_image):
     """Test critic submits an issue with occurrence."""
     mock = make_critic_mock_with_issues()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(critic_image)
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,

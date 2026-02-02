@@ -26,7 +26,7 @@ from uuid import UUID
 
 from props.core.display import short_uuid
 from props.core.docker_env import PROPS_NETWORK_NAME
-from props.core.oci_utils import resolve_image_ref_async
+from props.core.oci_utils import RegistryProxyConfig, resolve_image_ref_async
 from props.db.config import DatabaseConfig
 from props.orchestration.agent_credentials import ensure_agent_role
 
@@ -50,6 +50,7 @@ async def run_loop_agent(
     *,
     image: str,
     llm_proxy_url: str,
+    registry_config: RegistryProxyConfig,
     timeout_seconds: int | None = None,
     extra_env: dict[str, str] | None = None,
     container_name: str | None = None,
@@ -62,7 +63,7 @@ async def run_loop_agent(
     timeout_seconds=None means no timeout (for daemons). Returns exit_code=-1 on timeout.
     """
     # Resolve image from OCI reference
-    image_id = await resolve_image_ref_async(docker_client, image)
+    image_id = await resolve_image_ref_async(docker_client, image, registry_config)
     logger.info("Using image %s from %s", image_id[:19], image)
 
     # Ensure agent database role exists

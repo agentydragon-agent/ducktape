@@ -35,12 +35,12 @@ from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
     make_orchestration_grader_mock,
-    multi_model_e2e_stack,
 )
 from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.models import AgentRun, AgentRunStatus
 from props.db.session import get_session
+from props.testing.fixtures.e2e_container import multi_model_e2e_stack
 from props.testing.mocks import PropsMock, get_system_message_text
 
 logger = logging.getLogger(__name__)
@@ -222,7 +222,17 @@ def make_critic_mock_with_token_check(expected_token: str) -> PropsMock:
 
 @pytest.mark.timeout(300)
 @pytest.mark.slow
-async def test_po_orchestrates_critic_with_system_prompt_check(synced_test_db, async_docker_client, test_snapshot):
+async def test_po_orchestrates_critic_with_system_prompt_check(
+    synced_test_db,
+    async_docker_client,
+    docker_client,
+    e2e_registry_url,
+    test_snapshot,
+    prompt_optimizer_image,
+    critic_image,
+    grader_image,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """Test prompt optimizer orchestration with critic system prompt verification.
 
     Verifies:
@@ -241,17 +251,26 @@ async def test_po_orchestrates_critic_with_system_prompt_check(synced_test_db, a
     critic_mock = make_critic_mock_with_system_check()
     grader_mock = make_orchestration_grader_mock()
 
+    mocks = {
+        ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,
+        ORCHESTRATION_CRITIC_MODEL: critic_mock,
+        ORCHESTRATION_GRADER_MODEL: grader_mock,
+    }
     async with multi_model_e2e_stack(
-        optimizer_mock, critic_mock, synced_test_db, async_docker_client, grader_mock=grader_mock
-    ) as registry:
+        mocks, synced_test_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+    ) as stack:
+        stack.push_image(prompt_optimizer_image)
+        stack.push_image(critic_image)
+        stack.push_image(grader_image)
+
         # Start grader daemon in background
         grader_task = asyncio.create_task(
-            registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )
 
         try:
             # Run prompt optimizer
-            run_id = await registry.run_prompt_optimizer(
+            run_id = await stack.registry.run_prompt_optimizer(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -275,10 +294,18 @@ async def test_po_orchestrates_critic_with_system_prompt_check(synced_test_db, a
 
 @pytest.mark.timeout(300)
 @pytest.mark.slow
-@pytest.mark.skip(
-    reason="Requires registry proxy: add to multi_model_e2e_stack and pass PROPS_REGISTRY_PROXY_* env vars to containers"
-)
-async def test_po_creates_custom_critic_with_token(synced_test_db, async_docker_client, test_snapshot):
+@pytest.mark.skip(reason="Requires registry proxy: pass PROPS_REGISTRY_PROXY_* env vars to containers")
+async def test_po_creates_custom_critic_with_token(
+    synced_test_db,
+    async_docker_client,
+    docker_client,
+    e2e_registry_url,
+    test_snapshot,
+    prompt_optimizer_image,
+    critic_image,
+    grader_image,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """Test full custom image flow: PO creates critic image, critic verifies prompt token.
 
     This test verifies the complete workflow:
@@ -287,11 +314,6 @@ async def test_po_creates_custom_critic_with_token(synced_test_db, async_docker_
     3. Optimizer calls run_critic with the new custom image
     4. Critic receives system prompt and asserts it contains the token
     5. Grading completes
-
-    To enable this test:
-    1. Add registry proxy to multi_model_e2e_stack (start props-registry-proxy container)
-    2. Pass PROPS_REGISTRY_PROXY_HOST and PROPS_REGISTRY_PROXY_PORT to agent containers via extra_env
-    3. Remove the @skip marker
     """
     snapshot_slug = SnapshotSlug(test_snapshot)
     verification_token = f"VERIFY_{secrets.token_hex(8)}"
@@ -301,15 +323,24 @@ async def test_po_creates_custom_critic_with_token(synced_test_db, async_docker_
     critic_mock = make_critic_mock_with_token_check(verification_token)
     grader_mock = make_orchestration_grader_mock()
 
+    mocks = {
+        ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,
+        ORCHESTRATION_CRITIC_MODEL: critic_mock,
+        ORCHESTRATION_GRADER_MODEL: grader_mock,
+    }
     async with multi_model_e2e_stack(
-        optimizer_mock, critic_mock, synced_test_db, async_docker_client, grader_mock=grader_mock
-    ) as registry:
+        mocks, synced_test_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+    ) as stack:
+        stack.push_image(prompt_optimizer_image)
+        stack.push_image(critic_image)
+        stack.push_image(grader_image)
+
         grader_task = asyncio.create_task(
-            registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )
 
         try:
-            run_id = await registry.run_prompt_optimizer(
+            run_id = await stack.registry.run_prompt_optimizer(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -353,7 +384,7 @@ def make_critic_push_attempt_mock() -> PropsMock:
 
 @pytest.mark.timeout(180)
 @pytest.mark.slow
-async def test_critic_cannot_push_images(e2e_stack, all_files_scope):
+async def test_critic_cannot_push_images(e2e_stack, all_files_scope, critic_image):
     """Test that critic agents cannot push images to registry.
 
     Critic agents should only be able to read from the registry, not write.
@@ -366,6 +397,7 @@ async def test_critic_cannot_push_images(e2e_stack, all_files_scope):
     mock = make_critic_push_attempt_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(critic_image)
         run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=all_files_scope,

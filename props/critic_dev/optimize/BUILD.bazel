@@ -55,14 +55,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core/testing:responses",
-        "//openai_utils:model",
-        "//props/backend:app",
-        "//props/db:config",
-        "//props/orchestration:agent_registry",
         "//props/testing",
-        "//props/testing:fake_openai_server",
-        "@pypi//aiodocker",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -98,6 +91,7 @@ docker_py_test(
         "//props/db:models",
         "//props/db:session",
         "//props/testing",
+        "//props/testing/fixtures:e2e_container",
         "@pypi//aiodocker",
         "@pypi//pyhamcrest",
         "@pypi//pytest",

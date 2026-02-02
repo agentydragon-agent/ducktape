@@ -95,11 +95,12 @@ chmod +x /workspace/improved/init""",
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_example):
+async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_example, improvement_image):
     """Test improvement agent can create package directory in container."""
     mock = make_improvement_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],
@@ -121,7 +122,7 @@ async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_examp
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot):
+async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, improvement_image):
     """Test improvement agent with multiple training examples."""
     with get_session() as session:
         examples = session.query(Example).filter_by(snapshot_slug=test_snapshot).limit(2).all()
@@ -131,6 +132,7 @@ async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot):
     mock = make_improvement_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=allowed_examples,
             baseline_image_refs=[CRITIC_IMAGE_REF],
@@ -179,11 +181,14 @@ def make_hard_examples_check_mock() -> PropsMock:
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_cli_leaderboard_in_improvement_agent(e2e_stack, subtract_file_example, test_train_example_with_runs):
+async def test_cli_leaderboard_in_improvement_agent(
+    e2e_stack, subtract_file_example, test_train_example_with_runs, improvement_image
+):
     """Test that leaderboard CLI command works from improvement agent container."""
     mock = make_leaderboard_check_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],
@@ -198,11 +203,14 @@ async def test_cli_leaderboard_in_improvement_agent(e2e_stack, subtract_file_exa
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_cli_hard_examples_in_improvement_agent(e2e_stack, subtract_file_example, test_train_example_with_runs):
+async def test_cli_hard_examples_in_improvement_agent(
+    e2e_stack, subtract_file_example, test_train_example_with_runs, improvement_image
+):
     """Test that hard-examples CLI command works from improvement agent container."""
     mock = make_hard_examples_check_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(improvement_image)
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
             baseline_image_refs=[CRITIC_IMAGE_REF],

@@ -41,7 +41,6 @@ from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
     make_orchestration_grader_mock,
-    multi_model_e2e_stack,
 )
 from props.critic_dev.shared import TargetMetric
 from props.db.agent_definition_ids import CRITIC_IMAGE_REF
@@ -49,6 +48,7 @@ from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, Snapshot
 from props.db.session import get_session
+from props.testing.fixtures.e2e_container import multi_model_e2e_stack
 from props.testing.mocks import PropsMock
 
 logger = logging.getLogger(__name__)
@@ -74,11 +74,12 @@ def make_psql_connectivity_mock() -> PropsMock:
 
 @pytest.mark.timeout(120)
 @pytest.mark.requires_docker
-async def test_po_agent_psql_connectivity(e2e_stack):
+async def test_po_agent_psql_connectivity(e2e_stack, prompt_optimizer_image):
     """Test that psql works from the agent container using PG* env vars."""
     mock = make_psql_connectivity_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(prompt_optimizer_image)
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -112,7 +113,7 @@ def make_critic_mock_with_issue() -> PropsMock:
 
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
-async def test_optimizer_critic_workflow(e2e_stack, synced_test_db, test_snapshot):
+async def test_optimizer_critic_workflow(e2e_stack, synced_test_db, test_snapshot, critic_image):
     """Test optimizer → critic workflow with data access verification.
 
     Note: Grading is handled by snapshot grader daemons (not tested here).
@@ -130,6 +131,7 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_test_db, test_snapsho
     # First: run critic separately to verify it works
     critic_mock = make_critic_mock_with_issue()
     async with e2e_stack(critic_mock) as stack:
+        stack.push_image(critic_image)
         critic_run_id = await stack.registry.run_critic(
             image_ref=CRITIC_IMAGE_REF,
             example=example_spec,
@@ -169,7 +171,7 @@ def make_leaderboard_check_mock() -> PropsMock:
 
 @pytest.mark.timeout(120)
 @pytest.mark.requires_docker
-async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs):
+async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
     """Test that leaderboard CLI command shows actual recall values from database."""
     example, _critic_run, _grader_run = test_train_example_with_runs
     assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
@@ -177,6 +179,7 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
     mock = make_leaderboard_check_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(prompt_optimizer_image)
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -201,7 +204,7 @@ def make_hard_examples_check_mock() -> PropsMock:
 
 @pytest.mark.timeout(120)
 @pytest.mark.requires_docker
-async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs):
+async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
     """Test that hard-examples CLI command shows example metrics."""
     example, _critic_run, _grader_run = test_train_example_with_runs
     assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
@@ -209,6 +212,7 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
     mock = make_hard_examples_check_mock()
 
     async with e2e_stack(mock) as stack:
+        stack.push_image(prompt_optimizer_image)
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -295,7 +299,16 @@ def make_orchestration_critic_mock() -> PropsMock:
 @pytest.mark.timeout(180)
 @pytest.mark.requires_docker
 @pytest.mark.slow
-async def test_optimizer_orchestrates_critic(synced_test_db: DatabaseConfig, async_docker_client: aiodocker.Docker):
+async def test_optimizer_orchestrates_critic(
+    synced_test_db: DatabaseConfig,
+    async_docker_client: aiodocker.Docker,
+    docker_client,
+    e2e_registry_url: str,
+    prompt_optimizer_image,
+    critic_image,
+    grader_image,
+    monkeypatch: pytest.MonkeyPatch,
+):
     """Test optimizer can orchestrate critic runs with simulated grading.
 
     This e2e test verifies the full orchestration flow:
@@ -333,9 +346,19 @@ async def test_optimizer_orchestrates_critic(synced_test_db: DatabaseConfig, asy
     critic_mock = make_orchestration_critic_mock()
     grader_mock = make_orchestration_grader_mock()
 
+    mocks = {
+        ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,
+        ORCHESTRATION_CRITIC_MODEL: critic_mock,
+        ORCHESTRATION_GRADER_MODEL: grader_mock,
+    }
     async with multi_model_e2e_stack(
-        optimizer_mock, critic_mock, synced_test_db, async_docker_client, grader_mock=grader_mock
-    ) as registry:
+        mocks, synced_test_db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
+    ) as stack:
+        # Push all agent images through the proxy
+        stack.push_image(prompt_optimizer_image)
+        stack.push_image(critic_image)
+        stack.push_image(grader_image)
+
         # Start grader daemon in background - it will sleep until there's drift
         grader_task: asyncio.Task[None] | None = None
 
@@ -343,7 +366,7 @@ async def test_optimizer_orchestrates_critic(synced_test_db: DatabaseConfig, asy
             """Run grader daemon in background."""
             try:
                 logger.info(f"Starting grader daemon for {snapshot_slug}")
-                await registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+                await stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
                 logger.info("Grader daemon completed")
             except asyncio.CancelledError:
                 logger.info("Grader daemon cancelled")
@@ -356,7 +379,7 @@ async def test_optimizer_orchestrates_critic(synced_test_db: DatabaseConfig, asy
         try:
             # Run prompt optimizer - this triggers the full orchestration
             # The grader daemon running in background will process edges when critic completes
-            run_id = await registry.run_prompt_optimizer(
+            run_id = await stack.registry.run_prompt_optimizer(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,

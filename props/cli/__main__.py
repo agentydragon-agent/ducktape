@@ -31,6 +31,7 @@ from props.core.agent_types import AgentType
 from props.core.display import fmt_pct, short_sha
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
+from props.core.oci_utils import get_registry_proxy_config
 from props.core.splits import Split
 from props.critic_dev.improve.main import TerminationSuccess
 from props.critic_dev.shared import TargetMetric
@@ -131,7 +132,7 @@ async def prompt_optimize(
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
+    registry = AgentRegistry(docker_client, db_config, llm_proxy_url, registry_config=get_registry_proxy_config())
     try:
         run_id = await registry.run_prompt_optimizer(
             budget=budget,
@@ -345,7 +346,7 @@ async def prompt_improve_cmd(
 
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
-    registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
+    registry = AgentRegistry(docker_client, db_config, llm_proxy_url, registry_config=get_registry_proxy_config())
     try:
         result: ImprovementResult = await registry.run_improvement_agent(
             examples=allowed_examples,
@@ -445,7 +446,7 @@ async def cmd_run(
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
 
-    registry = AgentRegistry(docker_client, db_config, llm_proxy_url)
+    registry = AgentRegistry(docker_client, db_config, llm_proxy_url, registry_config=get_registry_proxy_config())
     try:
         # Get available files from database (no hydration)
         with get_session() as session:

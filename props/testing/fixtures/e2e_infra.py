@@ -21,20 +21,17 @@ Usage in BUILD.bazel:
 
 Usage in tests:
     @pytest.mark.requires_docker
-    async def test_something(e2e_registry, critic_image, e2e_stack):
-        # critic_image fixture loads and pushes the critic image
+    async def test_something(e2e_registry, grader_image, e2e_stack):
         async with e2e_stack(mock) as stack:
-            run_id = await stack.registry.run_critic(...)
+            run_id = await stack.registry.run_snapshot_grader(...)
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import time
 from collections.abc import Generator
-from contextlib import contextmanager
 from dataclasses import dataclass
 
 import docker
@@ -48,81 +45,37 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class AgentImage:
-    """Loaded and pushed agent image info."""
+class LoadedImage:
+    """Image loaded into Docker daemon from Bazel, ready for push."""
 
     repo_name: str
     local_tag: str
-    registry_tag: str
 
 
-@contextmanager
-def load_and_push_image(
-    docker_client: docker.DockerClient, registry_url: str, load_script_path: str, repo_name: str, local_tag: str
-) -> Generator[AgentImage]:
-    """Context manager to load an image via Bazel :load script and push to registry.
+def push_image_to_proxy(docker_client: docker.DockerClient, image: LoadedImage, proxy_url: str) -> str:
+    """Push a loaded image through the backend proxy (which records agent_definitions).
 
-    Args:
-        docker_client: Docker client
-        registry_url: URL of the registry (e.g., "localhost:5000")
-        load_script_path: Runfiles path to the load.sh script
-        repo_name: Repository name for the image (e.g., "critic")
-        local_tag: Local Docker tag after load (e.g., "critic-agent:latest")
+    Tags the image for the proxy URL and pushes via Docker SDK. The proxy
+    forwards to the raw registry and records the digest in agent_definitions.
 
-    Yields:
-        AgentImage with load details
-
-    Cleanup:
-        Removes the registry tag after the context exits.
+    Returns:
+        The registry tag that was pushed (e.g., "localhost:12345/grader:latest")
     """
-    load_bazel_image(load_script_path, local_tag)
+    registry_tag = f"{proxy_url}/{image.repo_name}:latest"
+    local_image = docker_client.images.get(image.local_tag)
+    local_image.tag(registry_tag)
 
-    # Get the loaded image
-    image = docker_client.images.get(local_tag)
-    image_id = image.id or "unknown"
-    logger.info(f"Loaded image {image_id[:19]} as {local_tag}")
-
-    # Tag for the registry
-    registry_tag = f"{registry_url}/{repo_name}:latest"
-    image.tag(registry_tag)
-    logger.info(f"Tagged as {registry_tag}")
-
-    # Push to registry
     docker_client.images.push(registry_tag)
-    logger.info(f"Pushed {registry_tag}")
+    logger.info(f"Pushed {image.local_tag} → {registry_tag} (through proxy)")
 
-    try:
-        yield AgentImage(repo_name=repo_name, local_tag=local_tag, registry_tag=registry_tag)
-    finally:
-        # Cleanup: remove registry tag
+    return registry_tag
+
+
+def cleanup_registry_tags(docker_client: docker.DockerClient, tags: list[str]) -> None:
+    """Remove registry tags from Docker daemon."""
+    for tag in tags:
         with contextlib.suppress(docker.errors.ImageNotFound):
-            docker_client.images.remove(registry_tag, force=True)
-
-
-# --- Registry configuration ---
-
-
-@dataclass
-class E2ERegistryConfig:
-    """Registry configuration for e2e tests.
-
-    Stores individual components (host, port) and builds env vars on demand.
-    """
-
-    host_host: str
-    host_port: str
-    container_host: str
-    container_port: str
-
-    def as_env_vars(self) -> dict[str, str]:
-        """Build environment variables for oci_utils.py configuration."""
-        return {
-            "PROPS_REGISTRY_HOST": self.host_host,
-            "PROPS_REGISTRY_PORT": self.host_port,
-            "PROPS_REGISTRY_PROXY_URL": f"http://{self.host_host}:{self.host_port}",
-            "PROPS_PROXY_CONTAINER_NAME": self.container_host,
-            "PROPS_PROXY_CONTAINER_PORT": self.container_port,
-        }
+            docker_client.images.remove(tag, force=True)
 
 
 # --- Session-scoped infrastructure ---
@@ -143,31 +96,29 @@ def e2e_registry() -> Generator[DockerContainer]:
     Starts a registry:2 container and waits for it to be ready.
     """
     with DockerContainer("registry:2").with_exposed_ports(5000) as registry:
-        # Wait for registry to be ready
         wait_for_logs(registry, "listening on")
         time.sleep(0.5)
         yield registry
 
 
 @pytest.fixture(scope="session")
-def e2e_registry_config(e2e_registry: DockerContainer) -> E2ERegistryConfig:
-    """Registry configuration for e2e tests."""
-    port = str(e2e_registry.get_exposed_port(5000))
-    container_host = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.internal")
-    return E2ERegistryConfig(host_host="localhost", host_port=port, container_host=container_host, container_port=port)
+def e2e_registry_url(e2e_registry: DockerContainer) -> str:
+    """Raw registry URL (e.g., 'http://localhost:32769') for PROPS_REGISTRY_UPSTREAM_URL."""
+    port = e2e_registry.get_exposed_port(5000)
+    return f"http://localhost:{port}"
 
 
-# --- Agent image fixtures ---
+# --- Agent image fixtures (session-scoped, load only) ---
 
 
 def _make_image_fixture(load_script: str, repo_name: str, local_tag: str):
-    """Factory for agent image fixtures."""
+    """Factory for agent image fixtures that load from Bazel tar."""
 
     @pytest.fixture(scope="session")
-    def _fixture(docker_client: docker.DockerClient, e2e_registry_config: E2ERegistryConfig) -> Generator[AgentImage]:
-        registry_url = f"{e2e_registry_config.host_host}:{e2e_registry_config.host_port}"
-        with load_and_push_image(docker_client, registry_url, load_script, repo_name, local_tag) as image:
-            yield image
+    def _fixture() -> LoadedImage:
+        load_bazel_image(load_script, local_tag)
+        logger.info(f"Loaded image {local_tag} from {load_script}")
+        return LoadedImage(repo_name=repo_name, local_tag=local_tag)
 
     return _fixture
 
@@ -178,18 +129,3 @@ prompt_optimizer_image = _make_image_fixture(
     "props/critic_dev/optimize/load.sh", "prompt_optimizer", "prompt-optimizer:latest"
 )
 improvement_image = _make_image_fixture("props/critic_dev/improve/load.sh", "improvement", "improvement-agent:latest")
-
-
-# --- Environment application ---
-
-
-@pytest.fixture
-def e2e_env(e2e_registry_config: E2ERegistryConfig, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
-    """Apply e2e environment variables for a test.
-
-    Use this fixture to configure oci_utils.py to use the testcontainers registry.
-    """
-    env_vars = e2e_registry_config.as_env_vars()
-    for key, value in env_vars.items():
-        monkeypatch.setenv(key, value)
-    return env_vars

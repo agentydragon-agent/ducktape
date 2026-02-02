@@ -15,6 +15,7 @@ Usage:
         docker_client=docker_client,
         db_config=db_config,
         llm_proxy_url="http://props-backend:8000",
+        registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
     )
     async with registry:
         critic_run_id = await registry.run_critic(
@@ -36,7 +37,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -59,7 +59,7 @@ from props.core.agent_types import (
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
-from props.core.oci_utils import BUILTIN_TAG, build_oci_reference, is_digest
+from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig, is_digest
 from props.core.splits import Split
 from props.critic_dev.improve.main import TerminationSuccess
 from props.critic_dev.shared import TargetMetric
@@ -119,11 +119,13 @@ class AgentRegistry:
         docker_client: aiodocker.Docker,
         db_config: DatabaseConfig,
         llm_proxy_url: str,
+        registry_config: RegistryProxyConfig,
         extra_hosts: dict[str, str] | None = None,
     ) -> None:
         self._docker_client = docker_client
         self._db_config = db_config
         self._llm_proxy_url = llm_proxy_url
+        self._registry_config = registry_config
         self._extra_hosts = extra_hosts
 
     async def close(self) -> None:
@@ -160,7 +162,7 @@ class AgentRegistry:
 
         repository = str(agent_type)
 
-        proxy_url = os.environ.get("PROPS_REGISTRY_PROXY_URL", "http://localhost:8000")
+        proxy_url = self._registry_config.proxy_url
         manifest_url = f"{proxy_url}/v2/{repository}/manifests/{ref}"
         headers = {"Accept": "application/vnd.oci.image.manifest.v1+json"}
         auth = (self._db_config.user, self._db_config.password)
@@ -203,7 +205,7 @@ class AgentRegistry:
 
         # Resolve image reference to digest, then build full OCI reference
         image_digest = self._resolve_image_ref(AgentType.CRITIC, image_ref)
-        image = build_oci_reference(AgentType.CRITIC, image_digest)
+        image = self._registry_config.build_oci_reference(AgentType.CRITIC, image_digest)
         logger.info(f"Resolved critic image {image_ref} → {image_digest}")
 
         # Phase 1: Write initial AgentRun to DB
@@ -235,6 +237,7 @@ class AgentRegistry:
             db_config=self._db_config,
             image=image,
             llm_proxy_url=self._llm_proxy_url,
+            registry_config=self._registry_config,
             timeout_seconds=timeout_seconds,
             extra_env=extra_env,
             container_name=f"critic-{short_uuid(agent_run_id)}",
@@ -279,7 +282,7 @@ class AgentRegistry:
 
         # Resolve image reference to digest and construct full OCI reference
         image_digest = self._resolve_image_ref(AgentType.PROMPT_OPTIMIZER, image_ref)
-        image = build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
+        image = self._registry_config.build_oci_reference(AgentType.PROMPT_OPTIMIZER, image_digest)
         logger.info(f"Resolved prompt-optimizer image {image_ref} → {image}")
 
         # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
@@ -313,6 +316,7 @@ class AgentRegistry:
                 db_config=self._db_config,
                 image=image,
                 llm_proxy_url=self._llm_proxy_url,
+                registry_config=self._registry_config,
                 extra_env={
                     # Backend URL for eval API (run_critic, wait_until_graded)
                     "PROPS_BACKEND_URL": self._llm_proxy_url,
@@ -384,7 +388,7 @@ class AgentRegistry:
 
         # Always use builtin improvement image
         image_digest = self._resolve_image_ref(AgentType.IMPROVEMENT, BUILTIN_TAG)
-        image = build_oci_reference(AgentType.IMPROVEMENT, image_digest)
+        image = self._registry_config.build_oci_reference(AgentType.IMPROVEMENT, image_digest)
         logger.info(f"Using builtin improvement image: {image_digest}")
 
         type_config = ImprovementTypeConfig(
@@ -415,6 +419,7 @@ class AgentRegistry:
                 db_config=self._db_config,
                 image=image,
                 llm_proxy_url=self._llm_proxy_url,
+                registry_config=self._registry_config,
                 extra_env={
                     # Backend URL for eval API (run_critic, wait_until_graded)
                     "PROPS_BACKEND_URL": self._llm_proxy_url,
@@ -517,7 +522,7 @@ class AgentRegistry:
                 for r in runs
             ]
 
-    async def run_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str, image_ref: str = "grader") -> UUID:
+    async def run_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> UUID:
         """Run a snapshot grader daemon. Blocks until daemon exits.
 
         The grader daemon listens for pg_notify on grading_pending channel, grades all
@@ -526,10 +531,10 @@ class AgentRegistry:
         """
         agent_run_id = uuid4()
 
-        # Resolve image reference to digest
-        image_digest = self._resolve_image_ref(AgentType.GRADER, image_ref)
-        image = build_oci_reference(AgentType.GRADER, image_digest)
-        logger.info(f"Resolved grader image {image_ref} → {image_digest}")
+        # Resolve builtin grader image to digest
+        image_digest = self._resolve_image_ref(AgentType.GRADER, BUILTIN_TAG)
+        image = self._registry_config.build_oci_reference(AgentType.GRADER, image_digest)
+        logger.info(f"Resolved grader image {BUILTIN_TAG} → {image_digest}")
 
         # Phase 1: Write initial AgentRun to DB
         with get_session() as session:
@@ -558,6 +563,7 @@ class AgentRegistry:
             db_config=self._db_config,
             image=image,
             llm_proxy_url=self._llm_proxy_url,
+            registry_config=self._registry_config,
             extra_env=extra_env,
             container_name=f"grader-{short_uuid(agent_run_id)}",
             extra_hosts=self._extra_hosts,

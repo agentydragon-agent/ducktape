@@ -1,12 +1,14 @@
 """E2E test fixtures for container-based agent tests.
 
 These fixtures set up the full e2e testing stack:
+- Raw Docker registry (testcontainers, from e2e_infra)
+- Real backend app (FastAPI - same as production)
 - Fake OpenAI server (returns scripted responses)
-- LLM proxy (validates auth, logs requests)
 - AgentRegistry (orchestrates containers)
 
-The container communicates through the real LLM proxy to the fake OpenAI server,
-exercising the full production code path including auth and request logging.
+The container communicates through the real backend to the fake OpenAI server,
+exercising the full production code path including auth, request logging, and
+registry proxy (which records agent_definitions on push).
 
 Environment variables:
     PROPS_E2E_HOST_HOSTNAME: Hostname for containers to reach host services.
@@ -36,35 +38,24 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 
 import aiodocker
+import docker
+import pytest
 import pytest_asyncio
 import uvicorn
-from fastapi import FastAPI
 
+from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
-from props.backend.auth import AuthMiddleware
-from props.backend.routes import llm
+from props.backend.app import create_app
+from props.core.oci_utils import RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.orchestration.agent_registry import AgentRegistry
-from props.testing.fake_openai_server import FakeOpenAIServer
-
-
-def create_test_proxy_app() -> FastAPI:
-    """Create a minimal FastAPI app with just the LLM proxy for e2e tests.
-
-    This is a lightweight version of the full backend that only includes
-    the LLM proxy routes. It doesn't start grader daemons or other services
-    that are not needed for e2e container tests.
-    """
-    app = FastAPI(title="Test LLM Proxy")
-    app.add_middleware(AuthMiddleware)
-    app.include_router(llm.router, tags=["llm_proxy"])
-    return app
-
+from props.testing.fake_openai_server import FakeOpenAIServer, MultiModelFakeOpenAI
+from props.testing.fixtures.e2e_infra import LoadedImage, push_image_to_proxy
 
 logger = logging.getLogger(__name__)
 
@@ -84,127 +75,51 @@ HOST_GATEWAY = {E2E_HOST_HOSTNAME: "host-gateway"} if E2E_HOST_HOSTNAME == "host
 class E2EStack:
     """Running e2e test stack with all services."""
 
-    fake_openai: FakeOpenAIServer
-    proxy_port: int
     registry: AgentRegistry
     model: str
+    _proxy_port: int
+    _docker_client: docker.DockerClient
 
-    @property
-    def proxy_url(self) -> str:
-        """LLM proxy URL accessible from containers."""
-        return f"http://{E2E_HOST_HOSTNAME}:{self.proxy_port}"
-
-
-class _ProxyServer:
-    """LLM proxy server wrapper for testing."""
-
-    def __init__(self, upstream_url: str, host: str = "0.0.0.0", port: int = 0) -> None:
-        self._upstream_url = upstream_url
-        self._host = host
-        self._port = port
-        self._server: uvicorn.Server | None = None
-        self._task: asyncio.Task[None] | None = None
-        self._actual_port: int | None = None
-
-    @property
-    def port(self) -> int:
-        if self._actual_port is None:
-            raise RuntimeError("Server not started")
-        return self._actual_port
-
-    @property
-    def url(self) -> str:
-        if self._actual_port is None:
-            raise RuntimeError("Server not started")
-        return f"http://{self._host}:{self._actual_port}"
-
-    async def start(self) -> None:
-        # Configure proxy to use our fake upstream
-        os.environ["OPENAI_UPSTREAM_URL"] = self._upstream_url
-        # Use a dummy API key (fake server doesn't validate it)
-        os.environ["OPENAI_API_KEY"] = "test-key"
-
-        # Create test-specific app with just LLM proxy routes
-        test_app = create_test_proxy_app()
-        config = uvicorn.Config(test_app, host=self._host, port=self._port, log_level="warning")
-        self._server = uvicorn.Server(config)
-        self._task = asyncio.create_task(self._server.serve())
-
-        while not self._server.started:
-            await asyncio.sleep(0.01)
-            if self._task.done():
-                exc = self._task.exception()
-                raise RuntimeError(f"Proxy server failed to start: {exc}")
-
-        for server in self._server.servers:
-            for socket in server.sockets:
-                self._actual_port = socket.getsockname()[1]
-                break
-            break
-
-        logger.info("LLM proxy started on port %d, upstream=%s", self._actual_port, self._upstream_url)
-
-    async def stop(self) -> None:
-        if self._server is not None:
-            self._server.should_exit = True
-            if self._task is not None:
-                try:
-                    await asyncio.wait_for(self._task, timeout=5.0)
-                except TimeoutError:
-                    self._task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await self._task
-            logger.info("LLM proxy stopped")
+    def push_image(self, image: LoadedImage) -> str:
+        """Push a loaded image through the backend proxy (records agent_definition)."""
+        return push_image_to_proxy(self._docker_client, image, f"localhost:{self._proxy_port}")
 
 
 @asynccontextmanager
-async def e2e_stack_context(
-    mock: OpenAIModelProto, db_config: DatabaseConfig, docker_client: aiodocker.Docker, model: str = TEST_MODEL
-) -> AsyncIterator[E2EStack]:
-    """Create and manage the full e2e test stack.
+async def run_backend(
+    upstream_url: str, registry_proxy_config: RegistryProxyConfig, host: str = "0.0.0.0"
+) -> AsyncIterator[int]:
+    """Start the real backend app with uvicorn, yield the port.
 
-    Sets up:
-    1. Fake OpenAI server with the provided mock
-    2. LLM proxy pointing to fake server
-    3. AgentRegistry configured to use the proxy
-
-    The fake OpenAI server and proxy bind to 0.0.0.0 so they're accessible
-    from Docker containers via host.docker.internal.
-
-    Args:
-        mock: Mock implementing OpenAIModelProto (e.g., PropsMock, StepRunner)
-        db_config: Database configuration for agent runs
-        docker_client: Docker client for running containers
-        model: Model name to use for agent runs (default: "test-model")
-
-    Yields:
-        E2EStack with all services running
+    Sets app.state.llm_proxy_url and app.state.registry_proxy_config before lifespan.
     """
-    # Start fake OpenAI server (bind to 0.0.0.0 for container access)
-    fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
-    await fake_openai.start()
+    app = create_app()
+    app.state.llm_proxy_url = upstream_url
+    app.state.registry_proxy_config = registry_proxy_config
+
+    config = uvicorn.Config(app, host=host, port=registry_proxy_config.port, log_level="warning")
+    server = uvicorn.Server(config)
+    task = asyncio.create_task(server.serve())
+
+    while not server.started:
+        await asyncio.sleep(0.01)
+        if task.done():
+            exc = task.exception()
+            raise RuntimeError(f"Backend server failed to start: {exc}")
+
+    logger.info("Backend started on port %d, upstream=%s", registry_proxy_config.port, upstream_url)
 
     try:
-        # Start LLM proxy pointing to fake server
-        proxy = _ProxyServer(upstream_url=fake_openai.url, host="0.0.0.0", port=0)
-        await proxy.start()
-
-        try:
-            # Create registry with proxy URL accessible from containers
-            proxy_url = f"http://{E2E_HOST_HOSTNAME}:{proxy.port}"
-            registry = AgentRegistry(
-                docker_client=docker_client, db_config=db_config, llm_proxy_url=proxy_url, extra_hosts=HOST_GATEWAY
-            )
-
-            yield E2EStack(fake_openai=fake_openai, proxy_port=proxy.port, registry=registry, model=model)
-
-            await registry.close()
-
-        finally:
-            await proxy.stop()
-
+        yield registry_proxy_config.port
     finally:
-        await fake_openai.stop()
+        server.should_exit = True
+        try:
+            await asyncio.wait_for(task, timeout=5.0)
+        except TimeoutError:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        logger.info("Backend stopped")
 
 
 # Type alias for the fixture factory
@@ -213,20 +128,100 @@ E2EStackFactory = Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2ESt
 
 @pytest_asyncio.fixture
 async def e2e_stack(
-    synced_test_db: DatabaseConfig, async_docker_client: aiodocker.Docker
-) -> AsyncIterator[Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2EStack]]]:
+    synced_test_db: DatabaseConfig,
+    async_docker_client: aiodocker.Docker,
+    docker_client: docker.DockerClient,
+    e2e_registry_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[E2EStackFactory]:
     """Fixture factory for creating e2e test stacks.
+
+    Sets up env vars via monkeypatch and yields a factory that creates E2EStack instances.
+    RegistryProxyConfig is constructed directly from the backend's port (determined upfront).
 
     Usage:
         async def test_something(e2e_stack, all_files_scope):
             mock = make_my_mock()
             async with e2e_stack(mock) as stack:
+                stack.push_image(grader_image)
                 run_id = await stack.registry.run_critic(...)
     """
+    # Configure upstream registry for the backend's registry proxy
+    monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     @asynccontextmanager
     async def _factory(mock: OpenAIModelProto, model: str = TEST_MODEL) -> AsyncIterator[E2EStack]:
-        async with e2e_stack_context(mock, synced_test_db, async_docker_client, model) as stack:
-            yield stack
+        fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
+        await fake_openai.start()
+
+        try:
+            monkeypatch.setenv("OPENAI_UPSTREAM_URL", fake_openai.url)
+
+            backend_port = pick_free_port()
+            registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
+            proxy_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
+
+            async with run_backend(fake_openai.url, registry_proxy_config) as _port:
+                registry = AgentRegistry(
+                    docker_client=async_docker_client,
+                    db_config=synced_test_db,
+                    llm_proxy_url=proxy_url,
+                    registry_config=registry_proxy_config,
+                    extra_hosts=HOST_GATEWAY,
+                )
+
+                try:
+                    yield E2EStack(
+                        registry=registry, model=model, _proxy_port=backend_port, _docker_client=docker_client
+                    )
+                finally:
+                    await registry.close()
+
+        finally:
+            await fake_openai.stop()
 
     yield _factory
+
+
+@asynccontextmanager
+async def multi_model_e2e_stack(
+    mocks: Mapping[str, OpenAIModelProto],
+    db_config: DatabaseConfig,
+    async_docker_client: aiodocker.Docker,
+    sync_docker_client: docker.DockerClient,
+    e2e_registry_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[E2EStack]:
+    """Set up full e2e stack with multi-model routing.
+
+    Each key in `mocks` is a model name routed to the corresponding mock.
+    """
+    fake_openai = MultiModelFakeOpenAI(dict(mocks), host="0.0.0.0", port=0)
+    await fake_openai.start()
+
+    try:
+        monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", e2e_registry_url)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setenv("OPENAI_UPSTREAM_URL", fake_openai.url)
+
+        backend_port = pick_free_port()
+        registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
+        proxy_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
+
+        async with run_backend(fake_openai.url, registry_proxy_config) as _port:
+            registry = AgentRegistry(
+                docker_client=async_docker_client,
+                db_config=db_config,
+                llm_proxy_url=proxy_url,
+                registry_config=registry_proxy_config,
+                extra_hosts=HOST_GATEWAY,
+            )
+
+            try:
+                yield E2EStack(registry=registry, model="", _proxy_port=backend_port, _docker_client=sync_docker_client)
+            finally:
+                await registry.close()
+
+    finally:
+        await fake_openai.stop()

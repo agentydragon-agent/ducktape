@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from cli_util.logging import LogLevel, configure_logging
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
+from props.core.oci_utils import get_registry_proxy_config
 from props.db.config import get_database_config
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.grader_supervisor import GraderSupervisor
@@ -66,7 +67,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise RuntimeError(f"LLM proxy URL required: set {ENV_LLM_PROXY_URL} or app.state.llm_proxy_url")
 
     # Registry owns resources and orchestrates agent runs
-    app.state.registry = AgentRegistry(docker_client=docker_client, db_config=db_config, llm_proxy_url=llm_proxy_url)
+    registry_proxy_config = getattr(app.state, "registry_proxy_config", None) or get_registry_proxy_config()
+    app.state.registry = AgentRegistry(
+        docker_client=docker_client,
+        db_config=db_config,
+        llm_proxy_url=llm_proxy_url,
+        registry_config=registry_proxy_config,
+    )
 
     # Initialize daemon manager if configured
     # Daemon manager listens for pg_notify on snapshot_created channel and spawns daemons automatically
