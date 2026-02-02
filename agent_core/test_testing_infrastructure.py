@@ -147,7 +147,11 @@ async def test_minicodex_executes_tool_and_returns_text(
     agent = await Agent.create(
         tool_provider=mcp_tool_provider_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
     )
-    agent.process_message(UserMessage.text("say hi"))
+    agent.process_message(
+        UserMessage.text(
+            'Call the echo tool with the argument "hi", then reply with exactly the word "done" and nothing else.'
+        )
+    )
 
     res = await agent.run()
 

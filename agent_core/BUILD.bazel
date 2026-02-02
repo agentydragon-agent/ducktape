@@ -90,6 +90,19 @@ py_library(
 )
 
 py_library(
+    name = "logging_handler",
+    srcs = ["logging_handler.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":events",
+        ":handler",
+        ":loop_control",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
     name = "turn_limit",
     srcs = ["turn_limit.py"],
     imports = [".."],

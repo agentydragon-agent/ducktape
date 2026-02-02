@@ -6,18 +6,24 @@ Both need Docker (the exec tool runs in a real container).
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 import pytest_bazel
 
 from agent_core.agent import Agent, AgentResult
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import RequireAnyTool
+from agent_core.handler import FinishOnTextMessageHandler
+from agent_core.logging_handler import LoggingHandler
+from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import tool_roundtrip
+from agent_core.turn_limit import MaxTurnsHandler
 from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import UserMessage
+
+logger = logging.getLogger(__name__)
 
 ECHO_CMD = ["/bin/echo", "-n", "hello"]
 SERVER_NAME = MCPMountPrefix("box")
@@ -41,10 +47,11 @@ async def test_llm_exec_echo(mock_or_live, docker_exec_server_py312slim, composi
     agent = await Agent.create(
         tool_provider=MCPToolProvider(compositor_client),
         client=client,
-        handlers=[BaseHandler()],
-        tool_policy=RequireAnyTool(),
+        # Simple echo roundtrip shouldn't need more than ~3 turns; 10 is a generous safety margin.
+        handlers=[FinishOnTextMessageHandler(), MaxTurnsHandler(max_turns=10), LoggingHandler(logger)],
+        tool_policy=AllowAnyToolOrTextMessage(),
     )
-    agent.process_message(UserMessage.text("Call the exec tool with cmd={ECHO_CMD!r} and return exactly the stdout."))
+    agent.process_message(UserMessage.text(f"Call the exec tool with cmd={ECHO_CMD!r} and return exactly the stdout."))
     res: AgentResult = await agent.run()
     assert "hello" in (res.text or "")
 
