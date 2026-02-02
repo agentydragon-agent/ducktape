@@ -59,15 +59,14 @@
     HF_HOME = "/wyrmhdd/huggingface";
   };
 
-  # Bazel output directory on HDD (avoids filling up root SSD)
-  # Uses lib.mkBefore to prepend to content from popos-bazel.nix module
+  # Bazel: outputs on SSD (fast random I/O for runfiles symlinks),
+  # repository cache on HDD (large tarballs, read sequentially, rarely written)
   home.file.".bazelrc".text = lib.mkBefore ''
-    startup --output_user_root=/wyrmhdd/bazel
+    common --repository_cache=/wyrmhdd/bazel/repository_cache
   '';
 
-  # Allow Claude Code to access Bazel output directory
-  # Read: for test logs, build outputs, etc.
-  # Write: for pre-commit hooks running bazel format, etc.
+  # Allow Claude Code to read Bazel repository cache on HDD
   programs.claude-code.extraAllowedReadDirs = [ "/wyrmhdd/bazel" ];
-  programs.claude-code.additionalDirectories = [ "/wyrmhdd/bazel" ];
+  # Allow Claude Code to write to Bazel output base on SSD
+  programs.claude-code.additionalDirectories = [ "~/.cache/bazel" ];
 }
