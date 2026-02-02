@@ -234,3 +234,7 @@ def _initialize_kernel_environment(workspace: str | None) -> None:
                 break
     finally:
         client.stop_channels()
+
+
+if __name__ == "__main__":
+    sys.exit(cli_main())

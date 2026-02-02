@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from cli_util.logging import LogLevel, configure_logging
 from props.backend.auth import AuthMiddleware
 from props.backend.routes import eval, ground_truth, llm, registry, runs, stats
-from props.cli.resources import get_database_config
+from props.db.config import get_database_config
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.grader_supervisor import GraderSupervisor
 

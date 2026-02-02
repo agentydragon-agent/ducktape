@@ -29,7 +29,9 @@ def session(synced_test_db):
 @pytest.fixture
 def test_critic_run(session, example_subtract_orm):
     """Create a completed critic run for testing."""
-    critic_run = make_fake_critic_run(session=session, example=example_subtract_orm, status=AgentRunStatus.COMPLETED)
+    critic_run = make_fake_critic_run(
+        session=session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.COMPLETED
+    )
     session.add(critic_run)
     session.commit()
     return critic_run

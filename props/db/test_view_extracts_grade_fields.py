@@ -51,7 +51,10 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
 
         # Insert critic run (required for view join) using fixture factory
         critic_run = make_fake_critic_run(
-            session=session, example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED
+            session=session,
+            example=example.to_example_spec(),
+            agent_run_id=critic_agent_run_id,
+            status=AgentRunStatus.COMPLETED,
         )
         session.add(critic_run)
         session.flush()

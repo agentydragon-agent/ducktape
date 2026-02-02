@@ -37,8 +37,7 @@ py_binary(
 
 py_binary(
     name = "ember-python",
-    srcs = ["ember_python_main.py"],
-    main = "ember_python_main.py",
+    main_module = "ember.python_session",
     deps = [":python_session"],
 )
 
@@ -214,11 +213,4 @@ py_library(
     srcs = ["system_prompt.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//jinja2"],
-)
-
-py_library(
-    name = "ember_python_main",
-    srcs = ["ember_python_main.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":python_session"],
 )

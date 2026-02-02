@@ -1,10 +1,6 @@
-"""In-container agent loop for grader agents using agent_core.Agent.
+"""In-container agent loop for daemon grader agents using agent_core.Agent.
 
-Supports both one-off and daemon modes via GraderMode flag:
-- ONE_OFF: grades single critic run, has submit tool
-- DAEMON: grades all critiques for snapshot, no submit (drift handler controls sleep)
-
-Both modes share the same tools except for submit availability.
+Grades all critiques for a snapshot. Drift handler controls sleep/wake cycle.
 """
 
 from __future__ import annotations
@@ -12,7 +8,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from uuid import UUID
 
@@ -53,7 +48,6 @@ from props.grader.tools import (
     ShowFPArgs,
     ShowIssueArgs,
     ShowTPArgs,
-    SubmitArgs,
     TPRef,
 )
 
@@ -67,13 +61,6 @@ TEXT_OUTPUT_REMINDER = (
 
 # Default workspace path
 WORKSPACE = Path("/workspace")
-
-
-class GraderMode(StrEnum):
-    """Grader operation mode."""
-
-    ONE_OFF = "one_off"  # Grades single critic run, has submit
-    DAEMON = "daemon"  # Grades all critiques for snapshot, no submit
 
 
 @dataclass
@@ -91,7 +78,7 @@ def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
 
 
 def create_grader_tool_provider(
-    grader_run_id: UUID, snapshot_slug: SnapshotSlug, exit_state: ExitState, mode: GraderMode
+    grader_run_id: UUID, snapshot_slug: SnapshotSlug, exit_state: ExitState
 ) -> DirectToolProvider:
     """Create a tool provider with grader tools bound to the given run."""
     provider = DirectToolProvider()
@@ -282,15 +269,6 @@ def create_grader_tool_provider(
 
         return f"Deleted {count} edges for {args.run}/{args.issue_id}"
 
-    # Only add submit tool for one-off mode
-    if mode == GraderMode.ONE_OFF:
-
-        @provider.tool
-        def submit(args: SubmitArgs) -> None:
-            """Finalize grading. Validates no pending edges remain for this grader's scope."""
-            exit_state.should_exit = True
-            logger.info("Grading submitted: %s", args.summary)
-
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> None:
         """Report that grading could not be completed.
@@ -311,14 +289,8 @@ class LoggingHandler(BaseHandler):
         raise exc
 
 
-async def run_grader_loop(system_prompt: str, model: str, snapshot_slug: SnapshotSlug, mode: GraderMode) -> int:
+async def run_grader_loop(system_prompt: str, model: str, snapshot_slug: SnapshotSlug) -> int:
     """Run the grader agent loop.
-
-    Args:
-        system_prompt: The system prompt for the grader agent
-        model: Model name (must match agent_run.model for proxy validation)
-        snapshot_slug: Snapshot being graded
-        mode: ONE_OFF or DAEMON mode
 
     Returns:
         Exit code (0 for success, non-zero for failure)
@@ -329,7 +301,7 @@ async def run_grader_loop(system_prompt: str, model: str, snapshot_slug: Snapsho
 
     # Create tool provider with shared exit state
     exit_state = ExitState()
-    tool_provider = create_grader_tool_provider(grader_run_id, snapshot_slug, exit_state, mode)
+    tool_provider = create_grader_tool_provider(grader_run_id, snapshot_slug, exit_state)
 
     # Create OpenAI client pointing to proxy
     client = AsyncOpenAI(

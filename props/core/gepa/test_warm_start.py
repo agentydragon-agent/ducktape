@@ -81,15 +81,17 @@ def db_with_historical_runs(synced_test_db, sample_subtract_py_scope, calculator
         # Create critic + grader runs using convenience factory
         # example1 (test-validation/subtract.py) - evaluated with both prompts
         tp_occs1 = get_tp_occurrences_for_snapshot(example1.snapshot_slug, session)
-        make_fake_critic_and_grader_run(example=example1, tp_occurrences=tp_occs1, credit=0.8, session=session)
-        make_fake_critic_and_grader_run(example=example1, tp_occurrences=tp_occs1, credit=0.9, session=session)
+        example1_spec = example1.to_example_spec()
+        make_fake_critic_and_grader_run(example=example1_spec, tp_occurrences=tp_occs1, credit=0.8, session=session)
+        make_fake_critic_and_grader_run(example=example1_spec, tp_occurrences=tp_occs1, credit=0.9, session=session)
         # example2 (test-validation-2/calculator.py) - evaluated with prompt_a only
         tp_occs2 = get_tp_occurrences_for_snapshot(example2.snapshot_slug, session)
-        make_fake_critic_and_grader_run(example=example2, tp_occurrences=tp_occs2, credit=0.6, session=session)
+        example2_spec = example2.to_example_spec()
+        make_fake_critic_and_grader_run(example=example2_spec, tp_occurrences=tp_occs2, credit=0.6, session=session)
         # train_example (test-trivial/add.py) - evaluated but in TRAIN split
         tp_occs_train = get_tp_occurrences_for_snapshot(train_example.snapshot_slug, session)
         make_fake_critic_and_grader_run(
-            example=train_example, tp_occurrences=tp_occs_train, credit=0.5, session=session
+            example=train_example.to_example_spec(), tp_occurrences=tp_occs_train, credit=0.5, session=session
         )
 
         session.commit()

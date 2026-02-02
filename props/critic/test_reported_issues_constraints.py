@@ -33,7 +33,7 @@ def test_critic_run(synced_test_db):
         assert example is not None, "Expected test-fixtures/train1 example to exist"
 
         # Create critic run
-        critic_run = make_fake_critic_run(session=session, example=example)
+        critic_run = make_fake_critic_run(session=session, example=example.to_example_spec())
         session.add(critic_run)
         session.commit()
 

@@ -6,8 +6,7 @@ load("@rules_python//python:defs.bzl", "py_binary")
 # Yamllint binary via py_binary entry point
 py_binary(
     name = "yamllint",
-    srcs = ["yamllint_main.py"],
-    main = "yamllint_main.py",
+    main_module = "yamllint",
     visibility = ["//visibility:public"],
     deps = ["@pypi//yamllint"],
 )

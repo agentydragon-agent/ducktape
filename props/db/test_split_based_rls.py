@@ -217,7 +217,9 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
         assert example, "test-split-test fixture not found"
 
         # Create a critic run for the test specimen using fixture factory
-        test_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.COMPLETED)
+        test_run = make_fake_critic_run(
+            session=session, example=example.to_example_spec(), status=AgentRunStatus.COMPLETED
+        )
         session.add(test_run)
         session.commit()
 
@@ -255,7 +257,10 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
 
         # Create a critic run for the train specimen using fixture factory
         train_run = make_fake_critic_run(
-            session=session, example=example, agent_run_id=train_agent_run_id, status=AgentRunStatus.COMPLETED
+            session=session,
+            example=example.to_example_spec(),
+            agent_run_id=train_agent_run_id,
+            status=AgentRunStatus.COMPLETED,
         )
         session.add(train_run)
         session.commit()
@@ -287,7 +292,10 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
 
         # Create a critic run for the valid specimen
         valid_run = make_fake_critic_run(
-            session=session, example=example, agent_run_id=valid_agent_run_id, status=AgentRunStatus.COMPLETED
+            session=session,
+            example=example.to_example_spec(),
+            agent_run_id=valid_agent_run_id,
+            status=AgentRunStatus.COMPLETED,
         )
         session.add(valid_run)
         session.commit()
@@ -322,7 +330,10 @@ async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
 
         # Create a critic run for the valid specimen
         valid_run = make_fake_critic_run(
-            session=session, example=example, agent_run_id=valid_agent_run_id, status=AgentRunStatus.COMPLETED
+            session=session,
+            example=example.to_example_spec(),
+            agent_run_id=valid_agent_run_id,
+            status=AgentRunStatus.COMPLETED,
         )
         session.add(valid_run)
         session.flush()
@@ -363,7 +374,10 @@ async def test_prompt_optimizer_can_see_train_split_llm_requests(
 
         # Create a critic run for the train specimen
         train_run = make_fake_critic_run(
-            session=session, example=example, agent_run_id=train_agent_run_id, status=AgentRunStatus.COMPLETED
+            session=session,
+            example=example.to_example_spec(),
+            agent_run_id=train_agent_run_id,
+            status=AgentRunStatus.COMPLETED,
         )
         session.add(train_run)
         session.flush()

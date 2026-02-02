@@ -21,7 +21,7 @@ def test_failed_critic_run_appears_with_zero_credit(synced_test_session: Session
     """Test that max_turns_exceeded critic runs generate zero-credit rows."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
-        example=example_subtract_orm,
+        example=example_subtract_orm.to_example_spec(),
         model="test-critic-model",
         status=AgentRunStatus.MAX_TURNS_EXCEEDED,
     )
@@ -46,7 +46,7 @@ def test_context_length_exceeded_also_counted_as_zero(synced_test_session: Sessi
     """Test that context_length_exceeded critic runs also generate zero-credit rows."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
-        example=example_subtract_orm,
+        example=example_subtract_orm.to_example_spec(),
         model="test-critic-model",
         status=AgentRunStatus.CONTEXT_LENGTH_EXCEEDED,
     )
@@ -66,7 +66,7 @@ def test_only_expected_occurrences_included_for_failures(synced_test_session: Se
     """Test that failed runs only generate zero-credit rows for occurrences in expected recall scope."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
-        example=example_subtract_orm,
+        example=example_subtract_orm.to_example_spec(),
         model="test-critic-model",
         status=AgentRunStatus.MAX_TURNS_EXCEEDED,
     )
@@ -93,7 +93,7 @@ def test_whole_snapshot_failure_includes_all_occurrences(synced_test_session: Se
 
     critic_run = make_fake_critic_run(
         session=synced_test_session,
-        example=example,
+        example=example.to_example_spec(),
         model="test-critic-model",
         status=AgentRunStatus.MAX_TURNS_EXCEEDED,
     )
@@ -117,7 +117,7 @@ def test_successful_run_not_affected_by_failure_logic(
     """Test that successful critic+grader runs still work correctly."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
-        example=example_subtract_orm,
+        example=example_subtract_orm.to_example_spec(),
         model="test-critic-model",
         status=AgentRunStatus.COMPLETED,
     )
@@ -166,7 +166,7 @@ def test_multiple_occurrences_with_or_logic(synced_test_session: Session, exampl
     """Test catchability with OR logic in critic_scopes_expected_to_recall."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
-        example=example_multi_tp_orm,
+        example=example_multi_tp_orm.to_example_spec(),
         model="test-critic-model",
         status=AgentRunStatus.MAX_TURNS_EXCEEDED,
     )
@@ -188,13 +188,18 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
     """Test that multiple grader runs for same critic run don't cause overweighting."""
     # Create 1 failed critic run
     failed_run = make_fake_critic_run(
-        session=synced_test_session, example=example_subtract_orm, status=AgentRunStatus.MAX_TURNS_EXCEEDED
+        session=synced_test_session,
+        example=example_subtract_orm.to_example_spec(),
+        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
     )
     synced_test_session.add(failed_run)
 
     # Create 1 successful critic run with 3 grader runs at different credits
     successful_run = make_fake_critic_run(
-        session=synced_test_session, example=example_subtract_orm, model="test-model", status=AgentRunStatus.COMPLETED
+        session=synced_test_session,
+        example=example_subtract_orm.to_example_spec(),
+        model="test-model",
+        status=AgentRunStatus.COMPLETED,
     )
     synced_test_session.add(successful_run)
     synced_test_session.flush()
@@ -231,7 +236,7 @@ def test_aggregated_view_counts_total_and_failed_runs(synced_test_session: Sessi
     # Create 3 successful runs with grader runs
     for _ in range(3):
         critic_run = make_fake_critic_run(
-            session=synced_test_session, example=example_subtract_orm, status=AgentRunStatus.COMPLETED
+            session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.COMPLETED
         )
         synced_test_session.add(critic_run)
         synced_test_session.flush()
@@ -244,14 +249,18 @@ def test_aggregated_view_counts_total_and_failed_runs(synced_test_session: Sessi
     for _ in range(2):
         synced_test_session.add(
             make_fake_critic_run(
-                session=synced_test_session, example=example_subtract_orm, status=AgentRunStatus.MAX_TURNS_EXCEEDED
+                session=synced_test_session,
+                example=example_subtract_orm.to_example_spec(),
+                status=AgentRunStatus.MAX_TURNS_EXCEEDED,
             )
         )
 
     # Create 1 context_length_exceeded failure
     synced_test_session.add(
         make_fake_critic_run(
-            session=synced_test_session, example=example_subtract_orm, status=AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
+            session=synced_test_session,
+            example=example_subtract_orm.to_example_spec(),
+            status=AgentRunStatus.CONTEXT_LENGTH_EXCEEDED,
         )
     )
 
@@ -273,7 +282,7 @@ def test_aggregated_view_counts_zero_when_no_failures(synced_test_session: Sessi
     """Test that failure counts are zero when all runs succeed."""
     for _ in range(3):
         critic_run = make_fake_critic_run(
-            session=synced_test_session, example=example_subtract_orm, status=AgentRunStatus.COMPLETED
+            session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.COMPLETED
         )
         synced_test_session.add(critic_run)
         synced_test_session.flush()
@@ -301,13 +310,18 @@ def test_aggregated_recall_by_example_has_correct_weighting(
     """Test that aggregated_recall_by_example correctly weights critic runs."""
     # Create 1 failed critic run
     failed_run = make_fake_critic_run(
-        session=synced_test_session, example=example_subtract_orm, status=AgentRunStatus.MAX_TURNS_EXCEEDED
+        session=synced_test_session,
+        example=example_subtract_orm.to_example_spec(),
+        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
     )
     synced_test_session.add(failed_run)
 
     # Create 1 successful critic run with 3 grader runs at different credits
     successful_run = make_fake_critic_run(
-        session=synced_test_session, example=example_subtract_orm, model="test-model", status=AgentRunStatus.COMPLETED
+        session=synced_test_session,
+        example=example_subtract_orm.to_example_spec(),
+        model="test-model",
+        status=AgentRunStatus.COMPLETED,
     )
     synced_test_session.add(successful_run)
     synced_test_session.flush()
@@ -351,7 +365,7 @@ def test_occurrence_statistics_has_correct_n_critic_runs(
 
     # Critic run 1: graded 1 time (credit 0.8)
     run1 = make_fake_critic_run(
-        session=synced_test_session, example=example, model="test-model", status=AgentRunStatus.COMPLETED
+        session=synced_test_session, example=subtract_file_example, model="test-model", status=AgentRunStatus.COMPLETED
     )
     synced_test_session.add(run1)
     synced_test_session.flush()
@@ -361,7 +375,7 @@ def test_occurrence_statistics_has_correct_n_critic_runs(
 
     # Critic run 2: graded 4 times (credits sum to 0.7, within check_edge_credit_sum <= 1.0)
     run2 = make_fake_critic_run(
-        session=synced_test_session, example=example, model="test-model", status=AgentRunStatus.COMPLETED
+        session=synced_test_session, example=subtract_file_example, model="test-model", status=AgentRunStatus.COMPLETED
     )
     synced_test_session.add(run2)
     synced_test_session.flush()

@@ -7,9 +7,8 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_binary(
     name = "rspcache_cli",
-    srcs = ["rspcache_main.py"],
     imports = ["../.."],
-    main = "rspcache_main.py",
+    main_module = "experimental.rspcache.cli",
     visibility = ["//:__subpackages__"],
     deps = [
         ":cli",

@@ -1,22 +1,15 @@
-"""Grader agent - implementation and container images.
-
-Two images for different grader modes:
-- grader: One-off grader that grades a single critic run
-- grader_daemon: Persistent daemon that grades all critiques for a snapshot
+"""Grader agent - implementation and container image.
 
 Build targets:
-    bazel run //props/grader:load         -- Load one-off grader
-    bazel run //props/grader:push         -- Push one-off grader
-    bazel run //props/grader:daemon_load  -- Load daemon grader
-    bazel run //props/grader:daemon_push  -- Push daemon grader
+    bazel run //props/grader:load  -- Load grader image
+    bazel run //props/grader:push  -- Push grader image
 
-The containers run an agent loop that:
+The container runs a daemon agent loop that:
 1. Fetches snapshot to /workspace
 2. Renders system prompt from template
 3. Queries LLM via proxy (OPENAI_BASE_URL)
-4. Executes grader tools (list_pending, insert_edges, submit, etc.)
-5. One-off: exits 0 on successful submit
-6. Daemon: sleeps on pg_notify, wakes to grade new critiques
+4. Executes grader tools (list_pending, insert_edges, etc.)
+5. Sleeps on pg_notify, wakes to grade new critiques
 """
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
@@ -87,9 +80,8 @@ py_library(
 
 py_binary(
     name = "grader",
-    srcs = ["grader_main.py"],
     imports = ["../.."],
-    main = "grader_main.py",
+    main_module = "props.grader.main",
     visibility = ["//visibility:public"],
     deps = [
         ":main",
@@ -132,18 +124,6 @@ py_library(
     deps = [
         "//props/core:ids",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "edge_helpers",
-    srcs = ["edge_helpers.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/db:models",
-        "//props/db:session",
-        "@pypi//sqlalchemy",
     ],
 )
 

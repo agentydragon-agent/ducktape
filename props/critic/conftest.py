@@ -10,7 +10,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from props.core.models.examples import WholeSnapshotExample
-from props.db.examples import Example
 from props.db.models import AgentRunStatus
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
@@ -31,10 +30,11 @@ def test_critic_run(synced_test_db, test_snapshot):
         UUID of the created critic run
     """
     with get_session() as session:
-        # Create critic run using whole-snapshot example (exists after sync)
-        example = Example.from_spec(session, WholeSnapshotExample(snapshot_slug=test_snapshot))
-
-        critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.IN_PROGRESS)
+        critic_run = make_fake_critic_run(
+            session=session,
+            example=WholeSnapshotExample(snapshot_slug=test_snapshot),
+            status=AgentRunStatus.IN_PROGRESS,
+        )
         session.add(critic_run)
         session.commit()
 

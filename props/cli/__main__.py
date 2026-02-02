@@ -20,10 +20,8 @@ from typer_di import TyperDI
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
 from props.cli import common_options as opt
-from props.cli.cmd_agent_pkg import app as agent_pkg_app
 from props.cli.cmd_db import db_app
 from props.cli.cmd_grade_validation import cmd_grade_validation
-from props.cli.cmd_grader_agent import app as grader_agent_app
 from props.cli.cmd_gt import gt_app
 from props.cli.cmd_snapshot import snapshot_app
 from props.cli.cmd_stats import stats_app
@@ -58,11 +56,6 @@ app = TyperDI(help="props — properties tooling", add_completion=False)
 app.add_typer(db_app, name="db")
 app.add_typer(gt_app, name="gt")
 app.add_typer(snapshot_app, name="snapshot")
-app.add_typer(agent_pkg_app, name="agent-pkg")
-
-# Agent-type CLI subcommands (dual-use: human operators + container agents)
-app.add_typer(grader_agent_app, name="grader-agent")
-# Note: critic-dev is now a standalone entry point in props.critic_dev.cli
 
 # Configure logging via shared callback (default: WARNING level for props)
 # Then add database initialization on top

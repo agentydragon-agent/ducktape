@@ -25,7 +25,7 @@ from props.core.loop_utils import WORKSPACE, render_system_prompt, setup_logging
 from props.db.config import get_database_config
 from props.db.session import get_session
 from props.grader.drift_handler import check_grading_pending
-from props.grader.loop import GraderMode, run_grader_loop
+from props.grader.loop import run_grader_loop
 from props.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ async def run_daemon(snapshot_slug: SnapshotSlug, model: str, system_prompt: str
 
             # There's drift, run agent loop
             logger.info("Drift detected, starting agent loop")
-            exit_code = await run_grader_loop(system_prompt, model, snapshot_slug, GraderMode.DAEMON)
+            exit_code = await run_grader_loop(system_prompt, model, snapshot_slug)
 
             if exit_code != 0:
                 # Agent reported failure
@@ -125,7 +125,7 @@ async def main() -> int:
 
     # Render system prompt
     logger.info("Rendering system prompt")
-    system_prompt = render_system_prompt("props/docs/agents/grader.md.j2")
+    system_prompt = render_system_prompt("props/docs/agents/grader.md.j2", helpers={"snapshot_slug": snapshot_slug})
 
     # Run the daemon loop
     logger.info("Starting daemon loop")

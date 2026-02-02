@@ -45,7 +45,7 @@ py_library(
         "//props/backend/routes:registry",
         "//props/backend/routes:runs",
         "//props/backend/routes:stats",
-        "//props/cli:resources",
+        "//props/db:config",
         "//props/orchestration:agent_registry",
         "//props/orchestration:grader_supervisor",
         "@pypi//aiodocker",
@@ -82,9 +82,8 @@ py_library(
 
 py_binary(
     name = "backend_cli",
-    srcs = ["backend_main.py"],
     imports = ["../.."],
-    main = "backend_main.py",
+    main_module = "props.backend.cli",
     visibility = ["//props/frontend:__pkg__"],
     deps = [
         ":cli",

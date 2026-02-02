@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from props.core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig
 from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleKind
+from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.types import Rationale
 from props.db.config import DatabaseConfig
 from props.db.examples import Example
@@ -57,7 +57,7 @@ def ensure_fake_agent_definitions(session: Session) -> None:
 def make_fake_critic_run(
     *,
     session: Session,
-    example: Example,
+    example: ExampleSpec,
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
     agent_run_id: UUID | None = None,
@@ -71,8 +71,7 @@ def make_fake_critic_run(
     if agent_run_id is None:
         agent_run_id = uuid4()
 
-    example_spec = example.to_example_spec()
-    type_config = CriticTypeConfig(example=example_spec)
+    type_config = CriticTypeConfig(example=example)
 
     return AgentRun(
         agent_run_id=agent_run_id, image_digest=FAKE_CRITIC_DIGEST, model=model, status=status, type_config=type_config
@@ -127,7 +126,7 @@ def make_reported_issues(
 
 
 def make_fake_critic_and_grader_run(
-    *, example: Example, tp_occurrences: list[tuple[str, str]], credit: float, session: Session
+    *, example: ExampleSpec, tp_occurrences: list[tuple[str, str]], credit: float, session: Session
 ) -> tuple[AgentRun, AgentRun]:
     """One-stop helper: Creates complete critic+grader run with normalized tables."""
     critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.COMPLETED)
@@ -141,7 +140,7 @@ def make_fake_critic_and_grader_run(
     session.flush()
 
     if credit > 0.0:
-        location_file = None if example.example_kind == ExampleKind.WHOLE_SNAPSHOT else "subtract.py"
+        location_file = None if example.kind == ExampleKind.WHOLE_SNAPSHOT else "subtract.py"
         for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1):
             issue_id = f"issue-{i:03d}"
             issue = ReportedIssue(agent_run_id=critic_run.agent_run_id, issue_id=issue_id, rationale=f"Test issue {i}")
@@ -214,7 +213,7 @@ def make_fake_grader_run_with_credit(
     return grader_run
 
 
-def _make_example_with_runs(slug: SnapshotSlug, credit: float) -> tuple[Example, AgentRun, AgentRun]:
+def _make_example_with_runs(slug: SnapshotSlug, credit: float) -> tuple[ExampleSpec, AgentRun, AgentRun]:
     """Helper to create example with multiple critic and grader runs."""
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=slug, example_kind=ExampleKind.WHOLE_SNAPSHOT).first()
@@ -226,16 +225,19 @@ def _make_example_with_runs(slug: SnapshotSlug, credit: float) -> tuple[Example,
             f"Mismatch: {len(tp_occs)} TP occurrences vs {example.recall_denominator} expected"
         )
 
+        example_spec = example.to_example_spec()
         critic_run, grader_run = make_fake_critic_and_grader_run(
-            example=example, tp_occurrences=tp_occs, credit=credit, session=session
+            example=example_spec, tp_occurrences=tp_occs, credit=credit, session=session
         )
 
         # Create second pair for UCB/LCB computation which requires COUNT(*) > 1
-        make_fake_critic_and_grader_run(example=example, tp_occurrences=tp_occs, credit=credit * 0.9, session=session)
+        make_fake_critic_and_grader_run(
+            example=example_spec, tp_occurrences=tp_occs, credit=credit * 0.9, session=session
+        )
 
         session.commit()
 
-        return (example, critic_run, grader_run)
+        return (example_spec, critic_run, grader_run)
 
 
 @pytest.fixture
@@ -279,12 +281,12 @@ def test_validation_snapshot_slug(synced_test_db: DatabaseConfig) -> SnapshotSlu
 
 
 @pytest.fixture
-def test_train_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[Example, AgentRun, AgentRun]:
+def test_train_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[ExampleSpec, AgentRun, AgentRun]:
     """Provide a train example with critic and grader runs."""
     return _make_example_with_runs(SnapshotSlug("test-fixtures/train1"), credit=0.8)
 
 
 @pytest.fixture
-def test_valid_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[Example, AgentRun, AgentRun]:
+def test_valid_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[ExampleSpec, AgentRun, AgentRun]:
     """Provide a valid example with critic and grader runs."""
     return _make_example_with_runs(SnapshotSlug("test-fixtures/valid1"), credit=0.6)
