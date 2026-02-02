@@ -199,21 +199,17 @@ use_repo(types, "pip_types")
 uv = use_extension("@rules_python//python/uv:uv.bzl", "uv")
 uv.configure(version = "0.6.2")
 
-# BuildBuddy platform definitions — our //:rbe_linux_x64 inherits from these
-# since our RBE worker image is based on BuildBuddy's rbe-ubuntu24-04.
-bazel_dep(name = "toolchains_buildbuddy", version = "0.0.4")
+# Hermetic CC toolchain (Zig) — prevents Nix store paths from leaking into RBE actions.
+# Uses Uber's hermetic_cc_toolchain (~40 MB) instead of toolchains_llvm (~8.2 GB LLVM download).
+bazel_dep(name = "hermetic_cc_toolchain", version = "4.1.0")
 
-buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
-buildbuddy.platform(buildbuddy_container_image = "UBUNTU24_04_IMAGE")
-buildbuddy.gcc_toolchain(gcc_major_version = "13")
-use_repo(buildbuddy, "buildbuddy_toolchain")
+toolchains = use_extension("@hermetic_cc_toolchain//toolchain:ext.bzl", "toolchains")
+use_repo(toolchains, "zig_sdk")
 
-# BuildBuddy CC toolchain — uses GCC pre-installed in the RBE container, avoiding the
-# ~500 MB LLVM toolchain download. The toolchain's exec_compatible_with includes
-# @bazel_tools//tools/cpp:gcc, which only //:rbe_linux_x64 satisfies (via parent
-# inheritance), so all CC actions are routed to RBE — including Cargo build scripts.
-# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 in .bazelrc prevents host CC auto-detection.
-register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
+register_toolchains(
+    "@zig_sdk//toolchain/...",
+    "@zig_sdk//libc_aware/toolchain/...",
+)
 
 # Rust rules
 bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fix bzlmod ctve repo naming

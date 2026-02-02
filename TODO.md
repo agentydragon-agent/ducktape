@@ -34,6 +34,10 @@
 - [ ] Re-enable `bazel coverage` in CI once compatible with remote execution (RBE). Currently disabled because the Java-based `remote_coverage_tools` can't locate its runfiles on BuildBuddy workers, causing all tests to be marked as failed. See `bazel-test.yml`.
 - [ ] Set up BuildBuddy [remote runner features](https://www.buildbuddy.io/docs/remote-runner-features) for artifacts / extra test outputs
 
+## Rust / Cargo
+
+- [ ] Pin `Cargo.Bazel.lock` to avoid `cargo-bazel splice` running during builds. Splice runs as a repository rule (loading phase, always local) and times out in sandboxed environments (e.g., Claude Code gVisor) because `rules_rust` doesn't forward proxy env vars (`HTTP_PROXY`, `SSL_CERT_FILE`) to the `cargo-bazel` subprocess. Pre-generating and checking in the lockfile via `CARGO_BAZEL_REPIN=1 bazel sync --only=crates` should eliminate the need for splice at build time.
+
 ## Testing
 
 - [ ] Add automated check for missing `pytest_bazel.main()` in py_test targets (validation test using `bazel query` + AST parsing, or pre-commit hook for new test files)

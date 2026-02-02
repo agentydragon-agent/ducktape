@@ -1,8 +1,13 @@
 common --enable_bzlmod
 
-# Use hermetic LLVM CC toolchain instead of auto-detected host toolchain.
+# Use hermetic Zig CC toolchain instead of auto-detected host toolchain.
 # Prevents Nix store paths from leaking into RBE actions.
 build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+# hermetic_cc_toolchain: Zig needs /tmp mounted in sandbox for its cache.
+common --enable_platform_specific_config
+build:linux --sandbox_add_mount_pair=/tmp
+build:macos --sandbox_add_mount_pair=/var/tmp
 
 # Disable MODULE.bazel.lock to avoid churn between environments.
 # The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
