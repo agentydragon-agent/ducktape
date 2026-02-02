@@ -6,10 +6,11 @@ Handles startup and shutdown of application-scoped resources (database engine, t
 import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi_csrf_protect import CsrfProtect
@@ -95,7 +96,7 @@ def _register_auth_routes(app: FastAPI, settings: Settings) -> None:
             )
 
     # Handler for authenticated root
-    async def authenticated_root_handler(request, auth: Auth, settings: Settings = Depends(get_settings)):
+    async def authenticated_root_handler(request: Request, auth: Auth, settings: Settings = Depends(get_settings)):
         """Shared handler for authenticated root endpoint."""
         async with get_db_session(request) as db_session:
             recent = await get_latest_payloads(db_session, limit=5)
@@ -163,6 +164,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
     # Add Python builtins needed by templates
     app.state.templates.env.globals.update({"max": max, "min": min})
+
+    def _minutes_filter(td: timedelta) -> str:
+        total = int(td.total_seconds())
+        mins, secs = divmod(total, 60)
+        return f"{mins}m {secs}s"
+
+    app.state.templates.env.filters["minutes"] = _minutes_filter
     logger.info("Templates initialized")
 
     yield

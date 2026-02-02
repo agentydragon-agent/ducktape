@@ -34,6 +34,7 @@ from experimental.gatelet.server.config import (
     ServerSettings,
     Settings,
     WebhookSettings,
+    get_settings,
 )
 from experimental.gatelet.server.database import get_db_session
 from experimental.gatelet.server.endpoints.webhook_view import PayloadSummary
@@ -127,11 +128,12 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
     """Override ``get_db_session`` globally for tests."""
 
     @asynccontextmanager
-    async def _override() -> AsyncGenerator[AsyncSession]:
+    async def _override(*_args, **_kwargs) -> AsyncGenerator[AsyncSession]:
         yield db_session
 
     monkeypatch.setattr("experimental.gatelet.server.database.get_db_session", _override)
     monkeypatch.setattr("experimental.gatelet.server.app.get_db_session", _override)
+    monkeypatch.setattr("experimental.gatelet.server.lifespan.get_db_session", _override)
 
 
 @pytest.fixture
@@ -169,13 +171,14 @@ def _patch_get_settings(monkeypatch, test_settings: Settings) -> None:
 
 
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGenerator[AsyncClient]:
     """Get a test client connected to the test database with test settings."""
 
     async def override_db() -> AsyncGenerator[AsyncSession]:
         yield db_session
 
     app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_settings] = lambda: test_settings
 
     # Use LifespanManager to properly trigger app startup (which registers auth routes)
     async with (
@@ -185,6 +188,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
         yield client
 
     app.dependency_overrides.pop(get_db_session, None)
+    app.dependency_overrides.pop(get_settings, None)
 
 
 @pytest_asyncio.fixture
