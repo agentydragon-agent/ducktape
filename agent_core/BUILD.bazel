@@ -269,6 +269,27 @@ py_test(
 )
 
 live_openai_py_test(
+    name = "test_ollama_reasoning",
+    srcs = ["test_ollama_reasoning.py"],
+    tags = [
+        "manual",
+        "ollama",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":handler",
+        ":logging_handler",
+        ":loop_control",
+        ":turn_limit",
+        "//agent_core/testing/mcp:responses",
+        "//openai_utils:model",
+        "//openai_utils/testing:fixtures",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+live_openai_py_test(
     name = "test_testing_infrastructure",
     srcs = ["test_testing_infrastructure.py"],
     deps = [
