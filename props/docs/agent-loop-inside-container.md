@@ -1,40 +1,18 @@
-# Plan: Agent Loop Inside Container
+# Agent Loop Inside Container
 
 ## Overview
 
-Move the LLM API querying and agent loop from the host scaffold into the Docker container. The container becomes a self-contained agent that talks to an LLM proxy, executes tools via subprocess, and writes results to Postgres.
+All agent loops run inside Docker containers. Each container is a self-contained agent that talks to the LLM proxy (integrated into the unified backend), executes tools via subprocess, and writes results to Postgres.
 
 **Benefit:** Prompt optimizer agents can author entire agentic systems - arbitrary LLM pipelines, workflows, subagents, classifiers, loops, tool calls, analysis, dispatch. Not limited to append-only single-agent patterns.
 
 ## Architecture
-
-### Current
-
-```
-Host Scaffold                      Container
-─────────────                      ─────────
-AgentEnvironment
-├─ Create temp DB user
-├─ Start HTTP MCP server
-└─ Create container ─────────────> Container starts
-                                   /init → stdout = system prompt
-Agent.run() (host-side)
-├─ Sample LLM (OpenAI API)  ◄───── Control on host
-├─ Route tool calls:
-│   ├─ docker_exec ──────────────> props critic-agent ...
-│   └─ critic_submit (HTTP MCP)
-└─ DatabaseEventHandler
-    └─> Write events to DB
-```
-
-### Proposed
 
 ```
 Host Scaffold                      Container
 ─────────────                      ─────────
 AgentEnvironment (simplified)
 ├─ Create temp DB user
-├─ Start LLM proxy (rspcache)
 ├─ [Subagent spawn endpoint for PO/PI]
 └─ Create container ─────────────> Container starts (CMD)
                                    ├─ props snapshot fetch (from Postgres)
@@ -44,6 +22,13 @@ AgentEnvironment (simplified)
                                    ├─ Writes to Postgres directly
                                    └─ Exits 0 on success
 ```
+
+### Key implementations
+
+- **Critic:** `props/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
+- **Grader:** `props/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Daemon mode via `props/grader/daemon.py` with pg_notify.
+- **PO/PI:** `props/critic_dev/optimize/main.py`, `props/critic_dev/improve/main.py` — `DirectToolProvider` with exec, run_critic, wait_until_graded_tool, submit, report_failure tools.
+- **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
 
 ## Decisions
 
@@ -70,24 +55,18 @@ AgentEnvironment (simplified)
 
 ### LLM Proxy
 
-| Aspect            | Decision                                                                     |
-| ----------------- | ---------------------------------------------------------------------------- |
-| Env vars          | `OPENAI_BASE_URL`, `OPENAI_API_KEY` (Responses API compatible)               |
-| Token             | Same as existing Postgres password (`agent_{uuid}`)                          |
-| Token validation  | Via Postgres (lookup agent_runs by username pattern)                         |
-| Model restriction | One model per run, enforced by proxy                                         |
-| Cost budget       | Per-agent token counts, tracked via parent-child in agent_runs               |
-| Streaming         | Not supported (simplifies logging/budgeting)                                 |
-| Implementation    | New FastAPI proxy, similar pattern to rspcache but simpler (Responses only)  |
-| Container         | New `llm-proxy` service in compose.yaml on `props-internal` + `props-agents` |
-| Port              | 5052 (internal), exposed on `props-agents` network                           |
+The LLM proxy is integrated into the unified backend (`props/backend/routes/llm.py`), not a separate service.
 
-**Reference:** Existing `rspcache/` proxy handles OpenAI Responses API with caching, streaming, and token auth. New proxy is simpler:
-
-- No caching (every request goes upstream)
-- No streaming (simplifies logging)
-- Auth via Postgres temp user lookup (not separate token table)
-- Logs full request/response to new `llm_requests` table
+| Aspect            | Decision                                                       |
+| ----------------- | -------------------------------------------------------------- |
+| Env vars          | `OPENAI_BASE_URL`, `OPENAI_API_KEY` (Responses API compatible) |
+| Token             | Same as existing Postgres password (`agent_{uuid}`)            |
+| Token validation  | Via Postgres (lookup agent_runs by username pattern)           |
+| Model restriction | One model per run, enforced by proxy                           |
+| Cost budget       | Per-agent token counts, tracked via parent-child in agent_runs |
+| Streaming         | Not supported (simplifies logging/budgeting)                   |
+| Implementation    | FastAPI route in unified backend at `POST /v1/responses`       |
+| Port              | 8000 (same as backend)                                         |
 
 ### Resource Limits
 
@@ -144,7 +123,7 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Max turns     | Don't enforce (cost/timeout are sufficient)                                   |
 | Context limit | Container's responsibility; compaction is future work                         |
 | Completion    | "submit" tool validates → returns errors (agent retries) or succeeds → exit 0 |
-| Code reuse    | Could use `agent_core.Agent` with exec tool, or simpler standalone loop       |
+| Code reuse    | Uses `agent_core.Agent` with `DirectToolProvider`                             |
 
 ### Grader Daemon Mode
 
@@ -165,7 +144,33 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 - Uses `asyncio.Event` for coordinated wake/sleep, background `pg_listen` task
 - On context length exceeded: daemon manager auto-restarts with fresh context
 
-**pg_notify permissions:** Daemon uses its temp user credentials (`agent_{uuid}`) for LISTEN. PostgreSQL allows any connected user to LISTEN on any channel without special grants. Notifications include `snapshot_slug` in the payload; the daemon filters to only process notifications for its snapshot. This means any agent can technically hear all notifications, but application-level filtering ensures they only act on relevant ones.
+**pg_notify permissions:** Daemon uses its temp user credentials (`agent_{uuid}`) for LISTEN. PostgreSQL allows any connected user to LISTEN on any channel without special grants. Notifications include `snapshot_slug` in the payload; the daemon filters to only process notifications for its snapshot.
+
+**Single implementation, two modes:**
+
+- One-off (`GraderTypeConfig`): grades single critic run, has `submit` + `report_failure`
+- Daemon (`SnapshotGraderTypeConfig`): grades all critiques for snapshot, `report_failure` only (no `submit` - drift handler controls sleep)
+- Mode flag controls tool availability; all other tools identical
+
+**Grader Tools (DirectToolProvider):**
+
+| Tool             | Args                                              | Returns             | Mode    | Purpose                                     |
+| ---------------- | ------------------------------------------------- | ------------------- | ------- | ------------------------------------------- |
+| `exec`           | `cmd`, `timeout_ms`, `cwd`                        | `ExecResult`        | both    | Shell commands for file reading, psql, etc. |
+| `list_pending`   | `issue?`, `gt?`, `run?`                           | `list[PendingEdge]` | both    | Query `grading_pending` view                |
+| `show_issue`     | `issue_id`, `run?`                                | `IssueDetails`      | both    | View reported issue + occurrence locations  |
+| `show_gt`        | `gt_ref` (tp/id/occ or fp/id/occ)                 | `GTDetails`         | both    | View ground truth occurrence + rationale    |
+| `insert_edges`   | `issue_id`, `rationale`, `edges[]`                | `str`               | both    | Create multiple edges: `{gt_ref, credit}`   |
+| `fill_remaining` | `issue_id`, `expected_count`, `rationale`, `run?` | `str`               | both    | Bulk-fill remaining edges with credit=0     |
+| `delete_edges`   | `issue_id`, `run?`                                | `str`               | both    | Delete all edges for issue (to redo)        |
+| `submit`         | `summary`                                         | `None`              | one-off | Finalize grading (validates no pending)     |
+| `report_failure` | `message`                                         | `None`              | both    | Report blocking error, exit                 |
+
+**Edge model:** Every `(critique_issue, matchable_gt_occurrence)` pair needs an edge. Credit 0.0-1.0 for both TPs and FPs. Use credit=0 for non-matches, >0 for matches (quality of match).
+
+**Daemon loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
+
+**Grader supervisor:** `props/orchestration/grader_supervisor.py` manages daemon lifecycle — listens on `snapshot_created` channel, spawns one daemon per snapshot, handles restarts.
 
 ### Subagent Spawning
 
@@ -178,9 +183,7 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Limits          | No explicit concurrency/spawn limits; cost + timeout sufficient                 |
 | Wait helpers    | `wait_until_graded_tool` polls `grading_pending` view directly inside container |
 
-**Architecture:**
-
-PO/PI agents have DirectToolProvider tools that call the backend REST API for spawning and poll the database directly for grading status. No MCP required.
+PO/PI agents have `DirectToolProvider` tools that call the backend REST API for spawning and poll the database directly for grading status. No MCP required.
 
 ```
 Backend                                 Container (PO/PI)
@@ -208,32 +211,23 @@ grading_pending view         ◄──────────  wait_until_grade
 
 ### Observability
 
-| Aspect         | Decision                                                                   |
-| -------------- | -------------------------------------------------------------------------- |
-| LLM calls      | Logged by LLM proxy to new `llm_requests` table                            |
-| Container logs | Capture stdout/stderr, store in new columns on `agent_runs`                |
-| Access         | PO/PI agents and humans can query logs from DB                             |
-| Events table   | Deprecated (big bang cutover) - LLM proxy logs + container logs replace it |
+| Aspect         | Decision                                                        |
+| -------------- | --------------------------------------------------------------- |
+| LLM calls      | Logged by LLM proxy to `llm_requests` table                     |
+| Container logs | Capture stdout/stderr, store in columns on `agent_runs`         |
+| Access         | PO/PI agents and humans can query logs from DB                  |
+| Cost tracking  | `llm_request_costs` and `llm_run_costs` views (per-request/run) |
 
-**New `llm_requests` table:**
+**`llm_requests` table:**
 
 - `id`, `agent_run_id` (FK), `created_at`
 - `request_body` (JSONB) - full OpenAI Responses API request
 - `response_body` (JSONB) - full response including `usage` field
-- `input_tokens`, `output_tokens` (extracted from response for easy querying)
 - `model` (denormalized for filtering)
 - `latency_ms`
-- Cost computation via view joining with model pricing metadata table
-
-**New columns on `agent_runs`:**
-
-- `container_exit_code` (INTEGER) - container exit code (NULL if still running, -1 if timed out)
-- `budget_usd` (FLOAT) - max USD cost allowed (including child agents); enforced by proxy
-- `timeout_seconds` (INTEGER) - max seconds before agent is killed; enforced by agent_registry
-- `started_at` (TIMESTAMP) - when container started executing
-- `ended_at` (TIMESTAMP) - when container finished (success or failure)
-- `container_stdout` (TEXT) - captured container stdout
-- `container_stderr` (TEXT) - captured container stderr
+- `error` (TEXT, nullable)
+- Cost computation via `llm_request_costs` view joining with `model_metadata` pricing table
+- Aggregated per-run costs via `llm_run_costs` view
 
 ### Security
 
@@ -245,371 +239,72 @@ grading_pending view         ◄──────────  wait_until_grade
 
 ### Docker Compose Topology
 
-**Current services in `props/compose.yaml`:**
+Services in `props/compose.yaml`:
 
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
 - `registry` (5000:5000) - on `props-internal` + `default`
-- `backend` (8000:8000) - on `props-internal` + `props-agents` (serves LLM proxy + registry proxy)
-
-**New service to add:**
-
-```yaml
-llm-proxy:
-  image: props-llm-proxy:latest
-  container_name: props-llm-proxy
-  ports:
-    - "5052:5052"
-  networks:
-    - props-internal
-    - props-agents
-  environment:
-    PGHOST: props-postgres
-    PGPORT: 5432
-    PGUSER: ${PGUSER}
-    PGPASSWORD: ${PGPASSWORD}
-    PGDATABASE: ${PGDATABASE}
-    OPENAI_API_KEY: ${OPENAI_API_KEY}
-  depends_on:
-    postgres:
-      condition: service_healthy
-```
+- `backend` (8000:8000) - on `props-internal` + `props-agents` (serves LLM proxy at `/v1/responses`, registry proxy at `/v2/*`, eval API at `/api/eval/*`, dashboard API)
 
 **Network topology:**
 
-- `props-internal` (internal: true) - postgres, registry, registry-proxy, llm-proxy
-- `props-agents` - postgres, registry-proxy, llm-proxy (agent containers join this)
-- Agent containers reach LLM proxy at `props-llm-proxy:5052`
+- `props-internal` (internal: true) - postgres, registry, backend
+- `props-agents` - postgres, backend (agent containers join this)
+- Agent containers reach LLM proxy at `props-backend:8000`
 
-## Implementation Sketch
+## Resolved Decisions
 
-### Critic Agent (Container Side)
+### HTTP MCP Servers — Removed
 
-```python
-#!/usr/bin/env python3
-"""Critic agent - runs inside container."""
-import os
-import subprocess
-import sys
-from openai import OpenAI
+| Server                 | Location (former)         | Fate                                                  |
+| ---------------------- | ------------------------- | ----------------------------------------------------- |
+| **CriticSubmitServer** | `critic/submit_server.py` | **Removed** - replaced by in-container tools + exit 0 |
+| **GraderSubmitServer** | `grader/submit_server.py` | **Removed** - replaced by in-container tools + exit 0 |
+| **PromptEvalServer**   | (former)                  | **Removed** - replaced by REST API + DB polling       |
 
-def main():
-    # 1. Fetch snapshot (uses PG* env vars automatically)
-    snapshot_slug = os.environ["SNAPSHOT_SLUG"]
-    subprocess.run(["props", "snapshot", "fetch", snapshot_slug], check=True)
+### Events Table — Removed
 
-    # 2. Construct prompt (reuses existing rendering)
-    system_prompt = render_critic_prompt(
-        snapshot_slug=snapshot_slug,
-        example_kind=os.environ["EXAMPLE_KIND"],
-        files_hash=os.environ.get("FILES_HASH"),
-    )
+The old `events` table, `DatabaseEventHandler`, `event_costs` view, and `run_costs` view have been removed entirely. Replaced by:
 
-    # 3. Define tools
-    tools = [{
-        "type": "function",
-        "function": {
-            "name": "exec",
-            "description": "Execute a command",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "array", "items": {"type": "string"}}
-                },
-                "required": ["command"]
-            }
-        }
-    }]
+1. `llm_requests` table — LLM proxy logs full request/response payloads
+2. `agent_runs.container_stdout/stderr` — container logs
 
-    # 4. Agent loop
-    client = OpenAI(
-        base_url=os.environ["OPENAI_BASE_URL"],
-        api_key=os.environ["OPENAI_API_KEY"],
-    )
+Related CLI commands (`cmd_speak_with_dead.py`, `cmd_analyze_exec.py`, `cmd_critic_dev_helpers.py`) and the `Event` model have been removed.
 
-    messages = [{"role": "system", "content": system_prompt}]
+### Host-Side Agent Loop — Removed
 
-    while True:
-        response = client.responses.create(
-            model=os.environ["MODEL"],
-            input=messages,
-            tools=tools,
-        )
-
-        # Handle response, execute tools via subprocess
-        # Submit tool: runs `props critic-agent submit ...`
-        #   - Returns validation errors → agent sees output, can fix and retry
-        #   - Succeeds → exit 0
-
-    sys.exit(0)
-
-if __name__ == "__main__":
-    main()
-```
-
-### Host Scaffold (Simplified)
-
-```python
-async def run_critic(snapshot_slug: str, example: Example) -> AgentRunResult:
-    async with TempDatabaseUser() as db_user:
-        # Start container (no volume mount - agent fetches snapshot itself)
-        container = await start_container(
-            image=example.critic_image,
-            env={
-                "OPENAI_BASE_URL": rspcache_url,
-                "OPENAI_API_KEY": db_user.password,  # Same token as PG
-                "PGHOST": ..., "PGUSER": db_user.name, "PGPASSWORD": db_user.password, ...
-                "SNAPSHOT_SLUG": snapshot_slug,
-                "EXAMPLE_KIND": example.kind,
-                "FILES_HASH": example.files_hash,
-                "MODEL": "gpt-4o",
-            },
-        )
-
-        # Wait for completion
-        exit_code = await container.wait()
-        logs = await container.logs()
-
-        # Store logs in DB, determine status
-        return AgentRunResult(
-            status="completed" if exit_code == 0 else "failed",
-            logs=logs,
-        )
-```
-
-## Code Changes
-
-### To Remove
-
-| File/Component                                      | Reason                                           |
-| --------------------------------------------------- | ------------------------------------------------ |
-| `critic/submit_server.py`                           | `CriticSubmitServer` replaced by CLI + exit 0    |
-| `grader/submit_server.py`                           | `GraderSubmitServer` replaced by CLI + exit 0    |
-| `agent_handle.py`                                   | Host-side agent loop no longer needed            |
-| `db_event_handler.py`                               | `DatabaseEventHandler` - events table deprecated |
-| Events table                                        | Replaced by LLM proxy logs + container logs      |
-| HTTP MCP server startup in `AgentEnvironment` (C/G) | No longer needed for critic/grader               |
-| `docker_exec` tool from host                        | Tools run via subprocess inside container        |
-
-**Events table deprecation - files to update/remove:**
-
-Writing events (remove):
-
-- `props/db_event_handler.py` - `DatabaseEventHandler` class
-- `props/db/models.py` - `Event` model class
-
-Reading events (update to use `llm_requests` or remove):
-
-- `props/backend/routes/runs.py` - WebSocket streams, API responses
-- `props/cli/cmd_speak_with_dead.py` - replay agent execution
-- `props/cli/cmd_analyze_exec.py` - docker_exec pattern analysis
-- `props/cli/cmd_critic_dev_helpers.py` - development utilities
-- `props/core/gepa/gepa_adapter.py` - reflection event filtering
-
-Schema/views (drop):
-
-- `event_costs` view - extract costs from event payloads
-- `run_costs` view - aggregate event costs
-- Events table + indexes + RLS policies
-
-Tests (update):
-
-- `props/core/critic/test_e2e.py` - event assertions
-- `props/db/test_split_based_rls.py` - event RLS tests
-- `props/db/test_agent_queries.py` - event creation tests
-- `props/testing/fixtures/db.py` - event fixtures
-
-Documentation:
-
-- `props/docs/db/events.md.j2` - remove
-
-### To Simplify
-
-| File/Component                                 | Change                                                                       |
-| ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| `agent_setup.py` / `AgentEnvironment`          | Remove MCP server, just: create DB user, start container, wait, capture logs |
-| `agent_registry.py` / `AgentRegistry`          | Simplified - just calls spawn endpoint                                       |
-| `docker_env.py` / `PropertiesDockerCompositor` | Simplify or remove - less orchestration needed                               |
-| Container images                               | Change from `/init` producing prompt to `CMD` running full agent             |
-
-### To Add
-
-| Component                   | Purpose                                                                      |
-| --------------------------- | ---------------------------------------------------------------------------- |
-| **LLM proxy**               | Token validation, request/response logging, cost tracking, model enforcement |
-| **In-container agent loop** | OpenAI Responses API client, exec tool, submit handling                      |
-| **Log capture**             | Store container stdout/stderr in DB                                          |
-| **`llm_requests` table**    | New table for LLM proxy logs (request/response/tokens)                       |
-
-Note: Model pricing already exists in `model_metadata` table; `llm_request_costs` view joins with it.
-
-### To Keep (unchanged or minor changes)
-
-| Component                 | Notes                                                        |
-| ------------------------- | ------------------------------------------------------------ |
-| `props critic-agent` CLI  | Already exists, used by agent via subprocess                 |
-| `props grader-agent` CLI  | Already exists, used by agent via subprocess                 |
-| `props snapshot fetch`    | Already exists, used by agent to fetch snapshot              |
-| `grader/daemon.py`        | Keep, but agent loop moves inside container                  |
-| `grader/drift_handler.py` | Keep, runs inside container now                              |
-| `noop_classifier/`        | Keep as-is (specialized utility)                             |
-| Database models, RLS      | Keep as-is                                                   |
-| Registry proxy            | Keep as-is                                                   |
-| **Backend eval API**      | PO/PI call REST API for spawning, poll DB for grading status |
-
-## Migration Path
-
-### Phase 1: LLM Proxy ✓
-
-**Status: Complete**
-
-Implementation:
-
-- `props/llm_proxy/proxy.py` - FastAPI proxy with auth, model enforcement, logging
-- `props/core/db/migrations/versions/20260118_add_llm_requests.py` - Schema migration
-- `props/core/db/models.py` - Added `LLMRequest` model
-- `props/compose.yaml` - Added `llm-proxy` service on port 5052
-
-Features:
-
-- Token validation via Postgres (agent_runs lookup)
-- Request/response logging to `llm_requests` table
-- Cost tracking via `llm_request_costs` and `llm_run_costs` views
-- Model enforcement (only allow assigned model)
-- No streaming (returns complete response)
-
-### Phase 2: Simple Critic
-
-1. Write minimal agent loop in props package
-2. Update critic container image to use `CMD` running agent loop
-3. Simplify `AgentEnvironment`:
-   - Remove HTTP MCP server startup
-   - Start container, wait for exit, capture logs
-4. Test with existing critic prompts
-
-### Phase 3: Grader
-
-1. Update grader to run loop internally with pg_notify
-2. Daemon mode: container stays running, internal sleep/wake
-
-**Single implementation, two modes:**
-
-- One-off (`GraderTypeConfig`): grades single critic run, has `submit` + `report_failure`
-- Daemon (`SnapshotGraderTypeConfig`): grades all critiques for snapshot, `report_failure` only (no `submit` - drift handler controls sleep)
-- Mode flag controls tool availability; all other tools identical
-
-**Scaffold prefetches snapshot to `/workspace`:**
-
-- One-off: derives snapshot from critic run's config
-- Daemon: uses `SnapshotGraderTypeConfig.snapshot_slug` directly
-
-**Grader Tools (DirectToolProvider):**
-
-| Tool             | Args                                              | Returns             | Mode    | Purpose                                     |
-| ---------------- | ------------------------------------------------- | ------------------- | ------- | ------------------------------------------- |
-| `exec`           | `cmd`, `timeout_ms`, `cwd`                        | `ExecResult`        | both    | Shell commands for file reading, psql, etc. |
-| `list_pending`   | `issue?`, `gt?`, `run?`                           | `list[PendingEdge]` | both    | Query `grading_pending` view                |
-| `show_issue`     | `issue_id`, `run?`                                | `IssueDetails`      | both    | View reported issue + occurrence locations  |
-| `show_gt`        | `gt_ref` (tp/id/occ or fp/id/occ)                 | `GTDetails`         | both    | View ground truth occurrence + rationale    |
-| `insert_edges`   | `issue_id`, `rationale`, `edges[]`                | `str`               | both    | Create multiple edges: `{gt_ref, credit}`   |
-| `fill_remaining` | `issue_id`, `expected_count`, `rationale`, `run?` | `str`               | both    | Bulk-fill remaining edges with credit=0     |
-| `delete_edges`   | `issue_id`, `run?`                                | `str`               | both    | Delete all edges for issue (to redo)        |
-| `submit`         | `summary`                                         | `None`              | one-off | Finalize grading (validates no pending)     |
-| `report_failure` | `message`                                         | `None`              | both    | Report blocking error, exit                 |
-
-**Edge model:** Every `(critique_issue, matchable_gt_occurrence)` pair needs an edge. Credit 0.0-1.0 for both TPs and FPs. Use credit=0 for non-matches, >0 for matches (quality of match).
-
-**Daemon loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
-
-### Phase 4: Prompt Optimizer ✓
-
-**Status: Complete**
-
-1. PO/PI run agent loop inside container with DirectToolProvider tools
-2. `run_critic` tool calls backend REST API (`/api/eval/run_critic`)
-3. `wait_until_graded_tool` polls `grading_pending` view directly from container
-4. PO/PI access container logs via DB queries
-
-### Phase 5: Cleanup
-
-1. Remove deprecated code paths
-2. Drop events table (or archive)
-3. Update dashboard to use LLM proxy logs
-
-## Resolved
-
-### HTTP MCP Servers
-
-| Server                 | Location                        | Tools                      | Fate                                                 |
-| ---------------------- | ------------------------------- | -------------------------- | ---------------------------------------------------- |
-| **CriticSubmitServer** | `critic/submit_server.py`       | `submit`, `report_failure` | **Killed** - replaced by in-container tools + exit 0 |
-| **GraderSubmitServer** | `grader/submit_server.py`       | `grader_submit`, ...       | **Killed** - replaced by in-container tools + exit 0 |
-| **PromptEvalServer**   | (deleted)                       | (migrated)                 | **Killed** - replaced by REST API + DB polling       |
-| **ClassifierServer**   | `noop_classifier/classifier.py` | `submit_classifications`   | **Keep** - specialized utility, not core agent flow  |
+`agent_handle.py`, `AgentEnvironment` with HTTP MCP server startup, and `docker_exec` tool from host have been removed. All agent loops now run inside containers.
 
 ### Snapshot Fetching
 
 **Decision:** Keep `props snapshot fetch` inside container.
 
 - Simpler - no host-side change needed
-- Already works
-- Agent runs `props snapshot fetch <slug>` as part of init, uses PG\* env vars
+- Agent runs `props snapshot fetch <slug>` as part of init, uses `PG*` env vars
 
 ### Cost Budget Propagation
 
-**Decision:** LLM proxy queries `agent_runs.parent_agent_run_id` to compute budget tree, enforced via `budget_usd` column.
+LLM proxy queries `agent_runs.parent_agent_run_id` to compute budget tree, enforced via `budget_usd` column.
 
 - `agent_runs.budget_usd` column stores the USD cost limit for each agent run
 - Parent spawns child → child's cost counts against parent's remaining budget
 - Proxy sums costs up the parent chain on each request via `llm_run_costs` view
 - Rejects request with 429 if sum exceeds any ancestor's `budget_usd` limit
-- No special token encoding needed - just query the table
 - USD cost computed via view joining `llm_requests` with `model_metadata` pricing table
-- Accounts for model pricing, cached input tokens (cheaper), output tokens (more expensive)
-
-### Exec Tool Implementation
-
-**Decision:** Reuse `mcp_infra/exec/subprocess.py:run_proc()` directly.
-
-- Standalone async function with no MCP dependency
-- Already handles: timeouts, output capping (150KB), stderr, UTF-8 safety
-- Import and call directly from in-container agent loop:
-  ```python
-  from mcp_infra.exec.subprocess import run_proc
-  outcome = await run_proc(["props", "critic-agent", "submit", ...], timeout_s=60.0)
-  ```
-
-### Events Table Deprecation
-
-**Decision:** Big bang cutover. Remove events table entirely, replace with:
-
-1. `llm_requests` table - LLM proxy logs full request/response payloads
-2. `agent_runs.container_stdout/stderr` - container logs
-
-Files affected documented in "Code Changes" section above.
-
-### Grader Daemon pg_notify Permissions
-
-**Decision:** Daemon uses temp user credentials for LISTEN. No special grants required.
-
-- PostgreSQL allows any connected user to LISTEN on any channel
-- Daemon connects with its `agent_{uuid}` credentials (same as for queries)
-- Notifications include `snapshot_slug` in payload; daemon filters at application level
-- Any agent can hear all notifications, but only acts on its own snapshot's events
 
 ### Log Capture Guarantee
 
-**Decision:** Collect logs on container exit via aiodocker. Accept that hard crashes may lose final lines.
+Collect logs on container exit via aiodocker. Accept that hard crashes may lose final lines.
 
 - Host uses `aiodocker` to read container logs after container exits
 - Store in `agent_runs.container_stdout` and `agent_runs.container_stderr`
 - Hard crashes (OOM, SIGKILL) may lose buffered output - acceptable tradeoff
-- **Important for agent-authoring agents (PO/PI):** Container logs are only available after the agent exits, not during execution. Design workflows accordingly (e.g., don't expect to read subagent logs until after `wait_until_graded` tool returns).
+- **Important for agent-authoring agents (PO/PI):** Container logs are only available after the agent exits, not during execution. Design workflows accordingly.
 
 ## Open Questions
 
-### 1. Interactive Agents (Future)
+### Interactive Agents (Future)
 
-Current plan: exit 0 = done.
+Current model: exit 0 = done.
 
 **Question:** How will interactive agents work later?
 

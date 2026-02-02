@@ -14,7 +14,6 @@ import typer
 from rich.console import Console
 from sqlalchemy import text
 
-from agent_pkg.runtime.output import render_agent_prompt
 from cli_util.decorators import async_run
 from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.core.agent_helpers import get_current_agent_run, get_current_agent_run_id
@@ -234,18 +233,3 @@ def valid_leaderboard_cmd(
         console.print(f"\n[bold]Top {limit} Definitions by Validation Recall (Occurrence-Weighted)[/bold]\n")
         table = build_table_from_schema(results, columns)
         console.print(table)
-
-
-@app.command("init")
-def init_cmd() -> None:
-    """Run bootstrap for prompt_optimizer/improvement agents (called by /init script).
-
-    Renders the base critic scaffold which includes:
-    - Agent-specific advice from /agent.md
-    - Shared documentation and CLI help
-    """
-    with get_session() as session:
-        agent_run = get_current_agent_run(session)
-        config = agent_run.type_config
-
-    render_agent_prompt("props/docs/agents/critic_dev.md.j2", helpers={"config": config})

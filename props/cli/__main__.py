@@ -22,7 +22,6 @@ from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
 from props.cli import common_options as opt
 from props.cli.cmd_agent_pkg import app as agent_pkg_app
-from props.cli.cmd_classify_noops import cmd_classify_noops
 from props.cli.cmd_db import db_app
 from props.cli.cmd_grade_validation import cmd_grade_validation
 from props.cli.cmd_grader_agent import app as grader_agent_app
@@ -444,9 +443,6 @@ except ImportError:
 
 # Stats command group
 app.add_typer(stats_app, name="stats")
-
-# Classify no-op commands
-app.command("classify-noops")(cmd_classify_noops)
 
 # Grade validation set command
 app.command("grade-validation")(cmd_grade_validation)

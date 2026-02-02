@@ -163,13 +163,6 @@ py_library(
 )
 
 py_library(
-    name = "agent_pkg_utils",
-    srcs = ["agent_pkg_utils.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-)
-
-py_library(
     name = "runs_context",
     srcs = ["runs_context.py"],
     imports = ["../.."],
@@ -265,7 +258,7 @@ docker_py_test(
         "//props:conftest",
         "//props/core/models:examples",
         "//props/critic_dev:shared",
-        "//props/critic_dev/optimize:main",
+        "//props/critic_dev:loop",
         "//props/critic_dev/optimize:orchestration_fixtures",
         "//props/db:agent_definition_ids",
         "//props/db:models",

@@ -22,18 +22,12 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core:agent",
-        "//agent_core:direct_provider",
         "//agent_core:handler",
         "//agent_core:loop_control",
-        "//mcp_infra/exec:direct",
-        "//mcp_infra/exec:models",
-        "//mcp_infra/exec:subprocess",
         "//openai_utils:model",
         "//props/core:eval_client",
-        "//props/core:ids",
         "//props/core:loop_utils",
-        "//props/core/models:examples",
-        "@pypi//pydantic",
+        "//props/critic_dev:loop",
     ],
 )
 
@@ -106,6 +100,7 @@ docker_py_test(
         ":main",
         ":orchestration_fixtures",
         "//agent_core/testing:responses",
+        "//props/critic_dev:loop",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
         "//props/core:agent_types",

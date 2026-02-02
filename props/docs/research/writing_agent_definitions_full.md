@@ -150,8 +150,6 @@ props agent-pkg fetch <id> /workspace/my_critic/
 props agent-pkg create /workspace/my_critic/
 ```
 
-For programmatic access, see the `props_core.agent_pkg_utils` module.
-
 ## Container Environment
 
 At runtime, the built Docker image has:
@@ -175,15 +173,6 @@ Use the CLI (preferred):
 ```bash
 props agent-pkg fetch <id> /workspace/my_def/   # unpack base
 props agent-pkg create /workspace/my_def/       # pack and insert
-```
-
-Or Python API (see `props_core.agent_pkg_utils` for details):
-
-```python
-from props_core.agent_pkg_utils import pack_agent_pkg, unpack_agent_pkg
-
-archive = pack_agent_pkg(my_dir)  # validates Dockerfile exists
-unpack_agent_pkg(archive, target_dir)
 ```
 
 ## Best Practices

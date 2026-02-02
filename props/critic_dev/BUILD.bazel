@@ -13,6 +13,23 @@ py_library(
 )
 
 py_library(
+    name = "loop",
+    srcs = ["loop.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core:direct_provider",
+        "//agent_core:handler",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//props/core:eval_client",
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "cli_helpers",
     srcs = ["cli_helpers.py"],
     imports = ["../.."],
@@ -35,8 +52,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cli_helpers",
-        "//agent_pkg/runtime:mcp",
-        "//agent_pkg/runtime:output",
         "//cli_util:decorators",
         "//cli_util:logging",
         "//props/cli:cmd_stats",

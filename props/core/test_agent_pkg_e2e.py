@@ -29,7 +29,7 @@ from mcp_infra.exec.matchers import exited_successfully
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
-from props.critic_dev.optimize.main import RunCriticToolArgs, WaitUntilGradedToolArgs
+from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,

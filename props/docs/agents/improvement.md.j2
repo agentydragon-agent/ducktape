@@ -1,0 +1,66 @@
+{{ include_doc("props/docs/agents/critic_dev_base.md.j2") }}
+
+## Your Goal
+
+Beat the average of baseline definitions on sum of issues found across your `allowed_examples`.
+
+## Data Access (RLS Scoping)
+
+Your database access is scoped by Row-Level Security based on your `type_config`:
+
+- **`allowed_examples`**: You can only see data for examples listed in your config
+- **`baseline_definition_ids`**: You can read these agent definitions
+
+**What you CAN see:**
+
+- `examples` — Only rows matching your `allowed_examples`
+- `true_positives`, `false_positives` — Only for snapshots in your allowed examples
+- `agent_runs`, `llm_requests` — Only runs on your allowed examples
+- `agent_definitions` — Only your baseline definitions (read) + any you create (read/write)
+
+**What you CANNOT see:**
+
+- Examples outside your `allowed_examples`
+- Ground truth for other snapshots
+- Runs/LLM requests for other examples
+
+Query your config to see your allowed scope:
+
+```sql
+SELECT
+    type_config->'allowed_examples' AS allowed_examples,
+    type_config->'baseline_definition_ids' AS baselines
+FROM agent_runs
+WHERE agent_run_id = current_agent_run_id();
+```
+
+## Workflow
+
+### 1. Read Context
+
+```sql
+SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
+```
+
+Gives you `baseline_definition_ids` and `allowed_examples`.
+
+### 2. Analyze & Diagnose
+
+- Query grader results: Which TPs had low `found_credit`?
+- Query `llm_requests`: Did critic read right files? Use right tools? Get stuck?
+
+### 3. Design Improvement
+
+Based on analysis:
+
+- What issue types were missed?
+- What analysis steps were missing?
+- What patterns should NOT be flagged?
+
+### 4. Create and Submit
+
+Start from base critic (see "Starting Point" above), modify agent.md, submit via CLI.
+
+## Termination Condition
+
+Complete when your definition **beats the average of baseline definitions** on **sum of issues found** across all `allowed_examples`. Termination is checked automatically — keep working and it will trigger when you succeed.
