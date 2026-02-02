@@ -229,7 +229,7 @@ bazel build --config=rust-check //finance/...  # Rust linting
 **Adding dependencies:**
 
 1. Add to root `Cargo.toml`
-2. Run `CARGO_BAZEL_REPIN=1 bazel sync --only=crates` to update lockfile
+2. Run `CARGO_BAZEL_REPIN=1 bazel build @crates//:all` to update `Cargo.Bazel.lock`
 3. Use `@crates//crate_name` in BUILD.bazel deps
 
 ### Remote Cache / BuildBuddy (Optional)

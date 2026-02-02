@@ -18,6 +18,9 @@ experimental/sandboxed_jupyter/testdata/** rules-lint-ignored=true
 sysrw/testdata/** rules-lint-ignored=true
 tana/testdata/** rules-lint-ignored=true
 
+# Generated lockfiles - large, not useful to diff
+Cargo.Bazel.lock linguist-generated=true
+
 # Archived/legacy code
 k8s-old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
