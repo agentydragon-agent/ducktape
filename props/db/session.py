@@ -140,11 +140,6 @@ def dispose_db() -> None:
             _engine = None
 
 
-def is_db_initialized() -> bool:
-    """Check if database connection is already established."""
-    return _engine is not None
-
-
 def init_db(config: DatabaseConfig | None = None) -> None:
     """Explicitly initialize database connection (for tests).
 
@@ -168,21 +163,6 @@ def init_db(config: DatabaseConfig | None = None) -> None:
             raise RuntimeError("Database already initialized. Call dispose_db() first to switch databases.")
     # Release lock before potentially slow operation
     _get_engine(config)
-
-
-def check_connection(timeout_secs: int = 2) -> None:
-    """Validate database connection (fail fast if DB not reachable).
-
-    Args:
-        timeout_secs: Connection timeout in seconds (default: 2)
-
-    Raises:
-        RuntimeError: If database not initialized (call init_db() first)
-        sqlalchemy.exc.OperationalError: If cannot connect to database within timeout
-    """
-    if _engine is None:
-        raise RuntimeError("Database not initialized. Call init_db() first.")
-    _check_connection_internal(timeout_secs)
 
 
 def recreate_database() -> None:

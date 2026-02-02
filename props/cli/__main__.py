@@ -6,7 +6,6 @@ Incremental migration target: we will gradually move subcommands here.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -119,29 +118,6 @@ def run_info_cmd() -> None:
         typer.echo()
         typer.echo("Type Config:")
         typer.echo(agent_run.type_config.model_dump_json(indent=2))
-
-
-@dataclass
-class MetricsRow:
-    iteration: int
-    mean_recall: float
-    tp: int
-    fp: int
-    fn: int
-    unknown: int
-    dir: str
-
-
-def read_embedded_paths(paths: list[Path]) -> str:
-    files_to_embed: list[Path] = []
-    for q in paths:
-        p = Path(q)
-        if p.is_file():
-            files_to_embed.append(p)
-    return "\n\n".join(
-        "\n".join([f'<file path=":/{p}">', p.read_text(encoding="utf-8"), "</file>"])
-        for p in sorted(files_to_embed, key=str)
-    )
 
 
 @app.command("prompt-optimize")

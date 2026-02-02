@@ -28,13 +28,9 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import BoundOpenAIModel, SystemMessage
-from props.core.agent_helpers import (
-    fetch_snapshot,
-    get_current_agent_run,
-    get_current_agent_run_id,
-    get_scope_description,
-)
-from props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
+from props.core.agent_helpers import fetch_snapshot, get_current_agent_run, get_current_agent_run_id
+from props.core.models.examples import WholeSnapshotExample
+from props.db.models import AgentRun, AgentRunStatus, FileSet, ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
 
@@ -418,12 +414,26 @@ def main() -> int:
         model = agent_run.model
         logger.info("Agent run: %s, model: %s", agent_run.agent_run_id, model)
 
+        example = agent_run.critic_config().example
+        snapshot_slug = example.snapshot_slug
+        if isinstance(example, WholeSnapshotExample):
+            scope_files = None
+        else:
+            file_set = (
+                session.query(FileSet)
+                .filter_by(snapshot_slug=example.snapshot_slug, files_hash=example.files_hash)
+                .one()
+            )
+            scope_files = [member.file_path for member in file_set.members]
+
     logger.info("Fetching snapshot to %s", WORKSPACE)
     fetch_snapshot(WORKSPACE)
 
     logger.info("Rendering system prompt")
     template_content = _load_prompt_template()
-    system_prompt = _render_template(template_content, helpers={"scope_description": get_scope_description()})
+    system_prompt = _render_template(
+        template_content, helpers={"snapshot_slug": snapshot_slug, "scope_files": scope_files}
+    )
 
     logger.info("Starting agent loop")
     exit_code = asyncio.run(_run_agent_loop(system_prompt, model))

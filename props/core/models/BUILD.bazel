@@ -41,7 +41,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":types",
-        "//props/core:ids",
         "@pypi//pydantic",
     ],
 )

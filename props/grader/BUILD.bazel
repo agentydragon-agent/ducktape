@@ -125,21 +125,6 @@ py_library(
 )
 
 py_library(
-    name = "daemon",
-    srcs = ["daemon.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":drift_handler",
-        ":notifications",
-        "//props/core:ids",
-        "//props/db:config",
-        "@pypi//asyncpg",
-        "@pypi//asyncpg_stubs",
-    ],
-)
-
-py_library(
     name = "notifications",
     srcs = ["notifications.py"],
     imports = ["../.."],

@@ -1,8 +1,4 @@
-"""Centralized runs directory context and path derivation.
-
-This module provides RunsContext for managing runs directory paths and a standard
-timestamp formatting function.
-"""
+"""Specimens path derivation and timestamp formatting."""
 
 from __future__ import annotations
 
@@ -12,11 +8,6 @@ from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-
-def pkg_dir() -> Path:
-    """Root directory of this package resources."""
-    return Path(__file__).parent
 
 
 def specimens_definitions_root() -> Path:
@@ -68,45 +59,3 @@ def format_timestamp_session(dt: datetime | None = None) -> str:
     if dt is None:
         dt = datetime.now()
     return dt.strftime("%Y%m%d_%H%M%S")
-
-
-class RunsContext:
-    """Context object for runs directory path derivation.
-
-    Injected at CLI/entry point level. All path construction goes through this object.
-    No code should independently compute runs paths or use hardcoded path tokens.
-    """
-
-    def __init__(self, base_dir: Path):
-        """Initialize runs context.
-
-        Args:
-            base_dir: Base runs directory (e.g., pkg_dir() / "runs")
-        """
-        self.base_dir = base_dir
-
-    @classmethod
-    def from_pkg_dir(cls) -> RunsContext:
-        """Create RunsContext from package directory (default location).
-
-        Returns:
-            RunsContext for pkg_dir() / "runs"
-        """
-        return cls(pkg_dir() / "runs")
-
-    def issue_eval_dir(self, identifier: str, timestamp: str | None = None) -> Path:
-        """Get output directory for issue evaluation runs (lint_issue harness).
-
-        Args:
-            identifier: Identifier for the eval (e.g., snapshot_issue_id or "all")
-            timestamp: Optional timestamp string (defaults to creating new one)
-
-        Returns:
-            Path to eval output directory (created if it doesn't exist)
-            Structure: runs/evals/{identifier}_{timestamp}/
-        """
-        if timestamp is None:
-            timestamp = format_timestamp_session()
-        path = self.base_dir / "evals" / f"{identifier}_{timestamp}"
-        path.mkdir(parents=True, exist_ok=True)
-        return path

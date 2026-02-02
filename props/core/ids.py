@@ -10,7 +10,6 @@ All IDs are Pydantic-validated. NewTypes provide compile-time type safety
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated, NewType, TypeAlias
 
 from pydantic import PlainSerializer, StringConstraints
@@ -83,29 +82,3 @@ def split_snapshot_slug(slug: SnapshotSlug) -> tuple[str, str]:
     """
     parts = str(slug).split("/", 1)
     return parts[0], parts[1]
-
-
-def get_snapshot_manifest_path(base_path: Path, slug: SnapshotSlug) -> Path:
-    """Get synthetic reference path for resolving relative paths within a snapshot.
-
-    Returns a synthetic path (doesn't actually exist on disk) used as a reference
-    point for resolving relative paths like LocalSource.root. The parent of this
-    path is the snapshot directory.
-
-    Args:
-        base_path: Specimens base directory
-        slug: Snapshot slug like "ducktape/2025-11-26-00"
-
-    Returns:
-        Synthetic path {snapshot_dir}/_snapshot (parent is snapshot directory)
-
-    Example:
-        >>> base = Path("/path/to/specimens")
-        >>> path = get_snapshot_manifest_path(base, SnapshotSlug("ducktape/2025-11-26-00"))
-        >>> path
-        PosixPath('/path/to/specimens/ducktape/2025-11-26-00/_snapshot')
-        >>> path.parent  # This is the snapshot directory
-        PosixPath('/path/to/specimens/ducktape/2025-11-26-00')
-    """
-    repo, version = split_snapshot_slug(slug)
-    return (base_path / repo / version / "_snapshot").resolve()

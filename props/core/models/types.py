@@ -38,24 +38,6 @@ class FileType(StrEnum):
     OTHER = "other"
 
 
-def classify_path(p: Path) -> FileType:
-    """Classify a path's file type.
-
-    Must check in this order:
-    1. is_symlink() - symlinks report True for is_file()/is_dir()
-    2. is_dir()
-    3. is_file()
-    4. else OTHER
-    """
-    if p.is_symlink():
-        return FileType.SYMLINK
-    if p.is_dir():
-        return FileType.DIRECTORY
-    if p.is_file():
-        return FileType.REGULAR
-    return FileType.OTHER
-
-
 def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo) -> Path:
     """Validate snapshot-relative path with format and existence checks.
 

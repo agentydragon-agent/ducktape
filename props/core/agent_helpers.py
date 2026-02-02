@@ -2,7 +2,6 @@
 
 Provides:
 - get_current_agent_run_id(): Get agent run ID from PostgreSQL RLS context
-- get_scope_description(): Get critic scope description for template rendering
 - fetch_snapshot(): Fetch snapshot to local filesystem and return path
 
 For eval API client, use props.core.eval_client.EvalClient.
@@ -44,8 +43,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from props.core.models.examples import WholeSnapshotExample
-from props.db.models import AgentRun, FileSet
+from props.db.models import AgentRun
 from props.db.session import get_session
 from props.db.snapshot_io import fetch_snapshot_to_path
 
@@ -81,30 +79,6 @@ def get_current_agent_run(session: Session) -> AgentRun:
     """Get the current agent run from database via RLS context."""
     agent_run_id = get_current_agent_run_id(session)
     return get_agent_run(session, agent_run_id)
-
-
-def get_scope_description() -> str:
-    """Get scope description for critic template.
-
-    Returns a pre-formatted string describing the snapshot and files to review.
-    Used as Jinja2 helper in critic.md.j2 template.
-    """
-    with get_session() as session:
-        agent_run = get_current_agent_run(session)
-        example = agent_run.critic_config().example
-
-        if isinstance(example, WholeSnapshotExample):
-            return f"Snapshot: {example.snapshot_slug}\nReview: ALL files in snapshot"
-
-        # SingleFileSetExample - look up files via FileSet (must exist)
-        file_set = (
-            session.query(FileSet).filter_by(snapshot_slug=example.snapshot_slug, files_hash=example.files_hash).one()
-        )
-
-        files = [member.file_path for member in file_set.members]
-        files_str = ", ".join(files)
-
-        return f"Snapshot: {example.snapshot_slug}\nFiles to review: {files_str}"
 
 
 def fetch_snapshot(dest_dir: Path) -> Path:

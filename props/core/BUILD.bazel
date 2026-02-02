@@ -4,7 +4,7 @@ TODO: This package is being phased out. Remaining modules should move to:
 - types/ (SHARED): agent_types, ids, splits, models/, eval_api_models
 - orchestration/ (HOST): Already moved (agent_registry, loop_agent_env, etc.)
 - Agent folders (CONTAINER): agent_helpers, docker_env, agent_workspace, loop_utils
-- shared/ (SHARED utility): display, oci_utils, eval_client, exceptions
+- shared/ (SHARED utility): display, oci_utils, eval_client
 """
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
@@ -61,15 +61,6 @@ py_library(
     srcs = ["docker_env.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        "//mcp_infra:constants",
-        "//mcp_infra:mounted",
-        "//mcp_infra:prefix",
-        "//mcp_infra/compositor",
-        "//mcp_infra/exec:docker",
-        "//props/db:config",
-        "@pypi//aiodocker",
-    ],
 )
 
 py_library(
@@ -83,14 +74,6 @@ py_library(
         "//props/critic_dev:shared",
         "@pypi//pydantic",
     ],
-)
-
-py_library(
-    name = "exceptions",
-    srcs = ["exceptions.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [":agent_types"],
 )
 
 py_library(
@@ -140,7 +123,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/core/models:examples",
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshot_io",
@@ -257,8 +239,8 @@ docker_py_test(
         "//mcp_infra/exec:matchers",
         "//props:conftest",
         "//props/core/models:examples",
-        "//props/critic_dev:shared",
         "//props/critic_dev:loop",
+        "//props/critic_dev:shared",
         "//props/critic_dev/optimize:orchestration_fixtures",
         "//props/db:agent_definition_ids",
         "//props/db:models",

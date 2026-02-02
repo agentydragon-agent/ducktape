@@ -27,7 +27,6 @@ from sqlalchemy import func
 
 from props.backend.auth import CallerType, require_eval_api_access
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
-from props.core.exceptions import AgentDidNotSubmitError
 from props.core.splits import Split
 from props.critic.exceptions import CriticExecutionError
 from props.db.examples import Example
@@ -113,8 +112,6 @@ async def run_critic(
         )
     except CriticExecutionError as e:
         raise HTTPException(status_code=500, detail=f"Critic execution failed: {e}")
-    except AgentDidNotSubmitError as e:
-        raise HTTPException(status_code=500, detail=f"Agent did not submit: {e}")
 
     # Get final status
     with get_session() as session:

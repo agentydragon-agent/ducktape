@@ -37,6 +37,7 @@ py_library(
         "//mcp_infra/exec:subprocess",
         "//openai_utils:model",
         "//props/core:agent_helpers",
+        "//props/core/models:examples",
         "//props/db:models",
         "//props/db:session",
         "//props/db:snapshots",

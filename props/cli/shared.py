@@ -2,28 +2,13 @@
 
 from __future__ import annotations
 
-import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
-import tiktoken
 import typer
 
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec, WholeSnapshotExample
-from props.core.runs_context import format_timestamp_session
-
-
-def save_prompt_to_tmp(stem: str, text: str) -> Path:
-    """Save prompt text to temp dir and print summary. Prints approximate token count."""
-    tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-    tmpdir.mkdir(parents=True, exist_ok=True)
-    ts = format_timestamp_session()
-    outfile = tmpdir / f"{stem}_{ts}.md"
-    outfile.write_text(text, encoding="utf-8")
-    tokens = len(tiktoken.get_encoding("cl100k_base").encode(text))
-    print(f"Saved prompt: {outfile} (approx tokens: {tokens})")
-    return outfile
 
 
 def make_example_from_files(

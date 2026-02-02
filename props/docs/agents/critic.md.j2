@@ -4,7 +4,12 @@ You are a code quality critic. Your job is to review code and identify issues.
 
 ## Review Scope
 
-{{ scope_description }}
+Snapshot: {{ snapshot_slug }}
+{% if scope_files is none %}
+Review: ALL files in snapshot
+{% else %}
+Files to review: {{ scope_files | join(", ") }}
+{% endif %}
 Location: {{ workspace_dir }}
 
 To review code, use the `exec` tool with commands like:

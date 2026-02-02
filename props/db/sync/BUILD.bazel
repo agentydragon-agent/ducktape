@@ -85,7 +85,6 @@ py_library(
         "//props/core/models:snapshot",
         "//props/core/models:true_positive",
         "//props/db:models",
-        "//props/db:session",
         "@pypi//pygit2",
         "@pypi//sqlalchemy",
     ],

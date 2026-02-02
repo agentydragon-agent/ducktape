@@ -110,7 +110,7 @@ class GradingPendingNotification(BaseModel):
     - Ground truth changes: notify_gt_changed() on TP/FP INSERT/DELETE
     - Critique changes: notify_critique_changed() on reported_issues/occurrences INSERT
 
-    Consumed by: GraderDaemonScaffold, DaemonState in daemon_main.py
+    Consumed by: DaemonState in daemon_main.py
     """
 
     operation: Operation

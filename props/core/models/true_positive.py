@@ -5,8 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from props.core.ids import BaseIssueID
-from props.core.models.types import Rationale, SnapshotRelativePath
+from props.core.models.types import SnapshotRelativePath
 
 
 class LineRange(BaseModel):
@@ -185,38 +184,5 @@ class FalsePositiveOccurrence(BaseModel):
         if self.graders_match_only_if_reported_on is not None and not self.graders_match_only_if_reported_on:
             raise ValueError("graders_match_only_if_reported_on must be None or non-empty")
         return self
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class SnapshotIssuesLoadError(Exception):
-    """Raised when per-issue Jsonnet evaluation/validation yields any errors in strict mode.
-
-    Carries a list of human-readable error lines. __str__ joins them with newlines
-    so pytest and CLIs surface a readable summary.
-    """
-
-    def __init__(self, errors: list[str]):
-        self.errors = errors
-        super().__init__(str(self))
-
-    def __str__(self) -> str:  # pragma: no cover - exercised via message rendering
-        return "Snapshot issue loading errors:\n" + "\n".join(self.errors)
-
-
-# Strongly-typed identifiers with validation
-# BaseIssueID imported from ids module (validates no colons)
-
-
-class IssueCore(BaseModel):
-    """True positive metadata without occurrences.
-
-    Minimal header describing a logical problem.
-    When sending or storing per-location data separately, pair an IssueCore with
-    one or more Occurrence objects rather than repeating metadata.
-    """
-
-    id: BaseIssueID
-    rationale: Rationale
 
     model_config = ConfigDict(extra="forbid")

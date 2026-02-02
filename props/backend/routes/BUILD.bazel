@@ -8,7 +8,6 @@ py_library(
     deps = [
         "//props/backend:auth",
         "//props/core:eval_api_models",
-        "//props/core:exceptions",
         "//props/core:splits",
         "//props/critic:exceptions",
         "//props/db:examples",

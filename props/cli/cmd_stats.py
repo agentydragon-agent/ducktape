@@ -60,10 +60,6 @@ def fmt_model(model: str, max_length: int = 12) -> str:
     return model[:max_length]
 
 
-def fmt_hash(hash_value: str | None) -> str:
-    return short_sha(hash_value) if hash_value else "—"
-
-
 # Common dimension columns (used by prompt and example stats)
 _DIMENSION_COLUMNS: list[ColumnDef[Any, Any]] = [
     ColumnDef("Split", lambda r: r.split, width=6),
@@ -267,14 +263,6 @@ class SplitStats:
             return None
         zeros = sum(1 for r in self.recalls if r == 0.0)
         return 100.0 * zeros / len(self.recalls)
-
-
-@dataclass
-class PromptStats:
-    prompt_sha256: str
-    created_at: datetime
-    splits: dict[Split, SplitStats]
-    valid_best_count: int = 0  # Number of valid samples where this prompt is best (or tied)
 
 
 def _display_split_analysis(

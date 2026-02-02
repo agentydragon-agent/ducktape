@@ -42,7 +42,6 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.db.session import get_session
 from props.db.sync._yaml import load_yaml_issues
 from props.db.sync.loader import discover_snapshots
 
@@ -727,18 +726,6 @@ class ModelMetadataSyncStats:
     def summary_text(self) -> str:
         """Format as human-readable summary."""
         return f"{self.total} models (+{self.added}, ~{self.updated}, -{self.deleted})"
-
-
-def sync_model_metadata() -> ModelMetadataSyncStats:
-    """Sync model_metadata table from MODEL_METADATA source.
-
-    Opens its own session internally (legacy interface for backward compatibility).
-
-    Returns:
-        Statistics about what changed
-    """
-    with get_session() as session:
-        return sync_model_metadata_with_session(session)
 
 
 def sync_model_metadata_with_session(session: Session) -> ModelMetadataSyncStats:

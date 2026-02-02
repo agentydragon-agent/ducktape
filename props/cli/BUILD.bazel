@@ -5,7 +5,7 @@
 # gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 # =============================================================================
 # Leaf modules (minimal deps)
@@ -49,9 +49,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
-        "//props/core:runs_context",
         "//props/core/models:examples",
-        "@pypi//tiktoken",
         "@pypi//typer_slim",
     ],
 )
