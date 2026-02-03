@@ -229,11 +229,26 @@ def emit_session_context(
     sys.stdout.flush()
 
 
-class PrecommitSetup(BaseModel):
-    """Result of pre-commit hook installation."""
+class PrecommitNotInstalled(BaseModel):
+    """pre-commit hook was not installed (binary missing, install failed, etc.)."""
 
-    hook_installed: bool = False
-    install_hooks_pid: int | None = None
+    kind: Literal["not_installed"] = "not_installed"
+
+
+class PrecommitInstalled(BaseModel):
+    """pre-commit hook installed, but background env setup was not started."""
+
+    kind: Literal["installed"] = "installed"
+
+
+class PrecommitInstallingHooks(BaseModel):
+    """pre-commit hook installed and background `install-hooks` is running."""
+
+    kind: Literal["installing_hooks"] = "installing_hooks"
+    pid: int
+
+
+PrecommitSetup = PrecommitNotInstalled | PrecommitInstalled | PrecommitInstallingHooks
 
 
 def install_git_precommit_hook(project_dir: Path) -> PrecommitSetup:
@@ -246,7 +261,6 @@ def install_git_precommit_hook(project_dir: Path) -> PrecommitSetup:
     After installing the hook, launches `pre-commit install-hooks` in the background
     to eagerly pre-install hook environments so the first commit doesn't pay that cost.
     """
-    result = PrecommitSetup()
     precommit = shutil.which("pre-commit")
     if not precommit:
         logger.info("pre-commit not found on PATH, installing via pip...")
@@ -255,11 +269,11 @@ def install_git_precommit_hook(project_dir: Path) -> PrecommitSetup:
             logger.info("Installed pre-commit via pip")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.warning("Failed to install pre-commit via pip: %s", e)
-            return result
+            return PrecommitNotInstalled()
         precommit = shutil.which("pre-commit")
         if not precommit:
             logger.warning("pre-commit still not found on PATH after pip install")
-            return result
+            return PrecommitNotInstalled()
 
     try:
         version = subprocess.run([precommit, "--version"], capture_output=True, text=True, check=True, timeout=5)
@@ -267,45 +281,47 @@ def install_git_precommit_hook(project_dir: Path) -> PrecommitSetup:
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         pass
 
+    hook_installed = False
     try:
         install_result = subprocess.run(
             [precommit, "install"], check=False, cwd=project_dir, capture_output=True, text=True, timeout=30
         )
         if install_result.returncode == 0:
             logger.info("Installed git pre-commit hook")
-            result.hook_installed = True
+            hook_installed = True
         else:
             logger.warning("pre-commit install failed: %s", install_result.stderr)
     except subprocess.TimeoutExpired:
         logger.warning("pre-commit install timed out")
 
-    if result.hook_installed:
-        # Launch install-hooks in the background to eagerly pre-install hook
-        # environments (especially the ansible language:python venv). Without this,
-        # the first commit pays the cost of creating the venv and downloading ansible.
-        # pre-commit uses flock on ~/.cache/pre-commit/.lock, so this is safe to run
-        # concurrently with a hook-triggered run.
-        try:
-            log_dir = Path.home() / ".cache" / "claude-hooks"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_fh = (log_dir / "pre-commit-install-hooks.log").open("w")
-            proc = subprocess.Popen(
-                [precommit, "install-hooks"],
-                cwd=project_dir,
-                stdout=log_fh,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-            result.install_hooks_pid = proc.pid
-            logger.info(
-                "Started background pre-commit install-hooks (pid %d), log: %s",
-                proc.pid,
-                log_dir / "pre-commit-install-hooks.log",
-            )
-        except OSError as e:
-            logger.warning("Failed to start background pre-commit install-hooks: %s", e)
+    if not hook_installed:
+        return PrecommitNotInstalled()
 
-    return result
+    # Launch install-hooks in the background to eagerly pre-install hook
+    # environments (especially the ansible language:python venv). Without this,
+    # the first commit pays the cost of creating the venv and downloading ansible.
+    # pre-commit uses flock on ~/.cache/pre-commit/.lock, so this is safe to run
+    # concurrently with a hook-triggered run.
+    try:
+        log_dir = Path.home() / ".cache" / "claude-hooks"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_fh = (log_dir / "pre-commit-install-hooks.log").open("w")
+        proc = subprocess.Popen(
+            [precommit, "install-hooks"],
+            cwd=project_dir,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        logger.info(
+            "Started background pre-commit install-hooks (pid %d), log: %s",
+            proc.pid,
+            log_dir / "pre-commit-install-hooks.log",
+        )
+        return PrecommitInstallingHooks(pid=proc.pid)
+    except OSError as e:
+        logger.warning("Failed to start background pre-commit install-hooks: %s", e)
+        return PrecommitInstalled()
 
 
 class LogCollector(logging.handlers.MemoryHandler):
@@ -482,14 +498,14 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # Unpack with explicit type annotations for mypy
     proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     podman_result: podman_service.PodmanSetup | BaseException = results[1]
-    git_result: PrecommitSetup | BaseException = results[2]
+    precommit_result: PrecommitSetup | BaseException = results[2]
     nix_result: Path | None | BaseException = results[3]
     bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[4]
     buildbuddy_result: str | None | BaseException = results[5]
 
     # Log non-critical failures (git, bazelisk, nix, podman, buildbuddy)
-    if isinstance(git_result, BaseException):
-        logger.warning("Failed to install git pre-commit: %s", git_result)
+    if isinstance(precommit_result, BaseException):
+        logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(bazelisk_result, BaseException):
         logger.warning("Failed to install bazelisk: %s", bazelisk_result)
     if isinstance(buildbuddy_result, BaseException):
@@ -576,7 +592,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     # Render agent context from structured results
     podman = None if isinstance(podman_result, BaseException) else podman_result
-    precommit = None if isinstance(git_result, BaseException) else git_result
+    precommit = None if isinstance(precommit_result, BaseException) else precommit_result
     emit_session_context(collector=collector, log_file=log_file, proxy=proxy_result, podman=podman, precommit=precommit)
 
 
