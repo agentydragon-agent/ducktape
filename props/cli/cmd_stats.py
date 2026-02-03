@@ -822,7 +822,7 @@ def cmd_stats(ctx: typer.Context) -> None:
             str(stats.n_examples or 0),
             str(stats.zero_count or 0),
             str(stats.status_counts.get(AgentRunStatus.COMPLETED, 0)),
-            str(stats.status_counts.get(AgentRunStatus.MAX_TURNS_EXCEEDED, 0)),
+            str(stats.status_counts.get(AgentRunStatus.TIMED_OUT, 0)),
             str(stats.status_counts.get(AgentRunStatus.CONTEXT_LENGTH_EXCEEDED, 0)),
             str(stats.status_counts.get(AgentRunStatus.REPORTED_FAILURE, 0)),
         )

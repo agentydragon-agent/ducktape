@@ -295,7 +295,7 @@ async def prompt_improve_cmd(
         n_completed = best.status_counts.get(AgentRunStatus.COMPLETED, 0)
         n_examples_val = best.n_examples or 0
         zero_count = best.zero_count or 0
-        stuck_count = best.status_counts.get(AgentRunStatus.MAX_TURNS_EXCEEDED, 0)
+        stuck_count = best.status_counts.get(AgentRunStatus.TIMED_OUT, 0)
         context_count = best.status_counts.get(AgentRunStatus.CONTEXT_LENGTH_EXCEEDED, 0)
 
         console.print(

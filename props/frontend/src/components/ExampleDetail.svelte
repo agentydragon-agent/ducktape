@@ -16,7 +16,7 @@
   function formatStatusCounts(counts: Record<string, number>): string {
     const parts: string[] = [];
     if (counts.completed) parts.push(`${counts.completed} completed`);
-    if (counts.max_turns_exceeded) parts.push(`${counts.max_turns_exceeded} max_turns`);
+    if (counts.timed_out) parts.push(`${counts.timed_out} timed_out`);
     if (counts.in_progress) parts.push(`${counts.in_progress} in_progress`);
     return parts.join(", ") || "—";
   }

@@ -49,7 +49,6 @@ export type GradingTarget = TpTarget | FpTarget;
 export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
   "in_progress",
   "completed",
-  "max_turns_exceeded",
   "context_length_exceeded",
   "timed_out",
   "reported_failure",

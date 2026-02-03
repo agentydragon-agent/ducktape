@@ -134,9 +134,9 @@ class EvaluationResult:
 class ReflectionExample(BaseModel):
     """Example for GEPA's reflection dataset.
 
-    Includes both successful critiques and max_turns_exceeded cases.
+    Includes both successful critiques and timed_out cases.
     Status enums indicate whether critic/grader succeeded.
-    grader_status is None when critic exceeded max turns.
+    grader_status is None when critic timed out.
     """
 
     component_name: str
@@ -585,8 +585,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         for output, score, trajectory in zip(
             eval_batch.outputs, eval_batch.scores, eval_batch.trajectories, strict=True
         ):
-            # Include both successful critiques and max_turns_exceeded cases
-            # grader_status is None when critic exceeded max turns
+            # Include both successful critiques and timed_out cases
+            # grader_status is None when critic timed out
             example = ReflectionExample(
                 component_name="system_prompt",
                 current_text=candidate["system_prompt"],
@@ -639,7 +639,7 @@ async def load_datasets() -> tuple[list[Example], list[Example]]:
 
 
 def _log_run_statistics(critic_model: str, grader_model: str) -> None:
-    """Log statistics about critic and grader run statuses (success vs max_turns_exceeded).
+    """Log statistics about critic and grader run statuses (success vs timed_out).
 
     Args:
         critic_model: Critic model name to filter runs
