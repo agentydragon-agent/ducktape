@@ -2,6 +2,18 @@ name: "Copilot Setup Steps"
 
 # Automatically run the setup steps when they are changed to allow for easy validation, and
 # allow manual testing through the repository's "Actions" tab
+#
+# This workflow mirrors the setup performed by Claude Code hooks (tools/claude_hooks/session_start.py)
+# but adapted for GitHub Actions environment:
+#   - BuildBuddy remote cache + RBE (via setup-bazel action, using tools/setup-buildbuddy.sh)
+#   - Bazel toolchain auto-detection (enabled in bazel-repo-cache action)
+#   - Pre-commit hooks (installed directly in this workflow)
+#   - Props environment variables (specific to GitHub Actions networking)
+#
+# Key differences from Claude hooks:
+#   - No auth proxy needed (GitHub Actions has direct internet access)
+#   - No Podman setup (uses Docker directly)
+#   - Props uses 'props-agents' Docker network instead of 'host' network
 on:
   workflow_dispatch:
   push:
@@ -32,6 +44,9 @@ jobs:
           python-version: "3.13"
 
       - name: Setup Bazel
+        # Configures Bazel with BuildBuddy remote cache and RBE if BUILDBUDDY_API_KEY is available.
+        # This uses the same setup-buildbuddy.sh script as Claude Code hooks.
+        # The script writes to ~/.config/bazel/buildbuddy.bazelrc and adds a try-import to ~/.bazelrc.
         uses: ./.github/actions/setup-bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -67,13 +82,32 @@ jobs:
           which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
           which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
 
+          # Verify BuildBuddy remote cache configuration
+          if [[ -f ~/.config/bazel/buildbuddy.bazelrc ]]; then
+            echo "BuildBuddy: configured (remote cache + RBE enabled)"
+            grep -q "remote_executor" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote execution: enabled"
+            grep -q "remote_cache" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote cache: enabled"
+          else
+            echo "BuildBuddy: not configured (BUILDBUDDY_API_KEY not available)"
+          fi
+
+          # Verify Bazel toolchain auto-detection
+          if grep -q "BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0" ~/.bazelrc 2>/dev/null; then
+            echo "Bazel toolchain: auto-detection enabled"
+          else
+            echo "Bazel toolchain: using default configuration"
+          fi
+
       - name: Set up Props environment variables
         run: |
           # Props E2E test environment variables
-          # These mirror the setup used by Claude code hooks (tools/claude_hooks/bazelisk_setup.py)
-          # but simplified for GitHub Actions (no HTTP proxy needed, using docker networking)
+          # These mirror the setup used by Claude code hooks
+          # (tools/claude_hooks/bazelisk_setup.py)
+          # but simplified for GitHub Actions (no HTTP proxy needed, using
+          # docker networking)
 
-          echo "ADGN_PROPS_SPECIMENS_ROOT=${{ github.workspace }}/props/testing/fixtures/testdata/specimens" >> $GITHUB_ENV
+          PROPS_ROOT="${{ github.workspace }}/props/testing/fixtures/testdata/specimens"
+          echo "ADGN_PROPS_SPECIMENS_ROOT=$PROPS_ROOT" >> $GITHUB_ENV
 
           # PostgreSQL connection (for props database operations)
           echo "PGHOST=127.0.0.1" >> $GITHUB_ENV
