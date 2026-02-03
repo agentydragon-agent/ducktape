@@ -221,6 +221,7 @@ def emit_session_context(
         proxy=proxy,
         podman=podman,
         precommit=precommit,
+        PrecommitInstallingHooks=PrecommitInstallingHooks,
         log_entries=collector.buffer,
         has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN")),
         log_file=log_file,
