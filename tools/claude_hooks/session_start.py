@@ -12,7 +12,6 @@ import logging
 import logging.handlers
 import os
 import shutil
-import subprocess
 import sys
 import traceback
 from datetime import datetime
@@ -26,7 +25,15 @@ from pydantic import BaseModel
 from fmt_util.fmt_util import format_limited_list
 from tools import env_utils
 from tools.build_info import BUILD_COMMIT
-from tools.claude_hooks import bazelisk_setup, env_file, nix_setup, podman_service, proxy_setup
+from tools.claude_hooks import (
+    bazelisk_setup,
+    buildbuddy_setup,
+    env_file,
+    nix_setup,
+    podman_service,
+    precommit_setup,
+    proxy_setup,
+)
 from tools.claude_hooks.debug import log_entrypoint_debug
 from tools.claude_hooks.errors import DirenvError, SkipError
 from tools.claude_hooks.settings import HookSettings
@@ -200,7 +207,11 @@ def format_environment_summary() -> str:
 
 
 def emit_session_context(
-    collector: LogCollector, log_file: Path, proxy: proxy_setup.ProxySetup, podman: podman_service.PodmanSetup | None
+    collector: LogCollector,
+    log_file: Path,
+    auth_proxy: proxy_setup.ProxySetup,
+    podman: podman_service.PodmanSetup | None,
+    precommit: precommit_setup.PrecommitSetup | None,
 ) -> None:
     """Emit compact context summary for Claude Code transcript.
 
@@ -214,57 +225,16 @@ def emit_session_context(
         WARNING=logging.WARNING,
         build_commit=BUILD_COMMIT,
         status=status,
-        proxy=proxy,
+        proxy=auth_proxy,
         podman=podman,
+        precommit=precommit,
+        PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
         log_entries=collector.buffer,
         has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN")),
         log_file=log_file,
     )
     print(result.rstrip("\n"))
     sys.stdout.flush()
-
-
-def install_git_precommit_hook(project_dir: Path) -> None:
-    """Install git pre-commit hook using the pre-commit CLI.
-
-    If `pre-commit` is not on PATH, installs it via pip first.
-    pre-commit is not pre-installed in Claude Code on the web's container.
-    pre-commit itself handles missing .git, missing config, and idempotent installs.
-    """
-    precommit = shutil.which("pre-commit")
-    if not precommit:
-        logger.info("pre-commit not found on PATH, installing via pip...")
-        try:
-            subprocess.run(["pip", "install", "pre-commit"], check=True, capture_output=True, text=True, timeout=120)
-            logger.info("Installed pre-commit via pip")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.warning("Failed to install pre-commit via pip: %s", e)
-            return
-        precommit = shutil.which("pre-commit")
-        if not precommit:
-            logger.warning("pre-commit still not found on PATH after pip install")
-            return
-
-    try:
-        version = subprocess.run([precommit, "--version"], capture_output=True, text=True, check=True, timeout=5)
-        logger.info("pre-commit %s", version.stdout.strip())
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        pass
-
-    try:
-        result = subprocess.run(
-            [precommit, "install"], check=False, cwd=project_dir, capture_output=True, text=True, timeout=30
-        )
-        if result.returncode == 0:
-            logger.info("Installed git pre-commit hook")
-        else:
-            logger.warning("pre-commit install failed: %s", result.stderr)
-    except subprocess.TimeoutExpired:
-        logger.warning("pre-commit install timed out")
-
-    # TODO: Run `pre-commit install-hooks` in the background to eagerly pre-install
-    # hook environments (especially the ansible language:python venv). Without this,
-    # the first commit pays the cost of creating the venv and downloading ansible.
 
 
 class LogCollector(logging.handlers.MemoryHandler):
@@ -396,80 +366,49 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
             bazelisk_skipped=skipped,
         )
 
-    def setup_buildbuddy() -> str | None:
-        """Configure BuildBuddy remote cache if BUILDBUDDY_API_KEY is set.
-
-        Writes config to ~/.config/bazel/buildbuddy.bazelrc and ensures
-        ~/.bazelrc has the try-import line.
-        """
-        api_key = os.environ.get("BUILDBUDDY_API_KEY")
-        if not api_key:
-            logger.info("BUILDBUDDY_API_KEY not set, skipping BuildBuddy setup")
-            return None
-
-        # Run the setup script
-        script_path = project_dir / "tools" / "setup-buildbuddy.sh"
-        if not script_path.exists():
-            logger.warning("BuildBuddy setup script not found: %s", script_path)
-            return None
-
-        result = subprocess.run(
-            [script_path],
-            env={**os.environ, "BUILDBUDDY_API_KEY": api_key},
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        if result.returncode == 0:
-            logger.info("BuildBuddy remote cache configured")
-            return "configured"
-        logger.warning("BuildBuddy setup failed: %s", result.stderr)
-        return None
-
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     logger.info("Starting parallel installations...")
     results = await asyncio.gather(
         setup_proxy_with_supervisor(),
         setup_podman_with_supervisor(),
-        run_in_thread(install_git_precommit_hook, project_dir),
+        run_in_thread(precommit_setup.install_precommit, project_dir),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
-        run_in_thread(setup_buildbuddy),
+        run_in_thread(buildbuddy_setup.setup_buildbuddy, project_dir),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
-    proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
-    podman_result: podman_service.PodmanSetup | BaseException = results[1]
-    git_result: None | BaseException = results[2]
-    nix_result: Path | None | BaseException = results[3]
-    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[4]
-    buildbuddy_result: str | None | BaseException = results[5]
+    auth_proxy: proxy_setup.ProxySetup | BaseException = results[0]
+    podman: podman_service.PodmanSetup | BaseException = results[1]
+    precommit: precommit_setup.PrecommitSetup | BaseException = results[2]
+    nix: nix_setup.NixSetup | BaseException = results[3]
+    bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
+    buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = results[5]
 
-    # Log non-critical failures (git, bazelisk, nix, podman, buildbuddy)
-    if isinstance(git_result, BaseException):
-        logger.warning("Failed to install git pre-commit: %s", git_result)
-    if isinstance(bazelisk_result, BaseException):
-        logger.warning("Failed to install bazelisk: %s", bazelisk_result)
-    if isinstance(buildbuddy_result, BaseException):
-        logger.warning("Failed to configure BuildBuddy: %s", buildbuddy_result)
+    # Log non-critical failures
+    if isinstance(precommit, BaseException):
+        logger.warning("Failed to install git pre-commit: %s", precommit)
+    if isinstance(bazelisk, BaseException):
+        logger.warning("Failed to install bazelisk: %s", bazelisk)
+    if isinstance(buildbuddy, BaseException):
+        logger.warning("Failed to configure BuildBuddy: %s", buildbuddy)
 
-    # Extract artifacts
-    nix_store_bin: Path | None = None if isinstance(nix_result, BaseException) else nix_result
-    if isinstance(nix_result, SkipError):
-        logger.info("Nix setup skipped: %s", nix_result)
-    elif isinstance(nix_result, BaseException):
-        logger.warning("Failed to install nix: %s", nix_result)
+    # Handle nix result
+    if isinstance(nix, SkipError):
+        logger.info("Nix setup skipped: %s", nix)
+    elif isinstance(nix, BaseException):
+        logger.warning("Failed to install nix: %s", nix)
 
+    # Handle podman result
     docker_host: str | None = None
     podman_env: dict[str, str] | None = None
-    if isinstance(podman_result, SkipError):
-        logger.info("Podman setup skipped: %s", podman_result)
-    elif isinstance(podman_result, BaseException):
-        logger.warning("Failed to configure podman: %s", podman_result)
+    if isinstance(podman, SkipError):
+        logger.info("Podman setup skipped: %s", podman)
+    elif isinstance(podman, BaseException):
+        logger.warning("Failed to configure podman: %s", podman)
     else:
-        docker_host = podman_result.socket_url
-        podman_env = podman_result.env_vars
+        docker_host = podman.socket_url
+        podman_env = podman.env_vars
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -478,20 +417,19 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
 
     # Proxy setup is required - propagate failure with clear error message
-    if isinstance(proxy_result, BaseException):
-        logger.error("Proxy setup failed: %s", proxy_result)
-        raise RuntimeError(f"Proxy setup failed: {proxy_result}") from proxy_result
-    # At this point, proxy_result is ProxySetup (type narrowed by the check above)
+    if isinstance(auth_proxy, BaseException):
+        logger.error("Proxy setup failed: %s", auth_proxy)
+        raise RuntimeError(f"Proxy setup failed: {auth_proxy}") from auth_proxy
 
     # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
     combined_ca = settings.get_auth_proxy_combined_ca()
     if not combined_ca.exists():
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
-    nix_paths = nix_setup.get_nix_paths(nix_store_bin) if nix_store_bin else []
+    nix_paths = nix.paths if isinstance(nix, nix_setup.NixSetup) else []
 
     # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
-    if isinstance(bazelisk_result, bazelisk_setup.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
+    if isinstance(bazelisk, bazelisk_setup.BazeliskSetup) and bazelisk.bazelisk_skipped:
         if settings.system_bazel is not None:
             bazelisk_path = settings.system_bazel
         else:
@@ -522,20 +460,25 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     logger.info("Wrote environment to %s", env_file_path)
 
     # Emit status to log
-    if isinstance(bazelisk_result, SkipError):
+    if isinstance(bazelisk, SkipError):
         bazel_status = "skipped"
-    elif isinstance(bazelisk_result, BaseException):
+    elif isinstance(bazelisk, BaseException):
         bazel_status = "not installed"
     else:
-        bazel_status = bazelisk_result.status
-    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, proxy_result.status, proxy_result.ca_status)
+        bazel_status = bazelisk.status
+    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, auth_proxy.status, auth_proxy.ca_status)
     logger.info("Nix: %s", get_nix_status())
-    if not isinstance(podman_result, BaseException):
-        logger.info("Podman: %s", podman_result.status)
+    if not isinstance(podman, BaseException):
+        logger.info("Podman: %s", podman.status)
 
     # Render agent context from structured results
-    podman = None if isinstance(podman_result, BaseException) else podman_result
-    emit_session_context(collector=collector, log_file=log_file, proxy=proxy_result, podman=podman)
+    emit_session_context(
+        collector=collector,
+        log_file=log_file,
+        auth_proxy=auth_proxy,
+        podman=None if isinstance(podman, BaseException) else podman,
+        precommit=None if isinstance(precommit, BaseException) else precommit,
+    )
 
 
 async def async_main() -> None:

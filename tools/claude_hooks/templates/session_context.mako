@@ -6,6 +6,9 @@ Podman: ${podman.status}, DOCKER_HOST=${podman.socket_url}. Use fully qualified 
   `podman run` works (with --network=host). `podman build` works (gVisor workarounds are pre-configured).
   See tools/claude_hooks/docs/gvisor-dockerfile-build.md for details. Note: RUN steps producing >~3MB stdout may hit a buildah SIGPIPE bug — redirect output if needed.
 % endif
+% if isinstance(precommit, PrecommitInstallingHooks):
+pre-commit: hook environments installing in background (pid ${precommit.pid}). First `git commit` may block briefly on pre-commit's flock until done. Log: ~/.cache/claude-hooks/pre-commit-install-hooks.log
+% endif
 % for record in log_entries:
 % if record.levelno >= WARNING:
   ${record.levelname}: ${record.getMessage()}

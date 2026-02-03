@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 from tools.claude_hooks.errors import SkipError
@@ -14,6 +15,14 @@ from tools.claude_hooks.settings import CONFIG_FILES, HookSettings
 from tools.claude_hooks.streaming import run_streaming
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class NixSetup:
+    """Result of nix installation."""
+
+    store_bin: Path
+    paths: list[Path]
 
 
 def find_nix_bin() -> Path | None:
@@ -58,8 +67,8 @@ def _write_nix_conf(settings: HookSettings) -> Path:
 NIX_INSTALL_SCRIPT = Path("/tmp/nix-install.sh")
 
 
-def install_nix(settings: HookSettings) -> Path:
-    """Install nix if not present. Returns the nix store bin path.
+def install_nix(settings: HookSettings) -> NixSetup:
+    """Install nix if not present.
 
     Raises:
         SkipError: If install_nix is False in settings.
@@ -109,7 +118,7 @@ def install_nix(settings: HookSettings) -> Path:
 
     logger.info("nix installed: %s", nix_store_bin)
     setup_nix_path(nix_store_bin)
-    return nix_store_bin
+    return NixSetup(store_bin=nix_store_bin, paths=get_nix_paths(nix_store_bin))
 
 
 def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
