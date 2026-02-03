@@ -1,20 +1,26 @@
 from __future__ import annotations
 
+import importlib.resources
 from pathlib import Path
 
 import aiodocker
 from fastmcp.client import Client
+from jinja2 import Environment
 
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
+from agent_core.script_handler import ScriptBuilder, ScriptGen, script_handler
 from agent_core.turn_limit import MaxTurnsHandler
-from agent_pkg.host.init_runner import run_init_script
 from editor_agent.host.runner import EditorDockerSession, editor_docker_session, writeback_success
 from editor_agent.host.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
+
+_SYSTEM_PROMPT_TEMPLATE = Environment().from_string(
+    importlib.resources.files("editor_agent").joinpath("host/system_prompt.md.j2").read_text()
+)
 
 
 async def _run_agent_in_session(
@@ -22,22 +28,31 @@ async def _run_agent_in_session(
 ) -> None:
     """Run the agent loop within an established editor session."""
     async with Client(sess.compositor) as mcp_client:
-        # Run init script and use output as system prompt
-        system_prompt = await run_init_script(mcp_client, sess.runtime)
+        # Build system prompt on the host side (file content included inline)
+        system_prompt = _SYSTEM_PROMPT_TEMPLATE.render(
+            prompt=sess.submit_server.edit_prompt, filename=sess.filename, file_content=sess.original_content or ""
+        )
 
         reminder = """You sent a text message instead of taking action.
 
 To complete your task, you must submit your edits using the CLI tool:
 
-    editor-submit submit-success -m "Description of changes" -f /path/to/edited/file
+    editor_submit submit-success -m "Description of changes" -f /path/to/edited/file
 
 If you cannot complete the edit, declare failure:
 
-    editor-submit submit-failure -m "Reason for failure"
+    editor_submit submit-failure -m "Reason for failure"
 
 Do NOT send text messages - execute your plan with docker_exec."""
 
+        @script_handler
+        def editor_bootstrap(b: ScriptBuilder, sess: EditorDockerSession) -> ScriptGen:
+            yield None  # prime
+            yield from b.exec_ok(sess.runtime, ["editor_submit", "materialize", "/workspace"], timeout_ms=5000)
+
+        b = ScriptBuilder()
         handlers: list[BaseHandler] = [
+            editor_bootstrap(b, sess),
             AbortIf(lambda: not isinstance(sess.submit_server.state, SubmitStatePending)),
             MaxTurnsHandler(max_turns=max_turns),
             RedirectOnTextMessageHandler(reminder),
@@ -79,7 +94,7 @@ async def run_editor_docker_agent(
     """Run the docker-editor agent with step-runner or real model.
 
     - Starts a docker exec runtime + submit server via editor_docker_session
-    - Runs /init to get system prompt (includes file content and prompt from MCP resource)
+    - Materializes the file into the container and builds the system prompt on the host
     - Runs Agent with AllowAnyToolOrTextMessage and termination on submit-success/failure
     - Writes submitted content back to host file on success
 

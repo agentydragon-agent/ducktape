@@ -98,3 +98,7 @@ class EditorSubmitServer(EnhancedFastMCP):
     @property
     def state(self) -> SubmitState:
         return self._state
+
+    @property
+    def edit_prompt(self) -> str:
+        return self._prompt

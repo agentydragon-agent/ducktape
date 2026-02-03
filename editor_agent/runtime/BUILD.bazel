@@ -8,13 +8,11 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    data = glob(["docs/**/*.md"]),
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
         "//agent_pkg/runtime:mcp",
-        "//agent_pkg/runtime:output",
         "//cli_util:decorators",
         "//cli_util:logging",
         "@pypi//typer",
@@ -30,7 +28,6 @@ py_binary(
     deps = [
         ":constants",
         "//agent_pkg/runtime:mcp",
-        "//agent_pkg/runtime:output",
         "//cli_util:decorators",
         "//cli_util:logging",
         "@pypi//typer_slim",
@@ -48,23 +45,6 @@ pkg_tar(
     strip_prefix = ".",
 )
 
-# Wrapper script to put editor-submit on PATH
-pkg_tar(
-    name = "editor_submit_wrapper_tar",
-    srcs = ["editor-submit"],
-    mode = "0755",
-    package_dir = "/usr/local/bin",
-)
-
-# Package the /init script
-pkg_tar(
-    name = "init_tar",
-    srcs = ["//editor_agent/host:init_script"],
-    mode = "0755",
-    package_dir = "/",
-)
-
-# OCI image combining base + Python app + init script
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
@@ -74,14 +54,11 @@ oci_image(
         "-c",
     ],
     env = {
+        "PATH": "/app:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
     },
-    tars = [
-        ":editor_submit_tar",
-        ":editor_submit_wrapper_tar",
-        ":init_tar",
-    ],
+    tars = [":editor_submit_tar"],
     workdir = "/workspace",
 )
 

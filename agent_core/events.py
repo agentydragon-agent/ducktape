@@ -22,21 +22,6 @@ from pydantic import BaseModel, Field
 from agent_core.tool_provider import ToolResult
 from openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, ResponsesRequest
 
-__all__ = [
-    "REFLECTION_EVENT_TYPES",
-    "AgentEvent",
-    "ApiRequest",
-    "AssistantText",
-    "EventType",
-    "GroundTruthUsage",
-    "ReasoningItem",
-    "Response",
-    "SystemText",
-    "ToolCall",
-    "ToolCallOutput",
-    "UserText",
-]
-
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
 class GroundTruthUsage(BaseModel):
@@ -118,8 +103,7 @@ EventType = Annotated[
     Field(discriminator="type"),
 ]
 
-# Alias for cleaner imports
-AgentEvent = EventType
-
-# Event types relevant for GEPA reflection - excludes ApiRequest/Response to prevent O(n²) context blowup
-REFLECTION_EVENT_TYPES = (ToolCall, ToolCallOutput, AssistantText, ReasoningItem)
+# All event types that can appear in an agent transcript or be logged.
+TranscriptEvent = (
+    SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem | Response | ApiRequest
+)

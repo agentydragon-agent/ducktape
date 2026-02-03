@@ -3,20 +3,12 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
-# Init script for the container image (called as /init)
-filegroup(
-    name = "init_script",
-    srcs = ["definition/init"],
-    visibility = ["//editor_agent/runtime:__pkg__"],
-)
-
 # NOTE: No aggregator target - use specific per-file targets like :agent_runner, :cli, etc.
 # This is the Gazelle-compatible pattern (python_generation_mode = file)
 
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    data = glob(["definition/**/*"]),
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -91,6 +83,7 @@ py_test(
 py_library(
     name = "agent_runner",
     srcs = ["agent_runner.py"],
+    data = ["system_prompt.md.j2"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":runner",
@@ -99,12 +92,13 @@ py_library(
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
+        "//agent_core:script_handler",
         "//agent_core:turn_limit",
-        "//agent_pkg/host:init_runner",
         "//mcp_infra/display:rich_display",
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
+        "@pypi//jinja2",
     ],
 )
 
