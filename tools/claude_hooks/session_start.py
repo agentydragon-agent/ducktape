@@ -200,7 +200,11 @@ def format_environment_summary() -> str:
 
 
 def emit_session_context(
-    collector: LogCollector, log_file: Path, proxy: proxy_setup.ProxySetup, podman: podman_service.PodmanSetup | None
+    collector: LogCollector,
+    log_file: Path,
+    proxy: proxy_setup.ProxySetup,
+    podman: podman_service.PodmanSetup | None,
+    precommit: PrecommitSetup | None,
 ) -> None:
     """Emit compact context summary for Claude Code transcript.
 
@@ -216,6 +220,7 @@ def emit_session_context(
         status=status,
         proxy=proxy,
         podman=podman,
+        precommit=precommit,
         log_entries=collector.buffer,
         has_github_token=bool(os.environ.get("DUCKTAPE_CI_READ_GITHUB_TOKEN")),
         log_file=log_file,
@@ -224,13 +229,24 @@ def emit_session_context(
     sys.stdout.flush()
 
 
-def install_git_precommit_hook(project_dir: Path) -> None:
+class PrecommitSetup(BaseModel):
+    """Result of pre-commit hook installation."""
+
+    hook_installed: bool = False
+    install_hooks_pid: int | None = None
+
+
+def install_git_precommit_hook(project_dir: Path) -> PrecommitSetup:
     """Install git pre-commit hook using the pre-commit CLI.
 
     If `pre-commit` is not on PATH, installs it via pip first.
     pre-commit is not pre-installed in Claude Code on the web's container.
     pre-commit itself handles missing .git, missing config, and idempotent installs.
+
+    After installing the hook, launches `pre-commit install-hooks` in the background
+    to eagerly pre-install hook environments so the first commit doesn't pay that cost.
     """
+    result = PrecommitSetup()
     precommit = shutil.which("pre-commit")
     if not precommit:
         logger.info("pre-commit not found on PATH, installing via pip...")
@@ -239,11 +255,11 @@ def install_git_precommit_hook(project_dir: Path) -> None:
             logger.info("Installed pre-commit via pip")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.warning("Failed to install pre-commit via pip: %s", e)
-            return
+            return result
         precommit = shutil.which("pre-commit")
         if not precommit:
             logger.warning("pre-commit still not found on PATH after pip install")
-            return
+            return result
 
     try:
         version = subprocess.run([precommit, "--version"], capture_output=True, text=True, check=True, timeout=5)
@@ -252,19 +268,44 @@ def install_git_precommit_hook(project_dir: Path) -> None:
         pass
 
     try:
-        result = subprocess.run(
+        install_result = subprocess.run(
             [precommit, "install"], check=False, cwd=project_dir, capture_output=True, text=True, timeout=30
         )
-        if result.returncode == 0:
+        if install_result.returncode == 0:
             logger.info("Installed git pre-commit hook")
+            result.hook_installed = True
         else:
-            logger.warning("pre-commit install failed: %s", result.stderr)
+            logger.warning("pre-commit install failed: %s", install_result.stderr)
     except subprocess.TimeoutExpired:
         logger.warning("pre-commit install timed out")
 
-    # TODO: Run `pre-commit install-hooks` in the background to eagerly pre-install
-    # hook environments (especially the ansible language:python venv). Without this,
-    # the first commit pays the cost of creating the venv and downloading ansible.
+    if result.hook_installed:
+        # Launch install-hooks in the background to eagerly pre-install hook
+        # environments (especially the ansible language:python venv). Without this,
+        # the first commit pays the cost of creating the venv and downloading ansible.
+        # pre-commit uses flock on ~/.cache/pre-commit/.lock, so this is safe to run
+        # concurrently with a hook-triggered run.
+        try:
+            log_dir = Path.home() / ".cache" / "claude-hooks"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_fh = (log_dir / "pre-commit-install-hooks.log").open("w")
+            proc = subprocess.Popen(
+                [precommit, "install-hooks"],
+                cwd=project_dir,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+            result.install_hooks_pid = proc.pid
+            logger.info(
+                "Started background pre-commit install-hooks (pid %d), log: %s",
+                proc.pid,
+                log_dir / "pre-commit-install-hooks.log",
+            )
+        except OSError as e:
+            logger.warning("Failed to start background pre-commit install-hooks: %s", e)
+
+    return result
 
 
 class LogCollector(logging.handlers.MemoryHandler):
@@ -441,7 +482,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
     # Unpack with explicit type annotations for mypy
     proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     podman_result: podman_service.PodmanSetup | BaseException = results[1]
-    git_result: None | BaseException = results[2]
+    git_result: PrecommitSetup | BaseException = results[2]
     nix_result: Path | None | BaseException = results[3]
     bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[4]
     buildbuddy_result: str | None | BaseException = results[5]
@@ -535,7 +576,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
 
     # Render agent context from structured results
     podman = None if isinstance(podman_result, BaseException) else podman_result
-    emit_session_context(collector=collector, log_file=log_file, proxy=proxy_result, podman=podman)
+    precommit = None if isinstance(git_result, BaseException) else git_result
+    emit_session_context(collector=collector, log_file=log_file, proxy=proxy_result, podman=podman, precommit=precommit)
 
 
 async def async_main() -> None:
