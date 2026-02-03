@@ -11,8 +11,7 @@ export function getStatusColor(status: AgentRunStatus): string {
       return "bg-blue-100 text-blue-800";
     case "completed":
       return "bg-green-100 text-green-800";
-    case "max_turns_exceeded":
-    case "context_length_exceeded":
+    case "timed_out":
       return "bg-yellow-100 text-yellow-800";
     case "reported_failure":
       return "bg-red-100 text-red-800";

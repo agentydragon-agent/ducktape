@@ -18,7 +18,7 @@ props gepa --max-metric-calls 100
 
 ## Feedback
 
-GEPA receives rich feedback for each evaluation, including successful runs, max_turns_exceeded, and context_length_exceeded cases:
+GEPA receives rich feedback for each evaluation, including successful and timed_out cases:
 
 **1. Execution Traces** (from `events` table):
 
@@ -39,30 +39,21 @@ FALSE POSITIVES TRIGGERED:
 SUMMARY: The critic focused on runtime issues but neglected...
 ```
 
-**2b. Max Turns Exceeded** (when critic ran out of turns before submitting):
+**2b. Timed Out** (when critic timed out before submitting):
 
 ```
-critic_output: {"tag": "max_turns_exceeded", "max_turns": 100}
+critic_output: {"tag": "timed_out"}
 grader_output: null
 score: 0.0
 trajectory: includes all tool calls/events but no critique_payload
 ```
 
-**2c. Context Length Exceeded** (when prompt was too long for the model):
-
-```
-critic_output: {"tag": "context_length_exceeded", "error_message": "Error code: 400 - ..."}
-grader_output: null
-score: 0.0
-trajectory: empty or incomplete (failed before agent could run)
-```
-
-The reflection LLM sees the full discriminated union (success, max_turns_exceeded, or context_length_exceeded) and can learn from cases where the critic got stuck, looped, wasted turns, or had prompts that were too long.
+The reflection LLM sees the discriminated union (success or timed_out) and can learn from cases where the critic got stuck or looped.
 
 ## Key Types
 
 - `Example`: Training example from database (snapshot_slug, scope, scope_hash) - ORM model from `db/examples.py`
-- `CriticTrajectory`: Execution trace (transcript_id, events, critique_payload or None if max_turns)
+- `CriticTrajectory`: Execution trace (transcript_id, events, critique_payload or None if failed)
 - `CriticOutput`: Evaluation result (critic_output discriminated union, grader_output or None, critique_id or None)
 - `ReflectionExample`: Feedback for reflection LLM (current_text, score, trajectory, critic_output, grader_output or None)
 - `CriticAdapter`: GEPA adapter wrapping Agent + grader

@@ -73,8 +73,7 @@ def upgrade() -> None:
         CREATE TYPE agent_run_status_enum AS ENUM (
             'in_progress',
             'completed',
-            'max_turns_exceeded',
-            'context_length_exceeded',
+            'timed_out',
             'reported_failure'
         )
     """)
@@ -160,7 +159,7 @@ Returns NULL for lcb95/ucb95 when n < 2 (insufficient samples for CI).'
     op.execute("""
         COMMENT ON FUNCTION agg_status_counts(agent_run_status_enum[]) IS
         'Aggregates an array of status values into JSONB counts. Used by aggregate views.
-Example: agg_status_counts(array_agg(status)) -> {"completed": 5, "max_turns_exceeded": 2}'
+Example: agg_status_counts(array_agg(status)) -> {"completed": 5, "timed_out": 2}'
     """)
 
     # Helper: merge array of status count JSONBs (for re-aggregation)
@@ -1056,8 +1055,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
             postgresql.ENUM(
                 "in_progress",
                 "completed",
-                "max_turns_exceeded",
-                "context_length_exceeded",
+                "timed_out",
                 "reported_failure",
                 name="agent_run_status_enum",
                 create_type=False,
@@ -1087,9 +1085,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     op.execute(
         "COMMENT ON COLUMN agent_runs.type_config IS 'JSONB with agent_type discriminator and type-specific fields'"
     )
-    op.execute(
-        "COMMENT ON COLUMN agent_runs.status IS 'Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure'"
-    )
+    op.execute("COMMENT ON COLUMN agent_runs.status IS 'Terminal status of the agent run'")
     op.execute(
         "COMMENT ON COLUMN agent_runs.container_exit_code IS 'Container exit code (NULL if still running or not container-based)'"
     )
@@ -2610,7 +2606,7 @@ a critique to an occurrence that could not have been found from those files.'
         )
         CROSS JOIN true_positive_occurrences tpo
         WHERE (cr.type_config->>'agent_type') = 'critic'
-          AND cr.status = ANY (ARRAY['max_turns_exceeded'::agent_run_status_enum, 'context_length_exceeded'::agent_run_status_enum])
+          AND cr.status = 'timed_out'::agent_run_status_enum
           AND (cr.type_config->'example'->>'snapshot_slug') = tpo.snapshot_slug
           AND is_tp_in_expected_recall_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
     """)
