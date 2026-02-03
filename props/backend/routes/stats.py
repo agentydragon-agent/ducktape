@@ -7,15 +7,18 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from props.backend.auth import require_admin_access
+from props.backend.deps import get_admin_db
 from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind
 from props.core.splits import Split
+from props.db.database import Database
 from props.db.examples import Example, count_available_examples_by_scope_all
 from props.db.models import (
     AgentDefinition,
@@ -26,19 +29,8 @@ from props.db.models import (
     Snapshot,
     StatsWithCI,
 )
-from props.db.session import get_session
 
 router = APIRouter(dependencies=[Depends(require_admin_access)])
-
-
-class DefinitionInfo(BaseModel):
-    image_digest: str
-    agent_type: AgentType
-    created_at: datetime
-
-
-class DefinitionsResponse(BaseModel):
-    definitions: list[DefinitionInfo]
 
 
 class SplitScopeStats(BaseModel):
@@ -77,8 +69,8 @@ def to_split_scope_stats(row: RecallByDefinitionSplitKind, total_available: int)
 
 
 @router.get("/overview")
-def get_overview() -> OverviewResponse:
-    with get_session() as session:
+def get_overview(db: Annotated[Database, Depends(get_admin_db)]) -> OverviewResponse:
+    with db.session() as session:
         example_counts = count_available_examples_by_scope_all(session, [Split.TRAIN, Split.VALID])
 
         # Get ALL critic definitions, not just those with stats
@@ -120,22 +112,6 @@ def get_overview() -> OverviewResponse:
         return OverviewResponse(definitions=rows, example_counts=dict(nested_counts), total_definitions=len(rows))
 
 
-@router.get("/definitions")
-def list_definitions(agent_type: AgentType | None = None) -> DefinitionsResponse:
-    """List all agent definitions, optionally filtered by type."""
-    with get_session() as session:
-        query = session.query(AgentDefinition)
-        if agent_type:
-            query = query.filter_by(agent_type=agent_type)
-        definitions = query.order_by(AgentDefinition.created_at.desc()).all()
-        return DefinitionsResponse(
-            definitions=[
-                DefinitionInfo(image_digest=d.digest, agent_type=AgentType(d.agent_type), created_at=d.created_at)
-                for d in definitions
-            ]
-        )
-
-
 # Per-example stats for a definition
 class ExampleStats(BaseModel):
     snapshot_slug: SnapshotSlug
@@ -157,9 +133,11 @@ class DefinitionDetailResponse(BaseModel):
 
 
 @router.get("/definitions/{image_digest}")
-def get_definition_detail(image_digest: str) -> DefinitionDetailResponse:
+def get_definition_detail(
+    image_digest: str, db: Annotated[Database, Depends(get_admin_db)]
+) -> DefinitionDetailResponse:
     """Get detailed stats for a single definition including per-example breakdown."""
-    with get_session() as session:
+    with db.session() as session:
         definition = session.query(AgentDefinition).filter_by(id=image_digest).first()
         if not definition:
             raise HTTPException(status_code=404, detail=f"Definition not found: {image_digest}")
@@ -241,7 +219,10 @@ class ExampleDetailResponse(BaseModel):
 
 @router.get("/examples")
 def get_example_detail(
-    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, files_hash: str | None = None
+    snapshot_slug: SnapshotSlug,
+    example_kind: ExampleKind,
+    db: Annotated[Database, Depends(get_admin_db)],
+    files_hash: str | None = None,
 ) -> ExampleDetailResponse:
     """Get detailed information about a specific example.
 
@@ -257,7 +238,7 @@ def get_example_detail(
         - Per-definition run statistics
         - Aggregate metrics
     """
-    with get_session() as session:
+    with db.session() as session:
         # Validate and fetch the example
         query = session.query(Example).filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind)
 
