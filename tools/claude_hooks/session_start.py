@@ -236,12 +236,6 @@ class PrecommitNotInstalled(BaseModel):
     kind: Literal["not_installed"] = "not_installed"
 
 
-class PrecommitInstalled(BaseModel):
-    """pre-commit hook installed, but background env setup was not started."""
-
-    kind: Literal["installed"] = "installed"
-
-
 class PrecommitInstallingHooks(BaseModel):
     """pre-commit hook installed and background `install-hooks` is running."""
 
@@ -249,7 +243,7 @@ class PrecommitInstallingHooks(BaseModel):
     pid: int
 
 
-PrecommitSetup = PrecommitNotInstalled | PrecommitInstalled | PrecommitInstallingHooks
+PrecommitSetup = PrecommitNotInstalled | PrecommitInstallingHooks
 
 
 def install_git_precommit_hook(project_dir: Path) -> PrecommitSetup:
@@ -303,26 +297,18 @@ def install_git_precommit_hook(project_dir: Path) -> PrecommitSetup:
     # the first commit pays the cost of creating the venv and downloading ansible.
     # pre-commit uses flock on ~/.cache/pre-commit/.lock, so this is safe to run
     # concurrently with a hook-triggered run.
-    try:
-        log_dir = Path.home() / ".cache" / "claude-hooks"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_fh = (log_dir / "pre-commit-install-hooks.log").open("w")
-        proc = subprocess.Popen(
-            [precommit, "install-hooks"],
-            cwd=project_dir,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        logger.info(
-            "Started background pre-commit install-hooks (pid %d), log: %s",
-            proc.pid,
-            log_dir / "pre-commit-install-hooks.log",
-        )
-        return PrecommitInstallingHooks(pid=proc.pid)
-    except OSError as e:
-        logger.warning("Failed to start background pre-commit install-hooks: %s", e)
-        return PrecommitInstalled()
+    log_dir = Path.home() / ".cache" / "claude-hooks"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_fh = (log_dir / "pre-commit-install-hooks.log").open("w")
+    proc = subprocess.Popen(
+        [precommit, "install-hooks"], cwd=project_dir, stdout=log_fh, stderr=subprocess.STDOUT, start_new_session=True
+    )
+    logger.info(
+        "Started background pre-commit install-hooks (pid %d), log: %s",
+        proc.pid,
+        log_dir / "pre-commit-install-hooks.log",
+    )
+    return PrecommitInstallingHooks(pid=proc.pid)
 
 
 class LogCollector(logging.handlers.MemoryHandler):
