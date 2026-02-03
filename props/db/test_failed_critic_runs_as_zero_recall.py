@@ -18,12 +18,12 @@ from props.testing.fixtures.runs import (
 
 
 def test_failed_critic_run_appears_with_zero_credit(synced_test_session: Session, example_subtract_orm: Example):
-    """Test that max_turns_exceeded critic runs generate zero-credit rows."""
+    """Test that timed_out critic runs generate zero-credit rows."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
         example=example_subtract_orm.to_example_spec(),
         model="test-critic-model",
-        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
+        status=AgentRunStatus.TIMED_OUT,
     )
     synced_test_session.add(critic_run)
     synced_test_session.commit()
@@ -42,33 +42,13 @@ def test_failed_critic_run_appears_with_zero_credit(synced_test_session: Session
     assert result.found_credit == 0.0
 
 
-def test_context_length_exceeded_also_counted_as_zero(synced_test_session: Session, example_subtract_orm: Example):
-    """Test that context_length_exceeded critic runs also generate zero-credit rows."""
-    critic_run = make_fake_critic_run(
-        session=synced_test_session,
-        example=example_subtract_orm.to_example_spec(),
-        model="test-critic-model",
-        status=AgentRunStatus.CONTEXT_LENGTH_EXCEEDED,
-    )
-    synced_test_session.add(critic_run)
-    synced_test_session.commit()
-
-    result = synced_test_session.execute(
-        text("SELECT found_credit FROM tp_occurrence_credits WHERE critic_run_id = :run_id"),
-        {"run_id": str(critic_run.agent_run_id)},
-    ).fetchone()
-
-    assert result is not None
-    assert result.found_credit == 0.0
-
-
 def test_only_expected_occurrences_included_for_failures(synced_test_session: Session, example_subtract_orm: Example):
     """Test that failed runs only generate zero-credit rows for occurrences in expected recall scope."""
     critic_run = make_fake_critic_run(
         session=synced_test_session,
         example=example_subtract_orm.to_example_spec(),
         model="test-critic-model",
-        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
+        status=AgentRunStatus.TIMED_OUT,
     )
     synced_test_session.add(critic_run)
     synced_test_session.commit()
@@ -95,7 +75,7 @@ def test_whole_snapshot_failure_includes_all_occurrences(synced_test_session: Se
         session=synced_test_session,
         example=example.to_example_spec(),
         model="test-critic-model",
-        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
+        status=AgentRunStatus.TIMED_OUT,
     )
     synced_test_session.add(critic_run)
     synced_test_session.commit()
@@ -168,7 +148,7 @@ def test_multiple_occurrences_with_or_logic(synced_test_session: Session, exampl
         session=synced_test_session,
         example=example_multi_tp_orm.to_example_spec(),
         model="test-critic-model",
-        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
+        status=AgentRunStatus.TIMED_OUT,
     )
     synced_test_session.add(critic_run)
     synced_test_session.commit()
@@ -188,9 +168,7 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
     """Test that multiple grader runs for same critic run don't cause overweighting."""
     # Create 1 failed critic run
     failed_run = make_fake_critic_run(
-        session=synced_test_session,
-        example=example_subtract_orm.to_example_spec(),
-        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
+        session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.TIMED_OUT
     )
     synced_test_session.add(failed_run)
 
@@ -223,7 +201,7 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
 
     assert sum(result.status_counts.values()) == 2, "Should count both critic runs"
     assert result.status_counts[AgentRunStatus.COMPLETED] == 1
-    assert result.status_counts[AgentRunStatus.MAX_TURNS_EXCEEDED] == 1
+    assert result.status_counts[AgentRunStatus.TIMED_OUT] == 1
 
     # SUM credits per critique: 0.2+0.3+0.4=0.9. Mean across 2 runs: (0.0 + 0.9) / 2 = 0.45
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
@@ -245,24 +223,15 @@ def test_aggregated_view_counts_total_and_failed_runs(synced_test_session: Sessi
         )
         synced_test_session.add(grader_run)
 
-    # Create 2 max_turns_exceeded failures
+    # Create 2 timed_out failures
     for _ in range(2):
         synced_test_session.add(
             make_fake_critic_run(
                 session=synced_test_session,
                 example=example_subtract_orm.to_example_spec(),
-                status=AgentRunStatus.MAX_TURNS_EXCEEDED,
+                status=AgentRunStatus.TIMED_OUT,
             )
         )
-
-    # Create 1 context_length_exceeded failure
-    synced_test_session.add(
-        make_fake_critic_run(
-            session=synced_test_session,
-            example=example_subtract_orm.to_example_spec(),
-            status=AgentRunStatus.CONTEXT_LENGTH_EXCEEDED,
-        )
-    )
 
     synced_test_session.commit()
 
@@ -272,10 +241,9 @@ def test_aggregated_view_counts_total_and_failed_runs(synced_test_session: Sessi
         .one()
     )
 
-    assert sum(result.status_counts.values()) == 6
+    assert sum(result.status_counts.values()) == 5
     assert result.status_counts[AgentRunStatus.COMPLETED] == 3
-    assert result.status_counts[AgentRunStatus.MAX_TURNS_EXCEEDED] == 2
-    assert result.status_counts[AgentRunStatus.CONTEXT_LENGTH_EXCEEDED] == 1
+    assert result.status_counts[AgentRunStatus.TIMED_OUT] == 2
 
 
 def test_aggregated_view_counts_zero_when_no_failures(synced_test_session: Session, example_subtract_orm: Example):
@@ -301,7 +269,7 @@ def test_aggregated_view_counts_zero_when_no_failures(synced_test_session: Sessi
 
     assert sum(result.status_counts.values()) == 3
     assert result.status_counts[AgentRunStatus.COMPLETED] == 3
-    assert result.status_counts.get(AgentRunStatus.MAX_TURNS_EXCEEDED, 0) == 0
+    assert result.status_counts.get(AgentRunStatus.TIMED_OUT, 0) == 0
 
 
 def test_aggregated_recall_by_example_has_correct_weighting(
@@ -310,9 +278,7 @@ def test_aggregated_recall_by_example_has_correct_weighting(
     """Test that aggregated_recall_by_example correctly weights critic runs."""
     # Create 1 failed critic run
     failed_run = make_fake_critic_run(
-        session=synced_test_session,
-        example=example_subtract_orm.to_example_spec(),
-        status=AgentRunStatus.MAX_TURNS_EXCEEDED,
+        session=synced_test_session, example=example_subtract_orm.to_example_spec(), status=AgentRunStatus.TIMED_OUT
     )
     synced_test_session.add(failed_run)
 
@@ -349,7 +315,7 @@ def test_aggregated_recall_by_example_has_correct_weighting(
 
     assert sum(result.status_counts.values()) == 2
     assert result.status_counts[AgentRunStatus.COMPLETED] == 1
-    assert result.status_counts[AgentRunStatus.MAX_TURNS_EXCEEDED] == 1
+    assert result.status_counts[AgentRunStatus.TIMED_OUT] == 1
 
     # SUM credits per critique: 0.1+0.2+0.3=0.6. Mean across 2 runs: (0.0 + 0.6) / 2 = 0.3
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0

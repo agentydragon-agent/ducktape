@@ -295,14 +295,13 @@ async def prompt_improve_cmd(
         n_completed = best.status_counts.get(AgentRunStatus.COMPLETED, 0)
         n_examples_val = best.n_examples or 0
         zero_count = best.zero_count or 0
-        stuck_count = best.status_counts.get(AgentRunStatus.MAX_TURNS_EXCEEDED, 0)
-        context_count = best.status_counts.get(AgentRunStatus.CONTEXT_LENGTH_EXCEEDED, 0)
+        timed_out_count = best.status_counts.get(AgentRunStatus.TIMED_OUT, 0)
 
         console.print(
             f"  Valid (whole_snapshot): recall={fmt_pct(recall_val)}, "
             f"LCB={fmt_pct(lcb_val)}, "
             f"n={n_completed}/{n_examples_val}, "
-            f"{zero_count}z {stuck_count}s {context_count}c"
+            f"{zero_count}z {timed_out_count}t"
         )
 
     # 2. Select training examples

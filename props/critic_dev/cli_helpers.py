@@ -81,8 +81,8 @@ def show_run_status(parent_agent_run_id: UUID | None = None) -> None:
         grader_q = grader_q.group_by(AgentRun.status)
         console.print(build_table_from_schema(grader_q.all(), cols))
 
-        console.print("\n[bold]Definitions with most max_turns_exceeded (top 5):[/bold]")
-        mt = func.count().filter(AgentRun.status == AgentRunStatus.MAX_TURNS_EXCEEDED)
+        console.print("\n[bold]Definitions with most timed_out (top 5):[/bold]")
+        mt = func.count().filter(AgentRun.status == AgentRunStatus.TIMED_OUT)
         pq = session.query(
             AgentRun.image_digest.label("image_digest"), mt.label("mt"), func.count().label("total")
         ).filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC)
@@ -91,7 +91,7 @@ def show_run_status(parent_agent_run_id: UUID | None = None) -> None:
         pq = pq.group_by(AgentRun.image_digest).order_by(mt.desc()).limit(5)
         pcols: list[ColumnDef[Any, Any]] = [
             ColumnDef("Definition", lambda r: r.image_digest, width=20),
-            ColumnDef("MaxTurns", lambda r: r.mt, str, justify="right"),
+            ColumnDef("TimedOut", lambda r: r.mt, str, justify="right"),
             ColumnDef("Total", lambda r: r.total, str, justify="right"),
             ColumnDef(
                 "Rate", lambda r: (r.mt / r.total * 100) if r.total > 0 else 0, lambda v: f"{v:.1f}%", justify="right"

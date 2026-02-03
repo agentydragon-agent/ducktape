@@ -54,8 +54,7 @@ class HasStatusCounts(Protocol):
 # IN_PROGRESS excluded since it's transient, not a terminal outcome
 STATUS_DISPLAY: dict[AgentRunStatus, tuple[str, int]] = {
     AgentRunStatus.COMPLETED: ("✓", 4),
-    AgentRunStatus.MAX_TURNS_EXCEEDED: ("S", 3),
-    AgentRunStatus.CONTEXT_LENGTH_EXCEEDED: ("C", 3),
+    AgentRunStatus.TIMED_OUT: ("T", 3),
     AgentRunStatus.REPORTED_FAILURE: ("F", 3),
 }
 

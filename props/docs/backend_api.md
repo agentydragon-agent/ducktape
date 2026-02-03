@@ -36,7 +36,7 @@ print(f"Recall: {status.total_credit}/{status.max_credit}")
 
 **Note:** `wait_until_graded()` validates that:
 
-- The critic run is finished (COMPLETED, FAILED, or MAX_TURNS_EXCEEDED)
+- The critic run is finished (COMPLETED, FAILED, or TIMED_OUT)
 - The critic run was started by the current agent
 
 ## OpenAPI Schema

@@ -101,7 +101,7 @@
                 </td>
                 <td class="px-3 py-2 text-right text-gray-400">{stats.zero_count}</td>
                 <td class="px-3 py-2 text-right">{stats.status_counts?.completed ?? 0}</td>
-                <td class="px-3 py-2 text-right text-gray-400">{stats.status_counts?.max_turns_exceeded ?? 0}</td>
+                <td class="px-3 py-2 text-right text-gray-400">{stats.status_counts?.timed_out ?? 0}</td>
               {:else}
                 <td class="px-3 py-2 text-right text-gray-300">—</td>
                 <td class="px-3 py-2 text-right text-gray-300">—</td>
