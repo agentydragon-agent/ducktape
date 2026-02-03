@@ -1342,6 +1342,8 @@ class AgentRun(Base):
     )
 
     # Container lifecycle timestamps
+    # TODO: Populate started_at when container actually starts executing (currently not set).
+    # Could compute deadline as started_at + timeout_seconds for display/monitoring.
     started_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP, nullable=True, comment="When container started executing"
     )
