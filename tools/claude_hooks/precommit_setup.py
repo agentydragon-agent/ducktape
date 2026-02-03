@@ -19,14 +19,33 @@ class PrecommitNotInstalled(BaseModel):
     kind: Literal["not_installed"] = "not_installed"
 
 
+class PrecommitReady(BaseModel):
+    """pre-commit hook was already installed; environments assumed ready."""
+
+    kind: Literal["ready"] = "ready"
+
+
 class PrecommitInstallingHooks(BaseModel):
-    """pre-commit hook installed and background `install-hooks` is running."""
+    """pre-commit hook freshly installed and background `install-hooks` is running."""
 
     kind: Literal["installing_hooks"] = "installing_hooks"
     pid: int
 
 
-PrecommitSetup = PrecommitNotInstalled | PrecommitInstallingHooks
+PrecommitSetup = PrecommitNotInstalled | PrecommitReady | PrecommitInstallingHooks
+
+
+def _hook_already_installed(project_dir: Path) -> bool:
+    """Check whether a pre-commit hook is already present in the git repo."""
+    hook = project_dir / ".git" / "hooks" / "pre-commit"
+    if not hook.exists():
+        return False
+    try:
+        content = hook.read_text(errors="replace")
+    except OSError:
+        return False
+    # pre-commit's generated hook contains this marker
+    return "pre-commit" in content
 
 
 def install_precommit(project_dir: Path) -> PrecommitSetup:
@@ -36,9 +55,11 @@ def install_precommit(project_dir: Path) -> PrecommitSetup:
     pre-commit is not pre-installed in Claude Code on the web's container.
     pre-commit itself handles missing .git, missing config, and idempotent installs.
 
-    After installing the hook, launches `pre-commit install-hooks` in the background
-    to eagerly pre-install hook environments so the first commit doesn't pay that cost.
+    If the hook was already installed, skips the background `install-hooks` step
+    (environments are assumed to already be in place).
     """
+    already_installed = _hook_already_installed(project_dir)
+
     precommit = shutil.which("pre-commit")
     if not precommit:
         logger.info("pre-commit not found on PATH, installing via pip...")
@@ -74,6 +95,10 @@ def install_precommit(project_dir: Path) -> PrecommitSetup:
 
     if not hook_installed:
         return PrecommitNotInstalled()
+
+    if already_installed:
+        logger.info("pre-commit hook was already installed, skipping background install-hooks")
+        return PrecommitReady()
 
     # Launch install-hooks in the background to eagerly pre-install hook
     # environments (especially the ansible language:python venv). Without this,
