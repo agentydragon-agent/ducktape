@@ -21,7 +21,6 @@ from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
 from props.cli import common_options as opt
 from props.cli.cmd_db import db_app
-from props.cli.cmd_grade_validation import cmd_grade_validation
 from props.cli.cmd_gt import gt_app
 from props.cli.cmd_snapshot import snapshot_app
 from props.cli.cmd_stats import stats_app
@@ -412,9 +411,6 @@ except ImportError:
 
 # Stats command group
 app.add_typer(stats_app, name="stats")
-
-# Grade validation set command
-app.command("grade-validation")(cmd_grade_validation)
 
 
 # ---------- Shared helpers for run ----------
