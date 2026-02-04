@@ -26,7 +26,7 @@ from hamcrest import all_of, assert_that
 
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF
+from props.core.oci_utils import BUILTIN_TAG
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
@@ -97,11 +97,10 @@ async def test_prompt_improve_e2e_creates_package(e2e_stack, subtract_file_examp
     """Test improvement agent can create package directory in container."""
     mock = make_improvement_mock()
 
-    async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+    async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,
@@ -129,11 +128,10 @@ async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, im
 
     mock = make_improvement_mock()
 
-    async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+    async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=allowed_examples,
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,
@@ -151,8 +149,12 @@ async def test_prompt_improve_e2e_multiple_examples(e2e_stack, test_snapshot, im
 # =============================================================================
 
 
-def make_leaderboard_check_mock() -> PropsMock:
-    """Create mock that runs leaderboard and terminates."""
+@pytest.mark.timeout(180)
+@pytest.mark.requires_docker
+async def test_cli_leaderboard_in_improvement_agent(
+    e2e_stack, subtract_file_example, test_train_example_with_runs, improvement_image
+):
+    """Test that leaderboard CLI command works from improvement agent container."""
 
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
@@ -161,35 +163,10 @@ def make_leaderboard_check_mock() -> PropsMock:
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
 
-    return mock
-
-
-def make_hard_examples_check_mock() -> PropsMock:
-    """Create mock that runs hard-examples and terminates."""
-
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
-        yield None  # First request
-        result = yield from m.docker_exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
-        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
-
-    return mock
-
-
-@pytest.mark.timeout(180)
-@pytest.mark.requires_docker
-async def test_cli_leaderboard_in_improvement_agent(
-    e2e_stack, subtract_file_example, test_train_example_with_runs, improvement_image
-):
-    """Test that leaderboard CLI command works from improvement agent container."""
-    mock = make_leaderboard_check_mock()
-
-    async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+    async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,
@@ -205,13 +182,18 @@ async def test_cli_hard_examples_in_improvement_agent(
     e2e_stack, subtract_file_example, test_train_example_with_runs, improvement_image
 ):
     """Test that hard-examples CLI command works from improvement agent container."""
-    mock = make_hard_examples_check_mock()
 
-    async with e2e_stack(mock) as stack:
-        stack.push_image(improvement_image)
+    @PropsMock.mock()
+    def mock(m: PropsMock) -> PlayGen:
+        yield None  # First request
+        result = yield from m.docker_exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000)
+        assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
+        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
+
+    async with e2e_stack(mock, images=[improvement_image]) as stack:
         result = await stack.registry.run_improvement_agent(
             examples=[subtract_file_example],
-            baseline_image_refs=[CRITIC_IMAGE_REF],
+            baseline_image_refs=[BUILTIN_TAG],
             token_budget=100_000,
             improvement_model=stack.model,
             critic_model=stack.model,

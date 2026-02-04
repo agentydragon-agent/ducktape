@@ -23,7 +23,6 @@ import asyncio
 import contextlib
 import logging
 
-import aiodocker
 import pytest
 import pytest_bazel
 from hamcrest import all_of, assert_that
@@ -32,9 +31,8 @@ from agent_core.testing.responses import PlayGen, tool_roundtrip
 from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.core.agent_types import AgentType
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
-from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
-from props.core.splits import Split
+from props.core.oci_utils import BUILTIN_TAG
 from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.critic_dev.optimize.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -43,11 +41,9 @@ from props.critic_dev.optimize.orchestration_fixtures import (
     make_orchestration_grader_mock,
 )
 from props.critic_dev.shared import TargetMetric
-from props.db.agent_definition_ids import CRITIC_IMAGE_REF
 from props.db.database import Database
 from props.db.examples import Example
-from props.db.models import AgentRun, AgentRunStatus, GradingEdge, Snapshot
-from props.testing.fixtures.e2e_container import multi_model_e2e_stack
+from props.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props.testing.mocks import PropsMock
 
 logger = logging.getLogger(__name__)
@@ -58,8 +54,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 TEST_TIMEOUT_SECONDS = 60
 
 
-def make_psql_connectivity_mock() -> PropsMock:
-    """Create mock that tests psql connectivity then terminates."""
+@pytest.mark.timeout(120)
+@pytest.mark.requires_docker
+async def test_po_agent_psql_connectivity(e2e_stack, prompt_optimizer_image):
+    """Test that psql works from the agent container using PG* env vars."""
 
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
@@ -68,17 +66,7 @@ def make_psql_connectivity_mock() -> PropsMock:
         assert_that(result, all_of(exited_successfully(), stdout_contains("1")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "psql connectivity verified"])
 
-    return mock
-
-
-@pytest.mark.timeout(120)
-@pytest.mark.requires_docker
-async def test_po_agent_psql_connectivity(e2e_stack, prompt_optimizer_image):
-    """Test that psql works from the agent container using PG* env vars."""
-    mock = make_psql_connectivity_mock()
-
-    async with e2e_stack(mock) as stack:
-        stack.push_image(prompt_optimizer_image)
+    async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -91,23 +79,6 @@ async def test_po_agent_psql_connectivity(e2e_stack, prompt_optimizer_image):
 # =============================================================================
 # Optimizer → Critic Workflow Test
 # =============================================================================
-
-
-def make_critic_mock_with_issue() -> PropsMock:
-    """Create mock for critic that submits one issue."""
-
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
-        yield None  # First request
-        result = yield from m.docker_exec_roundtrip(["critique", "insert-issue", "test-issue-001", "Test issue"])
-        assert_that(result, exited_successfully())
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-occurrence", "test-issue-001", "subtract.py", "-s", "1", "-e", "5"]
-        )
-        assert_that(result, exited_successfully())
-        yield from m.docker_exec_roundtrip(["critique", "submit", "1", "Found 1 test issue"])
-
-    return mock
 
 
 @pytest.mark.timeout(180)
@@ -127,12 +98,20 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
         assert example is not None, f"No whole_snapshot example found for {test_snapshot}"
         example_spec = example.to_example_spec()
 
-    # First: run critic separately to verify it works
-    critic_mock = make_critic_mock_with_issue()
-    async with e2e_stack(critic_mock) as stack:
-        stack.push_image(critic_image)
+    @PropsMock.mock()
+    def critic_mock(m: PropsMock) -> PlayGen:
+        yield None  # First request
+        result = yield from m.docker_exec_roundtrip(["critique", "insert-issue", "test-issue-001", "Test issue"])
+        assert_that(result, exited_successfully())
+        result = yield from m.docker_exec_roundtrip(
+            ["critique", "insert-occurrence", "test-issue-001", "subtract.py", "-s", "1", "-e", "5"]
+        )
+        assert_that(result, exited_successfully())
+        yield from m.docker_exec_roundtrip(["critique", "submit", "1", "Found 1 test issue"])
+
+    async with e2e_stack(critic_mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
-            image_ref=CRITIC_IMAGE_REF,
+            image_ref=BUILTIN_TAG,
             example=example_spec,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -155,8 +134,12 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
 # =============================================================================
 
 
-def make_leaderboard_check_mock() -> PropsMock:
-    """Create mock that runs leaderboard and terminates."""
+@pytest.mark.timeout(120)
+@pytest.mark.requires_docker
+async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
+    """Test that leaderboard CLI command shows actual recall values from database."""
+    example, _critic_run, _grader_run = test_train_example_with_runs
+    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
@@ -165,20 +148,7 @@ def make_leaderboard_check_mock() -> PropsMock:
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
 
-    return mock
-
-
-@pytest.mark.timeout(120)
-@pytest.mark.requires_docker
-async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
-    """Test that leaderboard CLI command shows actual recall values from database."""
-    example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
-
-    mock = make_leaderboard_check_mock()
-
-    async with e2e_stack(mock) as stack:
-        stack.push_image(prompt_optimizer_image)
+    async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -188,8 +158,12 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
         )
 
 
-def make_hard_examples_check_mock() -> PropsMock:
-    """Create mock that runs hard-examples and terminates."""
+@pytest.mark.timeout(120)
+@pytest.mark.requires_docker
+async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
+    """Test that hard-examples CLI command shows example metrics."""
+    example, _critic_run, _grader_run = test_train_example_with_runs
+    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
     @PropsMock.mock()
     def mock(m: PropsMock) -> PlayGen:
@@ -198,20 +172,7 @@ def make_hard_examples_check_mock() -> PropsMock:
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
         yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
 
-    return mock
-
-
-@pytest.mark.timeout(120)
-@pytest.mark.requires_docker
-async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, prompt_optimizer_image):
-    """Test that hard-examples CLI command shows example metrics."""
-    example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
-
-    mock = make_hard_examples_check_mock()
-
-    async with e2e_stack(mock) as stack:
-        stack.push_image(prompt_optimizer_image)
+    async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
             budget=1.0,
             optimizer_model=stack.model,
@@ -224,29 +185,38 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
 # =============================================================================
 # Multi-Model Orchestration Tests
 # =============================================================================
-# These tests use MultiModelFakeOpenAI to route optimizer and critic to
-# different mocks, testing the full orchestration flow.
 
 
-def make_orchestration_optimizer_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
-    """Create optimizer mock that calls run_critic tool and waits for grading.
+@pytest.mark.timeout(180)
+@pytest.mark.requires_docker
+@pytest.mark.slow
+async def test_optimizer_orchestrates_critic(
+    synced_db: Database, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
+):
+    """Test optimizer can orchestrate critic runs with simulated grading.
 
-    Uses DirectToolProvider tools (not MCP):
-    - run_critic: calls backend REST API
-    - wait_until_graded_tool: polls database directly
+    This e2e test verifies the full orchestration flow:
+    1. Optimizer container starts with DirectToolProvider tools
+    2. Optimizer calls run_critic tool (REST API to backend)
+    3. Registry spawns critic container with different model
+    4. Critic runs, submits issues, completes
+    5. Background grader daemon processes edges
+    6. Optimizer's wait_until_graded_tool returns (polls database directly)
+    7. Optimizer reports success
+
+    Uses multi-model FakeOpenAIServer to route optimizer and critic to different mocks.
     """
+    snapshot_slug = test_snapshot
+    logger.info(f"Running orchestration test with snapshot: {snapshot_slug}")
 
     @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    def optimizer_mock(m: PropsMock) -> PlayGen:
         yield None  # First request (system message)
 
         # Call run_critic tool (DirectToolProvider tool that calls REST API)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id="builtin",  # Use builtin critic
-            example=example,
-            timeout_seconds=120,
-            budget_usd=None,
+            definition_id=BUILTIN_TAG, example=example, timeout_seconds=120, budget_usd=None
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -268,14 +238,8 @@ def make_orchestration_optimizer_mock(snapshot_slug: SnapshotSlug) -> PropsMock:
         # Report success
         yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
 
-    return mock
-
-
-def make_orchestration_critic_mock() -> PropsMock:
-    """Create critic mock that submits one issue and completes."""
-
     @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    def critic_mock(m: PropsMock) -> PlayGen:
         yield None  # First request (system message)
 
         # Insert an issue and occurrence
@@ -292,58 +256,6 @@ def make_orchestration_critic_mock() -> PropsMock:
         # Submit the critique
         yield from m.docker_exec_roundtrip(["critique", "submit", "1", "Found 1 orchestration test issue"])
 
-    return mock
-
-
-@pytest.mark.timeout(180)
-@pytest.mark.requires_docker
-@pytest.mark.slow
-async def test_optimizer_orchestrates_critic(
-    synced_db: Database,
-    db: Database,
-    async_docker_client: aiodocker.Docker,
-    docker_client,
-    e2e_registry_url: str,
-    prompt_optimizer_image,
-    critic_image,
-    grader_image,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """Test optimizer can orchestrate critic runs with simulated grading.
-
-    This e2e test verifies the full orchestration flow:
-    1. Optimizer container starts with DirectToolProvider tools
-    2. Optimizer calls run_critic tool (REST API to backend)
-    3. Registry spawns critic container with different model
-    4. Critic runs, submits issues, completes
-    5. Background grader daemon processes edges
-    6. Optimizer's wait_until_graded_tool returns (polls database directly)
-    7. Optimizer reports success
-
-    Uses MultiModelFakeOpenAI to route optimizer and critic to different mocks.
-    """
-    # Get a test snapshot with TRAIN split
-    with synced_db.session() as session:
-        snapshot = session.query(Snapshot).filter_by(split=Split.TRAIN).first()
-        if not snapshot:
-            pytest.skip("No TRAIN snapshots available for orchestration test")
-
-        # Verify there's an example for this snapshot
-        example = (
-            session.query(Example)
-            .filter_by(snapshot_slug=snapshot.slug, example_kind=ExampleKind.WHOLE_SNAPSHOT)
-            .first()
-        )
-        if not example:
-            pytest.skip(f"No whole_snapshot example for {snapshot.slug}")
-
-        snapshot_slug = SnapshotSlug(snapshot.slug)
-
-    logger.info(f"Running orchestration test with snapshot: {snapshot_slug}")
-
-    # Create mocks for all three agents
-    optimizer_mock = make_orchestration_optimizer_mock(snapshot_slug)
-    critic_mock = make_orchestration_critic_mock()
     grader_mock = make_orchestration_grader_mock()
 
     mocks = {
@@ -351,14 +263,7 @@ async def test_optimizer_orchestrates_critic(
         ORCHESTRATION_CRITIC_MODEL: critic_mock,
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
-    async with multi_model_e2e_stack(
-        mocks, db, async_docker_client, docker_client, e2e_registry_url, monkeypatch
-    ) as stack:
-        # Push all agent images through the proxy
-        stack.push_image(prompt_optimizer_image)
-        stack.push_image(critic_image)
-        stack.push_image(grader_image)
-
+    async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
         # Start grader daemon in background - it will sleep until there's drift
         grader_task: asyncio.Task[None] | None = None
 

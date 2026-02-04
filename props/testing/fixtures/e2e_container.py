@@ -18,11 +18,11 @@ Environment variables:
 Usage:
     @pytest.mark.requires_docker
     @pytest.mark.requires_postgres
-    async def test_critic_completes(e2e_stack, all_files_scope):
+    async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
         mock = make_critic_mock()
-        async with e2e_stack(mock) as stack:
+        async with e2e_stack(mock, images=[critic_image]) as stack:
             run_id = await stack.registry.run_critic(
-                image_ref="builtin",
+                image_ref=BUILTIN_TAG,
                 example=all_files_scope,
                 model=stack.model,
                 timeout_seconds=60,
@@ -30,6 +30,12 @@ Usage:
                 budget_usd=None,
             )
             # Assert on database state
+
+    # Multi-model usage (pass dict of mocks):
+    async def test_orchestration(e2e_stack, ...):
+        mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
+        async with e2e_stack(mocks, images=[...]) as stack:
+            ...
 """
 
 from __future__ import annotations
@@ -38,12 +44,11 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import AsyncIterator, Callable, Mapping
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import aiodocker
-import docker
 import pytest
 import pytest_asyncio
 import uvicorn
@@ -52,12 +57,13 @@ from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
 from props.config import PropsConfig
-from props.core.oci_utils import RegistryProxyConfig
+from props.core.docker_env import PROPS_NETWORK_NAME
+from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
-from props.testing.fake_openai_server import FakeOpenAIServer, MultiModelFakeOpenAI
-from props.testing.fixtures.e2e_infra import LoadedImage, push_image_to_proxy
+from props.testing.fake_openai_server import FakeOpenAIServer
+from test_util.oci import BazelImage, crane_push
 
 logger = logging.getLogger(__name__)
 
@@ -73,18 +79,46 @@ E2E_HOST_HOSTNAME = os.environ.get("PROPS_E2E_HOST_HOSTNAME", "host.docker.inter
 HOST_GATEWAY = {E2E_HOST_HOSTNAME: "host-gateway"} if E2E_HOST_HOSTNAME == "host.docker.internal" else {}
 
 
+@asynccontextmanager
+async def ensure_agent_network(docker_client: aiodocker.Docker) -> AsyncIterator[None]:
+    """Ensure the agent Docker network exists, creating it if needed.
+
+    For "host" networking (CI/Firecracker), this is a no-op.
+    For bridge networking, creates the network and removes it on cleanup.
+    """
+    if PROPS_NETWORK_NAME == "host":
+        yield
+        return
+
+    # Check if network already exists
+    existing = await docker_client.networks.list(filters={"name": [PROPS_NETWORK_NAME]})
+    # Filter for exact name match (Docker list uses substring matching)
+    already_exists = any(n["Name"] == PROPS_NETWORK_NAME for n in existing)
+
+    if already_exists:
+        logger.info("Docker network %s already exists", PROPS_NETWORK_NAME)
+        yield
+        return
+
+    logger.info("Creating Docker network %s", PROPS_NETWORK_NAME)
+    network = await docker_client.networks.create({"Name": PROPS_NETWORK_NAME, "Driver": "bridge"})
+    try:
+        yield
+    finally:
+        try:
+            logger.info("Removing Docker network %s", PROPS_NETWORK_NAME)
+            await network.delete()
+        except RuntimeError:
+            # Docker session may already be closed during test teardown
+            logger.debug("Could not remove network %s (session closed)", PROPS_NETWORK_NAME)
+
+
 @dataclass
 class E2EStack:
     """Running e2e test stack with all services."""
 
     registry: AgentRegistry
     model: str
-    _proxy_port: int
-    _docker_client: docker.DockerClient
-
-    def push_image(self, image: LoadedImage) -> str:
-        """Push a loaded image through the backend proxy (records agent_definition)."""
-        return push_image_to_proxy(self._docker_client, image, f"localhost:{self._proxy_port}")
 
 
 def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[str, str]:
@@ -101,8 +135,8 @@ def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[
 
 
 @asynccontextmanager
-async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> AsyncIterator[int]:
-    """Start the real backend app with uvicorn, yield the port."""
+async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> AsyncIterator[None]:
+    """Start the real backend app with uvicorn."""
     app = create_app(deps=deps)
 
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
@@ -118,7 +152,7 @@ async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> As
     logger.info("Backend started on port %d", port)
 
     try:
-        yield port
+        yield
     finally:
         server.should_exit = True
         try:
@@ -138,85 +172,18 @@ def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig,
         monkeypatch.setenv(key, value)
 
 
-# Type alias for the fixture factory
-E2EStackFactory = Callable[[OpenAIModelProto], AbstractAsyncContextManager[E2EStack]]
-
-
-@pytest_asyncio.fixture
-async def e2e_stack(
-    synced_db: Database,
-    async_docker_client: aiodocker.Docker,
-    docker_client: docker.DockerClient,
-    e2e_registry_url: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> AsyncIterator[E2EStackFactory]:
-    """Fixture factory for creating e2e test stacks.
-
-    Sets up env vars via monkeypatch and yields a factory that creates E2EStack instances.
-    RegistryProxyConfig is constructed directly from the backend's port (determined upfront).
-
-    Usage:
-        async def test_something(e2e_stack, all_files_scope):
-            mock = make_my_mock()
-            async with e2e_stack(mock) as stack:
-                stack.push_image(grader_image)
-                run_id = await stack.registry.run_critic(...)
-    """
-    _set_backend_env(monkeypatch, synced_db.config, e2e_registry_url)
-
-    @asynccontextmanager
-    async def _factory(mock: OpenAIModelProto, model: str = TEST_MODEL) -> AsyncIterator[E2EStack]:
-        fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
-        await fake_openai.start()
-
-        try:
-            monkeypatch.setenv("OPENAI_UPSTREAM_URL", fake_openai.url)
-
-            backend_port = pick_free_port()
-            registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
-            agent_base_env = _build_agent_base_env(synced_db.config, backend_port)
-
-            deps = BackendDeps(
-                config=PropsConfig(agent_env=agent_base_env), registry_proxy_config=registry_proxy_config
-            )
-
-            async with run_backend(deps, port=backend_port) as _port:
-                registry = AgentRegistry(
-                    docker_client=async_docker_client,
-                    db=synced_db,
-                    db_config=synced_db.config,
-                    agent_base_env=agent_base_env,
-                    registry_config=registry_proxy_config,
-                    extra_hosts=HOST_GATEWAY,
-                )
-
-                try:
-                    yield E2EStack(
-                        registry=registry, model=model, _proxy_port=backend_port, _docker_client=docker_client
-                    )
-                finally:
-                    await registry.close()
-
-        finally:
-            await fake_openai.stop()
-
-    yield _factory
-
-
 @asynccontextmanager
-async def multi_model_e2e_stack(
-    mocks: Mapping[str, OpenAIModelProto],
+async def _make_stack(
+    fake_openai: FakeOpenAIServer,
     db: Database,
     async_docker_client: aiodocker.Docker,
-    sync_docker_client: docker.DockerClient,
     e2e_registry_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    model: str,
+    images: Sequence[BazelImage] = (),
 ) -> AsyncIterator[E2EStack]:
-    """Set up full e2e stack with multi-model routing.
-
-    Each key in `mocks` is a model name routed to the corresponding mock.
-    """
-    fake_openai = MultiModelFakeOpenAI(dict(mocks), host="0.0.0.0", port=0)
+    """Shared stack setup: start fake OpenAI, backend, registry, push images."""
     await fake_openai.start()
 
     try:
@@ -229,7 +196,7 @@ async def multi_model_e2e_stack(
 
         deps = BackendDeps(config=PropsConfig(agent_env=agent_base_env), registry_proxy_config=registry_proxy_config)
 
-        async with run_backend(deps, port=backend_port) as _port:
+        async with ensure_agent_network(async_docker_client), run_backend(deps, port=backend_port):
             registry = AgentRegistry(
                 docker_client=async_docker_client,
                 db=db,
@@ -240,9 +207,54 @@ async def multi_model_e2e_stack(
             )
 
             try:
-                yield E2EStack(registry=registry, model="", _proxy_port=backend_port, _docker_client=sync_docker_client)
+                proxy_url = f"localhost:{backend_port}"
+                for image in images:
+                    crane_push(image, proxy_url, BUILTIN_TAG)
+                yield E2EStack(registry=registry, model=model)
             finally:
                 await registry.close()
 
     finally:
         await fake_openai.stop()
+
+
+@pytest_asyncio.fixture
+async def e2e_stack(
+    synced_db: Database, async_docker_client: aiodocker.Docker, e2e_registry_url: str, monkeypatch: pytest.MonkeyPatch
+):
+    """Fixture factory for creating e2e test stacks.
+
+    Accepts a single mock (all requests go to it) or a dict of mocks
+    (routes by model name in the request body).
+
+    Usage:
+        # Single mock
+        async def test_something(e2e_stack, critic_image):
+            mock = make_my_mock()
+            async with e2e_stack(mock, images=[critic_image]) as stack:
+                run_id = await stack.registry.run_critic(...)
+
+        # Multi-model
+        async def test_orchestration(e2e_stack, ...):
+            mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
+            async with e2e_stack(mocks, images=[...]) as stack:
+                ...
+    """
+
+    @asynccontextmanager
+    async def _factory(
+        mock: OpenAIModelProto | Mapping[str, OpenAIModelProto],
+        model: str = TEST_MODEL,
+        *,
+        images: Sequence[BazelImage] = (),
+    ) -> AsyncIterator[E2EStack]:
+        if isinstance(mock, Mapping):
+            fake_openai = FakeOpenAIServer(dict(mock), host="0.0.0.0", port=0)
+        else:
+            fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
+        async with _make_stack(
+            fake_openai, synced_db, async_docker_client, e2e_registry_url, monkeypatch, model=model, images=images
+        ) as stack:
+            yield stack
+
+    yield _factory

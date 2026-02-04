@@ -13,6 +13,7 @@ The container runs an agent loop that:
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 py_library(
@@ -59,18 +60,15 @@ docker_py_test(
     name = "test_e2e",
     srcs = ["test_e2e.py"],
     data = [
-        ":load",
+        ":image",
     ],
-    env = {
-        "PROPS_DOCKER_NETWORK": "host",
-    },
     imports = ["../../.."],
     tags = ["e2e"],
     deps = [
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
-        "//props/db:agent_definition_ids",
+        "//props/core:oci_utils",
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
@@ -84,19 +82,20 @@ docker_py_test(
 oci_image(
     name = "image",
     base = "@distroless_cc_linux_amd64",
-    cmd = ["/app/improve"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
-    tars = [":main_tar"],
+    cmd = py_binary_distroless_cmd("improve"),
+    env = py_binary_distroless_env("improve"),
+    tars = [
+        ":main_tar",
+        "//props:crane_tar",
+    ],
+    visibility = ["//visibility:public"],
     workdir = "/workspace",
 )
 
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["improvement-agent:latest"],
+    repo_tags = ["improvement:latest"],
     visibility = ["//visibility:public"],
 )
 

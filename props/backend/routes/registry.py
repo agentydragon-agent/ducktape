@@ -1,21 +1,9 @@
 """OCI Registry Proxy routes - ACL enforcement and metadata tracking.
 
-Endpoints (OCI Distribution API):
-- GET /v2/ - API version check (anonymous allowed)
-- GET /v2/_catalog - List repositories
-- GET /v2/{repo}/tags/list - List tags
-- GET, HEAD /v2/{repo}/manifests/{ref} - Get manifest
-- PUT /v2/{repo}/manifests/{ref} - Push manifest
-- GET, HEAD /v2/{repo}/blobs/{digest} - Get blob
-- POST /v2/{repo}/blobs/uploads/ - Start blob upload
-- PATCH /v2/{repo}/blobs/uploads/{uuid} - Continue blob upload
-- PUT /v2/{repo}/blobs/uploads/{uuid} - Complete blob upload
-
-Features:
-- Validates agent auth tokens against postgres
-- Enforces ACL based on agent type (admin/PO/PI/critic/grader)
-- Records image refs in database when pushed
-- Prevents unauthorized operations
+Endpoints:
+- GET, HEAD /v2/ - API version check (anonymous)
+- PUT /v2/{repo}/manifests/{ref} - Push manifest with metadata recording
+- All other /v2/* - Proxied with method-based ACL (GET/HEAD=read, POST/PATCH/PUT=write)
 """
 
 from __future__ import annotations
@@ -24,13 +12,12 @@ import hashlib
 import json
 import logging
 import os
-from typing import Annotated
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
-from props.backend.auth import ACL_CAN_PUSH_TAGS, CallerType, require_registry_push, require_registry_read
+from props.backend.auth import ACL_CAN_PUSH_REGISTRY, ACL_CAN_PUSH_TAGS, ACL_CAN_READ_REGISTRY, Auth, get_caller_type
 from props.backend.deps import AdminDb
 from props.core.oci_utils import is_digest
 from props.db.database import Database
@@ -40,31 +27,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Environment variables for registry configuration
-UPSTREAM_REGISTRY_URL = os.environ.get("PROPS_REGISTRY_UPSTREAM_URL", "http://props-registry:5000")
+
+def _upstream_registry_url() -> str:
+    """Read upstream registry URL from env on each call.
+
+    Avoids caching at import time, which breaks tests that set
+    PROPS_REGISTRY_UPSTREAM_URL via monkeypatch after module import.
+    """
+    return os.environ["PROPS_REGISTRY_UPSTREAM_URL"]
 
 
-# =============================================================================
-# Helper functions
-# =============================================================================
-
-
-def _require_push_tag(caller_type: CallerType, ref: str) -> None:
-    """Require push-by-tag permission if ref is a tag, raise HTTPException if denied."""
-    if not is_digest(ref) and caller_type not in ACL_CAN_PUSH_TAGS:
-        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push by tag")
-
-
-async def _proxy_to_upstream(request: Request, path: str) -> Response:
+async def _proxy_to_upstream(request: Request) -> Response:
     """Forward request to upstream registry and return response."""
-    upstream_url = f"{UPSTREAM_REGISTRY_URL}/{path}"
+    upstream_url = f"{_upstream_registry_url()}{request.url.path}"
     if request.url.query:
         upstream_url += f"?{request.url.query}"
 
     async with httpx.AsyncClient() as client:
         headers = dict(request.headers)
         headers.pop("host", None)
-        body = await request.body()
+        body = await request.body() if request.method not in ("GET", "HEAD") else b""
 
         try:
             upstream_response = await client.request(
@@ -93,7 +75,7 @@ async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | N
         if not config_digest:
             return None
 
-        config_url = f"{UPSTREAM_REGISTRY_URL}/v2/{repository}/blobs/{config_digest}"
+        config_url = f"{_upstream_registry_url()}/v2/{repository}/blobs/{config_digest}"
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(config_url, timeout=5.0)
@@ -148,9 +130,7 @@ async def _record_manifest_push(
         )
 
 
-# =============================================================================
-# OCI Distribution API v2 routes
-# =============================================================================
+# Routes — order matters: specific routes must precede the catch-all proxy.
 
 
 @router.get("/v2/")
@@ -160,98 +140,32 @@ async def v2_check() -> Response:
     return Response(content=b"{}", status_code=200, headers={"Docker-Distribution-API-Version": "registry/2.0"})
 
 
-@router.get("/v2/_catalog")
-async def get_catalog(
-    request: Request, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
-) -> Response:
-    """List repositories."""
-    return await _proxy_to_upstream(request, "v2/_catalog")
-
-
-@router.get("/v2/{repo}/tags/list")
-async def get_tags(
-    request: Request, repo: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
-) -> Response:
-    """List tags for a repository."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/tags/list")
-
-
-@router.get("/v2/{repo}/manifests/{ref}")
-@router.head("/v2/{repo}/manifests/{ref}")
-async def get_manifest(
-    request: Request, repo: str, ref: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
-) -> Response:
-    """Get a manifest by tag or digest."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/manifests/{ref}")
-
-
 @router.put("/v2/{repo}/manifests/{ref}")
-async def put_manifest(
-    request: Request,
-    repo: str,
-    ref: str,
-    admin_db: AdminDb,
-    auth: Annotated[tuple[CallerType, UUID | None], Depends(require_registry_push)],
-) -> Response:
-    """Push a manifest."""
-    caller_type, agent_run_id = auth
-    _require_push_tag(caller_type, ref)
+async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
+    """Push a manifest — records agent definition on success."""
+    caller_type, agent_run_id = get_caller_type(auth, admin_db)
+    if caller_type not in ACL_CAN_PUSH_REGISTRY:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
+    if not is_digest(ref) and caller_type not in ACL_CAN_PUSH_TAGS:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push by tag")
 
-    # Read body for digest computation and recording
     body = await request.body()
-    manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
+    response = await _proxy_to_upstream(request)
 
-    # Forward to upstream
-    upstream_url = f"{UPSTREAM_REGISTRY_URL}/v2/{repo}/manifests/{ref}"
-    async with httpx.AsyncClient() as client:
-        headers = dict(request.headers)
-        headers.pop("host", None)
+    if response.status_code in (200, 201):
+        manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
+        await _record_manifest_push(repo, manifest_digest, body, agent_run_id, admin_db)
 
-        try:
-            upstream_response = await client.put(upstream_url, headers=headers, content=body, timeout=30.0)
-        except httpx.RequestError as e:
-            logger.error(f"Upstream request failed: {e}")
-            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
-
-        # Record manifest push if successful
-        if upstream_response.status_code in (200, 201):
-            await _record_manifest_push(repo, manifest_digest, body, agent_run_id, admin_db)
-
-        return Response(
-            content=upstream_response.content,
-            status_code=upstream_response.status_code,
-            headers=dict(upstream_response.headers),
-        )
+    return response
 
 
-@router.get("/v2/{repo}/blobs/{digest}")
-@router.head("/v2/{repo}/blobs/{digest}")
-async def get_blob(
-    request: Request, repo: str, digest: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_read)
-) -> Response:
-    """Get a blob by digest."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/{digest}")
-
-
-@router.post("/v2/{repo}/blobs/uploads/")
-async def start_blob_upload(
-    request: Request, repo: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
-) -> Response:
-    """Start a blob upload."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/")
-
-
-@router.patch("/v2/{repo}/blobs/uploads/{uuid}")
-async def continue_blob_upload(
-    request: Request, repo: str, uuid: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
-) -> Response:
-    """Continue a blob upload (chunked)."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")
-
-
-@router.put("/v2/{repo}/blobs/uploads/{uuid}")
-async def complete_blob_upload(
-    request: Request, repo: str, uuid: str, auth: tuple[CallerType, UUID | None] = Depends(require_registry_push)
-) -> Response:
-    """Complete a blob upload."""
-    return await _proxy_to_upstream(request, f"v2/{repo}/blobs/uploads/{uuid}")
+@router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"])
+async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: AdminDb) -> Response:
+    """Proxy OCI registry requests with method-based ACL (read for GET/HEAD, write for mutations)."""
+    caller_type, _ = get_caller_type(auth, admin_db)
+    if request.method in ("GET", "HEAD"):
+        if caller_type not in ACL_CAN_READ_REGISTRY:
+            raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to read from registry")
+    elif caller_type not in ACL_CAN_PUSH_REGISTRY:
+        raise HTTPException(status_code=403, detail=f"{caller_type} not allowed to push to registry")
+    return await _proxy_to_upstream(request)

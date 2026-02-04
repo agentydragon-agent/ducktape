@@ -25,45 +25,40 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from props.backend.auth import AuthContext, get_auth_context
+from props.backend.auth import Auth
 from props.backend.deps import AdminDb
-from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Environment configuration
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_BASE_URL = os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com")
-
 # Request timeout for upstream OpenAI calls
 UPSTREAM_TIMEOUT_SECONDS = 300  # 5 minutes
 
 
-def require_llm_access(request: Request) -> tuple[UUID, str]:
+def _upstream_api_key() -> str:
+    """Read upstream OpenAI API key at call time (not import time) for testability."""
+    return os.environ.get("OPENAI_API_KEY", "")
+
+
+def _upstream_base_url() -> str:
+    """Read upstream OpenAI base URL at call time (not import time) for testability."""
+    return os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com")
+
+
+def require_llm_access(auth: Auth, admin_db: AdminDb) -> tuple[UUID, str]:
     """FastAPI dependency requiring LLM API access (agent credentials only).
 
     Returns (agent_run_id, allowed_model) or raises HTTPException.
     """
-    auth: AuthContext = get_auth_context(request)
-    db: Database = request.app.state.admin_db
-
-    # Check for auth errors
-    if auth.error:
-        raise HTTPException(status_code=401, detail=auth.error)
-
-    # Require authentication
     if not auth.is_authenticated:
         raise HTTPException(status_code=401, detail="Authorization required")
 
-    # Require agent credentials (not admin)
     if auth.agent_run_id is None:
         raise HTTPException(status_code=401, detail="Invalid agent token format")
 
-    # Look up agent run to get allowed model and verify status
-    with db.session() as session:
+    with admin_db.session() as session:
         agent_run = session.get(AgentRun, auth.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Agent run not found")
@@ -127,22 +122,21 @@ async def responses(
     if body.get("stream"):
         raise HTTPException(status_code=400, detail="Streaming is not supported")
 
-    # Reject stateful API modes (we log everything ourselves)
-    if body.get("store"):
-        raise HTTPException(status_code=400, detail="Stateful mode 'store' is not supported")
+    # Strip stateful API modes (we log everything ourselves)
+    body.pop("store", None)
     if body.get("previous_response_id"):
         raise HTTPException(status_code=400, detail="Stateful mode 'previous_response_id' is not supported")
 
     # Forward request to OpenAI
     start_time = time.monotonic()
-    upstream_url = f"{OPENAI_BASE_URL}/v1/responses"
+    upstream_url = f"{_upstream_base_url()}/v1/responses"
 
     async with httpx.AsyncClient() as client:
         try:
             upstream_response = await client.post(
                 upstream_url,
                 json=body,
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {_upstream_api_key()}", "Content-Type": "application/json"},
                 timeout=UPSTREAM_TIMEOUT_SECONDS,
             )
         except httpx.TimeoutException:
