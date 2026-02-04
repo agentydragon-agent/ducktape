@@ -132,8 +132,6 @@ class AgentRunStatus(StrEnum):
 
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
-    MAX_TURNS_EXCEEDED = "max_turns_exceeded"
-    CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
     TIMED_OUT = "timed_out"
     REPORTED_FAILURE = "reported_failure"
 
@@ -999,7 +997,7 @@ class RecallByRun(Base):
     Scalar total_credit (sum of all TP occurrence credits) and scalar recall
     (total_credit / recall_denominator). Feeds into recall_by_definition_example.
 
-    Failed critic runs (max_turns/context_length) contribute 0 credit.
+    Failed critic runs (timed_out) contribute 0 credit.
     """
 
     __tablename__ = "recall_by_run"
@@ -1171,7 +1169,7 @@ class ParetoFrontierByExample(Base):
     - Generalist vs specialist definition patterns
 
     Built on recall_by_definition_example, which aggregates over runs.
-    Failed critic runs (max_turns/context_length) count as 0.0 credit.
+    Failed critic runs (timed_out) count as 0.0 credit.
     """
 
     __tablename__ = "pareto_frontier_by_example"
@@ -1331,7 +1329,7 @@ class AgentRun(Base):
     status: Mapped[AgentRunStatus] = mapped_column(
         nullable=False,
         server_default="in_progress",
-        comment="Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure",
+        comment="Run status: in_progress, completed, timed_out, or reported_failure",
     )
 
     # Resource limits (set at launch time)

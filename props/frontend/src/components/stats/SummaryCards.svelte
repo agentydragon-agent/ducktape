@@ -82,14 +82,9 @@
           ⟳{statusCounts["in_progress"]}
         </span>
       {/if}
-      {#if statusCounts["max_turns_exceeded"]}
-        <span class="text-yellow-600" title="Max Turns Exceeded">
-          S{statusCounts["max_turns_exceeded"]}
-        </span>
-      {/if}
-      {#if statusCounts["context_length_exceeded"]}
-        <span class="text-orange-600" title="Context Exceeded">
-          C{statusCounts["context_length_exceeded"]}
+      {#if statusCounts["timed_out"]}
+        <span class="text-yellow-600" title="Timed Out">
+          T{statusCounts["timed_out"]}
         </span>
       {/if}
       {#if statusCounts["reported_failure"]}

@@ -154,7 +154,7 @@
                 <td class="px-2 py-2 text-right">{stats.n_examples}</td>
                 <td class="px-2 py-2 text-right text-gray-400">{stats.zero_count}</td>
                 <td class="px-2 py-2 text-right">{stats.status_counts.completed ?? 0}</td>
-                <td class="px-2 py-2 text-right text-gray-400">{stats.status_counts.max_turns_exceeded ?? 0}</td>
+                <td class="px-2 py-2 text-right text-gray-400">{stats.status_counts.timed_out ?? 0}</td>
               {:else}
                 <td
                   class="px-2 py-2 text-right border-l border-gray-100 text-gray-300 {clickClass}"

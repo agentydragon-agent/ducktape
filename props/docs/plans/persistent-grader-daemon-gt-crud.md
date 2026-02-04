@@ -82,7 +82,7 @@ Grader CLI and docs completed:
   - Lifespan starts daemons for all snapshots if `PROPS_GRADER_MODEL` is set
   - Daemons sleep immediately if no drift
 - G.12: Context exhaustion restart in `DaemonManager._run_daemon_with_restart()`
-  - Catches `CONTEXT_LENGTH_EXCEEDED` status and spawns fresh daemon
+  - Catches `TIMED_OUT` status and spawns fresh daemon
   - Max 10 restarts per snapshot as safety limit
   - Agent docs updated to expect partial state
 - `GradingPending` ORM model added to `db/models.py` for the view
@@ -184,7 +184,7 @@ Key behaviors:
 When agent hits context limit:
 
 1. `ContextLengthExceededError` raised
-2. Scaffold catches, marks run as `CONTEXT_LENGTH_EXCEEDED`
+2. Scaffold catches, marks run as `TIMED_OUT`
 3. Spawns new agent run for same snapshot
 4. New agent queries `grading_pending` for remaining work
 5. GT reloaded into context (cache hit if recent)

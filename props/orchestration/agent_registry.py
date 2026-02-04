@@ -465,7 +465,7 @@ class AgentRegistry:
         elif result.exit_code == -1:
             # Timeout
             logger.warning(f"Container timed out: {agent_run_id}")
-            return AgentRunStatus.MAX_TURNS_EXCEEDED
+            return AgentRunStatus.TIMED_OUT
         else:
             # Non-zero exit - check if container set REPORTED_FAILURE
             with get_session() as session:

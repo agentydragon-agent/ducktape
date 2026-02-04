@@ -94,7 +94,7 @@ def upgrade() -> None:
         )
         CROSS JOIN true_positive_occurrences tpo
         WHERE (cr.type_config->>'agent_type') = 'critic'
-          AND cr.status = ANY (ARRAY['max_turns_exceeded'::agent_run_status_enum, 'context_length_exceeded'::agent_run_status_enum])
+          AND cr.status = 'timed_out'::agent_run_status_enum
           AND (cr.type_config->'example'->>'snapshot_slug') = tpo.snapshot_slug
           AND is_tp_in_expected_recall_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
     """)

@@ -71,7 +71,7 @@ ORDER BY tc.sequence_num;
 SELECT ar.agent_run_id, ar.status, ar.model,
        ar.type_config->'example'->>'snapshot_slug' AS snapshot
 FROM agent_runs ar
-WHERE ar.status = 'max_turns_exceeded'
+WHERE ar.status = 'timed_out'
   AND ar.type_config->>'agent_type' = 'critic';
 ```
 
