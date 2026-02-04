@@ -40,4 +40,4 @@
 - Need sane story for applying migrations without full `db recreate`
 - Consolidate shared envrc and directory structure across workspace members
 - Consider whether CLI stats command should be deprecated in favor of frontend dashboard
-- Store max_turns in agent type_config so we can tell from DB what limit a run used (currently lost)
+- Add timeout warning handler for agents: send warning messages when running out of time (e.g., "5 minutes remaining"). Could use `created_at` + `timeout_seconds` to calculate remaining time and inject reminder messages via agent communication channel
