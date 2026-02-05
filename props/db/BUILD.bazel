@@ -235,6 +235,7 @@ docker_py_test(
         "//props/core:agent_types",
         "//props/critic_dev:shared",
         "//props/orchestration:agent_credentials",
+        "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:runs",
         "@pypi//asyncpg",
         "@pypi//pytest",
