@@ -310,13 +310,13 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
 
 
 @router.get("/active")
-def list_active_runs(request: Request, db: AgentDb) -> ActiveRunsResponse:
+def list_active_runs(request: Request, agent_db: AgentDb) -> ActiveRunsResponse:
     """List all active agent runs.
 
     Queries database for runs with IN_PROGRESS status.
     RLS policies filter visible runs based on caller's database role.
     """
-    with db.session() as session:
+    with agent_db.session() as session:
         db_runs = (
             session.query(AgentRun)
             .filter(AgentRun.status == AgentRunStatus.IN_PROGRESS)
@@ -347,7 +347,7 @@ def list_jobs() -> JobsResponse:
 
 @router.get("")
 def list_runs(
-    db: AgentDb,
+    agent_db: AgentDb,
     status: AgentRunStatus | None = None,
     image_digest: str | None = None,
     agent_type: AgentType | None = None,
@@ -362,7 +362,7 @@ def list_runs(
     """
     limit = min(limit, 500)  # Cap at 500
 
-    with db.session() as session:
+    with agent_db.session() as session:
         query = session.query(AgentRun)
 
         if status:
@@ -524,9 +524,9 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
 
 
 @router.get("/{run_id}")
-def get_run(run_id: UUID, db: AgentDb) -> AgentRunDetail:
+def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
     """Get details of a specific agent run. RLS enforces access."""
-    with db.session() as session:
+    with agent_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -704,9 +704,9 @@ def get_run(run_id: UUID, db: AgentDb) -> AgentRunDetail:
 
 
 @router.get("/{run_id}/llm_requests")
-def get_run_llm_requests(run_id: UUID, db: AgentDb) -> LLMRequestsResponse:
+def get_run_llm_requests(run_id: UUID, agent_db: AgentDb) -> LLMRequestsResponse:
     """Get LLM requests for a specific agent run. RLS filters visible requests."""
-    with db.session() as session:
+    with agent_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")

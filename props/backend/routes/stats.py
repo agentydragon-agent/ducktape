@@ -67,8 +67,8 @@ def to_split_scope_stats(row: RecallByDefinitionSplitKind, total_available: int)
 
 
 @router.get("/overview")
-def get_overview(db: AgentDb) -> OverviewResponse:
-    with db.session() as session:
+def get_overview(agent_db: AgentDb) -> OverviewResponse:
+    with agent_db.session() as session:
         example_counts = count_available_examples_by_scope_all(session, [Split.TRAIN, Split.VALID])
 
         # Get ALL critic definitions, not just those with stats
@@ -131,9 +131,9 @@ class DefinitionDetailResponse(BaseModel):
 
 
 @router.get("/definitions/{image_digest}")
-def get_definition_detail(image_digest: str, db: AgentDb) -> DefinitionDetailResponse:
+def get_definition_detail(image_digest: str, agent_db: AgentDb) -> DefinitionDetailResponse:
     """Get detailed stats for a single definition including per-example breakdown."""
-    with db.session() as session:
+    with agent_db.session() as session:
         definition = session.query(AgentDefinition).filter_by(id=image_digest).first()
         if not definition:
             raise HTTPException(status_code=404, detail=f"Definition not found: {image_digest}")
@@ -215,7 +215,7 @@ class ExampleDetailResponse(BaseModel):
 
 @router.get("/examples")
 def get_example_detail(
-    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, db: AgentDb, files_hash: str | None = None
+    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, agent_db: AgentDb, files_hash: str | None = None
 ) -> ExampleDetailResponse:
     """Get detailed information about a specific example.
 
@@ -231,7 +231,7 @@ def get_example_detail(
         - Per-definition run statistics
         - Aggregate metrics
     """
-    with db.session() as session:
+    with agent_db.session() as session:
         # Validate and fetch the example
         query = session.query(Example).filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind)
 

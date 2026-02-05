@@ -29,9 +29,9 @@ class DefinitionsResponse(BaseModel):
 
 
 @router.get("")
-def list_definitions(db: AgentDb, agent_type: AgentType | None = None) -> DefinitionsResponse:
+def list_definitions(agent_db: AgentDb, agent_type: AgentType | None = None) -> DefinitionsResponse:
     """List all agent definitions, optionally filtered by type."""
-    with db.session() as session:
+    with agent_db.session() as session:
         query = session.query(AgentDefinition)
         if agent_type:
             query = query.filter_by(agent_type=agent_type)
