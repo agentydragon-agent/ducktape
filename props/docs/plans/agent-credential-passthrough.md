@@ -81,12 +81,52 @@ Per-request connections (Option A): Each agent request creates a `Database.per_r
 2. Defense in depth: RLS prevents unauthorized access even if Python ACL is wrong
 3. Audit trail: Database logs show actual user performing operations
 
-## Future: Frontend Authentication
+## Phase 5: Admin Token Authentication
 
-Frontend currently relies on `PROPS_ALLOW_LOCALHOST_ADMIN=true`. Options for remote dashboard access:
+Replace localhost exception with token-based admin auth (Jupyter-style).
 
-- **Option A (recommended)**: Credentials endpoint — backend serves admin credentials at a protected endpoint
-- **Option C (later)**: Session-based auth with login for production multi-user access
+### Design
+
+**Token derivation**: `PROPS_ADMIN_TOKEN` env var if set, otherwise `HMAC-SHA256(PGPASSWORD, "props-admin-token")` base64url-encoded. Deterministic across restarts, doesn't expose raw Postgres password.
+
+**Backend startup** (`app.py` lifespan): Print `http://<host>:<port>/?token=<token>` to console, like Jupyter.
+
+**Auth flow** (`auth.py` `get_auth_context`): Check `Authorization: Bearer <token>` against admin token _before_ base64 credential parsing. Match → `AuthContext.admin(...)`. No Postgres connection needed for token auth.
+
+**Frontend token capture**: On page load, if `?token=` in URL → store in `localStorage`, strip from URL (`history.replaceState`). On every API call, attach `Authorization: Bearer <token>` from `localStorage`. If no token and 401 → show paste-token input.
+
+**Localhost exception**: Keep `PROPS_ALLOW_LOCALHOST_ADMIN` defaulting to `true` for local dev. Remote deployments set it to `false`.
+
+### Changes
+
+| File                           | Change                                                    |
+| ------------------------------ | --------------------------------------------------------- |
+| `props/backend/auth.py`        | `derive_admin_token()`, token check in `get_auth_context` |
+| `props/backend/app.py`         | Print token URL on startup                                |
+| `props/frontend/.../client.ts` | Attach Bearer token from `localStorage`                   |
+| `props/frontend/...`           | Token capture from URL param, paste-token fallback UI     |
+
+### Sequence
+
+```
+Startup:
+  backend derives token from PGPASSWORD
+  backend prints http://host:port/?token=abc123
+
+Browser opens URL:
+  frontend reads ?token=abc123 from URL
+  frontend stores in localStorage
+  frontend strips ?token from URL bar
+
+API call:
+  frontend attaches Authorization: Bearer abc123
+  backend: token matches admin token → AuthContext.admin()
+  backend: returns admin DB (no RLS)
+
+No token:
+  frontend shows "Paste admin token" input
+  user pastes token → stored in localStorage → retry
+```
 
 ## Non-Goals
 
