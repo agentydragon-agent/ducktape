@@ -87,11 +87,9 @@ Replace localhost exception with token-based admin auth (Jupyter-style).
 
 ### Design
 
-**Token derivation**: `PROPS_ADMIN_TOKEN` env var if set, otherwise `HMAC-SHA256(PGPASSWORD, "props-admin-token")` base64url-encoded. Deterministic across restarts, doesn't expose raw Postgres password.
+**Token**: `base64(PGUSER:PGPASSWORD)` — same format agents already use. The existing `parse_credentials` → `validate_postgres_credentials` path handles it with no auth.py changes.
 
-**Backend startup** (`app.py` lifespan): Print `http://<host>:<port>/?token=<token>` to console, like Jupyter.
-
-**Auth flow** (`auth.py` `get_auth_context`): Check `Authorization: Bearer <token>` against admin token _before_ base64 credential parsing. Match → `AuthContext.admin(...)`. No Postgres connection needed for token auth.
+**Backend startup** (`app.py` lifespan): Compute token from `DatabaseConfig`, print `http://<host>:<port>/?token=<token>` to console.
 
 **Frontend token capture**: On page load, if `?token=` in URL → store in `localStorage`, strip from URL (`history.replaceState`). On every API call, attach `Authorization: Bearer <token>` from `localStorage`. If no token and 401 → show paste-token input.
 
@@ -99,29 +97,28 @@ Replace localhost exception with token-based admin auth (Jupyter-style).
 
 ### Changes
 
-| File                           | Change                                                    |
-| ------------------------------ | --------------------------------------------------------- |
-| `props/backend/auth.py`        | `derive_admin_token()`, token check in `get_auth_context` |
-| `props/backend/app.py`         | Print token URL on startup                                |
-| `props/frontend/.../client.ts` | Attach Bearer token from `localStorage`                   |
-| `props/frontend/...`           | Token capture from URL param, paste-token fallback UI     |
+| File                           | Change                                                |
+| ------------------------------ | ----------------------------------------------------- |
+| `props/backend/app.py`         | Print token URL on startup                            |
+| `props/frontend/.../client.ts` | Attach Bearer token from `localStorage`               |
+| `props/frontend/...`           | Token capture from URL param, paste-token fallback UI |
 
 ### Sequence
 
 ```
 Startup:
-  backend derives token from PGPASSWORD
-  backend prints http://host:port/?token=abc123
+  backend computes base64(PGUSER:PGPASSWORD)
+  backend prints http://host:port/?token=<base64>
 
 Browser opens URL:
-  frontend reads ?token=abc123 from URL
+  frontend reads ?token= from URL
   frontend stores in localStorage
   frontend strips ?token from URL bar
 
 API call:
-  frontend attaches Authorization: Bearer abc123
-  backend: token matches admin token → AuthContext.admin()
-  backend: returns admin DB (no RLS)
+  frontend attaches Authorization: Bearer <base64>
+  backend: parse_credentials → validate_postgres_credentials → admin
+  (existing auth flow, no changes)
 
 No token:
   frontend shows "Paste admin token" input
