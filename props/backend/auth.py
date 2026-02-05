@@ -312,7 +312,7 @@ def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
         raise HTTPException(status_code=500, detail="Agent auth missing credentials")
 
     agent_config = admin_db.config.with_user(auth.username, auth.password)
-    agent_db = Database(agent_config, _per_request=True)
+    agent_db = Database.per_request(agent_config)
     try:
         yield agent_db
     finally:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -54,8 +54,8 @@ def test_get_agent_db_anonymous_raises_401():
     assert exc_info.value.status_code == 401
 
 
-def test_get_agent_db_agent_creates_per_request_db(monkeypatch: pytest.MonkeyPatch):
-    """Agent callers get a per-request Database with their credentials."""
+def test_get_agent_db_agent_calls_per_request():
+    """Agent callers get a Database.per_request() instance with their credentials."""
     run_id = uuid4()
     admin_config = DatabaseConfig(host="localhost", port=5432, database="testdb", user="admin", password="admin_pass")
     admin_db = MagicMock(spec=Database)
@@ -63,38 +63,29 @@ def test_get_agent_db_agent_creates_per_request_db(monkeypatch: pytest.MonkeyPat
 
     auth = AuthContext.agent(username=f"agent_{run_id}", password="agent_pass", agent_run_id=run_id)
 
-    # Mock Database constructor to avoid actual Postgres connection
-    created_dbs: list[tuple[DatabaseConfig, bool]] = []
+    mock_agent_db = MagicMock(spec=Database)
+    with patch.object(Database, "per_request", return_value=mock_agent_db) as mock_pr:
+        gen = get_agent_db(admin_db=admin_db, auth=auth)
+        db = next(gen)
 
-    def mock_init(self, config, *, _per_request=False):
-        created_dbs.append((config, _per_request))
-        self._config = config
-        self._engine = MagicMock()
+        # Verify per_request was called with agent credentials
+        mock_pr.assert_called_once()
+        config = mock_pr.call_args[0][0]
+        assert config.user == f"agent_{run_id}"
+        assert config.password == "agent_pass"
+        assert config.host == "localhost"
+        assert config.database == "testdb"
 
-    monkeypatch.setattr(Database, "__init__", mock_init)
-    monkeypatch.setattr(Database, "dispose", lambda self: None)
+        # Verify it's the per_request instance, not admin
+        assert db is mock_agent_db
+        assert db is not admin_db
 
-    gen = get_agent_db(admin_db=admin_db, auth=auth)
-    db = next(gen)
-
-    # Verify a new Database was created with agent credentials and per_request=True
-    assert len(created_dbs) == 1
-    config, per_request = created_dbs[0]
-    assert config.user == f"agent_{run_id}"
-    assert config.password == "agent_pass"
-    assert config.host == "localhost"
-    assert config.database == "testdb"
-    assert per_request is True
-
-    # Verify it's not the admin db
-    assert db is not admin_db
-
-    # Cleanup
-    with contextlib.suppress(StopIteration):
-        next(gen)
+        # Cleanup
+        with contextlib.suppress(StopIteration):
+            next(gen)
 
 
-def test_get_agent_db_agent_disposes_on_cleanup(monkeypatch: pytest.MonkeyPatch):
+def test_get_agent_db_agent_disposes_on_cleanup():
     """Agent per-request database is disposed after the request."""
     run_id = uuid4()
     admin_config = DatabaseConfig(host="localhost", port=5432, database="testdb", user="admin", password="admin_pass")
@@ -103,25 +94,18 @@ def test_get_agent_db_agent_disposes_on_cleanup(monkeypatch: pytest.MonkeyPatch)
 
     auth = AuthContext.agent(username=f"agent_{run_id}", password="agent_pass", agent_run_id=run_id)
 
-    disposed = []
+    mock_agent_db = MagicMock(spec=Database)
+    with patch.object(Database, "per_request", return_value=mock_agent_db):
+        gen = get_agent_db(admin_db=admin_db, auth=auth)
+        next(gen)  # Get the yielded db
 
-    def mock_init(self, config, *, _per_request=False):
-        self._config = config
-        self._engine = MagicMock()
+        mock_agent_db.dispose.assert_not_called()
 
-    monkeypatch.setattr(Database, "__init__", mock_init)
-    monkeypatch.setattr(Database, "dispose", lambda self: disposed.append(True))
+        # Exhaust the generator (triggers finally block)
+        with contextlib.suppress(StopIteration):
+            next(gen)
 
-    gen = get_agent_db(admin_db=admin_db, auth=auth)
-    next(gen)  # Get the yielded db
-
-    assert len(disposed) == 0  # Not disposed yet
-
-    # Exhaust the generator (triggers finally block)
-    with contextlib.suppress(StopIteration):
-        next(gen)
-
-    assert len(disposed) == 1  # Disposed after cleanup
+        mock_agent_db.dispose.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -55,33 +55,48 @@ class Database:
         """
         return cls(DatabaseConfig())
 
-    def __init__(self, config: DatabaseConfig, *, _per_request: bool = False) -> None:
+    @classmethod
+    def per_request(cls, config: DatabaseConfig) -> Database:
+        """Create Database for per-request use (no startup verification).
+
+        Used by get_agent_db for agent credential passthrough. Caller must
+        call dispose() when done.
+        """
+        db = cls.__new__(cls)
+        db._config = config
+        db._engine = create_engine(config.url, echo=False, poolclass=NullPool)
+
+        @event.listens_for(db._engine, "checkout")
+        def _register_composite_types(
+            dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
+        ) -> None:
+            try:
+                register_composite("stats_with_ci", dbapi_connection, globally=False)
+            except Exception as e:
+                logger.debug(f"Could not register stats_with_ci composite type: {e}")
+
+        db._scoped_factory = scoped_session(sessionmaker(bind=db._engine))
+        return db
+
+    def __init__(self, config: DatabaseConfig) -> None:
         self._config = config
         url = config.url
 
-        if _per_request:
-            # Per-request mode: NullPool (no persistent connections), no verification.
-            # Used by get_agent_db for agent credential passthrough.
-            self._engine: Engine = create_engine(url, echo=False, poolclass=NullPool)
-        else:
-            logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
-            self._engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)
+        logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
+        self._engine: Engine = create_engine(url, echo=False, poolclass=NullPool)
 
-            # Register composite type adapter on each checkout from pool.
-            # "checkout" (not "connect") so registration happens on every use,
-            # handling the case where type is created by a migration after the
-            # connection was first established.
-            @event.listens_for(self._engine, "checkout")
-            def _register_composite_types(
-                dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
-            ) -> None:
-                try:
-                    register_composite("stats_with_ci", dbapi_connection, globally=False)
-                except Exception as e:
-                    logger.debug(f"Could not register stats_with_ci composite type: {e}")
+        # Register composite type adapter on each checkout.
+        # NullPool creates a fresh connection per checkout, so this runs on every use.
+        @event.listens_for(self._engine, "checkout")
+        def _register_composite_types(
+            dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
+        ) -> None:
+            try:
+                register_composite("stats_with_ci", dbapi_connection, globally=False)
+            except Exception as e:
+                logger.debug(f"Could not register stats_with_ci composite type: {e}")
 
-            self._verify_connection()
-
+        self._verify_connection()
         self._scoped_factory = scoped_session(sessionmaker(bind=self._engine))
 
     def _verify_connection(self, timeout_secs: int = 2) -> None:
