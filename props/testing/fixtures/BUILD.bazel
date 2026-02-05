@@ -10,13 +10,18 @@ package(default_testonly = True)
 py_library(
     name = "db",
     srcs = ["db.py"],
-    data = glob(["testdata/specimens/**"]),
+    data = glob(["testdata/specimens/**"]) + [
+        "//third_party/containers:postgres_16_tarball",
+        "//third_party/containers:ryuk_tarball",
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
         "//props/db:database",
         "//props/db:setup",
         "//props/db/sync",
+        "//test_util:image_loader",
+        "//third_party/containers:rlocations",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
@@ -63,10 +68,15 @@ py_library(
 py_library(
     name = "e2e_infra",
     srcs = ["e2e_infra.py"],
+    data = [
+        "//third_party/containers:registry_2_tarball",
+        "//third_party/containers:ryuk_tarball",
+    ],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//:runfiles",
+        "//test_util:image_loader",
         "//test_util:oci",
+        "//third_party/containers:rlocations",
         "@pypi//pytest",
         "@pypi//testcontainers",
     ],

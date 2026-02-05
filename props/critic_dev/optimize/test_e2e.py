@@ -4,10 +4,10 @@ Tests the prompt optimizer agent using:
 - Real Docker containers running agent loops
 - Real PostgreSQL database with temporary RLS-scoped users
 - Real LLM proxy (validates auth, logs requests)
-- Fake OpenAI server (returns scripted responses from PropsMock)
+- Fake OpenAI server (returns scripted responses from CriticDevMock)
 
 The test stack is:
-    Container → LLM Proxy → Fake OpenAI → PropsMock
+    Container → LLM Proxy → Fake OpenAI → CriticDevMock/CriticMock
 
 Tests verify:
 - Prompt optimizer can run in container and use tools
@@ -44,7 +44,7 @@ from props.critic_dev.shared import TargetMetric
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge
-from props.testing.mocks import PropsMock
+from props.testing.mocks import CriticDevMock, CriticMock
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +59,12 @@ TEST_TIMEOUT_SECONDS = 60
 async def test_po_agent_psql_connectivity(e2e_stack, prompt_optimizer_image):
     """Test that psql works from the agent container using PG* env vars."""
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def mock(m: CriticDevMock) -> PlayGen:
         yield None  # Receive first request
         result = yield from m.psql_roundtrip("SELECT 1")
         assert_that(result, all_of(exited_successfully(), stdout_contains("1")))
-        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "psql connectivity verified"])
+        yield m.report_failure("psql connectivity verified")
 
     async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
@@ -98,16 +98,12 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
         assert example is not None, f"No whole_snapshot example found for {test_snapshot}"
         example_spec = example.to_example_spec()
 
-    @PropsMock.mock()
-    def critic_mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def critic_mock(m: CriticMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(["critique", "insert-issue", "test-issue-001", "Test issue"])
-        assert_that(result, exited_successfully())
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-occurrence", "test-issue-001", "subtract.py", "-s", "1", "-e", "5"]
-        )
-        assert_that(result, exited_successfully())
-        yield from m.docker_exec_roundtrip(["critique", "submit", "1", "Found 1 test issue"])
+        yield m.insert_issue("test-issue-001", "Test issue")
+        yield m.insert_occurrence("test-issue-001", "subtract.py", 1, 5)
+        yield m.submit(issues_count=1, summary="Found 1 test issue")
 
     async with e2e_stack(critic_mock, images=[critic_image]) as stack:
         critic_run_id = await stack.registry.run_critic(
@@ -141,12 +137,12 @@ async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_r
     example, _critic_run, _grader_run = test_train_example_with_runs
     assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"])
+        result = yield from m.exec_roundtrip(["critic-dev", "leaderboard", "--limit", "5"])
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Leaderboard test completed"])
+        yield m.report_failure("Leaderboard test completed")
 
     async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
@@ -165,12 +161,12 @@ async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_wit
     example, _critic_run, _grader_run = test_train_example_with_runs
     assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
-        result = yield from m.docker_exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"])
+        result = yield from m.exec_roundtrip(["critic-dev", "hard-examples", "--limit", "5"])
         assert_that(result, all_of(exited_successfully(), stdout_contains("76%")))
-        yield from m.docker_exec_roundtrip(["critic-dev", "report-failure", "Hard examples test completed"])
+        yield m.report_failure("Hard examples test completed")
 
     async with e2e_stack(mock, images=[prompt_optimizer_image]) as stack:
         await stack.registry.run_prompt_optimizer(
@@ -209,8 +205,8 @@ async def test_optimizer_orchestrates_critic(
     snapshot_slug = test_snapshot
     logger.info(f"Running orchestration test with snapshot: {snapshot_slug}")
 
-    @PropsMock.mock()
-    def optimizer_mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request (system message)
 
         # Call run_critic tool (DirectToolProvider tool that calls REST API)
@@ -236,25 +232,18 @@ async def test_optimizer_orchestrates_critic(
         logger.info(f"Orchestration optimizer got grading: total_credit={total_credit}, recall={recall:.2%}")
 
         # Report success
-        yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
+        yield m.report_success()
 
-    @PropsMock.mock()
-    def critic_mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def critic_mock(m: CriticMock) -> PlayGen:
         yield None  # First request (system message)
 
         # Insert an issue and occurrence
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-issue", "orchestration-test-001", "Test issue from orchestration"]
-        )
-        assert_that(result, exited_successfully())
-
-        result = yield from m.docker_exec_roundtrip(
-            ["critique", "insert-occurrence", "orchestration-test-001", "test.py", "-s", "1", "-e", "10"]
-        )
-        assert_that(result, exited_successfully())
+        yield m.insert_issue("orchestration-test-001", "Test issue from orchestration")
+        yield m.insert_occurrence("orchestration-test-001", "test.py", 1, 10)
 
         # Submit the critique
-        yield from m.docker_exec_roundtrip(["critique", "submit", "1", "Found 1 orchestration test issue"])
+        yield m.submit(issues_count=1, summary="Found 1 orchestration test issue")
 
     grader_mock = make_orchestration_grader_mock()
 

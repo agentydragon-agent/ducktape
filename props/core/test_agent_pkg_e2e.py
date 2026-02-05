@@ -1,14 +1,20 @@
-"""E2E test for agent building and running custom agent images.
+"""E2E test for agent orchestration and custom agent images.
 
-Tests the full workflow of an agent creating its own variant:
+Tests the orchestration workflow:
+1. Optimizer calls run_critic to spawn critic containers
+2. Critic receives system prompt and submits issues
+3. Grader processes edges
+4. Optimizer waits for grading and reports success
+
+Custom image flow:
 1. Create custom agent.md content with random token
-2. Use props agent-pkg create CLI to build OCI layer
+2. Use crane push to push OCI layout to registry proxy
 3. Proxy automatically creates agent_definitions row
-4. Run the newly created agent image via run_critic MCP tool
+4. Run the newly created agent image via run_critic tool
 5. Verify new agent got the custom agent.md in its system message
 
 Uses the in-container architecture with:
-- FakeOpenAI server backed by PropsMock/GraderMock
+- FakeOpenAI server backed by CriticDevMock/CriticMock/GraderMock
 - LLM proxy for auth and logging
 - AgentRegistry for container orchestration
 """
@@ -40,7 +46,7 @@ from props.critic_dev.optimize.orchestration_fixtures import (
 from props.critic_dev.shared import TargetMetric
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
-from props.testing.mocks import PropsMock, get_system_message_text
+from props.testing.mocks import CriticDevMock, CriticMock, get_system_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +74,8 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     """
     snapshot_slug = SnapshotSlug(test_snapshot)
 
-    @PropsMock.mock()
-    def optimizer_mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
 
         # Call run_critic tool (DirectToolProvider)
@@ -91,10 +97,10 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
-        yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
+        yield m.report_success()
 
-    @PropsMock.mock()
-    def critic_mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def critic_mock(m: CriticMock) -> PlayGen:
         # Capture first request to verify system message is present
         first_request = yield None
 
@@ -107,7 +113,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         logger.info(f"Critic received system message ({len(system_text)} chars)")
 
         # Submit zero issues
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Critic completed"])
+        yield m.submit(issues_count=0, summary="Critic completed")
 
     grader_mock = make_orchestration_grader_mock()
 
@@ -148,7 +154,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
 
 @pytest.mark.timeout(300)
 @pytest.mark.slow
-@pytest.mark.skip(reason="Requires registry proxy: pass PROPS_REGISTRY_PROXY_* env vars to containers")
 async def test_po_creates_custom_critic_with_token(
     synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
 ):
@@ -156,7 +161,7 @@ async def test_po_creates_custom_critic_with_token(
 
     This test verifies the complete workflow:
     1. Optimizer creates a custom agent.md with a unique verification token
-    2. Optimizer builds and pushes custom critic image via registry proxy
+    2. Optimizer uses crane push to push OCI layout to registry proxy
     3. Optimizer calls run_critic with the new custom image
     4. Critic receives system prompt and asserts it contains the token
     5. Grading completes
@@ -164,8 +169,8 @@ async def test_po_creates_custom_critic_with_token(
     snapshot_slug = SnapshotSlug(test_snapshot)
     verification_token = f"VERIFY_{secrets.token_hex(8)}"
 
-    @PropsMock.mock()
-    def optimizer_mock(m: PropsMock) -> PlayGen:
+    @CriticDevMock.mock()
+    def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
 
         # Create custom critic directory with agent.md containing the random token
@@ -175,7 +180,7 @@ You are a code critic. VERIFICATION_TOKEN: {verification_token}
 
 Find issues in the code and report them.
 """
-        result = yield from m.docker_exec_roundtrip(
+        result = yield from m.exec_roundtrip(
             [
                 "sh",
                 "-c",
@@ -189,15 +194,20 @@ AGENT_EOF
         )
         assert_that(result, exited_successfully())
 
-        # Build and push the custom image via registry proxy
-        result = yield from m.docker_exec_roundtrip(
-            ["props", "agent-pkg", "create", "/workspace/custom_critic/"], timeout_ms=60000
+        # Push the custom image via crane to the registry proxy
+        result = yield from m.exec_roundtrip(
+            [
+                "sh",
+                "-c",
+                "crane push /workspace/custom_critic/ ${PROPS_BACKEND_URL#http://}/custom_critic:latest --insecure",
+            ],
+            timeout_ms=60000,
         )
         assert_that(result, exited_successfully())
-        logger.info(f"agent-pkg create output: {result.stdout}")
+        logger.info(f"crane push output: {result.stdout}")
 
         # Extract digest from the created agent definition
-        result = yield from m.docker_exec_roundtrip(
+        result = yield from m.exec_roundtrip(
             ["psql", "-t", "-c", "SELECT digest FROM agent_definitions ORDER BY created_at DESC LIMIT 1"],
             timeout_ms=10000,
         )
@@ -228,10 +238,10 @@ AGENT_EOF
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
-        yield from m.docker_exec_roundtrip(["prompt-optimize-dev", "report-success"])
+        yield m.report_success()
 
-    @PropsMock.mock()
-    def critic_mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def critic_mock(m: CriticMock) -> PlayGen:
         # Capture first request to verify system message contains the token
         first_request = yield None
 
@@ -244,7 +254,7 @@ AGENT_EOF
         logger.info(f"Critic received system message with expected token: {verification_token}")
 
         # Submit zero issues
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Custom critic completed"])
+        yield m.submit(issues_count=0, summary="Custom critic completed")
 
     grader_mock = make_orchestration_grader_mock()
 
@@ -291,22 +301,23 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
     and the registry proxy should check the agent type before allowing pushes.
     """
 
-    @PropsMock.mock()
-    def mock(m: PropsMock) -> PlayGen:
+    @CriticMock.mock()
+    def mock(m: CriticMock) -> PlayGen:
         yield None  # First request
 
-        # Try to call agent-pkg create from critic container
-        # This should fail because critics don't have registry write access
-        result = yield from m.docker_exec_roundtrip(["props", "agent-pkg", "create", "/workspace/"], timeout_ms=30000)
-        # The command should fail - check for non-zero exit or error message
-        # We expect a 403 Forbidden from the registry proxy
+        # Try crane push from critic container — should fail because
+        # critics don't have registry write access (403 Forbidden).
+        result = yield from m.exec_roundtrip(
+            ["sh", "-c", "crane push /workspace/ ${PROPS_BACKEND_URL#http://}/test-push:latest --insecure 2>&1"],
+            timeout_ms=30000,
+        )
         stdout = result.stdout if hasattr(result, "stdout") else ""
         stderr = result.stderr if hasattr(result, "stderr") else ""
         logger.info(f"Critic push attempt stdout: {stdout}")
         logger.info(f"Critic push attempt stderr: {stderr}")
 
-        # Report failure since we couldn't push (expected behavior)
-        yield from m.docker_exec_roundtrip(["critique", "submit", "0", "Push attempt completed (expected to fail)"])
+        # Submit zero issues (expected behavior: push failed, critic still completes)
+        yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")
 
     async with e2e_stack(mock, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(

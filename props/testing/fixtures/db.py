@@ -19,6 +19,8 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import sync_all
+from test_util.image_loader import load_image
+from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
 
 # Path to test specimens (git-tracked fixtures)
 TEST_FIXTURES_PATH = Path(__file__).parent / "testdata" / "specimens"
@@ -47,6 +49,8 @@ def postgres_container() -> Generator[PostgresContainer]:
     Starts a fresh PostgreSQL 16 container for the entire test session.
     All tests share this container but get isolated databases.
     """
+    load_image(RYUK_TARBALL)
+    load_image(POSTGRES_16_TARBALL)
     with PostgresContainer(
         image="postgres:16", username="postgres", password="postgres", dbname="postgres"
     ) as postgres:

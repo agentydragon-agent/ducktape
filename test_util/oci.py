@@ -1,16 +1,15 @@
 """OCI image utilities for tests.
 
-Provides crane-based push for Bazel-built OCI images to test registries,
-bypassing Docker entirely. Images go directly from Bazel's OCI layout
-directory to the registry via crane push.
+Provides async push utilities for Bazel-built OCI images to test registries
+using crane. Images are pushed directly from OCI layout directories produced
+by Bazel's oci_image rule.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 
 import runfiles
 
@@ -19,39 +18,44 @@ logger = logging.getLogger(__name__)
 _CRANE_RLOCATION = "crane/crane"
 
 
-def _get_crane() -> Path:
-    """Get path to the crane binary from runfiles."""
-    return runfiles.get_required_path(_CRANE_RLOCATION)
-
-
 @dataclass(frozen=True)
 class BazelImage:
-    """OCI image built by Bazel, identified by its layout directory.
+    """OCI image built by Bazel, available as an OCI layout directory.
 
-    The layout directory is the output of a Bazel oci_image target,
-    containing the standard OCI image layout (blobs/, index.json, oci-layout).
-
-    repo_name matches the OCI repository name (and AgentType for agent images).
+    image_rlocation: Runfiles-relative path to the oci_image output directory.
+    repo_name: OCI repository name (e.g., "critic", "grader").
     """
 
     repo_name: str
-    layout_dir: Path
+    image_rlocation: str
 
 
-def crane_push(image: BazelImage, registry_url: str, tag: str) -> None:
-    """Push an OCI image layout to a registry via crane.
+async def crane_push(image: BazelImage, registry_url: str, tag: str) -> None:
+    """Push an OCI layout directory to a registry via crane.
+
+    Uses asyncio subprocess to avoid blocking the event loop while uvicorn
+    serves registry proxy requests on the same loop.
 
     Args:
         image: Bazel-built OCI image with layout directory.
         registry_url: Registry host:port (e.g., "localhost:12345").
         tag: Tag to push (e.g., "latest").
     """
-    crane = _get_crane()
+    crane = runfiles.get_required_path(_CRANE_RLOCATION)
+    image_path = runfiles.get_required_path(image.image_rlocation)
     dest = f"{registry_url}/{image.repo_name}:{tag}"
-    logger.info("Pushing %s -> %s", image.layout_dir, dest)
-    result = subprocess.run(
-        [str(crane), "push", "--insecure", str(image.layout_dir), dest], check=False, capture_output=True, text=True
+
+    logger.info("Pushing %s -> %s via crane", image_path, dest)
+    proc = await asyncio.create_subprocess_exec(
+        crane,
+        "push",
+        str(image_path),
+        dest,
+        "--insecure",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"crane push failed for {dest}: {result.stderr}")
-    logger.info("Pushed %s", dest)
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(f"crane push failed for {dest}: {stderr.decode()}")
+    logger.info("Pushed %s: %s", dest, stdout.decode().strip())

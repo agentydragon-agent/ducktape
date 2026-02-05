@@ -70,7 +70,34 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
 )
-use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64", "oci_crane_linux_amd64", "python_slim", "python_slim_linux_amd64")
+
+# Test infrastructure: PostgreSQL for Testcontainers
+oci.pull(
+    name = "postgres_16",
+    digest = "sha256:6e9bbed548cc1ca776dd4685cfea9efe60d58df91186ec6bad7328fd03b388a5",
+    image = "docker.io/library/postgres",
+    platforms = ["linux/amd64"],
+    tag = "16",
+)
+
+# Test infrastructure: Docker registry for e2e tests
+oci.pull(
+    name = "registry_2",
+    digest = "sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373",
+    image = "docker.io/library/registry",
+    platforms = ["linux/amd64"],
+    tag = "2",
+)
+
+# Test infrastructure: Testcontainers Ryuk reaper (container cleanup)
+oci.pull(
+    name = "ryuk",
+    digest = "sha256:ce323122ac8fe22e87a63651903286d478c857c44961aa3a484c2596c53cd1d0",
+    image = "docker.io/testcontainers/ryuk",
+    platforms = ["linux/amd64"],
+    tag = "0.8.1",
+)
+use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "python_slim", "python_slim_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
 
 # Re-export crane binary with public visibility for py_test data deps
 crane = use_extension("//tools:crane_export.bzl", "crane_export")

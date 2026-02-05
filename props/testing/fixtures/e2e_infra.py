@@ -2,7 +2,7 @@
 
 Provides session-scoped test infrastructure:
 - Docker registry (testcontainers registry:2)
-- BazelImage fixtures for agent images (from Bazel oci_image layout directories)
+- BazelImage fixtures for agent images (from Bazel oci_image layouts)
 
 Usage in tests:
     @pytest.mark.requires_docker
@@ -21,8 +21,9 @@ import pytest
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
-import runfiles
+from test_util.image_loader import load_image
 from test_util.oci import BazelImage
+from third_party.containers.rlocations import REGISTRY_2_TARBALL, RYUK_TARBALL
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,8 @@ def e2e_registry() -> Generator[DockerContainer]:
 
     Starts a registry:2 container and waits for it to be ready.
     """
+    load_image(RYUK_TARBALL)
+    load_image(REGISTRY_2_TARBALL)
     with DockerContainer("registry:2").with_exposed_ports(5000) as registry:
         wait_for_logs(registry, "listening on")
         time.sleep(0.5)
@@ -49,21 +52,30 @@ def e2e_registry_url(e2e_registry: DockerContainer) -> str:
     return f"http://localhost:{port}"
 
 
-# --- Agent image fixtures (session-scoped, from Bazel oci_image outputs) ---
+# --- Agent image fixtures (session-scoped, from Bazel oci_image layouts) ---
 
 
-def _make_image_fixture(image_runfiles_path: str, repo_name: str):
-    """Factory for agent image fixtures from Bazel oci_image layout directories."""
+# Map of repo_name → OCI layout rlocation
+_AGENT_IMAGES = {
+    "critic": "_main/props/critic/image",
+    "grader": "_main/props/grader/image",
+    "prompt_optimizer": "_main/props/critic_dev/optimize/image",
+    "improvement": "_main/props/critic_dev/improve/image",
+}
+
+
+def _make_image_fixture(repo_name: str):
+    """Factory for agent image fixtures from Bazel oci_image layouts."""
+    image_rlocation = _AGENT_IMAGES[repo_name]
 
     @pytest.fixture(scope="session")
     def _fixture() -> BazelImage:
-        layout_dir = runfiles.get_required_path(f"_main/{image_runfiles_path}")
-        return BazelImage(repo_name=repo_name, layout_dir=layout_dir)
+        return BazelImage(repo_name=repo_name, image_rlocation=image_rlocation)
 
     return _fixture
 
 
-critic_image = _make_image_fixture("props/critic/image", "critic")
-grader_image = _make_image_fixture("props/grader/image", "grader")
-prompt_optimizer_image = _make_image_fixture("props/critic_dev/optimize/image", "prompt_optimizer")
-improvement_image = _make_image_fixture("props/critic_dev/improve/image", "improvement")
+critic_image = _make_image_fixture("critic")
+grader_image = _make_image_fixture("grader")
+prompt_optimizer_image = _make_image_fixture("prompt_optimizer")
+improvement_image = _make_image_fixture("improvement")
