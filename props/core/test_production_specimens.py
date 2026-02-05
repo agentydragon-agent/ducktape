@@ -33,7 +33,11 @@ from props.db.models import Snapshot
 from props.db.setup import ensure_database_exists, recreate_database
 from props.db.sync.sync import sync_all
 
-pytestmark = [pytest.mark.requires_production_specimens, pytest.mark.integration]
+pytestmark = [
+    pytest.mark.requires_production_specimens,
+    pytest.mark.integration,
+    pytest.mark.skip(reason="TODO: validate with actual prod data in separate repo"),
+]
 
 
 # =============================================================================
