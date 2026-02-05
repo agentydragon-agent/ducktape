@@ -98,6 +98,19 @@ py_library(
 )
 
 py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":runs",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/orchestration:agent_credentials",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "runs",
     srcs = ["runs.py"],
     visibility = ["//props:__subpackages__"],

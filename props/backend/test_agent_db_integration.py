@@ -20,44 +20,18 @@ from props.core.agent_types import CriticTypeConfig
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus
-from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
+from props.orchestration.agent_credentials import AgentCredentials
+from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
-def _exhaust_generator(gen):
-    """Run a FastAPI dependency generator and return the yielded value."""
-    value = next(gen)
-    with contextlib.suppress(StopIteration):
-        next(gen)
-    return value
-
-
 @pytest_asyncio.fixture
 async def critic_agent_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
-    """Create critic agent credentials with a real Postgres role.
-
-    Creates an AgentRun record so current_agent_type() returns 'critic'
-    for RLS policy evaluation, then creates the Postgres role.
-    """
-    run_id = uuid4()
-
-    with synced_db.session() as session:
-        ensure_fake_agent_definitions(session)
-
-        type_config = CriticTypeConfig(example={"snapshot_slug": "test-fixtures/train1", "kind": "whole_snapshot"})
-        agent_run = AgentRun(
-            agent_run_id=run_id,
-            image_digest=FAKE_CRITIC_DIGEST,
-            model="test-model",
-            status=AgentRunStatus.COMPLETED,
-            type_config=type_config.model_dump(),
-        )
-        session.add(agent_run)
-        session.commit()
-
-    yield await ensure_agent_role(synced_db.config, run_id)
+    """Create critic agent credentials with a real Postgres role."""
+    type_config = CriticTypeConfig(example={"snapshot_slug": "test-fixtures/train1", "kind": "whole_snapshot"})
+    yield await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DIGEST)
 
 
 async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_agent_creds: AgentCredentials) -> None:
@@ -128,12 +102,12 @@ async def test_agent_db_can_see_own_run(synced_db: Database, critic_agent_creds:
             next(gen)
 
 
-async def test_admin_auth_returns_admin_db(synced_db: Database) -> None:
+async def test_admin_auth_returns_admin_db(synced_db: Database, exhaust_generator) -> None:
     """get_agent_db with admin auth returns the admin Database directly."""
     auth = AuthContext.localhost_admin()
 
     gen = get_agent_db(admin_db=synced_db, auth=auth)
-    db = _exhaust_generator(gen)
+    db = exhaust_generator(gen)
 
     assert db is synced_db, "Admin should get the same admin Database instance"
 

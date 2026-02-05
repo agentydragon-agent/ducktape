@@ -42,52 +42,24 @@ from props.critic_dev.shared import TargetMetric
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
-from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
-from props.testing.fixtures.runs import (
-    FAKE_PROMPT_OPTIMIZER_DIGEST,
-    ensure_fake_agent_definitions,
-    make_fake_critic_run,
-)
+from props.orchestration.agent_credentials import AgentCredentials
+from props.testing.fixtures.credentials import make_agent_credentials
+from props.testing.fixtures.runs import FAKE_PROMPT_OPTIMIZER_DIGEST, make_fake_critic_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest_asyncio.fixture
 async def prompt_optimizer_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
-    """Create prompt optimizer agent credentials.
-
-    Creates an AgentRun record with agent_type='prompt_optimizer' so that
-    current_agent_type() returns the correct value for RLS policy evaluation.
-
-    Returns:
-        credentials for use in RLS tests
-    """
-    run_id = uuid4()
-
-    # Create AgentRun record with prompt_optimizer type_config (as admin)
-    # This must happen BEFORE the agent role is created, so RLS policies can
-    # identify this user as a prompt_optimizer via current_agent_type()
-    with synced_db.session() as session:
-        ensure_fake_agent_definitions(session)
-
-        type_config = PromptOptimizerTypeConfig(
-            target_metric=TargetMetric.TARGETED,
-            optimizer_model="test-optimizer-model",
-            critic_model="test-critic-model",
-            grader_model="test-grader-model",
-            budget_limit=100.0,
-        )
-        agent_run = AgentRun(
-            agent_run_id=run_id,
-            image_digest=FAKE_PROMPT_OPTIMIZER_DIGEST,
-            model="test-model",
-            status=AgentRunStatus.COMPLETED,
-            type_config=type_config.model_dump(),
-        )
-        session.add(agent_run)
-        session.commit()
-
-    yield await ensure_agent_role(synced_db.config, run_id)
+    """Create prompt optimizer agent credentials with a real Postgres role."""
+    type_config = PromptOptimizerTypeConfig(
+        target_metric=TargetMetric.TARGETED,
+        optimizer_model="test-optimizer-model",
+        critic_model="test-critic-model",
+        grader_model="test-grader-model",
+        budget_limit=100.0,
+    )
+    yield await make_agent_credentials(synced_db, type_config, FAKE_PROMPT_OPTIMIZER_DIGEST)
 
 
 @pytest_asyncio.fixture

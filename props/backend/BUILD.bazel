@@ -96,6 +96,19 @@ py_library(
 )
 
 # =============================================================================
+# Test support
+# =============================================================================
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)
+
+# =============================================================================
 # Tests
 # =============================================================================
 
@@ -105,6 +118,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":auth",
+        ":conftest",
         "//props/db:config",
         "//props/db:database",
         "@pypi//fastapi",
@@ -119,12 +133,14 @@ docker_py_test(
     imports = ["../.."],
     deps = [
         ":auth",
+        ":conftest",
         "//props:conftest",
         "//props/core:agent_types",
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
         "//props/orchestration:agent_credentials",
+        "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:runs",
         "@pypi//asyncpg",
         "@pypi//pytest",
