@@ -98,6 +98,45 @@ and `CLONE_NEWUSER`).
 | `sendfile`                | works   |                                                                                                                              |
 | `timerfd_create`          | works   |                                                                                                                              |
 | `signalfd`                | EINVAL  |                                                                                                                              |
+| `add_key` / `keyctl`      | limited | Kernel keyring quota exhausts after ~60-70 container invocations per session                                                 |
+
+## Kernel Keyring Quota Limit
+
+**Status: FIXED** — The `crun-gvisor-wrapper` now injects `--no-new-keyring` to
+prevent keyring creation entirely. Builds with 100+ RUN steps work without
+hitting quota limits.
+
+### Background
+
+gVisor imposes a **per-session kernel keyring quota** (~60-70 keyrings). By
+default, crun creates a new session keyring for each container. Without the fix,
+this would limit Dockerfile builds to ~60 RUN steps per session.
+
+**Why crun creates keyrings**: The Linux kernel keyring provides credential
+isolation — secrets stored in a container's keyring are inaccessible to other
+containers. crun uses `keyctl(KEYCTL_JOIN_SESSION_KEYRING)` to create a new
+session keyring when starting each container.
+
+**The fix**: The `--no-new-keyring` flag tells crun to skip keyring creation
+and inherit the parent's session keyring. Our `crun-gvisor-wrapper` injects
+this flag for all `crun create` and `crun run` invocations.
+
+### Historical Context (before fix)
+
+**Symptoms** (no longer occur with the fix):
+
+- `create keyring 'buildah-buildah...': Disk quota exceeded`
+- Builds fail at early RUN steps after previous builds consumed the quota
+- Cleaning up containers/storage does NOT restore quota
+
+**Why recovery was impossible**: gVisor's keyring syscall support is limited:
+
+- `keyctl(KEYCTL_GET_KEYRING_ID)` returns `EDQUOT` once quota is exceeded
+- `keyctl(KEYCTL_CLEAR)` returns `ENOSYS` (not implemented in gVisor)
+- `keyctl(KEYCTL_REVOKE)` returns `ENOSYS` (not implemented in gVisor)
+- `add_key()` returns `EACCES` (permission denied)
+
+gVisor doesn't expose `/proc/sys/kernel/keys/*` sysctls to tune limits.
 
 ## Supported Filesystem Types
 
@@ -135,15 +174,30 @@ From `/proc/filesystems`:
 - Layer deduplication: only diffs stored per layer, 8 MB for alpine vs full copy
 - Layer caching works: unchanged steps reuse cached layers instantly
 
-**Layer count limit**: The kernel imposes a page size limit (~4096 bytes) on the
-`lowerdir` mount option string. Each overlay layer adds ~70 characters to this string.
-At ~54 layers, the string exceeds the limit and `mount(overlay)` returns EINVAL.
-Our 98-step Dockerfile hits this at step ~76.
+**Layer count limit**: The kernel imposes a **4096 byte (1 page)** limit on the
+`mount()` options string. The overlay `lowerdir` option lists all lower layer paths,
+and each layer adds `{graphroot}/overlay/l/{26-char-symlink}:` to this string.
 
-**Workaround**: Restructure the Dockerfile into multi-stage builds where each stage
-has <50 steps. Each stage starts a fresh overlay stack, resetting the layer count.
-With 41 RUN instructions across 98 total steps, 3 stages of ~33 steps each would
-stay within the limit while enabling full layer caching.
+Empirically verified limits (2026-02-03):
+
+- Direct mount test: 90 layers (4066 bytes) succeeded, 91 layers (4110 bytes) failed
+- The limit is purely byte-based, not layer-count-based
+- Shorter graphroot paths allow more layers
+
+With typical containers/storage graphroot paths:
+
+- Per-layer overhead: ~80 bytes (path + symlink + separator)
+- Fixed overhead: ~268 bytes (lowerdir= prefix, upperdir=, workdir=)
+- Practical max: ~47-50 layers per overlay stack
+
+**containers/storage behavior**: Layers are deduplicated across images. Multiple
+Dockerfile builds share common base layers in the `l/` directory. A 90-step build
+may succeed because it shares layers with previous builds, keeping the total unique
+layer count within limits.
+
+**Workaround** (if hitting limit): Multi-stage builds reset the overlay stack. Each
+`FROM` instruction starts a fresh layer stack. Alternatively, use `--squash` to
+flatten layers (loses caching benefits).
 
 Configuration:
 

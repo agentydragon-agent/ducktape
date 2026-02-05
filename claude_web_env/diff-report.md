@@ -2,277 +2,293 @@
 
 **live** vs **built**
 
-Generated: 2026-02-03
-
-## Status
-
-**Build v11**: Added stripping, PHP 8.4 version pin, and python3-apt version pin.
-
-Previous run (v10) showed 241 real differences. The changes in this version:
-
-1. **Stripping added**: `rm -rf` for `/usr/share/doc`, `/usr/share/man`, `/usr/include`,
-   `/usr/sbin`, `/usr/share/X11`, etc. to match live container's size optimization.
-
-2. **PHP 8.4 pinned**: Version `8.4.15-1+ubuntu24.04.1+deb.sury.org+1` via APT preferences.
-
-3. **python3-apt pinned**: Version `2.7.7ubuntu5.1` to match live.
-
-## Remaining Work
-
-For exact binary matching, still need to pin:
-
-- util-linux, binutils, gdb to specific versions
-- Use snapshot.ubuntu.com for remaining packages
-
 ## Summary
 
-|                      | Count   | %        |
-| -------------------- | ------- | -------- |
-| Identical            | 120,924 | 15.4%    |
-| Excluded (expected)  | 662,767 | 84.5%    |
-| **Real differences** | **241** | **0.0%** |
-| Total                | 783,932 |          |
+|                      | Count     | %        |
+| -------------------- | --------- | -------- |
+| Identical            | 120,576   | 6.8%     |
+| Excluded (expected)  | 1,664,740 | 93.2%    |
+| **Real differences** | **112**   | **0.0%** |
+| Total                | 1,785,428 |          |
 
 ## Real Differences
 
-### Only in live (4)
+### Only in built (1)
 
-**python-libs** (4)
+**python-libs** (1)
 
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info/PKG-INFO`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info/dependency_links.txt`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.1.egg-info/top_level.txt`
+- `/usr/lib/python3.13/pydoc_data/module_docs.py`
 
-### Only in built (4)
+### Content changed (hash differs) (111)
 
-**python-libs** (4)
+**docs** (4)
 
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info/PKG-INFO`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info/dependency_links.txt`
-- `/usr/lib/python3/dist-packages/python_apt-2.7.7+ubuntu5.egg-info/top_level.txt`
+- `/usr/share/doc/libpng16-16t64/changelog.Debian.gz` — size 1963->1501
+- `/usr/share/doc/libpython3.13-stdlib/changelog.Debian.gz` — size 19356->19377
+- `/usr/share/doc/linux-libc-dev/changelog.Debian.gz` — size 532128->531692
+- `/usr/share/doc/python3.13/changelog.Debian.gz` — size 19350->19369
 
-### Content changed (hash differs) (233)
+**headers** (6)
 
-**docs** (19)
+- `/usr/include/python3.13/cpython/object.h` — size 19074->19461
+- `/usr/include/python3.13/cpython/pyerrors.h` — size 2908->2932
+- `/usr/include/python3.13/internal/pycore_ceval.h` — size 11366->11384
+- `/usr/include/python3.13/internal/pycore_ceval_state.h` — size 3921->4036
+- `/usr/include/python3.13/internal/pycore_pymath.h` — size 8600->8600
+- `/usr/include/python3.13/patchlevel.h` — size 1301->1301
 
-- `/usr/share/doc/binutils-common/changelog.Debian.gz` — size 1928->1963
-- `/usr/share/doc/bsdutils/changelog.Debian.gz` — size 13927->14002
-- `/usr/share/doc/fonts-opensymbol/changelog.Debian.gz` — size 36166->42367
-- `/usr/share/doc/fonts-opensymbol/copyright` — size 21830->20199
-- `/usr/share/doc/gdb/changelog.Debian.gz` — size 4004->4529
-- `/usr/share/doc/libblkid1/changelog.Debian.gz` — size 13925->14001
-- `/usr/share/doc/libctf-nobfd0/changelog.Debian.gz` — size 1931->1965
-- `/usr/share/doc/libcups2t64/changelog.Debian.gz` — size 10464->10249
-- `/usr/share/doc/libsframe1/changelog.Debian.gz` — size 1928->1962
-- `/usr/share/doc/libsmartcols1/changelog.Debian.gz` — size 13926->14001
-- `/usr/share/doc/libsubid4/changelog.Debian.gz` — size 6467->6641
-- `/usr/share/doc/libuuid1/changelog.Debian.gz` — size 13929->14004
-- `/usr/share/doc/login/changelog.Debian.gz` — size 6466->6641
-- `/usr/share/doc/passwd/changelog.Debian.gz` — size 6467->6641
-- `/usr/share/doc/php-common/changelog.gz` — size 2107->2169
-- `/usr/share/doc/php8.4-common/changelog.Debian.gz` — size 7882->8090
-- `/usr/share/doc/php8.4-common/changelog.gz` — size 24220->26057
-- `/usr/share/doc/python-apt-common/changelog.gz` — size 6832->6737
-- `/usr/share/doc/python3-apt/changelog.gz` — size 6831->6736
+**python-libs** (97)
 
-**etc** (1)
+- `/usr/lib/python3.13/_android_support.py` — size 7065->7417
+- `/usr/lib/python3.13/_pyio.py` — size 93809->93862
+- `/usr/lib/python3.13/_pyrepl/unix_console.py` — size 26721->26762
+- `/usr/lib/python3.13/_pyrepl/windows_console.py` — size 21620->21892
+- `/usr/lib/python3.13/_sitebuiltins.py` — size 3128->2699
+- `/usr/lib/python3.13/_sysconfigdata__x86_64-linux-gnu.py` — size 47913->47913
+- `/usr/lib/python3.13/argparse.py` — size 101661->102926
+- `/usr/lib/python3.13/asyncio/__main__.py` — size 6171->6281
+- `/usr/lib/python3.13/asyncio/futures.py` — size 14157->14189
+- `/usr/lib/python3.13/asyncio/selector_events.py` — size 48474->48623
+- `/usr/lib/python3.13/config-3.13-x86_64-linux-gnu/Makefile` — size 204830->205166
+- `/usr/lib/python3.13/config-3.13-x86_64-linux-gnu/libpython3.13-pic.a` — size 11497270->11502642
+- `/usr/lib/python3.13/config-3.13-x86_64-linux-gnu/libpython3.13.a` — size 11868934->11877914
+- `/usr/lib/python3.13/config-3.13-x86_64-linux-gnu/python.o` — size 11048->11048
+- `/usr/lib/python3.13/email/_encoded_words.py` — size 8541->8541
+- `/usr/lib/python3.13/email/_header_value_parser.py` — size 111175->113072
+- `/usr/lib/python3.13/email/feedparser.py` — size 22905->22869
+- `/usr/lib/python3.13/email/generator.py` — size 20829->21417
+- `/usr/lib/python3.13/email/headerregistry.py` — size 20819->21244
+- `/usr/lib/python3.13/enum.py` — size 85593->85619
+- `/usr/lib/python3.13/hmac.py` — size 7716->7759
+- `/usr/lib/python3.13/http/cookies.py` — size 19951->20854
+- `/usr/lib/python3.13/inspect.py` — size 128640->128803
+- `/usr/lib/python3.13/lib-dynload/_asyncio.cpython-313-x86_64-linux-gnu.so` — size 65560->65560
+- `/usr/lib/python3.13/lib-dynload/_bz2.cpython-313-x86_64-linux-gnu.so` — size 32112->32112
+- `/usr/lib/python3.13/lib-dynload/_codecs_cn.cpython-313-x86_64-linux-gnu.so` — size 154160->154160
+- `/usr/lib/python3.13/lib-dynload/_codecs_hk.cpython-313-x86_64-linux-gnu.so` — size 162384->162384
+- `/usr/lib/python3.13/lib-dynload/_codecs_iso2022.cpython-313-x86_64-linux-gnu.so` — size 31312->31312
+- `/usr/lib/python3.13/lib-dynload/_codecs_jp.cpython-313-x86_64-linux-gnu.so` — size 272944->272944
+- `/usr/lib/python3.13/lib-dynload/_codecs_kr.cpython-313-x86_64-linux-gnu.so` — size 141872->141872
+- `/usr/lib/python3.13/lib-dynload/_codecs_tw.cpython-313-x86_64-linux-gnu.so` — size 113200->113200
+- `/usr/lib/python3.13/lib-dynload/_contextvars.cpython-313-x86_64-linux-gnu.so` — size 14536->14536
+- `/usr/lib/python3.13/lib-dynload/_ctypes.cpython-313-x86_64-linux-gnu.so` — size 138376->138376
+- `/usr/lib/python3.13/lib-dynload/_ctypes_test.cpython-313-x86_64-linux-gnu.so` — size 31360->31360
+- `/usr/lib/python3.13/lib-dynload/_curses.cpython-313-x86_64-linux-gnu.so` — size 128584->128584
+- `/usr/lib/python3.13/lib-dynload/_curses_panel.cpython-313-x86_64-linux-gnu.so` — size 28272->28272
+- `/usr/lib/python3.13/lib-dynload/_dbm.cpython-313-x86_64-linux-gnu.so` — size 23888->23888
+- `/usr/lib/python3.13/lib-dynload/_decimal.cpython-313-x86_64-linux-gnu.so` — size 330808->334904
+- `/usr/lib/python3.13/lib-dynload/_hashlib.cpython-313-x86_64-linux-gnu.so` — size 64336->64336
+- `/usr/lib/python3.13/lib-dynload/_interpchannels.cpython-313-x86_64-linux-gnu.so` — size 45440->45440
+- `/usr/lib/python3.13/lib-dynload/_interpqueues.cpython-313-x86_64-linux-gnu.so` — size 31880->31880
+- `/usr/lib/python3.13/lib-dynload/_interpreters.cpython-313-x86_64-linux-gnu.so` — size 36928->36928
+- `/usr/lib/python3.13/lib-dynload/_json.cpython-313-x86_64-linux-gnu.so` — size 44840->44840
+- `/usr/lib/python3.13/lib-dynload/_lsprof.cpython-313-x86_64-linux-gnu.so` — size 27920->27920
+- `/usr/lib/python3.13/lib-dynload/_lzma.cpython-313-x86_64-linux-gnu.so` — size 45104->45104
+- `/usr/lib/python3.13/lib-dynload/_multibytecodec.cpython-313-x86_64-linux-gnu.so` — size 50568->50568
+- `/usr/lib/python3.13/lib-dynload/_multiprocessing.cpython-313-x86_64-linux-gnu.so` — size 24248->24248
+- `/usr/lib/python3.13/lib-dynload/_posixshmem.cpython-313-x86_64-linux-gnu.so` — size 14880->14880
+- `/usr/lib/python3.13/lib-dynload/_queue.cpython-313-x86_64-linux-gnu.so` — size 19632->19632
+- `/usr/lib/python3.13/lib-dynload/_sqlite3.cpython-313-x86_64-linux-gnu.so` — size 145040->149136
+- `/usr/lib/python3.13/lib-dynload/_ssl.cpython-313-x86_64-linux-gnu.so` — size 225776->225776
+- `/usr/lib/python3.13/lib-dynload/_testbuffer.cpython-313-x86_64-linux-gnu.so` — size 54248->54248
+- `/usr/lib/python3.13/lib-dynload/_testcapi.cpython-313-x86_64-linux-gnu.so` — size 292088->292088
+- `/usr/lib/python3.13/lib-dynload/_testclinic.cpython-313-x86_64-linux-gnu.so` — size 91848->91848
+- `/usr/lib/python3.13/lib-dynload/_testclinic_limited.cpython-313-x86_64-linux-gnu.so` — size 14696->14696
+- `/usr/lib/python3.13/lib-dynload/_testexternalinspection.cpython-313-x86_64-linux-gnu.so` — size 14816->14816
+- `/usr/lib/python3.13/lib-dynload/_testimportmultiple.cpython-313-x86_64-linux-gnu.so` — size 14728->14728
+- `/usr/lib/python3.13/lib-dynload/_testinternalcapi.cpython-313-x86_64-linux-gnu.so` — size 81360->81360
+- `/usr/lib/python3.13/lib-dynload/_testlimitedcapi.cpython-313-x86_64-linux-gnu.so` — size 178912->178912
+- `/usr/lib/python3.13/lib-dynload/_testmultiphase.cpython-313-x86_64-linux-gnu.so` — size 31888->31888
+- `/usr/lib/python3.13/lib-dynload/_testsinglephase.cpython-313-x86_64-linux-gnu.so` — size 20104->20104
+- `/usr/lib/python3.13/lib-dynload/_uuid.cpython-313-x86_64-linux-gnu.so` — size 14720->14720
+- `/usr/lib/python3.13/lib-dynload/_xxtestfuzz.cpython-313-x86_64-linux-gnu.so` — size 23152->23152
+- `/usr/lib/python3.13/lib-dynload/_zoneinfo.cpython-313-x86_64-linux-gnu.so` — size 36872->36872
+- `/usr/lib/python3.13/lib-dynload/mmap.cpython-313-x86_64-linux-gnu.so` — size 32600->32600
+- `/usr/lib/python3.13/lib-dynload/readline.cpython-313-x86_64-linux-gnu.so` — size 36544->36544
+- `/usr/lib/python3.13/lib-dynload/resource.cpython-313-x86_64-linux-gnu.so` — size 23552->23552
+- `/usr/lib/python3.13/lib-dynload/termios.cpython-313-x86_64-linux-gnu.so` — size 35584->35584
+- `/usr/lib/python3.13/lib-dynload/xxlimited.cpython-313-x86_64-linux-gnu.so` — size 15176->15176
+- `/usr/lib/python3.13/lib-dynload/xxlimited_35.cpython-313-x86_64-linux-gnu.so` — size 15080->15080
+- `/usr/lib/python3.13/lib-dynload/xxsubtype.cpython-313-x86_64-linux-gnu.so` — size 16032->16032
+- `/usr/lib/python3.13/linecache.py` — size 7284->7488
+- `/usr/lib/python3.13/logging/handlers.py` — size 62372->62524
+- `/usr/lib/python3.13/mailbox.py` — size 81644->81531
+- `/usr/lib/python3.13/multiprocessing/forkserver.py` — size 12648->12842
+- `/usr/lib/python3.13/multiprocessing/spawn.py` — size 9644->9659
+- `/usr/lib/python3.13/pdb.py` — size 91982->92522
+- `/usr/lib/python3.13/plistlib.py` — size 30034->30024
+- `/usr/lib/python3.13/pydoc.py` — size 110322->110658
+- `/usr/lib/python3.13/pydoc_data/topics.py` — size 530360->533248
+- `/usr/lib/python3.13/ssl.py` — size 52706->52706
+- `/usr/lib/python3.13/stat.py` — size 6147->6308
+- `/usr/lib/python3.13/subprocess.py` — size 90826->90827
+- `/usr/lib/python3.13/test/libregrtest/cmdline.py` — size 24278->24635
+- `/usr/lib/python3.13/test/libregrtest/main.py` — size 28970->28975
+- `/usr/lib/python3.13/test/libregrtest/runtests.py` — size 7191->7533
+- `/usr/lib/python3.13/test/libregrtest/utils.py` — size 24701->25039
+- `/usr/lib/python3.13/test/support/__init__.py` — size 93368->93985
+- `/usr/lib/python3.13/test/support/import_helper.py` — size 10688->10688
+- `/usr/lib/python3.13/test/support/pty_helper.py` — size 3052->3300
+- `/usr/lib/python3.13/types.py` — size 11207->11324
+- `/usr/lib/python3.13/typing.py` — size 133263->133261
+- `/usr/lib/python3.13/unittest/mock.py` — size 110923->110945
+- `/usr/lib/python3.13/urllib/request.py` — size 102464->102673
+- `/usr/lib/python3.13/wsgiref/headers.py` — size 6766->6943
+- `/usr/lib/python3.13/xml/dom/minidom.py` — size 68388->68456
+- `/usr/lib/python3.13/zoneinfo/_common.py` — size 5529->5587
 
-- `/etc/pam.d/login` — size 4118->3974
+**system-binaries** (1)
 
-**headers** (3)
+- `/usr/bin/python3.13` — size 6498936->6507184
 
-- `/usr/include/php/20240924/Zend/zend.h` — size 17662->17662
-- `/usr/include/php/20240924/ext/mbstring/php_onig_compat.h` — size 256->426
-- `/usr/include/php/20240924/main/php_version.h` — size 266->266
+**system-libs** (3)
 
-**other** (38)
-
-- `/usr/lib/php/20240924/build/gen_stub.php` — size 223580->223643
-- `/usr/lib/php/20240924/build/run-tests.php` — size 142534->142534
-- `/usr/lib/php/20240924/calendar.so` — size 39176->39176
-- `/usr/lib/php/20240924/ctype.so` — size 14600->14600
-- `/usr/lib/php/20240924/curl.so` — size 137480->137480
-- `/usr/lib/php/20240924/dom.so` — size 2099008->2099008
-- `/usr/lib/php/20240924/exif.so` — size 92424->92424
-- `/usr/lib/php/20240924/ffi.so` — size 186632->186632
-- `/usr/lib/php/20240924/fileinfo.so` — size 8653120->8653120
-- `/usr/lib/php/20240924/ftp.so` — size 67848->67848
-- `/usr/lib/php/20240924/gd.so` — size 149768->149768
-- `/usr/lib/php/20240924/gettext.so` — size 22792->22792
-- `/usr/lib/php/20240924/iconv.so` — size 55560->55560
-- `/usr/lib/php/20240924/intl.so` — size 653664->653664
-- `/usr/lib/php/20240924/mbstring.so` — size 1225600->1225600
-- `/usr/lib/php/20240924/mysqli.so` — size 166152->166152
-- `/usr/lib/php/20240924/mysqlnd.so` — size 223048->223048
-- `/usr/lib/php/20240924/opcache.so` — size 1204888->1209112
-- `/usr/lib/php/20240924/pdo.so` — size 137480->137480
-- `/usr/lib/php/20240924/pdo_mysql.so` — size 39176->39176
-- `/usr/lib/php/20240924/pdo_pgsql.so` — size 63752->63752
-- `/usr/lib/php/20240924/pgsql.so` — size 186632->186632
-- `/usr/lib/php/20240924/phar.so` — size 293128->297224
-- `/usr/lib/php/20240924/posix.so` — size 47368->47368
-- `/usr/lib/php/20240924/readline.so` — size 39176->39176
-- `/usr/lib/php/20240924/shmop.so` — size 18696->18696
-- `/usr/lib/php/20240924/simplexml.so` — size 63752->63752
-- `/usr/lib/php/20240924/sockets.so` — size 117000->117000
-- `/usr/lib/php/20240924/sysvmsg.so` — size 22792->22792
-- `/usr/lib/php/20240924/sysvsem.so` — size 14600->14600
-- `/usr/lib/php/20240924/sysvshm.so` — size 22792->22792
-- `/usr/lib/php/20240924/tokenizer.so` — size 35080->35080
-- `/usr/lib/php/20240924/xml.so` — size 76040->76040
-- `/usr/lib/php/20240924/xmlreader.so` — size 55560->55560
-- `/usr/lib/php/20240924/xmlwriter.so` — size 55560->55560
-- `/usr/lib/php/20240924/xsl.so` — size 39176->39176
-- `/usr/lib/php/20240924/zip.so` — size 108808->108808
-- `/usr/lib/php/php-maintscript-helper` — size 9234->9217
-
-**python-libs** (2)
-
-- `/usr/lib/python3/dist-packages/apt_inst.cpython-312-x86_64-linux-gnu.so` — size 60072->60072
-- `/usr/lib/python3/dist-packages/apt_pkg.cpython-312-x86_64-linux-gnu.so` — size 347328->347328
-
-**system-binaries** (143)
-
-- `/usr/bin/addpart` — size 14720->14720
-- `/usr/bin/chage` — size 72184->72184
-- `/usr/bin/chfn` — size 72792->72792
-- `/usr/bin/choom` — size 22912->22912
-- `/usr/bin/chrt` — size 31104->31104
-- `/usr/bin/chsh` — size 44760->44760
-- `/usr/bin/delpart` — size 14720->14720
-- `/usr/bin/dmesg` — size 70288->70288
-- `/usr/bin/expiry` — size 27152->27152
-- `/usr/bin/faillog` — size 23168->23168
-- `/usr/bin/fallocate` — size 27008->27008
-- `/usr/bin/findmnt` — size 69280->69280
-- `/usr/bin/flock` — size 23024->23024
-- `/usr/bin/gdb` — size 11744504->8920528
-- `/usr/bin/getopt` — size 22912->22912
-- `/usr/bin/getsubids` — size 14640->14640
-- `/usr/bin/gpasswd` — size 76248->76248
-- `/usr/bin/hardlink` — size 47600->47600
-- `/usr/bin/ionice` — size 18816->18816
-- `/usr/bin/ipcmk` — size 22984->22984
-- `/usr/bin/ipcrm` — size 18816->18816
-- `/usr/bin/ipcs` — size 39296->39296
-- `/usr/bin/last` — size 35200->35200
-- `/usr/bin/lastlog` — size 28456->28456
-- `/usr/bin/logger` — size 39904->39904
-- `/usr/bin/login` — size 53056->53056
-- `/usr/bin/lsblk` — size 149896->149896
-- `/usr/bin/lscpu` — size 113032->113032
-- `/usr/bin/lsipc` — size 51584->51584
-- `/usr/bin/lslocks` — size 31504->31504
-- `/usr/bin/lslogins` — size 51584->51584
-- `/usr/bin/lsmem` — size 39296->39296
-- `/usr/bin/lsns` — size 43400->43400
-- `/usr/bin/mcookie` — size 27080->27080
-- `/usr/bin/mesg` — size 14720->14720
-- `/usr/bin/more` — size 47496->47496
-- `/usr/bin/mount` — size 51584->51584
-- `/usr/bin/mountpoint` — size 18816->18816
-- `/usr/bin/namei` — size 22912->22912
-- `/usr/bin/newgidmap` — size 41864->41864
-- `/usr/bin/newgrp` — size 40664->40664
-- `/usr/bin/newuidmap` — size 41864->41864
-- `/usr/bin/nsenter` — size 31336->31336
-- `/usr/bin/partx` — size 63880->63880
-- `/usr/bin/passwd` — size 64152->64152
-- `/usr/bin/phar8.4.phar` — size 15242->15242
-- `/usr/bin/php-config8.4` — size 4803->4803
-- `/usr/bin/php8.4` — size 6025808->6029904
-- `/usr/bin/prlimit` — size 27536->27536
-- `/usr/bin/rename.ul` — size 22912->22912
-- `/usr/bin/renice` — size 14720->14720
-- `/usr/bin/resizepart` — size 22912->22912
-- `/usr/bin/rev` — size 14720->14720
-- `/usr/bin/script` — size 55680->55680
-- `/usr/bin/scriptlive` — size 43392->43392
-- `/usr/bin/scriptreplay` — size 35200->35200
-- `/usr/bin/setarch` — size 27288->27288
-- `/usr/bin/setpriv` — size 39304->39304
-- `/usr/bin/setsid` — size 14720->14720
-- `/usr/bin/setterm` — size 35200->35200
-- `/usr/bin/su` — size 55680->55680
-- `/usr/bin/taskset` — size 31104->31104
-- `/usr/bin/uclampset` — size 31104->31104
-- `/usr/bin/umount` — size 39296->39296
-- `/usr/bin/unshare` — size 43624->43624
-- `/usr/bin/utmpdump` — size 22912->22912
-- `/usr/bin/wall` — size 22912->22912
-- `/usr/bin/wdctl` — size 35224->35224
-- `/usr/bin/whereis` — size 31576->31576
-- `/usr/bin/x86_64-linux-gnu-addr2line` — size 31440->31440
-- `/usr/bin/x86_64-linux-gnu-ar` — size 55792->55792
-- `/usr/bin/x86_64-linux-gnu-as` — size 745768->745768
-- `/usr/bin/x86_64-linux-gnu-c++filt` — size 22800->22800
-- `/usr/bin/x86_64-linux-gnu-dwp` — size 1961344->1961344
-- `/usr/bin/x86_64-linux-gnu-elfedit` — size 35552->35552
-- `/usr/bin/x86_64-linux-gnu-gp-archive` — size 162336->162336
-- `/usr/bin/x86_64-linux-gnu-gp-collect-app` — size 178552->178552
-- `/usr/bin/x86_64-linux-gnu-gp-display-src` — size 153960->153960
-- `/usr/bin/x86_64-linux-gnu-gp-display-text` — size 297336->297336
-- `/usr/bin/x86_64-linux-gnu-gprof` — size 102184->102184
-- `/usr/bin/x86_64-linux-gnu-gprofng` — size 141672->141672
-- `/usr/bin/x86_64-linux-gnu-ld.bfd` — size 1359128->1359128
-- `/usr/bin/x86_64-linux-gnu-ld.gold` — size 3218592->3218592
-- `/usr/bin/x86_64-linux-gnu-nm` — size 44544->44544
-- `/usr/bin/x86_64-linux-gnu-objcopy` — size 166536->166536
-- `/usr/bin/x86_64-linux-gnu-objdump` — size 390848->390848
-- `/usr/bin/x86_64-linux-gnu-ranlib` — size 55792->55792
-- `/usr/bin/x86_64-linux-gnu-readelf` — size 789280->789280
-- `/usr/bin/x86_64-linux-gnu-size` — size 31184->31184
-- `/usr/bin/x86_64-linux-gnu-strings` — size 35440->35440
-- `/usr/bin/x86_64-linux-gnu-strip` — size 166568->166568
-- `/usr/sbin/agetty` — size 60992->60992
-- `/usr/sbin/blkdiscard` — size 22912->22912
-- `/usr/sbin/blkid` — size 55720->55720
-- `/usr/sbin/blkzone` — size 35200->35200
-- `/usr/sbin/blockdev` — size 35200->35200
-- `/usr/sbin/chcpu` — size 31104->31104
-- `/usr/sbin/chgpasswd` — size 59720->59720
-- `/usr/sbin/chmem` — size 35200->35200
-- `/usr/sbin/chpasswd` — size 55736->55736
-- _...and 43 more_
-
-**system-libs** (20)
-
-- `/usr/lib/x86_64-linux-gnu/bfd-plugins/libdep.so` — size 14560->14560
-- `/usr/lib/x86_64-linux-gnu/gprofng/libgp-collector.so` — size 1341720->1341720
-- `/usr/lib/x86_64-linux-gnu/gprofng/libgp-collectorAPI.a` — size 34346->34362
-- `/usr/lib/x86_64-linux-gnu/gprofng/libgp-collectorAPI.so` — size 14536->14536
-- `/usr/lib/x86_64-linux-gnu/gprofng/libgp-heap.so` — size 18744->18744
-- `/usr/lib/x86_64-linux-gnu/gprofng/libgp-iotrace.so` — size 63832->63832
-- `/usr/lib/x86_64-linux-gnu/gprofng/libgp-sync.so` — size 26904->26904
-- `/usr/lib/x86_64-linux-gnu/libbfd-2.42-system.so` — size 1479888->1479888
-- `/usr/lib/x86_64-linux-gnu/libblkid.so.1.1.0` — size 236592->236592
-- `/usr/lib/x86_64-linux-gnu/libctf-nobfd.so.0.0.0` — size 216096->216096
-- `/usr/lib/x86_64-linux-gnu/libctf.so.0.0.0` — size 220384->220384
-- `/usr/lib/x86_64-linux-gnu/libcups.so.2` — size 653416->653416
-- `/usr/lib/x86_64-linux-gnu/libfdisk.so.1.1.0` — size 350064->350064
-- `/usr/lib/x86_64-linux-gnu/libgprofng.so.0.0.0` — size 2334672->2334672
-- `/usr/lib/x86_64-linux-gnu/libmount.so.1.1.0` — size 309960->309960
-- `/usr/lib/x86_64-linux-gnu/libopcodes-2.42-system.so` — size 911656->911656
-- `/usr/lib/x86_64-linux-gnu/libsframe.so.1.0.0` — size 35168->35168
-- `/usr/lib/x86_64-linux-gnu/libsmartcols.so.1.1.0` — size 112792->112792
-- `/usr/lib/x86_64-linux-gnu/libsubid.so.4.0.0` — size 41248->41248
-- `/usr/lib/x86_64-linux-gnu/libuuid.so.1.3.0` — size 35032->35032
-
-**usr-share** (7)
-
-- `/usr/share/gdb/python/gdb/dap/breakpoint.py` — size 13936->13851
-- `/usr/share/gdb/python/gdb/dap/bt.py` — size 5671->5632
-- `/usr/share/gdb/python/gdb/dap/disassemble.py` — size 1634->3527
-- `/usr/share/gdb/python/gdb/dap/memory.py` — size 1386->1513
-- `/usr/share/gdb/python/gdb/dap/sources.py` — size 2990->3137
-- `/usr/share/lintian/overrides/php8.4-cli` — size 135->197
-- `/usr/share/lintian/overrides/php8.4-common` — size 302->367
+- `/usr/lib/x86_64-linux-gnu/libpng16.a` — size 357020->355524
+- `/usr/lib/x86_64-linux-gnu/libpng16.so.16.43.0` — size 223304->223304
+- `/usr/lib/x86_64-linux-gnu/libpython3.13.so.1.0` — size 7359248->7363400
 
 ## Excluded (expected differences)
 
-- excluded: 624,090
-- expected_only_left: 24,923
-- expected_only_right: 12,969
-- hash_excluded: 785
+- excluded: 1,625,907
+- expected_only_left: 24,569
+- expected_only_right: 12,910
+- hash_excluded: 1,354
+
+## Exclusion Pattern Utilization
+
+109 patterns excluded 1,664,740 paths (1,664,740 attributed to specific patterns). 10 patterns matched 0 paths.
+Ratio: 1.0x patterns per real diff.
+
+### `skip_paths` (30 patterns, 1,625,907 hits, 1 unused)
+
+|      Hits | Pattern                         |
+| --------: | ------------------------------- |
+| 1,125,259 | `/tmp`                          |
+|   469,513 | `/root/.cache`                  |
+|    14,125 | `/proc`                         |
+|     6,223 | `/root/.npm`                    |
+|     5,194 | `/home/user/ducktape`           |
+|     2,870 | `/var/lib/dpkg/info`            |
+|     1,721 | `/root/.local/share/virtualenv` |
+|       408 | `/root/.claude/plugins`         |
+|       176 | `/sys`                          |
+|       123 | `/home/claude/.npm`             |
+|        48 | `/run`                          |
+|        40 | `/root/.claude/projects`        |
+|        33 | `/root/.claude/session-env`     |
+|        33 | `/root/.claude/todos`           |
+|        26 | `/var/lib/apt/lists`            |
+|        21 | `/var/tmp`                      |
+|        20 | `/root/.claude/debug`           |
+|        19 | `/var/log`                      |
+|        18 | `/dev`                          |
+|        16 | `/root/.claude/shell-snapshots` |
+|         4 | `/root/.claude/statsig`         |
+|         4 | `/var/cache/apt`                |
+|         3 | `/root/.local/share/pnpm`       |
+|         3 | `/var/lib/containers`           |
+|         2 | `/home/claude/.claude/remote`   |
+|         2 | `/home/claude/.ssh`             |
+|         1 | `/home/claude/.cache`           |
+|         1 | `/root/.claude/plans`           |
+|         1 | `/root/.claude/telemetry`       |
+|         0 | `/nix` **UNUSED**               |
+
+### `volatile_paths` (44 patterns, 38,750 hits, 3 unused)
+
+|   Hits | Pattern                                  |
+| -----: | ---------------------------------------- |
+| 22,094 | `/root/.local/share/uv/**`               |
+|  8,701 | `/opt/ruby-*`                            |
+|  2,903 | `/usr/local/lib/python*/**`              |
+|  1,832 | `/opt/rbenv/**`                          |
+|  1,496 | `**/__pycache__/**`                      |
+|  1,240 | `/root/.local/lib/python*/**`            |
+|    257 | `/opt/nvm/**`                            |
+|    145 | `/opt/node*/**`                          |
+|     19 | `/var/cache/fontconfig/**`               |
+|     17 | `/root/.rustup/**`                       |
+|      6 | `/root/.local/share/gem/**`              |
+|      4 | `/var/cache/debconf/**`                  |
+|      4 | `/var/lib/dpkg/alternatives/**`          |
+|      3 | `/var/lib/postgresql/**`                 |
+|      2 | `/root/.local/bin/*`                     |
+|      2 | `/usr/local/use-go-*.sh`                 |
+|      1 | `/etc/group`                             |
+|      1 | `/etc/group-`                            |
+|      1 | `/etc/gshadow`                           |
+|      1 | `/etc/gshadow-`                          |
+|      1 | `/etc/hostname`                          |
+|      1 | `/etc/hosts`                             |
+|      1 | `/etc/machine-id`                        |
+|      1 | `/etc/passwd`                            |
+|      1 | `/etc/passwd-`                           |
+|      1 | `/etc/postgresql/**`                     |
+|      1 | `/etc/shadow`                            |
+|      1 | `/etc/shadow-`                           |
+|      1 | `/etc/ssl/certs/java/cacerts`            |
+|      1 | `/etc/ssl/certs/ssl-cert-snakeoil.pem`   |
+|      1 | `/etc/ssl/private/ssl-cert-snakeoil.key` |
+|      1 | `/etc/sudoers`                           |
+|      1 | `/root/.wget-hsts`                       |
+|      1 | `/usr/local/bin/composer`                |
+|      1 | `/usr/local/bin/golangci-lint`           |
+|      1 | `/var/cache/ldconfig/**`                 |
+|      1 | `/var/lib/apt/extended_states`           |
+|      1 | `/var/lib/dbus/machine-id`               |
+|      1 | `/var/lib/dpkg/status`                   |
+|      1 | `/var/lib/dpkg/status-old`               |
+|      1 | `/var/lib/dpkg/triggers/**`              |
+|      0 | `**/__pycache__` **UNUSED**              |
+|      0 | `/var/lib/sgml-base/**` **UNUSED**       |
+|      0 | `/var/lib/systemd/**` **UNUSED**         |
+
+### `only_in_live` (24 patterns, 77 hits, 1 unused)
+
+| Hits | Pattern                                         |
+| ---: | ----------------------------------------------- |
+|   30 | `/root/.config/**`                              |
+|   18 | `/root/.gradle/**`                              |
+|    8 | `/root/.launchpadlib/**`                        |
+|    2 | `/root/.local/state/**`                         |
+|    1 | `/.dockerenv`                                   |
+|    1 | `/container_info.json`                          |
+|    1 | `/etc/alternatives/python`                      |
+|    1 | `/etc/apt/sources.list`                         |
+|    1 | `/etc/apt/sources.list.d/ubuntu.sources`        |
+|    1 | `/etc/containers/networks`                      |
+|    1 | `/etc/ssl/certs/*.0`                            |
+|    1 | `/root/.bazelrc`                                |
+|    1 | `/root/.claude.json`                            |
+|    1 | `/root/.claude.json.backup`                     |
+|    1 | `/root/.claude/stats-cache.json`                |
+|    1 | `/root/.claude/stop-hook-git-check.sh`          |
+|    1 | `/root/.gradle`                                 |
+|    1 | `/root/.launchpadlib`                           |
+|    1 | `/root/.local/state`                            |
+|    1 | `/usr/bin/python`                               |
+|    1 | `/var/cache/containers`                         |
+|    1 | `/var/cache/containers/**`                      |
+|    1 | `/var/lib/dpkg/alternatives/python`             |
+|    0 | `/var/lib/dpkg/alternatives/python3` **UNUSED** |
+
+### `session_hook_artifacts` (5 patterns, 0 hits, 5 unused)
+
+| Hits | Pattern                                         |
+| ---: | ----------------------------------------------- |
+|    0 | `/etc/containers/containers.conf` **UNUSED**    |
+|    0 | `/root/.nix-defexpr` **UNUSED**                 |
+|    0 | `/root/.nix-defexpr/**` **UNUSED**              |
+|    0 | `/root/.nix-profile` **UNUSED**                 |
+|    0 | `/usr/local/bin/crun-gvisor-wrapper` **UNUSED** |
+
+### `only_in_built` (6 patterns, 6 hits, 0 unused)
+
+| Hits | Pattern                         |
+| ---: | ------------------------------- |
+|    1 | `/etc/apt/apt.conf.d/80retries` |
+|    1 | `/etc/ssl/certs/*.0`            |
+|    1 | `/usr/local/bin/conan`          |
+|    1 | `/usr/local/bin/httpx`          |
+|    1 | `/usr/local/bin/normalizer`     |
+|    1 | `/usr/local/bin/websockets`     |

@@ -16,6 +16,7 @@ Typical builds (package installs, file copies, compilation) work without any spe
 | Host networking     | `netns = "host"` in `containers.conf`                  | gVisor doesn't support private container networking                                              |
 | Docker format       | `image_default_format = "docker"` in `containers.conf` | OCI image format doesn't support `SHELL` directive                                               |
 | crun-gvisor-wrapper | `runtime = "crun-gvisor"` in `containers.conf`         | gVisor lacks `/proc/self/setgroups`; wrapper injects `run.oci.keep_original_groups=1` annotation |
+| No new keyring      | Wrapper injects `--no-new-keyring` flag                | gVisor has ~60-70 keyring quota per session; prevents quota exhaustion in large Dockerfiles      |
 | Host user namespace | `userns = "host"` in `containers.conf`                 | Skips user namespace creation (gVisor restriction)                                               |
 
 ## Disk space
@@ -79,6 +80,18 @@ RUN seq 1 1000000 > /dev/null 2>&1
 # Or redirect to a log file (preserve output in the image)
 RUN some-verbose-command > /tmp/build.log 2>&1
 ```
+
+## Kernel keyring quota (handled automatically)
+
+The `crun-gvisor-wrapper` automatically injects `--no-new-keyring` to prevent
+keyring creation. This allows Dockerfiles with 100+ RUN steps without hitting
+gVisor's ~60-70 keyring quota limit.
+
+**No action required** — the fix is applied automatically for all `podman build`
+and `podman run` operations.
+
+See `claude_web_env/docs/sandbox-investigation.md` for technical details on why
+this fix is necessary.
 
 ## Verifying shared library completeness
 
