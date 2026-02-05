@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated
@@ -283,3 +284,40 @@ def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
     caller_type, _ = get_caller_type(auth, admin_db)
     if caller_type != CallerType.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")
+
+
+# =============================================================================
+# Agent credential passthrough
+# =============================================================================
+
+
+def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
+    """Get Database using agent credentials for RLS enforcement.
+
+    For agent callers: Creates per-request Database with agent's Postgres
+    credentials. RLS policies automatically enforce access control.
+    For admin callers: Returns the shared admin Database instance.
+    For anonymous: Raises 401.
+
+    Yields the Database and disposes per-request agent connections on cleanup.
+    """
+    if not auth.is_authenticated:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if auth.is_admin:
+        yield admin_db
+        return
+
+    if not auth.username or not auth.password:
+        raise HTTPException(status_code=500, detail="Agent auth missing credentials")
+
+    agent_config = admin_db.config.with_user(auth.username, auth.password)
+    agent_db = Database(agent_config, _per_request=True)
+    try:
+        yield agent_db
+    finally:
+        agent_db.dispose()
+
+
+# Type alias for agent database dependency (use in route signatures where RLS applies)
+AgentDb = Annotated[Database, Depends(get_agent_db)]

@@ -105,26 +105,31 @@ def get_agent_db(request: Request) -> Database:
 
 ### Migration Path
 
-1. **Phase 1: Rename `get_db` → `get_admin_db` and add `get_agent_db`** ✅ PARTIAL
+1. **Phase 1: Rename `get_db` → `get_admin_db` and add `get_agent_db`** ✅
    - ✅ Rename existing `get_db` to `get_admin_db` in `deps.py`
    - ✅ Add `AdminDb` type alias for FastAPI route signatures
    - ✅ Update all imports and usages to `get_admin_db` (no behavior change)
-   - ⬚ Add new `get_agent_db` dependency
+   - ✅ Add new `get_agent_db` dependency (in `auth.py` to avoid circular deps with `deps.py`)
+   - ✅ Add `AgentDb` type alias in `auth.py`
+   - ✅ Add `_per_request` mode to `Database` (NullPool, no verification)
 
-2. **Phase 2: Migrate read-heavy endpoints to `get_agent_db`**
-   - Update routes that only read data accessible to agents
-   - Replace `db: Annotated[Database, Depends(get_admin_db)]` with `get_agent_db`
-   - Routes: runs list/detail (read-only parts), stats views
+2. **Phase 2: Migrate read-heavy endpoints to `get_agent_db`** ✅
+   - ✅ `agent_definitions.py`: `list_definitions` → `AgentDb`
+   - ✅ `stats.py`: all endpoints → `AgentDb`
+   - ✅ `runs.py` read endpoints: `list_active_runs`, `list_runs`, `get_run`, `get_run_llm_requests` → `AgentDb`
+   - ✅ `runs.py` write endpoints: `trigger_validation_runs` keeps `AdminDb` with explicit `require_admin_access`
+   - ✅ `runs.py` admin-only: `list_jobs` keeps explicit `require_admin_access`
+   - ✅ Unit tests for `get_agent_db` in `props/backend/test_auth.py`
 
 3. **Phase 3: Migrate write endpoints with RLS**
-   - Grading edges endpoints
-   - Reported issues endpoints
-   - Remove manual ACL checks that RLS now handles
+   - ⬚ Grading edges endpoints (when they exist)
+   - ⬚ Reported issues endpoints (when they exist)
+   - ⬚ Remove manual ACL checks that RLS now handles
 
 4. **Phase 4: Clean up**
-   - Remove `ACL_CAN_*` sets for operations now handled by RLS
-   - Simplify `CallerType` checks
-   - Update tests
+   - ⬚ Remove `ACL_CAN_*` sets for operations now handled by RLS
+   - ⬚ Simplify `CallerType` checks
+   - ⬚ Update tests
 
 ### Files Requiring Update
 
@@ -301,10 +306,10 @@ For production with remote access, consider **Option C (session auth)** later.
 ## Implementation Order
 
 1. ✅ Rename `get_db` → `get_admin_db`, add `AdminDb` type alias
-2. Add `get_agent_db` dependency (no behavior change)
-3. Add integration test for agent credential passthrough
-4. Migrate one read endpoint as proof of concept
-5. Migrate remaining read endpoints
-6. Migrate write endpoints with RLS
-7. Remove redundant Python ACL checks
-8. Update documentation
+2. ✅ Add `get_agent_db` dependency (in `auth.py`, with `_per_request` Database mode)
+3. ✅ Add unit tests for `get_agent_db` (`props/backend/test_auth.py`)
+4. ✅ Migrate read endpoints (`agent_definitions`, `stats`, `runs` reads) to `AgentDb`
+5. ⬚ Add integration test for agent credential passthrough (e2e with real Postgres)
+6. ⬚ Migrate write endpoints with RLS (grading edges, reported issues - when they exist)
+7. ⬚ Remove redundant Python ACL checks
+8. ⬚ Update documentation

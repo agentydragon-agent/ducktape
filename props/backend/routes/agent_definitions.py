@@ -1,21 +1,21 @@
 """Agent definitions API routes.
 
-All endpoints require admin access (localhost admin or authenticated admin user).
+Endpoints use agent credential passthrough - RLS policies filter results
+based on the caller's database role.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from props.backend.auth import require_admin_access
-from props.backend.deps import AdminDb
+from props.backend.auth import AgentDb
 from props.core.agent_types import AgentType
 from props.db.models import AgentDefinition
 
-router = APIRouter(dependencies=[Depends(require_admin_access)])
+router = APIRouter()
 
 
 class DefinitionInfo(BaseModel):
@@ -29,9 +29,9 @@ class DefinitionsResponse(BaseModel):
 
 
 @router.get("")
-def list_definitions(admin_db: AdminDb, agent_type: AgentType | None = None) -> DefinitionsResponse:
+def list_definitions(db: AgentDb, agent_type: AgentType | None = None) -> DefinitionsResponse:
     """List all agent definitions, optionally filtered by type."""
-    with admin_db.session() as session:
+    with db.session() as session:
         query = session.query(AgentDefinition)
         if agent_type:
             query = query.filter_by(agent_type=agent_type)

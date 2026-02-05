@@ -1,6 +1,8 @@
 """Runs API routes for triggering and monitoring agent runs.
 
-All endpoints require admin access (localhost admin or authenticated admin user).
+Read endpoints use agent credential passthrough - RLS policies filter results
+based on the caller's database role. Write endpoints (validation triggers)
+require admin access.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from props.backend.auth import require_admin_access
+from props.backend.auth import AgentDb, require_admin_access
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
@@ -39,7 +41,7 @@ from props.db.models import (
 )
 from props.orchestration.agent_registry import AgentRegistry
 
-router = APIRouter(dependencies=[Depends(require_admin_access)])
+router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
@@ -308,15 +310,13 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
 
 
 @router.get("/active")
-def list_active_runs(request: Request, admin_db: AdminDb) -> ActiveRunsResponse:
+def list_active_runs(request: Request, db: AgentDb) -> ActiveRunsResponse:
     """List all active agent runs.
 
     Queries database for runs with IN_PROGRESS status.
-    In the new in-container architecture, agents run independently and
-    status is tracked only in the database.
+    RLS policies filter visible runs based on caller's database role.
     """
-    # Query database for IN_PROGRESS runs
-    with admin_db.session() as session:
+    with db.session() as session:
         db_runs = (
             session.query(AgentRun)
             .filter(AgentRun.status == AgentRunStatus.IN_PROGRESS)
@@ -338,7 +338,7 @@ def list_active_runs(request: Request, admin_db: AdminDb) -> ActiveRunsResponse:
     return ActiveRunsResponse(runs=result)
 
 
-@router.get("/jobs")
+@router.get("/jobs", dependencies=[Depends(require_admin_access)])
 def list_jobs() -> JobsResponse:
     """List all validation jobs."""
     # JobInfo is a subset of ValidationJob fields - use model_validate for clarity
@@ -347,7 +347,7 @@ def list_jobs() -> JobsResponse:
 
 @router.get("")
 def list_runs(
-    admin_db: AdminDb,
+    db: AgentDb,
     status: AgentRunStatus | None = None,
     image_digest: str | None = None,
     agent_type: AgentType | None = None,
@@ -358,18 +358,11 @@ def list_runs(
 ) -> RunsListResponse:
     """List all agent runs with optional filters and pagination.
 
-    Query parameters:
-    - status: Filter by run status
-    - image_digest: Filter by image digest
-    - agent_type: Filter by agent type (critic, grader, etc.)
-    - split: Filter by data split (train, valid, test)
-    - example_kind: Filter by example kind (whole_snapshot, file_set)
-    - offset: Pagination offset (default: 0)
-    - limit: Pagination limit (default: 100, max: 500)
+    RLS policies filter visible runs based on caller's database role.
     """
     limit = min(limit, 500)  # Cap at 500
 
-    with admin_db.session() as session:
+    with db.session() as session:
         query = session.query(AgentRun)
 
         if status:
@@ -416,7 +409,7 @@ def list_runs(
         )
 
 
-@router.post("/validation")
+@router.post("/validation", dependencies=[Depends(require_admin_access)])
 async def trigger_validation_runs(
     request: Request, body: ValidationRunRequest, admin_db: AdminDb
 ) -> ValidationRunResponse:
@@ -531,9 +524,9 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
 
 
 @router.get("/{run_id}")
-def get_run(run_id: UUID, admin_db: AdminDb) -> AgentRunDetail:
-    """Get details of a specific agent run."""
-    with admin_db.session() as session:
+def get_run(run_id: UUID, db: AgentDb) -> AgentRunDetail:
+    """Get details of a specific agent run. RLS enforces access."""
+    with db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -711,9 +704,9 @@ def get_run(run_id: UUID, admin_db: AdminDb) -> AgentRunDetail:
 
 
 @router.get("/{run_id}/llm_requests")
-def get_run_llm_requests(run_id: UUID, admin_db: AdminDb) -> LLMRequestsResponse:
-    """Get LLM requests for a specific agent run."""
-    with admin_db.session() as session:
+def get_run_llm_requests(run_id: UUID, db: AgentDb) -> LLMRequestsResponse:
+    """Get LLM requests for a specific agent run. RLS filters visible requests."""
+    with db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")

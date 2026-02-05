@@ -32,7 +32,7 @@ from typing import Any
 from psycopg2.extras import register_composite
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
-from sqlalchemy.pool import ConnectionPoolEntry
+from sqlalchemy.pool import ConnectionPoolEntry, NullPool
 
 from props.db.config import DatabaseConfig
 from props.db.setup import recreate_database as _setup_recreate_database
@@ -55,28 +55,34 @@ class Database:
         """
         return cls(DatabaseConfig())
 
-    def __init__(self, config: DatabaseConfig) -> None:
+    def __init__(self, config: DatabaseConfig, *, _per_request: bool = False) -> None:
         self._config = config
         url = config.url
-        logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
 
-        self._engine: Engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)
+        if _per_request:
+            # Per-request mode: NullPool (no persistent connections), no verification.
+            # Used by get_agent_db for agent credential passthrough.
+            self._engine: Engine = create_engine(url, echo=False, poolclass=NullPool)
+        else:
+            logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
+            self._engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)
+
+            # Register composite type adapter on each checkout from pool.
+            # "checkout" (not "connect") so registration happens on every use,
+            # handling the case where type is created by a migration after the
+            # connection was first established.
+            @event.listens_for(self._engine, "checkout")
+            def _register_composite_types(
+                dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
+            ) -> None:
+                try:
+                    register_composite("stats_with_ci", dbapi_connection, globally=False)
+                except Exception as e:
+                    logger.debug(f"Could not register stats_with_ci composite type: {e}")
+
+            self._verify_connection()
+
         self._scoped_factory = scoped_session(sessionmaker(bind=self._engine))
-
-        # Register composite type adapter on each checkout from pool.
-        # "checkout" (not "connect") so registration happens on every use,
-        # handling the case where type is created by a migration after the
-        # connection was first established.
-        @event.listens_for(self._engine, "checkout")
-        def _register_composite_types(
-            dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
-        ) -> None:
-            try:
-                register_composite("stats_with_ci", dbapi_connection, globally=False)
-            except Exception as e:
-                logger.debug(f"Could not register stats_with_ci composite type: {e}")
-
-        self._verify_connection()
 
     def _verify_connection(self, timeout_secs: int = 2) -> None:
         test_engine = create_engine(

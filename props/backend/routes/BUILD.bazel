@@ -7,7 +7,6 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         "//props/backend:auth",
-        "//props/backend:deps",
         "//props/core:agent_types",
         "//props/db:models",
         "@pypi//fastapi",
@@ -114,7 +113,6 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         "//props/backend:auth",
-        "//props/backend:deps",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core:splits",
