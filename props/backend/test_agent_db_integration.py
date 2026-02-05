@@ -104,7 +104,7 @@ async def test_agent_db_can_see_own_run(synced_db: Database, critic_agent_creds:
 
 async def test_admin_auth_returns_admin_db(synced_db: Database, exhaust_generator) -> None:
     """get_agent_db with admin auth returns the admin Database directly."""
-    auth = AuthContext.localhost_admin()
+    auth = AuthContext.admin(username=synced_db.config.user, password=synced_db.config.password)
 
     gen = get_agent_db(admin_db=synced_db, auth=auth)
     db = exhaust_generator(gen)

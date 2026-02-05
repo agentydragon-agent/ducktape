@@ -1,8 +1,26 @@
 import createClient from "openapi-fetch";
 import type { paths, components } from "./schema";
+import { getToken, onAuthFailed } from "$lib/stores/token";
 
 // Create typed API client (types from Bazel: //props/frontend:generate_schema)
 export const api = createClient<paths>({ baseUrl: "" });
+
+// Attach admin token as Bearer header to every request
+api.use({
+  async onRequest({ request }) {
+    const token = getToken();
+    if (token) {
+      request.headers.set("Authorization", `Bearer ${token}`);
+    }
+    return request;
+  },
+  async onResponse({ response }) {
+    if (response.status === 401) {
+      onAuthFailed();
+    }
+    return response;
+  },
+});
 
 // Re-export generated types
 export type DefinitionInfo = components["schemas"]["DefinitionInfo"];

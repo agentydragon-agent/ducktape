@@ -9,6 +9,7 @@ When an agent authenticates to the backend with their Postgres credentials (`age
 - **Phase 1**: Renamed `get_db` → `get_admin_db`, added `AdminDb` type alias, added `get_agent_db` dependency (in `auth.py` to avoid circular deps), added `AgentDb` type alias, added `Database.per_request()` classmethod (NullPool, no verification)
 - **Phase 2**: Migrated read-heavy endpoints to `AgentDb` (`agent_definitions`, `stats`, all `runs` read endpoints). Write endpoints (`trigger_validation_runs`, `list_jobs`) keep `AdminDb` with explicit `require_admin_access`.
 - **Tests**: Unit tests in `props/backend/test_auth.py`, integration tests with real Postgres + RLS in `props/backend/test_agent_db_integration.py`
+- **Phase 5**: Admin token authentication — removed localhost admin exception, backend prints admin token URL on startup, frontend captures token from URL → `localStorage` → `Authorization: Bearer` header, paste-token fallback UI, WebSocket feed auth via `?token=` query param
 
 ### Key files
 
@@ -81,49 +82,21 @@ Per-request connections (Option A): Each agent request creates a `Database.per_r
 2. Defense in depth: RLS prevents unauthorized access even if Python ACL is wrong
 3. Audit trail: Database logs show actual user performing operations
 
-## Phase 5: Admin Token Authentication
+## Phase 5: Admin Token Authentication (Completed)
 
-Replace localhost exception with token-based admin auth (Jupyter-style).
+Replaced localhost exception with token-based admin auth (Jupyter-style).
 
-### Design
+### Key files
 
-**Token**: `base64(PGUSER:PGPASSWORD)` — same format agents already use. The existing `parse_credentials` → `validate_postgres_credentials` path handles it with no auth.py changes.
-
-**Backend startup** (`app.py` lifespan): Compute token from `DatabaseConfig`, print `http://<host>:<port>/?token=<token>` to console.
-
-**Frontend token capture**: On page load, if `?token=` in URL → store in `localStorage`, strip from URL (`history.replaceState`). On every API call, attach `Authorization: Bearer <token>` from `localStorage`. If no token and 401 → show paste-token input.
-
-**Localhost exception**: Keep `PROPS_ALLOW_LOCALHOST_ADMIN` defaulting to `true` for local dev. Remote deployments set it to `false`.
-
-### Changes
-
-| File                           | Change                                                |
-| ------------------------------ | ----------------------------------------------------- |
-| `props/backend/app.py`         | Print token URL on startup                            |
-| `props/frontend/.../client.ts` | Attach Bearer token from `localStorage`               |
-| `props/frontend/...`           | Token capture from URL param, paste-token fallback UI |
-
-### Sequence
-
-```
-Startup:
-  backend computes base64(PGUSER:PGPASSWORD)
-  backend prints http://host:port/?token=<base64>
-
-Browser opens URL:
-  frontend reads ?token= from URL
-  frontend stores in localStorage
-  frontend strips ?token from URL bar
-
-API call:
-  frontend attaches Authorization: Bearer <base64>
-  backend: parse_credentials → validate_postgres_credentials → admin
-  (existing auth flow, no changes)
-
-No token:
-  frontend shows "Paste admin token" input
-  user pastes token → stored in localStorage → retry
-```
+| File                                        | What changed                                       |
+| ------------------------------------------- | -------------------------------------------------- |
+| `props/backend/app.py`                      | Compute and print admin token URL on startup       |
+| `props/backend/auth.py`                     | Removed localhost admin exception                  |
+| `props/frontend/src/lib/api/client.ts`      | Bearer token middleware from `localStorage`        |
+| `props/frontend/src/lib/stores/token.ts`    | Token capture, storage, and auth-failed management |
+| `props/frontend/src/App.svelte`             | Token capture from URL, paste-token fallback UI    |
+| `props/frontend/src/lib/stores/runsFeed.ts` | WebSocket auth via `?token=` query param           |
+| `props/backend/routes/runs.py`              | WebSocket feed token validation                    |
 
 ## Non-Goals
 

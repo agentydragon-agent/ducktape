@@ -18,16 +18,6 @@ from props.db.database import Database
 def test_get_agent_db_admin_returns_admin_db(exhaust_generator):
     """Admin users get the shared admin database connection."""
     admin_db = MagicMock(spec=Database)
-    auth = AuthContext.localhost_admin()
-
-    gen = get_agent_db(admin_db=admin_db, auth=auth)
-    db = exhaust_generator(gen)
-    assert db is admin_db
-
-
-def test_get_agent_db_admin_with_credentials_returns_admin_db(exhaust_generator):
-    """Admin users with explicit credentials still get the admin connection."""
-    admin_db = MagicMock(spec=Database)
     auth = AuthContext.admin(username="postgres", password="secret")
 
     gen = get_agent_db(admin_db=admin_db, auth=auth)

@@ -28,7 +28,8 @@ def serve(
     if static_dir:
         os.environ["PROPS_DASHBOARD_STATIC_DIR"] = str(static_dir.absolute())
 
-    app = create_app(deps=default_deps(), static_dir=static_dir)
+    deps = default_deps(host=host, port=port)
+    app = create_app(deps=deps, static_dir=static_dir)
     uvicorn.run(app, host=host, port=port, reload=reload, reload_dirs=reload_dir)
 
 

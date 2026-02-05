@@ -3,7 +3,6 @@
 Authentication uses Bearer or Basic tokens with Postgres credentials validation:
 - Admin users: Any valid Postgres user (non-agent_* username)
 - Agent users: Format agent_{uuid} with temp credentials
-- Localhost admin: Empty/no creds from localhost = admin (for local dev and dashboard)
 
 Tokens contain base64-encoded username:password. Both schemes are supported:
 - Bearer: OpenAI SDK sends api_key as Bearer token; agent containers encode creds this way
@@ -21,7 +20,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
@@ -38,18 +36,11 @@ from props.db.models import AgentRun, AgentType
 
 logger = logging.getLogger(__name__)
 
-# Localhost admin access - allow empty creds from localhost to act as admin
-# This is useful for local development and dashboard/backend access
-ALLOW_LOCALHOST_ADMIN = os.environ.get("PROPS_ALLOW_LOCALHOST_ADMIN", "true").lower() == "true"
-
-# Trusted localhost addresses
-LOCALHOST_ADDRESSES = {"127.0.0.1", "localhost", "::1"}
-
 
 class AccessLevel(StrEnum):
     """Access level for authenticated users."""
 
-    ADMIN = "admin"  # Full access (postgres user or localhost)
+    ADMIN = "admin"  # Full access (postgres user)
     AGENT = "agent"  # Agent access (agent_{uuid} pattern)
 
 
@@ -170,18 +161,12 @@ def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
         return None
 
 
-def is_localhost_request(request: Request) -> bool:
-    client = request.client
-    return bool(client and client.host in LOCALHOST_ADDRESSES)
-
-
 @dataclass
 class AuthContext:
     """Authentication context resolved per-request by the get_auth_context dependency."""
 
     is_authenticated: bool = False
     is_admin: bool = False
-    is_localhost_admin: bool = False
     username: str | None = None
     password: str | None = None
     agent_run_id: UUID | None = None
@@ -189,10 +174,6 @@ class AuthContext:
     @classmethod
     def anonymous(cls) -> AuthContext:
         return cls(is_authenticated=False)
-
-    @classmethod
-    def localhost_admin(cls) -> AuthContext:
-        return cls(is_authenticated=True, is_admin=True, is_localhost_admin=True)
 
     @classmethod
     def admin(cls, username: str, password: str) -> AuthContext:
@@ -216,9 +197,6 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
     authorization = request.headers.get("authorization")
 
     if not authorization:
-        if ALLOW_LOCALHOST_ADMIN and is_localhost_request(request):
-            logger.debug("Localhost admin access granted (no auth required)")
-            return AuthContext.localhost_admin()
         return AuthContext.anonymous()
 
     parsed = parse_credentials(authorization)

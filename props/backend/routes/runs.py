@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from props.backend.auth import AgentDb, require_admin_access
+from props.backend.auth import AgentDb, parse_credentials, require_admin_access, validate_postgres_credentials
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import FileLocationInfo
 from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
@@ -791,10 +791,27 @@ async def runs_feed(websocket: WebSocket) -> None:
     """WebSocket endpoint for live runs/jobs feed.
 
     Sends initial state then streams updates when runs or jobs change.
+    Requires admin token as ?token= query parameter.
     """
+    db: Database = websocket.app.state.admin_db
+
+    # Validate token from query parameter
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return
+    parsed = parse_credentials(f"Bearer {token}")
+    if not parsed:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
+    username, password = parsed
+    result = validate_postgres_credentials(username, password, db.config)
+    if not result.is_valid:
+        await websocket.close(code=4001, reason="Invalid credentials")
+        return
+
     await websocket.accept()
     _feed_connections.add(websocket)
-    db: Database = websocket.app.state.admin_db
 
     try:
         # Send initial state

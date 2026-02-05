@@ -13,6 +13,7 @@ status check that containers can poll.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import traceback
@@ -55,6 +56,8 @@ class BackendDeps:
     config: PropsConfig
     registry_proxy_config: RegistryProxyConfig
     grader_model: str | None = None
+    host: str = "127.0.0.1"
+    port: int = 8000
 
 
 def _make_lifespan(deps: BackendDeps):
@@ -85,6 +88,10 @@ def _make_lifespan(deps: BackendDeps):
             app.state.grader_supervisor = None
             logger.info(f"Daemon manager disabled ({ENV_GRADER_MODEL} not set)")
 
+        admin_token = base64.b64encode(f"{db_config.user}:{db_config.password}".encode()).decode()
+        protocol = "https" if deps.port == 443 else "http"
+        logger.info(f"Admin token: {admin_token}")
+        logger.info(f"Admin URL: {protocol}://{deps.host}:{deps.port}/?token={admin_token}")
         logger.info("Props backend ready")
         yield
 
@@ -140,9 +147,11 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     return app
 
 
-def default_deps() -> BackendDeps:
+def default_deps(host: str = "127.0.0.1", port: int = 8000) -> BackendDeps:
     return BackendDeps(
         config=load_config_from_env(),
         registry_proxy_config=get_registry_proxy_config(),
         grader_model=os.environ.get(ENV_GRADER_MODEL),
+        host=host,
+        port=port,
     )

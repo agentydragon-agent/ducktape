@@ -3,6 +3,7 @@
  */
 import { writable, derived } from "svelte/store";
 import type { RunInfo, JobInfo } from "$lib/api/client";
+import { getToken } from "$lib/stores/token";
 
 // State
 export const runs = writable<RunInfo[]>([]);
@@ -19,7 +20,9 @@ let started = false;
 
 function getWsUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/api/runs/feed`;
+  const base = `${protocol}//${window.location.host}/api/runs/feed`;
+  const token = getToken();
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 function doConnect() {
