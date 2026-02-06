@@ -20,7 +20,7 @@ Usage:
     @pytest.mark.requires_postgres
     async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
         mock = make_critic_mock()
-        async with e2e_stack(mock, images=[critic_image]) as stack:
+        async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
             run_id = await stack.registry.run_critic(
                 image_ref=BUILTIN_TAG,
                 example=all_files_scope,
@@ -31,7 +31,7 @@ Usage:
             )
             # Assert on database state
 
-    # Multi-model usage (pass dict of mocks):
+    # Multi-model usage:
     async def test_orchestration(e2e_stack, ...):
         mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
         async with e2e_stack(mocks, images=[...]) as stack:
@@ -57,11 +57,11 @@ from net_util.net import pick_free_port
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
 from props.config import PropsConfig
-from props.core.docker_env import PROPS_NETWORK_NAME
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.orchestration.agent_registry import AgentRegistry
+from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.testing.fake_openai_server import FakeOpenAIServer
 from test_util.oci import BazelImage, crane_push
 
@@ -119,19 +119,15 @@ class E2EStack:
 
     registry: AgentRegistry
     model: str
+    image_digests: dict[str, str]  # repo_name → digest (sha256:...)
 
 
-def _build_agent_base_env(db_config: DatabaseConfig, backend_port: int) -> dict[str, str]:
+def _build_agent_base_env(db_config: DatabaseConfig) -> dict[str, str]:
     """Build agent_base_env for e2e tests.
 
-    Agents reach postgres and backend through E2E_HOST_HOSTNAME at the mapped ports.
+    Agents reach postgres through E2E_HOST_HOSTNAME at the mapped port.
     """
-    return {
-        "PGHOST": E2E_HOST_HOSTNAME,
-        "PGPORT": str(db_config.port),
-        "PGDATABASE": db_config.database,
-        "PROPS_BACKEND_URL": f"http://{E2E_HOST_HOSTNAME}:{backend_port}",
-    }
+    return {"PGHOST": E2E_HOST_HOSTNAME, "PGPORT": str(db_config.port), "PGDATABASE": db_config.database}
 
 
 @asynccontextmanager
@@ -192,15 +188,21 @@ async def _make_stack(
 
         backend_port = pick_free_port()
         registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
-        agent_base_env = _build_agent_base_env(db.config, backend_port)
+        backend_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
+        agent_base_env = _build_agent_base_env(db.config)
 
-        deps = BackendDeps(config=PropsConfig(agent_env=agent_base_env), registry_proxy_config=registry_proxy_config)
+        deps = BackendDeps(
+            config=PropsConfig(agent_env=agent_base_env),
+            registry_proxy_config=registry_proxy_config,
+            backend_url=backend_url,
+        )
 
         async with ensure_agent_network(async_docker_client), run_backend(deps, port=backend_port):
             registry = AgentRegistry(
                 docker_client=async_docker_client,
                 db=db,
                 db_config=db.config,
+                backend_url=backend_url,
                 agent_base_env=agent_base_env,
                 registry_config=registry_proxy_config,
                 extra_hosts=HOST_GATEWAY,
@@ -208,11 +210,13 @@ async def _make_stack(
 
             try:
                 proxy_url = f"localhost:{backend_port}"
+                digests: dict[str, str] = {}
                 for image in images:
-                    await crane_push(
+                    digest = await crane_push(
                         image, proxy_url, BUILTIN_TAG, username=db.config.user, password=db.config.password
                     )
-                yield E2EStack(registry=registry, model=model)
+                    digests[image.repo_name] = digest
+                yield E2EStack(registry=registry, model=model, image_digests=digests)
             finally:
                 await registry.close()
 
@@ -226,14 +230,13 @@ async def e2e_stack(
 ):
     """Fixture factory for creating e2e test stacks.
 
-    Accepts a single mock (all requests go to it) or a dict of mocks
-    (routes by model name in the request body).
+    Accepts a dict of mocks keyed by model name. Requests are routed
+    to the mock matching the `model` field in the request body.
 
     Usage:
-        # Single mock
         async def test_something(e2e_stack, critic_image):
             mock = make_my_mock()
-            async with e2e_stack(mock, images=[critic_image]) as stack:
+            async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
                 run_id = await stack.registry.run_critic(...)
 
         # Multi-model
@@ -245,15 +248,9 @@ async def e2e_stack(
 
     @asynccontextmanager
     async def _factory(
-        mock: OpenAIModelProto | Mapping[str, OpenAIModelProto],
-        model: str = TEST_MODEL,
-        *,
-        images: Sequence[BazelImage] = (),
+        mocks: Mapping[str, OpenAIModelProto], model: str = TEST_MODEL, *, images: Sequence[BazelImage] = ()
     ) -> AsyncIterator[E2EStack]:
-        if isinstance(mock, Mapping):
-            fake_openai = FakeOpenAIServer(dict(mock), host="0.0.0.0", port=0)
-        else:
-            fake_openai = FakeOpenAIServer(mock, host="0.0.0.0", port=0)
+        fake_openai = FakeOpenAIServer(dict(mocks), host="0.0.0.0", port=0)
         async with _make_stack(
             fake_openai, synced_db, async_docker_client, e2e_registry_url, monkeypatch, model=model, images=images
         ) as stack:

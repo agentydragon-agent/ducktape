@@ -1,0 +1,139 @@
+"""Grader daemon main entry point for in-container execution.
+
+This is the CMD entrypoint for the daemon grader container. It:
+1. Fetches the snapshot to /workspace
+2. Runs the reconciliation loop:
+   - Grade until grading_pending is empty
+   - Sleep waiting for pg_notify
+   - Wake and repeat
+3. Only exits on fatal error or shutdown signal
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import sys
+from typing import Any
+
+import asyncpg
+from asyncpg.pool import PoolConnectionProxy
+
+from props.agents.grader.drift_handler import check_grading_pending
+from props.agents.grader.loop import run_grader_loop
+from props.agents.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
+from props.agents.runtime import WORKSPACE, get_current_agent_run, render_system_prompt, setup_logging
+from props.core.ids import SnapshotSlug
+from props.db.database import Database
+from props.db.snapshot_io import fetch_snapshot_to_path
+
+logger = logging.getLogger(__name__)
+
+
+class DaemonState:
+    """Tracks daemon state for pg_notify wake/sleep coordination."""
+
+    def __init__(self, snapshot_slug: SnapshotSlug):
+        self.snapshot_slug = snapshot_slug
+        self.wake_event = asyncio.Event()
+        self.shutdown = False
+        self.notification_queue: list[GradingPendingNotification] = []
+
+    def notification_callback(
+        self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
+    ) -> None:
+        """Handle incoming pg_notify notifications."""
+        if not isinstance(payload, str):
+            raise TypeError(f"Expected string payload, got {type(payload)}")
+
+        notification = GradingPendingNotification.model_validate_json(payload)
+
+        if notification.snapshot_slug != self.snapshot_slug:
+            return  # Not for us
+
+        logger.debug(f"Notification for {self.snapshot_slug}: {notification.operation} {notification.item.table}")
+        self.notification_queue.append(notification)
+        self.wake_event.set()
+
+
+async def run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> int:
+    """Run the daemon reconciliation loop.
+
+    Grades until no drift, sleeps on pg_notify, repeats.
+    """
+    state = DaemonState(snapshot_slug)
+
+    # Start pg_notify listener
+    listener_conn = await db.config.asyncpg_connect()
+    await listener_conn.add_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
+    logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {snapshot_slug}")
+
+    try:
+        while not state.shutdown:
+            # Check if there's drift to process
+            if not check_grading_pending(snapshot_slug, db):
+                # No drift, wait for notification
+                logger.info(f"No drift for {snapshot_slug}, sleeping...")
+                state.wake_event.clear()
+                state.notification_queue.clear()
+                await state.wake_event.wait()
+
+                if state.shutdown:
+                    break
+
+                logger.info(f"Woken by {len(state.notification_queue)} notifications")
+                continue
+
+            # There's drift, run agent loop
+            logger.info("Drift detected, starting agent loop")
+            exit_code = await run_grader_loop(system_prompt, snapshot_slug, db)
+
+            if exit_code != 0:
+                # Agent reported failure
+                logger.error("Agent loop failed with exit code %d", exit_code)
+                state.shutdown = True
+
+            # Loop continues - check for more drift
+
+    finally:
+        await listener_conn.remove_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
+        await listener_conn.close()
+        logger.info("Listener stopped")
+
+    return 0 if not state.shutdown else 1
+
+
+async def main() -> int:
+    """Main entry point for daemon grader agent."""
+    setup_logging()
+
+    logger.info("Grader daemon starting")
+    db = Database.from_env()
+
+    # Get snapshot from agent run config
+    with db.session() as session:
+        agent_run = get_current_agent_run(session)
+        config = agent_run.grader_config()
+        snapshot_slug = SnapshotSlug(config.snapshot_slug)
+        logger.info("Agent run: %s, snapshot: %s, model: %s", agent_run.agent_run_id, snapshot_slug, agent_run.model)
+
+    # Fetch snapshot
+    logger.info("Fetching snapshot to %s", WORKSPACE)
+    fetch_snapshot_to_path(snapshot_slug, WORKSPACE, db)
+
+    # Render system prompt
+    logger.info("Rendering system prompt")
+    system_prompt = render_system_prompt(
+        "props/agents/grader/prompt.md.j2", db, helpers={"snapshot_slug": snapshot_slug}
+    )
+
+    # Run the daemon loop
+    logger.info("Starting daemon loop")
+    exit_code = await run_daemon(snapshot_slug, system_prompt, db)
+
+    logger.info("Daemon exited with code %d", exit_code)
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

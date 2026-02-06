@@ -490,12 +490,16 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
                 # Check critic status
                 with db.session() as session:
                     critic_run = session.get(AgentRun, critic_run_id)
-                    if critic_run is None or critic_run.status != AgentRunStatus.COMPLETED:
+                    if (
+                        critic_run is None
+                        or critic_run.status != AgentRunStatus.EXITED
+                        or critic_run.container_exit_code != 0
+                    ):
                         status = critic_run.status if critic_run else "not found"
                         logger.warning(f"[Job {job.job_id}] Critic failed with status {status}")
                         return False
 
-                logger.info(f"[Job {job.job_id}] Critic completed: {critic_run_id}")
+                logger.info(f"[Job {job.job_id}] Critic exited: {critic_run_id}")
                 return True
 
             except Exception:

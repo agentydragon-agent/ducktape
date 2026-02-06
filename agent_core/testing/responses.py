@@ -23,7 +23,9 @@ from openai_utils.builders import ItemFactory
 from openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
+    FunctionCallOutputContent,
     FunctionCallOutputItem,
+    FunctionOutputTextContent,
     InputTokensDetails,
     OpenAIModelProto,
     OutputTokensDetails,
@@ -155,6 +157,18 @@ def openai_mock(fn: MockScriptFn) -> GeneratorRunner:
     return GeneratorRunner(gen, factory)
 
 
+def _extract_text_from_content_list(content: list[FunctionCallOutputContent], call_id: str) -> str:
+    """Extract text from a list of FunctionCallOutputContent items.
+
+    When _tool_result_to_openai returns list format (content blocks with no structured_content),
+    concatenate text items to recover the original string.
+    """
+    texts = [item.text for item in content if isinstance(item, FunctionOutputTextContent)]
+    if not texts:
+        raise ValueError(f"No text content in output list for call_id={call_id}")
+    return "".join(texts)
+
+
 def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output_type: type[T]) -> T:
     """Extract typed output for a specific function call from the request.
 
@@ -169,12 +183,10 @@ def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output
         raise ValueError(f"Multiple outputs found for call_id={call.call_id}: expected exactly 1, got {len(matches)}")
 
     output = matches[0].output
-    # output can be str (JSON) or list[FunctionCallOutputContent]
-    if not isinstance(output, str):
-        raise ValueError(f"Expected string output for call_id={call.call_id}, got list")
+    json_str = output if isinstance(output, str) else _extract_text_from_content_list(output, call.call_id)
 
     # OpenAI format returns the structured content directly (not wrapped).
-    return TypeAdapter(output_type).validate_python(json.loads(output))
+    return TypeAdapter(output_type).validate_python(json.loads(json_str))
 
 
 def tool_roundtrip[T](call: FunctionCallItem, output_type: type[T]) -> Generator[FunctionCallItem, ResponsesRequest, T]:

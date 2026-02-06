@@ -36,8 +36,8 @@ py_library(
     deps = [
         "//openai_utils:model",
         "//openai_utils/testing:openai_mock",
+        "//props/agents/critic_dev:main",
         "//props/core:ids",
-        "//props/critic_dev/improve:main",
         "@pypi//pytest",
     ],
 )
@@ -51,11 +51,11 @@ py_library(
         "//openai_utils:model",
         "//props:config",
         "//props/backend:app",
-        "//props/core:docker_env",
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
         "//props/orchestration:agent_registry",
+        "//props/orchestration:docker_env",
         "//props/testing:fake_openai_server",
         "//test_util:oci",
         "@pypi//aiodocker",

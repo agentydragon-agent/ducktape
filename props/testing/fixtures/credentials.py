@@ -25,7 +25,7 @@ async def make_agent_credentials(db: Database, type_config: BaseModel, image_dig
             agent_run_id=run_id,
             image_digest=image_digest,
             model="test-model",
-            status=AgentRunStatus.COMPLETED,
+            status=AgentRunStatus.EXITED,
             type_config=type_config.model_dump(),
         )
         session.add(agent_run)

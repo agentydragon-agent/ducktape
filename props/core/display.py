@@ -53,9 +53,8 @@ class HasStatusCounts(Protocol):
 # Status display mapping: AgentRunStatus -> (header, column width)
 # IN_PROGRESS excluded since it's transient, not a terminal outcome
 STATUS_DISPLAY: dict[AgentRunStatus, tuple[str, int]] = {
-    AgentRunStatus.COMPLETED: ("✓", 4),
+    AgentRunStatus.EXITED: ("✓", 4),
     AgentRunStatus.TIMED_OUT: ("T", 3),
-    AgentRunStatus.REPORTED_FAILURE: ("F", 3),
 }
 
 
@@ -75,7 +74,7 @@ def _make_status_column(status: AgentRunStatus) -> ColumnDef[HasStatusCounts, in
 
 
 def build_status_columns() -> list[ColumnDef[HasStatusCounts, int]]:
-    """Build list of status count columns (✓, S, C, F)."""
+    """Build list of status count columns (✓, T)."""
     return [_make_status_column(status) for status in STATUS_DISPLAY]
 
 

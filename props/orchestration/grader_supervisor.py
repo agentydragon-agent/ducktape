@@ -19,11 +19,11 @@ from typing import TYPE_CHECKING, Any
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 
+from props.agents.grader.notifications import SNAPSHOT_CREATED_CHANNEL, SnapshotCreatedNotification
 from props.core.ids import SnapshotSlug
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import Snapshot
-from props.grader.notifications import SNAPSHOT_CREATED_CHANNEL, SnapshotCreatedNotification
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry

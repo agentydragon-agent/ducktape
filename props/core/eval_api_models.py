@@ -29,7 +29,7 @@ class RunCriticRequest(BaseModel):
     definition_id: DefinitionId = Field(description="Image ref: OCI digest (sha256:...) or tag (e.g., 'latest')")
     example: ExampleSpec = Field(description="Example to evaluate")
     timeout_seconds: int = Field(default=3600, description="Max seconds before container is killed")
-    budget_usd: float | None = Field(default=None, description="Max USD cost for this agent")
+    budget_usd: float | None = Field(description="Max USD cost for this agent")
     critic_model: str = Field(default="gpt-5.1-codex-mini", description="Model for the critic agent")
 
 

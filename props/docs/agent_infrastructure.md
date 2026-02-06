@@ -11,7 +11,7 @@ props/
 ├── critic_dev/             # Critic-dev agents
 │   ├── optimize/           # Prompt optimizer agent
 │   └── improve/            # Improvement agent
-├── orchestration/          # Host scaffold (agent_registry, loop_agent_env)
+├── orchestration/          # Host scaffold (agent_registry)
 ├── backend/                # Unified backend (LLM proxy, registry proxy, eval API)
 ├── db/                     # Database layer (ORM, migrations)
 ├── cli/                    # CLI commands

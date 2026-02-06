@@ -25,11 +25,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 
+from props.agents.critic.exceptions import CriticExecutionError
 from props.backend.auth import CallerType, require_eval_api_access
 from props.backend.deps import AdminDb
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.splits import Split
-from props.critic.exceptions import CriticExecutionError
 from props.db.examples import Example
 from props.db.models import AgentRun, GradingEdge, GradingPending, Snapshot
 

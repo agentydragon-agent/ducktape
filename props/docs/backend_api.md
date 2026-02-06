@@ -19,7 +19,7 @@ auth = (os.environ["PGUSER"], os.environ["PGPASSWORD"])
 For running critic evaluations, use the `EvalClient` class for the REST API calls and the `wait_until_graded()` function for polling grading status directly from the database:
 
 ```python
-from props.core.eval_client import EvalClient, wait_until_graded
+from props.agents.eval_client import EvalClient, wait_until_graded
 from props.core.models.examples import WholeSnapshotExample
 
 async with EvalClient.from_env() as client:

@@ -72,9 +72,9 @@
   <div class="bg-white rounded-lg shadow p-4">
     <h3 class="text-sm font-medium text-gray-500 mb-2">Runs ({totalRuns})</h3>
     <div class="flex gap-2 text-xs">
-      {#if statusCounts["completed"]}
-        <span class="text-green-600" title="Completed">
-          ✓{statusCounts["completed"]}
+      {#if statusCounts["exited"]}
+        <span class="text-green-600" title="Exited">
+          ✓{statusCounts["exited"]}
         </span>
       {/if}
       {#if statusCounts["in_progress"]}
@@ -85,11 +85,6 @@
       {#if statusCounts["timed_out"]}
         <span class="text-yellow-600" title="Timed Out">
           T{statusCounts["timed_out"]}
-        </span>
-      {/if}
-      {#if statusCounts["reported_failure"]}
-        <span class="text-red-600" title="Failed">
-          F{statusCounts["reported_failure"]}
         </span>
       {/if}
     </div>

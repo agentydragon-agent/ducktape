@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Enum,
     FetchedValue,
@@ -128,12 +129,14 @@ class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
 
 
 class AgentRunStatus(StrEnum):
-    """Unified status for all agent types (critic, grader, prompt_optimizer, etc.)."""
+    """Unified status for all agent types (critic, grader, prompt_optimizer, etc.).
+
+    Terminal states: EXITED (check container_exit_code for success/failure), TIMED_OUT.
+    """
 
     IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
+    EXITED = "exited"
     TIMED_OUT = "timed_out"
-    REPORTED_FAILURE = "reported_failure"
 
 
 class PydanticColumn(TypeDecorator[T]):
@@ -994,10 +997,8 @@ class TpOccurrenceCredit(Base):
 class RecallByRun(Base):
     """Per-critic-run recall from recall_by_run database VIEW.
 
-    Scalar total_credit (sum of all TP occurrence credits) and scalar recall
-    (total_credit / recall_denominator). Feeds into recall_by_definition_example.
-
-    Failed critic runs (timed_out) contribute 0 credit.
+    Includes all runs (in_progress, exited, timed_out). grading_complete indicates
+    whether grading_pending has no remaining edges for this run.
     """
 
     __tablename__ = "recall_by_run"
@@ -1024,6 +1025,9 @@ class RecallByRun(Base):
 
     # Scalar recall (total_credit / recall_denominator)
     recall: Mapped[float] = mapped_column(nullable=False)
+
+    # True when no missing edges remain in grading_pending for this run
+    grading_complete: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
 class RecallByDefinitionExample(Base):
@@ -1055,7 +1059,7 @@ class RecallByDefinitionExample(Base):
     # Number of critic runs for this (definition, model, example)
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Status breakdown (JSONB: {AgentRunStatus.COMPLETED: 5, ...})
+    # Status breakdown (JSONB: {AgentRunStatus.EXITED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
 
     # Credit stats (numerator; failed runs count as 0 credit)
@@ -1092,7 +1096,7 @@ class RecallByDefinitionSplitKind(Base):
     # Catchable occurrences (denominator - sum across distinct examples)
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Status breakdown (JSONB: {AgentRunStatus.COMPLETED: 5, ...})
+    # Status breakdown (JSONB: {AgentRunStatus.EXITED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
 
     # Credit stats (numerator; failed runs count as 0 credit)
@@ -1132,7 +1136,7 @@ class RecallByExample(Base):
     # Run count
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Status breakdown (JSONB: {AgentRunStatus.COMPLETED: 5, ...})
+    # Status breakdown (JSONB: {AgentRunStatus.EXITED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
 
     # Credit stats (numerator; failed runs count as 0 credit)
@@ -1236,6 +1240,44 @@ class OccurrenceStatistics(Base):
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
+class LLMRequestCost(Base):
+    __tablename__ = "llm_request_costs"
+    __table_args__ = (
+        {
+            "info": {"is_view": True},
+            "extend_existing": True,
+            "comment": "Per-request LLM cost (joins llm_requests with model_metadata pricing).",
+        },
+    )
+    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(nullable=True)
+    cached_input_tokens: Mapped[int] = mapped_column(nullable=True)
+    output_tokens: Mapped[int] = mapped_column(nullable=True)
+    latency_ms: Mapped[int] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
+    cost_usd: Mapped[float] = mapped_column(nullable=True)
+
+
+class ValidationRecallByDefinition(Base):
+    __tablename__ = "validation_recall_by_definition"
+    __table_args__ = (
+        {
+            "info": {"is_view": True},
+            "extend_existing": True,
+            "comment": "Aggregated validation recall by (definition, model) over full-snapshot validation examples.",
+        },
+    )
+    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+
+    critic_image_digest: Mapped[str] = mapped_column(String, primary_key=True)
+    critic_model: Mapped[str] = mapped_column(String, primary_key=True)
+    recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
+
+
 class AgentDefinition(Base):
     """Agent image definition stored as OCI digest.
 
@@ -1244,8 +1286,8 @@ class AgentDefinition(Base):
     """
 
     __tablename__ = "agent_definitions"
+    __table_args__ = (CheckConstraint("digest ~ '^sha256:[0-9a-f]{64}$'", name="check_digest_format"),)
 
-    # TODO: Add CHECK constraint validating digest format (sha256:[0-9a-f]{64})
     digest: Mapped[str] = mapped_column(String, primary_key=True, comment="OCI image digest (sha256:...)")
     agent_type: Mapped[AgentType] = mapped_column(String, nullable=False, comment="Agent type enum")
     created_by_agent_run_id: Mapped[UUID | None] = mapped_column(

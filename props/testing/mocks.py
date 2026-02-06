@@ -37,13 +37,3 @@ class SubprocessExecMock(MCPDecoratorMock):
         exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
         call = self.tool_call("exec", exec_input)
         return tool_roundtrip(call, BaseExecResult)
-
-
-class PropsMock(SubprocessExecMock):
-    """Mock with props-specific helpers (psql, etc.)."""
-
-    def psql_roundtrip(
-        self, query: str, *, timeout_ms: int = 5000
-    ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
-        """Execute psql query via in-container exec and return result."""
-        return self.exec_roundtrip(["psql", "-c", query], timeout_ms=timeout_ms)

@@ -53,7 +53,7 @@ def test_view_extracts_grade_fields_correctly(synced_db: Database):
             session=session,
             example=example.to_example_spec(),
             agent_run_id=critic_agent_run_id,
-            status=AgentRunStatus.COMPLETED,
+            status=AgentRunStatus.EXITED,
         )
         session.add(critic_run)
         session.flush()

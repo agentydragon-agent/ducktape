@@ -85,16 +85,16 @@ Update session start hook to trigger props infrastructure when enabled.
    bazel run //props/cli:cli -- db recreate -y
 
    # Build and push agent images to local registry
-   bazel run //props/critic:push
-   bazel run //props/grader:push
-   bazel run //props/critic_dev/improve:push
-   bazel run //props/critic_dev/optimize:push
+   bazel run //props/agents/critic:push
+   bazel run //props/agents/grader:push
+   bazel run //props/agents/critic_dev/improve:push
+   bazel run //props/agents/critic_dev/optimize:push
    ```
 
 4. **Running tests**:
 
    ```bash
-   bazel test //props/critic:test_e2e
+   bazel test //props/agents/critic:test_e2e
    ```
 
    The `.bazelrc` default `test` stanza automatically passes through env vars when set.
@@ -181,14 +181,14 @@ If aiodocker doesn't support annotations, we need to:
 3. Run manual setup (one-time per session):
    ```bash
    bazel run //props/cli:cli -- db recreate -y
-   bazel run //props/critic:push
-   bazel run //props/grader:push
-   bazel run //props/critic_dev/improve:push
-   bazel run //props/critic_dev/optimize:push
+   bazel run //props/agents/critic:push
+   bazel run //props/agents/grader:push
+   bazel run //props/agents/critic_dev/improve:push
+   bazel run //props/agents/critic_dev/optimize:push
    ```
 4. Run tests:
    ```bash
-   bazel test //props/critic:test_e2e
+   bazel test //props/agents/critic:test_e2e
    ```
 
 ### Local Development
@@ -198,18 +198,18 @@ If aiodocker doesn't support annotations, we need to:
 3. Run setup: `bazel run //props/cli:cli -- db recreate -y` and image pushes
 4. Run tests:
    ```bash
-   bazel test //props/critic:test_e2e
+   bazel test //props/agents/critic:test_e2e
    ```
 
 ## Incremental Validation
 
-| Step | Command                                 | Validates                |
-| ---- | --------------------------------------- | ------------------------ |
-| 1    | `podman ps`                             | Containers running       |
-| 2    | `curl http://127.0.0.1:5050/v2/`        | Registry accessible      |
-| 3    | `psql -h 127.0.0.1 -p 5433 -U postgres` | PostgreSQL accessible    |
-| 4    | `bazel test //props/db:test_session`    | DB connection from Bazel |
-| 5    | `bazel test //props/critic:test_e2e`    | Full e2e stack           |
+| Step | Command                                     | Validates                |
+| ---- | ------------------------------------------- | ------------------------ |
+| 1    | `podman ps`                                 | Containers running       |
+| 2    | `curl http://127.0.0.1:5050/v2/`            | Registry accessible      |
+| 3    | `psql -h 127.0.0.1 -p 5433 -U postgres`     | PostgreSQL accessible    |
+| 4    | `bazel test //props/db:test_session`        | DB connection from Bazel |
+| 5    | `bazel test //props/agents/critic:test_e2e` | Full e2e stack           |
 
 ## Open Questions
 

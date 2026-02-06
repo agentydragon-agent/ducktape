@@ -100,9 +100,8 @@ STATS_TABLE_LEGEND = """
     - ~84% confidence the true mean is above this value
   [cyan]N / {total}[/cyan]: Number of examples evaluated out of total available
   [cyan]Z[/cyan]: Count of examples with 0% recall
-  [cyan]✓[/cyan]: Count of completed runs
+  [cyan]✓[/cyan]: Count of exited runs
   [cyan]T[/cyan]: Count of runs that timed out
-  [cyan]F[/cyan]: Count of runs that reported failure
 
 [bold]Split Groups:[/bold]
   [cyan]Valid[/cyan]: Validation split (whole-snapshot only, terminal metric)
@@ -111,7 +110,7 @@ STATS_TABLE_LEGEND = """
 
 [bold]Notes:[/bold]
   - Results sorted by valid LCB, then train-whole LCB, then train-partial LCB, then age
-  - Status columns show count distribution (✓=success, T=timed_out, F=failure)
+  - Status columns show count distribution (✓=exited, T=timed_out)
   - Green recall means fully evaluated (N = total available)
   - Many prompts have no valid data (— in Valid columns)
 """
@@ -367,15 +366,13 @@ def _display_split_analysis(
 
 
 def _add_split_columns(table: Table, split_name: str, color: str, total_examples: int) -> None:
-    # Column order: Recall, LCB, N/{total}, Z, ✓, S, C, F
+    # Column order: Recall, LCB, N/{total}, Z, ✓ (exited), T (timed_out)
     table.add_column(f"[{color}]{split_name} Recall[/{color}]", justify="right", width=11)
     table.add_column(f"[{color}]LCB[/{color}]", justify="right", width=7)
     table.add_column(f"[{color}]N/{total_examples}[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]Z[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]✓[/{color}]", justify="right", width=4)
-    table.add_column(f"[{color}]S[/{color}]", justify="right", width=4)
-    table.add_column(f"[{color}]C[/{color}]", justify="right", width=4)
-    table.add_column(f"[{color}]F[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]T[/{color}]", justify="right", width=4)
 
 
 @stats_app.command("critic-leaderboard")
@@ -808,13 +805,13 @@ def cmd_stats(ctx: typer.Context) -> None:
         _add_split_columns(table, label, color, example_counts[key])
 
     def format_view_stats(stats: RecallByDefinitionSplitKind | None, fully_computed: bool = False) -> tuple[str, ...]:
-        """Format view stats for the multi-column-group table as (recall, lcb, n, zero, completed, timed_out, failure).
+        """Format view stats for the multi-column-group table as (recall, lcb, n, zero, exited, timed_out).
 
         This is a local helper for the main stats table which uses a different layout
         than the row-per-item tables that use _OCCURRENCE_COLUMNS / _STATUS_COLUMNS.
         """
         if stats is None:
-            return ("—", "—", "—", "—", "—", "—", "—")
+            return ("—", "—", "—", "—", "—", "—")
 
         # Use fmt_pct for percentage formatting (handles None -> "—")
         recall_val = stats.recall_stats.mean if stats.recall_stats else None
@@ -829,9 +826,8 @@ def cmd_stats(ctx: typer.Context) -> None:
             lcb_str,
             str(stats.n_examples or 0),
             str(stats.zero_count or 0),
-            str(stats.status_counts.get(AgentRunStatus.COMPLETED, 0)),
+            str(stats.status_counts.get(AgentRunStatus.EXITED, 0)),
             str(stats.status_counts.get(AgentRunStatus.TIMED_OUT, 0)),
-            str(stats.status_counts.get(AgentRunStatus.REPORTED_FAILURE, 0)),
         )
 
     for definition_id in sorted_definition_ids:
@@ -883,7 +879,7 @@ def cmd_stats(ctx: typer.Context) -> None:
         best_def_id, best_stats = max(
             valid_whole_definitions, key=lambda x: x[1].recall_stats.mean if x[1].recall_stats else 0.0
         )
-        n_completed = best_stats.status_counts.get(AgentRunStatus.COMPLETED, 0)
+        n_completed = best_stats.status_counts.get(AgentRunStatus.EXITED, 0)
         recall_mean = best_stats.recall_stats.mean if best_stats.recall_stats else 0.0
         console.print(
             f"\n[bold green]Best definition (valid whole-snapshot):[/bold green] "

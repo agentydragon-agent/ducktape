@@ -7,7 +7,7 @@ Provides test infrastructure:
 Usage in tests:
     @pytest.mark.requires_docker
     async def test_something(e2e_registry, grader_image, e2e_stack):
-        async with e2e_stack(mock, images=[grader_image]) as stack:
+        async with e2e_stack({TEST_MODEL: mock}, images=[grader_image]) as stack:
             run_id = await stack.registry.run_snapshot_grader(...)
 """
 
@@ -63,10 +63,10 @@ def e2e_registry_url(e2e_registry: DockerContainer) -> str:
 
 # Map of repo_name → OCI layout rlocation
 _AGENT_IMAGES = {
-    "critic": "_main/props/critic/image",
-    "grader": "_main/props/grader/image",
-    "prompt_optimizer": "_main/props/critic_dev/optimize/image",
-    "improvement": "_main/props/critic_dev/improve/image",
+    "critic": "_main/props/agents/critic/image",
+    "grader": "_main/props/agents/grader/image",
+    "prompt_optimizer": "_main/props/agents/critic_dev/optimize/image",
+    "improvement": "_main/props/agents/critic_dev/improve/image",
 }
 
 

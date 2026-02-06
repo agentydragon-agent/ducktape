@@ -224,7 +224,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         trajectory: CriticTrajectory | None = None
         if capture_traces:
             critique_payload_db: DBCriticSubmitPayload | None = None
-            if critic_status == AgentRunStatus.COMPLETED:
+            if critic_status == AgentRunStatus.EXITED:
                 # Notes are no longer stored; empty payload indicates successful completion
                 critique_payload_db = DBCriticSubmitPayload(notes_md=None)
 

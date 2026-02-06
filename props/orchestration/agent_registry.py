@@ -14,6 +14,7 @@ Usage:
     registry = AgentRegistry(
         docker_client=docker_client,
         db=db,
+        backend_url="http://props-backend:8000",
         agent_base_env=config.agent_env,
         registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
     )
@@ -30,19 +31,20 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import logging
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 import aiodocker
 import httpx
-from pydantic import BaseModel, Field
 
+from props.agents.critic_dev.shared import TargetMetric
 from props.core.agent_types import (
     AgentType,
     CriticTypeConfig,
@@ -54,37 +56,29 @@ from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig, is_digest
-from props.critic_dev.improve.main import TerminationSuccess
-from props.critic_dev.shared import TargetMetric
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, Snapshot
-from props.orchestration.loop_agent_env import ContainerResult, run_loop_agent
+from props.orchestration.agent_credentials import ensure_agent_role
+from props.orchestration.docker_env import PROPS_NETWORK_NAME
 
 logger = logging.getLogger(__name__)
 
 
-# --- Improvement Agent Result Types ---
+# --- Container Result ---
 
 
-class OutcomeExhausted(BaseModel):
-    kind: Literal["exhausted"] = "exhausted"
+@dataclass(frozen=True)
+class ContainerResult:
+    """Result of running an agent container. exit_code is None if the container timed out."""
 
+    stdout: str
+    stderr: str
+    exit_code: int | None
 
-class OutcomeUnexpectedTermination(BaseModel):
-    kind: Literal["unexpected_termination"] = "unexpected_termination"
-    message: str
-
-
-ImprovementOutcome = Annotated[
-    TerminationSuccess | OutcomeExhausted | OutcomeUnexpectedTermination, Field(discriminator="kind")
-]
-
-
-class ImprovementResult(BaseModel):
-    tokens_used: int
-    run_id: UUID
-    outcome: ImprovementOutcome
+    @property
+    def timed_out(self) -> bool:
+        return self.exit_code is None
 
 
 # --- Agent Run View ---
@@ -112,6 +106,7 @@ class AgentRegistry:
         docker_client: aiodocker.Docker,
         db: Database,
         db_config: DatabaseConfig,
+        backend_url: str,
         agent_base_env: dict[str, str],
         registry_config: RegistryProxyConfig,
         extra_hosts: dict[str, str] | None = None,
@@ -119,6 +114,7 @@ class AgentRegistry:
         self._docker_client = docker_client
         self._db = db
         self._db_config = db_config
+        self._backend_url = backend_url
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
         self._extra_hosts = extra_hosts
@@ -136,9 +132,26 @@ class AgentRegistry:
 
     # --- Image Resolution ---
 
-    # TODO: Consider consolidating with resolve_image_ref_async in oci_utils.py
-    # (that one resolves via Docker daemon inspect/pull; this one resolves tags
-    # to digests via the registry proxy).
+    async def _pull_image(self, image: str) -> str:
+        """Pull an OCI image to the local Docker daemon, returning its image ID."""
+        full_ref = self._registry_config.normalize_image_ref(image)
+        try:
+            info = await self._docker_client.images.inspect(full_ref)
+            image_id: str = info["Id"]
+            logger.info("Using cached image %s for %s", image_id[:19], full_ref)
+            return image_id
+        except Exception:
+            pass  # Not found locally, pull
+        logger.info("Pulling image %s", full_ref)
+        auth = {"username": self._db_config.user, "password": self._db_config.password}
+        try:
+            await self._docker_client.pull(full_ref, auth=auth)
+            info = await self._docker_client.images.inspect(full_ref)
+            image_id = info["Id"]
+            logger.info("Pulled image %s for %s", image_id[:19], full_ref)
+            return image_id
+        except Exception as e:
+            raise ValueError(f"Failed to pull image {full_ref}: {e}") from e
 
     async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
         """Resolve image reference to digest via registry proxy.
@@ -193,14 +206,105 @@ class AgentRegistry:
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return digest, oci_ref
 
-    def _finalize_run(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
-        """Interpret container exit, update AgentRun status in DB, return final status."""
-        status = self._interpret_container_result(result, agent_run_id)
+    async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
+        """Run agent container, update DB status, return final status.
+
+        Full lifecycle: resolve image → create DB role → start container →
+        wait for exit → capture logs → update agent_runs status.
+        timeout_seconds=None means no timeout (for daemons).
+        """
+        image_id = await self._pull_image(image)
+        logger.info("Using image %s from %s", image_id[:19], image)
+
+        creds = await ensure_agent_role(self._db_config, agent_run_id)
+        logger.info("Agent role ready: %s", creds.username)
+
+        container = None
+        try:
+            name = f"agent-{short_uuid(agent_run_id)}"
+
+            backend_url = self._backend_url
+            # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
+            # accepts Bearer tokens containing base64-encoded username:password.
+            api_key = base64.b64encode(f"{creds.username}:{creds.password}".encode()).decode()
+            env = {
+                **self._agent_base_env,
+                "PGUSER": creds.username,
+                "PGPASSWORD": creds.password,
+                "PROPS_BACKEND_URL": backend_url,
+                "OPENAI_BASE_URL": f"{backend_url}/v1",
+                "OPENAI_API_KEY": api_key,
+            }
+
+            host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
+            if self._extra_hosts:
+                host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
+
+            container_config = {
+                "Image": image_id,
+                "Env": [f"{k}={v}" for k, v in env.items()],
+                "HostConfig": host_config,
+                "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
+            }
+
+            container = await self._docker_client.containers.create(
+                container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
+                name=name,
+            )
+            logger.info("Created container %s", name)
+
+            await container.start()
+            logger.info("Started container %s", name)
+
+            # Wait for container to exit (with optional timeout)
+            result: ContainerResult
+            try:
+                if timeout_seconds is not None:
+                    exit_info = await asyncio.wait_for(container.wait(), timeout=timeout_seconds)
+                else:
+                    exit_info = await container.wait()
+
+                stdout = "".join(await container.log(stdout=True, stderr=False))
+                stderr = "".join(await container.log(stdout=False, stderr=True))
+                exit_code = exit_info.get("StatusCode", 1)
+                result = ContainerResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
+                logger.info("Container %s exited with code %d", name, exit_code)
+            except TimeoutError:
+                logger.error("Container %s timed out after %d seconds", name, timeout_seconds)
+                try:
+                    await container.kill()
+                except Exception as e:
+                    logger.warning("Failed to kill timed-out container: %s", e)
+                stdout = "".join(await container.log(stdout=True, stderr=False))
+                stderr = "".join(await container.log(stdout=False, stderr=True))
+                result = ContainerResult(stdout=stdout, stderr=stderr, exit_code=None)
+
+            # Log container output
+            if result.exit_code == 0:
+                logger.info("Container %s stdout:\n%s", name, result.stdout)
+                if result.stderr:
+                    logger.info("Container %s stderr:\n%s", name, result.stderr)
+            else:
+                logger.error("Container %s stdout:\n%s", name, result.stdout)
+                logger.error("Container %s stderr:\n%s", name, result.stderr)
+
+        finally:
+            if container is not None:
+                try:
+                    await container.delete(force=True)
+                    logger.info("Deleted container")
+                except Exception as e:
+                    logger.warning("Failed to delete container: %s", e)
+
+        # Determine and persist status
+        status = AgentRunStatus.TIMED_OUT if result.timed_out else AgentRunStatus.EXITED
+
         with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
             if found_run.status == AgentRunStatus.IN_PROGRESS:
                 found_run.status = status
+                found_run.container_exit_code = result.exit_code
                 session.commit()
                 logger.info(f"Updated {agent_run_id} status to {status}")
         return status
@@ -235,19 +339,7 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        result = await run_loop_agent(
-            docker_client=self._docker_client,
-            agent_run_id=agent_run_id,
-            db_config=self._db_config,
-            image=image,
-            agent_base_env=self._agent_base_env,
-            registry_config=self._registry_config,
-            timeout_seconds=timeout_seconds,
-            container_name=f"critic-{short_uuid(agent_run_id)}",
-            extra_hosts=self._extra_hosts,
-        )
-
-        self._finalize_run(result, agent_run_id)
+        await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
         return agent_run_id
 
     async def run_prompt_optimizer(
@@ -268,7 +360,6 @@ class AgentRegistry:
                 target_metric=target_metric,
                 optimizer_model=optimizer_model,
                 critic_model=critic_model,
-                grader_model=critic_model,  # Not actively used (grading by daemons)
                 budget_limit=budget,
             )
 
@@ -282,33 +373,24 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        result = await run_loop_agent(
-            docker_client=self._docker_client,
-            agent_run_id=agent_run_id,
-            db_config=self._db_config,
-            image=image,
-            agent_base_env=self._agent_base_env,
-            registry_config=self._registry_config,
-            container_name=f"promptopt-{short_uuid(agent_run_id)}",
-            timeout_seconds=timeout_seconds,
-            extra_hosts=self._extra_hosts,
-        )
-
-        self._finalize_run(result, agent_run_id)
+        await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
         return agent_run_id
 
     async def run_improvement_agent(
         self,
         *,
         examples: list[ExampleSpec],
-        baseline_image_refs: list[str],
+        baseline_image_digests: list[str],
         token_budget: int,
         improvement_model: str,
         critic_model: str,
         timeout_seconds: int,
         output_dir: Path | None = None,
-    ) -> ImprovementResult:
-        """Run an improvement agent that creates definitions to beat baselines on the allowed examples."""
+    ) -> UUID:
+        """Run an improvement agent that creates definitions to beat baselines on the allowed examples.
+
+        Returns agent run ID. Query DB for final status.
+        """
         if not examples:
             raise ValueError("examples must not be empty")
 
@@ -321,12 +403,14 @@ class AgentRegistry:
 
         image_digest, image = await self._resolve_image(AgentType.IMPROVEMENT, BUILTIN_TAG)
 
+        # Resolve baseline refs to digests (tags → sha256:...)
+        resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
+
         type_config = ImprovementTypeConfig(
-            baseline_image_refs=baseline_image_refs,
+            baseline_image_digests=resolved_baselines,
             allowed_examples=examples,
             improvement_model=improvement_model,
             critic_model=critic_model,
-            grader_model=critic_model,  # Not actively used (grading by daemons)
         )
 
         with self._db.session() as session:
@@ -340,53 +424,8 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        result = await run_loop_agent(
-            docker_client=self._docker_client,
-            agent_run_id=run_id,
-            db_config=self._db_config,
-            image=image,
-            agent_base_env=self._agent_base_env,
-            registry_config=self._registry_config,
-            container_name=f"improve-{short_uuid(run_id)}",
-            timeout_seconds=timeout_seconds,
-            extra_hosts=self._extra_hosts,
-        )
-
-        final_status = self._finalize_run(result, run_id)
-
-        # Determine outcome from final status
-        outcome: ImprovementOutcome
-        if final_status == AgentRunStatus.TIMED_OUT:
-            outcome = OutcomeUnexpectedTermination(message=f"Container timed out after {timeout_seconds} seconds")
-        elif final_status == AgentRunStatus.COMPLETED:
-            outcome = OutcomeExhausted()  # TODO: Parse actual success details from DB
-        else:
-            outcome = OutcomeUnexpectedTermination(message=f"Container exited with code {result.exit_code}")
-
-        return ImprovementResult(tokens_used=0, run_id=run_id, outcome=outcome)  # TODO: Track tokens
-
-    def _interpret_container_result(self, result: ContainerResult, agent_run_id: UUID) -> AgentRunStatus:
-        if result.exit_code == 0:
-            # Check DB - container should have set status to COMPLETED
-            with self._db.session() as session:
-                run = session.get(AgentRun, agent_run_id)
-                if run and run.status == AgentRunStatus.COMPLETED:
-                    return AgentRunStatus.COMPLETED
-                # Container exited 0 but didn't submit - unexpected
-                logger.warning(f"Container exited 0 but status is {run.status if run else 'None'}")
-                return AgentRunStatus.COMPLETED
-        elif result.exit_code == -1:
-            # Timeout
-            logger.warning(f"Container timed out: {agent_run_id}")
-            return AgentRunStatus.TIMED_OUT
-        else:
-            # Non-zero exit - check if container set REPORTED_FAILURE
-            with self._db.session() as session:
-                run = session.get(AgentRun, agent_run_id)
-                if run and run.status == AgentRunStatus.REPORTED_FAILURE:
-                    return AgentRunStatus.REPORTED_FAILURE
-            logger.error(f"Container failed with exit code {result.exit_code}: stderr={result.stderr[:500]}")
-            return AgentRunStatus.REPORTED_FAILURE
+        await self._run_agent(run_id, image=image, timeout_seconds=timeout_seconds)
+        return run_id
 
     # --- State Tracking ---
 
@@ -440,16 +479,5 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
-        result = await run_loop_agent(
-            docker_client=self._docker_client,
-            agent_run_id=agent_run_id,
-            db_config=self._db_config,
-            image=image,
-            agent_base_env=self._agent_base_env,
-            registry_config=self._registry_config,
-            container_name=f"grader-{short_uuid(agent_run_id)}",
-            extra_hosts=self._extra_hosts,
-        )
-
-        self._finalize_run(result, agent_run_id)
+        await self._run_agent(agent_run_id, image=image)
         return agent_run_id

@@ -2,7 +2,6 @@
 
 This package contains HOST-only code that orchestrates agent containers:
 - AgentRegistry: unified entry point for running agents
-- loop_agent_env: container spawning and lifecycle
 - grader_supervisor: grader daemon lifecycle management
 - agent_credentials: PostgreSQL role creation for agents
 """
@@ -22,18 +21,10 @@ py_library(
 )
 
 py_library(
-    name = "loop_agent_env",
-    srcs = ["loop_agent_env.py"],
+    name = "docker_env",
+    srcs = ["docker_env.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        ":agent_credentials",
-        "//props/core:display",
-        "//props/core:docker_env",
-        "//props/core:oci_utils",
-        "//props/db:config",
-        "@pypi//aiodocker",
-    ],
 )
 
 py_library(
@@ -42,20 +33,19 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":loop_agent_env",
+        ":agent_credentials",
+        ":docker_env",
+        "//props/agents/critic_dev:shared",
         "//props/core:agent_types",
         "//props/core:display",
         "//props/core:ids",
         "//props/core:oci_utils",
-        "//props/core:splits",
         "//props/core/models:examples",
-        "//props/critic_dev:shared",
-        "//props/critic_dev/improve:main",
+        "//props/db:config",
         "//props/db:database",
         "//props/db:models",
         "@pypi//aiodocker",
         "@pypi//httpx",
-        "@pypi//pydantic",
     ],
 )
 
@@ -66,10 +56,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":agent_registry",
+        "//props/agents/grader:notifications",
         "//props/core:ids",
         "//props/db:database",
         "//props/db:models",
-        "//props/grader:notifications",
         "@pypi//asyncpg",
     ],
 )

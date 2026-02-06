@@ -102,38 +102,38 @@ Total test time: ~627s (~10.5 minutes) for 243 tests
 
 ## Slowest 30 Tests
 
-| Duration | Phase | Test                                                                                                 |
-| -------- | ----- | ---------------------------------------------------------------------------------------------------- |
-| 72.30s   | call  | `prompt_optimize/test_e2e.py::test_three_agent_workflow_with_grader_data_access`                     |
-| 35.19s   | setup | `db/test_splits.py::test_specimen_has_valid_split`                                                   |
-| 32.65s   | call  | `critic/test_e2e.py::test_critic_http_mode_submit_with_issues`                                       |
-| 29.86s   | call  | `clustering/test_e2e.py::test_clustering_http_mode_assign_to_cluster`                                |
-| 29.16s   | setup | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                          |
-| 19.54s   | call  | `prompt_optimize/test_e2e.py::test_cli_hard_examples_shows_metrics`                                  |
-| 19.31s   | call  | `critic/test_e2e.py::test_critic_http_mode_zero_issues`                                              |
-| 19.31s   | call  | `prompt_optimize/test_e2e.py::test_cli_leaderboard_shows_recall`                                     |
-| 19.29s   | call  | `critic/test_e2e.py::test_critic_does_not_infinite_loop_on_zero_issues`                              |
-| 19.10s   | call  | `prompt_optimize/test_e2e.py::test_po_agent_psql_connectivity`                                       |
-| 19.06s   | call  | `clustering/test_e2e.py::test_clustering_http_mode_assign_to_existing`                               |
-| 18.04s   | call  | `critic/test_e2e.py::test_critic_zero_issues`                                                        |
-| 17.52s   | setup | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                             |
-| 17.44s   | call  | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                             |
-| 17.40s   | setup | `grader/test_e2e.py::test_grader_http_mode_zero_issues`                                              |
-| 16.75s   | call  | `specimens/test_validation.py::test_specimen_issues_and_false_positives_load`                        |
-| 16.72s   | call  | `grader/test_e2e.py::test_grader_http_mode_zero_issues`                                              |
-| 16.13s   | call  | `db/test_splits.py::test_all_specimens_in_splits_can_load`                                           |
-| 14.67s   | call  | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                          |
-| 12.92s   | call  | `prompt_improve/test_e2e.py::test_cli_hard_examples_in_improvement_agent`                            |
-| 12.79s   | call  | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_multiple_examples`                              |
-| 12.31s   | call  | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_success`                                        |
-| 12.29s   | call  | `prompt_improve/test_e2e.py::test_cli_leaderboard_in_improvement_agent`                              |
-| 6.12s    | call  | `critic/test_temp_user_permissions.py::test_docker_minimal_insert`                                   |
-| 1.68s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_multi_location_occurrence`                   |
-| 1.63s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_rls_isolation`                               |
-| 1.47s    | setup | `grader/test_grader_sql_integration.py::test_grader_report_failure_prevents_subsequent_submit`       |
-| 1.34s    | setup | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_success`                                        |
-| 1.31s    | call  | `critic/test_temp_user_permissions.py::test_docker_connection_info`                                  |
-| 1.26s    | setup | `db/test_failed_critic_runs_as_zero_recall.py::test_occurrence_statistics_has_correct_n_critic_runs` |
+| Duration | Phase | Test                                                                                           |
+| -------- | ----- | ---------------------------------------------------------------------------------------------- |
+| 72.30s   | call  | `prompt_optimize/test_e2e.py::test_three_agent_workflow_with_grader_data_access`               |
+| 35.19s   | setup | `db/test_splits.py::test_specimen_has_valid_split`                                             |
+| 32.65s   | call  | `critic/test_e2e.py::test_critic_http_mode_submit_with_issues`                                 |
+| 29.86s   | call  | `clustering/test_e2e.py::test_clustering_http_mode_assign_to_cluster`                          |
+| 29.16s   | setup | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                    |
+| 19.54s   | call  | `prompt_optimize/test_e2e.py::test_cli_hard_examples_shows_metrics`                            |
+| 19.31s   | call  | `critic/test_e2e.py::test_critic_http_mode_zero_issues`                                        |
+| 19.31s   | call  | `prompt_optimize/test_e2e.py::test_cli_leaderboard_shows_recall`                               |
+| 19.29s   | call  | `critic/test_e2e.py::test_critic_does_not_infinite_loop_on_zero_issues`                        |
+| 19.10s   | call  | `prompt_optimize/test_e2e.py::test_po_agent_psql_connectivity`                                 |
+| 19.06s   | call  | `clustering/test_e2e.py::test_clustering_http_mode_assign_to_existing`                         |
+| 18.04s   | call  | `critic/test_e2e.py::test_critic_zero_issues`                                                  |
+| 17.52s   | setup | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                       |
+| 17.44s   | call  | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                       |
+| 17.40s   | setup | `grader/test_e2e.py::test_grader_http_mode_zero_issues`                                        |
+| 16.75s   | call  | `specimens/test_validation.py::test_specimen_issues_and_false_positives_load`                  |
+| 16.72s   | call  | `grader/test_e2e.py::test_grader_http_mode_zero_issues`                                        |
+| 16.13s   | call  | `db/test_splits.py::test_all_specimens_in_splits_can_load`                                     |
+| 14.67s   | call  | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                    |
+| 12.92s   | call  | `prompt_improve/test_e2e.py::test_cli_hard_examples_in_improvement_agent`                      |
+| 12.79s   | call  | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_multiple_examples`                        |
+| 12.31s   | call  | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_success`                                  |
+| 12.29s   | call  | `prompt_improve/test_e2e.py::test_cli_leaderboard_in_improvement_agent`                        |
+| 6.12s    | call  | `critic/test_temp_user_permissions.py::test_docker_minimal_insert`                             |
+| 1.68s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_multi_location_occurrence`             |
+| 1.63s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_rls_isolation`                         |
+| 1.47s    | setup | `grader/test_grader_sql_integration.py::test_grader_report_failure_prevents_subsequent_submit` |
+| 1.34s    | setup | `prompt_improve/test_e2e.py::test_prompt_improve_e2e_success`                                  |
+| 1.31s    | call  | `critic/test_temp_user_permissions.py::test_docker_connection_info`                            |
+| 1.26s    | setup | `db/test_tp_occurrence_credits.py::test_occurrence_statistics_has_correct_n_critic_runs`       |
 
 ## Categories of Slow Tests
 

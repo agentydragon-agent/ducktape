@@ -12,9 +12,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from props.agents.critic_dev.shared import TargetMetric
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
-from props.critic_dev.shared import TargetMetric
 
 
 class AgentType(StrEnum):
@@ -101,21 +101,20 @@ class ImprovementTypeConfig(BaseModel):
     Improvement agents analyze critic/grader runs and propose improved agent definitions.
 
     RLS policies filter data access based on these fields:
-    - Can read agent_definitions matching baseline_image_refs
+    - Can read agent_definitions matching baseline_image_digests
     - Can read agent_runs/events for runs on allowed_examples
     - Can create new definitions and run evals on allowed_examples
     """
 
     agent_type: Literal[AgentType.IMPROVEMENT] = AgentType.IMPROVEMENT
-    baseline_image_refs: list[str] = Field(
-        min_length=1, description="One or more agent image references to study and improve"
+    baseline_image_digests: list[str] = Field(
+        min_length=1, description="One or more agent image digests (sha256:...) to study and improve"
     )
     allowed_examples: list[ExampleSpec] = Field(
         min_length=1, description="Training examples this agent can access (snapshot + scope)"
     )
     improvement_model: str = Field(description="Model used for the improvement agent itself")
     critic_model: str = Field(description="Model used for critic evaluations")
-    grader_model: str = Field(description="Model used for grader evaluations")
 
 
 # Discriminated union for type-specific config

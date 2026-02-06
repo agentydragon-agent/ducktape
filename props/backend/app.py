@@ -55,6 +55,7 @@ class BackendDeps:
 
     config: PropsConfig
     registry_proxy_config: RegistryProxyConfig
+    backend_url: str
     grader_model: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
@@ -74,6 +75,7 @@ def _make_lifespan(deps: BackendDeps):
             docker_client=docker_client,
             db=db,
             db_config=db_config,
+            backend_url=deps.backend_url,
             agent_base_env=deps.config.agent_env,
             registry_config=deps.registry_proxy_config,
         )
@@ -148,9 +150,11 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
 
 
 def default_deps(host: str = "127.0.0.1", port: int = 8000) -> BackendDeps:
+    config = load_config_from_env()
     return BackendDeps(
-        config=load_config_from_env(),
+        config=config,
         registry_proxy_config=get_registry_proxy_config(),
+        backend_url=config.agent_env["PROPS_BACKEND_URL"],
         grader_model=os.environ.get(ENV_GRADER_MODEL),
         host=host,
         port=port,

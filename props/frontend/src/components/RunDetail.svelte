@@ -308,15 +308,14 @@
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span
             ><span class="text-gray-500">Baselines:</span>
-            {#each config.baseline_image_refs as defId, i (defId)}
+            {#each config.baseline_image_digests as defId, i (defId)}
               {#if i > 0},
               {/if}<DefinitionIdLink id={defId} />
             {/each}
           </span>
           <span><span class="text-gray-500">Examples:</span> {config.allowed_examples.length}</span>
           <span
-            ><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model},
-            grader={config.grader_model}</span
+            ><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model}</span
           >
         </div>
       {:else if getAgentType(run) === "prompt_optimizer"}

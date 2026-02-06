@@ -11,18 +11,12 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import FullSyncResult, sync_all
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
-
-
-def ensure_databases_exist(config: DatabaseConfig) -> None:
-    """Ensure eval_results database exists."""
-    ensure_database_exists(config, config.database, drop_existing=False)
 
 
 def recreate_database_and_sync(db: Database, *, use_staged: bool = False) -> FullSyncResult:
@@ -94,7 +88,7 @@ def cmd_db_recreate(
     # Ensure databases exist before trying to connect
     typer.echo("Ensuring databases exist...")
     db: Database = ctx.obj
-    ensure_databases_exist(db.config)
+    ensure_database_exists(db.config, db.config.database, drop_existing=False)
 
     # Connect and recreate (includes full sync)
     console = Console()

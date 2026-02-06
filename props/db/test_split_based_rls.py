@@ -37,8 +37,8 @@ import pytest_bazel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from props.agents.critic_dev.shared import TargetMetric
 from props.core.agent_types import PromptOptimizerTypeConfig
-from props.critic_dev.shared import TargetMetric
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
@@ -56,7 +56,6 @@ async def prompt_optimizer_creds(synced_db: Database) -> AsyncGenerator[AgentCre
         target_metric=TargetMetric.TARGETED,
         optimizer_model="test-optimizer-model",
         critic_model="test-critic-model",
-        grader_model="test-grader-model",
         budget_limit=100.0,
     )
     yield await make_agent_credentials(synced_db, type_config, FAKE_PROMPT_OPTIMIZER_DIGEST)
@@ -185,7 +184,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
 
         # Create a critic run for the test specimen using fixture factory
         test_run = make_fake_critic_run(
-            session=session, example=example.to_example_spec(), status=AgentRunStatus.COMPLETED
+            session=session, example=example.to_example_spec(), status=AgentRunStatus.EXITED
         )
         session.add(test_run)
         session.commit()
@@ -225,7 +224,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(synced_db: Datab
             session=session,
             example=example.to_example_spec(),
             agent_run_id=train_agent_run_id,
-            status=AgentRunStatus.COMPLETED,
+            status=AgentRunStatus.EXITED,
         )
         session.add(train_run)
         session.commit()
@@ -260,7 +259,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
             session=session,
             example=example.to_example_spec(),
             agent_run_id=valid_agent_run_id,
-            status=AgentRunStatus.COMPLETED,
+            status=AgentRunStatus.EXITED,
         )
         session.add(valid_run)
         session.commit()
@@ -298,7 +297,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
             session=session,
             example=example.to_example_spec(),
             agent_run_id=valid_agent_run_id,
-            status=AgentRunStatus.COMPLETED,
+            status=AgentRunStatus.EXITED,
         )
         session.add(valid_run)
         session.flush()
@@ -342,7 +341,7 @@ async def test_prompt_optimizer_can_see_train_split_llm_requests(
             session=session,
             example=example.to_example_spec(),
             agent_run_id=train_agent_run_id,
-            status=AgentRunStatus.COMPLETED,
+            status=AgentRunStatus.EXITED,
         )
         session.add(train_run)
         session.flush()

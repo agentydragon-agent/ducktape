@@ -279,7 +279,7 @@ TAG_CONTRACTS = {
     },
     "e2e": {
         "env_vars": {},
-        "setup": "dedicated_workflow",  # Complex, needs own workflow
+        "setup": "rbe",  # Run on RBE with testcontainers
     },
 }
 ```
@@ -370,7 +370,7 @@ Extend `bazel_diff.py` to:
     "basic": ["//adgn:test_foo", "//mcp_infra:test_bar"],
     "postgres": ["//props/db:test_sync", "//gatelet:test_db"],
     "docker": ["//agent_server:test_exec"],
-    "e2e": ["//props/critic:test_e2e"]
+    "e2e": ["//props/agents/critic:test_e2e"]
 }
 ```
 

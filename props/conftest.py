@@ -67,9 +67,6 @@ from props.testing.fixtures.runs import (
 )
 from props.testing.fixtures.scopes import all_files_scope, subtract_file_example
 
-# Re-export mocks for direct imports
-from props.testing.mocks import PropsMock
-
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode."""

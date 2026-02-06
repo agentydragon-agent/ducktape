@@ -25,9 +25,9 @@ run_loop_agent()
 
 ### Key implementations
 
-- **Critic:** `props/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
-- **Grader:** `props/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Daemon mode via `props/grader/daemon.py` with pg_notify.
-- **PO/PI:** `props/critic_dev/optimize/main.py`, `props/critic_dev/improve/main.py` — `DirectToolProvider` with exec, run_critic, wait_until_graded_tool, submit, report_failure tools.
+- **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
+- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Daemon mode via `props/agents/grader/daemon.py` with pg_notify.
+- **PO/PI:** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, run_critic, wait_until_graded_tool, submit, report_failure tools.
 - **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
 
 ## Decisions

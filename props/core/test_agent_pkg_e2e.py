@@ -32,22 +32,22 @@ from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen, tool_roundtrip
 from mcp_infra.exec.matchers import exited_successfully
-from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
-from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleKind, WholeSnapshotExample
-from props.core.oci_utils import BUILTIN_TAG
-from props.critic.testing.mocks import CriticMock
-from props.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
-from props.critic_dev.shared import TargetMetric
-from props.critic_dev.testing.mocks import CriticDevMock
-from props.critic_dev.testing.orchestration_fixtures import (
+from props.agents.critic.testing.mocks import CriticMock
+from props.agents.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
+from props.agents.critic_dev.shared import TargetMetric
+from props.agents.critic_dev.testing.mocks import CriticDevMock
+from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
     make_orchestration_grader_mock,
 )
+from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
+from props.core.ids import SnapshotSlug
+from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
+from props.testing.fixtures.e2e_container import TEST_MODEL
 from props.testing.mocks import get_system_message_text
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,9 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     """
     snapshot_slug = SnapshotSlug(test_snapshot)
 
+    # Mutable container filled after image push but before mock runs
+    digests: dict[str, str] = {}
+
     @CriticDevMock.mock()
     def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
@@ -83,7 +86,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         # Call run_critic tool (DirectToolProvider)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id=BUILTIN_TAG, example=example, timeout_seconds=120, budget_usd=None
+            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=None
         )
 
         call = m.tool_call("run_critic", run_critic_args)
@@ -125,6 +128,8 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         ORCHESTRATION_GRADER_MODEL: grader_mock,
     }
     async with e2e_stack(mocks, images=[prompt_optimizer_image, critic_image, grader_image]) as stack:
+        digests.update(stack.image_digests)
+
         # Start grader daemon in background
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
@@ -144,9 +149,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
             with synced_db.session() as session:
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
-                assert optimizer_run.status == AgentRunStatus.COMPLETED, (
-                    f"Expected COMPLETED, got {optimizer_run.status}"
-                )
+                assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected COMPLETED, got {optimizer_run.status}"
 
         finally:
             grader_task.cancel()
@@ -282,7 +285,7 @@ AGENT_EOF
             with synced_db.session() as session:
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
-                assert optimizer_run.status == AgentRunStatus.COMPLETED
+                assert optimizer_run.status == AgentRunStatus.EXITED
 
         finally:
             grader_task.cancel()
@@ -321,9 +324,9 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         # Submit zero issues (expected behavior: push failed, critic still completes)
         yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")
 
-    async with e2e_stack(mock, images=[critic_image]) as stack:
+    async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:
         run_id = await stack.registry.run_critic(
-            image_ref=BUILTIN_TAG,
+            image_ref=stack.image_digests["critic"],
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,
@@ -336,7 +339,7 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
             critic_run = session.get(AgentRun, run_id)
             assert critic_run is not None
             # The critic should complete because it handled the push failure gracefully
-            assert critic_run.status == AgentRunStatus.COMPLETED
+            assert critic_run.status == AgentRunStatus.EXITED
 
 
 if __name__ == "__main__":
