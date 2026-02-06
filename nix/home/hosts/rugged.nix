@@ -12,11 +12,17 @@
   lib,
   ...
 }:
+let
+  tana = pkgs.callPackage ../packages/tana.nix { };
+in
 {
   imports = [ ../home.nix ];
 
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
-  home.packages = [ pkgs.gnomeExtensions.appindicator ];
+  home.packages = [
+    pkgs.gnomeExtensions.appindicator
+    tana
+  ];
   dconf.settings."org/gnome/shell".enabled-extensions = [
     "appindicatorsupport@rgcjonas.gmail.com"
   ];
