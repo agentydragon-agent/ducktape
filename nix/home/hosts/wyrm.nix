@@ -8,6 +8,9 @@
   lib,
   ...
 }:
+let
+  tana = pkgs.callPackage ../packages/tana.nix { };
+in
 {
   imports = [
     ../home.nix
@@ -18,6 +21,8 @@
 
   # Wyrm-specific configuration (VM/desktop with full GUI)
   home.stateVersion = "24.05";
+
+  home.packages = [ tana ];
   # TODO: Re-enable once k3s cluster is back up
   # services.google-drive.enable = true;
 

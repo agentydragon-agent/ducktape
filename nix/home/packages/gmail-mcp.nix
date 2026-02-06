@@ -20,12 +20,9 @@
 #   4. Credentials stored in ~/.gmail-mcp/credentials.json
 #
 # UPDATING:
-#   1. Find new commit at https://github.com/GongRzhe/Gmail-MCP-Server/commits/main
-#   2. Update `rev` below
-#   3. Run: nix-prefetch-url --unpack "https://github.com/GongRzhe/Gmail-MCP-Server/archive/NEW_REV.tar.gz"
-#   4. Convert hash: nix hash convert --hash-algo sha256 --to sri <hash>
-#   5. Update `hash` in fetchFromGitHub
-#   6. Build - it will fail with correct npmDepsHash, update that too
+#   cd nix/home && nix run nixpkgs#nix-update -- --flake gmail-mcp \
+#     --version branch=main --url https://github.com/GongRzhe/Gmail-MCP-Server
+#   If npmDepsHash changes, build will fail with correct hash - update manually.
 { pkgs, lib }:
 let
   # Pinned commit - update this to upgrade

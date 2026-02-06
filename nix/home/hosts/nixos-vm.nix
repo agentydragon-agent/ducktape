@@ -13,6 +13,9 @@
   lib,
   ...
 }:
+let
+  tana = pkgs.callPackage ../packages/tana.nix { };
+in
 {
   imports = [
     ../home.nix
@@ -20,6 +23,8 @@
 
   # VM-specific configuration (GUI enabled, no special customizations)
   home.stateVersion = "24.05";
+
+  home.packages = [ tana ];
 
   # Disable screensaver and screen blanking (for VM)
   dconf.settings = {

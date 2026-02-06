@@ -8,6 +8,9 @@
   lib,
   ...
 }:
+let
+  tana = pkgs.callPackage ../packages/tana.nix { };
+in
 {
   imports = [
     ../home.nix
@@ -18,6 +21,8 @@
 
   # Agentydragon-specific configuration (desktop with full GUI)
   home.stateVersion = "24.05";
+
+  home.packages = [ tana ];
   # TODO: Re-enable when google-drive-service module is fixed (see home.nix imports)
   # services.google-drive.enable = true;
 }

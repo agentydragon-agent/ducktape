@@ -1,8 +1,8 @@
 # Tana: knowledge graph / note-taking desktop app (Electron)
 # Installed from .deb via GitHub Releases (tanainc/tana-desktop-releases)
 #
-# To update: change version, set hash to lib.fakeHash,
-# run home-manager switch to get the new hash, then update hash.
+# To update:
+#   cd nix/home && nix run nixpkgs#nix-update -- --flake tana
 {
   lib,
   pkgs,
@@ -16,7 +16,6 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://github.com/tanainc/tana-desktop-releases/releases/download/v${version}/tana_${version}_amd64.deb";
-    # After updating version, set to lib.fakeHash and rebuild to get new hash
     hash = "sha256-zjFMF46a/aHxNbbAfuvmX8CFxcy5Q8cajultHuBi3Ew=";
   };
 

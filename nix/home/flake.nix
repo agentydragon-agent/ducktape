@@ -101,6 +101,19 @@
         };
     in
     {
+      # Packages exposed for nix-update and direct builds
+      packages.${system} =
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+          };
+        in
+        {
+          tana = pkgs.callPackage ./packages/tana.nix { };
+          gmail-mcp = pkgs.callPackage ./packages/gmail-mcp.nix { };
+        };
+
       homeConfigurations = {
         # Main laptop (ThinkPad X1 Extreme)
         agentydragon = mkHome {
