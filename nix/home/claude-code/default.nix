@@ -215,6 +215,9 @@
 let
   cfg = config.programs.claude-code;
 
+  # Gmail MCP Server - pinned to specific commit for security
+  gmail-mcp-server = import ../packages/gmail-mcp.nix { inherit pkgs lib; };
+
   # Helper to generate Read/Grep/Glob permissions for directories
   # Allows recursive access to all files in specified directories
   # Pattern syntax: https://code.claude.com/docs/en/settings
@@ -309,6 +312,22 @@ in
 
     commands = commands;
 
+    mcpServers = {
+      tana-local = {
+        type = "http";
+        url = "http://localhost:8262/mcp";
+      };
+
+      # Gmail integration via MCP
+      # Setup: See nix/home/packages/gmail-mcp.nix for full instructions
+      # Quick start: gmail-mcp-auth (after configuring Google Cloud OAuth)
+      gmail = {
+        type = "stdio";
+        command = "${gmail-mcp-server}/bin/gmail-mcp";
+        args = [ ];
+      };
+    };
+
     settings = {
       theme = "dark";
       attribution.commit = ""; # Disable "Co-authored-by" in commits
@@ -352,6 +371,9 @@ in
       };
     };
   };
+
+  # Add gmail-mcp-server to PATH for auth setup command
+  config.home.packages = [ gmail-mcp-server ];
 
   # Deploy skills to ~/.claude/skills/
   # Skills are stored in nix/home/claude-code/skills/ and symlinked for declarative management
