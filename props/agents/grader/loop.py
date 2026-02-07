@@ -7,8 +7,8 @@ allowing the daemon to sleep.
 
 from __future__ import annotations
 
+import enum
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from sqlalchemy import select
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
+from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
@@ -66,12 +67,9 @@ TEXT_OUTPUT_REMINDER = (
 WORKSPACE = Path("/workspace")
 
 
-@dataclass
-class ExitState:
-    """Tracks whether a tool has requested exit and the reason."""
-
-    should_exit: bool = False
-    failed: bool = False
+class _GraderExit(enum.Enum):
+    SLEEP = "sleep"
+    FAILED = "failed"
 
 
 def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
@@ -82,7 +80,7 @@ def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
 
 
 def create_grader_tool_provider(
-    grader_run_id: UUID, snapshot_slug: SnapshotSlug, exit_state: ExitState, db: Database
+    grader_run_id: UUID, snapshot_slug: SnapshotSlug, exit_reason: list[_GraderExit], db: Database
 ) -> DirectToolProvider:
     """Create a tool provider with grader tools bound to the given run."""
     provider = DirectToolProvider()
@@ -279,8 +277,7 @@ def create_grader_tool_provider(
 
         Use when there are blocking issues. Signals exit.
         """
-        exit_state.should_exit = True
-        exit_state.failed = True
+        exit_reason.append(_GraderExit.FAILED)
         logger.info("Reported failure: %s", args.message)
 
     @provider.tool
@@ -294,19 +291,11 @@ def create_grader_tool_provider(
         """
         if check_grading_pending(snapshot_slug, db):
             raise ValueError("There is still pending grading work. Continue grading before sleeping.")
-        exit_state.should_exit = True
+        exit_reason.append(_GraderExit.SLEEP)
         logger.info("Sleep requested: %s", args.summary)
         return "Going to sleep. Will wake when new grading work arrives."
 
     return provider
-
-
-class LoggingHandler(BaseHandler):
-    """Handler that logs events for debugging."""
-
-    def on_error(self, exc: Exception) -> None:
-        logger.error("Agent error: %s", exc)
-        raise exc
 
 
 async def run_grader_loop(system_prompt: str, snapshot_slug: SnapshotSlug, db: Database) -> int:
@@ -319,20 +308,18 @@ async def run_grader_loop(system_prompt: str, snapshot_slug: SnapshotSlug, db: D
     with db.session() as session:
         grader_run_id = get_current_agent_run_id(session)
 
-    # Create tool provider with shared exit state
-    exit_state = ExitState()
-    tool_provider = create_grader_tool_provider(grader_run_id, snapshot_slug, exit_state, db)
+    # Mutable container for exit reason (populated by report_failure or sleep tools)
+    exit_reason: list[_GraderExit] = []
+    tool_provider = create_grader_tool_provider(grader_run_id, snapshot_slug, exit_reason, db)
 
     bound_model = create_bound_model_from_env(db)
 
-    # Create handlers
     handlers: list[BaseHandler] = [
-        LoggingHandler(),
-        AbortIf(lambda: exit_state.should_exit),
+        LoggingHandler(logger),
+        AbortIf(lambda: len(exit_reason) > 0),
         RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
     ]
 
-    # Create and run agent
     agent = await Agent.create(
         tool_provider=tool_provider,
         handlers=handlers,
@@ -341,11 +328,11 @@ async def run_grader_loop(system_prompt: str, snapshot_slug: SnapshotSlug, db: D
         tool_policy=AllowAnyToolOrTextMessage(),
     )
 
-    # Add system prompt
     agent.process_message(SystemMessage.text(system_prompt))
 
     await agent.run()
-    if exit_state.failed:
+
+    if exit_reason and exit_reason[0] == _GraderExit.FAILED:
         logger.error("Grading failed via report_failure")
         return 1
 

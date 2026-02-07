@@ -2,47 +2,43 @@
 
 Shared entry point for both optimize and improve modes. The type_config
 discriminant determines behavior:
-- PromptOptimizerTypeConfig: runs until budget exhaustion
-- ImprovementTypeConfig: auto-terminates when a candidate beats baseline
+- CriticDevOptimizeTypeConfig: runs until budget exhaustion
+- CriticDevImproveTypeConfig: auto-terminates when a candidate beats baseline
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-from sqlalchemy import bindparam, text
+from sqlalchemy import bindparam, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import String
 
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
+from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, LoopDecision, NoAction
 from openai_utils.model import SystemMessage, UserMessage
-from props.agents.critic_dev.eval_client import EvalClient
-from props.agents.critic_dev.loop import (
-    TEXT_OUTPUT_REMINDER,
-    LoggingHandler,
-    LoopState,
-    LoopStatus,
-    create_tool_provider,
-)
+from props.agents.critic_dev.eval_client import CriticRunClient
+from props.agents.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoopState, LoopStatus, create_tool_provider
 from props.agents.runtime import create_bound_model_from_env, get_current_agent_run, render_system_prompt, setup_logging
-from props.core.agent_types import ImprovementTypeConfig, PromptOptimizerTypeConfig
+from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig
 from props.core.ids import DefinitionId
 from props.core.models.examples import SingleFileSetExample
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.db.models import GradingPending
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +55,7 @@ def _setup_crane_auth(config: DatabaseConfig) -> None:
         raise RuntimeError("PROPS_BACKEND_URL must be set for crane auth setup")
 
     registry = urlparse(backend_url).netloc
-    auth_token = base64.b64encode(f"{config.user}:{config.password}".encode()).decode()
+    auth_token = config.basic_auth_token
     docker_config = {"auths": {registry: {"auth": auth_token}}}
 
     config_dir = Path.home() / ".docker"
@@ -83,19 +79,21 @@ class TerminationSuccess(BaseModel):
 class BlockingStatus(BaseModel):
     kind: Literal["blocking"] = "blocking"
     message: str = Field(description="Human-readable explanation of what's blocking termination")
-    baseline_avg_issues: float | None = Field(
+    baseline_avg_credit: float | None = Field(
         default=None, description="Average total_credit across baseline definitions"
     )
-    best_candidate_issues: float | None = Field(default=None, description="Best candidate's total_credit")
+    best_candidate_credit: float | None = Field(default=None, description="Best candidate's total_credit")
     best_candidate_id: str | None = Field(default=None, description="ID of the best candidate definition so far")
-    missing_evals_count: int = Field(default=0, description="Number of (definition, example) pairs still needing evals")
+    edges_needing_grading_count: int = Field(
+        default=0, description="Number of edges in grading_pending still awaiting grading"
+    )
 
 
 TerminationResult = Annotated[TerminationSuccess | BlockingStatus, Field(discriminator="kind")]
 
 
 def check_termination_condition(
-    session: Session, improvement_run_id: UUID, type_config: ImprovementTypeConfig
+    session: Session, improvement_run_id: UUID, type_config: CriticDevImproveTypeConfig
 ) -> TerminationResult:
     baseline_ids = type_config.baseline_image_digests
     allowed_examples = type_config.allowed_examples
@@ -111,7 +109,7 @@ def check_termination_condition(
         baseline_issues AS (
             SELECT
                 oc.critic_image_digest AS agent_definition_id,
-                SUM(oc.found_credit) as total_issues
+                SUM(oc.found_credit) as total_credit
             FROM tp_occurrence_credits oc
             JOIN allowed_examples ae ON (
                 oc.snapshot_slug = ae.snapshot_slug
@@ -121,7 +119,7 @@ def check_termination_condition(
             WHERE oc.critic_image_digest = ANY(:baseline_ids)
             GROUP BY oc.critic_image_digest
         )
-        SELECT AVG(total_issues) as avg_issues
+        SELECT AVG(total_credit) as avg_credit
         FROM baseline_issues
     """).bindparams(
         bindparam("baseline_ids", type_=ARRAY(String)),
@@ -144,7 +142,7 @@ def check_termination_condition(
         },
     ).fetchone()
 
-    baseline_avg = baseline_result.avg_issues if baseline_result and baseline_result.avg_issues else None
+    baseline_avg = baseline_result.avg_credit if baseline_result and baseline_result.avg_credit else None
 
     candidate_query = text("""
         WITH allowed_examples AS (
@@ -162,7 +160,7 @@ def check_termination_condition(
             SELECT
                 cd.agent_definition_id,
                 COUNT(DISTINCT (oc.snapshot_slug, oc.example_kind, COALESCE(oc.files_hash, ''))) as covered_examples,
-                SUM(oc.found_credit) as total_issues
+                SUM(oc.found_credit) as total_credit
             FROM candidate_defs cd
             LEFT JOIN tp_occurrence_credits oc ON oc.critic_image_digest = cd.agent_definition_id
             LEFT JOIN allowed_examples ae ON (
@@ -176,9 +174,9 @@ def check_termination_condition(
         SELECT
             agent_definition_id,
             covered_examples,
-            total_issues
+            total_credit
         FROM candidate_coverage
-        ORDER BY total_issues DESC NULLS LAST
+        ORDER BY total_credit DESC NULLS LAST
     """).bindparams(
         bindparam("snapshot_slugs", type_=ARRAY(String)),
         bindparam("example_kinds", type_=ARRAY(String)),
@@ -195,105 +193,65 @@ def check_termination_condition(
         },
     ).fetchall()
 
-    best_candidate_id: str | None = None
-    best_candidate_issues: float | None = None
-    best_partial_candidate_id: str | None = None
-    best_partial_issues: float | None = None
-    best_partial_coverage: int = 0
+    @dataclass
+    class _CandidateScore:
+        definition_id: str
+        total_credit: float
+        coverage: int
+
+    best_full: _CandidateScore | None = None
+    best_partial: _CandidateScore | None = None
 
     for row in candidate_results:
         covered = row.covered_examples or 0
-        issues = row.total_issues or 0.0
+        credit = row.total_credit or 0.0
 
         if covered >= n_examples:
-            if best_candidate_issues is None or issues > best_candidate_issues:
-                best_candidate_id = row.agent_definition_id
-                best_candidate_issues = issues
-        elif covered > best_partial_coverage or (
-            covered == best_partial_coverage and (best_partial_issues is None or issues > best_partial_issues)
+            if best_full is None or credit > best_full.total_credit:
+                best_full = _CandidateScore(row.agent_definition_id, credit, covered)
+        elif best_partial is None or covered > best_partial.coverage or (
+            covered == best_partial.coverage and credit > best_partial.total_credit
         ):
-            best_partial_candidate_id = row.agent_definition_id
-            best_partial_issues = issues
-            best_partial_coverage = covered
+            best_partial = _CandidateScore(row.agent_definition_id, credit, covered)
 
-    missing_baseline_query = text("""
-        WITH required_examples AS (
-            SELECT
-                unnest(:snapshot_slugs) as snapshot_slug,
-                unnest(:example_kinds) as example_kind,
-                unnest(:files_hashes) as files_hash
-        ),
-        baseline_coverage AS (
-            SELECT
-                critic_image_digest AS agent_definition_id,
-                snapshot_slug,
-                example_kind,
-                files_hash
-            FROM tp_occurrence_credits
-            WHERE critic_image_digest = ANY(:baseline_ids)
-            GROUP BY critic_image_digest, snapshot_slug, example_kind, files_hash
-        )
-        SELECT COUNT(*) as missing_count
-        FROM (
-            SELECT b.agent_definition_id, r.snapshot_slug, r.example_kind, r.files_hash
-            FROM unnest(:baseline_ids) as b(agent_definition_id)
-            CROSS JOIN required_examples r
-            WHERE NOT EXISTS (
-                SELECT 1 FROM baseline_coverage bc
-                WHERE bc.agent_definition_id = b.agent_definition_id
-                  AND bc.snapshot_slug = r.snapshot_slug
-                  AND bc.example_kind::text = r.example_kind
-                  AND COALESCE(bc.files_hash, '') = COALESCE(r.files_hash, '')
-            )
-        ) missing
-    """).bindparams(
-        bindparam("baseline_ids", type_=ARRAY(String)),
-        bindparam("snapshot_slugs", type_=ARRAY(String)),
-        bindparam("example_kinds", type_=ARRAY(String)),
-        bindparam("files_hashes", type_=ARRAY(String)),
+    # Count edges awaiting grading from the grading_pending view
+    pending_grading_edges = (
+        session.query(func.count())
+        .select_from(GradingPending)
+        .filter(GradingPending.snapshot_slug.in_(snapshot_slugs))
+        .scalar()
+        or 0
     )
 
-    missing_result = session.execute(
-        missing_baseline_query,
-        {
-            "baseline_ids": baseline_ids,
-            "snapshot_slugs": snapshot_slugs,
-            "example_kinds": example_kinds,
-            "files_hashes": files_hashes,
-        },
-    ).fetchone()
-
-    missing_baseline_evals = missing_result.missing_count if missing_result else 0
-
-    if best_candidate_id is not None and best_candidate_issues is not None:
+    if best_full is not None:
         if baseline_avg is None:
             return BlockingStatus(
                 message=(
-                    f"Definition '{best_candidate_id}' has {best_candidate_issues:.1f} issues found, "
+                    f"Definition '{best_full.definition_id}' has {best_full.total_credit:.1f} total credit, "
                     f"but baseline definitions have no evals yet. "
-                    f"Run evals for {missing_baseline_evals} missing (baseline, example) pairs."
+                    f"{pending_grading_edges} edges still awaiting grading."
                 ),
-                best_candidate_issues=best_candidate_issues,
-                best_candidate_id=best_candidate_id,
-                missing_evals_count=missing_baseline_evals,
+                best_candidate_credit=best_full.total_credit,
+                best_candidate_id=best_full.definition_id,
+                edges_needing_grading_count=pending_grading_edges,
             )
 
-        if best_candidate_issues > baseline_avg:
+        if best_full.total_credit > baseline_avg:
             return TerminationSuccess(
-                definition_id=DefinitionId(best_candidate_id),
-                total_credit=best_candidate_issues,
+                definition_id=DefinitionId(best_full.definition_id),
+                total_credit=best_full.total_credit,
                 baseline_avg=baseline_avg,
             )
 
         return BlockingStatus(
             message=(
-                f"Definition '{best_candidate_id}' found {best_candidate_issues:.1f} issues, "
+                f"Definition '{best_full.definition_id}' has {best_full.total_credit:.1f} total credit, "
                 f"but baseline average is {baseline_avg:.1f}. "
-                f"Need to find more issues or create a better definition."
+                f"Need better credit or create a better definition."
             ),
-            baseline_avg_issues=baseline_avg,
-            best_candidate_issues=best_candidate_issues,
-            best_candidate_id=best_candidate_id,
+            baseline_avg_credit=baseline_avg,
+            best_candidate_credit=best_full.total_credit,
+            best_candidate_id=best_full.definition_id,
         )
 
     if not candidate_results:
@@ -302,35 +260,31 @@ def check_termination_condition(
                 "No definitions created yet. "
                 "Create an improved definition at /workspace/improved/ and call create_definition."
             ),
-            baseline_avg_issues=baseline_avg,
-            missing_evals_count=missing_baseline_evals,
+            baseline_avg_credit=baseline_avg,
+            edges_needing_grading_count=pending_grading_edges,
         )
 
-    missing_examples = n_examples - best_partial_coverage
+    assert best_partial is not None
+    missing_examples = n_examples - best_partial.coverage
     return BlockingStatus(
         message=(
-            f"Definition '{best_partial_candidate_id}' has evals for {best_partial_coverage}/{n_examples} examples. "
+            f"Definition '{best_partial.definition_id}' has evals for {best_partial.coverage}/{n_examples} examples. "
             f"Run evals for the remaining {missing_examples} examples to check if it beats baseline "
-            f"(baseline avg: {baseline_avg:.1f} issues)."
+            f"(baseline avg: {baseline_avg:.1f} credit)."
             if baseline_avg
-            else f"Definition '{best_partial_candidate_id}' has evals for {best_partial_coverage}/{n_examples} examples. "
+            else f"Definition '{best_partial.definition_id}' has evals for {best_partial.coverage}/{n_examples} examples. "
             f"Run evals for the remaining {missing_examples} examples. "
-            f"Also run baseline evals ({missing_baseline_evals} missing) to establish comparison target."
+            f"{pending_grading_edges} edges still awaiting grading."
         ),
-        baseline_avg_issues=baseline_avg,
-        best_candidate_issues=best_partial_issues,
-        best_candidate_id=best_partial_candidate_id,
-        missing_evals_count=missing_examples + missing_baseline_evals,
+        baseline_avg_credit=baseline_avg,
+        best_candidate_credit=best_partial.total_credit,
+        best_candidate_id=best_partial.definition_id,
+        edges_needing_grading_count=pending_grading_edges,
     )
 
 
 class ImprovementReminderHandler(BaseHandler):
-    def __init__(self, improvement_run_id: UUID, type_config: ImprovementTypeConfig, db: Database):
-        if not type_config.baseline_image_digests:
-            raise ValueError("baseline_image_digests must not be empty")
-        if not type_config.allowed_examples:
-            raise ValueError("allowed_examples must not be empty")
-
+    def __init__(self, improvement_run_id: UUID, type_config: CriticDevImproveTypeConfig, db: Database):
         self._improvement_run_id = improvement_run_id
         self._type_config = type_config
         self._db = db
@@ -351,7 +305,7 @@ class ImprovementReminderHandler(BaseHandler):
         if isinstance(result, TerminationSuccess):
             logger.info(
                 f"Critic developer terminating: "
-                f"definition '{result.definition_id}' with {result.total_credit:.1f} issues "
+                f"definition '{result.definition_id}' with {result.total_credit:.1f} credit "
                 f"beats baseline avg {result.baseline_avg:.1f}"
             )
             return Abort()
@@ -365,14 +319,14 @@ class ImprovementReminderHandler(BaseHandler):
     def _build_reminder(self, status: BlockingStatus) -> str:
         lines = ["=== Critic Developer Status ===", "", f"Blocking: {status.message}", ""]
 
-        if status.baseline_avg_issues is not None:
-            lines.append(f"Baseline average: {status.baseline_avg_issues:.1f} issues")
+        if status.baseline_avg_credit is not None:
+            lines.append(f"Baseline average credit: {status.baseline_avg_credit:.1f}")
 
-        if status.best_candidate_issues is not None:
-            lines.append(f"Best candidate: {status.best_candidate_issues:.1f} issues ({status.best_candidate_id})")
+        if status.best_candidate_credit is not None:
+            lines.append(f"Best candidate credit: {status.best_candidate_credit:.1f} ({status.best_candidate_id})")
 
-        if status.missing_evals_count > 0:
-            lines.append(f"Missing evals: {status.missing_evals_count}")
+        if status.edges_needing_grading_count > 0:
+            lines.append(f"Edges awaiting grading: {status.edges_needing_grading_count}")
 
         lines.extend(
             [
@@ -401,11 +355,11 @@ class ImprovementReminderHandler(BaseHandler):
 
 async def run_agent_loop(
     system_prompt: str,
-    eval_client: EvalClient,
+    eval_client: CriticRunClient,
     critic_model: str,
     db: Database,
     agent_run_id: UUID,
-    type_config: PromptOptimizerTypeConfig | ImprovementTypeConfig,
+    type_config: CriticDevOptimizeTypeConfig | CriticDevImproveTypeConfig,
 ) -> int:
     """Run the critic developer agent loop.
 
@@ -417,13 +371,13 @@ async def run_agent_loop(
     bound_model = create_bound_model_from_env(db)
 
     handlers: list[BaseHandler] = [
-        LoggingHandler(),
+        LoggingHandler(logger),
         RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
         AbortIf(lambda: state.status != LoopStatus.IN_PROGRESS),
     ]
 
     reminder_handler: ImprovementReminderHandler | None = None
-    if isinstance(type_config, ImprovementTypeConfig):
+    if isinstance(type_config, CriticDevImproveTypeConfig):
         reminder_handler = ImprovementReminderHandler(improvement_run_id=agent_run_id, type_config=type_config, db=db)
         handlers.append(reminder_handler)
 
@@ -441,7 +395,7 @@ async def run_agent_loop(
     if reminder_handler is not None and isinstance(reminder_handler.last_result, TerminationSuccess):
         result = reminder_handler.last_result
         logger.info(
-            "Critic developer succeeded: definition '%s' with %.1f issues beats baseline avg %.1f",
+            "Critic developer succeeded: definition '%s' with %.1f credit beats baseline avg %.1f",
             result.definition_id,
             result.total_credit,
             result.baseline_avg,
@@ -456,7 +410,7 @@ async def run_agent_loop(
             logger.info("Critic developer failed")
             return 1
         case LoopStatus.IN_PROGRESS:
-            if isinstance(type_config, PromptOptimizerTypeConfig):
+            if isinstance(type_config, CriticDevOptimizeTypeConfig):
                 logger.info("Optimization completed (exhausted budget)")
                 return 0
             logger.warning("Agent finished without beating baseline")
@@ -481,15 +435,16 @@ async def main() -> int:
         type_config = agent_run.type_config
         logger.info("Critic developer starting: %s, run=%s", type_config.agent_type.value, agent_run_id)
 
-    if not isinstance(type_config, (PromptOptimizerTypeConfig, ImprovementTypeConfig)):
+    if not isinstance(type_config, (CriticDevOptimizeTypeConfig, CriticDevImproveTypeConfig)):
         logger.error("Unexpected type_config: %s", type(type_config).__name__)
         return 1
 
     critic_model = type_config.critic_model
-    mode = "optimize" if isinstance(type_config, PromptOptimizerTypeConfig) else "improve"
 
-    async with EvalClient.from_env() as eval_client:
-        system_prompt = render_system_prompt("props/agents/critic_dev/prompt.md.mako", db, helpers={"mode": mode})
+    async with CriticRunClient.from_env() as eval_client:
+        system_prompt = render_system_prompt(
+            "props/agents/critic_dev/prompt.md.mako", db, helpers={"type_config": type_config}
+        )
 
         exit_code = await run_agent_loop(
             system_prompt=system_prompt,

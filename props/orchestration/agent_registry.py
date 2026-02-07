@@ -25,14 +25,13 @@ Usage:
             model="gpt-4o",
             timeout_seconds=3600,
             parent_run_id=None,
-            budget_usd=None,
+            budget_usd=5.0,
         )
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import tempfile
 from dataclasses import dataclass
@@ -47,10 +46,10 @@ import httpx
 from props.agents.critic_dev.shared import TargetMetric
 from props.core.agent_types import (
     AgentType,
+    CriticDevImproveTypeConfig,
+    CriticDevOptimizeTypeConfig,
     CriticTypeConfig,
     GraderTypeConfig,
-    ImprovementTypeConfig,
-    PromptOptimizerTypeConfig,
 )
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
@@ -226,7 +225,7 @@ class AgentRegistry:
             backend_url = self._backend_url
             # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
             # accepts Bearer tokens containing base64-encoded username:password.
-            api_key = base64.b64encode(f"{creds.username}:{creds.password}".encode()).decode()
+            api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
             env = {
                 **self._agent_base_env,
                 "PGUSER": creds.username,
@@ -311,6 +310,40 @@ class AgentRegistry:
 
     # --- Execution Methods ---
 
+    def _validate_spawn_budget(self, parent_run_id: UUID, child_budget_usd: float) -> None:
+        """Validate that spawning a child with the given budget doesn't exceed parent's remaining budget.
+
+        Uses the llm_request_costs view to compute parent's spent amount (including all descendants).
+        """
+        from sqlalchemy import text  # avoids top-level import for rarely-used symbol
+
+        with self._db.session() as session:
+            parent = session.get(AgentRun, parent_run_id)
+            if parent is None:
+                raise ValueError(f"Parent run {parent_run_id} not found")
+
+            result = session.execute(
+                text("""
+                    WITH RECURSIVE run_tree AS (
+                        SELECT agent_run_id FROM agent_runs WHERE agent_run_id = :run_id
+                        UNION ALL
+                        SELECT ar.agent_run_id FROM agent_runs ar
+                        JOIN run_tree rt ON ar.parent_agent_run_id = rt.agent_run_id
+                    )
+                    SELECT COALESCE(SUM(c.cost_usd), 0) AS spent
+                    FROM llm_request_costs c
+                    JOIN run_tree rt ON c.agent_run_id = rt.agent_run_id
+                """),
+                {"run_id": parent_run_id},
+            )
+            spent = result.scalar_one()
+            remaining = parent.budget_usd - spent
+            if child_budget_usd > remaining:
+                raise ValueError(
+                    f"Cannot spawn child with ${child_budget_usd:.2f} budget: "
+                    f"parent has ${remaining:.2f} remaining (${spent:.2f} spent of ${parent.budget_usd:.2f})"
+                )
+
     async def run_critic(
         self,
         *,
@@ -319,9 +352,12 @@ class AgentRegistry:
         model: str,
         timeout_seconds: int,
         parent_run_id: UUID | None,
-        budget_usd: float | None,
+        budget_usd: float,
     ) -> UUID:
         """Run a critic agent. Returns agent run ID (query DB for status)."""
+        if parent_run_id is not None:
+            self._validate_spawn_budget(parent_run_id, budget_usd)
+
         agent_run_id = uuid4()
         image_digest, image = await self._resolve_image(AgentType.CRITIC, image_ref)
 
@@ -335,6 +371,7 @@ class AgentRegistry:
                 model=model,
                 type_config=CriticTypeConfig(example=example),
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=budget_usd,
             )
             session.add(agent_run)
             session.commit()
@@ -342,7 +379,7 @@ class AgentRegistry:
         await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
         return agent_run_id
 
-    async def run_prompt_optimizer(
+    async def run_critic_dev_optimize(
         self,
         *,
         budget: float,
@@ -353,10 +390,10 @@ class AgentRegistry:
     ) -> UUID:
         """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
         agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
+        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
 
         with self._db.session() as session:
-            type_config = PromptOptimizerTypeConfig(
+            type_config = CriticDevOptimizeTypeConfig(
                 target_metric=target_metric,
                 optimizer_model=optimizer_model,
                 critic_model=critic_model,
@@ -369,6 +406,7 @@ class AgentRegistry:
                 model=optimizer_model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=budget,
             )
             session.add(agent_run)
             session.commit()
@@ -376,18 +414,18 @@ class AgentRegistry:
         await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
         return agent_run_id
 
-    async def run_improvement_agent(
+    async def run_critic_dev_improve(
         self,
         *,
         examples: list[ExampleSpec],
         baseline_image_digests: list[str],
-        token_budget: int,
+        budget_usd: float,
         improvement_model: str,
         critic_model: str,
         timeout_seconds: int,
         output_dir: Path | None = None,
     ) -> UUID:
-        """Run an improvement agent that creates definitions to beat baselines on the allowed examples.
+        """Run a critic-dev improve agent that creates definitions to beat baselines on the allowed examples.
 
         Returns agent run ID. Query DB for final status.
         """
@@ -401,12 +439,12 @@ class AgentRegistry:
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        image_digest, image = await self._resolve_image(AgentType.IMPROVEMENT, BUILTIN_TAG)
+        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
 
         # Resolve baseline refs to digests (tags → sha256:...)
         resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
 
-        type_config = ImprovementTypeConfig(
+        type_config = CriticDevImproveTypeConfig(
             baseline_image_digests=resolved_baselines,
             allowed_examples=examples,
             improvement_model=improvement_model,
@@ -420,6 +458,7 @@ class AgentRegistry:
                 model=improvement_model,
                 type_config=type_config,
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=budget_usd,
             )
             session.add(agent_run)
             session.commit()
@@ -475,6 +514,7 @@ class AgentRegistry:
                 model=model,
                 type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
                 status=AgentRunStatus.IN_PROGRESS,
+                budget_usd=10_000.0,
             )
             session.add(agent_run)
             session.commit()
