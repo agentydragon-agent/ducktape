@@ -143,9 +143,9 @@ spec:
           adminPasswordKey: "password"
           userPasswordKey: "password"
 
-    # Redis (optional)
+    # Redis (required for worker message queue)
     redis:
-      enabled: false
+      enabled: true
 
     # Service account
     serviceAccount:
