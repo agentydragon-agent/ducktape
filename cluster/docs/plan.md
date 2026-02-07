@@ -162,10 +162,20 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 
 ### Phase 1: Cluster Bootstrap
 
-1. [ ] Boot fresh cluster (new VPS IPs assigned)
-2. [ ] Update configs with new VPS IPs
-3. [ ] Configure registrar DNS for allegedly.works
-4. [ ] Verify DNS resolution and ingress work
+1. [ ] Run `./bootstrap.sh` to create VPS nodes (new public IPs assigned)
+2. [ ] Get VPS IPs after bootstrap:
+   ```bash
+   cd terraform/01-infrastructure && tofu output -json | jq -r '.vps_ips.value'
+   ```
+3. [ ] Update cluster configs with new VPS IPs:
+   - `k8s/powerdns-zones/nameserver-glue-records.yaml` - NS1/NS2 A records
+   - `k8s/external-dns/deployment.yaml` - `--default-targets` flag
+4. [ ] Commit and push IP updates, reconcile Flux
+5. [ ] Configure Route 53 glue records at registrar:
+   - `ns1.allegedly.works` → VPS-0 IP
+   - `ns2.allegedly.works` → VPS-1 IP
+6. [ ] Verify DNS resolution: `dig @ns1.allegedly.works allegedly.works`
+7. [ ] Verify certs issue: `kubectl get certificates -A`
 
 ### Phase 2: Deploy Missing Services
 
