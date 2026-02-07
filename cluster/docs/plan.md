@@ -302,6 +302,23 @@ rule {
 
 ---
 
+### TODO: Remote Proxmox API Access
+
+**Current state**: Proxmox API only reachable via VLAN IP (10.2.0.2) from home network.
+
+- CSI driver uses 10.2.0.2:8006 (works because pods run on Proxmox VMs)
+- Terraform provisioning also uses 10.2.0.2:8006 (only works from home)
+
+**Future enhancement**: Split CSI and provisioning hosts, or add Tailscale route.
+
+Options:
+
+1. **Separate variables** - `proxmox_csi_host` (10.2.0.2) vs `proxmox_api_host` (Tailscale)
+2. **Tailscale on Proxmox VLAN** - Route 10.2.0.0/16 via Tailscale for remote access
+3. **Keep as-is** - Accept that Proxmox provisioning requires home network
+
+---
+
 ### TODO: Terraform State Backup
 
 **Problem**: If `terraform/00-persistent-auth/terraform.tfstate` is lost, all SealedSecrets become
