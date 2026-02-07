@@ -128,13 +128,13 @@ js_library(
 # Run: bazel run //:requirements.update
 #
 # IMPORTANT: This target requires direct network access to PyPI for dependency resolution.
-# On CC web the action runs on RBE workers which have direct internet access —
-# no proxy configuration needed.  Locally there is no proxy either.
+# dockerNetwork=bridge gives the RBE action outbound internet access (off by default).
 lock(
     name = "requirements",
     srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
     args = ["--all-extras"],
+    exec_properties = {"dockerNetwork": "bridge"},
 )
 
 # Test that requirements_bazel.txt is up to date
