@@ -33,6 +33,14 @@ load("@rules_python//python/uv:lock.bzl", "lock")
 # Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
 # so targets default to private. Public targets explicitly set visibility.
 
+# Set by the CC web session-start hook bazelrc (--define=auth_proxy=true).
+# Routes network-dependent build actions through the local TLS-inspecting
+# auth proxy so they can reach external registries (e.g., PyPI).
+config_setting(
+    name = "has_auth_proxy",
+    define_values = {"auth_proxy": "true"},
+)
+
 # Link workspace npm packages
 npm_link_all_packages(name = "node_modules")
 
@@ -128,13 +136,22 @@ js_library(
 # Run: bazel run //:requirements.update
 #
 # IMPORTANT: This target requires direct network access to PyPI for dependency resolution.
-# On CC web the action runs on RBE workers which have direct internet access —
-# no proxy configuration needed.  Locally there is no proxy either.
+# no-remote: force local execution (RBE workers can't reach PyPI, and in CC web
+# the auth proxy is only available locally).
 lock(
     name = "requirements",
     srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
     args = ["--all-extras"],
+    env = select({
+        ":has_auth_proxy": {
+            "HTTPS_PROXY": "http://localhost:18081",
+            "HTTP_PROXY": "http://localhost:18081",
+            "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+        },
+        "//conditions:default": {},
+    }),
+    tags = ["no-remote"],
 )
 
 # Test that requirements_bazel.txt is up to date
@@ -153,6 +170,19 @@ platform(
     constraint_values = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
+    ],
+)
+
+# Local execution platform with GCC constraint, for environments where
+# system GCC is installed but BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1.
+# Activated via --extra_execution_platforms=//:cc_web_linux_x64 in the
+# CC web session-start hook bazelrc.
+platform(
+    name = "cc_web_linux_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+        "@bazel_tools//tools/cpp:gcc",
     ],
 )
 

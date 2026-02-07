@@ -22,6 +22,14 @@ common --repo_env=GOSUMDB=sum.golang.org
 # only affect the Bazel host (repo rules); RBE workers are unaffected.
 common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
 common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
+# Enable auth proxy for build actions that need network (e.g., uv pip compile).
+# The :has_auth_proxy config_setting in BUILD.bazel uses this to inject
+# proxy env vars into the lock() rule's action environment.
+build --define=auth_proxy=true
+# CC web has system GCC but BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 in .bazelrc
+# disables auto-detection.  Use a host platform that declares the gcc
+# constraint so the BuildBuddy CC toolchain resolves for local execution.
+build --host_platform=//:cc_web_linux_x64
 # Avoid gVisor linux-sandbox (/dev/null issues in CC web).
 # remote,local: prefer remote execution (BuildBuddy RBE) when configured, fall
 # back to unsandboxed local execution.  Remote workers don't use gVisor.
