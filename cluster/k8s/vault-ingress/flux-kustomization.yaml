@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/vault-ingress"
   prune: true
   wait: true
+  # Health check ensures TLS certificate is issued before dependents try to access Vault via HTTPS
+  healthChecks:
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: vault-ingress-tls
+      namespace: vault
   dependsOn:
     - name: vault # Core Vault must be ready first
     - name: ingress-nginx

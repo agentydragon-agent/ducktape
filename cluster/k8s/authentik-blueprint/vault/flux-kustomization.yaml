@@ -9,6 +9,12 @@ spec:
   path: ./cluster/k8s/authentik-blueprint/vault
   prune: true
   wait: true
+  # Health check ensures Terraform has configured Vault OIDC auth in Authentik
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: authentik-blueprint-vault
+      namespace: flux-system
   sourceRef:
     kind: GitRepository
     name: flux-system

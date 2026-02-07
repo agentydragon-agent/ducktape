@@ -10,6 +10,13 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  wait: true
+  # Health check ensures OIDC config is synced from Vault for Grafana SSO
+  healthChecks:
+    - apiVersion: external-secrets.io/v1beta1
+      kind: ExternalSecret
+      name: grafana-oidc-config
+      namespace: monitoring
   dependsOn:
     - name: monitoring-namespace
       namespace: flux-system

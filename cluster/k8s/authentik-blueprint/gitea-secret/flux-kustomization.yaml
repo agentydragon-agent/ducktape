@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/authentik-blueprint/gitea-secret"
   prune: true
   wait: true
+  # Health check ensures OIDC secret is synced from Vault before Gitea starts
+  healthChecks:
+    - apiVersion: external-secrets.io/v1beta1
+      kind: ExternalSecret
+      name: gitea-oauth-client-secret
+      namespace: gitea
   dependsOn:
     - name: authentik-blueprint-gitea-provider # Wait for provider to be created
       namespace: flux-system

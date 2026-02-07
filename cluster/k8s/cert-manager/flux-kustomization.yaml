@@ -12,5 +12,19 @@ spec:
   path: "./cluster/k8s/cert-manager"
   prune: true
   wait: true
+  # Health check ensures cert-manager pods are ready before dependents try to create Certificates
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: cert-manager
+      namespace: cert-manager
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: cert-manager
+      namespace: cert-manager
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: cert-manager-webhook
+      namespace: cert-manager
   # No dependencies - cert-manager core can start independently
   # PowerDNS is only needed when ClusterIssuers actually try to do DNS-01 challenges

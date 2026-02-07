@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/applications/gitea"
   prune: true
   wait: true
+  # Health check ensures Gitea is fully operational with SSO
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: gitea
+      namespace: gitea
   dependsOn:
     - name: ingress-nginx
       namespace: flux-system

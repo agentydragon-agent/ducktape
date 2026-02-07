@@ -12,6 +12,11 @@ spec:
     name: flux-system
   timeout: 5m0s
   wait: true
+  # Health check ensures ClusterSecretStores are ready before dependents create ExternalSecrets
+  healthChecks:
+    - apiVersion: external-secrets.io/v1beta1
+      kind: ClusterSecretStore
+      name: vault-backend
   dependsOn:
     - name: external-secrets-operator
       namespace: flux-system

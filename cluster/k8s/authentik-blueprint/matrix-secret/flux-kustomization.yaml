@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/authentik-blueprint/matrix-secret"
   prune: true
   wait: true
+  # Health check ensures OIDC secret is synced from Vault for Matrix SSO
+  healthChecks:
+    - apiVersion: external-secrets.io/v1beta1
+      kind: ExternalSecret
+      name: matrix-oauth-client-secret
+      namespace: matrix
   dependsOn:
     - name: matrix # Wait for Matrix namespace to be created
       namespace: flux-system

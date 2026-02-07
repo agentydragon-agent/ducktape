@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/applications/harbor"
   prune: true
   wait: true
+  # Health check ensures Harbor is fully operational
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: harbor
+      namespace: harbor
   dependsOn:
     - name: ingress-nginx
       namespace: flux-system

@@ -10,6 +10,13 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  wait: true
+  # Health check ensures Terraform has created the Grafana OIDC provider in Authentik
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: grafana-sso
+      namespace: flux-system
   dependsOn:
     - name: core # Wait for tofu-controller to install Terraform CRD
       namespace: flux-system

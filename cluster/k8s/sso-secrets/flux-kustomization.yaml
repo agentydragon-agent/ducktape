@@ -12,6 +12,12 @@ spec:
     name: flux-system
   timeout: 10m0s
   wait: true
+  # Health check ensures Terraform has successfully applied SSO secrets to Vault
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: sso-secrets
+      namespace: flux-system
   dependsOn:
     - name: core # Wait for tofu-controller to install Terraform CRD
       namespace: flux-system

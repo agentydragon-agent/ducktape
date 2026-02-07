@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/authentik-blueprint/gitea-provider"
   prune: true
   wait: true
+  # Health check ensures Terraform has created the Gitea OIDC provider in Authentik
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: authentik-blueprint-gitea
+      namespace: flux-system
   dependsOn:
     - name: core # Wait for tofu-controller to install Terraform CRD
       namespace: flux-system

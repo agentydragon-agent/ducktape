@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/applications/matrix"
   prune: true
   wait: true
+  # Health check ensures Matrix Synapse is ready with SSO
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: matrix-synapse
+      namespace: matrix
   dependsOn:
     - name: ingress-nginx
       namespace: flux-system

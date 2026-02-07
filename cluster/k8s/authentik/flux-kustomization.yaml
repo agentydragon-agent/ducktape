@@ -12,6 +12,20 @@ spec:
     name: flux-system
   timeout: 10m0s
   wait: true
+  # Health checks ensure Authentik is fully operational before dependents start
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: authentik
+      namespace: authentik
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: authentik-server
+      namespace: authentik
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: authentik-worker
+      namespace: authentik
   dependsOn:
     - name: vault
       namespace: flux-system
