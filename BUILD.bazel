@@ -33,20 +33,6 @@ load("@rules_python//python/uv:lock.bzl", "lock")
 # Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
 # so targets default to private. Public targets explicitly set visibility.
 
-# Knobs set by the CC web session-start hook bazelrc to route
-# network-dependent build actions through the local TLS-inspecting proxy.
-# --define=uv_https_proxy=<url> injects HTTPS_PROXY/HTTP_PROXY into lock().
-# --define=uv_ssl_cert_file=<path> injects SSL_CERT_FILE into lock().
-config_setting(
-    name = "has_uv_proxy",
-    define_values = {"uv_https_proxy": "http://localhost:18081"},
-)
-
-config_setting(
-    name = "has_uv_ssl_cert",
-    define_values = {"uv_ssl_cert_file": "/etc/ssl/certs/ca-certificates.crt"},
-)
-
 # Link workspace npm packages
 npm_link_all_packages(name = "node_modules")
 
@@ -142,28 +128,13 @@ js_library(
 # Run: bazel run //:requirements.update
 #
 # IMPORTANT: This target requires direct network access to PyPI for dependency resolution.
-# no-remote: force local execution (RBE workers can't reach PyPI, and in CC web
-# the auth proxy is only available locally).
-# TODO: upstream exec_properties/exec_compatible_with on rules_python's _lock rule
-# so we can use dockerNetwork=bridge on RBE instead of forcing local execution.
+# dockerNetwork=bridge gives the RBE action outbound internet access (off by default).
 lock(
     name = "requirements",
     srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
     args = ["--all-extras"],
-    env = select({
-        ":has_uv_proxy": {
-            "HTTPS_PROXY": "http://localhost:18081",
-            "HTTP_PROXY": "http://localhost:18081",
-        },
-        "//conditions:default": {},
-    }) | select({
-        ":has_uv_ssl_cert": {
-            "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
-        },
-        "//conditions:default": {},
-    }),
-    tags = ["no-remote"],
+    exec_properties = {"dockerNetwork": "bridge"},
 )
 
 # Test that requirements_bazel.txt is up to date

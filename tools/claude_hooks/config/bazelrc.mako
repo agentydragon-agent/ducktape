@@ -22,10 +22,6 @@ common --repo_env=GOSUMDB=sum.golang.org
 # only affect the Bazel host (repo rules); RBE workers are unaffected.
 common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
 common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
-# Route uv pip compile through the local auth proxy so it can reach PyPI.
-# Matching config_settings in BUILD.bazel inject these into lock(env=...).
-build --define=uv_https_proxy=http://localhost:${proxy_port}
-build --define=uv_ssl_cert_file=/etc/ssl/certs/ca-certificates.crt
 # Claude Code web has system GCC but BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 # in .bazelrc disables auto-detection.  Use a host platform that declares
 # the gcc constraint so the BuildBuddy CC toolchain resolves locally.
