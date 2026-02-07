@@ -9,4 +9,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - registry.test-cluster.agentydragon.com
+    - registry.allegedly.works

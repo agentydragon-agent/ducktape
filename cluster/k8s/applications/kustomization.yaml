@@ -4,8 +4,7 @@ resources:
   - harbor
   - gitea
   - matrix
-  - test-app
   - firecrawl
   - headscale
   - website
-  - atlas-proxy
+  # atlas-proxy - deferred, using headscale mesh for atlas access

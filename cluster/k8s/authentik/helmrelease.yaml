@@ -92,11 +92,11 @@ spec:
           cert-manager.io/cluster-issuer: "letsencrypt-prod"
           nginx.ingress.kubernetes.io/ssl-redirect: "true"
         hosts:
-          - auth.test-cluster.agentydragon.com
+          - auth.allegedly.works
         tls:
           - secretName: authentik-tls
             hosts:
-              - auth.test-cluster.agentydragon.com
+              - auth.allegedly.works
 
       # Resources
       resources:

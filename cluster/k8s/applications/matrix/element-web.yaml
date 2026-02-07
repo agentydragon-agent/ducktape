@@ -10,8 +10,8 @@ data:
     {
       "default_server_config": {
         "m.homeserver": {
-          "base_url": "https://matrix.test-cluster.agentydragon.com",
-          "server_name": "test-cluster.agentydragon.com"
+          "base_url": "https://matrix.allegedly.works",
+          "server_name": "allegedly.works"
         }
       },
       "brand": "Element",
@@ -124,10 +124,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - chat.test-cluster.agentydragon.com
+        - chat.allegedly.works
       secretName: element-web-tls
   rules:
-    - host: chat.test-cluster.agentydragon.com
+    - host: chat.allegedly.works
       http:
         paths:
           - path: /

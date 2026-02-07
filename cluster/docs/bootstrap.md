@@ -180,7 +180,7 @@ The keypair persists in terraform state (`00-persistent-auth`):
 
 ### DNS Delegation
 
-1. Route 53 delegates `test-cluster.agentydragon.com` → VPS PowerDNS
+1. Route 53 delegates `allegedly.works` → VPS PowerDNS
 2. PowerDNS runs on VPS nodes (public IPs)
 3. cert-manager uses DNS-01 challenges
 

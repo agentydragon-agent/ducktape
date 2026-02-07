@@ -11,4 +11,4 @@ spec:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - vault.test-cluster.agentydragon.com
+    - vault.allegedly.works

@@ -1,6 +1,6 @@
 ---
 # Glue records for nameservers - required for DNS-01 ACME challenges
-# Without these A records, cert-manager cannot resolve ns1/ns2.test-cluster.agentydragon.com
+# Without these A records, cert-manager cannot resolve ns1/ns2.allegedly.works
 # when verifying DNS challenges, causing all certificate issuance to fail
 #
 # Now using Hetzner VPS public IPs (PowerDNS runs directly on VPS nodes via hostNetwork):
@@ -13,7 +13,7 @@ metadata:
 spec:
   zoneRef:
     kind: ClusterZone
-    name: test-cluster.agentydragon.com
+    name: allegedly.works
   name: ns1 # Relative to zone
   type: A
   ttl: 3600
@@ -27,7 +27,7 @@ metadata:
 spec:
   zoneRef:
     kind: ClusterZone
-    name: test-cluster.agentydragon.com
+    name: allegedly.works
   name: ns2 # Relative to zone
   type: A
   ttl: 3600

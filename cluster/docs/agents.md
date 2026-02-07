@@ -86,8 +86,8 @@ spec:
 
       Your workspace is persistent at /home/agent/workspace.
       You have credentials pre-configured for:
-      - Gitea: git.test-cluster.agentydragon.com
-      - Harbor: registry.test-cluster.agentydragon.com
+      - Gitea: git.allegedly.works
+      - Harbor: registry.allegedly.works
 
     modelConfig: anthropic-claude
 
@@ -326,7 +326,7 @@ spec:
               EOF
 
               cat > /workspace/.config/git/credentials <<EOF
-              https://devbot:${GITEA_TOKEN}@git.test-cluster.agentydragon.com
+              https://devbot:${GITEA_TOKEN}@git.allegedly.works
               EOF
               chmod 600 /workspace/.config/git/credentials
           env:
@@ -707,7 +707,7 @@ helm install databot ./charts/kagent-agent \
 - [x] Write Dockerfiles for desktop and MCP server containers ✅
 - [x] Build container images locally ✅
 - [x] Deploy Kagent platform (controller + UI + KMCP) ✅
-- [ ] Test Kagent UI access at <https://kagent.test-cluster.agentydragon.com> (wait for DNS propagation)
+- [ ] Test Kagent UI access at <https://kagent.allegedly.works> (wait for DNS propagation)
 - [ ] Load container images into cluster nodes (talosctl image import)
 - [ ] Store secrets in Vault (`kv/agents/devbot`)
 - [ ] Deploy agent desktop pod (desktop + MCP sidecar)

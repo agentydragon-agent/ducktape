@@ -642,20 +642,20 @@ done
 
 ```bash
 # Verify VPS has zone data
-ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone test-cluster.agentydragon.com"
+ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works"
 
 # Manually trigger zone transfer
-ssh root@agentydragon.com "docker exec powerdns pdns_control retrieve test-cluster.agentydragon.com"
+ssh root@agentydragon.com "docker exec powerdns pdns_control retrieve allegedly.works"
 
 # Verify NS records are correct
-dig @ns1.agentydragon.com test-cluster.agentydragon.com NS
+dig @ns1.agentydragon.com allegedly.works NS
 ```
 
 **Common issues**:
 
 - **VPS not fetching zone**: Check `secondary=yes` in VPS PowerDNS config
 - **Tailscale route not working**: Verify routes advertised and enabled in Headscale
-- **Old NS records cached**: Wait for TTL expiry (check with `dig test-cluster.agentydragon.com NS`)
+- **Old NS records cached**: Wait for TTL expiry (check with `dig allegedly.works NS`)
 
 #### cert-manager DNS-01 Validation
 
@@ -673,7 +673,7 @@ kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager --tail=50
 1. **"propagation check failed: no such host"**
    - **Symptom**: cert-manager trying to resolve old NS record names
    - **Cause**: DNS cache still returning stale NS records
-   - **Check**: `dig test-cluster.agentydragon.com NS` (check TTL)
+   - **Check**: `dig allegedly.works NS` (check TTL)
    - **Fix**: Wait for DNS cache expiry (typically 1 hour from NS change)
 
 2. **"webhook call failed"**
@@ -737,7 +737,7 @@ terraform output nix_signing_public_key
 
 # Get public key for NixOS config
 terraform output -raw nix_signing_public_key | head -1
-# Output: cache.test-cluster.agentydragon.com-1:BASE64KEY
+# Output: cache.allegedly.works-1:BASE64KEY
 cd -
 ```
 
@@ -747,7 +747,7 @@ cd -
 
 ```bash
 # On NixOS host, test upload
-nix copy --to https://cache.test-cluster.agentydragon.com /nix/store/xxx-hello-xxx --debug
+nix copy --to https://cache.allegedly.works /nix/store/xxx-hello-xxx --debug
 
 # Check Harmonia logs
 kubectl logs -n nix-cache deployment/harmonia --tail=100

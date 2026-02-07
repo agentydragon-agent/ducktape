@@ -27,4 +27,4 @@ spec:
                 key: PDNS_API_KEY
         selector:
           dnsZones:
-            - "test-cluster.agentydragon.com"
+            - "allegedly.works"

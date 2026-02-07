@@ -7,7 +7,6 @@ Small Talos k8s cluster with GitOps and HTTPS.
   - Run Talos, configured and bootstrapped with Terraform.
   - Disks are pre-baked per-node from Image Factory with static IPs and Tailscale + QEMU guest agent
 - VPS forwards traffic to cluster through Tailscale mesh.
-- Test application: <https://test.test-cluster.agentydragon.com/>
 - CNI: Cilium with Talos-specific security configuration
 - Sealed-secrets: Automatic keypair persistence via terraform state for turnkey GitOps
 
@@ -33,23 +32,24 @@ Execute tools like these with the direnv loaded, or use `direnv exec .`.
   - 10.2.3.2 (`ingress-pool`): MetalLB across worker node replicas of NGINX Ingress
   - 10.2.3.3 (`dns-pool`): PowerDNS
   - 10.2.3.4-20 (`services-pool`): for future use (Harbor, Gitea, etc.)
-- Domain: `*.test-cluster.agentydragon.com`
+- Domain: `*.allegedly.works`
   - PowerDNS in k8s has authority on this domain and handles Let's Encrypt DNS-01 challenges
   - cert-manager provisions Let's Encrypt certs
 - HTTPS chain: Internet → VPS nginx reads CNI → Tailscale VPN → HA VIP → NGINX Ingress terminates TLS → app
 
 ## Services
 
-Deployed services accessible via `*.test-cluster.agentydragon.com`:
+Deployed services accessible via `*.allegedly.works`:
 
-- **Authentik (SSO)**: <https://auth.test-cluster.agentydragon.com>
-- **Gitea (Git)**: <https://git.test-cluster.agentydragon.com>
-- **Harbor (Registry)**: <https://registry.test-cluster.agentydragon.com>
-- **Vault (Secrets)**: <https://vault.test-cluster.agentydragon.com>
-- **Matrix (Chat)**: <https://chat.test-cluster.agentydragon.com>
-- **Grafana (Monitoring)**: <https://grafana.test-cluster.agentydragon.com> (if exposed)
-- **Nix Cache**: <https://cache.test-cluster.agentydragon.com> (Harmonia binary cache)
-- **Test App**: <https://test.test-cluster.agentydragon.com>
+- **Authentik (SSO)**: <https://auth.allegedly.works>
+- **Gitea (Git)**: <https://git.allegedly.works>
+- **Harbor (Registry)**: <https://registry.allegedly.works>
+- **Vault (Secrets)**: <https://vault.allegedly.works>
+- **Matrix (Chat)**: <https://chat.allegedly.works>
+- **Grafana (Monitoring)**: <https://grafana.allegedly.works> (if exposed)
+- **Nix Cache**: <https://cache.allegedly.works> (Harmonia binary cache)
+- **Headscale**: <https://headscale.allegedly.works> (Tailscale coordination)
+- **Website**: <https://www.allegedly.works> (placeholder)
 
 All traffic routes: Internet (443) → VPS nginx (SNI passthrough) → Tailscale →
 MetalLB VIP (10.2.3.2:443) → NGINX Ingress → Services
@@ -144,7 +144,7 @@ cluster/
 │   ├── services-config/   # Authentik SSO config for services, via Terraform
 │   └── applications/
 │       ├── harbor/        # Container registry
-│       └── gitea/, matrix/, test-app/
+│       └── gitea/, matrix/, headscale/, website/
 └── flux-system/           # Flux controllers (auto-generated)
 ```
 
@@ -154,7 +154,7 @@ cluster/
 
 Internet (443) → VPS nginx proxy → Tailscale VPN → MetalLB VIP (10.2.3.2:443) → NGINX Ingress → Apps
 
-- VPS: `~/code/ducktape/ansible/nginx-sites/test-cluster.agentydragon.com.j2`
+- VPS: `~/code/ducktape/ansible/nginx-sites/allegedly.works.j2`
 - DNS:
   - Cluster PowerDNS (10.2.3.3) is primary authoritative server
   - VPS PowerDNS is secondary, replicates zone via AXFR over Tailscale
@@ -176,7 +176,7 @@ Kube VIP (10.2.3.1) is established after cluster formation, so bootstrap instead
 
 **Duplicate Certificate Limit**: 5 certificates per week for the same exact domain name
 
-- Applies per domain (e.g., `registry.test-cluster.agentydragon.com`)
+- Applies per domain (e.g., `registry.allegedly.works`)
 - Rolling 7-day window, refills at ~1 cert per 34 hours
 - No overrides available
 - **Problem**: Each `terraform destroy && ./bootstrap.sh` cycle requests fresh certificates

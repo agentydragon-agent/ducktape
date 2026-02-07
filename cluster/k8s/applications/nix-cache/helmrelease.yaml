@@ -47,14 +47,14 @@ spec:
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
         nginx.ingress.kubernetes.io/proxy-body-size: "500m" # Large NAR uploads
       hosts:
-        - host: cache.test-cluster.agentydragon.com
+        - host: cache.allegedly.works
           paths:
             - path: /
               pathType: Prefix
       tls:
         - secretName: attic-tls
           hosts:
-            - cache.test-cluster.agentydragon.com
+            - cache.allegedly.works
 
     # Persistence - using existing PVC
     persistence:

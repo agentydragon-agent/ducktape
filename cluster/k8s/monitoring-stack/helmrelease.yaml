@@ -89,13 +89,13 @@ spec:
         ingressClassName: nginx
         annotations:
           cert-manager.io/cluster-issuer: letsencrypt-prod
-          external-dns.alpha.kubernetes.io/hostname: grafana.test-cluster.agentydragon.com
+          external-dns.alpha.kubernetes.io/hostname: grafana.allegedly.works
         hosts:
-          - grafana.test-cluster.agentydragon.com
+          - grafana.allegedly.works
         tls:
           - secretName: grafana-tls
             hosts:
-              - grafana.test-cluster.agentydragon.com
+              - grafana.allegedly.works
 
       # CRITICAL: Use Recreate strategy for RWO volumes
       # Grafana uses RWO persistent volume for dashboards, plugins, and session data (10Gi).
@@ -142,7 +142,7 @@ spec:
       # Complete config stored in Vault by Terraform (single source of truth)
       grafana.ini:
         server:
-          root_url: https://grafana.test-cluster.agentydragon.com
+          root_url: https://grafana.allegedly.works
         # auth.generic_oauth populated automatically via valuesFrom
 
     # Prometheus Operator configuration

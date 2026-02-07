@@ -28,7 +28,7 @@ spec:
     - name: authentik_url
       value: "http://authentik-server.authentik:80"
     - name: vault_url
-      value: "https://vault.test-cluster.agentydragon.com"
+      value: "https://vault.allegedly.works"
     - name: vault_address
       value: "https://instance.vault.svc.cluster.local:8200"
 

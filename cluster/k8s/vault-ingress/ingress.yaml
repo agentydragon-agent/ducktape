@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - vault.test-cluster.agentydragon.com
+        - vault.allegedly.works
       secretName: vault-ingress-tls
   rules:
-    - host: vault.test-cluster.agentydragon.com
+    - host: vault.allegedly.works
       http:
         paths:
           - path: /

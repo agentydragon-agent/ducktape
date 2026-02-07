@@ -310,21 +310,21 @@ authentication failures. Consider filing upstream issue if this becomes frequent
    - **Fix**: Verify MetalLB speaker pods running, check IPAddressPool config
 
 2. **Zone Not Replicating to VPS (AXFR Failure)**:
-   - **Symptom**: `dig @ns1.agentydragon.com test-cluster.agentydragon.com SOA` shows old/missing data
-   - **Check**: `ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone test-cluster.agentydragon.com"`
+   - **Symptom**: `dig @ns1.agentydragon.com allegedly.works SOA` shows old/missing data
+   - **Check**: `ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works"`
    - **Solution**: Verify Tailscale route advertisement and VPS secondary configuration
    - **Fix**:
      - Check routes: `ssh root@agentydragon.com "tailscale status"` (should show 10.2.3.0/27)
      - Verify VPS config: `secondary=yes` in PowerDNS config
-     - Manual transfer: `ssh root@agentydragon.com "docker exec powerdns pdns_control retrieve test-cluster.agentydragon.com"`
+     - Manual transfer: `ssh root@agentydragon.com "docker exec powerdns pdns_control retrieve allegedly.works"`
 
 3. **NS Records Point to Wrong Nameserver**:
    - **Symptom**: cert-manager fails with "no such host" errors for NS records
-   - **Check**: `dig @10.2.3.3 test-cluster.agentydragon.com NS` (should return `ns1.agentydragon.com`)
+   - **Check**: `dig @10.2.3.3 allegedly.works NS` (should return `ns1.agentydragon.com`)
    - **Solution**: Fix NS records in zone
    - **Fix**:
      `kubectl exec -n dns-system deployment/powerdns -- pdnsutil replace-rrset
-test-cluster.agentydragon.com @ NS 3600 "ns1.agentydragon.com."`
+allegedly.works @ NS 3600 "ns1.agentydragon.com."`
    - **Note**: Public DNS will cache old NS records (check TTL with `dig`)
 
 4. **PowerDNS API Not Accessible**:

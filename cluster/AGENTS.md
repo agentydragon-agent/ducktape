@@ -314,7 +314,7 @@ kubectl get secret oidc-credentials -n gitea
 kubectl get externalsecret -n gitea
 
 # Test SSO login flow (requires browser/agent access)
-# Navigate to https://gitea.test-cluster.agentydragon.com
+# Navigate to https://gitea.allegedly.works
 # Click "Sign in with OpenID Connect"
 ```
 
@@ -391,13 +391,13 @@ The VPS runs PowerDNS in a Docker container as a secondary DNS server via AXFR f
 **Check zone contents:**
 
 ```bash
-ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone test-cluster.agentydragon.com"
+ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works"
 ```
 
 **Grep for specific records:**
 
 ```bash
-ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone test-cluster.agentydragon.com | grep loki"
+ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works | grep loki"
 ```
 
 **Check container status:**

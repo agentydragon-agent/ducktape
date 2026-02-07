@@ -4,4 +4,4 @@ metadata:
   name: authentik-host
   namespace: authentik
 data:
-  AUTHENTIK_HOST: "https://auth.test-cluster.agentydragon.com"
+  AUTHENTIK_HOST: "https://auth.allegedly.works"

@@ -52,7 +52,7 @@ spec:
     - name: authentik_oidc_discovery_url
       value: "http://authentik-server.authentik/application/o/vault/"
     - name: vault_external_url
-      value: "https://vault.test-cluster.agentydragon.com"
+      value: "https://vault.allegedly.works"
 
   # Get secrets from Kubernetes
   varsFrom:

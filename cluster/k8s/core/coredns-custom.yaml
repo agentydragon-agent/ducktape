@@ -1,6 +1,6 @@
 ---
-# CoreDNS ConfigMap patch to forward test-cluster.agentydragon.com to PowerDNS
-# This allows cert-manager to resolve ns1/ns2.test-cluster.agentydragon.com glue records
+# CoreDNS ConfigMap patch to forward allegedly.works to PowerDNS
+# This allows cert-manager to resolve ns1/ns2.allegedly.works glue records
 # during DNS-01 ACME challenge validation
 apiVersion: v1
 kind: ConfigMap
@@ -9,8 +9,8 @@ metadata:
   namespace: kube-system
 data:
   Corefile: |-
-    # Forward test-cluster.agentydragon.com zone to PowerDNS
-    test-cluster.agentydragon.com:53 {
+    # Forward allegedly.works zone to PowerDNS
+    allegedly.works:53 {
         errors
         cache 30
         forward . 10.2.3.3

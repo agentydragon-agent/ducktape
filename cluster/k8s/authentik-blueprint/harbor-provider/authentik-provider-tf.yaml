@@ -28,7 +28,7 @@ spec:
     - name: authentik_url
       value: "http://authentik-server.authentik:80"
     - name: harbor_url
-      value: "https://registry.test-cluster.agentydragon.com"
+      value: "https://registry.allegedly.works"
     - name: vault_address
       value: "https://instance.vault.svc.cluster.local:8200"
 

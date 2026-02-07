@@ -36,11 +36,11 @@ spec:
       tag: v1.120.2
       pullPolicy: IfNotPresent
 
-    # Server name - this is the domain used in Matrix user IDs (@user:test-cluster.agentydragon.com)
-    serverName: test-cluster.agentydragon.com
+    # Server name - this is the domain used in Matrix user IDs (@user:allegedly.works)
+    serverName: allegedly.works
 
     # Public baseurl - this is the actual URL where Synapse is accessible
-    publicBaseurl: https://matrix.test-cluster.agentydragon.com
+    publicBaseurl: https://matrix.allegedly.works
 
     # Resources
     resources:
@@ -103,10 +103,10 @@ spec:
         nginx.ingress.kubernetes.io/proxy-body-size: "50m"
       # Client-to-Server API hosts
       csHosts:
-        - matrix.test-cluster.agentydragon.com
+        - matrix.allegedly.works
       # Server-to-Server (federation) hosts
       hosts:
-        - test-cluster.agentydragon.com
+        - allegedly.works
       # Include /_synapse admin APIs
       includeUnderscoreSynapse: true
       # Include server name in csHosts automatically
@@ -114,8 +114,8 @@ spec:
       tls:
         - secretName: matrix-synapse-tls
           hosts:
-            - matrix.test-cluster.agentydragon.com
-            - test-cluster.agentydragon.com
+            - matrix.allegedly.works
+            - allegedly.works
 
     # PostgreSQL configuration with bundled chart
     postgresql:

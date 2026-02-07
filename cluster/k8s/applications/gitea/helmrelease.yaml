@@ -45,15 +45,15 @@ spec:
       admin:
         # Username and password from ESO-generated secret
         existingSecret: "gitea-admin-password"
-        email: "admin@test-cluster.agentydragon.com"
+        email: "admin@allegedly.works"
 
       # OAuth2 authentication sources
       oauth:
         - name: "authentik"
           provider: "openidConnect"
           existingSecret: "gitea-oauth-client-secret"
-          autoDiscoverUrl: "https://auth.test-cluster.agentydragon.com/application/o/gitea/.well-known/openid-configuration"
-          iconUrl: "https://auth.test-cluster.agentydragon.com/static/dist/assets/icons/icon.png"
+          autoDiscoverUrl: "https://auth.allegedly.works/application/o/gitea/.well-known/openid-configuration"
+          iconUrl: "https://auth.allegedly.works/static/dist/assets/icons/icon.png"
           scopes: "email profile"
 
       config:
@@ -61,9 +61,9 @@ spec:
         RUN_MODE: prod
 
         server:
-          DOMAIN: git.test-cluster.agentydragon.com
-          SSH_DOMAIN: git.test-cluster.agentydragon.com
-          ROOT_URL: https://git.test-cluster.agentydragon.com
+          DOMAIN: git.allegedly.works
+          SSH_DOMAIN: git.allegedly.works
+          ROOT_URL: https://git.allegedly.works
           HTTP_PORT: 3000
           SSH_PORT: 2222
           DISABLE_SSH: false
@@ -125,14 +125,14 @@ spec:
         cert-manager.io/cluster-issuer: "letsencrypt-prod"
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
       hosts:
-        - host: git.test-cluster.agentydragon.com
+        - host: git.allegedly.works
           paths:
             - path: /
               pathType: Prefix
       tls:
         - secretName: gitea-tls
           hosts:
-            - git.test-cluster.agentydragon.com
+            - git.allegedly.works
 
     # Resources
     resources:

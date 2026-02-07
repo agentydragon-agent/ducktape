@@ -121,17 +121,18 @@ Internet → VPS public IP:53  → PowerDNS pod (hostNetwork) → DNS responses
 
 ---
 
-## ⚠️ Remaining Work
+## ⚠️ Remaining Work Before Bootstrap
 
-**New application manifests** (`headscale`, `website`) are configured for `allegedly.works`.
+### Domain Switchover
 
-**Global domain switchover**: The rest of the cluster still uses `test-cluster.agentydragon.com`. Full switchover requires updating all existing manifests - defer until cluster bootstrap with new VPS IPs.
+✅ **Complete** - All manifests updated from `test-cluster.agentydragon.com` to `allegedly.works`
 
-**Deferred**: `k8s/applications/atlas-proxy/` - not needed for go-live, atlas access via headscale mesh instead.
+### VPS IP Configuration
 
----
+After cluster boots and new VPS IPs are assigned:
 
-## 📋 Domain Switchover: allegedly.works
+1. Update `k8s/powerdns-zones/nameserver-glue-records.yaml` with new IPs
+2. Update `k8s/external-dns/deployment.yaml` `--default-targets` with new IPs
 
 ### Registrar DNS Configuration
 
@@ -144,22 +145,13 @@ At registrar (where `allegedly.works` is registered), set:
 | A (glue)    | ns1.allegedly.works     | `<VPS-0 IP after boot>`        |
 | A (glue)    | ns2.allegedly.works     | `<VPS-1 IP after boot>`        |
 
-### Cluster Configuration Updates
+### PowerDNS Zone
 
-After cluster boots and VPS IPs are known:
+Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/clusterzone.yaml`).
 
-1. Update `k8s/powerdns-zones/nameserver-glue-records.yaml` with new IPs
-2. Update `k8s/external-dns/deployment.yaml` `--default-targets` with new IPs
-3. Create zone for `allegedly.works` in PowerDNS
+### Deferred
 
-### Files Requiring Domain Update
-
-Replace `test-cluster.agentydragon.com` with `allegedly.works` in:
-
-- `k8s/*/ingress.yaml` - All ingress hostnames
-- `k8s/*/helmrelease.yaml` - Helm values with domain references
-- `terraform/03-configuration/` - SSO provider URLs
-- `docs/*.md` - Documentation references
+`k8s/applications/atlas-proxy/` - not needed for go-live, atlas access via headscale mesh instead.
 
 ---
 

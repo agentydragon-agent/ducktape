@@ -24,7 +24,7 @@ spec:
             - --provider=pdns
             - --pdns-server=http://powerdns-api.dns-system:8081
             - --pdns-api-key=$(PDNS_API_KEY)
-            - --domain-filter=test-cluster.agentydragon.com
+            - --domain-filter=allegedly.works
             - --txt-owner-id=external-dns
             - --log-level=debug
             - --interval=30s
