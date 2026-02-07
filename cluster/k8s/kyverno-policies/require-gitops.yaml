@@ -17,7 +17,9 @@ metadata:
 spec:
   # Start in Audit mode - change to Enforce after validation
   validationFailureAction: Audit
-  background: true
+  # background: false because this policy uses subjects for exclusions,
+  # which requires admission context (request.userInfo) not available in background scans
+  background: false
   rules:
     - name: block-direct-workload-changes
       match:

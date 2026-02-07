@@ -14,5 +14,5 @@ spec:
   wait: true
   dependsOn:
     - name: ingress-nginx
-    - name: cert-manager-config
+    - name: cert-manager-environment
     - name: local-path-provisioner
