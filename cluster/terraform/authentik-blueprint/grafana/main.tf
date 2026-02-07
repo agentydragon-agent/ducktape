@@ -117,7 +117,7 @@ resource "vault_kv_secret_v2" "grafana_oidc_config" {
     client_id           = authentik_provider_oauth2.grafana.client_id
     client_secret       = random_password.grafana_client_secret.result
     scopes              = "openid email profile"
-    auth_url            = "https://auth.test-cluster.agentydragon.com/application/o/authorize/"
+    auth_url            = "https://auth.allegedly.works/application/o/authorize/"
     token_url           = "http://authentik-server.authentik/application/o/token/"
     api_url             = "http://authentik-server.authentik/application/o/userinfo/"
     role_attribute_path = "contains(groups[*], 'Grafana Admins') && 'Admin' || 'Viewer'"

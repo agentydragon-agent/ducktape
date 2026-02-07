@@ -48,7 +48,7 @@ data "external" "nix_cache_key" {
   program = ["bash", "-c", <<-EOT
     KEY_FILE="${path.module}/nix-cache-key.json"
     if [ ! -f "$KEY_FILE" ]; then
-      nix-store --generate-binary-cache-key cache.test-cluster.agentydragon.com-1 /tmp/nix-priv.$$ /tmp/nix-pub.$$ 2>/dev/null
+      nix-store --generate-binary-cache-key cache.allegedly.works-1 /tmp/nix-priv.$$ /tmp/nix-pub.$$ 2>/dev/null
       jq -n --arg priv "$(cat /tmp/nix-priv.$$)" --arg pub "$(cat /tmp/nix-pub.$$)" \
         '{private_key: $priv, public_key: $pub}' > "$KEY_FILE"
       rm -f /tmp/nix-priv.$$ /tmp/nix-pub.$$

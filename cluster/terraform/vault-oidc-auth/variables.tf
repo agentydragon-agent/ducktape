@@ -12,7 +12,7 @@ variable "vault_token" {
 variable "vault_external_url" {
   description = "External Vault URL for OIDC redirects"
   type        = string
-  default     = "https://vault.test-cluster.agentydragon.com"
+  default     = "https://vault.allegedly.works"
 }
 
 variable "authentik_oidc_discovery_url" {

@@ -1,5 +1,5 @@
 variable "harbor_url" {
   description = "Harbor URL"
   type        = string
-  default     = "https://registry.test-cluster.agentydragon.com"
+  default     = "https://registry.allegedly.works"
 }

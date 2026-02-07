@@ -12,7 +12,7 @@ variable "authentik_token" {
 variable "vault_url" {
   description = "Vault server URL"
   type        = string
-  default     = "https://vault.test-cluster.agentydragon.com"
+  default     = "https://vault.allegedly.works"
 }
 
 variable "vault_address" {

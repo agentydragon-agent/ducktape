@@ -13,7 +13,7 @@ variable "authentik_token" {
 variable "gitea_url" {
   description = "Gitea server URL"
   type        = string
-  default     = "https://git.test-cluster.agentydragon.com"
+  default     = "https://git.allegedly.works"
 }
 
 variable "vault_address" {

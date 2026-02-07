@@ -24,5 +24,5 @@ variable "vault_token" {
 variable "matrix_url" {
   description = "Matrix server URL"
   type        = string
-  default     = "https://matrix.test-cluster.agentydragon.com"
+  default     = "https://matrix.allegedly.works"
 }

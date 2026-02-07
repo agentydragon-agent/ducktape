@@ -13,7 +13,7 @@ variable "authentik_token" {
 variable "grafana_url" {
   description = "Grafana server URL"
   type        = string
-  default     = "https://grafana.test-cluster.agentydragon.com"
+  default     = "https://grafana.allegedly.works"
 }
 
 variable "vault_address" {

@@ -14,7 +14,7 @@ variable "cluster_name" {
 variable "cluster_domain" {
   description = "Cluster domain name"
   type        = string
-  default     = "test-cluster.agentydragon.com"
+  default     = "allegedly.works"
 }
 
 variable "talos_version" {
