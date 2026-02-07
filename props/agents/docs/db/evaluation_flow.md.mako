@@ -2,7 +2,7 @@
 
 This document describes the end-to-end evaluation pipeline for prompt optimization.
 
-## Pipeline Overview
+${"##"} Pipeline Overview
 
 ```
 Critic Run                    Grader Run                 Metrics
@@ -12,10 +12,10 @@ Source code ─┐
 System prompt┘   (reported_issues)  (grading_edges)        (aggregate views)
 ```
 
-{{ describe_relation("snapshots") }}
-{{ describe_relation("snapshot_files") }}
+${describe_relation("snapshots")}
+${describe_relation("snapshot_files")}
 
-## 1. Critic Run
+${"##"} 1. Critic Run
 
 **What the critic sees:**
 - Source code mounted at `/workspace` (read-only)
@@ -29,7 +29,7 @@ System prompt┘   (reported_issues)  (grading_edges)        (aggregate views)
 
 **Critic's task:** Review code, report issues, and call submit when done.
 
-## 2. Grader Run
+${"##"} 2. Grader Run
 
 **Input:**
 - Critique from critic (query `reported_issues`, `reported_issue_occurrences`)
@@ -46,37 +46,35 @@ Every (critique_issue, matchable_gt_occurrence) pair needs an edge with credit:
 - No file restriction is specified (`graders_match_only_if_reported_on IS NULL`), OR
 - The critique touches files that overlap with the occurrence's file scope
 
-Use `props grader-agent list pending` to see missing edges. Grading is complete when no pending edges remain.
-
 **Output:** `grading_edges` table populated with edges between issues and GT occurrences.
 
-## 3. Metrics Computation
+${"##"} 3. Metrics Computation
 
 **Per-run:** Recall = sum(found_credit) / count(occurrences)
 
 **Aggregate:** Query views like `recall_by_definition_split_kind`
 
-## Recall Views
+${"##"} Recall Views
 
-{{ describe_relation("recall_by_definition_split_kind") }}
-{{ describe_relation("recall_by_definition_example") }}
+${describe_relation("recall_by_definition_split_kind")}
+${describe_relation("recall_by_definition_example")}
 
-### Weighting
+${"##"}# Weighting
 
 Cross-run recall is weighted by occurrence, not by example:
 - Formula: `SUM(AVG(found_credit) per occurrence) / COUNT(occurrences)`
 - Examples with more TP occurrences naturally weight more
 - This measures "total issues found / total issues in dataset"
 
-### Failure Handling
+${"##"}# Failure Handling
 
 When a critic exceeds max_turns or context limits:
 - No valid critique is produced
 - Counts as zero-recall for that example
 
-### Pareto Frontier (Best Definitions per Example)
+${"##"}# Pareto Frontier (Best Definitions per Example)
 
-{{ describe_relation("pareto_frontier_by_example") }}
+${describe_relation("pareto_frontier_by_example")}
 
 Use this to find:
 - Which definitions achieve best recall on each example
@@ -98,59 +96,13 @@ WHERE split = 'valid'
 GROUP BY def_id ORDER BY wins DESC;
 ```
 
-## Your Optimization Mode
-{% if config.target_metric == "whole-repo" %}
-You are running in **whole-repo mode**.
+${"##"} Validation Recall
 
-**Terminal metric:** Whole-snapshot recall on VALID split.
+${describe_relation("validation_recall_by_definition")}
 
-**Validation access:**
-- Examples table: RLS-blocked (no filenames visible)
-- Can only run whole-snapshot evaluations
-- Ground truth: Hidden
-- Execution traces: Hidden
+${"##"} Data Access Patterns
 
-**Query validation metrics:**
-
-{{ describe_relation("validation_recall_by_definition") }}
-{% elif config.target_metric == "targeted" %}
-You are running in **targeted mode**.
-
-**Terminal metric:** Per-file and whole-snapshot recall on VALID split.
-
-**Validation access:**
-- Examples table: Accessible (filenames visible)
-- Can run both per-file and whole-snapshot evaluations
-- Ground truth: Still hidden
-- Execution traces: Still hidden
-
-**Query validation metrics:**
-```sql
--- Aggregate by definition
-SELECT (credit_stats).mean AS recall, n_examples,
-       (credit_stats).ucb95 AS ucb, (credit_stats).lcb95 AS lcb
-FROM recall_by_definition_split_kind
-WHERE critic_image_digest = '<def_id>' AND split = 'valid';
-
--- Per-example breakdown
-SELECT snapshot_slug, files_hash, example_kind,
-       (credit_stats).mean AS recall,
-       (credit_stats).lcb95 AS lcb,
-       (credit_stats).ucb95 AS ucb
-FROM recall_by_definition_example
-WHERE critic_image_digest = '<def_id>'
-  AND split = 'valid'
-ORDER BY (credit_stats).mean DESC;
-```
-
-**IMPORTANT:** Always check `n_examples >= 5` before trusting metrics (small samples = high variance).
-{% else %}
-**Note:** No target_metric specified. See documentation for whole-repo vs targeted modes.
-{% endif %}
-
-## Data Access Patterns
-
-### Training Split (Full Access)
+${"##"}# Training Split (Full Access)
 
 ```sql
 -- Get examples
@@ -160,34 +112,14 @@ WHERE s.split = 'train';
 
 -- Access ground truth
 SELECT * FROM true_positives WHERE snapshot_slug = '<slug>';
-
--- Read execution traces
-SELECT * FROM events WHERE agent_run_id = '<run_id>' ORDER BY sequence_num;
 ```
 
-### Validation Split (Restricted)
+${"##"}# Validation Split (Restricted)
 
-{% if config.target_metric == "whole-repo" %}
 ```sql
--- Query aggregate metrics only (examples table is RLS-blocked)
-SELECT * FROM get_validation_full_snapshot_aggregates()
-WHERE critic_image_digest = '<def_id>';
-
--- CANNOT query examples table directly
--- CANNOT inspect ground truth or execution traces
+-- Query aggregate metrics only
+SELECT * FROM recall_by_definition_split_kind
+WHERE split = 'valid' AND critic_image_digest = '<def_id>';
 ```
-{% elif config.target_metric == "targeted" %}
-```sql
--- Can see example filenames
-SELECT * FROM examples e
-JOIN snapshots s ON e.snapshot_slug = s.slug
-WHERE s.split = 'valid';
 
--- Query metrics via views
-SELECT (credit_stats).mean AS recall
-FROM recall_by_definition_split_kind
-WHERE critic_image_digest = '<def_id>' AND split = 'valid';
-
--- CANNOT inspect ground truth or execution traces
-```
-{% endif %}
+**IMPORTANT:** Always check `n_examples >= 5` before trusting metrics (small samples = high variance).

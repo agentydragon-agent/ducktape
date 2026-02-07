@@ -6,7 +6,7 @@ Provides:
 - get_active_agent_run(): Get current agent run, ensuring it hasn't exited
 - fetch_snapshot(): Fetch snapshot to local filesystem and return path
 - setup_logging(): Configure logging for in-container agent loops
-- render_system_prompt(): Render Jinja2 system prompt templates
+- render_system_prompt(): Render Mako system prompt templates
 - create_bound_model_from_env(): Create OpenAI model from env vars
 """
 
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from jinja2 import Environment
+from mako.template import Template
 from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -34,11 +34,6 @@ from props.db.snapshot_io import fetch_snapshot_to_path
 logger = logging.getLogger(__name__)
 
 WORKSPACE = Path("/workspace")
-
-
-# =============================================================================
-# Agent run identification
-# =============================================================================
 
 
 def get_current_agent_run_id(session: Session) -> UUID:
@@ -75,19 +70,10 @@ def get_active_agent_run(session: Session) -> AgentRun:
     return agent_run
 
 
-# =============================================================================
-# Snapshot fetching
-# =============================================================================
-
-
 def fetch_snapshot(dest_dir: Path, db: Database) -> Path:
     """Fetch snapshot for current critic agent to specified directory.
 
-    Retrieves the tar archive from the snapshots table and extracts it
-    to the specified directory.
-
-    Returns:
-        The dest_dir path (for template convenience)
+    Returns the dest_dir path (for template convenience).
     """
     with db.session() as session:
         agent_run = get_current_agent_run(session)
@@ -98,32 +84,22 @@ def fetch_snapshot(dest_dir: Path, db: Database) -> Path:
     return dest_dir
 
 
-# =============================================================================
-# Logging
-# =============================================================================
-
-
 def setup_logging() -> None:
     """Configure logging for in-container agent loops."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
-# =============================================================================
-# Jinja2 template rendering
-# =============================================================================
+def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create Mako template context with standard helpers.
 
-
-def _setup_jinja_env(db: Database, helpers: dict[str, Any] | None = None) -> Environment:
-    """Create Jinja2 environment with standard helpers.
-
-    Globals:
+    Available in all templates:
     - workspace_dir — default workspace path
-    - describe_relation(name) — schema from SQLAlchemy metadata
-    - include_doc(pkg/path) — include from package resources
-    - include_file(path) — include from filesystem
+    - describe_relation(name) — schema JSON from SQLAlchemy metadata
+    - include_doc(pkg/path) — include and render from package resources
+    - include_file(path) — include and render from filesystem
     """
-    env = Environment()
-    env.globals["workspace_dir"] = str(WORKSPACE)
+    ctx: dict[str, Any] = {}
+    ctx["workspace_dir"] = str(WORKSPACE)
 
     def _describe_relation(name: str) -> str:
         desc = describe_table(name)
@@ -131,32 +107,32 @@ def _setup_jinja_env(db: Database, helpers: dict[str, Any] | None = None) -> Env
             return f"Unknown table: {name}"
         return desc.model_dump_json(indent=2, exclude_defaults=True)
 
-    env.globals["describe_relation"] = _describe_relation
+    ctx["describe_relation"] = _describe_relation
 
     def include_doc(pkg_path: str, *, raw: bool = False) -> str:
-        """Include doc from package resources."""
+        """Include doc from package resources, rendering Mako syntax."""
         pkg, _, p = pkg_path.partition("/")
         content = (importlib.resources.files(pkg) / p).read_text()
         if raw:
             return f'<doc source="{pkg_path}">\n{content}\n</doc>'
-        rendered = env.from_string(content).render()
+        rendered = Template(content).render(**ctx)
         return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
 
     def include_file(file_path: str, *, raw: bool = False) -> str:
-        """Include file from filesystem."""
+        """Include file from filesystem, rendering Mako syntax."""
         content = Path(file_path).read_text()
         if raw:
             return f'<doc source="{file_path}">\n{content}\n</doc>'
-        rendered = env.from_string(content).render()
+        rendered = Template(content).render(**ctx)
         return f'<doc source="{file_path}">\n{rendered}\n</doc>'
 
-    env.globals["include_doc"] = include_doc
-    env.globals["include_file"] = include_file
+    ctx["include_doc"] = include_doc
+    ctx["include_file"] = include_file
 
     if helpers:
-        env.globals.update(helpers)
+        ctx.update(helpers)
 
-    return env
+    return ctx
 
 
 def render_system_prompt(template_path: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
@@ -177,14 +153,9 @@ def render_system_prompt(template_path: str, db: Database, helpers: dict[str, An
 
 
 def render_template_string(content: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
-    """Render a Jinja2 template string with standard helpers."""
-    env = _setup_jinja_env(db, helpers)
-    return env.from_string(content).render()
-
-
-# =============================================================================
-# OpenAI model creation
-# =============================================================================
+    """Render a Mako template string with standard helpers."""
+    ctx = _make_template_context(db, helpers)
+    return Template(content).render(**ctx)
 
 
 def create_bound_model_from_env(db: Database) -> BoundOpenAIModel:

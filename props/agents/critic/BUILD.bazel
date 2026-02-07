@@ -19,6 +19,11 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
+exports_files(
+    ["prompt.md.mako"],
+    visibility = ["//props:__subpackages__"],
+)
+
 # =============================================================================
 # In-container agent main entry point
 # =============================================================================
@@ -27,9 +32,9 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     data = [
-        "prompt.md.j2",
+        "prompt.md.mako",
         "//props/agents/docs:database_access.md",
-        "//props/agents/docs:db/critiques.md.j2",
+        "//props/agents/docs:db/critiques.md.mako",
     ],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],

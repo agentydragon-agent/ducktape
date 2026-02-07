@@ -1,8 +1,6 @@
 # Ground Truth: Labels for Training
 
-This document describes the ground truth data used for training and evaluation.
-
-## Critical Context: Subjective Dataset
+${"##"} Critical Context: Subjective Dataset
 
 **This dataset reflects ONE person's subjective code review preferences.**
 
@@ -23,16 +21,16 @@ The ground truth issues (true positives and false positives) were hand-labeled b
 
 "Novel" findings don't contribute to recall - only matching labeled TPs counts. Your goal is to find the issues the labeler DID label (without hitting labeled FPs), not to discover new ones.
 
-{{ describe_relation("true_positives") }}
-{{ describe_relation("true_positive_occurrences") }}
-{{ describe_relation("false_positives") }}
-{{ describe_relation("false_positive_occurrences") }}
+${describe_relation("true_positives")}
+${describe_relation("true_positive_occurrences")}
+${describe_relation("false_positives")}
+${describe_relation("false_positive_occurrences")}
 
-## Expected Recall vs Grader Matching
+${"##"} Expected Recall vs Grader Matching
 
 **Two distinct fields control different aspects of grading:**
 
-### critic_scopes_expected_to_recall (Recall Denominator)
+${"##"}# critic_scopes_expected_to_recall (Recall Denominator)
 
 Determines the **recall denominator** for metrics. "From which file scopes do we EXPECT a diligent critic to find this issue?"
 
@@ -40,7 +38,7 @@ Determines the **recall denominator** for metrics. "From which file scopes do we
 - Used by `is_tp_in_expected_recall_scope()` to compute `recall_denominator` in the `examples` VIEW
 - **SOFT EXPECTATION:** Critics CAN find issues outside expected scopes - recall >100% is possible!
 
-### graders_match_only_if_reported_on (Hard Constraint)
+${"##"}# graders_match_only_if_reported_on (Hard Constraint)
 
 **HARD CONSTRAINT** on graders. "Where is the issue actually located? Where must it be validly reported?"
 
@@ -48,7 +46,7 @@ Determines the **recall denominator** for metrics. "From which file scopes do we
 - Enforced by `grading_pending` view - only shows (issue, occurrence) pairs with file overlap
 - If set, graders **cannot** give credit unless the critique flagged overlapping files
 
-### Why Two Fields?
+${"##"}# Why Two Fields?
 
 **Example:** `file.py` contains wrapper functions that call APIs in `bar.py`. `bar.py` has obvious dangerous code.
 
@@ -60,7 +58,7 @@ Determines the **recall denominator** for metrics. "From which file scopes do we
 - A critic reviewing `file.py` that only complains about `file.py` → zero credit (didn't find the real issue)
 - This occurrence counts toward recall denominator when reviewing either `file.py` or `bar.py`
 
-## Query Examples
+${"##"} Query Examples
 
 ```sql
 -- Get all TPs for a snapshot

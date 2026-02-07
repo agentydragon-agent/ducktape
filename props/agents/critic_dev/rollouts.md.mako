@@ -2,11 +2,11 @@
 
 Diagnostic queries for agent execution traces. Schema and basic queries are in the LLM Requests and Cost Tracking docs — this covers higher-level analysis patterns.
 
-## Extracting Tool Calls
+${"##"} Extracting Tool Calls
 
 Tool calls appear as `function_call` items in `response_body->'output'`. Their results appear as `function_call_output` items in the *next* request's `request_body->'input'`.
 
-### Calls only
+${"##"}# Calls only
 
 ```sql
 SELECT r.created_at, r.model,
@@ -18,7 +18,7 @@ WHERE r.agent_run_id = '<run_id>'
 ORDER BY r.created_at;
 ```
 
-### Calls with outputs
+${"##"}# Calls with outputs
 
 ```sql
 WITH calls AS (
@@ -44,9 +44,9 @@ LEFT JOIN outputs o ON c.call_id = o.call_id
 ORDER BY c.created_at;
 ```
 
-## Diagnostic Patterns
+${"##"} Diagnostic Patterns
 
-### Find timed-out runs
+${"##"}# Find timed-out runs
 
 ```sql
 SELECT ar.agent_run_id, ar.model,
@@ -56,7 +56,7 @@ WHERE ar.status = 'timed_out'
   AND ar.type_config->>'agent_type' = 'critic';
 ```
 
-### Find runs that exceeded budget
+${"##"}# Find runs that exceeded budget
 
 ```sql
 SELECT ar.agent_run_id, ar.budget_usd,
@@ -70,7 +70,7 @@ GROUP BY ar.agent_run_id
 HAVING SUM(lrc.cost_usd) >= ar.budget_usd;
 ```
 
-### Count LLM requests per run
+${"##"}# Count LLM requests per run
 
 ```sql
 SELECT
@@ -86,7 +86,7 @@ GROUP BY ar.agent_run_id
 ORDER BY n_requests DESC;
 ```
 
-## RLS Notes
+${"##"} RLS Notes
 
 - **TRAIN split:** Full access to LLM requests for all critic/grader runs
 - **VALID/TEST splits:** LLM requests are RLS-blocked to prevent overfitting

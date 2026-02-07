@@ -501,7 +501,7 @@ async def main() -> int:
         return 1
 
     async with EvalClient.from_env() as eval_client:
-        system_prompt = render_system_prompt("props/agents/critic_dev/prompt.md.j2", db, helpers={"mode": mode})
+        system_prompt = render_system_prompt("props/agents/critic_dev/prompt.md.mako", db, helpers={"mode": mode})
 
         exit_code = await run_agent_loop(
             system_prompt=system_prompt,

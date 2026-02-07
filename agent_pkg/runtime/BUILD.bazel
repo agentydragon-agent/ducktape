@@ -17,5 +17,5 @@ py_library(
     name = "output",
     srcs = ["output.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//jinja2"],
+    deps = ["@pypi//mako"],
 )

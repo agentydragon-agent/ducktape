@@ -1,21 +1,21 @@
-{{ include_doc("props/agents/critic_dev/prompt_base.md.j2") }}
+${include_doc("props/agents/critic_dev/prompt_base.md.mako")}
 
-{% if mode == "optimize" %}
-## Your Goal
+% if mode == "optimize":
+${"##"} Your Goal
 
 Maximize validation recall. Your target metric mode is printed in init output.
 
-## Data Access
+${"##"} Data Access
 
 - **Full TRAIN access:** Examples, TPs, FPs, runs, LLM requests
 - **VALID:** Metrics only (via `recall_by_definition_split_kind` view)
 - **TEST:** Off-limits
 
-## Constraints
+${"##"} Constraints
 
 - **Budget:** Query database cost views to understand run costs. Analyze before running.
 
-## Workflow
+${"##"} Workflow
 
 1. **Study subjective standards (REQUIRED):**
    - Query TPs/FPs to learn the labeler's preferences
@@ -34,12 +34,12 @@ Maximize validation recall. Your target metric mode is printed in init output.
    - Any improvement becomes new baseline
 
 Keep iterating until your budget or time runs out. There is no explicit termination — maximize the number of improvement cycles you can fit.
-{% elif mode == "improve" %}
-## Your Goal
+% elif mode == "improve":
+${"##"} Your Goal
 
 Beat the average of baseline definitions on sum of issues found across your `allowed_examples`.
 
-## Data Access (RLS Scoping)
+${"##"} Data Access (RLS Scoping)
 
 Your database access is scoped by Row-Level Security based on your `type_config`:
 
@@ -69,9 +69,9 @@ FROM agent_runs
 WHERE agent_run_id = current_agent_run_id();
 ```
 
-## Workflow
+${"##"} Workflow
 
-### 1. Read Context
+${"##"}# 1. Read Context
 
 ```sql
 SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
@@ -79,12 +79,12 @@ SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
 
 Gives you `baseline_definition_ids` and `allowed_examples`.
 
-### 2. Analyze & Diagnose
+${"##"}# 2. Analyze & Diagnose
 
 - Query grader results: Which TPs had low `found_credit`?
 - Query `llm_requests`: Did critic read right files? Use right tools? Get stuck?
 
-### 3. Design Improvement
+${"##"}# 3. Design Improvement
 
 Based on analysis:
 
@@ -92,11 +92,11 @@ Based on analysis:
 - What analysis steps were missing?
 - What patterns should NOT be flagged?
 
-### 4. Create and Submit
+${"##"}# 4. Create and Submit
 
 Start from base critic (see authoring guide), modify, submit via `crane`.
 
-## Termination Condition
+${"##"} Termination Condition
 
 Complete when your definition **beats the average of baseline definitions** on **sum of issues found** across all `allowed_examples`. Termination is checked automatically — keep working and it will trigger when you succeed.
-{% endif %}
+% endif

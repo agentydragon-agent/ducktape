@@ -1,6 +1,6 @@
 # Grading Schema
 
-## Bipartite Edge Model
+${"##"} Bipartite Edge Model
 
 Grading fills a bipartite graph between critique issues (left) and ground truth occurrences (right). **Every** (issue, matchable_occurrence) pair needs an edge:
 
@@ -17,15 +17,15 @@ Each edge carries:
 
 **Sum constraint:** Each occurrence can receive at most 1.0 total credit across all issues.
 
-{{ describe_relation("grading_edges") }}
+${describe_relation("grading_edges")}
 
-## Pending Edges (Completeness)
+${"##"} Pending Edges (Completeness)
 
-{{ describe_relation("grading_pending") }}
+${describe_relation("grading_pending")}
 
 **Source of truth for completeness:** Query `grading_pending` to see missing edges. Grading is complete when no rows remain. The grader `submit` tool validates this and rejects submission if any edges are pending.
 
-## Sparse Matching (graders_match_only_if_reported_on)
+${"##"} Sparse Matching (graders_match_only_if_reported_on)
 
 Not all occurrences are matchable from all critique issues. The `graders_match_only_if_reported_on` field on TP/FP occurrences controls which critiques can create edges to them:
 
@@ -36,4 +36,4 @@ Not all occurrences are matchable from all critique issues. The `graders_match_o
 
 The `grading_pending` view automatically enforces this - it only shows (issue, occurrence) pairs where the critique's files overlap.
 
-{{ describe_relation("matchable_occurrences") }}
+${describe_relation("matchable_occurrences")}

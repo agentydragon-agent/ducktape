@@ -2,9 +2,9 @@
 
 Training/validation examples define what a critic reviews.
 
-{{ describe_relation("examples") }}
+${describe_relation("examples")}
 
-## Example Types
+${"##"} Example Types
 
 Each example has an `example_kind` field with one of two values:
 
@@ -20,7 +20,7 @@ Each example has an `example_kind` field with one of two values:
 - Used for focused per-file training
 - `files_hash` is a hash of the sorted file list
 
-## Querying Examples
+${"##"} Querying Examples
 
 ```sql
 -- All examples for a snapshot
@@ -31,21 +31,15 @@ SELECT * FROM examples WHERE example_kind = 'whole_snapshot';
 
 -- File-set examples only
 SELECT * FROM examples WHERE example_kind = 'file_set';
-
--- Specific example by composite key
-SELECT * FROM examples
-WHERE snapshot_slug = 'ducktape/2025-11-26-00'
-  AND example_kind = 'file_set'
-  AND files_hash = 'abc123...';
 ```
 
-## Example Generation
+${"##"} Example Generation
 
 Examples are auto-generated from `critic_scopes_expected_to_recall` in ground truth:
 - Each unique trigger set becomes a per-file example
 - Plus one full-snapshot example per snapshot
 
-## Using Examples for Optimization
+${"##"} Using Examples for Optimization
 
 **File-set examples are your proxy metric** - easier to iterate on:
 - Smaller scope (1-5 occurrences in expected recall scope)

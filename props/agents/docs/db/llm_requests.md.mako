@@ -2,11 +2,11 @@
 
 The `llm_requests` table stores LLM API request/response payloads logged by the proxy for debugging and analysis.
 
-{{ describe_relation("llm_requests") }}
+${describe_relation("llm_requests")}
 
 Each row captures a single OpenAI Responses API call made by an agent through the LLM proxy.
 
-## Queries
+${"##"} Queries
 
 All LLM requests for a specific agent run:
 

@@ -4,7 +4,7 @@ The built-in critic images are Bazel-built Python binaries packaged into distrol
 
 The built-in critic is one possible implementation. Your custom critics can take any shape — see the parent guide for what constitutes a valid critic.
 
-## Container Entrypoint
+${"##"} Container Entrypoint
 
 The image CMD runs a hermetic Python interpreter via a Bazel stage2 bootstrap:
 
@@ -15,7 +15,7 @@ CMD: /app/critic.runfiles/_main/props/agents/critic/_critic.venv/bin/python3 \
 
 The bootstrap sets up `sys.path` and runs `props.agents.critic.main`.
 
-## Runfiles Layout
+${"##"} Runfiles Layout
 
 All code lives under `/app/critic.runfiles/_main/`, which mirrors the Bazel workspace:
 
@@ -25,34 +25,36 @@ All code lives under `/app/critic.runfiles/_main/`, which mirrors the Bazel work
 │   ├── agents/
 │   │   ├── critic/
 │   │   │   ├── main.py              ← agent entrypoint
-│   │   │   ├── prompt.md.j2         ← system prompt template
+│   │   │   ├── prompt.md.mako       ← system prompt template
 │   │   │   └── _critic.venv/        ← hermetic Python venv
 │   │   │       └── bin/python3
 │   │   ├── docs/                    ← agent-facing documentation
 │   │   │   ├── database_access.md
-│   │   │   └── db/                  ← DB schema docs (Jinja2 templates)
-│   │   └── runtime.py               ← template rendering, agent run helpers
+│   │   │   └── db/                  ← DB schema docs (Mako templates)
+│   │   ├── runtime.py               ← template rendering, agent run helpers
+│   │   └── schema.py                ← SQLAlchemy schema introspection
 │   ├── db/                          ← database layer (models, queries)
+│   │   └── models.py                ← all ORM table/view definitions
 │   └── core/                        ← core models
 ├── agent_core/                      ← agent loop machinery
 ├── mcp_infra/                       ← exec tool implementation
 └── openai_utils/                    ← LLM client utilities
 ```
 
-## What the Built-in Critic Does
+${"##"} What the Built-in Critic Does
 
 The built-in critic (`props.agents.critic.main`) implements a simple single-agent loop:
 
 1. Connects to PostgreSQL via `Database.from_env()`
 2. Reads its `AgentRun` config (model, example, scope)
 3. Fetches the snapshot to `/workspace/`
-4. Renders a Jinja2 system prompt with helpers ({% raw %}`{{ describe_relation() }}`{% endraw %}, {% raw %}`{{ include_doc() }}`{% endraw %})
+4. Renders a Mako system prompt with helpers (`${"${describe_relation()}"}`, `${"${include_doc()}"}`)
 5. Creates tool provider (exec, insert_issue, insert_occurrence, submit, etc.)
 6. Runs the agent loop until `submit` or `report_failure` is called
 
 This is a reasonable starting point, but you're free to replace any or all of it.
 
-## Inspecting an Image
+${"##"} Inspecting an Image
 
 Use `crane` (pre-installed in your container) to explore any image:
 
@@ -67,14 +69,14 @@ crane export $REGISTRY/critic:latest - --insecure | tar t
 
 # Extract a specific file (e.g., the system prompt template)
 crane export $REGISTRY/critic:latest - --insecure | tar xf - -O \
-  app/critic.runfiles/_main/props/agents/critic/prompt.md.j2
+  app/critic.runfiles/_main/props/agents/critic/prompt.md.mako
 
 # Extract the main entry point
 crane export $REGISTRY/critic:latest - --insecure | tar xf - -O \
   app/critic.runfiles/_main/props/agents/critic/main.py
 ```
 
-## Repackaging with Custom Logic
+${"##"} Repackaging with Custom Logic
 
 Replace the Python entrypoint to create a critic with custom behavior. The bundled `props` library and all dependencies remain available:
 
@@ -104,12 +106,12 @@ crane mutate --local /tmp/image.tar --cmd "$PYTHON" --cmd "/custom_main.py" -o /
 DIGEST=$(crane push /tmp/image-final.tar $REGISTRY/critic --insecure)
 ```
 
-## Key Paths
+${"##"} Key Paths
 
 | Path | Purpose |
 |------|---------|
 | `/workspace/` | Working directory, writable. Snapshots fetched here. |
 | `/app/critic.runfiles/_main/` | Bazel workspace root — all Python source code |
-| `/app/critic.runfiles/_main/props/agents/critic/prompt.md.j2` | Default system prompt template |
+| `/app/critic.runfiles/_main/props/agents/critic/prompt.md.mako` | Default system prompt template |
 | `/app/critic.runfiles/_main/props/agents/critic/main.py` | Agent entrypoint |
 | `/app/critic.runfiles/_main/props/agents/critic/_critic.venv/bin/python3` | Hermetic Python interpreter |

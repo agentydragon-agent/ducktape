@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from importlib import resources
 
-from jinja2 import Environment, StrictUndefined
+from mako.template import Template
 
 
 def load_system_prompt() -> str:
-    template_text = _read_resource("system_prompt.md.j2")
-    env = Environment(undefined=StrictUndefined, autoescape=False)
-    template = env.from_string(template_text)
-    return template.render(embed_package_file=_embed_package_file)
+    template_text = _read_resource("system_prompt.md.mako")
+    return Template(template_text, strict_undefined=True).render(embed_package_file=_embed_package_file)
 
 
 def _embed_package_file(relative_path: str) -> str:

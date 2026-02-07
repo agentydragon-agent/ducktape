@@ -12,10 +12,10 @@ This directory (`props/docs/`) contains **developer-facing** documentation only.
 
 Example violation:
 
-```jinja2
-{# grader.md.j2 #}
-{{ describe_relation("true_positives") }}           {# WRONG - already in ground_truth.md.j2 #}
-{{ include_doc("props/agents/docs/db/ground_truth.md.j2") }}  {# includes describe_relation("true_positives") #}
+```mako
+## grader prompt
+${describe_relation("true_positives")}           ## WRONG - already in ground_truth.md.mako
+${include_doc("props/agents/docs/db/ground_truth.md.mako")}  ## includes describe_relation("true_positives")
 ```
 
 The grader would see the `true_positives` schema twice.
@@ -23,21 +23,21 @@ The grader would see the `true_positives` schema twice.
 **Correct approach:** Only call `describe_relation()` for tables unique to the current template.
 Let included docs handle their own tables.
 
-## Jinja2 Patterns
+## Mako Patterns
 
 Templates use these helpers (defined in `props/agents/runtime.py`):
 
-| Pattern                             | Purpose                                                 |
-| ----------------------------------- | ------------------------------------------------------- |
-| `{{ describe_relation("name") }}`   | Outputs table schema from SQLAlchemy metadata           |
-| `{{ include_doc("package/path") }}` | Includes another template from Python package resources |
-| `{{ include_file("/path") }}`       | Includes file from filesystem                           |
+| Pattern                          | Purpose                                                 |
+| -------------------------------- | ------------------------------------------------------- |
+| `${describe_relation("name")}`   | Outputs table schema from SQLAlchemy metadata           |
+| `${include_doc("package/path")}` | Includes another template from Python package resources |
+| `${include_file("/path")}`       | Includes file from filesystem                           |
 
 ## Write for Agents
 
 **Audience:** The agent running in a container, not developers reading source code.
 
-**How docs reach agents:** Agent main loops use `render_system_prompt()` to render Jinja2
+**How docs reach agents:** Agent main loops use `render_system_prompt()` to render Mako
 templates. Output goes to the agent's system prompt.
 
 **Example - wrong:**

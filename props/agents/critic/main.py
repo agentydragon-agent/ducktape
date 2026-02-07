@@ -354,7 +354,7 @@ def main() -> int:
 
     logger.info("Rendering system prompt")
     system_prompt = render_system_prompt(
-        "props/agents/critic/prompt.md.j2", db, helpers={"snapshot_slug": snapshot_slug, "scope_files": scope_files}
+        "props/agents/critic/prompt.md.mako", db, helpers={"snapshot_slug": snapshot_slug, "scope_files": scope_files}
     )
 
     logger.info("Starting agent loop")

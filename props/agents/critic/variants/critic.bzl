@@ -5,7 +5,7 @@ All variants share the same agent loop code (main.py) and tools.
 
 Architecture:
 - All variants use //props/agents/critic:main_tar (shared agent loop)
-- Each variant packages its own prompt.md.j2 into /prompt.md.j2
+- Each variant packages its own prompt into /prompt.md.mako
 - PROMPT_TEMPLATE_PATH env var tells main.py to use the baked-in prompt
 """
 
@@ -21,7 +21,7 @@ def critic_variant(name, prompt_md):
     - Same container base, env, workdir
 
     Each variant differs only in:
-    - The prompt template baked into /prompt.md.j2
+    - The prompt template baked into /prompt.md.mako
     - PROMPT_TEMPLATE_PATH env var pointing to it
 
     Generates targets:
@@ -34,13 +34,13 @@ def critic_variant(name, prompt_md):
         prompt_md: Source markdown file for system prompt
     """
 
-    # Rename variant-specific prompt to /prompt.md.j2
+    # Rename variant-specific prompt to /prompt.md.mako
     # Use _gen suffix dir to avoid conflict with oci_image output dir
     gen_dir = name + "_gen"
     native.genrule(
         name = name + "_prompt_gen",
         srcs = [prompt_md],
-        outs = [gen_dir + "/prompt.md.j2"],
+        outs = [gen_dir + "/prompt.md.mako"],
         cmd = "cp $< $@",
     )
 
@@ -58,7 +58,7 @@ def critic_variant(name, prompt_md):
         base = "@distroless_cc_linux_amd64",
         cmd = py_binary_distroless_cmd("critic", binary_package = "props/agents/critic"),
         env = py_binary_distroless_env("critic", extra_env = {
-            "PROMPT_TEMPLATE_PATH": "/prompt.md.j2",
+            "PROMPT_TEMPLATE_PATH": "/prompt.md.mako",
         }),
         tars = [
             "//props/agents/critic:main_tar",
