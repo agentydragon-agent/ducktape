@@ -19,7 +19,7 @@ from props.db.models import AgentRunStatus, ReportedIssue, ReportedIssueOccurren
 from props.db.snapshots import DBLocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 
 async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, temp_engine, db: Database):

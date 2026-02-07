@@ -14,7 +14,6 @@ which isolates concurrent runs within the same split.
 
 These tests use per-test isolated databases and require:
 - postgres container running (managed by devenv)
-- Database environment variables set (PG* vars for admin access)
 
 Each test gets its own database (created and destroyed by db fixture).
 For RLS testing, tests use:
@@ -46,7 +45,7 @@ from props.orchestration.agent_credentials import AgentCredentials
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_PROMPT_OPTIMIZER_DIGEST, make_fake_critic_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 
 @pytest_asyncio.fixture

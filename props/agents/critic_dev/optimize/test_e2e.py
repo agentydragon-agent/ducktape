@@ -49,7 +49,7 @@ from props.testing.fixtures.e2e_container import TEST_MODEL
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 60

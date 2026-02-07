@@ -21,7 +21,7 @@ from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import DBLocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 
 @pytest.fixture

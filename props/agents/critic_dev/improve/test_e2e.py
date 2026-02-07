@@ -32,7 +32,7 @@ from props.db.examples import Example
 from props.db.models import AgentRun
 from props.testing.fixtures.e2e_container import TEST_MODEL
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 # Test timeout (seconds) - applies to container execution
 TEST_TIMEOUT_SECONDS = 120

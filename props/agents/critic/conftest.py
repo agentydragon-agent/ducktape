@@ -19,7 +19,7 @@ from props.testing.fixtures.runs import make_fake_critic_run
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 
 @pytest.fixture

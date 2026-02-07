@@ -52,7 +52,7 @@ from props.testing.mocks import get_system_message_text
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres, pytest.mark.requires_docker]
+pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 
 # Test timeout (seconds)
 TEST_TIMEOUT_SECONDS = 120

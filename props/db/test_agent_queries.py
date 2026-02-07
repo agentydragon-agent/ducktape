@@ -25,7 +25,7 @@ from props.db.examples import Example
 from props.db.models import FalsePositive, RecallByDefinitionSplitKind, Snapshot, TruePositive
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 
 @pytest.fixture

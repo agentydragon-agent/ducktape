@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import text
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 
 class TestMatchableOccurrences:

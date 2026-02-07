@@ -17,7 +17,6 @@ Environment variables:
 
 Usage:
     @pytest.mark.requires_docker
-    @pytest.mark.requires_postgres
     async def test_critic_completes(e2e_stack, all_files_scope, critic_image):
         mock = make_critic_mock()
         async with e2e_stack({TEST_MODEL: mock}, images=[critic_image]) as stack:

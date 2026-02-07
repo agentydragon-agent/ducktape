@@ -11,11 +11,12 @@ Tests declare infrastructure requirements via Bazel tags:
 | Tag                      | Meaning                         | Current Usage                              |
 | ------------------------ | ------------------------------- | ------------------------------------------ |
 | `requires_docker`        | Needs Docker daemon             | `agent_server/`, `editor_agent/`, `props/` |
-| `requires_postgres`      | Needs PostgreSQL                | `props/`, `gatelet/`                       |
 | `requires_runtime_image` | Needs pre-built container image | `agent_server/`                            |
 | `e2e`                    | Full end-to-end test            | `props/` E2E tests                         |
 | `visual`                 | Visual regression test          | `props/frontend/`                          |
 | `manual`                 | Excluded from `//...`           | Various                                    |
+
+Note: `requires_postgres` was removed — all PostgreSQL tests now use testcontainers (which only requires Docker).
 
 ### Docker Test Infrastructure
 
@@ -58,8 +59,7 @@ This eliminates the need for docker-compose and CI workflow infrastructure setup
 
 ### PostgreSQL Tests
 
-- `bazel-test.yml`: Uses GitHub service container (`PGHOST=localhost`, `PGPORT=5432`) for gatelet tests
-- Props E2E tests use testcontainers for PostgreSQL (hermetic, per-test)
+All PostgreSQL tests (both `props/` and `gatelet/`) use **testcontainers** for hermetic PostgreSQL instances. No CI service containers or `PG*` env vars are needed — tests only require Docker (provided by `docker_py_test` / `requires_docker` tag).
 
 ### Workflow Dispatch
 
@@ -77,8 +77,7 @@ Current approach in `ci.yml`:
 
 **Remaining issues:**
 
-1. **Inconsistent env vars**: Same tag (`requires_postgres`) maps to different ports
-2. **No tag validation**: Nothing prevents tests from having tags without matching CI support
+1. **No tag validation**: Nothing prevents tests from having tags without matching CI support
 
 ## Industry Patterns
 
@@ -133,7 +132,7 @@ services:
 - Single fixed port (conflicts if tests expect different ports)
 - Not reproducible locally without manual setup
 
-**Recommendation**: Good for simple requirements. Already used for `bazel-test.yml`.
+**Recommendation**: Good for simple requirements. Previously used for `bazel-test.yml` (PostgreSQL for gatelet), now replaced by testcontainers.
 
 ### Option 3: Docker Compose Pre-Setup (Historical)
 
@@ -256,16 +255,6 @@ Define explicit contracts for each infrastructure tag:
 # tools/ci/test_environments.py
 
 TAG_CONTRACTS = {
-    "requires_postgres": {
-        "env_vars": {
-            "PGHOST": "127.0.0.1",
-            "PGPORT": "5432",
-            "PGUSER": "postgres",
-            "PGPASSWORD": "postgres",
-            "PGDATABASE": "test",
-        },
-        "setup": "service_container",  # or "compose"
-    },
     "requires_docker": {
         "env_vars": {},  # Just needs daemon
         "setup": "native",  # GitHub runners have Docker
@@ -283,24 +272,6 @@ TAG_CONTRACTS = {
     },
 }
 ```
-
-### Standardize Port Allocation
-
-**Problem**: `props/` tests use port 5433, `gatelet/` uses 5432.
-
-**Solution**: Pick one port and migrate:
-
-| Service        | Standard Port                               |
-| -------------- | ------------------------------------------- |
-| PostgreSQL     | 5432                                        |
-| Registry proxy | 8000                                        |
-| Backend        | 8000 (same as registry via unified backend) |
-
-**Migration**:
-
-1. Update `props/` BUILD.bazel files to use port 5432
-2. Update `props/compose.yaml` to expose 5432
-3. All `_POSTGRES_TEST_ENV` definitions use same values
 
 ### CI Architecture
 
@@ -321,14 +292,14 @@ TAG_CONTRACTS = {
 │  basic-tests    │  │  docker-tests   │  │  e2e-tests      │
 │  (no infra)     │  │  (Docker only)  │  │  (testcontainers│
 ├─────────────────┤  ├─────────────────┤  │   per-test)     │
-│ service:        │  │ setup:          │  ├─────────────────┤
-│   postgres:5432 │  │   (native)      │  │ setup:          │
-│                 │  │                 │  │   (none - tests  │
-│ bazel test      │  │ bazel test      │  │   manage own    │
-│   --test_tag_   │  │   --test_tag_   │  │   infra via     │
-│   filters=-e2e  │  │   filters=      │  │   testcontainers│
-│   -requires_    │  │   requires_     │  │                 │
-│   docker        │  │   docker        │  │ bazel test      │
+│                 │  │ setup:          │  ├─────────────────┤
+│ bazel test      │  │   (native)      │  │ setup:          │
+│   --test_tag_   │  │                 │  │   (none - tests  │
+│   filters=-e2e  │  │ bazel test      │  │   manage own    │
+│   -requires_    │  │   --test_tag_   │  │   infra via     │
+│   docker        │  │   filters=      │  │   testcontainers│
+│                 │  │   requires_     │  │                 │
+│                 │  │   docker        │  │ bazel test      │
 │                 │  │   -e2e          │  │   --test_tag_   │
 │                 │  │                 │  │   filters=e2e   │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
@@ -339,15 +310,6 @@ TAG_CONTRACTS = {
 #### Completed: Testcontainers Migration
 
 Props E2E tests have been migrated to testcontainers. Each test manages its own PostgreSQL, Docker registry, and other infrastructure via `props/testing/fixtures/e2e_infra.py`. No docker-compose or CI workflow setup is needed.
-
-#### Remaining: Tag Validation
-
-Add Bazel query to detect tag inconsistencies:
-
-```bash
-# Find all tests with requires_postgres
-bazel query 'attr(tags, "requires_postgres", //...)'
-```
 
 #### Remaining: Unified Compute-Targets
 
@@ -376,11 +338,7 @@ def validate():
 
 ## Open Questions
 
-1. **How to handle tests needing multiple infra (postgres + docker)?**
-   - Option A: Composite tags (`requires_postgres_and_docker`)
-   - Option B: Multiple tags, environment provides superset
-
-2. **Remote execution compatibility?**
+1. **Remote execution compatibility?**
    - Testcontainers work with RBE (Firecracker VMs have Docker)
    - Remaining compose-based tests won't work with remote execution
 

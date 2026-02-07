@@ -41,7 +41,6 @@ def make_critic_mock_zero_issues() -> DecoratorMock:
 
 
 @pytest.mark.requires_docker
-@pytest.mark.requires_postgres
 async def test_critic_zero_issues(e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database):
     """Test critic successfully submits zero issues."""
     mock = make_critic_mock_zero_issues()
@@ -86,7 +85,6 @@ def make_critic_mock_with_issues() -> DecoratorMock:
 
 
 @pytest.mark.requires_docker
-@pytest.mark.requires_postgres
 async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database):
     """Test critic submits an issue with occurrence."""
     mock = make_critic_mock_with_issues()
