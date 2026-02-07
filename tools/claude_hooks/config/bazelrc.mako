@@ -22,10 +22,11 @@ common --repo_env=GOSUMDB=sum.golang.org
 # only affect the Bazel host (repo rules); RBE workers are unaffected.
 common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
 common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
-# Claude Code web has system GCC but BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
-# in .bazelrc disables auto-detection.  Use a host platform that declares
-# the gcc constraint so the BuildBuddy CC toolchain resolves locally.
-build --host_platform=//:claude_code_web_linux_x64
+# Point host platform at the RBE platform so toolchain resolution for
+# exec-config tools (e.g. Rust linking needs CC) succeeds even though
+# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 disables local auto-detection.
+# This is the standard RBE pattern (bazelbuild/bazel#8636).
+build --host_platform=//:rbe_linux_x64
 # Avoid gVisor linux-sandbox (/dev/null issues in CC web).
 # remote,local: prefer remote execution (BuildBuddy RBE) when configured, fall
 # back to unsandboxed local execution.  Remote workers don't use gVisor.

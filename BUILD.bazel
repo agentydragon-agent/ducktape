@@ -156,19 +156,6 @@ platform(
     ],
 )
 
-# Local execution platform with GCC constraint, for environments where
-# system GCC is installed but BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1.
-# Activated via --host_platform=//:claude_code_web_linux_x64 in the
-# CC web session-start hook bazelrc.
-platform(
-    name = "claude_code_web_linux_x64",
-    constraint_values = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-        "@bazel_tools//tools/cpp:gcc",
-    ],
-)
-
 platform(
     name = "rbe_linux_x64",
     exec_properties = {
