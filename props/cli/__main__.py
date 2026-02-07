@@ -131,7 +131,7 @@ async def prompt_optimize(
         docker_client,
         db=db,
         db_config=db.config,
-        backend_url=config.agent_env["PROPS_BACKEND_URL"],
+        backend_url=config.backend_url,
         agent_base_env=config.agent_env,
         registry_config=get_registry_proxy_config(),
     )
@@ -340,7 +340,7 @@ async def prompt_improve_cmd(
         docker_client,
         db=db,
         db_config=db.config,
-        backend_url=config.agent_env["PROPS_BACKEND_URL"],
+        backend_url=config.backend_url,
         agent_base_env=config.agent_env,
         registry_config=get_registry_proxy_config(),
     )
@@ -416,7 +416,7 @@ async def cmd_run(
         docker_client,
         db=db,
         db_config=db.config,
-        backend_url=config.agent_env["PROPS_BACKEND_URL"],
+        backend_url=config.backend_url,
         agent_base_env=config.agent_env,
         registry_config=get_registry_proxy_config(),
     )

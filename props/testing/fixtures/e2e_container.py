@@ -191,7 +191,7 @@ async def _make_stack(
         agent_base_env = _build_agent_base_env(db.config)
 
         deps = BackendDeps(
-            config=PropsConfig(agent_env=agent_base_env),
+            config=PropsConfig(backend_url=backend_url, agent_env=agent_base_env),
             registry_proxy_config=registry_proxy_config,
             backend_url=backend_url,
         )

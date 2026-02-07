@@ -19,6 +19,8 @@ ENV_CONFIG_FILE = "PROPS_CONFIG_FILE"
 class PropsConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    backend_url: str
+    grader_model: str | None = None
     agent_env: dict[str, str]
 
 

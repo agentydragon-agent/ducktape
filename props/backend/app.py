@@ -43,7 +43,6 @@ configure_logging(
 )
 logger = logging.getLogger(__name__)
 
-ENV_GRADER_MODEL = "PROPS_GRADER_MODEL"
 ENV_CORS_ORIGINS = "PROPS_CORS_ORIGINS"
 
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
@@ -88,7 +87,7 @@ def _make_lifespan(deps: BackendDeps):
             logger.info(f"Daemon manager started (model: {deps.grader_model})")
         else:
             app.state.grader_supervisor = None
-            logger.info(f"Daemon manager disabled ({ENV_GRADER_MODEL} not set)")
+            logger.info("Daemon manager disabled (grader_model not set in config)")
 
         admin_token = base64.b64encode(f"{db_config.user}:{db_config.password}".encode()).decode()
         protocol = "https" if deps.port == 443 else "http"
@@ -154,8 +153,8 @@ def default_deps(host: str = "127.0.0.1", port: int = 8000) -> BackendDeps:
     return BackendDeps(
         config=config,
         registry_proxy_config=get_registry_proxy_config(),
-        backend_url=config.agent_env["PROPS_BACKEND_URL"],
-        grader_model=os.environ.get(ENV_GRADER_MODEL),
+        backend_url=config.backend_url,
+        grader_model=config.grader_model,
         host=host,
         port=port,
     )

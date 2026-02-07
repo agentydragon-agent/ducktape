@@ -79,7 +79,7 @@ Grader CLI and docs completed:
   - All commands accept `--run` to filter by critic run
   - Short UUID prefix resolution from pending edges
 - G.11: Backend auto-start via `DaemonManager` in `grader/daemon_manager.py`
-  - Lifespan starts daemons for all snapshots if `PROPS_GRADER_MODEL` is set
+  - Lifespan starts daemons for all snapshots if `grader_model` is set in config
   - Daemons sleep immediately if no drift
 - G.12: Context exhaustion restart in `DaemonManager._run_daemon_with_restart()`
   - Catches `TIMED_OUT` status and spawns fresh daemon

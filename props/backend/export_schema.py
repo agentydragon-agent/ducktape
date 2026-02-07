@@ -9,7 +9,7 @@ from props.core.oci_utils import RegistryProxyConfig
 if __name__ == "__main__":
     # Dummy deps — schema export only needs route definitions, not runtime config.
     deps = BackendDeps(
-        config=PropsConfig(agent_env={}),
+        config=PropsConfig(backend_url="http://localhost:0", agent_env={}),
         registry_proxy_config=RegistryProxyConfig(host="localhost", port=0),
         backend_url="http://localhost:0",
     )
