@@ -90,6 +90,7 @@ worktrees
 .vscode
 .claude/agents
 cluster/.git
+cluster/.claude/
 
 # Python build artifacts
 **/dist/
