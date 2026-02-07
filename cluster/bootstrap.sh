@@ -95,7 +95,7 @@ fi
 for layer in "00-persistent-auth" "01-infrastructure" "02-services"; do
   log "🔍 Validating terraform layer: ${layer}..."
   cd "${TERRAFORM_DIR}/${layer}"
-  if ! terraform validate; then
+  if ! tofu validate; then
     log "❌ FATAL: Terraform configuration is invalid in layer ${layer}"
     exit 1
   fi
@@ -110,14 +110,14 @@ if [ "$START_FROM_LAYER" != "infrastructure" ] && [ "$START_FROM_LAYER" != "serv
   cd "${TERRAFORM_DIR}/00-persistent-auth"
 
   # Check if persistent auth already exists
-  if [ -f "terraform.tfstate" ] && terraform show -json | jq -e '.values.root_module.resources | length > 0' >/dev/null 2>&1; then
+  if [ -f "terraform.tfstate" ] && tofu show -json | jq -e '.values.root_module.resources | length > 0' >/dev/null 2>&1; then
     log "ℹ️  Persistent auth layer already exists - skipping deployment"
-    echo "    Use 'cd terraform/00-persistent-auth && terraform destroy' to reset auth"
+    echo "    Use 'cd terraform/00-persistent-auth && tofu destroy' to reset auth"
   else
     log "🚀 Deploying persistent auth layer..."
     echo "     📋 CSI-TOKENS → SEALED-SECRETS-KEYPAIR → GIT-COMMIT"
 
-    if ! terraform apply -auto-approve; then
+    if ! tofu apply -auto-approve; then
       log "❌ FATAL: Persistent auth deployment failed"
       exit 1
     fi
@@ -136,7 +136,7 @@ if [ "$START_FROM_LAYER" != "services" ]; then
   log "🚀 Deploying infrastructure layer..."
   echo "     📋 PVE-AUTH → VMs → TALOS → CILIUM → SEALED-SECRETS"
 
-  if ! terraform apply -auto-approve; then
+  if ! tofu apply -auto-approve; then
     log "❌ FATAL: Infrastructure deployment failed"
     exit 1
   fi
@@ -170,7 +170,7 @@ cd "${TERRAFORM_DIR}/02-services"
 log "🚀 Deploying services layer..."
 echo "     📋 GITOPS → AUTHENTIK → POWERDNS → HARBOR → GITEA → MATRIX"
 
-if ! terraform apply -auto-approve; then
+if ! tofu apply -auto-approve; then
   log "❌ FATAL: Services deployment failed"
   exit 1
 fi

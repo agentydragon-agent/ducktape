@@ -194,11 +194,12 @@ repos:
         files: "^cluster/terraform/.*\\.tf$"
 
   # tofu validate - runs tofu init -backend=false + tofu validate per directory
-  # Wrapper handles init with retry logic; discovers tofu via PCT_TFPATH or PATH
+  # Uses OpenTofu (not HashiCorp Terraform) via --hook-config
   - repo: https://github.com/antonbabenko/pre-commit-terraform
     rev: v1.105.0
     hooks:
       - id: terraform_validate
+        args: ["--hook-config=--tf-path=tofu"]
         files: "^cluster/terraform/.*\\.tf$"
 
   # NOTE: The following hooks are combined into bazel-precommit:
