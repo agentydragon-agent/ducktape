@@ -33,12 +33,18 @@ load("@rules_python//python/uv:lock.bzl", "lock")
 # Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
 # so targets default to private. Public targets explicitly set visibility.
 
-# Set by the CC web session-start hook bazelrc (--define=auth_proxy=true).
-# Routes network-dependent build actions through the local TLS-inspecting
-# auth proxy so they can reach external registries (e.g., PyPI).
+# Knobs set by the CC web session-start hook bazelrc to route
+# network-dependent build actions through the local TLS-inspecting proxy.
+# --define=uv_https_proxy=<url> injects HTTPS_PROXY/HTTP_PROXY into lock().
+# --define=uv_ssl_cert_file=<path> injects SSL_CERT_FILE into lock().
 config_setting(
-    name = "has_auth_proxy",
-    define_values = {"auth_proxy": "true"},
+    name = "has_uv_proxy",
+    define_values = {"uv_https_proxy": "http://localhost:18081"},
+)
+
+config_setting(
+    name = "has_uv_ssl_cert",
+    define_values = {"uv_ssl_cert_file": "/etc/ssl/certs/ca-certificates.crt"},
 )
 
 # Link workspace npm packages
@@ -144,9 +150,13 @@ lock(
     out = "requirements_bazel.txt",
     args = ["--all-extras"],
     env = select({
-        ":has_auth_proxy": {
+        ":has_uv_proxy": {
             "HTTPS_PROXY": "http://localhost:18081",
             "HTTP_PROXY": "http://localhost:18081",
+        },
+        "//conditions:default": {},
+    }) | select({
+        ":has_uv_ssl_cert": {
             "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
         },
         "//conditions:default": {},
@@ -175,10 +185,10 @@ platform(
 
 # Local execution platform with GCC constraint, for environments where
 # system GCC is installed but BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1.
-# Activated via --extra_execution_platforms=//:cc_web_linux_x64 in the
+# Activated via --host_platform=//:claude_code_web_linux_x64 in the
 # CC web session-start hook bazelrc.
 platform(
-    name = "cc_web_linux_x64",
+    name = "claude_code_web_linux_x64",
     constraint_values = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",
