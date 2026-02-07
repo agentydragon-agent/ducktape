@@ -144,6 +144,8 @@ js_library(
 # IMPORTANT: This target requires direct network access to PyPI for dependency resolution.
 # no-remote: force local execution (RBE workers can't reach PyPI, and in CC web
 # the auth proxy is only available locally).
+# TODO: upstream exec_properties/exec_compatible_with on rules_python's _lock rule
+# so we can use dockerNetwork=bridge on RBE instead of forcing local execution.
 lock(
     name = "requirements",
     srcs = ["pyproject.toml"],
