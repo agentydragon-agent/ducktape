@@ -63,6 +63,9 @@ spec:
     synapse:
       strategy:
         type: Recreate
+      # Reloader: auto-restart pods when secrets change
+      annotations:
+        reloader.stakater.com/auto: "true"
 
     # Synapse configuration via extraConfig
     config:

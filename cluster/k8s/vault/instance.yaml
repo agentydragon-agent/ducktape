@@ -111,6 +111,10 @@ spec:
   # Service account
   serviceAccount: vault
 
+  # Reloader: auto-restart pods when secrets change
+  vaultAnnotations:
+    reloader.stakater.com/auto: "true"
+
   # Pod anti-affinity for HA - spread replicas across nodes
   affinity:
     podAntiAffinity:

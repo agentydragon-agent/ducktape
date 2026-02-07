@@ -92,6 +92,9 @@ spec:
 
     # Trust cluster CA bundle (includes Let's Encrypt staging CA)
     deployment:
+      # Reloader: auto-restart pods when secrets change
+      annotations:
+        reloader.stakater.com/auto: "true"
       env:
         - name: SSL_CERT_FILE
           value: /etc/ssl/certs/cluster-ca/ca-certificates.crt

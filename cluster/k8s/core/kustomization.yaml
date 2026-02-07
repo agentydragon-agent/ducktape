@@ -5,3 +5,4 @@ resources:
   - tofu-controller.yaml
   - coredns-custom.yaml
   - reloader.yaml
+  - kyverno.yaml

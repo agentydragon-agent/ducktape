@@ -1,0 +1,172 @@
+# Kyverno - Kubernetes Native Policy Management
+# Used to enforce GitOps-only deployments and other security policies
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: kyverno
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://kyverno.github.io/kyverno/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kyverno
+  namespace: flux-system
+spec:
+  targetNamespace: kyverno
+  interval: 15m
+  chart:
+    spec:
+      chart: kyverno
+      version: "3.3.4"
+      sourceRef:
+        kind: HelmRepository
+        name: kyverno
+        namespace: flux-system
+  values:
+    # Admission controller configuration
+    admissionController:
+      replicas: 1
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 128Mi
+
+    # Background controller for policy reports
+    backgroundController:
+      enabled: true
+      replicas: 1
+      resources:
+        limits:
+          cpu: 200m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+    # Cleanup controller
+    cleanupController:
+      enabled: true
+      replicas: 1
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+
+    # Reports controller
+    reportsController:
+      enabled: true
+      replicas: 1
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+        requests:
+          cpu: 10m
+          memory: 32Mi
+
+    # CRD installation
+    crds:
+      install: true
+
+    # Feature flags
+    features:
+      logging:
+        format: text
+      admissionReports:
+        enabled: true
+      policyReports:
+        enabled: true
+
+    # Webhook configuration
+    config:
+      # Exclude kyverno namespace from policies to prevent self-lockout
+      webhooks:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - kyverno
+---
+# ClusterPolicy: Require GitOps for workload resources
+# Blocks direct kubectl apply for Deployments/StatefulSets/DaemonSets
+# Only Flux controllers can create/modify these resources
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-gitops
+  annotations:
+    policies.kyverno.io/title: Require GitOps
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Deployment, StatefulSet, DaemonSet
+    policies.kyverno.io/description: >-
+      Enforces that workload resources (Deployments, StatefulSets, DaemonSets)
+      can only be created or modified by Flux GitOps controllers.
+      Direct kubectl apply/create/patch is blocked.
+spec:
+  # Start in Audit mode - change to Enforce after validation
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: block-direct-workload-changes
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+              operations:
+                - CREATE
+                - UPDATE
+      exclude:
+        any:
+          # Allow Flux kustomize-controller
+          - subjects:
+              - kind: ServiceAccount
+                name: kustomize-controller
+                namespace: flux-system
+          # Allow Flux helm-controller
+          - subjects:
+              - kind: ServiceAccount
+                name: helm-controller
+                namespace: flux-system
+          # Allow Flux source-controller (for CRD updates)
+          - subjects:
+              - kind: ServiceAccount
+                name: source-controller
+                namespace: flux-system
+          # Allow Kyverno itself (for admission webhooks)
+          - subjects:
+              - kind: ServiceAccount
+                name: kyverno-admission-controller
+                namespace: kyverno
+          # Allow system namespaces
+          - resources:
+              namespaces:
+                - kube-system
+                - kyverno
+                - flux-system
+      validate:
+        message: >-
+          Direct resource creation/modification blocked.
+          All changes must go through GitOps (commit to git repository).
+          Resource: {{request.object.kind}}/{{request.object.metadata.name}}
+          User: {{request.userInfo.username}}
+        deny: {}

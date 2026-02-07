@@ -44,6 +44,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Monitoring             | ✅     | Prometheus/Grafana/Loki            |
 | Proxmox CSI            | ✅     | Storage for home nodes             |
 | local-path-provisioner | ✅     | Storage for VPS nodes              |
+| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)   |
 
 ## Applications (already configured)
 
@@ -54,7 +55,8 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Matrix/Element| Chat              | ✅  |
 | Nix cache    | Binary cache       | -   |
 | BuildBuddy   | Remote build exec  | -   |
-| Test app     | Connectivity test  | -   |
+| Headscale    | Tailscale control  | -   |
+| Website      | Static placeholder | -   |
 
 ---
 
@@ -176,6 +178,259 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 9. [ ] Migrate Tailscale devices from ansible VPS headscale to cluster headscale
 10. [ ] Update `agentydragon.com` DNS to point to cluster
 11. [ ] Decommission ansible-managed VPS
+
+---
+
+## 🔧 Operational Hardening
+
+### ESO Password Generator Volatility Fix
+
+**Problem**: ESO Password generators regenerate on every `refreshInterval`. Applications that persist
+credentials (PostgreSQL, Authentik) don't auto-update, causing authentication failures after refresh.
+
+**Current Workaround**: `refreshInterval: 8760h` (1 year) - stops regeneration but prevents rotation.
+
+#### Phase 1: Reloader Adoption ✅ Complete
+
+Stakater Reloader auto-restarts pods when secrets change. All services now have
+`reloader.stakater.com/auto: "true"` annotation (PowerDNS, Grafana, Gitea, Matrix, Vault, Authentik, Nix-cache).
+
+After cluster is stable, can reduce `refreshInterval` to 24h-168h.
+
+**Note**: Reloader handles pod-level secret consumption. Does NOT fix init-time persistence
+(PostgreSQL passwords written to DB on first boot). Phase 2 addresses that.
+
+#### Phase 2: Migrate Password Generators to Vault SSOT
+
+Replace ESO Password generators with Vault KV sources. Terraform generates once → stores in Vault →
+ESO reads stable value.
+
+**ESO Password generators to migrate**:
+
+| File | Secret | Notes |
+|------|--------|-------|
+| `k8s/powerdns/externalsecret-api-key.yaml` | PowerDNS API key | Breaks cert-manager webhook |
+| `k8s/authentik/postgres-external-secret.yaml` | PostgreSQL password | Init-time persistence |
+| `k8s/authentik/admin-password-external-secret.yaml` | Admin password | |
+| `k8s/authentik/secret-key-external-secret.yaml` | Secret key | |
+| `k8s/authentik-blueprint/users/password-secret.yaml` | User password | |
+| `k8s/applications/gitea/secrets.yaml` | Admin password | |
+| `k8s/applications/matrix/secrets.yaml` | 3 secrets (signing, registration, macaroon) | |
+| `k8s/monitoring-stack/admin-password-external-secret.yaml` | Grafana admin | |
+
+**Implementation**:
+
+1. Create `terraform/gitops/secrets/` module with `random_password` resources
+2. Store in Vault KV at `kv/cluster/{service}/{secret}`
+3. Update ExternalSecrets to use `remoteRef` instead of `generatorRef`
+4. Remove Password generator resources
+
+See `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md` for detailed analysis.
+
+---
+
+### Kyverno GitOps Enforcement
+
+**Status**: ✅ Deployed (Audit mode)
+
+Kyverno deployed with `require-gitops` ClusterPolicy that blocks direct kubectl changes to
+Deployments/StatefulSets/DaemonSets. Only Flux controllers can modify these resources.
+
+**Location**: `k8s/core/kyverno.yaml`
+
+**Current mode**: `validationFailureAction: Audit` - logs violations but doesn't block.
+Change to `Enforce` after validation in live cluster.
+
+**Excluded from policy**:
+- Flux controllers (kustomize-controller, helm-controller, source-controller)
+- System namespaces (kube-system, kyverno, flux-system)
+- Kyverno admission controller itself
+
+---
+
+### TODO: Firewall Hardening
+
+**Problem**: All cluster ports exposed to 0.0.0.0/0 including K8s API, Talos API, etcd, kubelet.
+
+**Current state** (`terraform/01-infrastructure/main.tf` lines 128-221):
+
+```hcl
+# All rules have: source_ips = ["0.0.0.0/0", "::/0"]
+```
+
+**Recommended changes**:
+
+| Port | Service | Current | Should Be |
+|------|---------|---------|-----------|
+| 80, 443 | HTTP/HTTPS | 0.0.0.0/0 | ✅ Keep (public ingress) |
+| 53 | DNS | 0.0.0.0/0 | ✅ Keep (public DNS) |
+| 6443 | K8s API | 0.0.0.0/0 | Restrict to known IPs |
+| 50000-50001 | Talos API | 0.0.0.0/0 | Restrict to known IPs |
+| 51820 | KubeSpan | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+| 8472 | Cilium VXLAN | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+| 2379-2380 | etcd | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+| 10250 | kubelet | 0.0.0.0/0 | Restrict to VPS + Proxmox |
+
+**Implementation approach**:
+
+```hcl
+locals {
+  # Known admin IPs (update with your IPs)
+  admin_ips = ["YOUR_HOME_IP/32", "YOUR_MOBILE_IP/32"]
+
+  # Inter-node communication (VPS public IPs + Proxmox subnet via KubeSpan)
+  cluster_ips = concat(
+    [for s in hcloud_server.vps : "${s.ipv4_address}/32"],
+    ["10.2.0.0/16"]  # Proxmox subnet reachable via KubeSpan
+  )
+}
+
+# K8s API - admin only
+rule {
+  port       = "6443"
+  source_ips = local.admin_ips
+}
+
+# etcd - cluster internal only
+rule {
+  port       = "2379-2380"
+  source_ips = local.cluster_ips
+}
+```
+
+---
+
+### TODO: Terraform State Backup
+
+**Problem**: If `terraform/00-persistent-auth/terraform.tfstate` is lost, all SealedSecrets become
+undecryptable. This is the single source of truth for the sealed-secrets keypair.
+
+**Current state**: Local file only, no backup.
+
+**Options**:
+
+1. **rclone + Google Drive** (documented in Future Directions below)
+2. **Encrypted S3/GCS backend** - Terraform native, but exposes to cloud provider
+3. **git-crypt in separate repo** - Version controlled but complex
+4. **Manual backup script** - Simple, run after `terraform apply`
+
+**Minimum viable implementation**:
+
+```bash
+#!/bin/bash
+# scripts/backup-terraform-state.sh
+set -e
+BACKUP_DIR="$HOME/gdrive-backup/terraform-state"
+mkdir -p "$BACKUP_DIR"
+for state in terraform/*/terraform.tfstate; do
+  cp "$state" "$BACKUP_DIR/$(dirname $state | tr / -)-$(date +%Y%m%d).tfstate"
+done
+echo "Backed up to $BACKUP_DIR"
+```
+
+Add to post-apply hook or document as manual step.
+
+---
+
+### TODO: Flux Reconciliation Failure Alerts
+
+**Problem**: If Flux silently fails to reconcile, deployments drift from git without notification.
+
+**Current state**: No alerting configured.
+
+**Implementation**: Use Flux native alerting with ntfy.sh for push notifications to phone.
+
+**Architecture**:
+
+```text
+Flux Kustomization/HelmRelease fails
+        ↓
+Flux Alert (watches for errors)
+        ↓
+Flux Provider (ntfy webhook)
+        ↓
+ntfy.sh topic (secret URL)
+        ↓
+Phone notification
+```
+
+**Setup steps** (requires sealing key access):
+
+1. Generate an unguessable ntfy topic name:
+
+   ```bash
+   TOPIC="flux-ducktape-$(openssl rand -hex 8)"
+   echo "Topic: $TOPIC"
+   echo "Subscribe to: https://ntfy.sh/$TOPIC"
+   ```
+
+2. Create and seal the webhook secret:
+
+   ```bash
+   cd terraform/00-persistent-auth
+   kubectl create secret generic ntfy-webhook \
+     --namespace=flux-system \
+     --from-literal=address="https://ntfy.sh/$TOPIC" \
+     --dry-run=client -o yaml | \
+   kubeseal --cert <(terraform output -raw sealed_secrets_cert_pem) \
+     --format=yaml > ../../k8s/flux-system/ntfy-webhook-sealed.yaml
+   ```
+
+3. Create Provider and Alert resources (`k8s/flux-system/flux-alerts.yaml`):
+
+   ```yaml
+   apiVersion: notification.toolkit.fluxcd.io/v1beta3
+   kind: Provider
+   metadata:
+     name: ntfy
+     namespace: flux-system
+   spec:
+     type: generic
+     secretRef:
+       name: ntfy-webhook
+   ---
+   apiVersion: notification.toolkit.fluxcd.io/v1beta3
+   kind: Alert
+   metadata:
+     name: on-call
+     namespace: flux-system
+   spec:
+     providerRef:
+       name: ntfy
+     eventSeverity: error
+     eventSources:
+       - kind: Kustomization
+         name: '*'
+       - kind: HelmRelease
+         name: '*'
+       - kind: GitRepository
+         name: '*'
+   ```
+
+4. Add to `k8s/flux-system/kustomization.yaml`
+
+5. Install ntfy app on phone, subscribe to the topic
+
+**Optional enhancement**: Also add PrometheusRule for Grafana dashboards:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: flux-alerts
+  namespace: monitoring
+spec:
+  groups:
+    - name: flux
+      rules:
+        - alert: FluxReconciliationFailure
+          expr: gotk_reconcile_condition{status="False",type="Ready"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Flux resource {{ $labels.kind }}/{{ $labels.name }} failed to reconcile"
+```
 
 ---
 

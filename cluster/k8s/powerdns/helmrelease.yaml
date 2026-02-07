@@ -43,6 +43,10 @@ spec:
     # Run 2 replicas for HA (one per VPS node)
     replicaCount: 2
 
+    # Reloader: auto-restart pods when secrets change
+    podAnnotations:
+      reloader.stakater.com/auto: "true"
+
     # Spread across different VPS nodes
     affinity:
       podAntiAffinity:
