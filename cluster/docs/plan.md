@@ -1,6 +1,6 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-06
+**Last Updated**: 2026-02-07
 
 ## 🎯 Target Architecture
 
@@ -234,19 +234,16 @@ See `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md` for detailed analysis.
 
 **Status**: ✅ Deployed (Audit mode)
 
-Kyverno deployed with `require-gitops` ClusterPolicy that blocks direct kubectl changes to
-Deployments/StatefulSets/DaemonSets. Only Flux controllers can modify these resources.
+Kyverno deployed with `require-gitops` ClusterPolicy. Separated into own kustomization with
+ValidatingWebhookConfiguration health check to ensure webhook is operational before other
+workloads deploy.
 
-**Location**: `k8s/core/kyverno.yaml`
+**Location**: `k8s/kyverno/` (separate from core)
+
+**Dependency chain**: cert-manager → kyverno → core/metallb/metrics-server → everything else
 
 **Current mode**: `validationFailureAction: Audit` - logs violations but doesn't block.
 Change to `Enforce` after validation in live cluster.
-
-**Excluded from policy**:
-
-- Flux controllers (kustomize-controller, helm-controller, source-controller)
-- System namespaces (kube-system, kyverno, flux-system)
-- Kyverno admission controller itself
 
 ---
 
@@ -368,105 +365,13 @@ Add to post-apply hook or document as manual step.
 
 ---
 
-### TODO: Flux Reconciliation Failure Alerts
+### Flux Reconciliation Failure Alerts
 
-**Problem**: If Flux silently fails to reconcile, deployments drift from git without notification.
+**Status**: ✅ Configured
 
-**Current state**: No alerting configured.
+Flux alerts via ntfy.sh are configured in `k8s/flux-system/flux-alerts.yaml` and `ntfy-webhook-sealed.yaml`.
 
-**Implementation**: Use Flux native alerting with ntfy.sh for push notifications to phone.
-
-**Architecture**:
-
-```text
-Flux Kustomization/HelmRelease fails
-        ↓
-Flux Alert (watches for errors)
-        ↓
-Flux Provider (ntfy webhook)
-        ↓
-ntfy.sh topic (secret URL)
-        ↓
-Phone notification
-```
-
-**Setup steps** (requires sealing key access):
-
-1. Generate an unguessable ntfy topic name:
-
-   ```bash
-   TOPIC="flux-ducktape-$(openssl rand -hex 8)"
-   echo "Topic: $TOPIC"
-   echo "Subscribe to: https://ntfy.sh/$TOPIC"
-   ```
-
-2. Create and seal the webhook secret:
-
-   ```bash
-   cd terraform/00-persistent-auth
-   kubectl create secret generic ntfy-webhook \
-     --namespace=flux-system \
-     --from-literal=address="https://ntfy.sh/$TOPIC" \
-     --dry-run=client -o yaml | \
-   kubeseal --cert <(terraform output -raw sealed_secrets_cert_pem) \
-     --format=yaml > ../../k8s/flux-system/ntfy-webhook-sealed.yaml
-   ```
-
-3. Create Provider and Alert resources (`k8s/flux-system/flux-alerts.yaml`):
-
-   ```yaml
-   apiVersion: notification.toolkit.fluxcd.io/v1beta3
-   kind: Provider
-   metadata:
-     name: ntfy
-     namespace: flux-system
-   spec:
-     type: generic
-     secretRef:
-       name: ntfy-webhook
-   ---
-   apiVersion: notification.toolkit.fluxcd.io/v1beta3
-   kind: Alert
-   metadata:
-     name: on-call
-     namespace: flux-system
-   spec:
-     providerRef:
-       name: ntfy
-     eventSeverity: error
-     eventSources:
-       - kind: Kustomization
-         name: "*"
-       - kind: HelmRelease
-         name: "*"
-       - kind: GitRepository
-         name: "*"
-   ```
-
-4. Add to `k8s/flux-system/kustomization.yaml`
-
-5. Install ntfy app on phone, subscribe to the topic
-
-**Optional enhancement**: Also add PrometheusRule for Grafana dashboards:
-
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PrometheusRule
-metadata:
-  name: flux-alerts
-  namespace: monitoring
-spec:
-  groups:
-    - name: flux
-      rules:
-        - alert: FluxReconciliationFailure
-          expr: gotk_reconcile_condition{status="False",type="Ready"} == 1
-          for: 15m
-          labels:
-            severity: warning
-          annotations:
-            summary: "Flux resource {{ $labels.kind }}/{{ $labels.name }} failed to reconcile"
-```
+**TODO**: Add PrometheusRule for Grafana dashboards (optional enhancement).
 
 ---
 
@@ -709,31 +614,6 @@ See **DNS Architecture** section below for details.
 - Single PostgreSQL pod on VPS with Hetzner volume
 - Multiple databases: `vault`, `authentik`, etc.
 - Secrets persist across cluster destroy/recreate
-
----
-
-## ✅ Recent Accomplishments
-
-### 2026-02-06: Go-Live Preparation
-
-- Registered `allegedly.works` test domain
-- Configured ingress-nginx for hostNetwork mode on VPS nodes
-- Configured PowerDNS for hostNetwork mode on VPS nodes
-- Updated external-dns with dual VPS IP targets
-- Created manifests for headscale, website, atlas-proxy
-
-### 2026-01-03: Hybrid Infrastructure Foundation
-
-- Migrated from Proxmox-only to hybrid Hetzner+Proxmox architecture
-- Deployed 2x CPX31 VPS nodes with Talos
-- Implemented Cilium VXLAN tunnel mode for cloud networking
-- Added VXLAN firewall rule (UDP 8472)
-
-### Previous Milestones
-
-- Observability: Prometheus, Loki, Grafana with SSO
-- DNS: PowerDNS with AXFR to VPS
-- Certificates: cert-manager with DNS-01
 
 ---
 
