@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: core
+    - name: kyverno # Policies require Kyverno CRDs to be installed
   interval: 5m
   path: ./cluster/k8s/kyverno-policies
   prune: true

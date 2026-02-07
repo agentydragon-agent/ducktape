@@ -3,6 +3,7 @@ kind: Kustomization
 # TODO LATER: Evaluate and implement layered approach once stable core components are identified
 resources:
   - flux-system/gotk-sync.yaml
+  - kyverno/flux-kustomization.yaml
   - core/flux-kustomization.yaml
   - kyverno-policies/flux-kustomization.yaml
   - storage/flux-kustomization.yaml
