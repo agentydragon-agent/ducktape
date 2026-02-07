@@ -1,38 +1,195 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-01-17
+**Last Updated**: 2026-02-06
 
-## 🎯 Current Status
+## 🎯 Target Architecture
 
-**Hybrid Hetzner VPS + Proxmox** architecture operational:
+The cluster will run entirely on Talos:
 
-- ✅ 2x Hetzner CPX31 VPS nodes (Hillsboro, OR) - control-plane
-- ✅ 2x Proxmox nodes (atlas) - 1 control-plane + 1 worker
-- ✅ Cilium CNI with VXLAN tunnel mode
-- ✅ KubeSpan mesh (WireGuard) connecting VPS ↔ home
-- ✅ Hetzner Cloud CSI + Proxmox CSI + local-path-provisioner
-- ✅ Flux, Vault, Authentik, cert-manager deployed
-- ⚠️ `talos-vps-cp-1` currently NotReady (needs investigation)
+- **2x Hetzner VPS** - Control plane nodes with public IPs
+- **1+ Proxmox VMs** - Control plane + workers on home server (atlas)
 
-**Current Nodes**:
+No separate ansible-managed VPS. Everything currently on the VPS must move into the cluster.
 
-| Node               | Location | Role          | IP                      |
-| ------------------ | -------- | ------------- | ----------------------- |
-| talos-vps-cp-0     | Hetzner  | control-plane | 5.78.43.147             |
-| talos-vps-cp-1     | Hetzner  | control-plane | 5.78.106.249 (NotReady) |
-| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1                |
-| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1                |
+**End state**: Cluster handles everything on `allegedly.works` (test) then `agentydragon.com` (production).
 
-**Pending**:
+## Domain Strategy
 
-- [ ] Fix talos-vps-cp-1 NotReady state
-- [ ] Complete DNS stack migration (see DNS Architecture below)
+| Domain              | Purpose                    | Status                    |
+| ------------------- | -------------------------- | ------------------------- |
+| `allegedly.works`   | Test/staging cluster       | Registered, pending setup |
+| `agentydragon.com`  | Production (future cutover)| On ansible VPS            |
+
+## Current Nodes
+
+| Node               | Location | Role          | IP           |
+| ------------------ | -------- | ------------- | ------------ |
+| talos-vps-cp-0     | Hetzner  | control-plane | (new on boot)|
+| talos-vps-cp-1     | Hetzner  | control-plane | (new on boot)|
+| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1     |
+| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1     |
+
+## Core Services (already configured)
+
+| Component              | Status | Notes                              |
+| ---------------------- | ------ | ---------------------------------- |
+| Flux CD                | ✅     | GitOps                             |
+| MetalLB                | ✅     | VIP 10.2.3.2 for ingress           |
+| ingress-nginx          | ✅     | hostNetwork on VPS nodes           |
+| cert-manager           | ✅     | DNS-01 via PowerDNS                |
+| PowerDNS               | ✅     | hostNetwork on VPS nodes           |
+| Vault                  | ✅     | With OIDC auth                     |
+| Authentik              | ✅     | SSO provider                       |
+| External Secrets       | ✅     | Vault integration                  |
+| Monitoring             | ✅     | Prometheus/Grafana/Loki            |
+| Proxmox CSI            | ✅     | Storage for home nodes             |
+| local-path-provisioner | ✅     | Storage for VPS nodes              |
+
+## Applications (already configured)
+
+| App          | Purpose            | SSO |
+| ------------ | ------------------ | --- |
+| Harbor       | Container registry | ✅  |
+| Gitea        | Git hosting        | ✅  |
+| Matrix/Element| Chat              | ✅  |
+| Nix cache    | Binary cache       | -   |
+| BuildBuddy   | Remote build exec  | -   |
+| Test app     | Connectivity test  | -   |
 
 ---
 
-## 🔀 Possible Directions
+## 🚨 Minimal Requirements for Go-Live
 
-### Branch A: Terraform State Backup (rclone + Google Drive)
+### Public Traffic Routing
+
+| Status | ✅ Configured (hostNetwork) |
+| ------ | --------------------------- |
+
+ingress-nginx and PowerDNS run with `hostNetwork: true`, binding directly to VPS node IPs.
+
+**Traffic flow**:
+```
+Internet → VPS public IP:443 → ingress-nginx pod (hostNetwork) → backend services
+Internet → VPS public IP:53  → PowerDNS pod (hostNetwork) → DNS responses
+```
+
+**Failover via DNS**: DNS returns two A records (both VPS IPs). Modern browsers handle failover automatically.
+
+### Website Hosting
+
+| Status | ✅ Manifests created |
+| ------ | -------------------- |
+
+- [ ] Personal website accessible (test domain first, then `agentydragon.com`)
+- **Current state**: Hakyll-built site, rsync to ansible VPS, served by nginx
+- **Initial implementation**: Simple nginx + static HTML placeholder
+- **Location**: `k8s/applications/website/`
+
+### Atlas Proxmox Access
+
+| Status | ✅ Via Headscale mesh |
+| ------ | --------------------- |
+
+- [ ] Atlas joins headscale mesh
+- Access via tailscale IP: `ssh root@100.64.x.x` or `https://100.64.x.x:8006`
+- No public ingress needed - internal mesh access only
+
+**Dependency**: Requires headscale running first. Once atlas joins the mesh, it's accessible from any device in the tailnet.
+
+**Deferred**: Public DNS access (`atlas.allegedly.works`) is optional - would require proxy pod on Proxmox worker or tailscale on VPS nodes. Not needed for go-live.
+
+### Headscale Server
+
+| Status | ✅ Manifests created |
+| ------ | -------------------- |
+
+- [ ] Headscale server running as cluster workload
+- [ ] Stable public endpoint for Tailscale clients
+- [ ] Persistent storage for database (SQLite on PVC)
+- **Location**: `k8s/applications/headscale/`
+
+**Architecture**: Headscale exposed via public ingress on VPS nodes. Non-cluster devices (laptops, phones, atlas) connect via public DNS.
+
+### kubectl Access
+
+| Status | ✅ Configured |
+| ------ | ------------- |
+
+- [x] Working kubectl access to the cluster
+- Via KUBECONFIG from terraform output
+- direnv auto-exports when in cluster directory
+
+---
+
+## ⚠️ Remaining Work
+
+**New application manifests** (`headscale`, `website`) are configured for `allegedly.works`.
+
+**Global domain switchover**: The rest of the cluster still uses `test-cluster.agentydragon.com`. Full switchover requires updating all existing manifests - defer until cluster bootstrap with new VPS IPs.
+
+**Deferred**: `k8s/applications/atlas-proxy/` - not needed for go-live, atlas access via headscale mesh instead.
+
+---
+
+## 📋 Domain Switchover: allegedly.works
+
+### Registrar DNS Configuration
+
+At registrar (where `allegedly.works` is registered), set:
+
+| Record Type | Name                    | Value                          |
+| ----------- | ----------------------- | ------------------------------ |
+| NS          | allegedly.works         | ns1.allegedly.works            |
+| NS          | allegedly.works         | ns2.allegedly.works            |
+| A (glue)    | ns1.allegedly.works     | `<VPS-0 IP after boot>`        |
+| A (glue)    | ns2.allegedly.works     | `<VPS-1 IP after boot>`        |
+
+### Cluster Configuration Updates
+
+After cluster boots and VPS IPs are known:
+
+1. Update `k8s/powerdns-zones/nameserver-glue-records.yaml` with new IPs
+2. Update `k8s/external-dns/deployment.yaml` `--default-targets` with new IPs
+3. Create zone for `allegedly.works` in PowerDNS
+
+### Files Requiring Domain Update
+
+Replace `test-cluster.agentydragon.com` with `allegedly.works` in:
+
+- `k8s/*/ingress.yaml` - All ingress hostnames
+- `k8s/*/helmrelease.yaml` - Helm values with domain references
+- `terraform/03-configuration/` - SSO provider URLs
+- `docs/*.md` - Documentation references
+
+---
+
+## 📋 Migration Path
+
+### Phase 1: Cluster Bootstrap
+
+1. [ ] Boot fresh cluster (new VPS IPs assigned)
+2. [ ] Update configs with new VPS IPs
+3. [ ] Configure registrar DNS for allegedly.works
+4. [ ] Verify DNS resolution and ingress work
+
+### Phase 2: Deploy Missing Services
+
+5. [ ] Deploy headscale, test with a device
+6. [ ] Deploy website, verify accessible
+7. [ ] Configure atlas proxy (update IP)
+8. [ ] Test all services on allegedly.works
+
+### Phase 3: Production Cutover
+
+9. [ ] Migrate Tailscale devices from ansible VPS headscale to cluster headscale
+10. [ ] Update `agentydragon.com` DNS to point to cluster
+11. [ ] Decommission ansible-managed VPS
+
+---
+
+## 🔀 Future Directions
+
+### Terraform State Backup (rclone + Google Drive)
 
 Protect terraform state with encrypted cloud backup.
 
@@ -46,7 +203,7 @@ Protect terraform state with encrypted cloud backup.
 
 **Scope**: `terraform/*/terraform.tfstate` files (contain all secrets)
 
-### Branch B: GPU Workloads (Ollama + Auth Proxy)
+### GPU Workloads (Ollama + Auth Proxy)
 
 Move GPU from standalone VM (wyrm) to k8s cluster for LLM inference.
 
@@ -95,7 +252,7 @@ Move GPU from standalone VM (wyrm) to k8s cluster for LLM inference.
 - Ingress/TLS handled by existing infrastructure
 - API key rotation via Vault/ESO
 
-### Branch C: BuildBuddy Remote Executor
+### BuildBuddy Remote Executor
 
 Remote build execution via BuildBuddy Cloud.
 
@@ -111,7 +268,7 @@ Remote build execution via BuildBuddy Cloud.
 
 **Location**: `k8s/applications/buildbuddy-executor/`
 
-### Branch D: DNS Stack Migration
+### Shared PostgreSQL / MariaDB Galera
 
 Migrate from current single-instance MariaDB to replicated Galera cluster.
 
@@ -143,24 +300,7 @@ See **DNS Architecture** section below for details.
 
 ---
 
-## 📋 Service Deployment (Once Storage Available)
-
-### Core Infrastructure
-
-- [ ] Flux CD with Sealed Secrets
-- [ ] Vault with Raft HA (requires persistent storage)
-- [ ] External Secrets Operator
-- [ ] Authentik (identity provider)
-
-### Platform Services
-
-- [ ] Harbor (container registry, pull-through cache)
-- [ ] Gitea (git hosting)
-- [ ] Grafana + Prometheus + Loki (observability)
-- [ ] Matrix/Synapse (chat)
-- [ ] Nix Cache (Harmonia)
-
-### Future Services (Lower Priority)
+## 📋 Future Services (Lower Priority)
 
 - [ ] Jellyfin (media streaming)
 - [ ] \*arr stack (media automation)
@@ -291,23 +431,23 @@ See **DNS Architecture** section below for details.
 
 ## ✅ Recent Accomplishments
 
-- Removed obsolete components:
-  - `terraform/hetzner-image/` layer (no longer needed)
-  - `scripts/create-hetzner-talos-image.sh`
-  - `hcloud-upload-image` tool from shell.nix
-- ISO boots → reads user_data → auto-installs to disk → reboots
+### 2026-02-06: Go-Live Preparation
+
+- Registered `allegedly.works` test domain
+- Configured ingress-nginx for hostNetwork mode on VPS nodes
+- Configured PowerDNS for hostNetwork mode on VPS nodes
+- Updated external-dns with dual VPS IP targets
+- Created manifests for headscale, website, atlas-proxy
 
 ### 2026-01-03: Hybrid Infrastructure Foundation
 
 - Migrated from Proxmox-only to hybrid Hetzner+Proxmox architecture
 - Deployed 2x CPX31 VPS nodes with Talos
 - Implemented Cilium VXLAN tunnel mode for cloud networking
-- Fixed regenerate-attic-jwt.sh to use terraform state (not libsecret)
 - Added VXLAN firewall rule (UDP 8472)
 
-### Previous Milestones (Proxmox-only era)
+### Previous Milestones
 
-- 5-node Talos cluster (3 controllers, 2 workers)
 - Observability: Prometheus, Loki, Grafana with SSO
 - DNS: PowerDNS with AXFR to VPS
 - Certificates: cert-manager with DNS-01
@@ -316,24 +456,16 @@ See **DNS Architecture** section below for details.
 
 ## 🔗 Related Documentation
 
-- **VPS Integration Design**: `docs/vps_cluster_integration.md`
 - **Bootstrap Procedures**: `docs/bootstrap.md`
 - **Troubleshooting**: `docs/troubleshooting.md`
 - **Secret Sync Analysis**: `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md`
 
 ---
 
-## 📊 Current Metrics
+## 📊 Cluster Specifications
 
-**VPS Cluster** (2026-01-03):
-
-- Nodes: 2 (both Ready, control-plane)
-- Talos: v1.9.5
-- Kubernetes: v1.32.0
-- CNI: Cilium 1.16.x (VXLAN)
-- Location: Hillsboro, OR (hil)
-
-**Monthly Cost** (VPS only):
-
-- 2x CPX31: ~€30/month total
-- Backups enabled: +20%
+- **Nodes**: 4 (2 VPS control-plane, 1 Proxmox control-plane, 1 Proxmox worker)
+- **Talos**: v1.9.5
+- **Kubernetes**: v1.32.0
+- **CNI**: Cilium (VXLAN tunnel mode)
+- **Monthly Cost**: ~€30 (2x CPX31 + backups)

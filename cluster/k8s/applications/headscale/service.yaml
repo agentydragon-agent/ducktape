@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: headscale
+  namespace: headscale
+spec:
+  selector:
+    app: headscale
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: 50443
+      targetPort: 50443
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  type: ClusterIP
+---
+# Separate service for STUN (UDP) - exposed via NodePort for direct access
+# DERP/STUN needs UDP connectivity for NAT traversal
+apiVersion: v1
+kind: Service
+metadata:
+  name: headscale-stun
+  namespace: headscale
+spec:
+  selector:
+    app: headscale
+  ports:
+    - name: stun
+      port: 3478
+      targetPort: 3478
+      protocol: UDP
+      nodePort: 30478
+  type: NodePort

@@ -6,3 +6,6 @@ resources:
   - matrix
   - test-app
   - firecrawl
+  - headscale
+  - website
+  - atlas-proxy

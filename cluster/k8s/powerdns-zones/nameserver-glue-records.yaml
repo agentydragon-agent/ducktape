@@ -2,6 +2,10 @@
 # Glue records for nameservers - required for DNS-01 ACME challenges
 # Without these A records, cert-manager cannot resolve ns1/ns2.test-cluster.agentydragon.com
 # when verifying DNS challenges, causing all certificate issuance to fail
+#
+# Now using Hetzner VPS public IPs (PowerDNS runs directly on VPS nodes via hostNetwork):
+# - talos-vps-cp-0: 5.78.43.147
+# - talos-vps-cp-1: 5.78.106.249
 apiVersion: dns.cav.enablers.ob/v1alpha2
 kind: ClusterRRset
 metadata:
@@ -14,7 +18,7 @@ spec:
   type: A
   ttl: 3600
   records:
-    - "172.235.48.86" # VPS public IP (ns1.agentydragon.com)
+    - "5.78.43.147" # Hetzner VPS talos-vps-cp-0
 ---
 apiVersion: dns.cav.enablers.ob/v1alpha2
 kind: ClusterRRset
@@ -28,4 +32,4 @@ spec:
   type: A
   ttl: 3600
   records:
-    - "172.235.48.86" # VPS public IP (ns1.agentydragon.com, same server)
+    - "5.78.106.249" # Hetzner VPS talos-vps-cp-1

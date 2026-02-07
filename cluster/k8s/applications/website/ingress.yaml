@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: website
+  namespace: website
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # For test domain initially - update to agentydragon.com for production cutover
+    external-dns.alpha.kubernetes.io/hostname: www.allegedly.works
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - www.allegedly.works
+        - allegedly.works
+      secretName: website-tls
+  rules:
+    - host: www.allegedly.works
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: website
+                port:
+                  number: 80
+    - host: allegedly.works
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: website
+                port:
+                  number: 80

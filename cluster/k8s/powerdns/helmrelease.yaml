@@ -22,13 +22,41 @@ spec:
       tag: "4.9"
       pullPolicy: IfNotPresent
 
-    # Service configuration with MetalLB
+    # hostNetwork mode: bind directly to VPS public IPs on port 53
+    # This allows serving public DNS traffic without MetalLB
+    hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
+
+    # Only run on Hetzner VPS nodes (which have public IPs)
+    nodeSelector:
+      topology.kubernetes.io/region: hetzner
+
+    # Allow running on control-plane nodes (VPS nodes are control-plane)
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "node-role.kubernetes.io/master"
+        operator: "Exists"
+        effect: "NoSchedule"
+
+    # Run 2 replicas for HA (one per VPS node)
+    replicaCount: 2
+
+    # Spread across different VPS nodes
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: powerdns
+            topologyKey: kubernetes.io/hostname
+
+    # Service configuration - ClusterIP for internal access
     service:
       dns:
-        type: LoadBalancer
-        annotations:
-          metallb.universe.tf/address-pool: dns-pool
-          metallb.universe.tf/loadBalancerIPs: 10.2.3.3
+        type: ClusterIP
+        # No MetalLB needed - using hostNetwork
 
     # PowerDNS configuration
     powerdns:

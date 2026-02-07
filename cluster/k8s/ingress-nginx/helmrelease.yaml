@@ -19,15 +19,19 @@ spec:
       # Enable snippet annotations for Authentik forward auth X-Forwarded-Host header
       allowSnippetAnnotations: true
 
-      # Use NodePort to expose on node interfaces (now that Cilium kube-proxy replacement is enabled)
-      hostNetwork: false
-      hostPort:
-        enabled: false
+      # hostNetwork mode: bind directly to VPS public IPs on ports 80/443
+      # This allows serving public traffic without MetalLB (which only works on home network)
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
 
-      # Use Deployment instead of DaemonSet for NodePort
-      kind: Deployment
+      # Use DaemonSet to run exactly one pod per selected node
+      kind: DaemonSet
 
-      # Allow running on all nodes for better HA with VIP
+      # Only run on Hetzner VPS nodes (which have public IPs)
+      nodeSelector:
+        topology.kubernetes.io/region: hetzner
+
+      # Allow running on control-plane nodes (VPS nodes are control-plane)
       tolerations:
         - key: "node-role.kubernetes.io/control-plane"
           operator: "Exists"
@@ -36,31 +40,13 @@ spec:
           operator: "Exists"
           effect: "NoSchedule"
 
-      # Spread pods across different nodes for HA
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app.kubernetes.io/name: ingress-nginx
-                    app.kubernetes.io/component: controller
-                topologyKey: kubernetes.io/hostname
-
-      # Service configuration - LoadBalancer with MetalLB
+      # Service configuration - ClusterIP since we're using hostNetwork
+      # The service is mainly for internal cluster access and health checks
       service:
-        type: LoadBalancer
-        loadBalancerIP: 10.2.3.2 # Dedicated ingress VIP
-        annotations:
-          metallb.universe.tf/address-pool: ingress-pool
+        type: ClusterIP
         ports:
           http: 80
           https: 443
-        # Keep NodePort as backup/fallback
-        # nodePorts:
-        #   http: 30080
-        #   https: 30443
 
       # Ingress class configuration
       ingressClassResource:
@@ -84,9 +70,7 @@ spec:
           cpu: 100m
           memory: 256Mi
 
-      # HA replicas on worker nodes
-      replicaCount: 2
-
+      # DaemonSet doesn't use replicaCount - one pod per matched node
       # Pod disruption budget for HA
       podDisruptionBudget:
         enabled: true

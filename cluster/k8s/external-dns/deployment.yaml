@@ -28,7 +28,9 @@ spec:
             - --txt-owner-id=external-dns
             - --log-level=debug
             - --interval=30s
-            - --default-targets=172.235.48.86
+            # Both Hetzner VPS IPs for DNS failover (ingress runs on both via hostNetwork)
+            - --default-targets=5.78.43.147
+            - --default-targets=5.78.106.249
           env:
             - name: PDNS_API_KEY
               valueFrom:
