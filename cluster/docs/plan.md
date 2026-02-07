@@ -351,6 +351,23 @@ Add to post-apply hook or document as manual step.
 
 ---
 
+### TODO: GitHub Webhook for Instant Reconciliation
+
+**Problem**: Flux polls git repository on interval (default 1m). Changes aren't applied instantly.
+
+**Solution**: Configure GitHub webhook to notify Flux receiver, triggering immediate reconciliation on push.
+
+**Implementation**:
+
+1. Create Flux `Receiver` resource (webhook endpoint)
+2. Create sealed secret with webhook token
+3. Configure GitHub repo webhook to POST to receiver URL
+4. Receiver triggers GitRepository reconciliation
+
+**Reference**: <https://fluxcd.io/flux/guides/webhook-receivers/>
+
+---
+
 ### TODO: Flux Reconciliation Failure Alerts
 
 **Problem**: If Flux silently fails to reconcile, deployments drift from git without notification.

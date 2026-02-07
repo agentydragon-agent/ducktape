@@ -48,9 +48,10 @@ data:
       update_frequency: 24h
 
     # DNS configuration
+    # base_domain must NOT overlap with server_url hostname
     dns:
       magic_dns: true
-      base_domain: allegedly.works
+      base_domain: tailnet.allegedly.works
       nameservers:
         global:
           - 1.1.1.1
