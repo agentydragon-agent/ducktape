@@ -10,5 +10,11 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  wait: true
+  # Health check ensures monitoring namespace exists before dependents deploy
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: monitoring
   dependsOn:
     - name: storage

@@ -12,6 +12,12 @@ spec:
   path: "./cluster/k8s/external-dns"
   prune: true
   wait: true
+  # Health check ensures ExternalDNS is ready to manage records
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: external-dns
+      namespace: external-dns
   dependsOn:
     - name: reflector
       namespace: flux-system
