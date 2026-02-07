@@ -92,13 +92,6 @@ spec:
       policyReports:
         enabled: true
 
-    # Webhook configuration
+    # Exclude system namespaces from policy enforcement
     config:
-      # Exclude kyverno namespace from policies to prevent self-lockout
-      webhooks:
-        - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: NotIn
-                values:
-                  - kyverno
+      excludeKyvernoNamespace: true
