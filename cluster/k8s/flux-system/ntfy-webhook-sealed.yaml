@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: ntfy-webhook
+  namespace: flux-system
+spec:
+  encryptedData:
+    address: AgAP3YiCgjuc+ojLlZDiKQHM7pnMUrdWChNfE0q/rvMZxf/XVXCdhbayqunJu0mSPrhrUncTAZl0FwxpkyzYVpiYtody13C8LQUsfMpp/btvIq4m6RrbuwLiLc5kva0jXVHieRQjlknqVerQf6D2iQbn6wAuTCdbuS6QocVb4EpTFDq68HoeoKJihLGRdEpjRjDK62LHKHV25uDJe0MdcsxT1JtjHmvYBia21S9sORIsWkwj8Uyxp27JlW0d3xBNf4Jqg1ZeXqnEl6fMs95C1XohO7tvcQb65+iOn02rzQ9T/v4otV871+MdGlaXXZy/l89pN3PxlV7Es+gsmnMHKvM1E1hGli1mp2YmwiPtjYDuDIiDzFUfhcG1RcpWY0mqdmwtzThKWvTENqBCQiySl0jbs4CigxpXpaKo0CBXYru5Lx1788tzBz9x6dDa5IynisV3X7H/6pph51rdAB/FMlpdKirvgkljhslgJeKyk/NY5iC/g1PJH8Q7HYPRhj78E4Y1tRiQEz5JB/NF/wyqdlFhmPVhJLJle++1y8jDtXJIqQqddVeStjJxLiG1vljJUPoLKPJNbOS2iA32oKK/gCniMswE9VzilxSA9LeaqVOyrJgsPDFQ2dtRtj34zYsqC0ryT7Oo9mo87mzU2zfQk/X7X7S8MYe1PsB5ZhcEbFuToAJeZmh5fMvZ4FSYhciYszoQLrBZ9Y1vrwHnVFB8GJ7Dpu2gH+j77temjdICqXfe5xM97FAJt9JAkBjPGxjS9TXPRgeQIbfw6SochrMj
+  template:
+    metadata:
+      name: ntfy-webhook
+      namespace: flux-system
