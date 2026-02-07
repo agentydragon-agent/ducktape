@@ -11,29 +11,42 @@ Maximize validation recall. Your target metric mode is printed in init output.
 - **VALID:** Metrics only (via `recall_by_definition_split_kind` view)
 - **TEST:** Off-limits
 
-## Constraints
+## Budget
 
-- **Budget:** Query database cost views to understand run costs. Analyze before running.
+You have a USD budget enforced by the LLM proxy. When your budget is exhausted, the proxy will stop answering LLM requests. Query your remaining budget:
+
+```sql
+SELECT budget_usd FROM agent_runs WHERE agent_run_id = current_agent_run_id();
+SELECT SUM(cost_usd) AS spent FROM llm_run_costs WHERE agent_run_id = current_agent_run_id();
+```
+
+Query `llm_run_costs` to understand per-run costs before launching expensive evaluations.
 
 ## Workflow
 
-1. **Study subjective standards (REQUIRED):**
+1. **Study existing runs and scores FIRST:**
+   - Query `recall_by_definition_split_kind` for existing definitions' performance
+   - Query `agent_runs` for prior critic developer runs — learn from what was already tried
+   - Study `llm_requests` from prior runs to understand what approaches worked or failed
+   - Build on existing progress rather than starting from scratch
+
+2. **Study subjective standards (REQUIRED):**
    - Query TPs/FPs to learn the labeler's preferences
    - Study rationales — what types of issues matter?
 
-2. **Diagnose failures:**
+3. **Diagnose failures:**
    - Query `llm_requests` to analyze child agent behavior
    - Identify patterns: wrong files read? missed analysis steps? false positives?
 
-3. **Iterate:**
+4. **Iterate:**
    - Modify definition (prompt, entry point, tools — whatever addresses the failure)
    - Test on small TRAIN sample, verify improvement
 
-4. **Validate:**
+5. **Validate:**
    - Run on validation, compare to baseline
    - Any improvement becomes new baseline
 
-Keep iterating until your budget or time runs out. There is no explicit termination — maximize the number of improvement cycles you can fit.
+Keep iterating until your budget runs out. There is no explicit termination — maximize the number of improvement cycles you can fit.
 % elif mode == "improve":
 ## Your Goal
 
@@ -69,15 +82,30 @@ FROM agent_runs
 WHERE agent_run_id = current_agent_run_id();
 ```
 
+## Budget
+
+You have a USD budget enforced by the LLM proxy. When your budget is exhausted, the proxy will stop answering LLM requests. Query your remaining budget:
+
+```sql
+SELECT budget_usd FROM agent_runs WHERE agent_run_id = current_agent_run_id();
+SELECT SUM(cost_usd) AS spent FROM llm_run_costs WHERE agent_run_id = current_agent_run_id();
+```
+
 ## Workflow
 
-### 1. Read Context
+### 1. Read Context & Existing Work
 
 ```sql
 SELECT type_config FROM agent_runs WHERE agent_run_id = current_agent_run_id();
 ```
 
 Gives you `baseline_definition_ids` and `allowed_examples`.
+
+Also check for existing definitions and scores — prior runs may have already made progress:
+
+```sql
+SELECT * FROM recall_by_definition_split_kind;
+```
 
 ### 2. Analyze & Diagnose
 

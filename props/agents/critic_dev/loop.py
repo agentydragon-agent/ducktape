@@ -54,8 +54,8 @@ class RunCriticToolArgs(OpenAIStrictModeBaseModel):
         description="Image ref: OCI digest (sha256:...) for custom images, or 'latest' for builtin"
     )
     example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
-    timeout_seconds: int = Field(default=3600, description="Max seconds before container is killed")
-    budget_usd: float | None = Field(description="Max USD cost for this agent")
+    timeout_seconds: int = Field(description="Max seconds before container is killed")
+    budget_usd: float = Field(description="Max USD cost for this agent")
 
 
 class WaitUntilGradedToolArgs(OpenAIStrictModeBaseModel):

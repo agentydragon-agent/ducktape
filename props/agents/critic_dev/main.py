@@ -1,9 +1,9 @@
 """Critic developer agent main entry point for in-container execution.
 
-Shared entry point for both optimize and improve modes. The agent_type from
-the agent_run's type_config determines which mode to use:
-- PROMPT_OPTIMIZER: runs until budget/timeout exhaustion
-- IMPROVEMENT: auto-terminates when a candidate beats baseline
+Shared entry point for both optimize and improve modes. The type_config
+discriminant determines behavior:
+- PromptOptimizerTypeConfig: runs until budget exhaustion
+- ImprovementTypeConfig: auto-terminates when a candidate beats baseline
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from props.agents.critic_dev.loop import (
     create_tool_provider,
 )
 from props.agents.runtime import create_bound_model_from_env, get_current_agent_run, render_system_prompt, setup_logging
-from props.core.agent_types import AgentType, ImprovementTypeConfig
+from props.core.agent_types import ImprovementTypeConfig, PromptOptimizerTypeConfig
 from props.core.ids import DefinitionId
 from props.core.models.examples import SingleFileSetExample
 from props.db.config import DatabaseConfig
@@ -404,30 +404,26 @@ async def run_agent_loop(
     eval_client: EvalClient,
     critic_model: str,
     db: Database,
-    agent_type: AgentType,
     agent_run_id: UUID,
-    type_config: ImprovementTypeConfig | None = None,
+    type_config: PromptOptimizerTypeConfig | ImprovementTypeConfig,
 ) -> int:
     """Run the critic developer agent loop.
 
-    For optimize mode: runs until budget/timeout exhaustion.
-    For improve mode: auto-terminates when a candidate beats baseline.
+    For optimize: runs until budget/timeout exhaustion.
+    For improve: auto-terminates when a candidate beats baseline.
     """
     state = LoopState()
     tool_provider = create_tool_provider(state, eval_client, critic_model, db)
     bound_model = create_bound_model_from_env(db)
 
-    # Common handlers for all modes
     handlers: list[BaseHandler] = [
         LoggingHandler(),
         RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
         AbortIf(lambda: state.status != LoopStatus.IN_PROGRESS),
     ]
 
-    # Type-specific handlers
     reminder_handler: ImprovementReminderHandler | None = None
-    if agent_type == AgentType.IMPROVEMENT:
-        assert type_config is not None
+    if isinstance(type_config, ImprovementTypeConfig):
         reminder_handler = ImprovementReminderHandler(improvement_run_id=agent_run_id, type_config=type_config, db=db)
         handlers.append(reminder_handler)
 
@@ -442,7 +438,6 @@ async def run_agent_loop(
     agent.process_message(SystemMessage.text(system_prompt))
     await agent.run()
 
-    # Check improvement-specific termination (beat baseline)
     if reminder_handler is not None and isinstance(reminder_handler.last_result, TerminationSuccess):
         result = reminder_handler.last_result
         logger.info(
@@ -461,8 +456,7 @@ async def run_agent_loop(
             logger.info("Critic developer failed")
             return 1
         case LoopStatus.IN_PROGRESS:
-            if agent_type == AgentType.PROMPT_OPTIMIZER:
-                # Ran until budget/timeout — that's success for optimize mode
+            if isinstance(type_config, PromptOptimizerTypeConfig):
                 logger.info("Optimization completed (exhausted budget)")
                 return 0
             logger.warning("Agent finished without beating baseline")
@@ -484,20 +478,15 @@ async def main() -> int:
     with db.session() as session:
         agent_run = get_current_agent_run(session)
         agent_run_id = agent_run.agent_run_id
-        agent_type = agent_run.type_config.agent_type
-        logger.info("Critic developer starting: %s mode, run=%s", agent_type.value, agent_run_id)
+        type_config = agent_run.type_config
+        logger.info("Critic developer starting: %s, run=%s", type_config.agent_type.value, agent_run_id)
 
-    improvement_config: ImprovementTypeConfig | None = None
-    if agent_type == AgentType.PROMPT_OPTIMIZER:
-        critic_model = agent_run.prompt_optimizer_config().critic_model
-        mode = "optimize"
-    elif agent_type == AgentType.IMPROVEMENT:
-        improvement_config = agent_run.improvement_config()
-        critic_model = improvement_config.critic_model
-        mode = "improve"
-    else:
-        logger.error("Unexpected agent type: %s", agent_type)
+    if not isinstance(type_config, (PromptOptimizerTypeConfig, ImprovementTypeConfig)):
+        logger.error("Unexpected type_config: %s", type(type_config).__name__)
         return 1
+
+    critic_model = type_config.critic_model
+    mode = "optimize" if isinstance(type_config, PromptOptimizerTypeConfig) else "improve"
 
     async with EvalClient.from_env() as eval_client:
         system_prompt = render_system_prompt("props/agents/critic_dev/prompt.md.mako", db, helpers={"mode": mode})
@@ -507,9 +496,8 @@ async def main() -> int:
             eval_client=eval_client,
             critic_model=critic_model,
             db=db,
-            agent_type=agent_type,
             agent_run_id=agent_run_id,
-            type_config=improvement_config,
+            type_config=type_config,
         )
 
     logger.info("Agent loop finished with exit code %d", exit_code)
