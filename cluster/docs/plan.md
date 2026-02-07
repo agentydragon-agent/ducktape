@@ -369,9 +369,8 @@ Add to post-apply hook or document as manual step.
 
 **Status**: ✅ Configured
 
-Flux alerts via ntfy.sh are configured in `k8s/flux-system/flux-alerts.yaml` and `ntfy-webhook-sealed.yaml`.
-
-**TODO**: Add PrometheusRule for Grafana dashboards (optional enhancement).
+- ntfy.sh push notifications: `k8s/flux-system/flux-alerts.yaml`
+- Grafana/Prometheus alerting: `k8s/monitoring-stack/flux-prometheus-rule.yaml`
 
 ---
 

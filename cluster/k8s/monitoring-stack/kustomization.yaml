@@ -5,3 +5,4 @@ resources:
   - admin-password-external-secret.yaml
   - helmrelease.yaml
   - dashboards/harbor-dashboard.yaml
+  - flux-prometheus-rule.yaml
