@@ -463,7 +463,7 @@ async def run_agent_loop(
         case LoopStatus.IN_PROGRESS:
             if agent_type == AgentType.PROMPT_OPTIMIZER:
                 # Ran until budget/timeout — that's success for optimize mode
-                logger.info("Optimization completed (exhausted budget/turns)")
+                logger.info("Optimization completed (exhausted budget)")
                 return 0
             logger.warning("Agent finished without beating baseline")
             return 1

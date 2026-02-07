@@ -205,7 +205,7 @@ Real-time visibility into running agents.
 
 Display current state of each active run:
 
-- **Waiting**: Queued, awaiting semaphore slot
+- **Waiting**: Queued, awaiting resources
 - **Initializing**: Container starting, init script running
 - **Sampling**: LLM API call in flight
 - **Processing**: Agent loop between tool calls

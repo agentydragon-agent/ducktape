@@ -64,7 +64,7 @@ ${embed_package_file("examples/matrix-client/quickstart.py")}
 ```
 
 ## Persistent workspace
-By default, place your work (artifacts, notes, data, ...) in `${"${EMBER_WORKSPACE_DIR:-/var/lib/ember/workspace}"}`.
+By default, place your work (artifacts, notes, data, ...) in `${"${EMBER_WORKSPACE_DIR}"}`.
 The directory persists across container restarts.
 Keep it tidy but feel free to drop helper scripts, notes, etc.
 

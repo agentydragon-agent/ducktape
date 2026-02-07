@@ -71,7 +71,6 @@ def _make_template_context(helpers: Mapping[str, Any] | None = None) -> dict[str
     - run_command(cmd) — execute shell command
     - describe_relation(name) — psql \\d+ output for tables/views
     - include_doc(pkg/path) — include and render from package resources
-    - include_file(path) — include and render from filesystem
     """
     ctx: dict[str, Any] = {}
     ctx["workspace_dir"] = str(WORKSPACE)
@@ -90,12 +89,7 @@ def _make_template_context(helpers: Mapping[str, Any] | None = None) -> dict[str
         content = (importlib.resources.files(pkg) / p).read_text()
         return _include(pkg_path, content, raw=raw)
 
-    def include_file(file_path: str, *, raw: bool = False) -> str:
-        """Include file from filesystem, rendering Mako syntax."""
-        return _include(file_path, Path(file_path).read_text(), raw=raw)
-
     ctx["include_doc"] = include_doc
-    ctx["include_file"] = include_file
 
     if helpers:
         ctx.update(helpers)
@@ -155,7 +149,6 @@ def render_agent_prompt(template_path: str, helpers: Mapping[str, Any] | None = 
 
     Supports:
     - ${include_doc("package/path")} — include doc with source annotation
-    - ${include_file("/path")} — include from filesystem
     - ${describe_relation("name")} — psql \\d+ output for tables/views
     - ${run_command("cmd")} — shell command output
     """

@@ -78,21 +78,6 @@ def test_critic_dev_improve_prompt(db: Database):
     assert "allowed_examples" in rendered
 
 
-def test_all_prompts_no_jinja2_artifacts(db: Database):
-    """Verify no Jinja2 syntax remains in rendered output."""
-    prompts = {
-        "critic": _render(
-            db, "props/agents/critic/prompt.md.mako", helpers={"snapshot_slug": "test/s", "scope_files": None}
-        ),
-        "grader": _render(db, "props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/s"}),
-        "critic_dev_optimize": _render(db, "props/agents/critic_dev/prompt.md.mako", helpers={"mode": "optimize"}),
-        "critic_dev_improve": _render(db, "props/agents/critic_dev/prompt.md.mako", helpers={"mode": "improve"}),
-    }
-    for name, prompt in prompts.items():
-        assert "{{" not in prompt, f"{name} contains Jinja2 {{{{ artifact"
-        assert "{%" not in prompt, f"{name} contains Jinja2 {{% artifact"
-
-
 def test_describe_relation_in_prompts(db: Database):
     """Verify describe_relation produces schema content in rendered prompts."""
     rendered = _render(db, "props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/s"})

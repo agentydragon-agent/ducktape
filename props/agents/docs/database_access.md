@@ -91,7 +91,7 @@ These read SQLAlchemy model metadata — no database connection needed.
 | `grader_runs`                      | TRAIN split           | -        | -        |
 | `recall_by_definition_split_kind`  | All splits (view)     | -        | -        |
 
-[^1]: VALID/TEST access restricted to prevent overfitting. See `db/evaluation_flow.md.mako` for details.
+[^1]: VALID/TEST access restricted to prevent overfitting. See the Evaluation Flow section below for details.
 
 ## Monitoring Grading Status
 

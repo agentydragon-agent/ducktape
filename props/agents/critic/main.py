@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,10 +29,10 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.agents.runtime import (
     create_bound_model_from_env,
     fetch_snapshot,
-    get_active_agent_run,
     get_current_agent_run,
     get_current_agent_run_id,
     render_system_prompt,
+    render_template_string,
 )
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
@@ -215,7 +216,7 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
     def submit(args: SubmitArgs) -> str:
         """Finalize and submit the critique. Validates all issues and marks the run as complete."""
         with db.session() as session:
-            agent_run = get_active_agent_run(session)
+            agent_run = get_current_agent_run(session)
             agent_run_id = agent_run.agent_run_id
 
             issues = session.query(ReportedIssue).filter_by(agent_run_id=agent_run_id).all()
@@ -257,7 +258,7 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
     def report_failure(args: ReportFailureArgs) -> str:
         """Report that the critique could not be completed due to blocking issues (e.g., no files in scope)."""
         with db.session() as session:
-            get_active_agent_run(session)
+            get_current_agent_run(session)
 
         exit_state.should_exit = True
         exit_state.exit_code = 1
@@ -353,9 +354,13 @@ def main() -> int:
     fetch_snapshot(WORKSPACE, db)
 
     logger.info("Rendering system prompt")
-    system_prompt = render_system_prompt(
-        "props/agents/critic/prompt.md.mako", db, helpers={"snapshot_slug": snapshot_slug, "scope_files": scope_files}
-    )
+    helpers = {"snapshot_slug": snapshot_slug, "scope_files": scope_files}
+    prompt_override = os.environ.get("PROMPT_TEMPLATE_PATH")
+    if prompt_override:
+        logger.info("Using variant prompt from %s", prompt_override)
+        system_prompt = render_template_string(Path(prompt_override).read_text(), db, helpers)
+    else:
+        system_prompt = render_system_prompt("props/agents/critic/prompt.md.mako", db, helpers)
 
     logger.info("Starting agent loop")
     exit_code = asyncio.run(_run_agent_loop(system_prompt, db))

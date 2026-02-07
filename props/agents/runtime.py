@@ -1,14 +1,4 @@
-"""Runtime helpers for agents running inside containers.
-
-Provides:
-- get_current_agent_run_id(): Get agent run ID from PostgreSQL RLS context
-- get_current_agent_run(): Get current agent run from database
-- get_active_agent_run(): Get current agent run, ensuring it hasn't exited
-- fetch_snapshot(): Fetch snapshot to local filesystem and return path
-- setup_logging(): Configure logging for in-container agent loops
-- render_system_prompt(): Render Mako system prompt templates
-- create_bound_model_from_env(): Create OpenAI model from env vars
-"""
+"""Runtime helpers for agents running inside containers."""
 
 from __future__ import annotations
 
@@ -44,28 +34,21 @@ def get_current_agent_run_id(session: Session) -> UUID:
     """
     result = session.execute(text("SELECT current_agent_run_id()"))
     agent_run_id = result.scalar()
-    if agent_run_id is None:
+    if not isinstance(agent_run_id, UUID):
         raise RuntimeError(
-            "current_agent_run_id() returned NULL - not connected as an agent user. "
+            "current_agent_run_id() returned non-UUID — not connected as an agent user. "
             "Make sure you're using agent credentials (e.g., critic_agent_{uuid})."
         )
-    if not isinstance(agent_run_id, UUID):
-        agent_run_id = UUID(str(agent_run_id))
     return agent_run_id
 
 
 def get_current_agent_run(session: Session) -> AgentRun:
-    """Get the current agent run from database via RLS context."""
-    agent_run_id = get_current_agent_run_id(session)
-    return get_agent_run(session, agent_run_id)
-
-
-def get_active_agent_run(session: Session) -> AgentRun:
-    """Get the current agent run, ensuring it's still active (not already exited).
+    """Get the current agent run from database via RLS context.
 
     Raises ValueError if the run has already exited.
     """
-    agent_run = get_current_agent_run(session)
+    agent_run_id = get_current_agent_run_id(session)
+    agent_run = get_agent_run(session, agent_run_id)
     if agent_run.status == AgentRunStatus.EXITED:
         raise ValueError(f"Agent run {agent_run.agent_run_id} already exited")
     return agent_run
@@ -97,7 +80,6 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
     - workspace_dir — default workspace path
     - describe_relation(name) — schema JSON from SQLAlchemy metadata
     - include_doc(pkg/path) — include and render from package resources
-    - include_file(path) — include and render from filesystem
     """
     ctx: dict[str, Any] = {}
     ctx["workspace_dir"] = str(WORKSPACE)
@@ -122,12 +104,7 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
         content = (importlib.resources.files(pkg) / p).read_text()
         return _include(pkg_path, content, raw=raw)
 
-    def include_file(file_path: str, *, raw: bool = False) -> str:
-        """Include file from filesystem, rendering Mako syntax."""
-        return _include(file_path, Path(file_path).read_text(), raw=raw)
-
     ctx["include_doc"] = include_doc
-    ctx["include_file"] = include_file
 
     if helpers:
         ctx.update(helpers)
@@ -136,19 +113,10 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
 
 
 def render_system_prompt(template_path: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
-    """Render system prompt from package resource, returning as string.
-
-    If PROMPT_TEMPLATE_PATH is set, reads the template from that filesystem path
-    instead (used by variant images to override the default prompt).
-    """
-    prompt_override = os.environ.get("PROMPT_TEMPLATE_PATH")
-    if prompt_override:
-        logger.info("Using variant prompt from %s", prompt_override)
-        content = Path(prompt_override).read_text()
-    else:
-        package, _, pkg_path = template_path.partition("/")
-        resource = importlib.resources.files(package) / pkg_path
-        content = resource.read_text()
+    """Render system prompt from package resource, returning as string."""
+    package, _, pkg_path = template_path.partition("/")
+    resource = importlib.resources.files(package) / pkg_path
+    content = resource.read_text()
     return render_template_string(content, db, helpers)
 
 

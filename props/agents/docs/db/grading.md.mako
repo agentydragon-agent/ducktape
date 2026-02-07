@@ -23,7 +23,7 @@ ${describe_relation("grading_edges")}
 
 ${describe_relation("grading_pending")}
 
-**Source of truth for completeness:** Query `grading_pending` to see missing edges. Grading is complete when no rows remain. The grader `submit` tool validates this and rejects submission if any edges are pending.
+**Source of truth for completeness:** Query `grading_pending` to see missing edges. Grading is complete when no rows remain. The grader `sleep` tool validates this and rejects sleep if any edges are pending.
 
 ## Sparse Matching (graders_match_only_if_reported_on)
 

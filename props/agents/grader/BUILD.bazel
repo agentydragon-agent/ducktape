@@ -192,6 +192,7 @@ docker_py_test(
     ],
     deps = [
         ":conftest",
+        ":drift_handler",
         "//agent_core/testing:responses",
         "//props:conftest",
         "//props/agents/grader/testing:mocks",
