@@ -34,24 +34,15 @@ Use descriptive kebab-case slugs:
 
 ## Source Code Inspection
 
-The `props` library is bundled in your container. To understand how tools work or inspect the implementation:
+The `props` library is bundled in your container at `/app/critic.runfiles/_main/`. Key files:
 
 ```bash
-# Read your own entry point
-cat /app/critic.runfiles/_main/props/agents/critic/main.py
-
-# Read runtime helpers (template rendering, agent run identification)
-cat /app/critic.runfiles/_main/props/agents/runtime.py
-
-# Read SQLAlchemy models (all table/column definitions)
-cat /app/critic.runfiles/_main/props/db/models.py
-
-# Describe a table or view schema (no DB connection needed)
-python3 -c "from props.agents.schema import describe_table; t = describe_table('reported_issues'); print(t.model_dump_json(indent=2) if t else 'Not found')"
-
-# List all tables and views
-python3 -c "import json; from props.agents.schema import describe_all; print(json.dumps([r.model_dump(exclude_defaults=True) for r in describe_all()], indent=2))"
+cat /app/critic.runfiles/_main/props/agents/critic/main.py   # Your entry point and tools
+cat /app/critic.runfiles/_main/props/agents/runtime.py       # Runtime helpers
+cat /app/critic.runfiles/_main/props/db/models.py            # SQLAlchemy models
 ```
+
+For schema introspection (no DB connection needed), see the Schema Discovery section below.
 
 ${include_doc("props/agents/docs/database_access.md")}
 ${include_doc("props/agents/docs/db/critiques.md.mako")}

@@ -33,6 +33,6 @@ The scope is displayed by the init script. Scope types:
 Critics have access to:
 
 - Shell tools via docker_exec (rg, ruff, mypy, vulture, etc.)
-- Direct psql access with RLS-scoped credentials
+- Direct SQL access with RLS-scoped credentials
 - CLI `props critic-agent` for reporting issues
 - MCP tool `critic_submit` to finalize review

@@ -26,7 +26,7 @@ Maximize validation recall. Your target metric mode is printed in init output.
    - Identify patterns: wrong files read? missed analysis steps? false positives?
 
 3. **Iterate:**
-   - Modify definition (prompt, tools, Dockerfile — whatever addresses the failure)
+   - Modify definition (prompt, entry point, tools — whatever addresses the failure)
    - Test on small TRAIN sample, verify improvement
 
 4. **Validate:**

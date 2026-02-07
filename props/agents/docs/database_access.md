@@ -22,7 +22,7 @@ Check your init output for which snapshots were fetched and their paths.
 
 ## Connection
 
-Standard PostgreSQL environment variables are set (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`). Use `psql`, `Database.from_env()`, or `DatabaseConfig().psycopg2_connect()` — all bundled in the container.
+Standard PostgreSQL environment variables are set (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`). Use `Database.from_env()` or `DatabaseConfig().psycopg2_connect()` — both bundled in the container.
 
 ## RLS Scoping
 

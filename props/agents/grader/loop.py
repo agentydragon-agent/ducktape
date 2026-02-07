@@ -89,7 +89,7 @@ def create_grader_tool_provider(
 
     @provider.tool
     async def exec(args: DirectExecArgs) -> BaseExecResult:
-        """Execute a shell command. Use for file operations, psql queries, etc."""
+        """Execute a shell command. Use for file operations, database queries, etc."""
         return await run_direct_exec(args, default_cwd=WORKSPACE)
 
     @provider.tool

@@ -22,7 +22,7 @@ ${include_doc("props/agents/docs/db/grading.md.mako")}
 4. **Fill** — `fill_remaining` to bulk-fill remaining non-matches with credit=0
 5. **Delete** — `delete_edges` to redo grading for an issue
 
-For ad-hoc database queries, use `exec` to run `psql` commands directly.
+For ad-hoc database queries, use `exec` to run SQL queries via Python.
 
 ## Daemon Lifecycle
 
@@ -54,20 +54,16 @@ Each wake cycle:
 
 ## Source Code Inspection
 
-The `props` library is bundled in your container. To understand tools or inspect implementation:
+The `props` library is bundled in your container at `/app/grader.runfiles/_main/`. Key files:
 
 ```bash
-# Read your own entry point and grading loop
-cat /app/grader.runfiles/_main/props/agents/grader/main.py
-cat /app/grader.runfiles/_main/props/agents/grader/loop.py
-cat /app/grader.runfiles/_main/props/agents/grader/tools.py
-
-# Read SQLAlchemy models (all table/column definitions)
-cat /app/grader.runfiles/_main/props/db/models.py
-
-# Describe any table or view schema
-python3 -c "from props.agents.schema import describe_table; t = describe_table('grading_edges'); print(t.model_dump_json(indent=2) if t else 'Not found')"
+cat /app/grader.runfiles/_main/props/agents/grader/main.py   # Entry point
+cat /app/grader.runfiles/_main/props/agents/grader/loop.py   # Grading loop
+cat /app/grader.runfiles/_main/props/agents/grader/tools.py  # Tool implementations
+cat /app/grader.runfiles/_main/props/db/models.py            # SQLAlchemy models
 ```
+
+For schema introspection (no DB connection needed), see the Schema Discovery section below.
 
 ${include_doc("props/agents/docs/database_access.md")}
 ${include_doc("props/agents/docs/db/agent_runs.md.mako")}
