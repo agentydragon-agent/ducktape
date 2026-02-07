@@ -49,18 +49,10 @@ def run_command(cmd: str | list[str | os.PathLike[str]], *, shell: bool = False)
 def run_command_template(cmd: str) -> str:
     """Execute command and return annotated output block.
 
-    For use as Mako template helper: ${run_command("psql -c '...'")}
+    For use as Mako template helper: ${run_command("ls /workspace")}
     """
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
     return f'<output command="{cmd}">\n{result.stdout}</output>'
-
-
-def describe_relation_template(relation_name: str) -> str:
-    r"""Return psql \d+ output for a table or view.
-
-    DRY helper for schema documentation: ${describe_relation("reported_issues")}
-    """
-    return run_command_template(f'psql -c "\\d+ {relation_name}"')
 
 
 def _make_template_context(helpers: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -69,13 +61,11 @@ def _make_template_context(helpers: Mapping[str, Any] | None = None) -> dict[str
     Available in all templates:
     - workspace_dir — default workspace path
     - run_command(cmd) — execute shell command
-    - describe_relation(name) — psql \\d+ output for tables/views
     - include_doc(pkg/path) — include and render from package resources
     """
     ctx: dict[str, Any] = {}
     ctx["workspace_dir"] = str(WORKSPACE)
     ctx["run_command"] = run_command_template
-    ctx["describe_relation"] = describe_relation_template
 
     def _include(source: str, content: str, *, raw: bool) -> str:
         if raw:
@@ -149,7 +139,6 @@ def render_agent_prompt(template_path: str, helpers: Mapping[str, Any] | None = 
 
     Supports:
     - ${include_doc("package/path")} — include doc with source annotation
-    - ${describe_relation("name")} — psql \\d+ output for tables/views
     - ${run_command("cmd")} — shell command output
     """
     package, _, pkg_path = template_path.partition("/")

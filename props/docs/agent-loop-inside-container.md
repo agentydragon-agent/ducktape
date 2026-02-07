@@ -103,7 +103,7 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Mechanism       | Subprocess inside container (no docker_exec from host)                   |
 | Tool schema     | Generic `exec` tool taking command array                                 |
 | Timeouts/limits | Reuse `mcp_infra.exec.subprocess.run_proc()` (standalone, no MCP needed) |
-| Critique tools  | Bundle existing `props critic-agent` CLI (insert-issue, submit, etc.)    |
+| Critique tools  | Direct tools: `insert_issue`, `insert_occurrence`, `submit`, etc.        |
 
 **Exec implementation:** Reuse `mcp_infra/exec/subprocess.py:run_proc()` directly:
 
