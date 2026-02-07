@@ -23,15 +23,21 @@ Execute tools like these with the direnv loaded, or use `direnv exec .`.
 
 ## Infrastructure
 
-- Network: 10.2.0.0/16, gateway 10.2.0.1
-- 5 Talos nodes:
-  - 3 controllers (controlplane0-2 = 10.2.1.1-3)
-  - 2 workers (worker0-1 = 10.2.2.1-2)
+- Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4 bridge)
+  - 10.2.0.1: Home router (gateway)
+  - 10.2.0.2: Atlas (Proxmox host) - for CSI driver API access
+  - 10.2.1.x: Control plane nodes
+  - 10.2.2.x: Worker nodes
+  - 10.2.3.x: VIPs (kube-vip, MetalLB)
+- Talos nodes:
+  - Controllers: talos-pve-cp-0 (10.2.1.1)
+  - Workers: talos-pve-worker-0 (10.2.2.1)
+  - VPS nodes: 2x Hetzner CPX31 (public IPs, hostNetwork ingress)
 - High availability VIP pools:
-  - 10.2.3.1: Cluster Kube API endpoint - kube-vip LB across controller Kube API servers
-  - 10.2.3.2 (`ingress-pool`): MetalLB across worker node replicas of NGINX Ingress
-  - 10.2.3.3 (`dns-pool`): PowerDNS
-  - 10.2.3.4-20 (`services-pool`): for future use (Harbor, Gitea, etc.)
+  - 10.2.3.1: Cluster Kube API endpoint (kube-vip)
+  - 10.2.3.2 (`ingress-pool`): NGINX Ingress (MetalLB)
+  - 10.2.3.3 (`dns-pool`): PowerDNS (MetalLB)
+  - 10.2.3.4-20 (`services-pool`): Harbor, Gitea, etc.
 - Domain: `*.allegedly.works`
   - PowerDNS in k8s has authority on this domain and handles Let's Encrypt DNS-01 challenges
   - cert-manager provisions Let's Encrypt certs

@@ -50,9 +50,9 @@ variable "hetzner_location" {
 # ============================================================================
 
 variable "proxmox_api_host" {
-  description = "Proxmox host (Tailscale MagicDNS name for direct access)"
+  description = "Proxmox API host - use VLAN IP (10.2.0.2) so CSI pods can reach it without Tailscale DNS"
   type        = string
-  default     = "atlas.vps"
+  default     = "10.2.0.2"
 }
 
 variable "proxmox_node_name" {
