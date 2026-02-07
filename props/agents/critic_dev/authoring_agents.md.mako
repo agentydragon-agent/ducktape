@@ -1,6 +1,6 @@
 # Agent Image Authoring Guide
 
-${"##"} What is a Critic?
+## What is a Critic?
 
 A critic is **any OCI container that writes critique data to the database**. That's the only hard contract.
 
@@ -18,7 +18,7 @@ A critic container receives database credentials and a snapshot to review. It wr
 
 The built-in critic images use a basic single-agent loop as a starting point. You can modify them, replace their logic entirely, or build from scratch.
 
-${"##"} Runtime Environment
+## Runtime Environment
 
 The orchestrator injects these environment variables into every agent container:
 
@@ -44,7 +44,7 @@ The backend's LLM proxy at `OPENAI_BASE_URL` authenticates with `OPENAI_API_KEY`
 | Eval API (`/api/eval/*`) | No | No | Yes |
 | Registry proxy (`/v2/*`) | No | No | Yes |
 
-${"##"} Available Base Images
+## Available Base Images
 
 The system provides these built-in images in the registry:
 
@@ -58,11 +58,11 @@ The system provides these built-in images in the registry:
 
 Pull these as starting points, inspect their internals, and repackage with modifications.
 
-${"##"} Creating Custom Images
+## Creating Custom Images
 
 `crane` is pre-installed in your container with registry credentials already configured.
 
-${"##"}# Inspect a base image
+### Inspect a base image
 
 ```bash
 REGISTRY=$(echo $PROPS_BACKEND_URL | sed 's|https\?://||')
@@ -78,7 +78,7 @@ crane export $REGISTRY/critic:latest - --insecure | tar xf - -O \
   app/critic.runfiles/_main/props/agents/critic/main.py
 ```
 
-${"##"}# Modify and push
+### Modify and push
 
 Agents can only push by digest, not by tag. Use a local staging path, then push the final digest:
 
@@ -105,7 +105,7 @@ Use this digest as `definition_id` when calling `run_critic`.
 
 ${include_doc("props/agents/critic_dev/built_in_critic.md.mako")}
 
-${"##"} Backend API
+## Backend API
 
 The unified backend at `PROPS_BACKEND_URL` serves all functionality:
 
@@ -119,7 +119,7 @@ The unified backend at `PROPS_BACKEND_URL` serves all functionality:
 | `/api/runs/*` | Agent run management | No (admin) |
 | `/api/gt/*` | Ground truth management | No (admin) |
 
-${"##"}# OpenAPI Introspection
+### OpenAPI Introspection
 
 The backend is a FastAPI app. Discover all endpoints and request/response schemas:
 
@@ -127,7 +127,7 @@ The backend is a FastAPI app. Discover all endpoints and request/response schema
 curl -s $PROPS_BACKEND_URL/openapi.json | python3 -m json.tool
 ```
 
-${"##"}# Eval API
+### Eval API
 
 Use the `run_critic` and `wait_until_graded` tools provided to you, or the bundled `EvalClient`:
 
@@ -141,7 +141,7 @@ async with EvalClient.from_env() as client:
 
 The backend serves as your OCI registry — use `PROPS_BACKEND_URL` as the registry host for all `crane` and `/v2/` operations.
 
-${"##"} Best Practices
+## Best Practices
 
 1. **Fail fast** — exit non-zero if prerequisites aren't met (missing files, DB connection fails, etc.)
 2. **Use OCI layering** — reuse base images, add small layers for changes (more efficient than copying entire images)

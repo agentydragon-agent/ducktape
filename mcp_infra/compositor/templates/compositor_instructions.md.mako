@@ -50,10 +50,10 @@ if sinfo:
 % endfor
 % endif
 
-${"##"} Instructions
+## Instructions
 ${instr.strip() if instr else "None available"}
 
-${"##"} Additional capabilities
+## Additional capabilities
 % if caps and getattr(caps, 'resources', None) is not None:
 * Resources\
 % else:
@@ -61,7 +61,7 @@ None available\
 % endif
 
 % if caps:
-${"##"} Capabilities (raw)
+## Capabilities (raw)
 ${caps.model_dump_json()}
 
 Semantics: resources.subscribe/listChanged → notifications support; presence of a section implies feature is supported.

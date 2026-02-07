@@ -5,7 +5,7 @@ Critic agents write issues and occurrences to the database via tools (not raw SQ
 ${describe_relation("reported_issues")}
 ${describe_relation("reported_issue_occurrences")}
 
-${"##"} Reading Critiques
+## Reading Critiques
 
 ```sql
 SELECT ri.issue_id, ri.rationale, rio.locations

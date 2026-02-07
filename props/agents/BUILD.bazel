@@ -25,6 +25,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":schema",
+        "//mako_utils:preprocessor",
         "//openai_utils:model",
         "//props/db:database",
         "//props/db:models",

@@ -98,6 +98,7 @@ py_library(
         "//agent_core:mcp_provider",
         "//agent_core:script_handler",
         "//agent_core:turn_limit",
+        "//mako_utils:preprocessor",
         "//mcp_infra/display:rich_display",
         "//openai_utils:model",
         "@pypi//aiodocker",

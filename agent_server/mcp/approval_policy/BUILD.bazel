@@ -17,6 +17,7 @@ py_library(
         "//agent_server/policies:policy_types",
         "//agent_server/policy_eval:container",
         "//agent_server/policy_eval:runner",
+        "//mako_utils:preprocessor",
         "//mcp_infra:constants",
         "//mcp_infra:flat_tool",
         "//mcp_infra:mcp_types",

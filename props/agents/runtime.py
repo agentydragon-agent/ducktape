@@ -24,6 +24,7 @@ from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from mako_utils.preprocessor import markdown_heading_preprocessor
 from openai_utils.model import BoundOpenAIModel
 from props.agents.schema import describe_table
 from props.db.database import Database
@@ -115,7 +116,7 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
         content = (importlib.resources.files(pkg) / p).read_text()
         if raw:
             return f'<doc source="{pkg_path}">\n{content}\n</doc>'
-        rendered = Template(content).render(**ctx)
+        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
         return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
 
     def include_file(file_path: str, *, raw: bool = False) -> str:
@@ -123,7 +124,7 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
         content = Path(file_path).read_text()
         if raw:
             return f'<doc source="{file_path}">\n{content}\n</doc>'
-        rendered = Template(content).render(**ctx)
+        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
         return f'<doc source="{file_path}">\n{rendered}\n</doc>'
 
     ctx["include_doc"] = include_doc
@@ -155,7 +156,8 @@ def render_system_prompt(template_path: str, db: Database, helpers: dict[str, An
 def render_template_string(content: str, db: Database, helpers: dict[str, Any] | None = None) -> str:
     """Render a Mako template string with standard helpers."""
     ctx = _make_template_context(db, helpers)
-    return Template(content).render(**ctx)
+    result: str = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
+    return result
 
 
 def create_bound_model_from_env(db: Database) -> BoundOpenAIModel:

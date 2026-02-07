@@ -13,6 +13,8 @@ from typing import Any
 
 from mako.template import Template
 
+from mako_utils.preprocessor import markdown_heading_preprocessor
+
 # Default workspace path in containers
 WORKSPACE = Path("/workspace")
 
@@ -82,7 +84,7 @@ def _make_template_context(helpers: Mapping[str, Any] | None = None) -> dict[str
         content = (importlib.resources.files(pkg) / p).read_text()
         if raw:
             return f'<doc source="{pkg_path}">\n{content}\n</doc>'
-        rendered = Template(content).render(**ctx)
+        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
         return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
 
     def include_file(file_path: str, *, raw: bool = False) -> str:
@@ -90,7 +92,7 @@ def _make_template_context(helpers: Mapping[str, Any] | None = None) -> dict[str
         content = Path(file_path).read_text()
         if raw:
             return f'<doc source="{file_path}">\n{content}\n</doc>'
-        rendered = Template(content).render(**ctx)
+        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
         return f'<doc source="{file_path}">\n{rendered}\n</doc>'
 
     ctx["include_doc"] = include_doc
@@ -107,8 +109,9 @@ def render_doc(content: str, helpers: Mapping[str, Any] | None = None) -> str:
     all_helpers: dict[str, Callable[..., Any]] = {"run_command": run_command_template}
     if helpers:
         all_helpers.update(helpers)
-    template = Template(content)
-    return template.render(**all_helpers)
+    template = Template(content, preprocessor=markdown_heading_preprocessor)
+    result: str = template.render(**all_helpers)
+    return result
 
 
 def render_and_print_file(path: str | Path, helpers: Mapping[str, Callable[..., Any]] | None = None) -> None:
@@ -121,7 +124,7 @@ def render_and_print_file(path: str | Path, helpers: Mapping[str, Callable[..., 
     content = path.read_text()
 
     ctx = _make_template_context(helpers)
-    template = Template(content)
+    template = Template(content, preprocessor=markdown_heading_preprocessor)
     rendered = template.render(**ctx)
     print(f'<file path="{path}">')
     print(rendered)
@@ -162,5 +165,5 @@ def render_agent_prompt(template_path: str, helpers: Mapping[str, Any] | None = 
     root_content = resource.read_text()
 
     ctx = _make_template_context(helpers)
-    template = Template(root_content)
+    template = Template(root_content, preprocessor=markdown_heading_preprocessor)
     print(template.render(**ctx))

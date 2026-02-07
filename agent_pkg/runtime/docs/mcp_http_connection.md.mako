@@ -4,10 +4,10 @@ An MCP server is available via Streamable HTTP transport. Connection environment
 - `MCP_SERVER_URL`: HTTP endpoint URL for the MCP server
 - `MCP_SERVER_TOKEN`: Bearer token for authentication
 
-${"##"} Example: Discovering Tools
+## Example: Discovering Tools
 
 ${include_doc("agent_pkg/runtime/examples/mcp_discover.py", raw=True)}
 
-${"##"} Server Info
+## Server Info
 
 ${run_command("python -m agent_pkg.runtime.examples.mcp_discover")}

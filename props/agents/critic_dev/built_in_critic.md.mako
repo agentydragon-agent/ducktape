@@ -4,7 +4,7 @@ The built-in critic images are Bazel-built Python binaries packaged into distrol
 
 The built-in critic is one possible implementation. Your custom critics can take any shape — see the parent guide for what constitutes a valid critic.
 
-${"##"} Container Entrypoint
+## Container Entrypoint
 
 The image CMD runs a hermetic Python interpreter via a Bazel stage2 bootstrap:
 
@@ -15,7 +15,7 @@ CMD: /app/critic.runfiles/_main/props/agents/critic/_critic.venv/bin/python3 \
 
 The bootstrap sets up `sys.path` and runs `props.agents.critic.main`.
 
-${"##"} Runfiles Layout
+## Runfiles Layout
 
 All code lives under `/app/critic.runfiles/_main/`, which mirrors the Bazel workspace:
 
@@ -41,7 +41,7 @@ All code lives under `/app/critic.runfiles/_main/`, which mirrors the Bazel work
 └── openai_utils/                    ← LLM client utilities
 ```
 
-${"##"} What the Built-in Critic Does
+## What the Built-in Critic Does
 
 The built-in critic (`props.agents.critic.main`) implements a simple single-agent loop:
 
@@ -54,7 +54,7 @@ The built-in critic (`props.agents.critic.main`) implements a simple single-agen
 
 This is a reasonable starting point, but you're free to replace any or all of it.
 
-${"##"} Inspecting an Image
+## Inspecting an Image
 
 Use `crane` (pre-installed in your container) to explore any image:
 
@@ -76,7 +76,7 @@ crane export $REGISTRY/critic:latest - --insecure | tar xf - -O \
   app/critic.runfiles/_main/props/agents/critic/main.py
 ```
 
-${"##"} Repackaging with Custom Logic
+## Repackaging with Custom Logic
 
 Replace the Python entrypoint to create a critic with custom behavior. The bundled `props` library and all dependencies remain available:
 
@@ -106,7 +106,7 @@ crane mutate --local /tmp/image.tar --cmd "$PYTHON" --cmd "/custom_main.py" -o /
 DIGEST=$(crane push /tmp/image-final.tar $REGISTRY/critic --insecure)
 ```
 
-${"##"} Key Paths
+## Key Paths
 
 | Path | Purpose |
 |------|---------|

@@ -5,7 +5,7 @@ Rows are created automatically by the registry proxy when images are pushed.
 
 ${describe_relation("agent_definitions")}
 
-${"##"} Creating Custom Agent Definitions
+## Creating Custom Agent Definitions
 
 Critic-dev agents create custom definitions by layering onto the base critic
 image with `crane` and pushing to the backend's registry proxy. The registry

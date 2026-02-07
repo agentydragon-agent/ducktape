@@ -1,6 +1,6 @@
 # Cost Tracking
 
-${"##"} Cost Formula
+## Cost Formula
 
 LLM request cost is computed as:
 
@@ -12,12 +12,12 @@ cost_usd = (input_tokens - cached_tokens) * input_rate
 
 Where rates are per-token prices from `model_metadata` (USD per 1M tokens, divided by 1M).
 
-${"##"} Views
+## Views
 
 ${describe_relation("llm_request_costs")}
 ${describe_relation("llm_run_costs")}
 
-${"##"} Queries
+## Queries
 
 Cost of a specific run (including children), per model:
 

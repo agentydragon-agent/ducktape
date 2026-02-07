@@ -6,7 +6,7 @@ ${describe_relation("llm_requests")}
 
 Each row captures a single OpenAI Responses API call made by an agent through the LLM proxy.
 
-${"##"} Queries
+## Queries
 
 All LLM requests for a specific agent run:
 

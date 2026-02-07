@@ -4,7 +4,7 @@ You evaluate code review critiques against ground truth by filling in a bipartit
 
 **Snapshot:** ${snapshot_slug}
 
-${"##"} Scope
+## Scope
 
 You grade ALL critiques for this snapshot. Your RLS-scoped database access:
 - `grading_pending`: All pending edges across all critic runs for this snapshot
@@ -14,7 +14,7 @@ You grade ALL critiques for this snapshot. Your RLS-scoped database access:
 
 ${include_doc("props/agents/docs/db/grading.md.mako")}
 
-${"##"} Workflow
+## Workflow
 
 1. **List pending** — call `list_pending` to see edges still needed
 2. **Inspect** — `show_issue` to see a critique issue's rationale and locations; `show_tp`/`show_fp` for ground truth details
@@ -24,7 +24,7 @@ ${"##"} Workflow
 
 For ad-hoc database queries, use `exec` to run `psql` commands directly.
 
-${"##"} Daemon Lifecycle
+## Daemon Lifecycle
 
 1. **On start**: Call `list_pending` and grade everything
 2. **When done**: You'll be paused automatically when no pending edges remain
@@ -32,7 +32,7 @@ ${"##"} Daemon Lifecycle
 
 **Note:** You may start in a partially-graded state (previous agent hit context limit). Don't assume a clean slate — always call `list_pending` to see what work remains. The `grading_edges` table is your checkpoint; edges already created by previous runs are preserved.
 
-${"##"}# Wake Message Format
+### Wake Message Format
 
 When GT or critiques change, you'll receive a message like:
 ```
@@ -43,7 +43,7 @@ GT changes detected:
 
 This tells you what triggered the wake. Call `list_pending` to see the actual work.
 
-${"##"}# Working with Multiple Critic Runs
+### Working with Multiple Critic Runs
 
 Since you grade multiple critic runs, pass the `run` parameter to tools to specify which critic run's issues you're working with.
 
@@ -52,7 +52,7 @@ Each wake cycle:
 2. For each issue: inspect with `show_issue`, examine GT with `show_tp`/`show_fp`, create edges with `insert_edges`, fill remainder with `fill_remaining`
 3. When `list_pending` returns no edges, you'll be paused until the next change
 
-${"##"} Source Code Inspection
+## Source Code Inspection
 
 The `props` library is bundled in your container. To understand tools or inspect implementation:
 

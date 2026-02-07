@@ -2,7 +2,7 @@
 
 This document describes the end-to-end evaluation pipeline for prompt optimization.
 
-${"##"} Pipeline Overview
+## Pipeline Overview
 
 ```
 Critic Run                    Grader Run                 Metrics
@@ -15,7 +15,7 @@ System prompt┘   (reported_issues)  (grading_edges)        (aggregate views)
 ${describe_relation("snapshots")}
 ${describe_relation("snapshot_files")}
 
-${"##"} 1. Critic Run
+## 1. Critic Run
 
 **What the critic sees:**
 - Source code mounted at `/workspace` (read-only)
@@ -29,7 +29,7 @@ ${"##"} 1. Critic Run
 
 **Critic's task:** Review code, report issues, and call submit when done.
 
-${"##"} 2. Grader Run
+## 2. Grader Run
 
 **Input:**
 - Critique from critic (query `reported_issues`, `reported_issue_occurrences`)
@@ -48,31 +48,31 @@ Every (critique_issue, matchable_gt_occurrence) pair needs an edge with credit:
 
 **Output:** `grading_edges` table populated with edges between issues and GT occurrences.
 
-${"##"} 3. Metrics Computation
+## 3. Metrics Computation
 
 **Per-run:** Recall = sum(found_credit) / count(occurrences)
 
 **Aggregate:** Query views like `recall_by_definition_split_kind`
 
-${"##"} Recall Views
+## Recall Views
 
 ${describe_relation("recall_by_definition_split_kind")}
 ${describe_relation("recall_by_definition_example")}
 
-${"##"}# Weighting
+### Weighting
 
 Cross-run recall is weighted by occurrence, not by example:
 - Formula: `SUM(AVG(found_credit) per occurrence) / COUNT(occurrences)`
 - Examples with more TP occurrences naturally weight more
 - This measures "total issues found / total issues in dataset"
 
-${"##"}# Failure Handling
+### Failure Handling
 
 When a critic exceeds max_turns or context limits:
 - No valid critique is produced
 - Counts as zero-recall for that example
 
-${"##"}# Pareto Frontier (Best Definitions per Example)
+### Pareto Frontier (Best Definitions per Example)
 
 ${describe_relation("pareto_frontier_by_example")}
 
@@ -96,13 +96,13 @@ WHERE split = 'valid'
 GROUP BY def_id ORDER BY wins DESC;
 ```
 
-${"##"} Validation Recall
+## Validation Recall
 
 ${describe_relation("validation_recall_by_definition")}
 
-${"##"} Data Access Patterns
+## Data Access Patterns
 
-${"##"}# Training Split (Full Access)
+### Training Split (Full Access)
 
 ```sql
 -- Get examples
@@ -114,7 +114,7 @@ WHERE s.split = 'train';
 SELECT * FROM true_positives WHERE snapshot_slug = '<slug>';
 ```
 
-${"##"}# Validation Split (Restricted)
+### Validation Split (Restricted)
 
 ```sql
 -- Query aggregate metrics only

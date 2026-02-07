@@ -212,5 +212,8 @@ py_library(
     name = "system_prompt",
     srcs = ["system_prompt.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//mako"],
+    deps = [
+        "//mako_utils:preprocessor",
+        "@pypi//mako",
+    ],
 )
