@@ -12,4 +12,5 @@ spec:
   path: "./cluster/k8s/metrics-server"
   prune: true
   wait: true
-  # No dependencies - metrics-server is a core component
+  dependsOn:
+    - name: kyverno # Kyverno webhook must be ready before creating workloads

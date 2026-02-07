@@ -12,6 +12,8 @@ spec:
   path: "./cluster/k8s/metallb"
   prune: true
   wait: true
+  dependsOn:
+    - name: kyverno # Kyverno webhook must be ready before creating workloads
   # Note: CNI (Cilium) now managed by Terraform, not Flux
   # MetalLB deploys after cluster networking is ready
   # Verify MetalLB controller and speaker are ready
