@@ -68,9 +68,10 @@ Cross-run recall is weighted by occurrence, not by example:
 
 ### Failure Handling
 
-When a critic exceeds max_turns or context limits:
-- No valid critique is produced
-- Counts as zero-recall for that example
+When a critic container crashes or times out:
+- Any critique items produced before failure are still graded
+- Recall is computed from whatever was reported (may be partial)
+- A run with no reported issues gets zero recall
 
 ### Pareto Frontier (Best Definitions per Example)
 

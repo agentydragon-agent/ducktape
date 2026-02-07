@@ -77,14 +77,12 @@ jobs:
       - name: Run tests
         id: tests
         env:
-          # PostgreSQL environment for props and gatelet tests
+          # PostgreSQL environment for gatelet tests (uses GitHub service container)
           PGHOST: localhost
           PGPORT: 5432
           PGUSER: postgres
           PGPASSWORD: postgres
           PGDATABASE: postgres
-          # For testcontainers bridge networking (e2e tests)
-          PROPS_E2E_HOST_HOSTNAME: host.docker.internal
         run: |
           # Use target_pattern_file if artifact exists (avoids shell arg length limits)
           if [[ -f targets.txt ]] && [[ -s targets.txt ]]; then
@@ -113,7 +111,6 @@ jobs:
             --test_env=PGHOST=localhost --test_env=PGPORT=5432 \
             --test_env=PGUSER=postgres --test_env=PGPASSWORD=postgres \
             --test_env=PGDATABASE=postgres \
-            --test_env=PROPS_E2E_HOST_HOSTNAME=host.docker.internal \
             $TARGET_ARG
 
       - uses: ./.github/actions/collect-test-logs

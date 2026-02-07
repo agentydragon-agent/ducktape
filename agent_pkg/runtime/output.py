@@ -78,22 +78,21 @@ def _make_template_context(helpers: Mapping[str, Any] | None = None) -> dict[str
     ctx["run_command"] = run_command_template
     ctx["describe_relation"] = describe_relation_template
 
+    def _include(source: str, content: str, *, raw: bool) -> str:
+        if raw:
+            return f'<doc source="{source}">\n{content}\n</doc>'
+        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
+        return f'<doc source="{source}">\n{rendered}\n</doc>'
+
     def include_doc(pkg_path: str, *, raw: bool = False) -> str:
         """Include doc from package resources, rendering Mako syntax."""
         pkg, _, p = pkg_path.partition("/")
         content = (importlib.resources.files(pkg) / p).read_text()
-        if raw:
-            return f'<doc source="{pkg_path}">\n{content}\n</doc>'
-        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
-        return f'<doc source="{pkg_path}">\n{rendered}\n</doc>'
+        return _include(pkg_path, content, raw=raw)
 
     def include_file(file_path: str, *, raw: bool = False) -> str:
         """Include file from filesystem, rendering Mako syntax."""
-        content = Path(file_path).read_text()
-        if raw:
-            return f'<doc source="{file_path}">\n{content}\n</doc>'
-        rendered = Template(content, preprocessor=markdown_heading_preprocessor).render(**ctx)
-        return f'<doc source="{file_path}">\n{rendered}\n</doc>'
+        return _include(file_path, Path(file_path).read_text(), raw=raw)
 
     ctx["include_doc"] = include_doc
     ctx["include_file"] = include_file

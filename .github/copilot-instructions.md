@@ -48,69 +48,10 @@ If you modified `ansible/`, follow the checklist in [ansible/AGENTS.md](../ansib
 - All `py_test` targets MUST have `pytest_bazel.main()` entry point
 - Do NOT add `@pytest.mark.asyncio` — auto mode handles it
 
-## Props E2E Test Environment
+## Props E2E Tests
 
-The props ecosystem requires Docker infrastructure for E2E tests.
-
-### Quick Setup
+Props E2E tests use per-test testcontainers (PostgreSQL, Docker registry, etc.) and are fully hermetic — no manual setup required. Just run:
 
 ```bash
-# Generate credentials
-export PGPASSWORD=$(openssl rand -base64 24)
-export OPENAI_API_KEY=test-key-not-used
-
-# Build and pull images
-bazel run //props/registry_proxy:load
-bazel run //props/llm_proxy:load
-docker pull postgres:16
-docker pull registry:2
-
-# Start infrastructure
-cd props && docker compose up -d
-
-# Wait for services
-until pg_isready -h 127.0.0.1 -p 5433 -U postgres 2>/dev/null; do sleep 1; done
-until curl -sf http://127.0.0.1:5050/v2/ 2>/dev/null; do sleep 1; done
-
-# Initialize database
-export PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres PGDATABASE=eval_results
-export ADGN_PROPS_SPECIMENS_ROOT="$PWD/props/testing/fixtures/testdata/specimens"
-bazel run //props/cli:cli -- db recreate -y
-
-# Push agent images
-bazel run //props/critic:push
-bazel run //props/grader:push
+bazel test //props/...
 ```
-
-### Running Props E2E Tests
-
-```bash
-export PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres PGDATABASE=eval_results
-export AGENT_PGHOST=127.0.0.1
-export PROPS_REGISTRY_PROXY_HOST=127.0.0.1 PROPS_REGISTRY_PROXY_PORT=5051
-export PROPS_DOCKER_NETWORK=props-agents
-export PROPS_E2E_HOST_HOSTNAME=172.17.0.1
-
-bazel test --keep_going \
-  //props/critic:test_e2e \
-  //props/critic_dev/improve:test_e2e \
-  //props/critic_dev/optimize:test_e2e \
-  //props/core:test_agent_pkg_e2e
-```
-
-### Cleanup
-
-```bash
-cd props && docker compose down -v
-```
-
-### Environment Variables
-
-Automatically configured in `copilot-setup-steps.yml`:
-
-- `ADGN_PROPS_SPECIMENS_ROOT` — path to test specimen fixtures
-- `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` — PostgreSQL connection
-- `AGENT_PGHOST` — PostgreSQL host for agent containers
-- `PROPS_REGISTRY_PROXY_HOST`, `PROPS_REGISTRY_PROXY_PORT` — registry proxy
-- `PROPS_DOCKER_NETWORK` — Docker network for agents (`props-agents`)
-- `PROPS_E2E_HOST_HOSTNAME` — host address for containers (`172.17.0.1`)

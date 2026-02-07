@@ -1,6 +1,6 @@
 # Critiques: Reported Issues
 
-Critic agents write issues and occurrences to the database via tools (not raw SQL). The schema below is auto-derived from the ORM.
+Critic agents write issues and occurrences to the database via tools (not raw SQL).
 
 ${describe_relation("reported_issues")}
 ${describe_relation("reported_issue_occurrences")}

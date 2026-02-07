@@ -22,12 +22,12 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy import func
 
 from agent_core.testing.responses import PlayGen
+from props.agents.grader.drift_handler import check_grading_pending
 from props.agents.grader.testing.mocks import GraderMock
 from props.db.database import Database
-from props.db.models import AgentRunStatus, GradingEdge, GradingPending, ReportedIssue, ReportedIssueOccurrence
+from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import DBLocationAnchor
 from props.testing.fixtures.e2e_container import TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run
@@ -94,15 +94,8 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
             logger.info(f"Created critic run {critic_run_id} with reported issue")
 
         # Precondition: verify grading_pending has rows before starting daemon
-        with db.session() as session:
-            pending_count = (
-                session.query(func.count())
-                .select_from(GradingPending)
-                .filter(GradingPending.snapshot_slug == test_snapshot)
-                .scalar()
-                or 0
-            )
-            assert pending_count > 0, f"grading_pending should have rows but has {pending_count}"
+        pending_count = check_grading_pending(test_snapshot, db)
+        assert pending_count > 0, f"grading_pending should have rows but has {pending_count}"
 
         # Start grader daemon in background task — drift already exists in DB
         daemon_task = asyncio.create_task(

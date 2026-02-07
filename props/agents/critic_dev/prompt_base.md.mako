@@ -94,5 +94,3 @@ ${include_doc("props/agents/docs/db/critiques.md.mako")}
 ${include_doc("props/agents/docs/db/grading.md.mako")}
 
 ${include_doc("props/agents/docs/db/llm_requests.md.mako")}
-
-${include_doc("props/agents/docs/db/costs.md.mako")}

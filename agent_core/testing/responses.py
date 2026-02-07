@@ -163,9 +163,11 @@ def _extract_text_from_content_list(content: list[FunctionCallOutputContent], ca
     When _tool_result_to_openai returns list format (content blocks with no structured_content),
     concatenate text items to recover the original string.
     """
-    texts = [item.text for item in content if isinstance(item, FunctionOutputTextContent)]
-    if not texts:
-        raise ValueError(f"No text content in output list for call_id={call_id}")
+    texts: list[str] = []
+    for item in content:
+        if not isinstance(item, FunctionOutputTextContent):
+            raise TypeError(f"Expected all text content for {call_id=}, got {type(item).__name__}: {item}")
+        texts.append(item.text)
     return "".join(texts)
 
 

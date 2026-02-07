@@ -7,7 +7,6 @@ exports_files(
         "database_access.md",
         "db/agent_definitions.md.mako",
         "db/agent_runs.md.mako",
-        "db/costs.md.mako",
         "db/critiques.md.mako",
         "db/evaluation_flow.md.mako",
         "db/examples.md.mako",

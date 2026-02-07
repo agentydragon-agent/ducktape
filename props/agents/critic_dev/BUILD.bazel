@@ -25,7 +25,6 @@ py_library(
         "//props/agents/docs:database_access.md",
         "//props/agents/docs:db/agent_definitions.md.mako",
         "//props/agents/docs:db/agent_runs.md.mako",
-        "//props/agents/docs:db/costs.md.mako",
         "//props/agents/docs:db/critiques.md.mako",
         "//props/agents/docs:db/evaluation_flow.md.mako",
         "//props/agents/docs:db/examples.md.mako",
