@@ -62,8 +62,8 @@ schema = httpx.get(f"{backend_url}/openapi.json").json()
 | Agent Type                         | Eval API | Registry | LLM Proxy |
 | ---------------------------------- | -------- | -------- | --------- |
 | Admin (localhost or postgres user) | ✓        | ✓        | ✓         |
-| Prompt Optimizer (PO)              | ✓        | ✓        | ✓         |
-| Prompt Improver (PI)               | ✓        | ✓        | ✓         |
+| Critic-dev (optimizer)             | ✓        | ✓        | ✓         |
+| Critic-dev (improver)              | ✓        | ✓        | ✓         |
 | Critic                             | ✗        | ✗        | ✓         |
 | Grader                             | ✗        | ✗        | ✓         |
 

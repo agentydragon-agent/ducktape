@@ -14,7 +14,7 @@ OPT_MODEL = typer.Option("gpt-5", help="Model id")
 OPT_VERBOSE = typer.Option(False, "--verbose", "-v", help="Enable verbose output")
 
 # Options - Model Selection
-OPT_OPTIMIZER_MODEL = typer.Option("gpt-5.1", help="Model for prompt optimizer/reflection agent")
+OPT_OPTIMIZER_MODEL = typer.Option("gpt-5.1", help="Model for critic developer agent")
 OPT_CRITIC_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for critic execution")
 OPT_GRADER_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for grader execution")
 

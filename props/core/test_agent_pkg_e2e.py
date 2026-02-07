@@ -63,7 +63,7 @@ TEST_TIMEOUT_SECONDS = 120
 async def test_po_orchestrates_critic_with_system_prompt_check(
     synced_db, e2e_stack, test_snapshot, prompt_optimizer_image, critic_image, grader_image
 ):
-    """Test prompt optimizer orchestration with critic system prompt verification.
+    """Test critic-dev optimizer orchestration with critic system prompt verification.
 
     Verifies:
     1. Optimizer can call run_critic MCP tool
@@ -136,7 +136,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         )
 
         try:
-            # Run prompt optimizer
+            # Run critic-dev optimizer
             run_id = await stack.registry.run_prompt_optimizer(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,

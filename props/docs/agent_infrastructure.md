@@ -9,8 +9,8 @@ props/
 ├── critic/                 # Critic agent (main.py entry point, DirectToolProvider)
 ├── grader/                 # Grader agent (loop.py, daemon.py)
 ├── critic_dev/             # Critic-dev agents
-│   ├── optimize/           # Prompt optimizer agent
-│   └── improve/            # Improvement agent
+│   ├── optimize/           # Critic developer (optimizer) agent
+│   └── improve/            # Critic developer (improver) agent
 ├── orchestration/          # Host scaffold (agent_registry)
 ├── backend/                # Unified backend (LLM proxy, registry proxy, eval API)
 ├── db/                     # Database layer (ORM, migrations)
@@ -33,8 +33,8 @@ Critic-dev agents (optimizer, improvement) can also create custom critic images 
 | ---------------- | -------------- | ----------------- | -------------------------- |
 | Critic           | Yes (required) | User must specify | Experimentation on prompts |
 | Grader           | No             | `BUILTIN_TAG`     | Evaluation infrastructure  |
-| Prompt Optimizer | No             | `BUILTIN_TAG`     | Infrastructure agent       |
-| Improvement      | No             | `BUILTIN_TAG`     | Infrastructure agent       |
+| Critic-dev (opt) | No             | `BUILTIN_TAG`     | Infrastructure agent       |
+| Critic-dev (imp) | No             | `BUILTIN_TAG`     | Infrastructure agent       |
 | Snapshot Grader  | No             | `BUILTIN_TAG`     | Long-running daemon        |
 
 ### ID Types
@@ -95,14 +95,14 @@ The proxy sits between agents and the registry, enforcing access control and tra
 | Caller              | Read | Push by digest | Push by tag | Delete |
 | ------------------- | ---- | -------------- | ----------- | ------ |
 | Admin (postgres)    | Yes  | Yes            | Yes         | No     |
-| PO/PI agent         | Yes  | Yes            | No          | No     |
+| Critic-dev agent    | Yes  | Yes            | No          | No     |
 | Critic/grader agent | No   | No             | No          | No     |
 
 Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), enforcing immutability. Tags (like `critic:builtin`) are set administratively when Bazel pushes built-in images.
 
 ### Agent Workflows
 
-**Critic-dev agents (PO/PI — registry access via proxy):**
+**Critic-dev agents (registry access via proxy):**
 
 1. Pull `critic:builtin` via proxy
 2. Create new layer with modified prompt/code using `crane`

@@ -1,7 +1,7 @@
 """Critic development CLI for optimizer and improvement agents.
 
 Commands for running critic/grader evaluations, viewing metrics, and analysis.
-Used by prompt optimizer and improvement agents running inside containers.
+Used by critic-dev agents running inside containers.
 """
 
 from __future__ import annotations

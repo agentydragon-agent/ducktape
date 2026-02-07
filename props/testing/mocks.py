@@ -24,7 +24,7 @@ class SubprocessExecMock(MCPDecoratorMock):
     """Mock for in-container subprocess exec (DirectToolProvider).
 
     Uses plain tool name ``exec`` matching DirectToolProvider registration
-    in in-container agent loops (critic, grader, PO/PI).
+    in in-container agent loops (critic, grader, critic-dev).
 
     For host-side docker exec via MCP server (editor_agent), use
     DockerExecMock from agent_core.testing.mcp.responses instead.

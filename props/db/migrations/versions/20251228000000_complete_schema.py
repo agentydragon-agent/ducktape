@@ -1609,9 +1609,9 @@ Key invariants:
 
 Drift = missing edges. Query grading_pending view to see what''s missing.
 
-USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
+USEFUL FOR: Grader (write), critic-dev (read TRAIN only).
 - Grader: INSERT edges for each (critique_issue, gt_occurrence) pair
-- Prompt optimizer: analyze which issues got credit vs not
+- Critic-dev: analyze which issues got credit vs not
 - Clustering: read decisions with NULL targets (unknowns)'
     """)
 

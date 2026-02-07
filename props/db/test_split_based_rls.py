@@ -1,6 +1,6 @@
 """Test split-based RLS policies for optimization agents.
 
-Verifies that prompt optimizer users (agent roles created via
+Verifies that critic-dev users (agent roles created via
 ensure_agent_role) can only access TRAIN split sensitive data
 (true_positives, false_positives, agent_runs, llm_requests, etc.), not TEST or VALID.
 
@@ -50,7 +50,7 @@ pytestmark = [pytest.mark.integration]
 
 @pytest_asyncio.fixture
 async def prompt_optimizer_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
-    """Create prompt optimizer agent credentials with a real Postgres role."""
+    """Create critic-dev agent credentials with a real Postgres role."""
     type_config = PromptOptimizerTypeConfig(
         target_metric=TargetMetric.TARGETED,
         optimizer_model="test-optimizer-model",
@@ -64,9 +64,9 @@ async def prompt_optimizer_creds(synced_db: Database) -> AsyncGenerator[AgentCre
 async def prompt_optimizer_session(
     prompt_optimizer_creds: AgentCredentials, synced_db: Database
 ) -> AsyncGenerator[Session]:
-    """Create database session as prompt optimizer temp user.
+    """Create database session as critic-dev temp user.
 
-    Yields session with RLS policies active for prompt optimizer role.
+    Yields session with RLS policies active for critic-dev role.
     """
     user_config = synced_db.config.with_user(prompt_optimizer_creds.username, prompt_optimizer_creds.password)
     engine = create_engine(user_config.url)
@@ -89,7 +89,7 @@ async def test_prompt_optimizer_can_see_all_snapshots_metadata(synced_db: Databa
     """
     # Can see TEST split snapshots (metadata only, not sensitive)
     test_snapshots = prompt_optimizer_session.query(Snapshot).filter(Snapshot.slug == "test-fixtures/test1").all()
-    assert len(test_snapshots) == 1, "prompt optimizer user CAN see all snapshots metadata"
+    assert len(test_snapshots) == 1, "critic-dev user CAN see all snapshots metadata"
     assert test_snapshots[0].split == "test"
 
     # Can also see TRAIN and VALID snapshots
@@ -108,12 +108,12 @@ async def test_prompt_optimizer_can_see_train_split_snapshots(synced_db: Databas
     Setup (as admin_user):
     - Git fixture already has test-trivial snapshot
 
-    Verify (as prompt optimizer temp user):
+    Verify (as critic-dev temp user):
     - Can query snapshots for train split
     """
     train_snapshots = prompt_optimizer_session.query(Snapshot).filter(Snapshot.slug == "test-fixtures/train1").all()
 
-    assert len(train_snapshots) == 1, "prompt optimizer user should see train split snapshots via RLS"
+    assert len(train_snapshots) == 1, "critic-dev user should see train split snapshots via RLS"
     assert train_snapshots[0].split == "train"
 
 
@@ -127,14 +127,14 @@ async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
     Setup (as admin_user):
     - Git fixture already has test-validation snapshot with TPs
 
-    Verify (as prompt optimizer temp user):
+    Verify (as critic-dev temp user):
     - CANNOT query true positives for valid specimens (returns 0 rows)
     """
     # Should NOT see true positives for valid specimen
     valid_tps = (
         prompt_optimizer_session.query(TruePositive).filter(TruePositive.snapshot_slug == "test-fixtures/valid1").all()
     )
-    assert len(valid_tps) == 0, "prompt optimizer user should NOT see valid split true_positives via RLS"
+    assert len(valid_tps) == 0, "critic-dev user should NOT see valid split true_positives via RLS"
 
 
 async def test_prompt_optimizer_can_see_train_split_false_positives(
@@ -148,7 +148,7 @@ async def test_prompt_optimizer_can_see_train_split_false_positives(
     Setup (as admin_user):
     - Git fixture already has test-trivial snapshot
 
-    Verify (as prompt optimizer temp user):
+    Verify (as critic-dev temp user):
     - Can query false positives for train specimens (query succeeds, no RLS block)
     """
     # Query should succeed (no RLS block), but may return empty if no FPs defined
@@ -172,7 +172,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
     - Query existing test-split-test snapshot and example
     - Create critic run for test snapshot
 
-    Verify (as prompt optimizer temp user):
+    Verify (as critic-dev temp user):
     - Cannot query critic_runs for test split specimens
     """
     # Setup: Use admin_user to write test data
@@ -188,14 +188,14 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
         session.add(test_run)
         session.commit()
 
-    # Verify: Connect as prompt optimizer temp user and verify RLS blocks test split
+    # Verify: Connect as critic-dev temp user and verify RLS blocks test split
     test_runs = (
         prompt_optimizer_session.query(AgentRun)
         .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/test1")
         .all()
     )
 
-    assert len(test_runs) == 0, "prompt optimizer user should not see test split critic_runs via RLS"
+    assert len(test_runs) == 0, "critic-dev user should not see test split critic_runs via RLS"
 
 
 async def test_prompt_optimizer_can_see_train_split_critic_runs(synced_db: Database, prompt_optimizer_session: Session):
@@ -207,7 +207,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(synced_db: Datab
     - Query existing test-trivial snapshot and example
     - Create critic run for train snapshot
 
-    Verify (as prompt optimizer temp user):
+    Verify (as critic-dev temp user):
     - Can query critic_runs for train split specimens
     """
     # Setup: Use admin_user to write test data
@@ -228,10 +228,10 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(synced_db: Datab
         session.add(train_run)
         session.commit()
 
-    # Verify: Connect as prompt optimizer temp user and verify can see train split
+    # Verify: Connect as critic-dev temp user and verify can see train split
     train_runs = prompt_optimizer_session.query(AgentRun).filter(AgentRun.agent_run_id == train_agent_run_id).all()
 
-    assert len(train_runs) == 1, "prompt optimizer user should see train split critic_runs via RLS"
+    assert len(train_runs) == 1, "critic-dev user should see train split critic_runs via RLS"
     assert train_runs[0].critic_config().example.snapshot_slug == "test-fixtures/train1"
 
 
@@ -263,14 +263,14 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
         session.add(valid_run)
         session.commit()
 
-    # Verify: Connect as prompt optimizer temp user and verify RLS blocks valid split
+    # Verify: Connect as critic-dev temp user and verify RLS blocks valid split
     valid_runs = (
         prompt_optimizer_session.query(AgentRun)
         .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/valid1")
         .all()
     )
 
-    assert len(valid_runs) == 0, "prompt optimizer user should NOT see valid split critic_runs via RLS"
+    assert len(valid_runs) == 0, "critic-dev user should NOT see valid split critic_runs via RLS"
 
 
 async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
@@ -310,12 +310,12 @@ async def test_prompt_optimizer_cannot_see_valid_split_llm_requests(
         session.add(llm_request)
         session.commit()
 
-    # Verify: Connect as prompt optimizer temp user and verify RLS blocks requests
+    # Verify: Connect as critic-dev temp user and verify RLS blocks requests
     valid_requests = (
         prompt_optimizer_session.query(LLMRequest).filter(LLMRequest.agent_run_id == valid_agent_run_id).all()
     )
 
-    assert len(valid_requests) == 0, "prompt optimizer user should NOT see valid split llm_requests via RLS"
+    assert len(valid_requests) == 0, "critic-dev user should NOT see valid split llm_requests via RLS"
 
 
 async def test_prompt_optimizer_can_see_train_split_llm_requests(
@@ -354,12 +354,12 @@ async def test_prompt_optimizer_can_see_train_split_llm_requests(
         session.add(llm_request)
         session.commit()
 
-    # Verify: Connect as prompt optimizer temp user and verify can see train split requests
+    # Verify: Connect as critic-dev temp user and verify can see train split requests
     train_requests = (
         prompt_optimizer_session.query(LLMRequest).filter(LLMRequest.agent_run_id == train_agent_run_id).all()
     )
 
-    assert len(train_requests) == 1, "prompt optimizer user should see train split llm_requests via RLS"
+    assert len(train_requests) == 1, "critic-dev user should see train split llm_requests via RLS"
     assert train_requests[0].model == "gpt-4o"
 
 

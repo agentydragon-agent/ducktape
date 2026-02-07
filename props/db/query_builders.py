@@ -220,7 +220,7 @@ def snapshot_files_with_issues_select() -> Select:
         return tp_files | fp_files
 
     RLS Note: This view inherits RLS from true_positives and false_positives tables,
-    which may be filtered by temporary agent users (e.g., TRAIN-only for prompt optimizer).
+    which may be filtered by temporary agent users (e.g., TRAIN-only for critic-dev).
     We also join with snapshots to ensure snapshot_slug is valid.
 
     Returns:
@@ -321,7 +321,7 @@ def po_run_costs(po_run_id: UUID) -> Select:
     """Get per-run costs and totals for a prompt optimization run.
 
     Uses AgentRun with JSONB filtering to find all child runs (critics, graders)
-    of a prompt optimizer agent run.
+    of a critic-dev agent run.
 
     Args:
         po_run_id: Prompt optimization agent run UUID (agent_run_id)

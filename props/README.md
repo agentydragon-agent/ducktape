@@ -31,7 +31,7 @@ props/
 │       ├── stats.py          # Dashboard stats API
 │       ├── runs.py           # Agent runs API
 │       ├── ground_truth.py   # Ground truth API
-│       ├── eval.py           # Eval API (for PO/PI agents)
+│       ├── eval.py           # Eval API (for critic-dev agents)
 │       ├── llm.py            # LLM proxy (OpenAI API)
 │       └── registry.py       # Registry proxy (OCI Distribution API)
 ├── frontend/                 # Svelte UI

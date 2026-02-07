@@ -1,6 +1,6 @@
-"""Prompt optimizer e2e tests.
+"""Critic-dev optimizer e2e tests.
 
-Tests the prompt optimizer agent using:
+Tests the critic-dev optimizer agent using:
 - Real Docker containers running agent loops
 - Real PostgreSQL database with temporary RLS-scoped users
 - Real LLM proxy (validates auth, logs requests)
@@ -254,7 +254,7 @@ async def test_optimizer_orchestrates_critic(
         grader_task = asyncio.create_task(run_grader_daemon())
 
         try:
-            # Run prompt optimizer - this triggers the full orchestration
+            # Run critic-dev optimizer - this triggers the full orchestration
             # The grader daemon running in background will process edges when critic completes
             run_id = await stack.registry.run_prompt_optimizer(
                 budget=1.0,
@@ -264,7 +264,7 @@ async def test_optimizer_orchestrates_critic(
                 timeout_seconds=120,
             )
 
-            logger.info(f"Orchestration test: prompt optimizer completed with run_id={run_id}")
+            logger.info(f"Orchestration test: critic-dev optimizer completed with run_id={run_id}")
 
             # Verify optimizer run status
             with synced_db.session() as session:

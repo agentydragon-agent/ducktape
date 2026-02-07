@@ -6,7 +6,7 @@ from props.testing.mocks import SubprocessExecMock
 
 
 class CriticDevMock(SubprocessExecMock):
-    """Mock for critic-dev agents (prompt optimizer, improvement) with tool convenience methods.
+    """Mock for critic-dev agents (optimizer, improver) with tool convenience methods.
 
     Example:
         @CriticDevMock.mock()

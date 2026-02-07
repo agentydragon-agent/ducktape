@@ -4,7 +4,7 @@
 
 All agent loops run inside Docker containers. Each container is a self-contained agent that talks to the LLM proxy (integrated into the unified backend), executes tools via subprocess, and writes results to Postgres.
 
-**Benefit:** Prompt optimizer agents can author entire agentic systems - arbitrary LLM pipelines, workflows, subagents, classifiers, loops, tool calls, analysis, dispatch. Not limited to append-only single-agent patterns.
+**Benefit:** Critic developer agents can author entire agentic systems - arbitrary LLM pipelines, workflows, subagents, classifiers, loops, tool calls, analysis, dispatch. Not limited to append-only single-agent patterns.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ Host Scaffold                      Container
 ─────────────                      ─────────
 run_loop_agent()
 ├─ Create temp DB user
-├─ [Subagent spawn endpoint for PO/PI]
+├─ [Subagent spawn endpoint for critic-dev]
 └─ Create container ─────────────> Container starts (CMD)
                                    ├─ props snapshot fetch (from Postgres)
                                    ├─ Construct prompt, start agent loop
@@ -27,7 +27,7 @@ run_loop_agent()
 
 - **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
 - **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Daemon mode via `props/agents/grader/daemon.py` with pg_notify.
-- **PO/PI:** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, run_critic, wait_until_graded_tool, submit, report_failure tools.
+- **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, run_critic, wait_until_graded_tool, submit, report_failure tools.
 - **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
 
 ## Decisions
@@ -183,11 +183,11 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Limits          | No explicit concurrency/spawn limits; cost + timeout sufficient                 |
 | Wait helpers    | `wait_until_graded_tool` polls `grading_pending` view directly inside container |
 
-PO/PI agents have `DirectToolProvider` tools that call the backend REST API for spawning and poll the database directly for grading status. No MCP required.
+Critic-dev agents have `DirectToolProvider` tools that call the backend REST API for spawning and poll the database directly for grading status. No MCP required.
 
 ```
-Backend                                 Container (PO/PI)
-───────                                 ─────────────────
+Backend                                 Container (critic-dev)
+───────                                 ──────────────────────
 /api/eval/run_critic (REST)             DirectToolProvider
 ├─ Spawns critic container   ◄──────────  run_critic tool (HTTP POST)
 └─ Returns critic_run_id
@@ -203,7 +203,7 @@ grading_pending view         ◄──────────  wait_until_grade
 - `run_critic(definition_id, example, ...)` → critic_run_id (calls REST API)
 - `wait_until_graded_tool(critic_run_id)` → grading results (polls database directly)
 
-**Typical PO workflow:**
+**Typical critic-dev workflow:**
 
 1. `run_critic(...)` → critic_run_id (returns when critic completes)
 2. `wait_until_graded_tool(critic_run_id)` (polls `grading_pending` until empty)
@@ -215,7 +215,7 @@ grading_pending view         ◄──────────  wait_until_grade
 | -------------- | --------------------------------------------------------------- |
 | LLM calls      | Logged by LLM proxy to `llm_requests` table                     |
 | Container logs | Capture stdout/stderr, store in columns on `agent_runs`         |
-| Access         | PO/PI agents and humans can query logs from DB                  |
+| Access         | Critic-dev agents and humans can query logs from DB             |
 | Cost tracking  | `llm_request_costs` and `llm_run_costs` views (per-request/run) |
 
 **`llm_requests` table:**
@@ -235,7 +235,7 @@ grading_pending view         ◄──────────  wait_until_grade
 | ----------------- | ----------------------------------------------------- |
 | Syscall filtering | None (containers are isolated enough)                 |
 | Network           | Only LLM proxy, Postgres, subagent endpoint reachable |
-| Registry          | PO/PI can push new images by digest                   |
+| Registry          | Critic-dev agents can push new images by digest       |
 
 ### Docker Compose Topology
 
@@ -298,7 +298,7 @@ Collect logs on container exit via aiodocker. Accept that hard crashes may lose 
 - Host uses `aiodocker` to read container logs after container exits
 - Store in `agent_runs.container_stdout` and `agent_runs.container_stderr`
 - Hard crashes (OOM, SIGKILL) may lose buffered output - acceptable tradeoff
-- **Important for agent-authoring agents (PO/PI):** Container logs are only available after the agent exits, not during execution. Design workflows accordingly.
+- **Important for critic-dev agents:** Container logs are only available after the agent exits, not during execution. Design workflows accordingly.
 
 ## Open Questions
 

@@ -351,7 +351,7 @@ class AgentRegistry:
         target_metric: TargetMetric,
         timeout_seconds: int,
     ) -> UUID:
-        """Run a prompt optimizer agent. Returns agent run ID (query DB for status)."""
+        """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
         agent_run_id = uuid4()
         image_digest, image = await self._resolve_image(AgentType.PROMPT_OPTIMIZER, BUILTIN_TAG)
 

@@ -235,9 +235,9 @@ For validation jobs:
 
 ## Future Extensions
 
-### Prompt Optimization Dashboard
+### Critic Development Dashboard
 
-- Launch prompt optimizer runs from UI
+- Launch critic-dev optimizer runs from UI
 - Budget tracking and cost display
 - Iteration history with metric trends
 - Compare definitions side-by-side

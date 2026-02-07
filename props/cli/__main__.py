@@ -123,7 +123,7 @@ async def prompt_optimize(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
 ) -> None:
-    """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
+    """Run a critic developer agent to optimize a critic system prompt with $ budget."""
     db: Database = ctx.obj
     config = load_config_from_env()
     docker_client = aiodocker.Docker()
