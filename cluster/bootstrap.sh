@@ -75,8 +75,14 @@ echo ""
 log "🔍 Phase 0: Preflight Validation"
 echo "=================================="
 
+# Get repo root first - must run git commands from there because cluster/.git is broken.
+# Claude Code's sandbox creates phantom dotfiles including an empty .git file in cluster/
+# which breaks git operations when run from within the cluster directory.
+# See: https://github.com/anthropics/claude-code/issues/17258
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && git rev-parse --show-toplevel)"
+
 # Check git working tree is clean (only cluster subtree - monorepo may have other changes)
-if ! git diff-index --quiet HEAD -- cluster/; then
+if ! (cd "$REPO_ROOT" && git diff-index --quiet HEAD -- cluster/); then
   echo "❌ FATAL: Git working tree is not clean in cluster/"
   echo "Please commit or stash your cluster changes before running bootstrap"
   exit 1
@@ -85,7 +91,6 @@ fi
 # Run pre-commit validation from repo root (unified config)
 # Only validate cluster files to avoid failures from unrelated packages
 log "🔍 Running pre-commit validation on cluster files..."
-REPO_ROOT="$(git rev-parse --show-toplevel)"
 if ! (cd "$REPO_ROOT" && git ls-files -- cluster/ | xargs pre-commit run --files); then
   log "❌ FATAL: Pre-commit validation failed"
   exit 1
