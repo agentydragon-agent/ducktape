@@ -9,7 +9,7 @@ Architecture:
 - wait_until_graded: Direct database polling inside container (no REST call)
 
 Usage (inside container):
-    from props.agents.eval_client import EvalClient, wait_until_graded
+    from props.agents.critic_dev.eval_client import EvalClient, wait_until_graded
 
     async with EvalClient.from_env() as client:
         result = await client.run_critic(

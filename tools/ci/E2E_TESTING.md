@@ -58,8 +58,8 @@ This eliminates the need for docker-compose and CI workflow infrastructure setup
 
 ### PostgreSQL Tests
 
-- `bazel-test.yml`: Uses GitHub service container (`PGHOST=localhost`, `PGPORT=5432`)
-- Props tests may use testcontainers in the future
+- `bazel-test.yml`: Uses GitHub service container (`PGHOST=localhost`, `PGPORT=5432`) for gatelet tests
+- Props E2E tests use testcontainers for PostgreSQL (hermetic, per-test)
 
 ### Workflow Dispatch
 
@@ -135,9 +135,9 @@ services:
 
 **Recommendation**: Good for simple requirements. Already used for `bazel-test.yml`.
 
-### Option 3: Docker Compose Pre-Setup
+### Option 3: Docker Compose Pre-Setup (Historical)
 
-Run docker-compose before tests (current `props-e2e-test.yml` approach):
+Previously used for props E2E tests, now replaced by testcontainers:
 
 ```yaml
 - run: docker compose up -d postgres registry
@@ -157,7 +157,7 @@ Run docker-compose before tests (current `props-e2e-test.yml` approach):
 - Harder to parallelize (shared state)
 - More CI YAML maintenance
 
-**Recommendation**: Good for complex multi-service tests. Keep for props E2E.
+**Recommendation**: Only when testcontainers can't handle the orchestration complexity.
 
 ### Option 4: rules_itest (Bazel-Native Service Orchestration)
 
@@ -238,7 +238,7 @@ postgresql_server_test(
 - Only `postgresql_server_test` currently supported
 - Limited to PostgreSQL (no Redis, etc.)
 
-**Recommendation**: Consider rules_itest for new hermetic tests, especially if remote execution becomes important. Keep docker-compose for existing complex E2E flows.
+**Recommendation**: Consider rules_itest for new hermetic tests, especially if remote execution becomes important.
 
 ## Recommended Approach: Tag-Based Environment Dispatch
 
@@ -319,82 +319,39 @@ TAG_CONTRACTS = {
          ▼                    ▼                    ▼
 ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
 │  basic-tests    │  │  docker-tests   │  │  e2e-tests      │
-│  (no infra)     │  │  (Docker only)  │  │  (full stack)   │
-├─────────────────┤  ├─────────────────┤  ├─────────────────┤
-│ service:        │  │ setup:          │  │ setup:          │
-│   postgres:5432 │  │   (native)      │  │   compose up    │
-│                 │  │                 │  │   build images  │
-│ bazel test      │  │ bazel test      │  │   init schema   │
-│   --test_tag_   │  │   --test_tag_   │  │   start backend │
-│   filters=-e2e  │  │   filters=      │  │                 │
-│   -requires_    │  │   requires_     │  │ bazel test      │
-│   docker        │  │   docker        │  │   --test_tag_   │
-│                 │  │   -e2e          │  │   filters=e2e   │
+│  (no infra)     │  │  (Docker only)  │  │  (testcontainers│
+├─────────────────┤  ├─────────────────┤  │   per-test)     │
+│ service:        │  │ setup:          │  ├─────────────────┤
+│   postgres:5432 │  │   (native)      │  │ setup:          │
+│                 │  │                 │  │   (none - tests  │
+│ bazel test      │  │ bazel test      │  │   manage own    │
+│   --test_tag_   │  │   --test_tag_   │  │   infra via     │
+│   filters=-e2e  │  │   filters=      │  │   testcontainers│
+│   -requires_    │  │   requires_     │  │                 │
+│   docker        │  │   docker        │  │ bazel test      │
+│                 │  │   -e2e          │  │   --test_tag_   │
+│                 │  │                 │  │   filters=e2e   │
 └─────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
 ### Implementation Plan
 
-#### Phase 1: Standardize Ports (Low Risk)
+#### Completed: Testcontainers Migration
 
-1. Create `tools/ci/test_environments.py` with tag contracts
-2. Update `props/` tests to use standard port 5432
-3. Update `props/compose.yaml` port mapping
-4. Verify all tests pass locally and in CI
+Props E2E tests have been migrated to testcontainers. Each test manages its own PostgreSQL, Docker registry, and other infrastructure via `props/testing/fixtures/e2e_infra.py`. No docker-compose or CI workflow setup is needed.
 
-#### Phase 2: Tag Validation
+#### Remaining: Tag Validation
 
 Add Bazel query to detect tag inconsistencies:
 
 ```bash
 # Find all tests with requires_postgres
 bazel query 'attr(tags, "requires_postgres", //...)'
-
-# Verify they all use consistent env expectations
-# (Check BUILD.bazel files for env = {...} declarations)
 ```
 
-Add CI check that fails if tests use tags without matching env declarations.
+#### Remaining: Unified Compute-Targets
 
-#### Phase 3: Unified Compute-Targets
-
-Extend `bazel_diff.py` to:
-
-1. Query tags on affected test targets
-2. Group by environment requirements
-3. Output structured JSON for matrix dispatch
-
-```python
-# Output example
-{
-    "basic": ["//adgn:test_foo", "//mcp_infra:test_bar"],
-    "postgres": ["//props/db:test_sync", "//gatelet:test_db"],
-    "docker": ["//agent_server:test_exec"],
-    "e2e": ["//props/agents/critic:test_e2e"]
-}
-```
-
-#### Phase 4: Matrix Dispatch
-
-Use [GitHub Actions dynamic matrix](https://devopsdirective.com/posts/2025/08/advanced-github-actions-matrix/):
-
-```yaml
-jobs:
-  compute:
-    outputs:
-      matrix: ${{ steps.compute.outputs.matrix }}
-    steps:
-      - run: python tools/ci/compute_test_matrix.py
-        id: compute
-
-  test:
-    needs: compute
-    strategy:
-      matrix: ${{ fromJson(needs.compute.outputs.matrix) }}
-    uses: ./.github/workflows/test-env-${{ matrix.env }}.yml
-    with:
-      targets: ${{ matrix.targets }}
-```
+Consider extending `bazel_diff.py` to group tests by environment requirements for matrix dispatch.
 
 ### Consistency Validation
 
@@ -419,17 +376,13 @@ def validate():
 
 ## Open Questions
 
-1. **Should we migrate to Testcontainers for new tests?**
-   - Pro: More hermetic, easier local dev
-   - Con: Learning curve, slower tests
-
-2. **How to handle tests needing multiple infra (postgres + docker)?**
+1. **How to handle tests needing multiple infra (postgres + docker)?**
    - Option A: Composite tags (`requires_postgres_and_docker`)
    - Option B: Multiple tags, environment provides superset
 
-3. **Remote execution compatibility?**
-   - Current compose-based tests won't work with remote execution
-   - Accept this limitation, or invest in Bazel-native services?
+2. **Remote execution compatibility?**
+   - Testcontainers work with RBE (Firecracker VMs have Docker)
+   - Remaining compose-based tests won't work with remote execution
 
 ## References
 

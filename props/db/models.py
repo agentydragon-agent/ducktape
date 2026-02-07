@@ -17,7 +17,6 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, TypeAdapter
 from sqlalchemy import (
     BigInteger,
-    Boolean,
     CheckConstraint,
     Enum,
     FetchedValue,
@@ -997,8 +996,8 @@ class TpOccurrenceCredit(Base):
 class RecallByRun(Base):
     """Per-critic-run recall from recall_by_run database VIEW.
 
-    Includes all runs (in_progress, exited, timed_out). grading_complete indicates
-    whether grading_pending has no remaining edges for this run.
+    Includes all runs (in_progress, exited, timed_out). missing_grading_edges counts
+    how many grading_pending edges remain for this run (0 = grading complete).
     """
 
     __tablename__ = "recall_by_run"
@@ -1026,8 +1025,8 @@ class RecallByRun(Base):
     # Scalar recall (total_credit / recall_denominator)
     recall: Mapped[float] = mapped_column(nullable=False)
 
-    # True when no missing edges remain in grading_pending for this run
-    grading_complete: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Number of grading_pending edges remaining for this run (0 = complete)
+    missing_grading_edges: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class RecallByDefinitionExample(Base):

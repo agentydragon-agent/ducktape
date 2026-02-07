@@ -13,7 +13,7 @@ Incorporates:
 - No clustering tables (deprecated feature removed)
 - Normalized occurrence ranges (replaces JSONB files/relevant_files columns)
 - Simplified grading views: tp_occurrence_credits (no grader_run_id dimension),
-  scalar total_credit in recall_by_run, grading_complete flag
+  scalar total_credit in recall_by_run, missing_grading_edges count
 - CHECK constraints for digest format (agent_definitions, agent_runs baseline_image_digests)
 
 Revision ID: 20251228000000
@@ -1055,12 +1055,22 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.CheckConstraint(
             """(
                 type_config->>'agent_type' <> 'improvement'
-                OR NOT jsonb_path_exists(
-                    type_config->'baseline_image_digests',
-                    '$[*] ? (! (@ like_regex "^sha256:[0-9a-f]{64}$"))'
+                OR (
+                    jsonb_array_length(type_config->'baseline_image_digests') > 0
+                    AND NOT jsonb_path_exists(
+                        type_config->'baseline_image_digests',
+                        '$[*] ? (! (@ like_regex "^sha256:[0-9a-f]{64}$"))'
+                    )
                 )
             )""",
             name="check_baseline_digests",
+        ),
+        sa.CheckConstraint(
+            """(
+                type_config->>'agent_type' <> 'improvement'
+                OR jsonb_array_length(type_config->'allowed_examples') > 0
+            )""",
+            name="check_allowed_examples_not_empty",
         ),
     )
 
@@ -1852,7 +1862,7 @@ Non-NULL = file-local (only critiques touching those files can match)'
         'Missing grading edges (drift detection). Includes all critic runs with
 reported issues (including in_progress — grading can start before critic exits).
 When this view returns no rows for a run, grading is complete for that run.
-recall_by_run.grading_complete is derived from this view.'
+recall_by_run.missing_grading_edges is derived from this view.'
     """)
 
     # ============================================================================
@@ -2311,10 +2321,10 @@ USEFUL FOR: Prompt optimizer, improvement agent.
                     FROM tp_occurrence_credits toc
                     WHERE toc.critic_run_id = cr.agent_run_id
                 ), 0.0) AS total_credit,
-                NOT EXISTS (
-                    SELECT 1 FROM grading_pending gp
+                (
+                    SELECT COUNT(*) FROM grading_pending gp
                     WHERE gp.critique_run_id = cr.agent_run_id
-                ) AS grading_complete
+                ) AS missing_grading_edges
             FROM agent_runs cr
             JOIN examples e ON (
                 cr.type_config->'example'->>'snapshot_slug' = e.snapshot_slug
@@ -2332,15 +2342,15 @@ USEFUL FOR: Prompt optimizer, improvement agent.
                 THEN total_credit / recall_denominator
                 ELSE 0.0
             END AS recall,
-            grading_complete
+            missing_grading_edges
         FROM per_run
     """)
 
     op.execute("""
         COMMENT ON VIEW recall_by_run IS
         'Per-critic-run recall. Includes all runs (in_progress, exited, timed_out).
-grading_complete = true when no missing edges remain in grading_pending.
-Credit is preliminary until grading_complete is true.'
+missing_grading_edges counts pending grading edges (0 = complete).
+Credit is preliminary until missing_grading_edges = 0.'
     """)
 
     # recall_by_definition_example view

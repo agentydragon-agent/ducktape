@@ -33,6 +33,11 @@ py_library(
     srcs = ["main.py"],
     data = [
         "prompt.md.mako",
+        "//props/agents/critic/variants:contract_truthfulness.md",
+        "//props/agents/critic/variants:dead_code.md",
+        "//props/agents/critic/variants:flag_propagation.md",
+        "//props/agents/critic/variants:high_recall_critic.md",
+        "//props/agents/critic/variants:verbose_docs.md",
         "//props/agents/docs:database_access.md",
         "//props/agents/docs:db/critiques.md.mako",
     ],

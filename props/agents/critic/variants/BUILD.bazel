@@ -13,6 +13,17 @@ Build targets:
 
 load(":critic.bzl", "critic_variant")
 
+exports_files(
+    [
+        "contract_truthfulness.md",
+        "dead_code.md",
+        "flag_propagation.md",
+        "high_recall_critic.md",
+        "verbose_docs.md",
+    ],
+    visibility = ["//props:__subpackages__"],
+)
+
 critic_variant(
     name = "contract_truthfulness",
     prompt_md = "contract_truthfulness.md",

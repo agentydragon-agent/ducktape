@@ -66,7 +66,7 @@ python3 -c "import json; from props.agents.schema import describe_all; print(jso
 cat /app/critic.runfiles/_main/agent_core/agent.py
 
 # Eval client (run_critic, wait_until_graded)
-cat /app/critic.runfiles/_main/props/agents/eval_client.py
+cat /app/critic.runfiles/_main/props/agents/critic_dev/eval_client.py
 ```
 
 Use this to understand the exact tool argument schemas, database operations, and agent loop behavior rather than guessing.

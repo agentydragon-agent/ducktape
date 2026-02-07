@@ -4,25 +4,22 @@ Each critic variant differs only in its system prompt markdown file.
 All variants share the same agent loop code (main.py) and tools.
 
 Architecture:
-- All variants use //props/agents/critic:main_tar (shared agent loop)
-- Each variant packages its own prompt into /prompt.md.mako
-- PROMPT_TEMPLATE_PATH env var tells main.py to use the baked-in prompt
+- All variants use //props/agents/critic:main_tar (shared agent loop + variant prompts)
+- PROMPT_TEMPLATE_PATH env var selects which variant prompt to use at runtime
 """
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
 
 def critic_variant(name, prompt_md):
-    """Build a critic variant using the new in-container model.
+    """Build a critic variant using the in-container model.
 
     All variants share:
-    - //props/agents/critic:main_tar (agent loop, tool definitions)
+    - //props/agents/critic:main_tar (agent loop, tool definitions, all variant prompts)
     - Same container base, env, workdir
 
     Each variant differs only in:
-    - The prompt template baked into /prompt.md.mako
-    - PROMPT_TEMPLATE_PATH env var pointing to it
+    - PROMPT_TEMPLATE_PATH env var pointing to the variant prompt in runfiles
 
     Generates targets:
     - :<name> - OCI image
@@ -34,35 +31,19 @@ def critic_variant(name, prompt_md):
         prompt_md: Source markdown file for system prompt
     """
 
-    # Rename variant-specific prompt to /prompt.md.mako
-    # Use _gen suffix dir to avoid conflict with oci_image output dir
-    gen_dir = name + "_gen"
-    native.genrule(
-        name = name + "_prompt_gen",
-        srcs = [prompt_md],
-        outs = [gen_dir + "/prompt.md.mako"],
-        cmd = "cp $< $@",
-    )
+    # Runfiles path for the variant prompt inside the container
+    prompt_runfiles_path = "/app/critic.runfiles/_main/props/agents/critic/variants/" + prompt_md
 
-    # Package renamed prompt
-    pkg_tar(
-        name = name + "_prompt_tar",
-        srcs = [":" + name + "_prompt_gen"],
-        package_dir = "/",
-        strip_prefix = gen_dir,
-    )
-
-    # Build OCI image: shared main_tar + variant prompt
+    # Build OCI image: shared main_tar (includes variant prompts via data)
     oci_image(
         name = name,
         base = "@distroless_cc_linux_amd64",
         cmd = py_binary_distroless_cmd("critic", binary_package = "props/agents/critic"),
         env = py_binary_distroless_env("critic", extra_env = {
-            "PROMPT_TEMPLATE_PATH": "/prompt.md.mako",
+            "PROMPT_TEMPLATE_PATH": prompt_runfiles_path,
         }),
         tars = [
             "//props/agents/critic:main_tar",
-            ":" + name + "_prompt_tar",
         ],
         workdir = "/workspace",
     )

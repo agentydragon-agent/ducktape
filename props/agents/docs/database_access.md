@@ -97,4 +97,4 @@ These read SQLAlchemy model metadata — no database connection needed.
 
 Critic developer agents can monitor grading via the `grading_pending` view — it shows all `(critique_issue, ground_truth_occurrence)` pairs needing edges. Grading is complete when no rows remain for a given critique run.
 
-Use the `wait_until_graded` tool or `wait_until_graded()` from `props.agents.eval_client` for programmatic polling.
+Use the `wait_until_graded` tool or `wait_until_graded()` from `props.agents.critic_dev.eval_client` for programmatic polling.

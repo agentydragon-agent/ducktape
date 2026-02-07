@@ -29,6 +29,7 @@ from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, LoopDecision, NoAction
 from openai_utils.model import SystemMessage, UserMessage
+from props.agents.critic_dev.eval_client import EvalClient
 from props.agents.critic_dev.loop import (
     TEXT_OUTPUT_REMINDER,
     LoggingHandler,
@@ -36,7 +37,6 @@ from props.agents.critic_dev.loop import (
     LoopStatus,
     create_tool_provider,
 )
-from props.agents.eval_client import EvalClient
 from props.agents.runtime import create_bound_model_from_env, get_current_agent_run, render_system_prompt, setup_logging
 from props.core.agent_types import AgentType, ImprovementTypeConfig
 from props.core.ids import DefinitionId
@@ -405,7 +405,7 @@ async def run_agent_loop(
     critic_model: str,
     db: Database,
     agent_type: AgentType,
-    agent_run_id: UUID | None = None,
+    agent_run_id: UUID,
     type_config: ImprovementTypeConfig | None = None,
 ) -> int:
     """Run the critic developer agent loop.
@@ -427,7 +427,6 @@ async def run_agent_loop(
     # Type-specific handlers
     reminder_handler: ImprovementReminderHandler | None = None
     if agent_type == AgentType.IMPROVEMENT:
-        assert agent_run_id is not None
         assert type_config is not None
         reminder_handler = ImprovementReminderHandler(improvement_run_id=agent_run_id, type_config=type_config, db=db)
         handlers.append(reminder_handler)
@@ -509,7 +508,7 @@ async def main() -> int:
             critic_model=critic_model,
             db=db,
             agent_type=agent_type,
-            agent_run_id=agent_run_id if improvement_config else None,
+            agent_run_id=agent_run_id,
             type_config=improvement_config,
         )
 

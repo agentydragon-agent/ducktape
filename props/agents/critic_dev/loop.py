@@ -19,7 +19,7 @@ from agent_core.handler import BaseHandler
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from props.agents.eval_client import EvalClient, wait_until_graded
+from props.agents.critic_dev.eval_client import EvalClient, wait_until_graded
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
 from props.db.database import Database

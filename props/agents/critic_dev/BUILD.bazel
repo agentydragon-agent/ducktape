@@ -14,6 +14,24 @@ exports_files([
 ])
 
 py_library(
+    name = "eval_client",
+    srcs = ["eval_client.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/agents:runtime",
+        "//props/core:eval_api_models",
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "@pypi//httpx",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "main",
     srcs = ["main.py"],
     data = [
@@ -35,12 +53,12 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":eval_client",
         ":loop",
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//openai_utils:model",
-        "//props/agents:eval_client",
         "//props/agents:runtime",
         "//props/core:agent_types",
         "//props/core:ids",
@@ -65,12 +83,12 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":eval_client",
         "//agent_core:direct_provider",
         "//agent_core:handler",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
         "//openai_utils:pydantic_strict_mode",
-        "//props/agents:eval_client",
         "//props/core:ids",
         "//props/core/models:examples",
         "//props/db:database",
@@ -101,9 +119,9 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cli_helpers",
+        ":eval_client",
         "//cli_util:decorators",
         "//cli_util:logging",
-        "//props/agents:eval_client",
         "//props/agents:runtime",
         "//props/cli:cmd_stats",
         "//props/core:agent_types",

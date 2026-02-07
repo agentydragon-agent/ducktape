@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from cli_util.decorators import async_run
 from props.agents.critic_dev.cli_helpers import show_execution_traces, show_grading_summary, show_run_status
-from props.agents.eval_client import EvalClient
+from props.agents.critic_dev.eval_client import EvalClient
 from props.agents.runtime import get_current_agent_run, get_current_agent_run_id
 from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.core.agent_types import AgentType

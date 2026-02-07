@@ -132,7 +132,7 @@ curl -s $PROPS_BACKEND_URL/openapi.json | python3 -m json.tool
 Use the `run_critic` and `wait_until_graded` tools provided to you, or the bundled `EvalClient`:
 
 ```python
-from props.agents.eval_client import EvalClient
+from props.agents.critic_dev.eval_client import EvalClient
 
 async with EvalClient.from_env() as client:
     result = await client.run_critic(definition_id="sha256:...", ...)
