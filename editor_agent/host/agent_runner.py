@@ -5,7 +5,7 @@ from pathlib import Path
 
 import aiodocker
 from fastmcp.client import Client
-from jinja2 import Environment
+from mako.template import Template
 
 from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
@@ -15,11 +15,13 @@ from agent_core.script_handler import ScriptBuilder, ScriptGen, script_handler
 from agent_core.turn_limit import MaxTurnsHandler
 from editor_agent.host.runner import EditorDockerSession, editor_docker_session, writeback_success
 from editor_agent.host.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
+from mako_utils.preprocessor import markdown_heading_preprocessor
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
 
-_SYSTEM_PROMPT_TEMPLATE = Environment().from_string(
-    importlib.resources.files("editor_agent").joinpath("host/system_prompt.md.j2").read_text()
+_SYSTEM_PROMPT_TEMPLATE = Template(
+    importlib.resources.files("editor_agent").joinpath("host/system_prompt.md.mako").read_text(),
+    preprocessor=markdown_heading_preprocessor,
 )
 
 

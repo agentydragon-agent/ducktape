@@ -28,7 +28,6 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "live_anthropic_api: tests requiring ANTHROPIC_API_KEY")
     config.addinivalue_line("markers", "real_github: tests requiring network access to GitHub")
     config.addinivalue_line("markers", "requires_docker: tests requiring Docker daemon")
-    config.addinivalue_line("markers", "requires_postgres: tests requiring PostgreSQL database")
     config.addinivalue_line("markers", "requires_sandbox_exec: tests requiring macOS sandbox-exec")
     config.addinivalue_line("markers", "requires_production_specimens: tests that sync production specimens")
 
@@ -47,12 +46,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     # sandbox-exec requires macOS
     if item.get_closest_marker("requires_sandbox_exec") is not None and platform.system() != "Darwin":
         pytest.skip("sandbox-exec requires macOS")
-
-    # PostgreSQL availability check
-    if item.get_closest_marker("requires_postgres") is not None:
-        pg_host = os.getenv("PGHOST")
-        if not pg_host:
-            pytest.skip("PGHOST not set - PostgreSQL not configured")
 
     # LLM API key requirements
     # fail() not skip(): pytest.skip surfaces as success at the Bazel level, hiding

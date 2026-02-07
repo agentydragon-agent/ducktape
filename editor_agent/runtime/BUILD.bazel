@@ -48,11 +48,6 @@ pkg_tar(
 oci_image(
     name = "image",
     base = "@python_slim_linux_amd64",
-    cmd = ["sleep infinity"],
-    entrypoint = [
-        "/bin/sh",
-        "-c",
-    ],
     env = {
         "PATH": "/app:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "PYTHONDONTWRITEBYTECODE": "1",

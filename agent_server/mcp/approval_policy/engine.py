@@ -19,7 +19,7 @@ from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import ServerSession
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
-from jinja2 import Template
+from mako.template import Template
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 from pydantic import AnyUrl, BaseModel
@@ -32,6 +32,7 @@ from agent_server.persist.types import ApprovalOutcome, Persistence
 from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from agent_server.policy_eval.container import ContainerPolicyEvaluator
 from agent_server.policy_eval.runner import run_policy_source
+from mako_utils.preprocessor import markdown_heading_preprocessor
 from mcp_infra.constants import RUNTIME_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -381,20 +382,20 @@ class _PolicyGatewayMiddleware(Middleware):
 
 
 def _load_instructions(policy_uri: str) -> str:
-    """Load and render instructions with embedded shared constants via Jinja2.
+    """Load and render instructions with embedded shared constants via Mako.
 
     Args:
         policy_uri: URI of the active policy resource (from server.active_policy_resource.uri)
     """
-    raw = resources.files(__package__).joinpath("instructions.j2.md").read_text(encoding="utf-8")
-    tmpl = Template(raw)
-    rendered = tmpl.render(
+    raw = resources.files(__package__).joinpath("instructions.mako.md").read_text(encoding="utf-8")
+    tmpl = Template(raw, preprocessor=markdown_heading_preprocessor)
+    result: str = tmpl.render(
         RUNTIME_MOUNT_PREFIX=RUNTIME_MOUNT_PREFIX,
         RUNTIME_EXEC_TOOL_NAME=ContainerExecServer.EXEC_TOOL_NAME,
         TRUSTED_POLICY_PATH=None,
         TRUSTED_POLICY_URL=policy_uri,
     )
-    return str(rendered)
+    return result
 
 
 # ---- Policy Server Classes ----

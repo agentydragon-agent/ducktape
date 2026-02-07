@@ -205,7 +205,7 @@ Real-time visibility into running agents.
 
 Display current state of each active run:
 
-- **Waiting**: Queued, awaiting semaphore slot
+- **Waiting**: Queued, awaiting resources
 - **Initializing**: Container starting, init script running
 - **Sampling**: LLM API call in flight
 - **Processing**: Agent loop between tool calls
@@ -235,9 +235,9 @@ For validation jobs:
 
 ## Future Extensions
 
-### Prompt Optimization Dashboard
+### Critic Development Dashboard
 
-- Launch prompt optimizer runs from UI
+- Launch critic-dev optimizer runs from UI
 - Budget tracking and cost display
 - Iteration history with metric trends
 - Compare definitions side-by-side

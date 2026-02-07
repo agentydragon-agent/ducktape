@@ -13,7 +13,7 @@ from mcp_infra.snapshots import RunningServerEntry
 def test_template_packaged() -> None:
     # Ensure the template is available via importlib.resources
     pkg = "mcp_infra.compositor.templates"
-    text = resources.files(pkg).joinpath("compositor_instructions.md.j2").read_text("utf-8")
+    text = resources.files(pkg).joinpath("compositor_instructions.md.mako").read_text("utf-8")
     assert "Instructions" in text
 
 

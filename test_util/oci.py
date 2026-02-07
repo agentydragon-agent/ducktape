@@ -37,7 +37,7 @@ class BazelImage:
 
 async def crane_push(
     image: BazelImage, registry_url: str, tag: str, *, username: str | None = None, password: str | None = None
-) -> None:
+) -> str:
     """Push an OCI layout directory to a registry via crane.
 
     Uses asyncio subprocess to avoid blocking the event loop while uvicorn
@@ -45,6 +45,8 @@ async def crane_push(
 
     When username/password are provided, a temporary Docker config is created
     so crane authenticates with the registry proxy.
+
+    Returns the digest (sha256:...) of the pushed image.
     """
     crane = runfiles.get_required_path(_CRANE_RLOCATION)
     image_path = runfiles.get_required_path(image.image_rlocation)
@@ -72,4 +74,17 @@ async def crane_push(
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
             raise RuntimeError(f"crane push failed for {dest}: {stderr.decode()}")
-        logger.info("Pushed %s: %s", dest, stdout.decode().strip())
+        digest = _parse_crane_digest(stdout.decode().strip(), dest)
+        logger.info("Pushed %s: %s", dest, digest)
+        return digest
+
+
+def _parse_crane_digest(stdout: str, dest: str) -> str:
+    """Extract digest from crane push output.
+
+    crane push prints the full reference with digest, e.g.:
+    'localhost:12345/critic@sha256:abc123...'
+    """
+    if "@sha256:" in stdout:
+        return "sha256:" + stdout.split("@sha256:", 1)[1].split()[0]
+    raise RuntimeError(f"crane push did not return digest for {dest}: {stdout!r}")

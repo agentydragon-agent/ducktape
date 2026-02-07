@@ -1,0 +1,18 @@
+# NOTE: No aggregator target - use specific per-file targets like
+# :database_access.md, :db/critiques.md.mako
+# This is the Gazelle-compatible pattern.
+
+exports_files(
+    [
+        "database_access.md",
+        "db/agent_definitions.md.mako",
+        "db/agent_runs.md.mako",
+        "db/critiques.md.mako",
+        "db/evaluation_flow.md.mako",
+        "db/examples.md.mako",
+        "db/grading.md.mako",
+        "db/ground_truth.md.mako",
+        "db/llm_requests.md.mako",
+    ],
+    visibility = ["//props:__subpackages__"],
+)

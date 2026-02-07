@@ -7,6 +7,7 @@ Tests construct their own DatabaseConfig with per-test database names.
 from __future__ import annotations
 
 import asyncpg
+import psycopg2
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -50,6 +51,12 @@ class DatabaseConfig(BaseSettings):
     def with_user(self, username: str, password: str) -> DatabaseConfig:
         """Return a copy with different user credentials."""
         return DatabaseConfig(host=self.host, port=self.port, user=username, password=password, database=self.database)
+
+    def psycopg2_connect(self) -> psycopg2.extensions.connection:
+        """Connect to database using psycopg2."""
+        return psycopg2.connect(
+            host=self.host, port=self.port, dbname=self.database, user=self.user, password=self.password
+        )
 
     async def asyncpg_connect(self) -> asyncpg.Connection[asyncpg.Record]:
         """Connect to database using asyncpg."""

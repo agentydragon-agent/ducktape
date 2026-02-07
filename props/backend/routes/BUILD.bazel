@@ -20,11 +20,11 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props/backend:__subpackages__"],
     deps = [
+        "//props/agents/critic:exceptions",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:eval_api_models",
         "//props/core:splits",
-        "//props/critic:exceptions",
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",

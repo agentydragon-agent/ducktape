@@ -63,7 +63,7 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 - **Role membership**: Inherit from `agent_base` role
 - **Permissions**: SELECT on reference tables, INSERT/UPDATE/DELETE on agent-specific tables
 - **RLS-restricted**: Access filtered by `current_agent_run_id()` and `current_agent_type()`
-- **Purpose**: Enforce data isolation (e.g., TRAIN-only for prompt optimizer, own-run for critics)
+- **Purpose**: Enforce data isolation (e.g., TRAIN-only for critic-dev agents, own-run for critics)
 - **Lifecycle**: Created on first use, never deleted (allows reconnection)
 - **Passwords**: Deterministic (HMAC-SHA256 of salt + agent_run_id)
 - **Implementation**: See `ensure_agent_role()` in `orchestration/agent_credentials.py`

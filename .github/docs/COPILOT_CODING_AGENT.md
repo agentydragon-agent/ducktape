@@ -51,7 +51,7 @@ GitHub Copilot coding agent is an AI agent that you can assign issues to on GitH
 
 **What it is**: Instructions file that tells Copilot how to work with your repository.
 
-**Location**: `.github/COPILOT_INSTRUCTIONS.md` (this repository already has this file)
+**Location**: `.github/COPILOT_INSTRUCTIONS.md`
 
 **What to include**:
 
@@ -133,18 +133,7 @@ When you add new dependencies or tools to the project, update `.github/workflows
     sudo -u postgres createdb testdb
 ```
 
-### 2. Keep COPILOT_INSTRUCTIONS.md Updated
-
-When you make significant changes to:
-
-- Build system (Bazel configurations)
-- Test infrastructure
-- Development workflows
-- Repository structure
-
-Update `.github/COPILOT_INSTRUCTIONS.md` to reflect these changes.
-
-### 3. Document Common Issues
+### 2. Document Common Issues
 
 Add common pitfalls and workarounds to the instructions:
 
@@ -155,7 +144,7 @@ Add common pitfalls and workarounds to the instructions:
 - **Solution**: Run `bazel clean` first, then `bazel test //...`
 ```
 
-### 4. Provide Clear Build Instructions
+### 3. Provide Clear Build Instructions
 
 Always include the exact commands to run:
 
@@ -169,7 +158,7 @@ bazel build //...
 "Build the project"
 ```
 
-### 5. Use AGENTS.md for Directory-Specific Context
+### 4. Use AGENTS.md for Directory-Specific Context
 
 For complex subdirectories (like `ansible/`), create local `AGENTS.md` files with context specific to that area.
 
@@ -189,13 +178,12 @@ If you need custom environment setup (like what Claude Code hooks provide), use 
 - [GitHub Copilot Documentation](https://docs.github.com/en/copilot)
 - [Adding Custom Instructions](https://docs.github.com/en/copilot/customizing-copilot/adding-custom-instructions-for-github-copilot)
 - [GitHub Copilot Coding Agent](https://github.com/features/copilot/agents)
-- [Existing COPILOT_INSTRUCTIONS.md](../COPILOT_INSTRUCTIONS.md)
-- [Existing AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../../AGENTS.md)
 
 ## Summary
 
 **Environment Setup**: Use `.github/workflows/copilot-setup-steps.yml` to install tools, dependencies, and configure services before Copilot starts working.
 
-**Instructions**: Use `.github/COPILOT_INSTRUCTIONS.md` and `AGENTS.md` files to provide guidance on how to work with the code.
+**Instructions**: Use `AGENTS.md` files to provide guidance on how to work with the code.
 
 **For Interactive Development**: Use GitHub Codespaces with `.devcontainer/` configuration if you need a persistent development environment.

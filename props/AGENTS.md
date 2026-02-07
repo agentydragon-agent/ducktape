@@ -13,11 +13,11 @@
 
 **Key documentation (transcluded below):**
 
-@docs/db/ground_truth.md.j2
-@docs/db/examples.md.j2
-@docs/db/evaluation_flow.md.j2
-@docs/database_access.md
-@docs/authoring_agents.md.j2
+@agents/docs/database_access.md
+@agents/docs/db/ground_truth.md.mako
+@agents/docs/db/examples.md.mako
+@agents/docs/db/evaluation_flow.md.mako
+@agents/critic_dev/authoring_agents.md.mako
 
 ## CLI
 

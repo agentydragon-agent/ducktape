@@ -16,7 +16,7 @@ Move budget tracking from `PromptOptimizerTypeConfig.budget_limit` to a proper c
 - **Budget querying**: Agents query their budget/consumed via `agent_budget_status` view with RLS - no special API needed
 - **Grader budget**: High limit (e.g., $10000) instead of truly unlimited
 - **Unknown models**: Reject requests - enforce via FK that `agent_runs.model` references `model_metadata`
-- **Critic-dev budget**: PO/PI agents specify budget limit explicitly in their spawn tool call
+- **Critic-dev budget**: Critic-dev agents specify budget limit explicitly in their spawn tool call
 - **Concurrent overspend**: Acceptable if in-flight requests cause slight overage (leave TODO in impl)
 - **Pre-flight estimate**: Check consumed budget before each call, not estimate future cost
 - **Model metadata RLS**: Grant agents SELECT on `model_metadata` so they can see cost info
@@ -152,7 +152,7 @@ def validate_child_budget(
 ) -> None:
     """Validate child agent can be spawned with requested budget.
 
-    PO/PI agents specify budget explicitly when spawning critics via tool call.
+    Critic-dev agents specify budget explicitly when spawning critics via tool call.
     """
     if child_budget_usd <= 0:
         raise ValueError(f"child_budget_usd must be positive, got {child_budget_usd}")
@@ -225,7 +225,7 @@ No new `AgentRunStatus.BUDGET_EXCEEDED` - the natural failure mode is sufficient
 5. **Update eval endpoints** to require budget parameter
 6. **Update spawn validation** to check parent's remaining budget
 7. **Remove** `budget_limit` from `PromptOptimizerTypeConfig`
-8. **Backfill** existing prompt optimizer runs (copy from type_config)
+8. **Backfill** existing critic-dev optimizer runs (copy from type_config)
 
 ### Files to Modify
 

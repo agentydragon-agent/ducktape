@@ -33,20 +33,6 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 180
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: gatelet
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -76,15 +62,6 @@ jobs:
 
       - name: Run tests
         id: tests
-        env:
-          # PostgreSQL environment for props and gatelet tests
-          PGHOST: localhost
-          PGPORT: 5432
-          PGUSER: postgres
-          PGPASSWORD: postgres
-          PGDATABASE: postgres
-          # For testcontainers bridge networking (e2e tests)
-          PROPS_E2E_HOST_HOSTNAME: host.docker.internal
         run: |
           # Use target_pattern_file if artifact exists (avoids shell arg length limits)
           if [[ -f targets.txt ]] && [[ -s targets.txt ]]; then
@@ -108,12 +85,8 @@ jobs:
 
           bazel test --keep_going \
             --build_metadata=ROLE=ci --build_metadata=TAGS=test \
-            --test_tag_filters=-e2e,-live_openai_api \
+            --test_tag_filters=-live_openai_api \
             --test_env=CI=true --test_env=GITHUB_ACTIONS=true \
-            --test_env=PGHOST=localhost --test_env=PGPORT=5432 \
-            --test_env=PGUSER=postgres --test_env=PGPASSWORD=postgres \
-            --test_env=PGDATABASE=postgres \
-            --test_env=PROPS_E2E_HOST_HOSTNAME=host.docker.internal \
             $TARGET_ARG
 
       - uses: ./.github/actions/collect-test-logs

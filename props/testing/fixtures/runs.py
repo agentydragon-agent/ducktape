@@ -58,7 +58,7 @@ def make_fake_critic_run(
     session: Session,
     example: ExampleSpec,
     model: str = "test-model",
-    status: AgentRunStatus = AgentRunStatus.COMPLETED,
+    status: AgentRunStatus = AgentRunStatus.EXITED,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:
     """Build AgentRun for critic with fake image digest.
@@ -82,7 +82,7 @@ def make_fake_grader_run(
     session: Session,
     snapshot_slug: SnapshotSlug,
     model: str = "test-model",
-    status: AgentRunStatus = AgentRunStatus.COMPLETED,
+    status: AgentRunStatus = AgentRunStatus.EXITED,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:
     """Build AgentRun for daemon-based grader with fake image digest.
@@ -128,12 +128,12 @@ def make_fake_critic_and_grader_run(
     *, example: ExampleSpec, tp_occurrences: list[tuple[str, str]], credit: float, session: Session
 ) -> tuple[AgentRun, AgentRun]:
     """One-stop helper: Creates complete critic+grader run with normalized tables."""
-    critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.COMPLETED)
+    critic_run = make_fake_critic_run(session=session, example=example, status=AgentRunStatus.EXITED)
     session.add(critic_run)
     session.flush()
 
     grader_run = make_fake_grader_run(
-        session=session, snapshot_slug=example.snapshot_slug, model="test-grader", status=AgentRunStatus.COMPLETED
+        session=session, snapshot_slug=example.snapshot_slug, model="test-grader", status=AgentRunStatus.EXITED
     )
     session.add(grader_run)
     session.flush()

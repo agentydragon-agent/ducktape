@@ -14,7 +14,7 @@ filegroup(
         "resources/examples/matrix-client/quickstart.py",
         "resources/examples/python-session/demo.sh",
         "resources/examples/python-session/test_demo.sh",
-        "system_prompt.md.j2",
+        "system_prompt.md.mako",
     ],
     visibility = ["//:__subpackages__"],
 )
@@ -212,5 +212,8 @@ py_library(
     name = "system_prompt",
     srcs = ["system_prompt.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//jinja2"],
+    deps = [
+        "//mako_utils:preprocessor",
+        "@pypi//mako",
+    ],
 )

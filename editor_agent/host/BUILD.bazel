@@ -87,7 +87,7 @@ py_test(
 py_library(
     name = "agent_runner",
     srcs = ["agent_runner.py"],
-    data = ["system_prompt.md.j2"],
+    data = ["system_prompt.md.mako"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":runner",
@@ -98,11 +98,12 @@ py_library(
         "//agent_core:mcp_provider",
         "//agent_core:script_handler",
         "//agent_core:turn_limit",
+        "//mako_utils:preprocessor",
         "//mcp_infra/display:rich_display",
         "//openai_utils:model",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
-        "@pypi//jinja2",
+        "@pypi//mako",
     ],
 )
 

@@ -24,7 +24,7 @@ from props.orchestration.agent_credentials import AgentCredentials
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.integration]
 
 
 @pytest_asyncio.fixture
@@ -52,7 +52,7 @@ async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_
             agent_run_id=valid_run_id,
             image_digest=FAKE_CRITIC_DIGEST,
             model="test-model",
-            status=AgentRunStatus.COMPLETED,
+            status=AgentRunStatus.EXITED,
             type_config=type_config.model_dump(),
         )
         session.add(admin_run)

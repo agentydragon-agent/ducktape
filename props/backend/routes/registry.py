@@ -39,6 +39,9 @@ def _upstream_registry_url() -> str:
     return os.environ["PROPS_REGISTRY_UPSTREAM_URL"]
 
 
+_OCI_MANIFEST_TYPES = "application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json"
+
+
 async def _proxy_to_upstream(request: Request) -> Response:
     """Forward request to upstream registry and return response."""
     upstream_url = f"{_upstream_registry_url()}{request.url.path}"
@@ -48,6 +51,13 @@ async def _proxy_to_upstream(request: Request) -> Response:
     async with httpx.AsyncClient() as client:
         headers = dict(request.headers)
         headers.pop("host", None)
+
+        # Docker daemon may omit OCI media types from Accept header when pulling manifests.
+        # If crane pushed in OCI format, the upstream registry returns 404 without these types.
+        if "/manifests/" in request.url.path and request.method in ("GET", "HEAD"):
+            accept = headers.get("accept", "")
+            if "vnd.oci.image" not in accept:
+                headers["accept"] = f"{accept}, {_OCI_MANIFEST_TYPES}" if accept else _OCI_MANIFEST_TYPES
 
         body = await request.body() if request.method not in ("GET", "HEAD") else b""
 

@@ -12,6 +12,9 @@ Incorporates:
 - graders_match_only_if_reported_on for sparse grading
 - No clustering tables (deprecated feature removed)
 - Normalized occurrence ranges (replaces JSONB files/relevant_files columns)
+- Simplified grading views: tp_occurrence_credits (no grader_run_id dimension),
+  scalar total_credit in recall_by_run, missing_grading_edges count
+- CHECK constraints for digest format (agent_definitions, agent_runs baseline_image_digests)
 
 Revision ID: 20251228000000
 Revises: None
@@ -72,9 +75,8 @@ def upgrade() -> None:
     op.execute("""
         CREATE TYPE agent_run_status_enum AS ENUM (
             'in_progress',
-            'completed',
-            'timed_out',
-            'reported_failure'
+            'exited',
+            'timed_out'
         )
     """)
 
@@ -159,7 +161,7 @@ Returns NULL for lcb95/ucb95 when n < 2 (insufficient samples for CI).'
     op.execute("""
         COMMENT ON FUNCTION agg_status_counts(agent_run_status_enum[]) IS
         'Aggregates an array of status values into JSONB counts. Used by aggregate views.
-Example: agg_status_counts(array_agg(status)) -> {"completed": 5, "timed_out": 2}'
+Example: agg_status_counts(array_agg(status)) -> {"exited": 5, "timed_out": 2}'
     """)
 
     # Helper: merge array of status count JSONBs (for re-aggregation)
@@ -832,9 +834,7 @@ For whole-snapshot scope, always returns TRUE.'
             snapshot_slug text,
             critic_image_digest text,
             critic_model text,
-            grader_model text,
             critic_run_id uuid,
-            grader_run_id uuid,
             status agent_run_status_enum,
             total_credit double precision,
             n_occurrences integer
@@ -847,51 +847,29 @@ For whole-snapshot scope, always returns TRUE.'
         BEGIN
             config := current_agent_type_config();
 
-            -- Only allow whole-repo mode agents
             IF config IS NULL OR config->>'target_metric' != 'whole-repo' THEN
                 RAISE EXCEPTION 'Access denied: get_validation_full_snapshot_aggregates() requires whole-repo target_metric';
             END IF;
 
             RETURN QUERY
-            WITH occurrence_avg_credits AS (
-                SELECT
-                    oc.snapshot_slug,
-                    oc.critic_image_digest,
-                    oc.critic_model,
-                    oc.grader_model,
-                    oc.critic_run_id,
-                    oc.grader_run_id,
-                    cr.status,
-                    oc.tp_id,
-                    oc.occurrence_id,
-                    AVG(oc.found_credit) as avg_credit
-                FROM occurrence_credits oc
-                JOIN snapshots s ON oc.snapshot_slug = s.slug
-                JOIN agent_runs cr ON oc.critic_run_id = cr.agent_run_id
-                WHERE s.split = 'valid'::split_enum
-                  AND oc.example_kind = 'whole_snapshot'
-                  AND (cr.type_config->>'agent_type') = 'critic'
-                GROUP BY oc.snapshot_slug, oc.critic_image_digest, oc.critic_model, oc.grader_model,
-                         oc.critic_run_id, oc.grader_run_id, cr.status, oc.tp_id, oc.occurrence_id
-            )
             SELECT
-                occurrence_avg_credits.snapshot_slug,
-                occurrence_avg_credits.critic_image_digest,
-                occurrence_avg_credits.critic_model,
-                occurrence_avg_credits.grader_model,
-                occurrence_avg_credits.critic_run_id,
-                occurrence_avg_credits.grader_run_id,
-                occurrence_avg_credits.status,
-                SUM(avg_credit) as total_credit,
-                CAST(COUNT(*) AS integer) as n_occurrences
-            FROM occurrence_avg_credits
-            GROUP BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_image_digest,
-                     occurrence_avg_credits.critic_model, occurrence_avg_credits.grader_model,
-                     occurrence_avg_credits.critic_run_id, occurrence_avg_credits.grader_run_id,
-                     occurrence_avg_credits.status
-            ORDER BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_image_digest,
-                     occurrence_avg_credits.critic_model, occurrence_avg_credits.grader_model,
-                     occurrence_avg_credits.critic_run_id, occurrence_avg_credits.grader_run_id;
+                toc.snapshot_slug,
+                toc.critic_image_digest,
+                toc.critic_model,
+                toc.critic_run_id,
+                cr.status,
+                SUM(toc.found_credit)::double precision AS total_credit,
+                CAST(COUNT(*) AS integer) AS n_occurrences
+            FROM tp_occurrence_credits toc
+            JOIN snapshots s ON toc.snapshot_slug = s.slug
+            JOIN agent_runs cr ON toc.critic_run_id = cr.agent_run_id
+            WHERE s.split = 'valid'::split_enum
+              AND toc.example_kind = 'whole_snapshot'
+              AND (cr.type_config->>'agent_type') = 'critic'
+            GROUP BY toc.snapshot_slug, toc.critic_image_digest, toc.critic_model,
+                     toc.critic_run_id, cr.status
+            ORDER BY toc.snapshot_slug, toc.critic_image_digest, toc.critic_model,
+                     toc.critic_run_id;
         END;
         $$
     """)
@@ -899,8 +877,7 @@ For whole-snapshot scope, always returns TRUE.'
     op.execute("""
         COMMENT ON FUNCTION get_validation_full_snapshot_aggregates() IS
         'Black-box validation metrics for whole-repo mode.
-Returns per-run recall for VALID split, whole_snapshot example_kind only.
-Includes critic_run status for proper outcome counting.
+Returns per-critic-run recall for VALID split, whole_snapshot example_kind only.
 Requires caller to be a whole-repo mode agent (prompt_optimizer or improvement).'
     """)
 
@@ -1019,6 +996,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("digest"),
+        sa.CheckConstraint("digest ~ '^sha256:[0-9a-f]{64}$'", name="check_digest_format"),
     )
 
     op.execute(
@@ -1074,6 +1052,26 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.PrimaryKeyConstraint("agent_run_id"),
         sa.ForeignKeyConstraint(["image_digest"], ["agent_definitions.digest"]),
         sa.ForeignKeyConstraint(["parent_agent_run_id"], ["agent_runs.agent_run_id"]),
+        sa.CheckConstraint(
+            """(
+                type_config->>'agent_type' <> 'improvement'
+                OR (
+                    jsonb_array_length(type_config->'baseline_image_digests') > 0
+                    AND NOT jsonb_path_exists(
+                        type_config->'baseline_image_digests',
+                        '$[*] ? (! (@ like_regex "^sha256:[0-9a-f]{64}$"))'
+                    )
+                )
+            )""",
+            name="check_baseline_digests",
+        ),
+        sa.CheckConstraint(
+            """(
+                type_config->>'agent_type' <> 'improvement'
+                OR jsonb_array_length(type_config->'allowed_examples') > 0
+            )""",
+            name="check_allowed_examples_not_empty",
+        ),
     )
 
     op.execute(
@@ -1138,6 +1136,11 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.PrimaryKeyConstraint("snapshot_slug", "tp_id"),
         sa.ForeignKeyConstraint(["snapshot_slug"], ["snapshots.slug"], ondelete="CASCADE"),
         issue_id_constraint("tp_id", "tp_id_format"),
+    )
+
+    op.execute(
+        "COMMENT ON TABLE true_positives IS "
+        "'Ground truth issues that SHOULD be found by critics. Each TP has occurrences in true_positive_occurrences.'"
     )
 
     # False positives table (issue header - occurrences are in separate table)
@@ -1220,6 +1223,11 @@ Deduplicated by PK constraint - same files always produce same hash.'
         ),
     )
 
+    op.execute(
+        "COMMENT ON TABLE true_positive_occurrences IS "
+        "'Individual occurrences of true positive issues. Ranges stored in tp_occurrence_ranges.'"
+    )
+
     # False positive occurrences table
     # Note: files/line ranges are stored in fp_occurrence_ranges table, not as JSONB column
     # Note: relevant_files are stored in fp_occurrence_relevant_files table, not as JSONB column
@@ -1241,6 +1249,11 @@ Deduplicated by PK constraint - same files always produce same hash.'
             ondelete="RESTRICT",
             name="fk_fp_occ_matchable_files",
         ),
+    )
+
+    op.execute(
+        "COMMENT ON TABLE false_positive_occurrences IS "
+        "'Individual occurrences of false positive patterns. Ranges stored in fp_occurrence_ranges.'"
     )
 
     # =========================================================================
@@ -1596,9 +1609,9 @@ Key invariants:
 
 Drift = missing edges. Query grading_pending view to see what''s missing.
 
-USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
+USEFUL FOR: Grader (write), critic-dev (read TRAIN only).
 - Grader: INSERT edges for each (critique_issue, gt_occurrence) pair
-- Prompt optimizer: analyze which issues got credit vs not
+- Critic-dev: analyze which issues got credit vs not
 - Clustering: read decisions with NULL targets (unknowns)'
     """)
 
@@ -1801,7 +1814,6 @@ Non-NULL = file-local (only critiques touching those files can match)'
             LEFT JOIN reported_issue_occurrences rio ON rio.agent_run_id = ri.agent_run_id AND rio.reported_issue_id = ri.issue_id
             LEFT JOIN LATERAL jsonb_array_elements(rio.locations) AS loc ON true
             WHERE (ar.type_config->>'agent_type') = 'critic'
-              AND ar.status = 'completed'
             GROUP BY ri.agent_run_id, ri.issue_id, ar.type_config
         )
         -- Find missing TP edges
@@ -1847,16 +1859,10 @@ Non-NULL = file-local (only critiques touching those files can match)'
 
     op.execute("""
         COMMENT ON VIEW grading_pending IS
-        'Shows missing grading edges (drift).
-Each row represents a (critique_issue, gt_occurrence) pair that needs grading.
-
-Query patterns:
-- All drift: SELECT * FROM grading_pending
-- By snapshot: WHERE snapshot_slug = ''...''
-- By critique: WHERE critique_run_id = ''...''
-- By GT: WHERE tp_id = ''...'' AND tp_occurrence_id = ''...''
-
-When this view returns no rows for a grader''s scope, grading is complete.'
+        'Missing grading edges (drift detection). Includes all critic runs with
+reported issues (including in_progress — grading can start before critic exits).
+When this view returns no rows for a run, grading is complete for that run.
+recall_by_run.missing_grading_edges is derived from this view.'
     """)
 
     # ============================================================================
@@ -2221,22 +2227,85 @@ a critique to an occurrence that could not have been found from those files.'
     """)
 
     # ============================================================================
-    # 12. Recreate recall views using grading_edges
+    # 12. tp_occurrence_credits and occurrence_statistics
     # ============================================================================
-    # recall_by_run view - based on grading_edges
+    op.execute("""
+        CREATE VIEW tp_occurrence_credits AS
+        SELECT
+            (cr.type_config->'example'->>'snapshot_slug') AS snapshot_slug,
+            s.split,
+            ex.example_kind,
+            ex.files_hash,
+            tpo.tp_id,
+            tpo.occurrence_id,
+            cr.agent_run_id AS critic_run_id,
+            cr.image_digest AS critic_image_digest,
+            cr.model AS critic_model,
+            COALESCE(SUM(ge.credit), 0.0) AS found_credit
+        FROM agent_runs cr
+        JOIN snapshots s ON (cr.type_config->'example'->>'snapshot_slug') = s.slug
+        JOIN examples ex ON (
+            (cr.type_config->'example'->>'snapshot_slug') = ex.snapshot_slug
+            AND (cr.type_config->'example'->>'kind')::example_kind_enum = ex.example_kind
+            AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(ex.files_hash, '')
+        )
+        CROSS JOIN true_positive_occurrences tpo
+        LEFT JOIN grading_edges ge ON (
+            ge.critique_run_id = cr.agent_run_id
+            AND ge.snapshot_slug = tpo.snapshot_slug
+            AND ge.tp_id = tpo.tp_id
+            AND ge.tp_occurrence_id = tpo.occurrence_id
+        )
+        WHERE (cr.type_config->>'agent_type') = 'critic'
+          AND (cr.type_config->'example'->>'snapshot_slug') = tpo.snapshot_slug
+          AND is_tp_in_expected_recall_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
+        GROUP BY cr.agent_run_id, s.split, ex.example_kind, ex.files_hash,
+                 tpo.snapshot_slug, tpo.tp_id, tpo.occurrence_id,
+                 cr.image_digest, cr.model
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW tp_occurrence_credits IS
+        'Per-(critique_run, tp, occurrence) credit via LEFT JOIN on grading_edges.
+All critic runs produce rows (including in_progress) — 0.0 for occurrences with no edges.
+Filter on critic_status in downstream views/queries if you want only terminal runs.
+
+USEFUL FOR: Prompt optimizer (TRAIN split via RLS), improvement agent.'
+    """)
+
+    op.execute("""
+        CREATE VIEW occurrence_statistics AS
+        SELECT
+            snapshot_slug,
+            split,
+            example_kind,
+            files_hash,
+            tp_id,
+            occurrence_id,
+            critic_image_digest,
+            critic_model,
+            compute_stats_with_ci(array_agg(found_credit)) AS credit_stats
+        FROM tp_occurrence_credits
+        GROUP BY snapshot_slug, split, example_kind, files_hash, tp_id, occurrence_id,
+            critic_image_digest, critic_model
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW occurrence_statistics IS
+        'Aggregate statistics per occurrence across critic runs.
+credit_stats.n = number of critic runs, credit_stats.mean = avg credit across runs.
+
+USEFUL FOR: Prompt optimizer, improvement agent.
+- Find consistently-missed occurrences (low credit_stats.mean across runs)
+- Identify occurrence patterns that need prompt improvements'
+    """)
+
+    # ============================================================================
+    # 13. Recall views (using tp_occurrence_credits)
+    # ============================================================================
     op.execute("""
         CREATE VIEW recall_by_run AS
-        WITH grader_stats AS (
-            SELECT
-                ge.grader_run_id,
-                ge.critique_run_id,
-                COALESCE(SUM(ge.credit) FILTER (WHERE ge.tp_id IS NOT NULL), 0.0) AS total_credit,
-                COUNT(DISTINCT (ge.tp_id, ge.tp_occurrence_id))
-                    FILTER (WHERE ge.tp_id IS NOT NULL) AS recall_denominator
-            FROM grading_edges ge
-            GROUP BY ge.grader_run_id, ge.critique_run_id
-        ),
-        per_run AS (
+        WITH per_run AS (
             SELECT
                 cr.type_config->'example'->>'snapshot_slug' AS snapshot_slug,
                 e.example_kind,
@@ -2247,12 +2316,15 @@ a critique to an occurrence that could not have been found from those files.'
                 cr.image_digest AS critic_image_digest,
                 cr.model AS critic_model,
                 cr.status AS critic_status,
-                compute_stats_with_ci(
-                    COALESCE(
-                        array_agg(gs.total_credit) FILTER (WHERE cr.status = 'completed'),
-                        ARRAY[0.0]::double precision[]
-                    )
-                ) AS credit_stats
+                COALESCE((
+                    SELECT SUM(toc.found_credit)
+                    FROM tp_occurrence_credits toc
+                    WHERE toc.critic_run_id = cr.agent_run_id
+                ), 0.0) AS total_credit,
+                (
+                    SELECT COUNT(*) FROM grading_pending gp
+                    WHERE gp.critique_run_id = cr.agent_run_id
+                ) AS missing_grading_edges
             FROM agent_runs cr
             JOIN examples e ON (
                 cr.type_config->'example'->>'snapshot_slug' = e.snapshot_slug
@@ -2260,23 +2332,25 @@ a critique to an occurrence that could not have been found from those files.'
                 AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(e.files_hash, '')
             )
             JOIN snapshots s ON cr.type_config->'example'->>'snapshot_slug' = s.slug
-            LEFT JOIN grader_stats gs ON gs.critique_run_id = cr.agent_run_id
             WHERE (cr.type_config->>'agent_type') = 'critic'
-              AND cr.status != 'in_progress'
-            GROUP BY cr.agent_run_id, cr.type_config, cr.image_digest, cr.model, cr.status,
-                     e.example_kind, e.files_hash, e.recall_denominator, s.split
         )
         SELECT
             snapshot_slug, example_kind, files_hash, split, recall_denominator,
             critic_run_id, critic_image_digest, critic_model, critic_status,
-            credit_stats,
-            scale_stats(credit_stats, recall_denominator) AS recall_stats
+            total_credit,
+            CASE WHEN recall_denominator > 0
+                THEN total_credit / recall_denominator
+                ELSE 0.0
+            END AS recall,
+            missing_grading_edges
         FROM per_run
     """)
 
     op.execute("""
         COMMENT ON VIEW recall_by_run IS
-        'Per-critic-run recall using grading_edges. Base view for all recall aggregates.'
+        'Per-critic-run recall. Includes all runs (in_progress, exited, timed_out).
+missing_grading_edges counts pending grading edges (0 = complete).
+Credit is preliminary until missing_grading_edges = 0.'
     """)
 
     # recall_by_definition_example view
@@ -2294,7 +2368,7 @@ a critique to an occurrence that could not have been found from those files.'
                 COUNT(*)::integer AS n_runs,
                 agg_status_counts(array_agg(rbr.critic_status)) AS status_counts,
                 compute_stats_with_ci(array_agg(
-                    COALESCE((rbr.credit_stats).mean, 0.0)
+                    rbr.total_credit
                 )) AS credit_stats
             FROM recall_by_run rbr
             GROUP BY rbr.critic_image_digest, rbr.critic_model,
@@ -2310,7 +2384,7 @@ a critique to an occurrence that could not have been found from those files.'
 
     op.execute("""
         COMMENT ON VIEW recall_by_definition_example IS
-        'Recall aggregated by (definition, example). Uses grading_edges.'
+        'Recall aggregated by (definition, example). Stats computed across critic runs.'
     """)
 
     # recall_by_definition_split_kind view
@@ -2354,7 +2428,7 @@ a critique to an occurrence that could not have been found from those files.'
 
     op.execute("""
         COMMENT ON VIEW recall_by_definition_split_kind IS
-        'Recall aggregated by (definition, split, example_kind). Uses grading_edges.'
+        'Recall aggregated by (definition, split, example_kind).'
     """)
 
     # recall_by_example view
@@ -2385,7 +2459,7 @@ a critique to an occurrence that could not have been found from those files.'
 
     op.execute("""
         COMMENT ON VIEW recall_by_example IS
-        'Recall aggregated by example (across all definitions). Uses grading_edges.'
+        'Recall aggregated by example (across all definitions).'
     """)
 
     # pareto_frontier_by_example view
@@ -2428,7 +2502,7 @@ a critique to an occurrence that could not have been found from those files.'
 
     op.execute("""
         COMMENT ON VIEW pareto_frontier_by_example IS
-        'Best definitions per example. Uses grading_edges.'
+        'Best definitions per example.'
     """)
 
     # validation_recall_by_definition view
@@ -2446,7 +2520,7 @@ a critique to an occurrence that could not have been found from those files.'
 
     op.execute("""
         COMMENT ON VIEW validation_recall_by_definition IS
-        'Aggregated validation recall by definition. Uses grading_edges.'
+        'Aggregated validation recall by definition.'
     """)
 
     # =========================================================================
@@ -2501,148 +2575,6 @@ a critique to an occurrence that could not have been found from those files.'
     """)
 
     # =========================================================================
-    # Occurrence credit views (adapted for grading_edges model)
-    # =========================================================================
-    op.execute("""
-        CREATE VIEW occurrence_credits AS
-        -- Graded occurrences: TP occurrences with credits from grading_edges
-        SELECT
-            -- Example identification
-            ge.snapshot_slug,
-            s.split,
-            ex.example_kind,
-            ex.files_hash,
-            -- Ground truth
-            ge.tp_id,
-            ge.tp_occurrence_id AS occurrence_id,
-            -- Critic-specific
-            ge.critique_run_id AS critic_run_id,
-            ge.critique_run_id AS critic_transcript_id,
-            cr.image_digest AS critic_image_digest,
-            cr.model AS critic_model,
-            -- Grader-specific
-            ge.grader_run_id,
-            ge.grader_run_id AS grader_transcript_id,
-            gr.created_at AS graded_at,
-            gr.model AS grader_model,
-            ge.credit AS found_credit,
-            jsonb_build_array(ge.critique_issue_id) AS matched_by_json,
-            ge.rationale AS grader_rationale
-        FROM grading_edges ge
-        JOIN agent_runs cr ON cr.agent_run_id = ge.critique_run_id
-        JOIN agent_runs gr ON gr.agent_run_id = ge.grader_run_id
-        JOIN snapshots s ON ge.snapshot_slug = s.slug
-        JOIN examples ex ON (
-            ge.snapshot_slug = ex.snapshot_slug
-            AND (cr.type_config->'example'->>'kind')::example_kind_enum = ex.example_kind
-            AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(ex.files_hash, '')
-        )
-        WHERE ge.tp_id IS NOT NULL
-          AND (cr.type_config->>'agent_type') = 'critic'
-
-        UNION ALL
-
-        -- Failed critics: generate zero-credit rows for all occurrences in expected recall scope
-        SELECT
-            (cr.type_config->'example'->>'snapshot_slug') AS snapshot_slug,
-            s.split,
-            ex.example_kind,
-            ex.files_hash,
-            tpo.tp_id,
-            tpo.occurrence_id,
-            cr.agent_run_id AS critic_run_id,
-            cr.agent_run_id AS critic_transcript_id,
-            cr.image_digest AS critic_image_digest,
-            cr.model AS critic_model,
-            NULL::uuid AS grader_run_id,
-            NULL::uuid AS grader_transcript_id,
-            cr.created_at AS graded_at,
-            NULL::varchar AS grader_model,
-            0.0 AS found_credit,
-            NULL::jsonb AS matched_by_json,
-            ('Critic failed: ' || cr.status) AS grader_rationale
-        FROM agent_runs cr
-        JOIN snapshots s ON (cr.type_config->'example'->>'snapshot_slug') = s.slug
-        JOIN examples ex ON (
-            (cr.type_config->'example'->>'snapshot_slug') = ex.snapshot_slug
-            AND (cr.type_config->'example'->>'kind')::example_kind_enum = ex.example_kind
-            AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(ex.files_hash, '')
-        )
-        CROSS JOIN true_positive_occurrences tpo
-        WHERE (cr.type_config->>'agent_type') = 'critic'
-          AND cr.status = 'timed_out'::agent_run_status_enum
-          AND (cr.type_config->'example'->>'snapshot_slug') = tpo.snapshot_slug
-          AND is_tp_in_expected_recall_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
-    """)
-
-    op.execute("""
-        COMMENT ON VIEW occurrence_credits IS
-        'Per-occurrence credit from grading_edges. Base view for computing recall.
-Each row = one TP occurrence with its found_credit (0-1).
-Sum(found_credit)/count(*) = occurrence-weighted recall.
-
-Uses grading_edges model: credits go directly to (tp_id, occurrence_id) pairs.
-Failed critics produce zero-credit rows for all occurrences in expected recall scope.
-NOTE: Recall can exceed 100%% if critics find issues outside expected scopes.
-
-USEFUL FOR: Prompt optimizer (TRAIN split via RLS), improvement agent.'
-    """)
-
-    op.execute("""
-        CREATE VIEW occurrence_run_credits AS
-        SELECT
-            snapshot_slug,
-            split,
-            example_kind,
-            files_hash,
-            tp_id,
-            occurrence_id,
-            critic_run_id,
-            critic_transcript_id,
-            critic_image_digest,
-            critic_model,
-            grader_run_id,
-            grader_transcript_id,
-            graded_at,
-            grader_model,
-            sum(found_credit) AS total_credit,
-            array_agg(DISTINCT matched_by_json) FILTER (WHERE matched_by_json IS NOT NULL) AS all_matched_by,
-            string_agg(DISTINCT grader_rationale, ' | ') AS combined_rationale
-        FROM occurrence_credits
-        GROUP BY snapshot_slug, split, example_kind, files_hash, tp_id, occurrence_id,
-            critic_run_id, critic_transcript_id, critic_image_digest, critic_model,
-            grader_run_id, grader_transcript_id, graded_at, grader_model
-    """)
-
-    op.execute("""
-        CREATE VIEW occurrence_statistics AS
-        SELECT
-            snapshot_slug,
-            split,
-            example_kind,
-            files_hash,
-            tp_id,
-            occurrence_id,
-            critic_image_digest,
-            critic_model,
-            grader_model,
-            compute_stats_with_ci(array_agg(total_credit)) AS credit_stats
-        FROM occurrence_run_credits
-        GROUP BY snapshot_slug, split, example_kind, files_hash, tp_id, occurrence_id,
-            critic_image_digest, critic_model, grader_model
-    """)
-
-    op.execute("""
-        COMMENT ON VIEW occurrence_statistics IS
-        'Aggregate statistics per occurrence across all runs.
-Uses grading_edges model for credit calculation.
-
-USEFUL FOR: Prompt optimizer, improvement agent.
-- Find consistently-missed occurrences (low credit_stats.mean across runs)
-- Identify occurrence patterns that need prompt improvements'
-    """)
-
-    # =========================================================================
     # 10. Roles and Grants
     # =========================================================================
 
@@ -2680,8 +2612,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("GRANT SELECT ON TABLE grading_pending TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE grading_edges_id_seq TO agent_base")
     op.execute("GRANT SELECT ON TABLE true_positives TO agent_base")
-    op.execute("GRANT SELECT ON TABLE occurrence_credits TO agent_base")
-    op.execute("GRANT SELECT ON TABLE occurrence_run_credits TO agent_base")
+    op.execute("GRANT SELECT ON TABLE tp_occurrence_credits TO agent_base")
     op.execute("GRANT SELECT ON TABLE occurrence_statistics TO agent_base")
     op.execute("GRANT SELECT ON TABLE pareto_frontier_by_example TO agent_base")
     op.execute("GRANT SELECT ON TABLE validation_recall_by_definition TO agent_base")

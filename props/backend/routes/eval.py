@@ -1,4 +1,4 @@
-"""Evaluation API routes - critic evaluation orchestration for PO/PI agents.
+"""Evaluation API routes - critic evaluation orchestration for critic-dev agents.
 
 These endpoints replace the MCP-based PromptEvalServer, providing HTTP REST
 endpoints that agents can call directly.
@@ -9,7 +9,7 @@ Endpoints:
 
 Access control:
 - Admin (localhost or postgres creds): Full access
-- PO/PI agents: Full access to these endpoints
+- Critic-dev agents: Full access to these endpoints
 - Other agents: No access
 
 Response models are shared between backend and agent containers via props.core.eval_api_models.
@@ -25,11 +25,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 
+from props.agents.critic.exceptions import CriticExecutionError
 from props.backend.auth import CallerType, require_eval_api_access
 from props.backend.deps import AdminDb
 from props.core.eval_api_models import GradingStatusResponse, RunCriticRequest, RunCriticResponse
 from props.core.splits import Split
-from props.critic.exceptions import CriticExecutionError
 from props.db.examples import Example
 from props.db.models import AgentRun, GradingEdge, GradingPending, Snapshot
 

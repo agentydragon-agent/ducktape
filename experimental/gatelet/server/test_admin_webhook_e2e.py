@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from experimental.gatelet.manage import reset_db
 from experimental.gatelet.server.models import Base
 
-pytestmark = [pytest.mark.e2e, pytest.mark.requires_postgres]
+pytestmark = [pytest.mark.e2e]
 
 
 @pytest.fixture(scope="session")

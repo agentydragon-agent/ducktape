@@ -32,21 +32,27 @@ def py_binary_distroless_cmd(binary_name, binary_package = None):
         "{}/_main/{}/_{}_stage2_bootstrap.py".format(runfiles, pkg, binary_name),
     ]
 
-def py_binary_distroless_env(binary_name, extra_env = {}):
+def py_binary_distroless_env(binary_name, binary_package = None, extra_env = {}):
     """Compute env for a distroless container running a Bazel py_binary.
 
     Args:
         binary_name: Name of the py_binary target (e.g., "critic").
+        binary_package: Bazel package of the py_binary (e.g., "props/critic").
+            Defaults to the calling BUILD file's package.
         extra_env: Additional env vars to merge.
 
     Returns:
         Env dict for oci_image.
     """
+    pkg = binary_package or native.package_name()
+    runfiles = "/app/{}.runfiles".format(binary_name)
+    venv_bin = "{}/_main/{}/_{}.venv/bin".format(runfiles, pkg, binary_name)
     env = {
+        "PATH": venv_bin,
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONUNBUFFERED": "1",
         "PYTHONSAFEPATH": "1",
-        "RUNFILES_DIR": "/app/{}.runfiles".format(binary_name),
+        "RUNFILES_DIR": runfiles,
     }
     env.update(extra_env)
     return env

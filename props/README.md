@@ -31,17 +31,18 @@ props/
 │       ├── stats.py          # Dashboard stats API
 │       ├── runs.py           # Agent runs API
 │       ├── ground_truth.py   # Ground truth API
-│       ├── eval.py           # Eval API (for PO/PI agents)
+│       ├── eval.py           # Eval API (for critic-dev agents)
 │       ├── llm.py            # LLM proxy (OpenAI API)
 │       └── registry.py       # Registry proxy (OCI Distribution API)
 ├── frontend/                 # Svelte UI
 │   ├── package.json
 │   └── src/                  # Frontend source
-├── critic/                   # Critic agent definitions
-├── grader/                   # Grader agent definitions
-├── critic_dev/               # Development critic agents
-│   ├── improve/              # Improvement agent
-│   └── optimize/             # Optimization agent
+├── agents/                   # Agent definitions
+│   ├── critic/               # Critic agent
+│   ├── grader/               # Grader agent
+│   └── critic_dev/           # Development critic agents
+│       ├── improve/          # Improvement agent
+│       └── optimize/         # Optimization agent
 ├── standards/                # Property definitions
 │   ├── python/               # Python-specific properties
 │   ├── markdown/             # Markdown-specific properties
@@ -76,10 +77,10 @@ docker compose up -d
 bazelisk run //props/cli -- db recreate
 
 # 5. Push agent images to registry
-bazelisk run //props/critic:push
-bazelisk run //props/grader:push
-bazelisk run //props/critic_dev/improve:push
-bazelisk run //props/critic_dev/optimize:push
+bazelisk run //props/agents/critic:push
+bazelisk run //props/agents/grader:push
+bazelisk run //props/agents/critic_dev/improve:push
+bazelisk run //props/agents/critic_dev/optimize:push
 ```
 
 ## Development
@@ -211,4 +212,4 @@ GitHub Copilot agents working on the props codebase should use the automated env
 - Claude hooks: Uses `host` network with HTTP proxy
 - GitHub Actions: Uses `props-agents` Docker network (simpler, no HTTP proxy needed)
 
-For complete setup instructions, see `.github/COPILOT_INSTRUCTIONS.md`.
+For the automated workflow, see `.github/workflows/copilot-setup-steps.yml`.

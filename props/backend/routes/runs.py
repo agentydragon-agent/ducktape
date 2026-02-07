@@ -416,7 +416,6 @@ async def trigger_validation_runs(
     """Trigger validation critic runs: sample N examples, run 1 critic per example.
 
     Runs are started in the background in parallel. Poll /api/runs/jobs for status.
-    Registry semaphore limits actual concurrency.
     Grading is handled automatically by snapshot grader daemons.
     """
     registry = get_registry(request)
@@ -466,7 +465,6 @@ async def trigger_validation_runs(
 async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db: Database) -> None:
     """Run critic for each example in the job, in parallel.
 
-    Registry semaphore limits actual concurrency.
     Grading is handled automatically by snapshot grader daemons.
     """
     # Default timeout: 1 hour per agent
@@ -490,19 +488,23 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
                 # Check critic status
                 with db.session() as session:
                     critic_run = session.get(AgentRun, critic_run_id)
-                    if critic_run is None or critic_run.status != AgentRunStatus.COMPLETED:
+                    if (
+                        critic_run is None
+                        or critic_run.status != AgentRunStatus.EXITED
+                        or critic_run.container_exit_code != 0
+                    ):
                         status = critic_run.status if critic_run else "not found"
                         logger.warning(f"[Job {job.job_id}] Critic failed with status {status}")
                         return False
 
-                logger.info(f"[Job {job.job_id}] Critic completed: {critic_run_id}")
+                logger.info(f"[Job {job.job_id}] Critic exited: {critic_run_id}")
                 return True
 
             except Exception:
                 logger.exception(f"[Job {job.job_id}] Error processing {example.snapshot_slug}")
                 return False
 
-        # Run all examples in parallel; registry semaphore limits concurrency
+        # Run all examples in parallel
         results = await asyncio.gather(*[run_one(e) for e in job.examples], return_exceptions=True)
 
         # Count successes and failures

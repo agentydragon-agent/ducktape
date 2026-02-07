@@ -1,19 +1,13 @@
 """Fake OpenAI HTTP server for e2e testing.
 
 Implements the OpenAI Responses API (/v1/responses) backed by mock objects
-like PropsMock or StepRunner. Used in e2e tests where containers talk to
+like SubprocessExecMock or StepRunner. Used in e2e tests where containers talk to
 a real LLM proxy, which forwards to this fake upstream.
 
-Accepts either a single mock (all requests go to it) or a dict of mocks
-(requests are routed by the `model` field in the request body).
+Requests are routed by the `model` field in the request body to the
+corresponding mock in the dict.
 
 Usage:
-    # Single mock - all requests handled by one mock
-    mock = make_critic_mock()
-    async with FakeOpenAIServer(mock) as server:
-        ...
-
-    # Multi-model - route by model name
     mocks = {"optimizer-model": opt_mock, "critic-model": crit_mock}
     async with FakeOpenAIServer(mocks) as server:
         ...
@@ -113,18 +107,14 @@ def result_to_sdk_response(result: ResponsesResult, *, model: str = "test-model"
 class FakeOpenAIServer:
     """Fake OpenAI Responses API server for e2e testing.
 
-    Accepts a single mock or a dict of mocks keyed by model name.
-    When given a dict, routes requests to the mock matching the request's
-    `model` field.
+    Routes requests to the mock matching the request's `model` field.
 
     Implements fail-fast error handling: exceptions from mocks are captured
     and re-raised when the server is stopped or when check_errors() is called.
     """
 
-    def __init__(
-        self, mock: OpenAIModelProto | dict[str, OpenAIModelProto], host: str = "127.0.0.1", port: int = 0
-    ) -> None:
-        self._mock = mock
+    def __init__(self, mocks: dict[str, OpenAIModelProto], host: str = "127.0.0.1", port: int = 0) -> None:
+        self._mocks = mocks
         self._host = host
         self._port = port
         self._server: uvicorn.Server | None = None
@@ -155,17 +145,15 @@ class FakeOpenAIServer:
             raise self._captured_error
 
     def _resolve_mock(self, body: dict[str, Any]) -> OpenAIModelProto:
-        """Resolve the mock for a request body."""
-        if isinstance(self._mock, dict):
-            model = body.get("model")
-            if not model:
-                raise HTTPException(status_code=400, detail="model field required")
-            mock = self._mock.get(model)
-            if mock is None:
-                available = list(self._mock.keys())
-                raise HTTPException(status_code=400, detail=f"No mock for model '{model}'. Available: {available}")
-            return mock
-        return self._mock
+        """Resolve the mock for a request body by model name."""
+        model = body.get("model")
+        if not model:
+            raise HTTPException(status_code=400, detail="model field required")
+        mock = self._mocks.get(model)
+        if mock is None:
+            available = list(self._mocks.keys())
+            raise HTTPException(status_code=400, detail=f"No mock for model '{model}'. Available: {available}")
+        return mock
 
     def _create_app(self) -> FastAPI:
         app = FastAPI(title="Fake OpenAI Server")

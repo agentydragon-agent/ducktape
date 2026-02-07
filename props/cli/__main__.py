@@ -12,13 +12,14 @@ from typing import Annotated
 import aiodocker
 import typer
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 from rich.traceback import install as rich_traceback_install
 from typer_di import TyperDI
 
 from cli_util.decorators import async_run
 from cli_util.logging import LogLevel, make_logging_callback
+from props.agents.critic_dev.shared import TargetMetric
+from props.agents.runtime import get_current_agent_run
 from props.cli import common_options as opt
 from props.cli.cmd_db import db_app
 from props.cli.cmd_gt import gt_app
@@ -26,26 +27,18 @@ from props.cli.cmd_snapshot import snapshot_app
 from props.cli.cmd_stats import stats_app
 from props.cli.shared import make_example_from_files
 from props.config import load_config_from_env
-from props.core.agent_helpers import get_current_agent_run
 from props.core.agent_types import AgentType
 from props.core.display import fmt_pct, short_sha
 from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.oci_utils import get_registry_proxy_config
 from props.core.splits import Split
-from props.critic_dev.improve.main import TerminationSuccess
-from props.critic_dev.shared import TargetMetric
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, RecallByDefinitionSplitKind, ReportedIssue, Snapshot
 from props.db.query_builders import query_recall_by_example
 
 # cmd_gepa imported lazily below (gepa is optional)
-from props.orchestration.agent_registry import (
-    AgentRegistry,
-    ImprovementResult,
-    OutcomeExhausted,
-    OutcomeUnexpectedTermination,
-)
+from props.orchestration.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +123,7 @@ async def prompt_optimize(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     timeout_seconds: int = opt.OPT_TIMEOUT_SECONDS,
 ) -> None:
-    """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
+    """Run a critic developer agent to optimize a critic system prompt with $ budget."""
     db: Database = ctx.obj
     config = load_config_from_env()
     docker_client = aiodocker.Docker()
@@ -138,6 +131,7 @@ async def prompt_optimize(
         docker_client,
         db=db,
         db_config=db.config,
+        backend_url=config.backend_url,
         agent_base_env=config.agent_env,
         registry_config=get_registry_proxy_config(),
     )
@@ -208,8 +202,7 @@ async def prompt_improve_cmd(
         critic_runs = (
             session.query(AgentRun)
             .filter(
-                AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-                AgentRun.status == AgentRunStatus.COMPLETED,
+                AgentRun.type_config["agent_type"].astext == AgentType.CRITIC, AgentRun.status == AgentRunStatus.EXITED
             )
             .all()
         )
@@ -267,7 +260,7 @@ async def prompt_improve_cmd(
 
         # Filter to those with at least one successful run
         eligible_stats = [
-            s for s in valid_whole_stats if s.status_counts and s.status_counts.get(AgentRunStatus.COMPLETED, 0) > 0
+            s for s in valid_whole_stats if s.status_counts and s.status_counts.get(AgentRunStatus.EXITED, 0) > 0
         ]
 
         if not eligible_stats:
@@ -290,7 +283,7 @@ async def prompt_improve_cmd(
         # Display validation stats using fmt_pct1 for percentage formatting
         recall_val = best.recall_stats.mean if best.recall_stats else 0.0
         lcb_val = best.recall_stats.lcb95 if best.recall_stats else None
-        n_completed = best.status_counts.get(AgentRunStatus.COMPLETED, 0)
+        n_completed = best.status_counts.get(AgentRunStatus.EXITED, 0)
         n_examples_val = best.n_examples or 0
         zero_count = best.zero_count or 0
         timed_out_count = best.status_counts.get(AgentRunStatus.TIMED_OUT, 0)
@@ -347,13 +340,14 @@ async def prompt_improve_cmd(
         docker_client,
         db=db,
         db_config=db.config,
+        backend_url=config.backend_url,
         agent_base_env=config.agent_env,
         registry_config=get_registry_proxy_config(),
     )
     try:
-        result: ImprovementResult = await registry.run_improvement_agent(
+        run_id = await registry.run_improvement_agent(
             examples=allowed_examples,
-            baseline_image_refs=[definition_id],
+            baseline_image_digests=[definition_id],
             token_budget=token_budget,
             improvement_model=improvement_model,
             critic_model=critic_model,
@@ -367,43 +361,14 @@ async def prompt_improve_cmd(
     finally:
         await registry.close()
 
-    # 5. Display results
-    console.print()
-    if isinstance(result.outcome, TerminationSuccess):
-        panel = Panel(
-            f"[green]✓ Improvement agent completed successfully[/green]\n\n"
-            f"[bold]Definition ID:[/bold] {result.outcome.definition_id}\n\n"
-            f"[bold]Tokens:[/bold] {result.tokens_used:,} / {token_budget:,} "
-            f"({100 * result.tokens_used / token_budget:.1f}%)\n\n"
-            f"[bold]Total credit:[/bold] {result.outcome.total_credit:.1f}\n"
-            f"[bold]Baseline avg:[/bold] {result.outcome.baseline_avg:.1f}",
-            title="Improvement Result",
-            border_style="green",
-        )
-        console.print(panel)
-    elif isinstance(result.outcome, OutcomeExhausted):
-        panel = Panel(
-            f"[yellow]! Token budget exhausted[/yellow]\n\n"
-            f"[bold]Tokens:[/bold] {result.tokens_used:,} / {token_budget:,} "
-            f"({100 * result.tokens_used / token_budget:.1f}%)\n\n"
-            f"The agent exhausted its token budget without submitting a prompt. "
-            f"Try increasing --token-budget or reducing --n-examples.",
-            title="Improvement Result",
-            border_style="yellow",
-        )
-        console.print(panel)
-    elif isinstance(result.outcome, OutcomeUnexpectedTermination):
-        panel = Panel(
-            f"[red]✗ Unexpected termination[/red]\n\n"
-            f"[bold]Tokens:[/bold] {result.tokens_used:,} / {token_budget:,} "
-            f"({100 * result.tokens_used / token_budget:.1f}%)\n\n"
-            f"[bold]Message:[/bold] {result.outcome.message}",
-            title="Improvement Result",
-            border_style="red",
-        )
-        console.print(panel)
-
-    console.print()
+    # Display results
+    with db.session() as session:
+        agent_run = session.get(AgentRun, run_id)
+        assert agent_run is not None
+        console.print()
+        console.print(f"Improvement run: {run_id}")
+        console.print(f"Status: {agent_run.status.value}")
+        console.print()
 
 
 # GEPA command (optional - requires gepa package)
@@ -451,6 +416,7 @@ async def cmd_run(
         docker_client,
         db=db,
         db_config=db.config,
+        backend_url=config.backend_url,
         agent_base_env=config.agent_env,
         registry_config=get_registry_proxy_config(),
     )
@@ -483,7 +449,7 @@ async def cmd_run(
             if critic_run is None:
                 raise RuntimeError(f"Critic run {critic_run_id} not found in database")
 
-            if critic_run.status == AgentRunStatus.COMPLETED:
+            if critic_run.status == AgentRunStatus.EXITED and critic_run.container_exit_code == 0:
                 issues = session.query(ReportedIssue).filter_by(agent_run_id=critic_run_id).all()
                 typer.echo(f"Issues found: {len(issues)}")
                 for issue in issues:
@@ -497,7 +463,11 @@ async def cmd_run(
                                     loc_str += f"-{loc.end_line}"
                             typer.echo(f"  - {loc_str}")
             else:
-                typer.echo(f"Critic run ended with status: {critic_run.status.value}", err=True)
+                typer.echo(
+                    f"Critic run ended with status: {critic_run.status.value}"
+                    f" (exit_code={critic_run.container_exit_code})",
+                    err=True,
+                )
     finally:
         await registry.close()
 

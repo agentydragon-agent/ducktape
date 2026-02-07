@@ -2,8 +2,8 @@
 
 Handles:
 - Registry configuration (RegistryProxyConfig)
-- Image resolution (tag to digest, pulling images)
 - OCI reference building
+- Digest detection
 """
 
 from __future__ import annotations
@@ -12,12 +12,8 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from props.core.agent_types import AgentType
-
-if TYPE_CHECKING:
-    import aiodocker
 
 logger = logging.getLogger(__name__)
 
@@ -78,36 +74,3 @@ def get_registry_proxy_config() -> RegistryProxyConfig:
 def is_digest(ref: str) -> bool:
     """Check if a reference is a digest (sha256:...) vs a tag."""
     return bool(re.match(r"^(sha256|sha384|sha512):[a-f0-9]+$", ref))
-
-
-async def resolve_image_ref_async(
-    docker: aiodocker.Docker,
-    image_ref: str,
-    registry_config: RegistryProxyConfig,
-    *,
-    auth: dict[str, str] | None = None,
-) -> str:
-    """Resolve an OCI image reference to a Docker image ID.
-
-    Pulls the image if not present locally.
-    auth: Optional {"username": ..., "password": ...} for registry authentication.
-    """
-    full_ref = registry_config.normalize_image_ref(image_ref)
-
-    try:
-        image = await docker.images.inspect(full_ref)
-        image_id: str = image["Id"]
-        logger.info(f"Using cached image {image_id[:19]} for {full_ref}")
-        return image_id
-    except Exception:
-        pass  # Image not found locally, need to pull
-
-    logger.info(f"Pulling image {full_ref}")
-    try:
-        await docker.pull(full_ref, auth=auth)
-        image = await docker.images.inspect(full_ref)
-        image_id = image["Id"]
-        logger.info(f"Pulled image {image_id[:19]} for {full_ref}")
-        return image_id
-    except Exception as e:
-        raise ValueError(f"Failed to pull image {full_ref}: {e}") from e
