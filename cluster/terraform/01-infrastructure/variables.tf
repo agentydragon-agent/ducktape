@@ -50,9 +50,9 @@ variable "hetzner_location" {
 # ============================================================================
 
 variable "proxmox_api_host" {
-  description = "Proxmox host FQDN (used for HTTPS API and SSH access)"
+  description = "Proxmox host (Tailscale MagicDNS name for direct access)"
   type        = string
-  default     = "atlas.agentydragon.com"
+  default     = "atlas.vps"
 }
 
 variable "proxmox_node_name" {

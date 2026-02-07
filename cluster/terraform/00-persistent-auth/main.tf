@@ -79,7 +79,7 @@ data "external" "pve_persistent_tokens" {
 
     # Create CSI config JSON and properly escape it as a string
     csi_config_json=$(cat <<JSON
-{"url":"https://${var.proxmox_api_host}/api2/json","insecure":false,"token_id":"$token_id","token_secret":"$token_value","region":"proxmox","token":"$token_id=$token_value"}
+{"url":"https://${var.proxmox_api_host}:8006/api2/json","insecure":true,"token_id":"$token_id","token_secret":"$token_value","region":"proxmox","token":"$token_id=$token_value"}
 JSON
 )
     # Output for terraform external - wrap JSON as escaped string
