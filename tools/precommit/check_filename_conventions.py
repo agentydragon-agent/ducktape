@@ -9,22 +9,29 @@ import pygit2
 
 
 def _lint_excluded_paths(filepaths: list[str]) -> set[str]:
-    """Return the subset of filepaths that have rules-lint-ignored=true in .gitattributes."""
+    """Return filepaths excluded from filename convention checks.
+
+    Checks for either:
+    - filename-conventions-ignored=true (specific to this check)
+    - rules-lint-ignored=true (general lint exclusion)
+    """
     if not filepaths:
         return set()
-    result = subprocess.run(
-        ["git", "check-attr", "rules-lint-ignored", "--stdin"],
-        check=False,
-        input="\n".join(filepaths),
-        capture_output=True,
-        text=True,
-    )
+
     excluded: set[str] = set()
-    for line in result.stdout.splitlines():
-        # Format: "path: rules-lint-ignored: true"
-        if ": true" in line:
-            path = line.split(": rules-lint-ignored:")[0]
-            excluded.add(path)
+    for attr in ["filename-conventions-ignored", "rules-lint-ignored"]:
+        result = subprocess.run(
+            ["git", "check-attr", attr, "--stdin"],
+            check=False,
+            input="\n".join(filepaths),
+            capture_output=True,
+            text=True,
+        )
+        for line in result.stdout.splitlines():
+            # Format: "path: attr-name: true"
+            if ": true" in line:
+                path = line.split(f": {attr}:")[0]
+                excluded.add(path)
     return excluded
 
 
