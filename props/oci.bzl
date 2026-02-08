@@ -1,58 +1,38 @@
-"""OCI image helpers for Bazel py_binary targets on distroless base images.
+"""OCI image helpers for py_image_layer containers.
 
-rules_python's py_binary generates a bash bootstrap script that locates the
-hermetic Python interpreter in runfiles and exec's it. distroless images have
-no shell, so the bash wrapper fails with "no such file or directory".
-
-These helpers compute the CMD and env that bypass the bash wrapper by directly
-invoking the hermetic Python interpreter and stage2 bootstrap from runfiles.
-
-TODO: This is a workaround — we're hand-computing internal rules_python paths
-(venv layout, stage2 bootstrap) that could break on rules_python upgrades.
-Investigate whether rules_python or rules_oci have a first-class solution for
-distroless py_binary containers, or whether switching to a non-distroless base
-with a shell (e.g. cc-debian) would be simpler.
+Uses aspect_rules_py's py_image_layer for multi-layer OCI images
+(interpreter, site-packages, app code) on a debian-slim base with bash.
+The aspect py_binary launcher is a bash script that sets up a venv and
+exec's the Python interpreter, so the base image must provide /bin/bash.
 """
 
-def py_binary_distroless_cmd(binary_name, binary_package = None):
-    """Compute CMD for a distroless container running a Bazel py_binary.
+_PY_IMAGE_ENV = {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1",
+}
+
+def py_image_entrypoint(binary_name, binary_package = None):
+    """Compute entrypoint for an OCI image running an aspect py_binary.
 
     Args:
-        binary_name: Name of the py_binary target (e.g., "critic").
-        binary_package: Bazel package of the py_binary (e.g., "props/critic").
-            Defaults to the calling BUILD file's package.
+        binary_name: Name of the aspect_py_binary target (e.g., "critic_bin").
+        binary_package: Bazel package path. Defaults to calling BUILD's package.
 
     Returns:
-        CMD list for oci_image.
+        Entrypoint list for oci_image.
     """
     pkg = binary_package or native.package_name()
-    runfiles = "/app/{}.runfiles".format(binary_name)
-    return [
-        "{}/_main/{}/_{}.venv/bin/python3".format(runfiles, pkg, binary_name),
-        "{}/_main/{}/_{}_stage2_bootstrap.py".format(runfiles, pkg, binary_name),
-    ]
+    return ["/{}/{}".format(pkg, binary_name)]
 
-def py_binary_distroless_env(binary_name, binary_package = None, extra_env = {}):
-    """Compute env for a distroless container running a Bazel py_binary.
+def py_image_env(extra_env = {}):
+    """Standard env dict for py_image_layer containers.
 
     Args:
-        binary_name: Name of the py_binary target (e.g., "critic").
-        binary_package: Bazel package of the py_binary (e.g., "props/critic").
-            Defaults to the calling BUILD file's package.
         extra_env: Additional env vars to merge.
 
     Returns:
         Env dict for oci_image.
     """
-    pkg = binary_package or native.package_name()
-    runfiles = "/app/{}.runfiles".format(binary_name)
-    venv_bin = "{}/_main/{}/_{}.venv/bin".format(runfiles, pkg, binary_name)
-    env = {
-        "PATH": venv_bin,
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-        "PYTHONSAFEPATH": "1",
-        "RUNFILES_DIR": runfiles,
-    }
+    env = dict(_PY_IMAGE_ENV)
     env.update(extra_env)
     return env

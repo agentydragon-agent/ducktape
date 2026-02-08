@@ -5,25 +5,22 @@ Build targets:
     bazel run //props/agents/critic_dev/improve:push  -- Push to local registry (localhost:8000)
 """
 
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_binary")
-load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
-py_binary(
+# Container-specific binary using aspect_rules_py (py_image_layer requires it).
+aspect_py_binary(
     name = "improve",
-    main_module = "props.agents.critic_dev.main",
+    main = "//props/agents/critic_dev:main.py",
     visibility = ["//visibility:public"],
     deps = ["//props/agents/critic_dev:main"],
 )
 
-pkg_tar(
-    name = "main_tar",
-    srcs = [":improve"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
+py_image_layer(
+    name = "layers",
+    binary = ":improve",
     visibility = ["//props:__subpackages__"],
 )
 
@@ -55,11 +52,11 @@ docker_py_test(
 
 oci_image(
     name = "image",
-    base = "@distroless_cc_linux_amd64",
-    cmd = py_binary_distroless_cmd("improve"),
-    env = py_binary_distroless_env("improve"),
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("improve"),
+    env = py_image_env(),
     tars = [
-        ":main_tar",
+        ":layers",
         "//props:crane_tar",
     ],
     visibility = ["//visibility:public"],

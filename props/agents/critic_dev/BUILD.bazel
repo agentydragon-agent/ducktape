@@ -14,6 +14,13 @@ exports_files([
     "rollouts.md.mako",
 ])
 
+# Exported for aspect_py_binary in improve/ and optimize/ (py_image_layer needs
+# a file label for `main`, unlike rules_python's `main_module`).
+exports_files(
+    ["main.py"],
+    visibility = ["//props/agents/critic_dev:__subpackages__"],
+)
+
 py_library(
     name = "eval_client",
     srcs = ["eval_client.py"],

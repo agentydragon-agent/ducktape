@@ -4,18 +4,18 @@ Each critic variant differs only in its system prompt markdown file.
 All variants share the same agent loop code (main.py) and tools.
 
 Architecture:
-- All variants use //props/agents/critic:main_tar (shared agent loop + variant prompts)
+- All variants use //props/agents/critic:layers (shared agent loop + variant prompts)
 - PROMPT_TEMPLATE_PATH env var selects which variant prompt to use at runtime
 """
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 def critic_variant(name, prompt_md):
     """Build a critic variant using the in-container model.
 
     All variants share:
-    - //props/agents/critic:main_tar (agent loop, tool definitions, all variant prompts)
+    - //props/agents/critic:layers (agent loop, tool definitions, all variant prompts)
     - Same container base, env, workdir
 
     Each variant differs only in:
@@ -32,18 +32,18 @@ def critic_variant(name, prompt_md):
     """
 
     # Runfiles path for the variant prompt inside the container
-    prompt_runfiles_path = "/app/critic.runfiles/_main/props/agents/critic/variants/" + prompt_md
+    prompt_runfiles_path = "/props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/variants/" + prompt_md
 
-    # Build OCI image: shared main_tar (includes variant prompts via data)
+    # Build OCI image: shared layers (includes variant prompts via data)
     oci_image(
         name = name,
-        base = "@distroless_cc_linux_amd64",
-        cmd = py_binary_distroless_cmd("critic", binary_package = "props/agents/critic"),
-        env = py_binary_distroless_env("critic", extra_env = {
+        base = "@debian_slim_linux_amd64",
+        entrypoint = py_image_entrypoint("critic_bin", binary_package = "props/agents/critic"),
+        env = py_image_env(extra_env = {
             "PROMPT_TEMPLATE_PATH": prompt_runfiles_path,
         }),
         tars = [
-            "//props/agents/critic:main_tar",
+            "//props/agents/critic:layers",
         ],
         workdir = "/workspace",
     )

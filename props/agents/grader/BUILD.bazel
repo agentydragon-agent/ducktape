@@ -12,10 +12,10 @@ The container runs a daemon agent loop that:
 5. Sleeps on pg_notify, wakes to grade new critiques
 """
 
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//props:oci.bzl", "py_binary_distroless_cmd", "py_binary_distroless_env")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files(
@@ -87,12 +87,20 @@ py_binary(
     ],
 )
 
-pkg_tar(
-    name = "main_tar",
-    srcs = [":grader"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
+# Container-specific binary using aspect_rules_py (py_image_layer requires it).
+aspect_py_binary(
+    name = "grader_bin",
+    imports = ["../../.."],
+    main = "main.py",
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":main",
+    ],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":grader_bin",
     visibility = ["//props:__subpackages__"],
 )
 
@@ -246,10 +254,10 @@ docker_py_test(
 
 oci_image(
     name = "image",
-    base = "@distroless_cc_linux_amd64",
-    cmd = py_binary_distroless_cmd("grader"),
-    env = py_binary_distroless_env("grader"),
-    tars = [":main_tar"],
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("grader_bin"),
+    env = py_image_env(),
+    tars = [":layers"],
     visibility = ["//visibility:public"],
     workdir = "/workspace",
 )
