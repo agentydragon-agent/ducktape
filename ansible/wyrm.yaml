@@ -268,9 +268,3 @@
         # - Temperature sensors as "dragon fire intensity"
         # Keep 00-header for basic system info (OS version, kernel)
       tags: [motd]
-
-    # Docker registry client role disabled - cluster is down
-    # - name: Apply Docker registry client role
-    #   ansible.builtin.include_role:
-    #     name: docker_registry_client
-    #   tags: [docker, registry]
