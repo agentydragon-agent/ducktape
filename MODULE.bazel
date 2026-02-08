@@ -44,6 +44,9 @@ use_repo(tf, "tf_toolchains")
 
 register_toolchains("@tf_toolchains//:all")
 
+# Python OCI image layering (aspect_rules_py)
+bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.2.7")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
@@ -60,6 +63,18 @@ oci.pull(
     image = "gcr.io/distroless/cc-debian12",
     platforms = ["linux/amd64"],
     tag = "latest",
+)
+
+# Production base image for py_image_layer containers.
+# aspect_rules_py's py_binary generates a bash launcher, so the base needs a
+# shell. Debian slim provides bash + glibc + libstdc++ at ~30 MB compressed.
+# The hermetic Python toolchain is bundled in the interpreter layer.
+oci.pull(
+    name = "debian_slim",
+    digest = "sha256:6458e6ce2b6448e31bfdced4be7d8aa88d389e6694ab09f5a718a694abe147f4",
+    image = "docker.io/library/debian",
+    platforms = ["linux/amd64"],
+    tag = "bookworm-slim",
 )
 
 # Test-only: Python image for container exec tests (needs shell + Python)
@@ -97,7 +112,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
-use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "python_slim", "python_slim_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
+use_repo(oci, "debian_slim_linux_amd64", "distroless_cc", "distroless_cc_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "python_slim", "python_slim_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
 
 # Re-export crane binary with public visibility for py_test data deps
 crane = use_extension("//tools:crane_export.bzl", "crane_export")
