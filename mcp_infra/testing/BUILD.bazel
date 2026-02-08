@@ -37,6 +37,8 @@ py_library(
     deps = [
         ":notifications",
         ":simple_servers",
+        ":stdio_app_lib",
+        ":stdio_notifier_lib",
         "//:bazel_subprocess",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
@@ -78,8 +80,8 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "stdio_app",
+py_library(
+    name = "stdio_app_lib",
     srcs = ["stdio_app.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
@@ -87,6 +89,14 @@ py_binary(
         ":simple_servers",
         "@pypi//anyio",
     ],
+)
+
+py_binary(
+    name = "stdio_app",
+    imports = ["../.."],
+    main_module = "mcp_infra.testing.stdio_app",
+    visibility = ["//:__subpackages__"],
+    deps = [":stdio_app_lib"],
 )
 
 py_library(
