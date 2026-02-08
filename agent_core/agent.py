@@ -256,7 +256,8 @@ def _content_block_to_openai(block: ResultContent) -> FunctionOutputTextContent 
 def _tool_result_to_openai(result: ToolResult) -> FunctionCallOutputType:
     """Convert ToolResult to OpenAI output format.
 
-    When is_error=True, always returns a list with "ERROR" prefix block.
+    When is_error=True, prepends "ERROR: " to make errors visible to the LLM.
+    For self-describing errors (e.g. "Tool error: ...") the prefix is omitted.
     """
     sc = result.structured_content
     content = list(result.content) if result.content else []
@@ -267,20 +268,32 @@ def _tool_result_to_openai(result: ToolResult) -> FunctionCallOutputType:
         json_str = pydantic_core.to_json(sc, fallback=str).decode("utf-8")
         _check_size(json_str)
         if is_error:
-            return [_ERROR_PREFIX, FunctionOutputTextContent(text=json_str)]
+            return f"ERROR: {json_str}"
         return json_str
 
     # Case 2: Content blocks present
     if content:
         items = [_content_block_to_openai(block) for block in content]
         if is_error:
-            items.insert(0, _ERROR_PREFIX)
+            first = items[0]
+            # "Tool error:" is self-describing (from DirectToolProvider exception handler)
+            if not (isinstance(first, FunctionOutputTextContent) and first.text.startswith("Tool error:")):
+                _add_error_prefix(items)
         return items
 
     # Case 3: Empty
     if is_error:
-        return [_ERROR_PREFIX]
+        return "ERROR"
     return ""
+
+
+def _add_error_prefix(items: list[FunctionOutputTextContent | FunctionOutputImageContent]) -> None:
+    """Inline 'ERROR: ' into the first text content block, or prepend a new one."""
+    first = items[0]
+    if isinstance(first, FunctionOutputTextContent):
+        items[0] = FunctionOutputTextContent(text=f"ERROR: {first.text}")
+    else:
+        items.insert(0, _ERROR_PREFIX)
 
 
 def _openai_to_tool_result(output: FunctionCallOutputType) -> ToolResult:
