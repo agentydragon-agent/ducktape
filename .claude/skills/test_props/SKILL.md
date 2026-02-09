@@ -68,7 +68,7 @@ git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/speci
    If not running, start them:
 
    ```bash
-   bash props/start_infra_podman.sh
+   bash .claude/skills/test_props/start_infra_podman.sh
    ```
 
 2. Set environment variables:

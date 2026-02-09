@@ -8,7 +8,9 @@ set -euo pipefail
 # - Native: --network=host (simplified; bridge networks optional)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STATE_DIR="$SCRIPT_DIR/.devenv/state"
+# State dir lives under props/ regardless of where this script is located.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+STATE_DIR="$REPO_ROOT/props/.devenv/state"
 PASSWORD_FILE="$STATE_DIR/pg_password"
 
 # Detect gVisor (Claude Code on the Web) by kernel version.
