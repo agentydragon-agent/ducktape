@@ -81,13 +81,17 @@ def _make_lifespan(deps: BackendDeps):
 
         if deps.grader_model:
             app.state.grader_supervisor = GraderSupervisor(
-                registry=app.state.registry, db_config=db_config, model=deps.grader_model, db=db
+                registry=app.state.registry,
+                db_config=db_config,
+                model=deps.grader_model,
+                db=db,
+                backend_url=deps.backend_url,
             )
             await app.state.grader_supervisor.start()
-            logger.info(f"Daemon manager started (model: {deps.grader_model})")
+            logger.info(f"Grader supervisor started (model: {deps.grader_model})")
         else:
             app.state.grader_supervisor = None
-            logger.info("Daemon manager disabled (grader_model not set in config)")
+            logger.info("Grader supervisor disabled (grader_model not set in config)")
 
         admin_token = db_config.basic_auth_token
         protocol = "https" if deps.port == 443 else "http"

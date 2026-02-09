@@ -19,6 +19,7 @@ from props.core.ids import SnapshotSlug
 # pg_notify channels
 GRADING_PENDING_CHANNEL = "grading_pending"
 SNAPSHOT_CREATED_CHANNEL = "snapshot_created"
+GRADER_DEFINITION_CHANGED_CHANNEL = "grader_definition_changed"
 
 
 class Operation(StrEnum):
@@ -129,3 +130,17 @@ class SnapshotCreatedNotification(BaseModel):
 
     operation: Operation
     snapshot_slug: SnapshotSlug
+
+
+class GraderDefinitionChangedNotification(BaseModel):
+    """Notification sent when a grader tag is pushed to the registry proxy.
+
+    Produced by: registry proxy route (put_manifest) when a grader manifest
+    is pushed by tag (not by digest), indicating the tag has moved.
+
+    Consumed by: GraderSupervisor to restart daemons that failed due to
+    missing grader image at startup.
+    """
+
+    digest: str
+    tag: str

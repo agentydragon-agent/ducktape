@@ -246,6 +246,7 @@ docker_py_test(
         "//props:conftest",
         "//props/agents/critic_dev:shared",
         "//props/core:agent_types",
+        "//props/core:ids",
         "//props/orchestration:agent_credentials",
         "//props/testing:constants",
         "//props/testing/fixtures:credentials",

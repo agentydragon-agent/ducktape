@@ -56,6 +56,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props/backend:__subpackages__"],
     deps = [
+        "//props/agents/grader:notifications",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:oci_utils",
@@ -63,6 +64,7 @@ py_library(
         "//props/db:models",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//sqlalchemy",
     ],
 )
 

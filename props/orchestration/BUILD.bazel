@@ -58,8 +58,10 @@ py_library(
         ":agent_registry",
         "//props/agents/grader:notifications",
         "//props/core:ids",
+        "//props/db:config",
         "//props/db:database",
         "//props/db:models",
         "@pypi//asyncpg",
+        "@pypi//httpx",
     ],
 )

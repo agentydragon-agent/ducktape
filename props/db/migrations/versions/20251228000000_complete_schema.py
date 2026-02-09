@@ -2264,11 +2264,13 @@ Credit is preliminary until missing_grading_edges = 0.'
         "false_positives",
         "file_set_members",
         "file_sets",
+        "fp_occurrence_relevant_files",
         "grading_edge_credit_sums",
         "grading_pending",
         "llm_request_costs",
         "llm_requests",
         "llm_run_costs",
+        "occurrence_ranges",
         "occurrence_statistics",
         "pareto_frontier_by_example",
         "recall_by_definition_example",
@@ -2291,7 +2293,12 @@ Credit is preliminary until missing_grading_edges = 0.'
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issue_occurrences TO agent_base")
 
     # Sequences
-    for seq in ["grading_edges_id_seq", "llm_requests_id_seq", "reported_issue_occurrences_id_seq"]:
+    for seq in [
+        "grading_edges_id_seq",
+        "llm_requests_id_seq",
+        "occurrence_ranges_id_seq",
+        "reported_issue_occurrences_id_seq",
+    ]:
         op.execute(f"GRANT USAGE ON SEQUENCE {seq} TO agent_base")
 
     op.execute("GRANT EXECUTE ON FUNCTION matchable_occurrences(VARCHAR, VARCHAR[]) TO agent_base")
@@ -2307,6 +2314,8 @@ Credit is preliminary until missing_grading_edges = 0.'
         "false_positives",
         "true_positive_occurrences",
         "false_positive_occurrences",
+        "occurrence_ranges",
+        "fp_occurrence_relevant_files",
         "critic_scopes_expected_to_recall",
         "llm_requests",
         "grading_edges",
@@ -2400,6 +2409,8 @@ Credit is preliminary until missing_grading_edges = 0.'
         "false_positives",
         "true_positive_occurrences",
         "false_positive_occurrences",
+        "occurrence_ranges",
+        "fp_occurrence_relevant_files",
         "critic_scopes_expected_to_recall",
     ]:
         op.execute(

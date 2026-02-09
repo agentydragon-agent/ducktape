@@ -16,7 +16,9 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
+from sqlalchemy import text
 
+from props.agents.grader.notifications import GRADER_DEFINITION_CHANGED_CHANNEL
 from props.backend.auth import (
     ACL_CAN_PUSH_REGISTRY,
     ACL_CAN_PUSH_TAGS,
@@ -177,6 +179,18 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
     if response.status_code in (200, 201):
         manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
         await _record_manifest_push(repo, manifest_digest, body, agent_run_id, admin_db)
+
+        # When a grader tag moves, notify the GraderSupervisor so it can
+        # (re)start daemons that failed due to missing image at startup.
+        if not is_digest(ref) and repo == str(AgentType.GRADER):
+            payload = json.dumps({"digest": manifest_digest, "tag": ref})
+            with admin_db.session() as session:
+                session.execute(
+                    text("SELECT pg_notify(:channel, :payload)"),
+                    {"channel": GRADER_DEFINITION_CHANGED_CHANNEL, "payload": payload},
+                )
+                session.commit()
+            logger.info(f"Notified grader definition changed: {repo}:{ref} -> {manifest_digest}")
 
     return response
 
