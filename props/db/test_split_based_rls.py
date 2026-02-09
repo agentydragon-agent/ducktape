@@ -1,8 +1,10 @@
-"""Test split-based RLS policies for optimization agents.
+"""Test split-based RLS policies for agent roles.
 
-Verifies that critic-dev users (agent roles created via
-ensure_agent_role) can only access TRAIN split sensitive data
-(true_positives, false_positives, agent_runs, llm_requests, etc.), not TEST or VALID.
+Verifies that agent roles (critic-dev, grader) created via ensure_agent_role
+respect RLS policies:
+- Critic-dev: can only access TRAIN split sensitive data, not TEST or VALID.
+- Grader: can access ground truth tables (occurrence_ranges, true_positives, etc.)
+  for its snapshot.
 
 **Note on snapshots table**: The snapshots table contains only metadata (slug, split,
 source info) which is not sensitive. All agents can see all snapshots. Actual data
@@ -18,7 +20,7 @@ These tests use per-test isolated databases and require:
 Each test gets its own database (created and destroyed by db fixture).
 For RLS testing, tests use:
 - admin_user (via db.session()) to write test data
-- critic_dev_optimize temporary user to verify split-based RLS policies
+- critic_dev_optimize / grader temporary users to verify split-based RLS policies
 
 Note: These tests share a module-scoped fixture and work correctly with pytest-xdist
 because the project uses --dist=loadscope by default, which ensures all tests in
@@ -37,14 +39,24 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from props.agents.critic_dev.shared import TargetMetric
-from props.core.agent_types import CriticDevOptimizeTypeConfig
+from props.core.agent_types import CriticDevOptimizeTypeConfig, GraderTypeConfig
+from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.examples import Example
-from props.db.models import AgentRun, AgentRunStatus, FalsePositive, LLMRequest, Snapshot, TruePositive
+from props.db.models import (
+    AgentRun,
+    AgentRunStatus,
+    FalsePositive,
+    LLMRequest,
+    OccurrenceRangeORM,
+    Snapshot,
+    TruePositive,
+    TruePositiveOccurrenceORM,
+)
 from props.orchestration.agent_credentials import AgentCredentials
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.credentials import make_agent_credentials
-from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, make_fake_critic_run
+from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST, FAKE_GRADER_DIGEST, make_fake_critic_run
 
 pytestmark = [pytest.mark.integration]
 
@@ -370,6 +382,82 @@ async def test_critic_dev_optimize_can_see_train_split_llm_requests(
 
     assert len(train_requests) == 1, "critic-dev user should see train split llm_requests via RLS"
     assert train_requests[0].model == DEFAULT_TEST_MODEL
+
+
+# =============================================================================
+# Grader RLS tests — ground truth table access
+# =============================================================================
+
+TRAIN1_SLUG = SnapshotSlug("test-fixtures/train1")
+VALID1_SLUG = SnapshotSlug("test-fixtures/valid1")
+
+
+@pytest_asyncio.fixture
+async def grader_train_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
+    """Create grader agent credentials scoped to train1 snapshot."""
+    type_config = GraderTypeConfig(snapshot_slug=TRAIN1_SLUG)
+    yield await make_agent_credentials(synced_db, type_config, FAKE_GRADER_DIGEST)
+
+
+@pytest_asyncio.fixture
+async def grader_train_session(grader_train_creds: AgentCredentials, synced_db: Database) -> AsyncGenerator[Session]:
+    """Database session as grader role scoped to train1."""
+    user_config = synced_db.config.with_user(grader_train_creds.username, grader_train_creds.password)
+    engine = create_engine(user_config.url)
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        engine.dispose()
+
+
+async def test_grader_can_read_occurrence_ranges_with_content(synced_db: Database, grader_train_session: Session):
+    """Grader agent can SELECT from occurrence_ranges and get actual GT content.
+
+    Regression test for a bug where occurrence_ranges was missing from GRANT,
+    RLS enable, and RLS policy lists — causing grader show_tp/show_fp tools to
+    return 'permission denied' instead of actual line range data.
+
+    Verifies that file_path, start_line, end_line are returned (not just empty
+    results or permission errors).
+    """
+    rows = grader_train_session.query(OccurrenceRangeORM).filter(OccurrenceRangeORM.snapshot_slug == TRAIN1_SLUG).all()
+
+    # train1 has 7 occurrence_ranges rows (5 TPs with varying file counts)
+    assert len(rows) >= 1, "Grader must see occurrence_ranges rows for its snapshot"
+
+    # Verify actual content is returned, not empty/null placeholders
+    for row in rows:
+        assert row.file_path is not None, "file_path must not be None"
+        assert str(row.file_path) != "", "file_path must not be empty"
+        assert row.start_line is not None, "start_line must not be None"
+        assert row.end_line is not None, "end_line must not be None"
+        assert row.start_line > 0, "start_line must be positive"
+        assert row.end_line >= row.start_line, "end_line must be >= start_line"
+        assert row.occurrence_id is not None, "occurrence_id must not be None"
+        # Exactly one of tp_id/fp_id must be set (exclusive arc)
+        assert (row.tp_id is None) != (row.fp_id is None), "Exclusive arc: exactly one of tp_id/fp_id must be set"
+
+
+async def test_grader_can_read_tp_occurrences(synced_db: Database, grader_train_session: Session):
+    """Grader agent can SELECT from true_positive_occurrences for its snapshot."""
+    rows = (
+        grader_train_session.query(TruePositiveOccurrenceORM)
+        .filter(TruePositiveOccurrenceORM.snapshot_slug == TRAIN1_SLUG)
+        .all()
+    )
+
+    assert len(rows) >= 1, "Grader must see TP occurrences for its snapshot"
+    for row in rows:
+        assert row.tp_id is not None
+        assert row.occurrence_id is not None
+
+
+async def test_grader_cannot_see_other_snapshot_occurrence_ranges(synced_db: Database, grader_train_session: Session):
+    """Grader scoped to train1 cannot see occurrence_ranges for valid1."""
+    rows = grader_train_session.query(OccurrenceRangeORM).filter(OccurrenceRangeORM.snapshot_slug == VALID1_SLUG).all()
+
+    assert len(rows) == 0, "Grader should NOT see occurrence_ranges for other snapshots"
 
 
 if __name__ == "__main__":
