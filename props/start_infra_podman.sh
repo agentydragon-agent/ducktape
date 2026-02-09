@@ -83,62 +83,21 @@ for i in {1..30}; do
   sleep 1
 done
 
-# Build registry proxy image if needed
-echo "Checking registry proxy image..."
-if ! podman image inspect localhost/props-registry-proxy:latest >/dev/null 2>&1; then
-  echo "Building registry proxy image..."
-  cd "$SCRIPT_DIR/.." && bazelisk run //props/registry_proxy:load || {
-    echo "ERROR: Failed to build proxy image"
-    echo "  Try manually: cd $(pwd) && bazelisk run //props/registry_proxy:load"
-    exit 1
-  }
-fi
-
-# Start Registry Proxy (port 5051)
-echo "Starting Registry Proxy on 127.0.0.1:5051..."
-podman run -d --rm \
-  --replace \
-  --network=host \
-  --annotation run.oci.keep_original_groups=1 \
-  --name props-registry-proxy \
-  -e PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050 \
-  -e PGHOST=127.0.0.1 \
-  -e PGPORT=5433 \
-  -e PGUSER=postgres \
-  -e PGPASSWORD="$PG_PASSWORD" \
-  -e PGDATABASE=eval_results \
-  localhost/props-registry-proxy:latest
-
-# Wait for Proxy
-echo "Waiting for Registry Proxy to be ready..."
-for i in {1..30}; do
-  # Proxy returns 401 for unauthenticated requests, which is expected
-  if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5051/v2/ 2>/dev/null | grep -qE "^(200|401)$"; then
-    echo "Registry Proxy is ready"
-    break
-  fi
-  if [ $i -eq 30 ]; then
-    echo "ERROR: Proxy failed to start within 30 seconds"
-    echo "Check logs: podman logs props-registry-proxy"
-    exit 1
-  fi
-  sleep 1
-done
-
 echo ""
 echo "=== Infrastructure Ready ==="
 echo "PostgreSQL:      127.0.0.1:5433 (user: postgres, password in $PASSWORD_FILE)"
 echo "OCI Registry:    127.0.0.1:5050 (direct access)"
-echo "Registry Proxy:  127.0.0.1:5051 (with ACL for agents)"
 echo ""
-echo "Environment variables (already set by session hook):"
-echo "  PGHOST=127.0.0.1"
-echo "  PGPORT=5433"
-echo "  AGENT_PGHOST=127.0.0.1"
-echo "  PROPS_REGISTRY_PROXY_HOST=127.0.0.1"
-echo "  PROPS_REGISTRY_PROXY_PORT=5051"
-echo "  PROPS_DOCKER_NETWORK=host"
+echo "Registry proxy is now provided by the backend (start separately)."
 echo ""
-echo "To stop: podman stop props-postgres props-registry props-registry-proxy"
+echo "Environment variables to set:"
+echo "  export PGHOST=127.0.0.1"
+echo "  export PGPORT=5433"
+echo "  export PGUSER=postgres"
+echo "  export PGPASSWORD=\$(cat $PASSWORD_FILE)"
+echo "  export PGDATABASE=eval_results"
+echo "  export ADGN_PROPS_SPECIMENS_ROOT=/home/user/specimens"
+echo ""
+echo "To stop: podman stop props-postgres props-registry"
 echo "To view logs: podman logs <container-name>"
 echo ""
