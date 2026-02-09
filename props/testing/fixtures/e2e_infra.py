@@ -19,7 +19,7 @@ from collections.abc import Generator
 
 import pytest
 from testcontainers.core.container import DockerContainer
-from testcontainers.core.waiting_utils import wait_for_logs
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from test_util.image_loader import load_image
 from test_util.oci import BazelImage
@@ -45,8 +45,12 @@ def e2e_registry() -> Generator[DockerContainer]:
     Function-scoped to match DB scope — each test gets a fresh registry so that
     crane push always records agent_definitions in the current test's DB.
     """
-    with DockerContainer("registry:2").with_exposed_ports(5000) as registry:
-        wait_for_logs(registry, "listening on")
+    with (
+        DockerContainer("registry:2")
+        .with_exposed_ports(5000)
+        .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
+        .waiting_for(LogMessageWaitStrategy("listening on")) as registry
+    ):
         time.sleep(0.5)
         yield registry
 

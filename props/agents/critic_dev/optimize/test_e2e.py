@@ -30,7 +30,7 @@ from agent_core.testing.responses import PlayGen, tool_roundtrip
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.agents.critic_dev.shared import TargetMetric
-from props.agents.critic_dev.testing.mocks import CriticDevMock, make_cli_test_mock
+from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
@@ -100,43 +100,6 @@ async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, cr
         assert critic_run.status == AgentRunStatus.EXITED, f"Critic should complete, got {critic_run.status}"
         assert len(critic_run.reported_issues) == 1, f"Expected 1 issue, got {len(critic_run.reported_issues)}"
         assert critic_run.reported_issues[0].issue_id == "test-issue-001"
-
-
-# =============================================================================
-# CLI Helper Integration Tests
-# =============================================================================
-
-
-@pytest.mark.timeout(120)
-@pytest.mark.requires_docker
-async def test_cli_leaderboard_shows_recall(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
-    """Test that leaderboard CLI command shows actual recall values from database."""
-    mock = make_cli_test_mock(["critic-dev", "leaderboard", "--limit", "5"], expected_output="76%")
-
-    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
-        await stack.registry.run_critic_dev_optimize(
-            budget=1.0,
-            optimizer_model=stack.model,
-            critic_model=stack.model,
-            target_metric=TargetMetric.WHOLE_REPO,
-            timeout_seconds=TEST_TIMEOUT_SECONDS,
-        )
-
-
-@pytest.mark.timeout(120)
-@pytest.mark.requires_docker
-async def test_cli_hard_examples_shows_metrics(e2e_stack, test_train_example_with_runs, critic_dev_optimize_image):
-    """Test that hard-examples CLI command shows example metrics."""
-    mock = make_cli_test_mock(["critic-dev", "hard-examples", "--limit", "5"], expected_output="76%")
-
-    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_optimize_image]) as stack:
-        await stack.registry.run_critic_dev_optimize(
-            budget=1.0,
-            optimizer_model=stack.model,
-            critic_model=stack.model,
-            target_metric=TargetMetric.WHOLE_REPO,
-            timeout_seconds=TEST_TIMEOUT_SECONDS,
-        )
 
 
 # =============================================================================

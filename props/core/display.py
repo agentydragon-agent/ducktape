@@ -37,6 +37,16 @@ def fmt_pct(value: float | None) -> str:
     return f"{value:.1%}" if value is not None else "—"
 
 
+def fmt_float(value: float | None, decimals: int = 2) -> str:
+    """Format float with specified decimal places, or dash if None."""
+    return f"{value:.{decimals}f}" if value is not None else "—"
+
+
+def fmt_model(model: str, max_length: int = 12) -> str:
+    """Truncate model name for display."""
+    return model[:max_length]
+
+
 class HasStatusCounts(Protocol):
     """Row with status_counts dict (ORM models or raw SQL rows)."""
 

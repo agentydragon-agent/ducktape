@@ -368,7 +368,7 @@ manifest:
     platformdirs: platformdirs
     playhouse: peewee
     playwright: playwright
-    plotext: plotext
+
     plotnine: plotnine
     pluggy: pluggy
     ply: ply

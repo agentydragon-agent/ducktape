@@ -22,8 +22,6 @@ ${include_doc("props/agents/docs/db/grading.md.mako")}
 4. **Fill** — `fill_remaining` to bulk-fill remaining non-matches with credit=0
 5. **Delete** — `delete_edges` to redo grading for an issue
 
-For ad-hoc database queries, use `exec` to run SQL queries via Python.
-
 ## Daemon Lifecycle
 
 1. **On start**: Call `list_pending` and grade everything
@@ -53,13 +51,13 @@ Each wake cycle:
 3. When `list_pending` returns no edges, you'll be paused until the next change
 
 ${source_inspection("grader", [
-    ("props/agents/grader/main.py", "Entry point"),
-    ("props/agents/grader/loop.py", "Grading loop"),
-    ("props/agents/grader/tools.py", "Tool implementations"),
-    ("props/db/models.py", "SQLAlchemy models"),
+    ("props.agents.grader.main", "Entry point"),
+    ("props.agents.grader.loop", "Grading loop"),
+    ("props.agents.grader.tools", "Tool implementations"),
+    ("props.db.models", "SQLAlchemy models"),
 ])}
 
-${include_doc("props/agents/docs/database_access.md")}
+${include_doc("props/agents/docs/system_access.md")}
 ${include_doc("props/agents/docs/db/agent_runs.md.mako")}
 ${include_doc("props/agents/docs/db/examples.md.mako")}
 ${include_doc("props/agents/docs/db/ground_truth.md.mako")}

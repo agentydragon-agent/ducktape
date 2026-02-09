@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
+from hamcrest import all_of, assert_that
 
 from agent_core.testing.responses import DecoratorMock, PlayGen
+from mcp_infra.exec.matchers import exited_successfully, stdout_contains
 from props.agents.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
+from props.agents.critic.testing.mocks import CriticMock
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
@@ -119,6 +122,54 @@ async def test_critic_submit_with_issues(e2e_stack, test_snapshot, all_files_sco
             occurrence = issue.occurrences[0]
             assert len(occurrence.locations) == 1
             assert occurrence.locations[0].file == "subtract.py"
+
+
+@pytest.mark.requires_docker
+async def test_python3_can_import_and_inspect_props(
+    e2e_stack, test_snapshot, all_files_scope, critic_image, db: Database
+):
+    """Verify python3 is on PATH and can import/inspect props source.
+
+    This validates the SPEC requirement that agents can use
+    `python3 -c "import inspect, MODULE; print(inspect.getsource(MODULE))"`
+    to read bundled source code at runtime (the "show over retell" principle).
+    """
+
+    @CriticMock.mock(check_consumed=False)
+    def mock(m: CriticMock) -> PlayGen:
+        yield None  # First request
+
+        # Test 1: python3 is on PATH and props is importable
+        result = yield from m.exec_roundtrip(
+            ["python3", "-c", "import props; print('props_imported')"], timeout_ms=15000
+        )
+        assert_that(result, all_of(exited_successfully(), stdout_contains("props_imported")))
+
+        # Test 2: inspect.getsource works on bundled modules
+        result = yield from m.exec_roundtrip(
+            ["python3", "-c", "import inspect, props.agents.runtime; print(inspect.getsource(props.agents.runtime))"],
+            timeout_ms=15000,
+        )
+        assert_that(result, all_of(exited_successfully(), stdout_contains("def render_system_prompt")))
+
+        yield m.tool_call("submit", SubmitArgs(issues_count=0, summary="Source inspection test complete"))
+
+    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
+        run_id = await stack.registry.run_critic(
+            image_ref=stack.image_digests["critic"],
+            example=all_files_scope,
+            model=stack.model,
+            timeout_seconds=TEST_TIMEOUT_SECONDS,
+            parent_run_id=None,
+            budget_usd=5.0,
+        )
+
+        assert run_id is not None
+
+        with db.session() as session:
+            run = session.get(AgentRun, run_id)
+            assert run is not None
+            assert run.status == AgentRunStatus.EXITED
 
 
 if __name__ == "__main__":

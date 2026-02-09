@@ -67,7 +67,7 @@ Pull these as starting points, inspect their internals, and repackage with modif
 ```bash
 REGISTRY=$(echo $PROPS_BACKEND_URL | sed 's|https\?://||')
 
-# View image config (CMD, ENV)
+# View image config (entrypoint, ENV)
 crane config $REGISTRY/critic:latest --insecure | python3 -m json.tool
 
 # List all files
@@ -75,35 +75,79 @@ crane export $REGISTRY/critic:latest - --insecure | tar t
 
 # Extract a specific file
 crane export $REGISTRY/critic:latest - --insecure | tar xf - -O \
-  app/critic.runfiles/_main/props/agents/critic/main.py
+  props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/main.py
 ```
+
+**Understanding the default critic:** To see what the built-in critic does and what its system prompt says, extract the key files:
+
+```bash
+RUNFILES=props/agents/critic/critic_bin.runfiles/_main
+
+# Read the critic's entry point (agent loop, tool registration)
+crane export $REGISTRY/critic:latest - --insecure | tar xf - -O $RUNFILES/props/agents/critic/main.py
+
+# Read the critic's system prompt template
+crane export $REGISTRY/critic:latest - --insecure | tar xf - -O $RUNFILES/props/agents/critic/prompt.md.mako
+```
+
+This shows exactly what instructions the critic receives, what tools it has, and how it processes snapshots. Use this to understand what to change.
 
 ### Modify and push
 
-Agents can only push by digest, not by tag. Use a local staging path, then push the final digest:
+The simplest approach: overlay `main.py` at the runfiles path. The existing entrypoint launcher will run your code instead of the original. Agents push by digest, not by tag.
 
 ```bash
-# Prepare your changes as a tar layer
-mkdir -p /tmp/layer
-cp /workspace/my_custom_main.py /tmp/layer/custom_main.py
+# Write your custom main.py at the runfiles path
+MAIN_PY=props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/main.py
+mkdir -p /tmp/layer/$(dirname $MAIN_PY)
+cp /workspace/my_custom_main.py /tmp/layer/$MAIN_PY
+
+# Create a tar layer that shadows the original main.py
 tar -cf /tmp/layer.tar -C /tmp/layer .
 
-# Append layer to a local staging path
-PYTHON=/app/critic.runfiles/_main/props/agents/critic/_critic.venv/bin/python3
-crane append -b $REGISTRY/critic:latest -f /tmp/layer.tar \
-  -o /tmp/image.tar --insecure
+# Append layer to the base image (no entrypoint change needed)
+crane mutate $REGISTRY/critic:latest \
+  --append /tmp/layer.tar \
+  -o /tmp/image.tar \
+  --insecure
 
-# Mutate CMD and push; crane push outputs the digest
-crane mutate --local /tmp/image.tar \
-  --cmd "$PYTHON" --cmd "/custom_main.py" \
-  -o /tmp/image-final.tar
-DIGEST=$(crane push /tmp/image-final.tar $REGISTRY/critic --insecure)
+# Compute digest and push
+DIGEST=$(crane digest --tarball /tmp/image.tar)
+crane push /tmp/image.tar $REGISTRY/critic@$DIGEST --insecure
 echo "Created image: critic@$DIGEST"
 ```
 
 Use this digest as `definition_id` when calling `run_critic`.
 
 ${include_doc("props/agents/critic_dev/built_in_critic.md.mako")}
+
+## Running and Evaluating Custom Critics
+
+After pushing a custom image, run and evaluate it:
+
+```
+1. Build image:  crane mutate ... --append ... -o /tmp/image.tar --insecure
+2. Get digest:   DIGEST=$(crane digest --tarball /tmp/image.tar)
+3. Push:         crane push /tmp/image.tar $REGISTRY/critic@$DIGEST --insecure
+4. Run:          run_critic(definition_id=$DIGEST, example=..., timeout_seconds=120, budget_usd=0.5)
+5. Grade:        wait_until_graded_tool(critic_run_id=..., timeout_seconds=300)
+6. Check recall: SELECT * FROM recall_by_definition_split_kind WHERE critic_image_digest = '$DIGEST';
+```
+
+`run_critic` **blocks until the critic container exits** (typically minutes per call). `wait_until_graded_tool` polls the database until grading is complete.
+
+Read `props.agents.critic_dev.loop` to see exact tool argument types and return types. Read `props.agents.critic_dev.eval_client` for the underlying REST API if you want to call it directly from Python (e.g., to run multiple critics in parallel).
+
+### Constructing examples
+
+Query the `examples` table to find available examples:
+
+```sql
+SELECT snapshot_slug, example_kind, files_hash, n_recall_denominator
+FROM examples WHERE split = 'train' ORDER BY n_recall_denominator;
+```
+
+Read `props.core.models.examples` for the `ExampleSpec` discriminated union (whole_snapshot vs file_set).
 
 ## Backend API
 
@@ -118,6 +162,8 @@ The unified backend at `PROPS_BACKEND_URL` serves all functionality:
 | `/api/runs/*` | Agent run management | No (admin) |
 | `/api/gt/*` | Ground truth management | No (admin) |
 
+The backend serves as your OCI registry — use `PROPS_BACKEND_URL` as the registry host for all `crane` and `/v2/` operations.
+
 ### OpenAPI Introspection
 
 The backend is a FastAPI app. Discover all endpoints and request/response schemas:
@@ -126,25 +172,10 @@ The backend is a FastAPI app. Discover all endpoints and request/response schema
 curl -s $PROPS_BACKEND_URL/openapi.json | python3 -m json.tool
 ```
 
-### Runs API
-
-Use the `run_critic` and `wait_until_graded` tools provided to you, or the bundled `CriticRunClient`:
-
-```python
-from props.agents.critic_dev.eval_client import CriticRunClient
-
-async with CriticRunClient.from_env() as client:
-    result = await client.run_critic(definition_id="sha256:...", ...)
-    # Wait for grading (polls DB directly, not via REST API)
-    from props.agents.critic_dev.grading import wait_until_graded
-    grading = await wait_until_graded(result.critic_run_id, db)
-```
-
-The backend serves as your OCI registry — use `PROPS_BACKEND_URL` as the registry host for all `crane` and `/v2/` operations.
-
 ## Best Practices
 
 1. **Fail fast** — exit non-zero if prerequisites aren't met (missing files, DB connection fails, etc.)
 2. **Use OCI layering** — reuse base images, add small layers for changes (more efficient than copying entire images)
 3. **Push by digest** — immutable content addressing prevents conflicts (agents can only push by digest, not by tag)
-4. **Experiment freely** — try different architectures (multi-agent, pipeline, hybrid) and measure which scores best
+4. **Start with file-set examples** — they're smaller, faster, and easier to debug than whole-snapshot
+5. **Experiment freely** — try different architectures (multi-agent, pipeline, hybrid) and measure which scores best

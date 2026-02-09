@@ -12,6 +12,10 @@
   import CopyButton from "$components/CopyButton.svelte";
   import BackButton from "$components/BackButton.svelte";
   import OccurrenceLink from "$lib/OccurrenceLink.svelte";
+  import CreditBadge from "$components/stats/CreditBadge.svelte";
+  import OccurrenceStats from "$components/stats/OccurrenceStats.svelte";
+  import { fetchOccurrenceStats } from "$lib/api/client";
+  import type { OccurrenceStatsRow } from "$lib/api/client";
   import { createExpansionState } from "$lib/expansionState.svelte";
 
   interface Props {
@@ -39,15 +43,20 @@
   });
   const targetFile = $derived(queryParams.get("file") || undefined);
 
+  // svelte-ignore state_referenced_locally
   let snapshot: SnapshotDetailResponse | null = $state(initialSnapshot ?? null);
+  // svelte-ignore state_referenced_locally
   let tree: FileTreeResponse | null = $state(initialTree ?? null);
+  // svelte-ignore state_referenced_locally
   let loading = $state(!initialSnapshot);
   let error: string | null = $state(null);
 
   const expandedIssues = createExpansionState();
-  let activeTab: "files" | "tps" | "fps" = $state("files");
+  let activeTab: "files" | "tps" | "fps" | "stats" = $state("files");
   let selectedFile: FileContentResponse | null = $state(null);
   let loadingFile = $state(false);
+  let occurrenceStats: OccurrenceStatsRow[] = $state([]);
+  let occurrenceStatsMap = $derived(new Map(occurrenceStats.map((o) => [`${o.tp_id}:${o.occurrence_id}`, o])));
 
   async function loadData() {
     loading = true;
@@ -59,6 +68,15 @@
       ]);
       snapshot = snapshotData;
       tree = treeData;
+      // Fetch occurrence stats (non-blocking)
+      fetchOccurrenceStats(parsedSlug.snapshotSlug).then(
+        (data) => {
+          occurrenceStats = data.occurrences;
+        },
+        (e) => {
+          toast.error(e instanceof Error ? e.message : "Failed to load occurrence stats");
+        }
+      );
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load snapshot";
     } finally {
@@ -202,6 +220,7 @@
         <TabButton active={activeTab === "fps"} onclick={() => (activeTab = "fps")}>
           False Positives ({snapshot.false_positives.length})
         </TabButton>
+        <TabButton active={activeTab === "stats"} onclick={() => (activeTab = "stats")}>Detection Stats</TabButton>
       </nav>
     </div>
 
@@ -270,13 +289,17 @@
                               : ''}"
                           >
                             <div class="flex items-center justify-between">
-                              <div class="text-xs">
+                              <div class="flex items-center gap-2 text-xs">
                                 <OccurrenceLink
                                   snapshotSlug={snapshot.slug}
                                   issueId={tp.tp_id}
                                   occurrenceId={occ.occurrence_id}
                                   filePath={occ.files[0]?.path}
                                 />
+                                {#if occurrenceStatsMap.has(`${tp.tp_id}:${occ.occurrence_id}`)}
+                                  {@const stats = occurrenceStatsMap.get(`${tp.tp_id}:${occ.occurrence_id}`)!}
+                                  <CreditBadge meanCredit={stats.mean_credit} nRuns={stats.n_runs} />
+                                {/if}
                               </div>
                               <CopyButton
                                 text={getOccurrenceUrl(tp.tp_id, occ.occurrence_id, occ.files[0]?.path)}
@@ -308,7 +331,7 @@
             </div>
           {/if}
         </div>
-      {:else}
+      {:else if activeTab === "fps"}
         <div class="max-h-[70vh] overflow-y-auto">
           {#if snapshot.false_positives.length === 0}
             <p class="text-gray-500">No false positives</p>
@@ -378,6 +401,10 @@
               {/each}
             </div>
           {/if}
+        </div>
+      {:else if activeTab === "stats"}
+        <div class="max-h-[70vh] overflow-y-auto">
+          <OccurrenceStats occurrences={occurrenceStats} />
         </div>
       {/if}
     </div>

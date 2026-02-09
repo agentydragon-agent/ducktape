@@ -14,7 +14,7 @@ props/
 │   ├── models/               # Data models (examples, true_positive, etc.)
 │   └── gepa/                 # GEPA prompt optimization
 ├── cli/                      # Command-line interface
-│   └── cmd_*.py              # Subcommand modules (db, stats, etc.)
+│   └── cmd_*.py              # Subcommand modules (db, snapshot, etc.)
 ├── db/                       # Database layer
 │   ├── models.py             # SQLAlchemy ORM models
 │   ├── migrations/           # Alembic migration (single complete_schema)

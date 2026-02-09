@@ -7,6 +7,12 @@
   import SummaryCards from "$components/stats/SummaryCards.svelte";
   import JobsList from "$components/JobsList.svelte";
   import RunList from "$components/RunList.svelte";
+  import DistributionChart from "$components/stats/DistributionChart.svelte";
+  import CoverageHeatmap from "$components/stats/CoverageHeatmap.svelte";
+  import { fetchDistributions, fetchCoverage } from "$lib/api/client";
+  import type { DistributionsResponse, CoverageResponse } from "$lib/api/client";
+  import TabButton from "$components/TabButton.svelte";
+  import { toast } from "svelte-sonner";
 
   interface Props {
     initialData?: OverviewResponse;
@@ -18,9 +24,35 @@
     open: (_?: RunModalPrefill) => void;
   }>("runModal");
 
+  // svelte-ignore state_referenced_locally
   let overview: OverviewResponse | null = $state(initialData ?? null);
+  // svelte-ignore state_referenced_locally
   let loading = $state(!initialData);
   let error: string | null = $state(null);
+
+  let analysisSplit: "valid" | "train" = $state("valid");
+  let distributions: DistributionsResponse | null = $state(null);
+  let coverage: CoverageResponse | null = $state(null);
+  let analysisLoading = $state(false);
+
+  async function loadAnalysis(split: "valid" | "train") {
+    analysisLoading = true;
+    try {
+      const [dist, cov] = await Promise.all([fetchDistributions(split), fetchCoverage(split)]);
+      distributions = dist;
+      coverage = cov;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load analysis");
+    } finally {
+      analysisLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (overview) {
+      loadAnalysis(analysisSplit);
+    }
+  });
 
   async function loadData() {
     loading = true;
@@ -73,6 +105,44 @@
         exampleCounts={overview.example_counts}
         onCellClick={handleNavigateToRuns}
       />
+    </div>
+
+    <!-- Analysis Section -->
+    <div class="mt-4 bg-white rounded-lg shadow p-4">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold">Stats & Analysis</h3>
+        <div class="flex border rounded">
+          <TabButton active={analysisSplit === "valid"} onclick={() => (analysisSplit = "valid")}>Valid</TabButton>
+          <TabButton active={analysisSplit === "train"} onclick={() => (analysisSplit = "train")}>Train</TabButton>
+        </div>
+      </div>
+
+      {#if analysisLoading}
+        <div class="text-gray-500 text-center py-8">Loading analysis...</div>
+      {:else}
+        {#if distributions}
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <DistributionChart
+              values={distributions.max_recall_values}
+              title="Max Recall Distribution"
+              numBuckets={10}
+              valueFormat={(v) => `${(v * 100).toFixed(0)}%`}
+              color="rgb(59, 130, 246)"
+            />
+            <DistributionChart
+              values={distributions.tp_count_values.map((v) => v)}
+              title="TP Occurrence Count Distribution"
+              numBuckets={8}
+              valueFormat={(v) => `${v.toFixed(0)}`}
+              color="rgb(34, 197, 94)"
+            />
+          </div>
+        {/if}
+
+        {#if coverage && coverage.definitions.length > 0}
+          <CoverageHeatmap definitions={coverage.definitions} examples={coverage.examples} cells={coverage.cells} />
+        {/if}
+      {/if}
     </div>
   </div>
 {/if}

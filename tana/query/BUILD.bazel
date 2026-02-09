@@ -1,8 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
-# Gazelle-managed per-file py_library targets
-# NOTE: No core target - get_tuple_value merged into :nodes
-
 py_library(
     name = "filters",
     srcs = ["filters.py"],

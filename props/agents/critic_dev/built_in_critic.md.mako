@@ -1,35 +1,51 @@
 # Built-in Critic Image Internals
 
-The built-in critic images are Bazel-built Python binaries packaged into distroless OCI images. This describes how they work internally — useful for understanding what you're starting from, inspecting internals, and repackaging with modifications.
+The built-in critic images are Bazel-built Python binaries packaged into OCI images on a debian-slim base. This describes how they work internally — useful for understanding what you're starting from and for building custom images that overlay the entry point.
 
 The built-in critic is one possible implementation. Your custom critics can take any shape — see the parent guide for what constitutes a valid critic.
 
 ## Container Entrypoint
 
-The image CMD runs a hermetic Python interpreter via a Bazel stage2 bootstrap:
+The image ENTRYPOINT is a Bazel-generated bash launcher:
 
 ```
-CMD: /app/critic.runfiles/_main/props/agents/critic/_critic.venv/bin/python3 \
-     /app/critic.runfiles/_main/props/agents/critic/_critic_stage2_bootstrap.py
+ENTRYPOINT: /props/agents/critic/critic_bin
 ```
 
-The bootstrap sets up `sys.path` and runs `props.agents.critic.main`.
+The launcher configures a hermetic Python venv, sets `sys.path` to include the runfiles tree, and runs `props.agents.critic.main` as a module. This means:
+
+1. `__name__` is set to `"__main__"` in `main.py`
+2. The `if __name__ == "__main__"` block executes
+3. That block calls `sys.exit(asyncio.run(main()))`
+
+**When you overlay `main.py`, your replacement must provide the same interface:**
+
+```python
+async def main() -> int:
+    # Your logic here. Return 0 for success, non-zero for failure.
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))
+```
+
+You do NOT need to set up `sys.path` — the launcher already did that. All bundled Python modules (the full `props` library, `agent_core`, `openai_utils`, etc.) are importable.
 
 ## Runfiles Layout
 
-All code lives under `/app/critic.runfiles/_main/`, which mirrors the Bazel workspace:
+All code lives under the runfiles tree, which mirrors the Bazel workspace:
 
 ```
-/app/critic.runfiles/_main/
+/props/agents/critic/critic_bin.runfiles/_main/
 ├── props/
 │   ├── agents/
 │   │   ├── critic/
-│   │   │   ├── main.py              ← agent entrypoint
+│   │   │   ├── main.py              ← agent entrypoint (override this)
 │   │   │   ├── prompt.md.mako       ← system prompt template
-│   │   │   └── _critic.venv/        ← hermetic Python venv
+│   │   │   └── _critic_bin.venv/    ← hermetic Python venv
 │   │   │       └── bin/python3
 │   │   ├── docs/                    ← agent-facing documentation
-│   │   │   ├── database_access.md
+│   │   │   ├── system_access.md
 │   │   │   └── db/                  ← DB schema docs (Mako templates)
 │   │   ├── runtime.py               ← template rendering, agent run helpers
 │   │   └── schema.py                ← SQLAlchemy schema introspection
@@ -54,64 +70,13 @@ The built-in critic (`props.agents.critic.main`) implements a simple single-agen
 
 This is a reasonable starting point, but you're free to replace any or all of it.
 
-## Inspecting an Image
-
-Use `crane` (pre-installed in your container) to explore any image:
-
-```bash
-REGISTRY=$(echo $PROPS_BACKEND_URL | sed 's|https\?://||')
-
-# View image config (CMD, ENV, entrypoint)
-crane config $REGISTRY/critic:latest --insecure | python3 -m json.tool
-
-# List all files in the image
-crane export $REGISTRY/critic:latest - --insecure | tar t
-
-# Extract a specific file (e.g., the system prompt template)
-crane export $REGISTRY/critic:latest - --insecure | tar xf - -O \
-  app/critic.runfiles/_main/props/agents/critic/prompt.md.mako
-
-# Extract the main entry point
-crane export $REGISTRY/critic:latest - --insecure | tar xf - -O \
-  app/critic.runfiles/_main/props/agents/critic/main.py
-```
-
-## Repackaging with Custom Logic
-
-Replace the Python entrypoint to create a critic with custom behavior. The bundled `props` library and all dependencies remain available:
-
-```bash
-mkdir -p /tmp/layer
-cat > /tmp/layer/custom_main.py << 'PYEOF'
-import sys
-sys.path.insert(0, "/app/critic.runfiles/_main")
-
-from props.agents.runtime import render_template_string, setup_logging
-from props.db.database import Database
-# Use any bundled module — the full workspace is available
-
-def main() -> int:
-    setup_logging()
-    # Your custom logic here
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main())
-PYEOF
-
-tar -cf /tmp/layer.tar -C /tmp/layer .
-PYTHON=/app/critic.runfiles/_main/props/agents/critic/_critic.venv/bin/python3
-crane append -b $REGISTRY/critic:latest -f /tmp/layer.tar -o /tmp/image.tar --insecure
-crane mutate --local /tmp/image.tar --cmd "$PYTHON" --cmd "/custom_main.py" -o /tmp/image-final.tar
-DIGEST=$(crane push /tmp/image-final.tar $REGISTRY/critic --insecure)
-```
-
 ## Key Paths
 
 | Path | Purpose |
 |------|---------|
-| `/workspace/` | Working directory, writable. Snapshots fetched here. |
-| `/app/critic.runfiles/_main/` | Bazel workspace root — all Python source code |
-| `/app/critic.runfiles/_main/props/agents/critic/prompt.md.mako` | Default system prompt template |
-| `/app/critic.runfiles/_main/props/agents/critic/main.py` | Agent entrypoint |
-| `/app/critic.runfiles/_main/props/agents/critic/_critic.venv/bin/python3` | Hermetic Python interpreter |
+| `/workspace/` | Working directory, writable. Snapshots fetched here at runtime. |
+| `python3` | Python interpreter (on PATH). Has `props` and all dependencies importable. |
+| `/props/agents/critic/critic_bin` | Bash entrypoint launcher |
+| `/props/agents/critic/critic_bin.runfiles/_main/` | Bazel workspace root — all Python source code |
+| `/props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/main.py` | Agent entrypoint (override this to customize) |
+| `/props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/prompt.md.mako` | Default system prompt template |

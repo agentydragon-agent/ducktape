@@ -74,6 +74,7 @@ py_library(
     deps = [
         ":ground_truth",
         "//props/agents/critic:exceptions",
+        "//props/agents/critic_dev:shared",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:agent_types",
@@ -84,6 +85,7 @@ py_library(
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
+        "//props/db:query_builders",
         "//props/orchestration:agent_registry",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -166,7 +168,31 @@ py_library(
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
+        "//props/db:query_builders",
         "@pypi//fastapi",
         "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+docker_py_test(
+    name = "test_stats",
+    srcs = ["test_stats.py"],
+    imports = ["../../.."],
+    deps = [
+        ":stats",
+        "//props:conftest",
+        "//props/backend:auth",
+        "//props/backend:conftest",
+        "//props/backend:deps",
+        "//props/core:splits",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing/fixtures:runs",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

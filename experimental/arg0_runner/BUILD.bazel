@@ -2,9 +2,6 @@
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-# NOTE: No aggregator target - use specific per-file targets like :patch, :runner, :setup
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 py_library(
     name = "patch",
     srcs = ["patch.py"],

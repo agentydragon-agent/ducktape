@@ -3454,10 +3454,7 @@ playwright==1.57.0 \
     # via
     #   ducktape (pyproject.toml)
     #   pytest-playwright
-plotext==5.3.2 \
-    --hash=sha256:394362349c1ddbf319548cfac17ca65e6d5dfc03200c40dfdc0503b3e95a2283 \
-    --hash=sha256:52d1e932e67c177bf357a3f0fe6ce14d1a96f7f7d5679d7b455b929df517068e
-    # via ducktape (pyproject.toml)
+
 plotnine==0.15.2 \
     --hash=sha256:7dc508bc51625b9b9f945e274d8ee4463cf30b280749190a5b707e6828003fa6 \
     --hash=sha256:ec2e4cdf2d022eb0dab63ef4aa0017ce0d84c60bd99d55093e72637fddf757e6

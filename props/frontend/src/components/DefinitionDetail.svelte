@@ -12,16 +12,6 @@
   }
   let { data }: Props = $props();
 
-  let copied = $state(false);
-
-  const cliCommand = $derived(`props agent-pkg fetch ${data.image_digest} /workspace/my_pkg/`);
-
-  async function copyCommand() {
-    await navigator.clipboard.writeText(cliCommand);
-    copied = true;
-    setTimeout(() => (copied = false), 2000);
-  }
-
   // Column group configs (same as DefinitionsTable)
   const colGroups: { split: Split; kind: ExampleKind; label: string }[] = [
     { split: "valid", kind: "whole_snapshot", label: "Valid Whole" },
@@ -54,20 +44,6 @@
         <span class="text-gray-600">{data.agent_type}</span>
         <span class="text-gray-400">|</span>
         <span class="text-gray-600">{formatAge(data.created_at)}</span>
-      </div>
-
-      <!-- CLI command -->
-      <div class="flex items-center gap-2">
-        <code class="flex-1 bg-gray-100 px-3 py-2 rounded text-sm font-mono text-gray-800 overflow-x-auto">
-          {cliCommand}
-        </code>
-        <button
-          type="button"
-          class="px-3 py-2 text-sm border rounded hover:bg-gray-50 whitespace-nowrap"
-          onclick={copyCommand}
-        >
-          {copied ? "Copied!" : "Copy"}
-        </button>
       </div>
     </div>
   </div>

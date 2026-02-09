@@ -13,7 +13,7 @@
 
 **Key documentation (transcluded below):**
 
-@agents/docs/database_access.md
+@agents/docs/system_access.md
 @agents/docs/db/ground_truth.md.mako
 @agents/docs/db/examples.md.mako
 @agents/docs/db/evaluation_flow.md.mako

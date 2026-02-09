@@ -1,7 +1,5 @@
 # Props has complex inter-package dependencies that are manually configured
 
-"""CLI module - per-file targets."""
-
 # gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
@@ -93,31 +91,8 @@ py_library(
         "//props/core:ids",
         "//props/db:database",
         "//props/db:models",
-        "//props/db:snapshot_io",
         "//props/db/sync:export",
         "@pypi//typer_di",
-        "@pypi//typer_slim",
-    ],
-)
-
-py_library(
-    name = "cmd_stats",
-    srcs = ["cmd_stats.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:agent_types",
-        "//props/core:display",
-        "//props/core:splits",
-        "//props/core/models:examples",
-        "//props/db:database",
-        "//props/db:examples",
-        "//props/db:models",
-        "//props/db:query_builders",
-        "@pypi//more_itertools",
-        "@pypi//plotext",
-        "@pypi//rich",
-        "@pypi//sqlalchemy",
         "@pypi//typer_slim",
     ],
 )
@@ -136,30 +111,9 @@ py_library(
         ":cmd_gepa",
         ":cmd_gt",
         ":cmd_snapshot",
-        ":cmd_stats",
-        ":common_options",
-        "//cli_util:decorators",
         "//cli_util:logging",
-        "//openai_utils:model",
-        "//props:config",
-        "//props/agents:runtime",
-        "//props/agents/critic_dev:shared",
-        "//props/core:agent_types",
-        "//props/core:agent_workspace",
-        "//props/core:display",
-        "//props/core:ids",
-        "//props/core:oci_utils",
-        "//props/core:runs_context",
-        "//props/core:splits",
-        "//props/core/models:examples",
-        "//props/db:config",
         "//props/db:database",
-        "//props/db:models",
-        "//props/db:query_builders",
-        "//props/orchestration:agent_registry",
-        "@pypi//aiodocker",
         "@pypi//rich",
-        "@pypi//sqlalchemy",
         "@pypi//typer",
         "@pypi//typer_di",
     ],

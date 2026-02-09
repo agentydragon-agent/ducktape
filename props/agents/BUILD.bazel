@@ -3,9 +3,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
-# NOTE: No aggregator target - use specific per-file targets like :runtime, :schema
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 py_library(
     name = "schema",
     srcs = ["schema.py"],
@@ -47,7 +44,7 @@ docker_py_test(
         "//props/agents/critic_dev:prompt.md.mako",
         "//props/agents/critic_dev:prompt_base.md.mako",
         "//props/agents/critic_dev:rollouts.md.mako",
-        "//props/agents/docs:database_access.md",
+        "//props/agents/critic_dev:system_access.md",
         "//props/agents/docs:db/agent_definitions.md.mako",
         "//props/agents/docs:db/agent_runs.md.mako",
         "//props/agents/docs:db/critiques.md.mako",
@@ -56,6 +53,8 @@ docker_py_test(
         "//props/agents/docs:db/grading.md.mako",
         "//props/agents/docs:db/ground_truth.md.mako",
         "//props/agents/docs:db/llm_requests.md.mako",
+        "//props/agents/docs:source_inspection.md.mako",
+        "//props/agents/docs:system_access.md",
         "//props/agents/grader:prompt.md.mako",
     ],
     imports = ["../.."],

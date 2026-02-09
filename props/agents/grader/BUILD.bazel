@@ -15,7 +15,7 @@ The container runs a daemon agent loop that:
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files(
@@ -43,12 +43,13 @@ py_library(
     srcs = ["main.py"],
     data = [
         "prompt.md.mako",
-        "//props/agents/docs:database_access.md",
         "//props/agents/docs:db/agent_runs.md.mako",
         "//props/agents/docs:db/critiques.md.mako",
         "//props/agents/docs:db/examples.md.mako",
         "//props/agents/docs:db/grading.md.mako",
         "//props/agents/docs:db/ground_truth.md.mako",
+        "//props/agents/docs:source_inspection.md.mako",
+        "//props/agents/docs:system_access.md",
     ],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
@@ -102,6 +103,11 @@ py_image_layer(
     name = "layers",
     binary = ":grader_bin",
     visibility = ["//props:__subpackages__"],
+)
+
+py_python3_symlink(
+    name = "python3_symlink",
+    binary_name = "grader_bin",
 )
 
 # =============================================================================
@@ -256,8 +262,11 @@ oci_image(
     name = "image",
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("grader_bin"),
-    env = py_image_env(),
-    tars = [":layers"],
+    env = py_image_env(binary_name = "grader_bin"),
+    tars = [
+        ":layers",
+        ":python3_symlink",
+    ],
     visibility = ["//visibility:public"],
     workdir = "/workspace",
 )

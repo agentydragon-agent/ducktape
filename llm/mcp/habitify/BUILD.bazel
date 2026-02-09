@@ -1,7 +1,6 @@
 # gazelle:ignore
 # gazelle:exclude utils
 # gazelle:exclude examples
-# Per-file py_library targets (Gazelle-compatible pattern)
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 

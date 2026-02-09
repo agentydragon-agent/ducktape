@@ -42,7 +42,7 @@ def _load_metadata() -> dict[str, ModelMetadata]:
     raw = yaml.safe_load(yaml_bytes.decode("utf-8"))
     if not isinstance(raw, dict):
         raise RuntimeError("model_metadata.yaml must contain a mapping")
-    return {k: ModelMetadata.parse_obj(v) for k, v in raw.items()}
+    return {k: ModelMetadata.model_validate(v) for k, v in raw.items()}
 
 
 # Load metadata at import time.

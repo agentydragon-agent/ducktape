@@ -4,8 +4,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
-# Gazelle manages git_ro/ and testing/ subpackages
-
 py_library(
     name = "git_commit_ai_lib",
     data = ["commit_editmsg.mako"],

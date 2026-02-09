@@ -11,11 +11,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from props.backend.auth import AgentDb
 from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
-from props.core.models.examples import ExampleKind
+from props.core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.core.splits import Split
 from props.db.examples import Example, count_available_examples_by_scope_all
 from props.db.models import (
@@ -26,7 +28,9 @@ from props.db.models import (
     RecallByDefinitionSplitKind,
     Snapshot,
     StatsWithCI,
+    TpOccurrenceCredit,
 )
+from props.db.query_builders import query_recall_by_example
 
 router = APIRouter()
 
@@ -52,11 +56,9 @@ class DefinitionRow(BaseModel):
 class OverviewResponse(BaseModel):
     definitions: list[DefinitionRow]
     example_counts: dict[Split, dict[ExampleKind, int]]
-    total_definitions: int
 
 
 def to_split_scope_stats(row: RecallByDefinitionSplitKind, total_available: int) -> SplitScopeStats:
-    """Convert RecallByDefinitionSplitKind row to SplitScopeStats."""
     return SplitScopeStats(
         recall_stats=row.recall_stats,
         n_examples=row.n_examples or 0,
@@ -107,7 +109,7 @@ def get_overview(agent_db: AgentDb) -> OverviewResponse:
         for (s, k), v in example_counts.items():
             nested_counts[s][k] = v
 
-        return OverviewResponse(definitions=rows, example_counts=dict(nested_counts), total_definitions=len(rows))
+        return OverviewResponse(definitions=rows, example_counts=dict(nested_counts))
 
 
 # Per-example stats for a definition
@@ -132,7 +134,6 @@ class DefinitionDetailResponse(BaseModel):
 
 @router.get("/definitions/{image_digest}")
 def get_definition_detail(image_digest: str, agent_db: AgentDb) -> DefinitionDetailResponse:
-    """Get detailed stats for a single definition including per-example breakdown."""
     with agent_db.session() as session:
         definition = session.query(AgentDefinition).filter_by(id=image_digest).first()
         if not definition:
@@ -191,8 +192,6 @@ def get_definition_detail(image_digest: str, agent_db: AgentDb) -> DefinitionDet
 
 
 class DefinitionStatsForExample(BaseModel):
-    """Stats for a single definition on this example."""
-
     image_digest: str
     model: str
     n_runs: int
@@ -201,8 +200,6 @@ class DefinitionStatsForExample(BaseModel):
 
 
 class ExampleDetailResponse(BaseModel):
-    """Detailed view of a single example."""
-
     snapshot_slug: SnapshotSlug
     example_kind: ExampleKind
     files_hash: str | None
@@ -217,20 +214,6 @@ class ExampleDetailResponse(BaseModel):
 def get_example_detail(
     snapshot_slug: SnapshotSlug, example_kind: ExampleKind, agent_db: AgentDb, files_hash: str | None = None
 ) -> ExampleDetailResponse:
-    """Get detailed information about a specific example.
-
-    Query parameters:
-        snapshot_slug: Snapshot identifier (e.g., "ducktape/2025-11-20-00")
-        example_kind: Example kind (whole_snapshot or file_set)
-        files_hash: Files hash (required for file_set, must be None for whole_snapshot)
-
-    Returns:
-        Detailed example information including:
-        - Example metadata (split, recall_denominator)
-        - File list (for file_set examples)
-        - Per-definition run statistics
-        - Aggregate metrics
-    """
     with agent_db.session() as session:
         # Validate and fetch the example
         query = session.query(Example).filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind)
@@ -323,3 +306,250 @@ def get_example_detail(
             definitions=definitions,
             credit_stats=credit_stats,
         )
+
+
+# --- Occurrence stats ---
+
+
+class OccurrenceStatsRow(BaseModel):
+    snapshot_slug: SnapshotSlug
+    split: Split
+    tp_id: str
+    occurrence_id: str
+    n_runs: int
+    mean_credit: float
+    min_credit: float
+    max_credit: float
+
+
+class OccurrenceStatsResponse(BaseModel):
+    occurrences: list[OccurrenceStatsRow]
+    total: int
+
+
+@router.get("/occurrences")
+def get_occurrences(
+    agent_db: AgentDb,
+    snapshot_slug: SnapshotSlug | None = None,
+    split: Split | None = None,
+    limit: int = 100,
+    sort_by: str = "mean_credit",
+    sort_dir: str = "asc",
+) -> OccurrenceStatsResponse:
+    with agent_db.session() as session:
+        query = session.query(
+            TpOccurrenceCredit.snapshot_slug,
+            TpOccurrenceCredit.split,
+            TpOccurrenceCredit.tp_id,
+            TpOccurrenceCredit.occurrence_id,
+            func.count().label("n_runs"),
+            func.avg(TpOccurrenceCredit.found_credit).label("mean_credit"),
+            func.min(TpOccurrenceCredit.found_credit).label("min_credit"),
+            func.max(TpOccurrenceCredit.found_credit).label("max_credit"),
+        ).group_by(
+            TpOccurrenceCredit.snapshot_slug,
+            TpOccurrenceCredit.split,
+            TpOccurrenceCredit.tp_id,
+            TpOccurrenceCredit.occurrence_id,
+        )
+
+        if snapshot_slug is not None:
+            query = query.filter(TpOccurrenceCredit.snapshot_slug == snapshot_slug)
+        if split is not None:
+            query = query.filter(TpOccurrenceCredit.split == split)
+
+        total = query.count()
+
+        sort_column = {"mean_credit": func.avg(TpOccurrenceCredit.found_credit), "n_runs": func.count()}.get(
+            sort_by, func.avg(TpOccurrenceCredit.found_credit)
+        )
+
+        query = query.order_by(sort_column.desc()) if sort_dir == "desc" else query.order_by(sort_column.asc())
+
+        results = query.limit(limit).all()
+
+        occurrences = [
+            OccurrenceStatsRow(
+                snapshot_slug=r.snapshot_slug,
+                split=r.split,
+                tp_id=r.tp_id,
+                occurrence_id=r.occurrence_id,
+                n_runs=r.n_runs,
+                mean_credit=float(r.mean_credit),
+                min_credit=float(r.min_credit),
+                max_credit=float(r.max_credit),
+            )
+            for r in results
+        ]
+
+        return OccurrenceStatsResponse(occurrences=occurrences, total=total)
+
+
+# --- Distributions ---
+
+
+class DistributionsResponse(BaseModel):
+    max_recall_values: list[float]
+    tp_count_values: list[int]
+
+
+@router.get("/distributions")
+def get_distributions(split: Split, agent_db: AgentDb) -> DistributionsResponse:
+    with agent_db.session() as session:
+        results = query_recall_by_example(session, split=split)
+
+        # Group by example, find max recall across definitions
+        by_example: dict[ExampleSpec, float] = {}
+        for row in results:
+            by_example[row.example] = max(by_example.get(row.example, 0.0), row.recall)
+        max_recall_values = list(by_example.values())
+
+        # TP counts per example
+        tp_count_results = (
+            session.query(
+                TpOccurrenceCredit.snapshot_slug,
+                TpOccurrenceCredit.example_kind,
+                TpOccurrenceCredit.files_hash,
+                func.count(TpOccurrenceCredit.occurrence_id.distinct()).label("n_occurrences"),
+            )
+            .filter(TpOccurrenceCredit.split == split)
+            .group_by(TpOccurrenceCredit.snapshot_slug, TpOccurrenceCredit.example_kind, TpOccurrenceCredit.files_hash)
+            .all()
+        )
+        tp_count_values = [r.n_occurrences for r in tp_count_results]
+
+        return DistributionsResponse(max_recall_values=max_recall_values, tp_count_values=tp_count_values)
+
+
+# --- Coverage heatmap ---
+
+
+class CoverageExample(BaseModel):
+    snapshot_slug: SnapshotSlug
+    example_kind: ExampleKind
+    files_hash: str | None
+    max_recall: float
+    tp_count: int
+
+
+class CoverageDefinition(BaseModel):
+    image_digest: str
+    best_on_count: int
+    evaluated_on_count: int
+
+
+class CoverageCell(BaseModel):
+    definition_idx: int
+    example_idx: int
+    recall: float
+    is_best: bool
+
+
+class CoverageResponse(BaseModel):
+    examples: list[CoverageExample]
+    definitions: list[CoverageDefinition]
+    cells: list[CoverageCell]
+
+
+def _row_to_example_spec(snapshot_slug: SnapshotSlug, example_kind: ExampleKind, files_hash: str | None) -> ExampleSpec:
+    if example_kind == ExampleKind.WHOLE_SNAPSHOT:
+        return WholeSnapshotExample(snapshot_slug=snapshot_slug)
+    assert files_hash is not None, f"FILE_SET row has None files_hash: {snapshot_slug}"
+    return SingleFileSetExample(snapshot_slug=snapshot_slug, files_hash=files_hash)
+
+
+def _build_tp_counts_by_example(session: Session, split: Split) -> dict[ExampleSpec, int]:
+    tp_count_results = (
+        session.query(
+            TpOccurrenceCredit.snapshot_slug,
+            TpOccurrenceCredit.example_kind,
+            TpOccurrenceCredit.files_hash,
+            func.count(TpOccurrenceCredit.occurrence_id.distinct()).label("n_occurrences"),
+        )
+        .filter(TpOccurrenceCredit.split == split)
+        .group_by(TpOccurrenceCredit.snapshot_slug, TpOccurrenceCredit.example_kind, TpOccurrenceCredit.files_hash)
+        .all()
+    )
+    return {
+        _row_to_example_spec(r.snapshot_slug, r.example_kind, r.files_hash): r.n_occurrences for r in tp_count_results
+    }
+
+
+@router.get("/coverage")
+def get_coverage(split: Split, agent_db: AgentDb, limit_definitions: int = 15) -> CoverageResponse:
+    with agent_db.session() as session:
+        results = query_recall_by_example(session, split=split)
+
+        # Group: example -> {definition_digest -> recall}
+        by_example: dict[ExampleSpec, dict[str, float]] = defaultdict(dict)
+        for row in results:
+            by_example[row.example][row.critic_image_digest] = row.recall
+
+        # Find best definitions per example, compute best_on_count
+        best_on_count: Counter[str] = Counter()
+        for recalls in by_example.values():
+            if not recalls:
+                continue
+            max_recall = max(recalls.values())
+            if max_recall > 0:
+                for digest, recall in recalls.items():
+                    if recall == max_recall:
+                        best_on_count[digest] += 1
+
+        # Sort definitions by best_on_count, take top N
+        top_definitions = [d for d, _ in best_on_count.most_common(limit_definitions)]
+
+        # Count how many examples each definition was evaluated on
+        evaluated_on_count: Counter[str] = Counter()
+        for recalls in by_example.values():
+            evaluated_on_count.update(recalls.keys())
+
+        # Only include examples that have nonzero max recall
+        nonzero_examples = [ex for ex, recalls in by_example.items() if recalls and max(recalls.values()) > 0]
+
+        # Get TP counts per example
+        tp_counts_by_example = _build_tp_counts_by_example(session, split)
+
+        # Build index maps
+        def_to_idx = {d: i for i, d in enumerate(top_definitions)}
+        ex_to_idx: dict[ExampleSpec, int] = {ex: i for i, ex in enumerate(nonzero_examples)}
+
+        # Build response examples
+        response_examples = [
+            CoverageExample(
+                snapshot_slug=ex.snapshot_slug,
+                example_kind=ex.kind,
+                files_hash=ex.files_hash if isinstance(ex, SingleFileSetExample) else None,
+                max_recall=max(by_example[ex].values()),
+                tp_count=tp_counts_by_example.get(ex, 0),
+            )
+            for ex in nonzero_examples
+        ]
+
+        # Build response definitions
+        response_definitions = [
+            CoverageDefinition(
+                image_digest=d, best_on_count=best_on_count[d], evaluated_on_count=evaluated_on_count.get(d, 0)
+            )
+            for d in top_definitions
+        ]
+
+        # Build cells
+        cells = []
+        for ex, recalls in by_example.items():
+            if ex not in ex_to_idx:
+                continue
+            max_recall = max(recalls.values())
+            for digest, recall in recalls.items():
+                if digest not in def_to_idx:
+                    continue
+                cells.append(
+                    CoverageCell(
+                        definition_idx=def_to_idx[digest],
+                        example_idx=ex_to_idx[ex],
+                        recall=recall,
+                        is_best=(recall == max_recall),
+                    )
+                )
+
+        return CoverageResponse(examples=response_examples, definitions=response_definitions, cells=cells)

@@ -167,6 +167,7 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
     caller, agent_run_id = get_caller_type(auth, admin_db)
     if not has_access(caller, ACL_CAN_PUSH_REGISTRY):
         raise HTTPException(status_code=403, detail=f"{caller} not allowed to push to registry")
+
     if not is_digest(ref) and not has_access(caller, ACL_CAN_PUSH_TAGS):
         raise HTTPException(status_code=403, detail=f"{caller} not allowed to push by tag")
 

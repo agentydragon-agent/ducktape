@@ -15,11 +15,8 @@ from rich.console import Console
 from sqlalchemy import text
 
 from props.agents.critic_dev.cli_helpers import show_execution_traces, show_grading_summary, show_run_status
-from props.agents.runtime import get_current_agent_run, get_current_agent_run_id
-from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
-from props.core.agent_types import AgentType
-from props.core.display import ColumnDef, build_table_from_schema
-from props.core.splits import Split
+from props.agents.runtime import get_current_agent_run_id
+from props.core.display import ColumnDef, build_table_from_schema, fmt_float, fmt_model, fmt_pct
 from props.db.database import Database
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
@@ -31,10 +28,8 @@ Common workflows:
     props critic-dev traces --limit 10
     props critic-dev grading-summary "critic-or-grader-run-uuid"
 
-  View metrics (definitions and examples):
-    props critic-dev leaderboard
+  View metrics:
     props critic-dev valid-leaderboard  # whole-repo mode only
-    props critic-dev hard-examples --limit 10
 """
 
 app = typer.Typer(name="critic-dev", help=HELP_TEXT, add_completion=False)
@@ -74,30 +69,6 @@ def grading_summary_cmd(
     """Show grading decision summary for a critic or grader run."""
     db: Database = ctx.obj
     show_grading_summary(db, agent_run_id=UUID(run_id))
-
-
-@app.command("leaderboard")
-def leaderboard_cmd(
-    ctx: typer.Context, limit: Annotated[int, typer.Option("--limit", "-n", help="Number of definitions to show")] = 20
-) -> None:
-    """Show top definitions by recall on accessible data."""
-    db: Database = ctx.obj
-    with db.session() as session:
-        agent_run = get_current_agent_run(session)
-        split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.CRITIC_DEV_OPTIMIZE else None
-    cmd_stats_critic_leaderboard(ctx, split=split_filter, example_kind=None, top=limit, bottom=None)
-
-
-@app.command("hard-examples")
-def hard_examples_cmd(
-    ctx: typer.Context, limit: Annotated[int, typer.Option("--limit", "-n", help="Number of examples to show")] = 20
-) -> None:
-    """Show examples with lowest recall (hardest to solve) on accessible data."""
-    db: Database = ctx.obj
-    with db.session() as session:
-        agent_run = get_current_agent_run(session)
-        split_filter = Split.TRAIN if agent_run.type_config.agent_type == AgentType.CRITIC_DEV_OPTIMIZE else None
-    cmd_stats_example(ctx, split=split_filter, top=None, bottom=limit)
 
 
 @app.command("valid-leaderboard")

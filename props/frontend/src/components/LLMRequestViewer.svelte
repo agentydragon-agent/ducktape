@@ -4,10 +4,12 @@
 
   interface Props {
     requests: LLMRequestInfo[];
+    initialExpanded?: number[];
   }
-  let { requests }: Props = $props();
+  let { requests, initialExpanded = [] }: Props = $props();
 
-  let expandedRequests = $state(new SvelteSet<number>());
+  // svelte-ignore state_referenced_locally
+  let expandedRequests = $state(new SvelteSet<number>(initialExpanded));
 
   function toggleRequest(id: number) {
     if (expandedRequests.has(id)) {

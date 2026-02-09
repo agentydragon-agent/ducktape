@@ -23,16 +23,24 @@ bazel test //props/frontend:visual_test  # Visual regression tests
 
 ## Visual Regression Testing
 
-Puppeteer-based visual regression testing via Bazel.
+Puppeteer-based visual regression testing via Bazel (runs on RBE).
 
 ```bash
-# Run visual tests (via Bazel)
+# Run visual tests
 bazel test //props/frontend:visual_test
 
 # Update baselines after intentional UI changes:
-UPDATE_BASELINES=1 bazel test //props/frontend:visual_test --test_output=all
-
-# Verify the new baselines pass
+# 1. Run the test — failing scenarios write actual screenshots to test.outputs/
+bazel test //props/frontend:visual_test
+# 2. Copy the *-actual.png files from test.outputs/ as new baselines:
+TESTLOGS=$(bazel info bazel-testlogs)/props/frontend/visual_test
+cp "$TESTLOGS/test.outputs/"*-actual.png \
+   props/frontend/tests/visual-regression.spec.ts-snapshots/
+# Rename: strip "-actual" suffix, add "-chromium-linux" suffix
+cd props/frontend/tests/visual-regression.spec.ts-snapshots
+for f in *-actual.png; do mv "$f" "${f%-actual.png}-chromium-linux.png"; done
+cd -
+# 3. Re-run to verify
 bazel test //props/frontend:visual_test --nocache_test_results
 ```
 
