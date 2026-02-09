@@ -37,3 +37,23 @@ Not all occurrences are matchable from all critique issues. The `graders_match_o
 The `grading_pending` view automatically enforces this - it only shows (issue, occurrence) pairs where the critique's files overlap.
 
 ${describe_relation("matchable_occurrences")}
+
+## Issue Clustering
+
+After grading is complete, issues with no positive match (credit=0 for all GT) need clustering. Clusters group independent reports of the same novel finding across critic runs.
+
+${describe_relation("issue_clusters")}
+${describe_relation("issue_cluster_members")}
+
+### Clustering Pending (Completeness)
+
+${describe_relation("clustering_pending")}
+
+**Source of truth for clustering completeness:** Query `clustering_pending` to see unclustered issues. Clustering is complete when no rows remain. The `sleep` tool validates both `grading_pending` and `clustering_pending` are empty.
+
+### Invariants
+
+- **Exclusivity**: An issue with any grading edge with credit > 0 cannot be in a cluster (DB trigger enforced)
+- **Reverse guard**: A grading edge with credit > 0 cannot be inserted for an already-clustered issue (DB trigger enforced)
+- **Single cluster**: Each critique issue belongs to at most one cluster (UNIQUE constraint)
+- **Non-empty clusters**: Removing the last member from a cluster is rejected — delete the cluster instead (deferred trigger)
