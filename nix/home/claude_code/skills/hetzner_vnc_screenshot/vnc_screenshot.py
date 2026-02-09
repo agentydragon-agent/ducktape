@@ -1,4 +1,15 @@
-#!/usr/bin/env -S uv run --with asyncvnc --with pillow --with typer --with hcloud --with websockets
+#!/usr/bin/env -S uv run
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "asyncvnc>=1.3.0",
+#     "pillow>=10.0.0",
+#     "typer>=0.9.0",
+#     "hcloud>=2.0.0",
+#     "websockets>=12.0",
+#     "numpy>=1.26.0",
+# ]
+# ///
 """
 Hetzner Cloud VNC Console Screenshot Tool
 

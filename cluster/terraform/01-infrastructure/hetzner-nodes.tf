@@ -108,3 +108,21 @@ resource "talos_machine_configuration_apply" "vps" {
 
   depends_on = [hcloud_server.vps]
 }
+
+# Detach ISO after Talos is installed to disk
+# This ensures future reboots boot from disk, not the ISO
+resource "terraform_data" "detach_iso" {
+  for_each = local.vps_nodes
+
+  # Re-run if server ID changes (new server)
+  triggers_replace = [hcloud_server.vps[each.key].id]
+
+  provisioner "local-exec" {
+    command = "hcloud server detach-iso ${hcloud_server.vps[each.key].id}"
+    environment = {
+      HCLOUD_TOKEN = var.hcloud_token
+    }
+  }
+
+  depends_on = [talos_machine_configuration_apply.vps]
+}

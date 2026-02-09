@@ -75,7 +75,8 @@ Options:
 - Uses asyncvnc library for RFB (VNC) protocol
 - Supports VNC password authentication
 - Captures framebuffer and saves as PNG
-- Dependencies auto-installed by uv: asyncvnc, pillow, typer, hcloud, websockets
+- Dependencies declared via PEP 723 inline script metadata (auto-installed by uv):
+  asyncvnc, pillow, typer, hcloud, websockets, numpy
 
 ## Notes
 
@@ -83,3 +84,14 @@ Options:
 - Console credentials are fetched automatically when using server name
 - Works with any Hetzner Cloud server (not just Talos)
 - Screen resolution is determined by the server's console settings
+
+## NixOS Compatibility
+
+On NixOS, numpy requires `libstdc++.so.6` which may not be in the default library path.
+If you get an ImportError about libstdc++, run with:
+
+```bash
+LD_LIBRARY_PATH=$(dirname $(find /nix/store -name 'libstdc++.so.6' -path '*gfortran*' 2>/dev/null | head -1)):$LD_LIBRARY_PATH uv run ~/.claude/skills/hetzner_vnc_screenshot/vnc_screenshot.py ...
+```
+
+Or add this to the skill invocation command.
