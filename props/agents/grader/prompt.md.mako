@@ -48,7 +48,7 @@ After grading is complete (`list_pending` returns empty), cluster unmatched issu
 
 **Member rationale** should explain why this specific issue belongs (can be brief if obvious).
 
-## Daemon Lifecycle
+## Grader Lifecycle
 
 1. **On start**: Call `list_pending` and grade everything, then `list_clustering_pending` and cluster
 2. **When done**: Call `sleep` — it validates both `grading_pending` and `clustering_pending` are empty, then waits for changes

@@ -8,7 +8,7 @@ Move budget tracking from `CriticDevOptimizeTypeConfig.budget_limit` to a proper
 
 - `budget_usd` column on `agent_runs` is NOT NULL and populated for all agent types
 - `RunCriticRequest` requires `budget_usd` with `gt=0` validation
-- Grader daemons get $10k default budget
+- Snapshot graders get $10k default budget
 - LLM proxy logs requests to `llm_requests` table
 - `model_metadata` table has cost info per model
 
@@ -188,7 +188,7 @@ class AgentConfig(BaseModel):
 **HTTP endpoints that launch agents**:
 
 - `POST /api/runs/critic` - Requires `budget_usd` parameter (gt=0)
-- Grader daemons - High budget ($10000) for long-running daemon
+- Snapshot graders - High budget ($10000) for long-running grader
 - Any critic-dev spawn endpoints - Requires `budget_usd` parameter
 
 ### No Default Budget

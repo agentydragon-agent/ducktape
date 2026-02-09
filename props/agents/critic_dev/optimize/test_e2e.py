@@ -14,7 +14,7 @@ Tests verify:
 - Database access works from container
 - CLI helpers work in container context
 
-Note: Grading is handled by snapshot grader daemons (not tested here).
+Note: Grading is handled by snapshot graders (not tested here).
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ TEST_TIMEOUT_SECONDS = 60
 async def test_optimizer_critic_workflow(e2e_stack, synced_db, test_snapshot, critic_image, db: Database):
     """Test optimizer → critic workflow with data access verification.
 
-    Note: Grading is handled by snapshot grader daemons (not tested here).
+    Note: Grading is handled by snapshot graders (not tested here).
     """
     # Get the whole-snapshot example and convert to ExampleSpec
     with synced_db.session() as session:
@@ -120,7 +120,7 @@ async def test_optimizer_orchestrates_critic(
     2. Optimizer calls run_critic tool (REST API to backend)
     3. Registry spawns critic container with different model
     4. Critic runs, submits issues, completes
-    5. Background grader daemon processes edges
+    5. Background snapshot grader processes edges
     6. Optimizer's wait_until_graded_tool returns (polls database directly)
     7. Optimizer reports success
 
@@ -181,26 +181,26 @@ async def test_optimizer_orchestrates_critic(
     }
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
-        # Start grader daemon in background - it will sleep until there's drift
+        # Start snapshot grader in background - it will sleep until there's drift
         grader_task: asyncio.Task[None] | None = None
 
-        async def run_grader_daemon() -> None:
-            """Run grader daemon in background."""
+        async def run_snapshot_grader() -> None:
+            """Run snapshot grader in background."""
             try:
-                logger.info(f"Starting grader daemon for {snapshot_slug}")
+                logger.info(f"Starting snapshot grader for {snapshot_slug}")
                 await stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
-                logger.info("Grader daemon completed")
+                logger.info("Snapshot grader completed")
             except asyncio.CancelledError:
-                logger.info("Grader daemon cancelled")
+                logger.info("Snapshot grader cancelled")
             except Exception as e:
-                logger.error(f"Grader daemon error: {e}")
+                logger.error(f"Snapshot grader error: {e}")
                 raise
 
-        grader_task = asyncio.create_task(run_grader_daemon())
+        grader_task = asyncio.create_task(run_snapshot_grader())
 
         try:
             # Run critic-dev optimizer - this triggers the full orchestration
-            # The grader daemon running in background will process edges when critic completes
+            # The snapshot grader running in background will process edges when critic completes
             run_id = await stack.registry.run_critic_dev_optimize(
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
@@ -245,7 +245,7 @@ async def test_optimizer_orchestrates_critic(
                     assert len(edges) >= 0, "Grading edges should be created"
 
         finally:
-            # Cancel grader daemon if still running
+            # Cancel snapshot grader if still running
             if grader_task is not None and not grader_task.done():
                 grader_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

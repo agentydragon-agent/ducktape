@@ -94,6 +94,29 @@ class ContainerResult:
 # --- Agent Run View ---
 
 
+class GraderHandle:
+    """Handle for a running grader container. Call kill() to stop it."""
+
+    def __init__(self, container_name: str, docker_client: aiodocker.Docker) -> None:
+        self.container_name = container_name
+        self._docker_client = docker_client
+
+    async def kill(self) -> None:
+        """Kill and remove the container."""
+        try:
+            container = await self._docker_client.containers.get(self.container_name)
+            await container.kill()
+            logger.info("Killed container %s", self.container_name)
+        except Exception as e:
+            logger.warning("Failed to kill container %s: %s", self.container_name, e)
+        try:
+            container = await self._docker_client.containers.get(self.container_name)
+            await container.delete(force=True)
+            logger.info("Deleted container %s", self.container_name)
+        except Exception as e:
+            logger.warning("Failed to delete container %s: %s", self.container_name, e)
+
+
 @dataclass
 class AgentRunView:
     """Unified view of an agent run from DB."""
@@ -218,7 +241,7 @@ class AgentRegistry:
 
         Full lifecycle: resolve image → create DB role → start container →
         wait for exit → capture logs → update agent_runs status.
-        timeout_seconds=None means no timeout (for daemons).
+        timeout_seconds=None means no timeout (for long-running agents).
         """
         image_id = await self._pull_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
@@ -491,13 +514,54 @@ class AgentRegistry:
                 for r in runs
             ]
 
-    async def run_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> UUID:
-        """Run a snapshot grader daemon. Blocks until daemon exits.
+    async def _start_agent(self, agent_run_id: UUID, *, image: str) -> str:
+        """Create and start an agent container, returning the container name.
 
-        The grader daemon listens for pg_notify on grading_pending channel, grades all
-        critiques for the snapshot until no drift remains, sleeps when no drift.
-        Daemons run indefinitely until cancelled.
+        Handles image pull, role creation, and container startup. Does NOT
+        wait for the container to exit — caller manages the lifecycle.
         """
+        image_id = await self._pull_image(image)
+        logger.info("Using image %s from %s", image_id[:19], image)
+
+        creds = await ensure_agent_role(self._db_config, agent_run_id)
+        logger.info("Agent role ready: %s", creds.username)
+
+        name = f"agent-{short_uuid(agent_run_id)}"
+
+        backend_url = self._backend_url
+        api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
+        env = {
+            **self._agent_base_env,
+            "PGUSER": creds.username,
+            "PGPASSWORD": creds.password,
+            "PROPS_BACKEND_URL": backend_url,
+            "OPENAI_BASE_URL": f"{backend_url}/v1",
+            "OPENAI_API_KEY": api_key,
+        }
+
+        host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
+        if self._extra_hosts:
+            host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
+
+        container_config = {
+            "Image": image_id,
+            "Env": [f"{k}={v}" for k, v in env.items()],
+            "HostConfig": host_config,
+            "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
+        }
+
+        container = await self._docker_client.containers.create(
+            container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
+            name=name,
+        )
+        logger.info("Created container %s", name)
+
+        await container.start()
+        logger.info("Started container %s", name)
+        return name
+
+    async def _create_grader_run(self, snapshot_slug: SnapshotSlug, model: str) -> tuple[UUID, str]:
+        """Create a grader agent_run record and resolve image. Returns (agent_run_id, image_ref)."""
         agent_run_id = uuid4()
         image_digest, image = await self._resolve_image(AgentType.GRADER, BUILTIN_TAG)
 
@@ -515,5 +579,16 @@ class AgentRegistry:
             session.add(agent_run)
             session.commit()
 
+        return agent_run_id, image
+
+    async def run_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> UUID:
+        """Run a snapshot grader. Blocks until it exits."""
+        agent_run_id, image = await self._create_grader_run(snapshot_slug, model)
         await self._run_agent(agent_run_id, image=image)
         return agent_run_id
+
+    async def start_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> GraderHandle:
+        """Start a snapshot grader, returning a handle to kill it."""
+        agent_run_id, image = await self._create_grader_run(snapshot_slug, model)
+        container_name = await self._start_agent(agent_run_id, image=image)
+        return GraderHandle(container_name=container_name, docker_client=self._docker_client)

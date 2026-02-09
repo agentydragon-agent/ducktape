@@ -22,11 +22,11 @@ ORCHESTRATION_GRADER_MODEL = "gpt-4.1-mini"
 def make_orchestration_grader_mock() -> GraderMock:
     """Create grader mock that fills all pending edges with credit=0.
 
-    Single-shot: the daemon's initial-drift-wait guarantees pending edges
+    Single-shot: the grader's initial-drift-wait guarantees pending edges
     exist by the time the agent loop starts, so one round suffices.
     """
 
-    @GraderMock.mock(check_consumed=False)  # Daemon may be cancelled before consuming all
+    @GraderMock.mock(check_consumed=False)  # Grader may be cancelled before consuming all
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request (system message)
 

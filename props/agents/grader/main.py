@@ -1,6 +1,6 @@
-"""Grader daemon main entry point for in-container execution.
+"""Grader main entry point for in-container execution.
 
-This is the CMD entrypoint for the daemon grader container. It:
+This is the CMD entrypoint for the grader container. It:
 1. Fetches the snapshot to /workspace
 2. Sets up pg_notify listener for grading_pending changes
 3. Runs a single persistent agent loop (sleep tool awaits notifications in-process)
@@ -101,8 +101,8 @@ TEXT_OUTPUT_REMINDER = (
 _WORKSPACE = Path("/workspace")
 
 
-class DaemonState:
-    """Tracks daemon state for pg_notify wake/sleep coordination.
+class GraderState:
+    """Tracks grader state for pg_notify wake/sleep coordination.
 
     Shared between the sleep tool (which awaits wake_event) and the
     pg_notify listener callback (which sets it).
@@ -139,7 +139,7 @@ def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
 
 
 def _create_grader_tool_provider(
-    grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: DaemonState, db: Database
+    grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: GraderState, db: Database
 ) -> DirectToolProvider:
     """Create a tool provider with grader tools bound to the given run."""
     provider = DirectToolProvider()
@@ -332,7 +332,7 @@ def _create_grader_tool_provider(
 
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> None:
-        """Report that grading could not be completed. Terminates the daemon."""
+        """Report that grading could not be completed. Terminates the grader."""
         state.failed = True
         logger.info("Reported failure: %s", args.message)
 
@@ -500,7 +500,7 @@ def _create_grader_tool_provider(
     return provider
 
 
-async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state: DaemonState, db: Database) -> None:
+async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> None:
     """Run the grader agent loop.
 
     Runs a single persistent agent loop. The sleep tool awaits pg_notify
@@ -536,7 +536,7 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
     logger.error("Grading failed via report_failure")
 
 
-async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> None:
+async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> None:
     """Set up pg_notify listener and run the agent loop.
 
     Waits for drift before starting the agent loop — avoids wasting an LLM
@@ -544,7 +544,7 @@ async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Datab
     is called (always a failure).  Normal operation is an infinite sleep/wake
     loop inside the agent.
     """
-    state = DaemonState(snapshot_slug)
+    state = GraderState(snapshot_slug)
 
     listener_conn = await db.config.asyncpg_connect()
     await listener_conn.add_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
@@ -570,10 +570,10 @@ async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Datab
 
 
 async def main() -> int:
-    """Main entry point for daemon grader agent."""
+    """Main entry point for grader agent."""
     setup_logging()
 
-    logger.info("Grader daemon starting")
+    logger.info("Grader starting")
     db = Database.from_env()
 
     with db.session() as session:
@@ -590,9 +590,9 @@ async def main() -> int:
         "props/agents/grader/prompt.md.mako", db, helpers={"snapshot_slug": snapshot_slug}
     )
 
-    logger.info("Starting daemon loop")
-    await _run_daemon(snapshot_slug, system_prompt, db)
-    # _run_daemon only returns on report_failure
+    logger.info("Starting grader loop")
+    await _run_grader_loop(snapshot_slug, system_prompt, db)
+    # _run_grader_loop only returns on report_failure
     return 1
 
 

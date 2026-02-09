@@ -1,15 +1,15 @@
-"""E2E test for grader daemon.
+"""E2E test for snapshot grader.
 
-Tests that the grader daemon:
+Tests that the snapshot grader:
 1. Detects pending drift in grading_pending view
 2. Picks up new critique issues and grades them
 3. Creates GradingEdge records
 
 Test flow:
-- Insert drift data (completed critic run with reported issues) BEFORE starting daemon
-- Start grader daemon container (runs indefinitely)
-- Daemon finds drift on first check, grades the issues, creates GradingEdge
-- Poll for GradingEdge creation, then cancel daemon
+- Insert drift data (completed critic run with reported issues) BEFORE starting grader
+- Start snapshot grader container (runs indefinitely)
+- Grader finds drift on first check, grades the issues, creates GradingEdge
+- Poll for GradingEdge creation, then cancel grader
 """
 
 from __future__ import annotations
@@ -38,10 +38,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 
 
 @pytest.mark.timeout(180)
-async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
-    """Test that grader daemon detects and grades new critique issues."""
+async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
+    """Test that snapshot grader detects and grades new critique issues."""
 
-    @GraderMock.mock(check_consumed=False)  # Daemon may be aborted before consuming all
+    @GraderMock.mock(check_consumed=False)  # Grader may be aborted before consuming all
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 
@@ -62,7 +62,7 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
         yield m.sleep("Graded all pending edges")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
-        # Create drift BEFORE starting daemon so it finds drift on first check.
+        # Create drift BEFORE starting grader so it finds drift on first check.
         # This avoids relying on pg_notify timing (which can be unreliable in Docker).
         critic_run_id = uuid4()
         with db.session() as session:
@@ -78,7 +78,7 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
 
             # Add a reported issue
             issue = ReportedIssue(
-                agent_run_id=critic_run_id, issue_id="test-issue-1", rationale="Test issue for grader daemon e2e"
+                agent_run_id=critic_run_id, issue_id="test-issue-1", rationale="Test issue for grader e2e"
             )
             session.add(issue)
 
@@ -93,13 +93,13 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
 
             logger.info(f"Created critic run {critic_run_id} with reported issue")
 
-        # Precondition: verify grading_pending has rows before starting daemon
+        # Precondition: verify grading_pending has rows before starting grader
         pending_count = check_grading_pending(test_snapshot, db)
         assert pending_count > 0, f"grading_pending should have rows but has {pending_count}"
 
-        # Start grader daemon in background task — drift already exists in DB
-        daemon_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="grader-daemon"
+        # Start snapshot grader in background task — drift already exists in DB
+        grader_task = asyncio.create_task(
+            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="snapshot-grader"
         )
 
         # Poll for GradingEdge creation
@@ -109,11 +109,11 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
         for _ in range(90):
             await asyncio.sleep(1)
 
-            # Check if daemon task failed (surface errors early)
-            if daemon_task.done() and not daemon_task.cancelled():
-                exc = daemon_task.exception()
+            # Check if grader task failed (surface errors early)
+            if grader_task.done() and not grader_task.cancelled():
+                exc = grader_task.exception()
                 if exc:
-                    raise RuntimeError(f"Grader daemon failed: {exc}") from exc
+                    raise RuntimeError(f"Snapshot grader failed: {exc}") from exc
 
             with db.session() as session:
                 grading_edge = (
@@ -128,10 +128,10 @@ async def test_grader_daemon_picks_up_drift(e2e_stack, test_snapshot, all_files_
                     logger.info(f"GradingEdge created: credit={edge_credit}, rationale={edge_rationale}")
                     break
 
-        # Cancel daemon
-        daemon_task.cancel()
+        # Cancel grader
+        grader_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await daemon_task
+            await grader_task
 
         # Assert grading happened
         assert found, "GradingEdge was not created within timeout"

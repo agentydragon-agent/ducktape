@@ -2,7 +2,7 @@
 
 This package contains HOST-only code that orchestrates agent containers:
 - AgentRegistry: unified entry point for running agents
-- grader_supervisor: grader daemon lifecycle management
+- grader_supervisor: grader container lifecycle management
 - agent_credentials: PostgreSQL role creation for agents
 """
 
@@ -62,6 +62,5 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "@pypi//asyncpg",
-        "@pypi//httpx",
     ],
 )

@@ -1,4 +1,4 @@
-"""Drift detection for snapshot grader daemon."""
+"""Drift detection for snapshot grader."""
 
 from __future__ import annotations
 

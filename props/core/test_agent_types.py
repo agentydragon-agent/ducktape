@@ -90,7 +90,7 @@ class TestTypeConfigDiscriminatedUnion:
 
 
 class TestGraderTypeConfig:
-    """Tests for GraderTypeConfig behavior (daemon model with snapshot_slug)."""
+    """Tests for GraderTypeConfig behavior (grader model with snapshot_slug)."""
 
     def test_valid_construction(self) -> None:
         """GraderTypeConfig accepts valid snapshot_slug."""

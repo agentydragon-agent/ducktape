@@ -46,7 +46,7 @@ class GraderMock(DecoratorMock):
     """
 
     def sleep(self, summary: str) -> FunctionCallItem:
-        """Signal that grading is complete and daemon should sleep."""
+        """Signal that grading is complete and grader should sleep."""
         return self.tool_call("sleep", SleepArgs(summary=summary))
 
     def list_pending_roundtrip(

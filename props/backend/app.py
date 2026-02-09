@@ -81,11 +81,7 @@ def _make_lifespan(deps: BackendDeps):
 
         if deps.grader_model:
             app.state.grader_supervisor = GraderSupervisor(
-                registry=app.state.registry,
-                db_config=db_config,
-                model=deps.grader_model,
-                db=db,
-                backend_url=deps.backend_url,
+                registry=app.state.registry, db_config=db_config, model=deps.grader_model, db=db
             )
             await app.state.grader_supervisor.start()
             logger.info(f"Grader supervisor started (model: {deps.grader_model})")

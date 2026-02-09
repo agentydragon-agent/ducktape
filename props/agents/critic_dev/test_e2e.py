@@ -130,7 +130,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
 
-        # Start grader daemon in background
+        # Start snapshot grader in background
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
         )
@@ -160,7 +160,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
 # Custom Python script that replaces the critic's main.py in the image.
 # Bypasses the LLM agent loop: connects to the DB directly, inserts one
 # reported issue + occurrence, and exits. This creates grading drift that
-# the grader daemon picks up.
+# the snapshot grader picks up.
 #
 # Overlaid at the runfiles path so the existing entrypoint launcher
 # (critic_bin) runs this instead of the original main.py.
@@ -222,7 +222,7 @@ async def test_po_creates_custom_critic_image(
     2. Appends a layer that overlays main.py at the runfiles path
     3. Pushes the modified image by digest to the registry proxy
     4. Runs the custom image — the overlaid main.py writes critique data directly to DB
-    5. Grader daemon detects drift and fills grading edges
+    5. Snapshot grader detects drift and fills grading edges
     6. Optimizer's wait_until_graded returns successfully
 
     The custom critic bypasses the LLM entirely — it directly inserts a
