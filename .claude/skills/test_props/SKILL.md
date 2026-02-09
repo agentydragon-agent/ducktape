@@ -1,34 +1,30 @@
+---
+name: test_props
+description: Run end-to-end props testing with a real OpenAI API key. Tests critic, grader, improver, and optimizer workflows in a podman + host networking environment.
+argument-hint: "[workflow: setup|critic|grader|improver|all]"
+allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, Task
+---
+
 # Test Props E2E
 
-Run end-to-end props testing with a real OpenAI API key. Starts infrastructure,
-initializes the database, runs the backend, pushes agent images, and tests
-critic, grader, improver, and optimizer workflows.
+Run end-to-end props testing. Sets up infrastructure, initializes the database,
+runs the backend, pushes agent images, and tests agent workflows.
 
-## Usage
+**Argument:** `$ARGUMENTS` (default: `all`)
 
-```bash
-/test_props [workflow]
-```
-
-**Default (no argument):** Run the full setup and test all workflows.
-
-**Examples:**
-
-- `/test_props` - Full setup + test all workflows
-- `/test_props critic` - Run a critic on a snapshot and verify output
-- `/test_props grader` - Verify graders are running and grading
-- `/test_props improver` - Test improver agent
-- `/test_props setup` - Only set up infrastructure (no tests)
+- `setup` - Only set up infrastructure, database, backend, and push images
+- `critic` - Run a critic on a snapshot and verify output
+- `grader` - Verify graders are running and grading
+- `improver` - Test improver agent
+- `all` - Full setup + test all workflows
 
 ## Prerequisites
 
-- `OPENAI_API_KEY` must be set in environment
+- `OPENAI_API_KEY` must be in environment
 - Podman must be running (claude_hooks handles this)
 - Specimens repo at `/home/user/specimens`
 
-## Procedure
-
-### Phase 1: Infrastructure Setup
+## Phase 1: Infrastructure Setup
 
 1. Check if podman containers `props-postgres` and `props-registry` are running:
 
@@ -54,20 +50,25 @@ critic, grader, improver, and optimizer workflows.
    ```
 
 3. Initialize database if needed (check if `snapshots` table has rows):
+
    ```bash
    bazel run //props/cli:cli -- db upgrade
    bazel run //props/cli:cli -- gt sync
    ```
+
    If specimen data has validation errors, move the problematic specimen
    directories out of `/home/user/specimens` and re-run `gt sync`.
 
-### Phase 2: Start Backend
+## Phase 2: Start Backend
 
 1. Check if backend is already running:
+
    ```bash
    curl -s http://127.0.0.1:8000/health
    ```
-   If not running, start it:
+
+   If not running, start it in the background with these env vars:
+
    ```bash
    export PROPS_CONFIG_FILE=props/config.podman.toml
    export PROPS_REGISTRY_HOST=127.0.0.1
@@ -76,9 +77,8 @@ critic, grader, improver, and optimizer workflows.
    export PROPS_DOCKER_NETWORK=host
    bazel run //props/backend:backend_cli -- serve --host 127.0.0.1 --port 8000
    ```
-   Run the backend in the background.
 
-### Phase 3: Push Agent Images
+## Phase 3: Push Agent Images
 
 Push images to the **registry proxy** (port 8000), not the direct registry
 (port 5050). The proxy records agent definitions and the grader supervisor
@@ -90,12 +90,11 @@ ADMIN_AUTH="postgres:$(cat props/.devenv/state/pg_password)"
 
 For each agent type needed (critic, grader, improver):
 
-1. Build the image: `bazel run //props/agents/<type>:load`
-2. Tag for proxy: `podman tag localhost/props-<type>:latest 127.0.0.1:8000/<type>:latest`
-3. Push to proxy: `podman push --tls-verify=false --creds="$ADMIN_AUTH" 127.0.0.1:8000/<type>:latest`
+1. Build: `bazel run //props/agents/<type>:load`
+2. Tag: `podman tag localhost/props-<type>:latest 127.0.0.1:8000/<type>:latest`
+3. Push: `podman push --tls-verify=false --creds="$ADMIN_AUTH" 127.0.0.1:8000/<type>:latest`
 
-Alternatively, use curl to GET the manifest from the direct registry and PUT
-it to the proxy:
+Alternatively, copy the manifest from the direct registry to the proxy:
 
 ```bash
 curl -s -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
@@ -106,9 +105,9 @@ curl -X PUT -u "$ADMIN_AUTH" \
   http://127.0.0.1:8000/v2/<type>/manifests/latest
 ```
 
-### Phase 4: Test Workflows
+## Phase 4: Test Workflows
 
-#### Critic
+### Critic
 
 Run a critic on a snapshot via the API:
 
@@ -130,7 +129,7 @@ curl -X POST http://127.0.0.1:8000/api/runs/start \
 - After completion, `reported_issues` has findings for the run
 - Issues have valid file paths and line ranges
 
-#### Grader
+### Grader
 
 Graders start automatically when the grader image is pushed. Verify:
 
@@ -141,7 +140,7 @@ FROM agent_runs WHERE type_config->>'agent_type' = 'grader';
 
 There should be one grader per snapshot, all `in_progress`.
 
-#### Improver
+### Improver
 
 Start an improver run and verify it proposes critic modifications:
 
@@ -189,11 +188,6 @@ insecure = true
 Use hex-only passwords in `props/.devenv/state/pg_password` (no `/`, `+`, `=`
 characters that break asyncpg DSN parsing).
 
-## Configuration
-
-`props/config.podman.toml` controls grader model and agent environment. Use
-at least gpt-5 level models for meaningful results.
-
 ## Key Architecture Points
 
 - **Registry proxy**: Integrated into the backend. Push images to port 8000
@@ -203,3 +197,5 @@ at least gpt-5 level models for meaningful results.
   When a grader tag is pushed, all grader containers are (re)started.
 - **Agent containers**: Run with host networking, per-agent PostgreSQL roles,
   and RLS-scoped database access.
+- **Model selection**: Use at least gpt-5 level models for meaningful results.
+  Config file: `props/config.podman.toml`.
