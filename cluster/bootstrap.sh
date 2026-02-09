@@ -157,29 +157,14 @@ if [ "$START_FROM_LAYER" != "services" ]; then
   kubectl cluster-info
   kubectl get nodes
 
-  # Wait for Cilium cluster mesh to be fully healthy
-  # This prevents webhook timeout issues caused by stale BPF socket LB state
-  log "⏳ Waiting for Cilium cluster mesh to be healthy..."
-  EXPECTED_NODES=$(kubectl get nodes --no-headers | wc -l)
-  for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
-    log "   Checking Cilium health on ${node}..."
-    CILIUM_POD=""
-    # Wait for Cilium pod to exist and be ready on this node
-    until CILIUM_POD=$(kubectl get pods -n kube-system -l k8s-app=cilium \
-      --field-selector spec.nodeName=${node} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) \
-      && [ -n "$CILIUM_POD" ]; do
-      sleep 2
-    done
-    kubectl wait --for=condition=Ready pod/${CILIUM_POD} -n kube-system --timeout=120s
-
-    # Wait for this node's Cilium to see all nodes as reachable
-    until kubectl exec -n kube-system ${CILIUM_POD} -- \
-      cilium-dbg status 2>/dev/null | grep -q "${EXPECTED_NODES}/${EXPECTED_NODES} reachable"; do
-      sleep 5
-    done
-    log "   ✅ ${node}: Cilium mesh ${EXPECTED_NODES}/${EXPECTED_NODES} reachable"
-  done
-  log "✅ Cilium cluster mesh healthy on all nodes"
+  # Rolling restart Cilium to refresh BPF state for existing processes
+  # API servers are static pods started before Cilium - their sockets were
+  # created without BPF interception. Restarting Cilium forces re-attachment
+  # of BPF programs to all processes, fixing ClusterIP routing for webhooks.
+  log "⏳ Restarting Cilium to refresh BPF state for API servers..."
+  kubectl rollout restart daemonset/cilium -n kube-system
+  kubectl rollout status daemonset/cilium -n kube-system --timeout=300s
+  log "✅ Cilium restarted, BPF state refreshed"
 
   echo "✅ Infrastructure layer ready"
 fi
