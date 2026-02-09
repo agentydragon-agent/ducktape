@@ -22,7 +22,22 @@ runs the backend, pushes agent images, and tests agent workflows.
 
 - `OPENAI_API_KEY` must be in environment
 - Podman must be running (claude_hooks handles this)
-- Specimens repo at `/home/user/specimens`
+
+## Phase 0: Specimens Repo
+
+Clone the specimens repo if not present:
+
+```bash
+if [ ! -d /home/user/specimens ]; then
+  git clone https://github.com/agentydragon/specimens /home/user/specimens
+fi
+```
+
+If authentication is needed, use the GitHub token:
+
+```bash
+git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/specimens /home/user/specimens
+```
 
 ## Phase 1: Infrastructure Setup
 
@@ -123,11 +138,35 @@ curl -X POST http://127.0.0.1:8000/api/runs/start \
   }'
 ```
 
-**Verify:**
+**Verify critic completion:**
 
-- Run appears in `agent_runs` with `status = 'in_progress'`
-- After completion, `reported_issues` has findings for the run
-- Issues have valid file paths and line ranges
+1. Poll until the critic run completes:
+
+   ```sql
+   SELECT agent_run_id, status FROM agent_runs
+   WHERE agent_run_id = '<run_id>';
+   ```
+
+   Wait until `status = 'completed'`.
+
+2. Check that `reported_issues` has findings:
+
+   ```sql
+   SELECT COUNT(*) FROM reported_issues
+   WHERE agent_run_id = '<run_id>';
+   ```
+
+   There should be at least one reported issue.
+
+3. Issues should have valid file paths and line ranges:
+
+   ```sql
+   SELECT ri.issue_id, ri.title, rio.locations
+   FROM reported_issues ri
+   JOIN reported_issue_occurrences rio
+     ON rio.agent_run_id = ri.agent_run_id AND rio.reported_issue_id = ri.issue_id
+   WHERE ri.agent_run_id = '<run_id>';
+   ```
 
 ### Grader
 
@@ -139,6 +178,33 @@ FROM agent_runs WHERE type_config->>'agent_type' = 'grader';
 ```
 
 There should be one grader per snapshot, all `in_progress`.
+
+**Verify grading after critic:**
+
+Once the critic run completes and graders are running, verify that grading
+happens — the grader should create `grading_edges` for the critic's issues.
+
+1. Check `grading_pending` for drift (missing grading edges):
+
+   ```sql
+   SELECT COUNT(*) FROM grading_pending
+   WHERE critique_run_id = '<critic_run_id>';
+   ```
+
+2. Poll until the count reaches 0. This means all grading edges have been
+   created — every reported issue has been compared against every relevant
+   ground truth occurrence.
+
+3. Verify `grading_edges` exist:
+
+   ```sql
+   SELECT ge.critique_run_id, ge.critique_issue_id,
+          ge.tp_id, ge.fp_id, ge.grade
+   FROM grading_edges ge
+   WHERE ge.critique_run_id = '<critic_run_id>';
+   ```
+
+   There should be at least one grading edge per reported issue.
 
 ### Improver
 
