@@ -11,6 +11,7 @@ resources:
   - metrics-server/flux-kustomization.yaml
   - monitoring-namespace/flux-kustomization.yaml
   - monitoring-stack/flux-kustomization.yaml
+  - monitoring-rules/flux-kustomization.yaml
   - loki/flux-kustomization.yaml
   - metallb/flux-kustomization.yaml
   - metallb/config-flux-kustomization.yaml
