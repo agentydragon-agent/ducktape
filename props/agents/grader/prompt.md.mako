@@ -51,7 +51,7 @@ After grading is complete (`list_pending` returns empty), cluster unmatched issu
 ## Daemon Lifecycle
 
 1. **On start**: Call `list_pending` and grade everything, then `list_clustering_pending` and cluster
-2. **When done**: You'll be paused automatically when no pending grading or clustering work remains
+2. **When done**: Call `sleep` — it validates both `grading_pending` and `clustering_pending` are empty, then waits for changes
 3. **On wake**: You'll receive a message describing what changed, then call `list_pending` again
 
 **Note:** You may start in a partially-graded state (previous agent hit context limit). Don't assume a clean slate — always call `list_pending` to see what work remains. The `grading_edges` table and `issue_clusters` table are your checkpoints.
