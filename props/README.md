@@ -34,7 +34,7 @@ props/
 ├── frontend/                 # Svelte dashboard UI
 ├── agents/                   # Agent implementations
 │   ├── critic/               # Critic agent (finds issues in code)
-│   ├── grader/               # Grader daemon (matches issues to ground truth)
+│   ├── grader/               # Grader agent (matches issues to ground truth)
 │   └── critic_dev/           # Meta-agents that develop critics
 │       ├── improve/          # Creates improved critic definitions
 │       └── optimize/         # Runs eval loops to select best critics
@@ -176,7 +176,7 @@ This:
 
 ### 2. Grading
 
-Grading is handled automatically by snapshot grader daemons. Use the frontend UI (`POST /api/runs/validation`) to trigger validation runs on specific definitions.
+Grading is handled automatically by snapshot graders. Use the frontend UI (`POST /api/runs/validation`) to trigger validation runs on specific definitions.
 
 ### Specimen Inspection
 

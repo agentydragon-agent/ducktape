@@ -25,7 +25,9 @@ from props.db.models import (
     FalsePositive,
     FileSet,
     FileSetMember,
+    IssueCluster,
     OccurrenceRangeORM,
+    ReportedIssue,
     Snapshot,
     SnapshotFile,
     TruePositive,
@@ -447,3 +449,65 @@ def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str, admin_db: Adm
                     raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}") from None
         except tarfile.TarError as e:
             raise HTTPException(status_code=500, detail=f"Error reading tar archive: {e}") from e
+
+
+# --- Cluster Endpoints ---
+
+
+class ClusterMemberResponse(BaseModel):
+    """Member of an issue cluster."""
+
+    critique_run_id: str
+    critique_issue_id: str
+    rationale: str
+    issue_rationale: str | None = Field(description="The original reported issue rationale")
+
+
+class ClusterResponse(BaseModel):
+    """Issue cluster with members."""
+
+    cluster_id: str
+    rationale: str
+    members: list[ClusterMemberResponse]
+
+
+class ClustersListResponse(BaseModel):
+    """All clusters for a snapshot."""
+
+    clusters: list[ClusterResponse]
+
+
+@router.get("/snapshots/{snapshot_slug:path}/clusters")
+def list_clusters(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> ClustersListResponse:
+    """List all issue clusters for a snapshot with members."""
+    with admin_db.session() as session:
+        _get_snapshot_or_404(session, snapshot_slug)
+
+        clusters = (
+            session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug).order_by(IssueCluster.cluster_id).all()
+        )
+
+        # Collect all member issue run IDs to batch-fetch rationales
+        all_run_ids = {m.critique_run_id for cluster in clusters for m in cluster.members}
+
+        # Batch fetch reported issue rationales
+        issue_rationales: dict[tuple[str, str], str] = {}
+        if all_run_ids:
+            issues = session.query(ReportedIssue).filter(ReportedIssue.agent_run_id.in_(all_run_ids)).all()
+            for issue in issues:
+                issue_rationales[(str(issue.agent_run_id), issue.issue_id)] = issue.rationale
+
+        result = []
+        for cluster in clusters:
+            members = [
+                ClusterMemberResponse(
+                    critique_run_id=str(m.critique_run_id),
+                    critique_issue_id=m.critique_issue_id,
+                    rationale=m.rationale,
+                    issue_rationale=issue_rationales.get((str(m.critique_run_id), m.critique_issue_id)),
+                )
+                for m in cluster.members
+            ]
+            result.append(ClusterResponse(cluster_id=cluster.cluster_id, rationale=cluster.rationale, members=members))
+
+        return ClustersListResponse(clusters=result)

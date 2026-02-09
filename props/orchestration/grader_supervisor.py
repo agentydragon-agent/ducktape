@@ -1,25 +1,26 @@
-"""Grader supervisor - manages per-snapshot grader lifecycle.
+"""Grader supervisor - manages per-snapshot grader container lifecycle.
 
 Supervises one grader container per snapshot:
-- Defers initial spawning until HTTP backend is ready (avoids self-referencing
-  image resolution during lifespan)
 - Listens for pg_notify on snapshot_created to spawn new graders
 - Listens for pg_notify on grader_definition_changed to restart all graders
   when the grader image tag moves (e.g. new image pushed)
+- Tracks running containers via GraderHandle, kills them directly on shutdown/restart
 
-Each grader runs eternally inside its container, handling context exhaustion
-internally. Host-side we supervise container lifecycle.
+Startup sequence:
+1. Lifespan calls start() to set up pg_notify listeners
+2. After uvicorn binds, caller invokes spawn_existing() to start graders
+   for all existing snapshots (avoids chicken-and-egg with registry proxy)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Coroutine
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 import asyncpg
-import httpx
 from asyncpg.pool import PoolConnectionProxy
 
 from props.agents.grader.notifications import (
@@ -34,7 +35,7 @@ from props.db.database import Database
 from props.db.models import Snapshot
 
 if TYPE_CHECKING:
-    from props.orchestration.agent_registry import AgentRegistry
+    from props.orchestration.agent_registry import AgentRegistry, GraderHandle
 
 logger = logging.getLogger(__name__)
 
@@ -49,20 +50,20 @@ class GraderSupervisor:
     Use as async context manager for proper lifecycle:
 
         async with GraderSupervisor(...) as gs:
+            await gs.spawn_existing()
             await some_long_running_task()
         # gs.shutdown() called automatically
     """
 
-    def __init__(self, registry: AgentRegistry, db_config: DatabaseConfig, model: str, db: Database, backend_url: str):
+    def __init__(self, registry: AgentRegistry, db_config: DatabaseConfig, model: str, db: Database):
         self._registry = registry
         self._db_config = db_config
         self._model = model
         self._db = db
-        self._backend_url = backend_url
-        self._tasks: dict[SnapshotSlug, asyncio.Task[Any]] = {}
+        self._handles: dict[SnapshotSlug, GraderHandle] = {}
         self._listener_conn: asyncpg.Connection[Any] | None = None
-        self._startup_task: asyncio.Task[Any] | None = None
         self._shutdown = False
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     async def __aenter__(self) -> GraderSupervisor:
         await self.start()
@@ -72,6 +73,12 @@ class GraderSupervisor:
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         await self.shutdown()
+
+    def _launch_background(self, coro: Coroutine[Any, Any, None], *, name: str) -> None:
+        """Launch a background task and prevent garbage collection."""
+        task = asyncio.create_task(coro, name=name)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
 
     def _snapshot_created_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -87,12 +94,12 @@ class GraderSupervisor:
         notification = SnapshotCreatedNotification.model_validate_json(payload)
 
         slug = notification.snapshot_slug
-        if slug in self._tasks and not self._tasks[slug].done():
+        if slug in self._handles:
             logger.debug(f"Grader for {slug} already running, ignoring notification")
             return
 
         logger.info(f"Snapshot created: {slug}, spawning grader")
-        self._tasks[slug] = asyncio.create_task(self._run_grader(slug), name=f"grader-{slug}")
+        self._launch_background(self._spawn_grader(slug), name=f"grader-spawn-{slug}")
 
     def _grader_definition_changed_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -108,48 +115,24 @@ class GraderSupervisor:
         notification = GraderDefinitionChangedNotification.model_validate_json(payload)
         logger.info(f"Grader definition changed: {notification.tag} -> {notification.digest}")
 
-        # Cancel running graders and restart all with the new image
-        for slug, task in list(self._tasks.items()):
-            if not task.done():
-                task.cancel()
-            self._tasks[slug] = asyncio.create_task(self._run_grader(slug), name=f"grader-{slug}")
-
-        logger.info(f"Restarted {len(self._tasks)} graders after definition change")
+        slugs = list(self._handles.keys())
+        self._launch_background(self._restart_all(slugs), name="grader-restart-all")
 
     async def start(self) -> None:
-        """Start listening for notifications and schedule deferred grader spawning.
+        """Start listening for notifications.
 
-        Sets up pg_notify listeners immediately (during lifespan), then spawns a
-        background task that waits for the HTTP server to be ready before starting
-        grader containers. This avoids the chicken-and-egg problem where containers
-        need the registry proxy (served by the same HTTP server) to resolve images.
+        Sets up pg_notify listeners immediately (during lifespan). Container
+        spawning is deferred until spawn_existing() is called after the HTTP
+        server is ready.
         """
-        # Start listener first so we don't miss any notifications during startup
         await self._start_listener()
 
-        # Defer container spawning until HTTP server is ready
-        self._startup_task = asyncio.create_task(self._deferred_spawn(), name="grader-startup")
+    async def spawn_existing(self) -> None:
+        """Spawn graders for all existing snapshots.
 
-    async def _wait_for_backend(self) -> None:
-        """Poll the backend health endpoint until it responds."""
-        health_url = f"{self._backend_url}/health"
-        async with httpx.AsyncClient() as client:
-            while not self._shutdown:
-                try:
-                    resp = await client.get(health_url, timeout=2.0)
-                    if resp.status_code == 200:
-                        return
-                except httpx.HTTPError:
-                    pass
-                await asyncio.sleep(0.5)
-
-    async def _deferred_spawn(self) -> None:
-        """Wait for HTTP server, then spawn graders for all existing snapshots."""
-        try:
-            await self._wait_for_backend()
-        except asyncio.CancelledError:
-            return
-
+        Call after the HTTP server is ready (uvicorn has bound its socket),
+        so that containers can resolve images through the registry proxy.
+        """
         if self._shutdown:
             return
 
@@ -160,7 +143,7 @@ class GraderSupervisor:
         if snapshot_slugs:
             logger.info(f"Starting graders for {len(snapshot_slugs)} existing snapshots")
             for slug in snapshot_slugs:
-                self._tasks[slug] = asyncio.create_task(self._run_grader(slug), name=f"grader-{slug}")
+                await self._spawn_grader(slug)
         else:
             logger.info("No existing snapshots, listening for new ones via pg_notify")
 
@@ -186,40 +169,38 @@ class GraderSupervisor:
                 logger.warning(f"Error closing listener connection: {e}")
             self._listener_conn = None
 
-    async def _run_grader(self, snapshot_slug: SnapshotSlug) -> None:
-        """Run grader container for a snapshot. Runs indefinitely until cancelled."""
+    async def _spawn_grader(self, snapshot_slug: SnapshotSlug) -> None:
+        """Start a grader container for a snapshot."""
         try:
             logger.info(f"Starting grader for {snapshot_slug}")
-            await self._registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=self._model)
-            logger.info(f"Grader for {snapshot_slug} exited")
-        except asyncio.CancelledError:
-            logger.info(f"Grader for {snapshot_slug} cancelled")
-            raise
+            handle = await self._registry.start_snapshot_grader(snapshot_slug=snapshot_slug, model=self._model)
+            self._handles[snapshot_slug] = handle
+            logger.info(f"Grader container {handle.container_name} running for {snapshot_slug}")
         except Exception:
-            logger.exception(f"Grader for {snapshot_slug} failed")
+            logger.exception(f"Failed to start grader for {snapshot_slug}")
+
+    async def _kill_grader(self, snapshot_slug: SnapshotSlug) -> None:
+        """Kill and remove a grader container."""
+        handle = self._handles.pop(snapshot_slug, None)
+        if handle:
+            await handle.kill()
+
+    async def _restart_all(self, slugs: list[SnapshotSlug]) -> None:
+        """Kill all graders and restart them (e.g. after image update)."""
+        for slug in slugs:
+            await self._kill_grader(slug)
+        for slug in slugs:
+            await self._spawn_grader(slug)
+        logger.info(f"Restarted {len(slugs)} graders after definition change")
 
     async def shutdown(self) -> None:
-        """Signal all graders to shutdown and wait for completion."""
+        """Kill all grader containers and stop listeners."""
         self._shutdown = True
         logger.info("Shutting down graders...")
 
-        # Stop listener first
         await self._stop_listener()
 
-        # Cancel startup task if still running
-        if self._startup_task and not self._startup_task.done():
-            self._startup_task.cancel()
-
-        # Cancel all tasks
-        for task in self._tasks.values():
-            if not task.done():
-                task.cancel()
-
-        # Wait for all to complete
-        all_tasks = list(self._tasks.values())
-        if self._startup_task:
-            all_tasks.append(self._startup_task)
-        if all_tasks:
-            await asyncio.gather(*all_tasks, return_exceptions=True)
+        for slug in list(self._handles.keys()):
+            await self._kill_grader(slug)
 
         logger.info("All graders stopped")

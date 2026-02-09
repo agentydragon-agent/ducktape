@@ -920,6 +920,84 @@ class GradingEdge(Base):
         raise ValueError(f"Grading edge {self.critique_issue_id} has no target (DB constraint violation)")
 
 
+class IssueCluster(Base):
+    """Cluster of unmatched critique issues that report the same underlying problem.
+
+    Groups issues from different critic runs that describe the same novel finding
+    (one not covered by ground truth TPs/FPs). Only issues with all grading edges
+    at credit=0 can be clustered.
+
+    Composite primary key: (snapshot_slug, cluster_id).
+    """
+
+    __tablename__ = "issue_clusters"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), primary_key=True
+    )
+    cluster_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    grader_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Relationships
+    members: Mapped[list[IssueClusterMember]] = relationship(back_populates="cluster", cascade="all, delete-orphan")
+
+
+class IssueClusterMember(Base):
+    """Membership of a critique issue in a cluster.
+
+    Each critique issue belongs to at most one cluster (UNIQUE constraint).
+    Only issues with no positive grading edges (credit > 0) can be members.
+    """
+
+    __tablename__ = "issue_cluster_members"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    cluster_id: Mapped[str] = mapped_column(String, primary_key=True)
+    critique_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    critique_issue_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    grader_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "cluster_id"],
+            ["issue_clusters.snapshot_slug", "issue_clusters.cluster_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["critique_run_id", "critique_issue_id"],
+            ["reported_issues.agent_run_id", "reported_issues.issue_id"],
+            ondelete="CASCADE",
+        ),
+        # Each critique issue belongs to at most one cluster
+        UniqueConstraint("critique_run_id", "critique_issue_id", name="uq_issue_cluster_member_issue"),
+    )
+
+    # Relationships
+    cluster: Mapped[IssueCluster] = relationship(back_populates="members")
+
+
+class ClusteringPending(Base):
+    """View: critique issues that need clustering (fully graded, no positive match, not yet clustered).
+
+    When this view returns no rows for a snapshot, all unmatched issues are clustered.
+    """
+
+    __tablename__ = "clustering_pending"
+    __table_args__ = ({"info": {"is_view": True}},)
+
+    critique_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    critique_issue_id: Mapped[str] = mapped_column(String, primary_key=True)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn())
+
+
 class ModelMetadata(Base):
     """OpenAI model metadata: pricing, context limits, and capabilities.
 

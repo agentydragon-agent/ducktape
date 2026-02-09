@@ -446,7 +446,7 @@ async def trigger_validation_runs(
     """Trigger validation critic runs: sample N examples, run 1 critic per example.
 
     Runs are started in the background in parallel. Poll /api/runs/jobs for status.
-    Grading is handled automatically by snapshot grader daemons.
+    Grading is handled automatically by snapshot graders.
     """
     registry = get_registry(request)
 
@@ -496,7 +496,7 @@ async def trigger_validation_runs(
 async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db: Database) -> None:
     """Run critic for each example in the job, in parallel.
 
-    Grading is handled automatically by snapshot grader daemons.
+    Grading is handled automatically by snapshot graders.
     """
     # Default timeout: 1 hour per agent
     timeout_seconds = 3600

@@ -12,7 +12,7 @@ ARG_SNAPSHOT = typer.Argument(..., help="Snapshot slug (under properties/specime
 # Options - Model Selection
 OPT_OPTIMIZER_MODEL = typer.Option("gpt-5.1", help="Model for critic developer agent")
 OPT_CRITIC_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for critic execution")
-OPT_GRADER_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for grader execution")
+OPT_GRADER_MODEL = typer.Option("gpt-5.1-mini", help="Model for grader execution")
 
 # Options - Output
 OPT_OUT_DIR = typer.Option(None, "--out-dir", "-o", help="Output directory")

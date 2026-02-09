@@ -1,15 +1,15 @@
 """E2E test for grader sleep-wake cycle.
 
-Tests that the grader daemon:
+Tests that the snapshot grader:
 1. Grades initial drift, then sleeps
 2. Wakes on pg_notify when new critic data arrives
 3. Grades the new data in the same agent loop (context retained)
 
 Test flow:
-- Insert critic-1 (one issue) BEFORE starting daemon
-- Daemon grades issue with insert_edges (credit=0.1), sleeps
+- Insert critic-1 (one issue) BEFORE starting grader
+- Grader grades issue with insert_edges (credit=0.1), sleeps
 - While sleeping, insert critic-2 (one issue) — triggers pg_notify
-- Daemon wakes, grades second issue with insert_edges (credit=0.2)
+- Grader wakes, grades second issue with insert_edges (credit=0.2)
 - Await explicit round-complete events, then verify edges
 """
 
@@ -25,7 +25,7 @@ import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
-from props.agents.grader.drift_handler import check_grading_pending
+from props.agents.grader.drift_handler import check_all_pending, check_grading_pending
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import EdgeSpec, TPRef
 from props.db.database import Database
@@ -41,7 +41,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 
 @pytest.mark.timeout(240)
 async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
-    """Test that grader daemon sleeps after grading, wakes on new drift, grades again."""
+    """Test that snapshot grader sleeps after grading, wakes on new drift, grades again."""
 
     # Explicit signals for when each round's edges have been committed.
     # Set in the mock generator (which runs in-process via FakeOpenAIServer)
@@ -94,7 +94,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
         yield m.sleep("Round 2 complete")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
-        # --- Insert critic-1 BEFORE starting daemon ---
+        # --- Insert critic-1 BEFORE starting grader ---
         critic_1_id = uuid4()
         with db.session() as session:
             critic_1 = make_fake_critic_run(
@@ -118,19 +118,19 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
 
         assert check_grading_pending(test_snapshot, db) > 0
 
-        # --- Start daemon ---
-        daemon_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="grader-daemon"
+        # --- Start snapshot grader ---
+        grader_task = asyncio.create_task(
+            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="snapshot-grader"
         )
 
         # --- Wait for round 1 to complete via explicit signal ---
         try:
             await asyncio.wait_for(round_1_complete.wait(), timeout=90)
         except TimeoutError:
-            if daemon_task.done():
-                exc = daemon_task.exception()
+            if grader_task.done():
+                exc = grader_task.exception()
                 if exc:
-                    raise RuntimeError(f"Grader daemon failed: {exc}") from exc
+                    raise RuntimeError(f"Snapshot grader failed: {exc}") from exc
             raise AssertionError("Round 1 did not complete within timeout")
 
         # Verify round 1 TP edges
@@ -145,7 +145,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             assert tp_edge_1.credit == pytest.approx(0.1)
             logger.info(f"Round 1 TP edge verified: credit={tp_edge_1.credit}")
 
-        # --- Insert critic-2 while daemon is sleeping (triggers pg_notify) ---
+        # --- Insert critic-2 while grader is sleeping (triggers pg_notify) ---
         critic_2_id = uuid4()
         with db.session() as session:
             critic_2 = make_fake_critic_run(
@@ -167,22 +167,22 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             )
             session.commit()
 
-        logger.info("Critic-2 inserted, waiting for daemon to wake and grade")
+        logger.info("Critic-2 inserted, waiting for grader to wake and grade")
 
         # --- Wait for round 2 to complete via explicit signal ---
         try:
             await asyncio.wait_for(round_2_complete.wait(), timeout=90)
         except TimeoutError:
-            if daemon_task.done():
-                exc = daemon_task.exception()
+            if grader_task.done():
+                exc = grader_task.exception()
                 if exc:
-                    raise RuntimeError(f"Grader daemon failed: {exc}") from exc
+                    raise RuntimeError(f"Snapshot grader failed: {exc}") from exc
             raise AssertionError("Round 2 did not complete within timeout")
 
         # --- Cleanup ---
-        daemon_task.cancel()
+        grader_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await daemon_task
+            await grader_task
 
         # Verify both edges exist with correct credits
         with db.session() as session:
@@ -203,6 +203,9 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             assert tp_edge_1.credit == pytest.approx(0.1)
             assert tp_edge_2.credit == pytest.approx(0.2)
             logger.info("Both edges verified: round 1 credit=0.1, round 2 credit=0.2")
+
+        # Assert no drift remains (grading + clustering)
+        assert check_all_pending(test_snapshot, db) == 0, "Drift should be zero after grading"
 
 
 if __name__ == "__main__":

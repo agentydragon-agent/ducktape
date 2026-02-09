@@ -91,7 +91,7 @@ def make_fake_grader_run(
     status: AgentRunStatus = AgentRunStatus.EXITED,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:
-    """Build AgentRun for daemon-based grader with fake image digest.
+    """Build AgentRun for snapshot grader with fake image digest.
 
     Automatically ensures fake agent_definitions rows exist.
     """

@@ -1,6 +1,6 @@
 """Handler that injects pg_notify notifications into the grader's context.
 
-Drains DaemonState.notification_queue on each on_before_sample() call.
+Drains GraderState.notification_queue on each on_before_sample() call.
 If notifications are pending, returns InjectItems with a UserMessage
 summarizing them. This covers both wake-from-sleep and mid-work arrivals
 through a single code path.
@@ -33,7 +33,7 @@ def _format_notifications(notifications: list[GradingPendingNotification]) -> Us
 class GraderNotificationsHandler(BaseHandler):
     """Deliver pg_notify notifications as a batched UserMessage via InjectItems.
 
-    Polls DaemonState.notification_queue. If non-empty, drains it and
+    Polls GraderState.notification_queue. If non-empty, drains it and
     returns InjectItems with a summary message. Otherwise returns NoAction.
     """
 

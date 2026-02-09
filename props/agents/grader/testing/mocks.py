@@ -8,9 +8,13 @@ from more_itertools import one
 from agent_core.testing.responses import DecoratorMock, _extract_text_from_content_list, tool_roundtrip
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest
 from props.agents.grader.tools import (
+    ClusteringPendingIssue,
+    ClusterMemberSpec,
+    CreateClusterArgs,
     EdgeSpec,
     FillRemainingArgs,
     InsertEdgesArgs,
+    ListClusteringPendingArgs,
     ListPendingArgs,
     PendingEdge,
     SleepArgs,
@@ -46,7 +50,7 @@ class GraderMock(DecoratorMock):
     """
 
     def sleep(self, summary: str) -> FunctionCallItem:
-        """Signal that grading is complete and daemon should sleep."""
+        """Signal that grading is complete and grader should sleep."""
         return self.tool_call("sleep", SleepArgs(summary=summary))
 
     def list_pending_roundtrip(
@@ -76,6 +80,27 @@ class GraderMock(DecoratorMock):
         """Yield insert_edges call and return result message."""
         call = self.tool_call(
             "insert_edges", InsertEdgesArgs(run=run, issue_id=issue_id, edges=edges, rationale=rationale)
+        )
+        req = yield call
+        return _extract_raw_output(req, call)
+
+    def list_clustering_pending_roundtrip(
+        self, *, run: UUID | None = None
+    ) -> Generator[FunctionCallItem, ResponsesRequest, list[ClusteringPendingIssue]]:
+        """Yield list_clustering_pending call and return parsed result."""
+        return (
+            yield from tool_roundtrip(
+                self.tool_call("list_clustering_pending", ListClusteringPendingArgs(run=run)),
+                list[ClusteringPendingIssue],
+            )
+        )
+
+    def create_cluster_roundtrip(
+        self, cluster_id: str, rationale: str, members: list[ClusterMemberSpec]
+    ) -> Generator[FunctionCallItem, ResponsesRequest, str]:
+        """Yield create_cluster call and return result message."""
+        call = self.tool_call(
+            "create_cluster", CreateClusterArgs(cluster_id=cluster_id, rationale=rationale, members=members)
         )
         req = yield call
         return _extract_raw_output(req, call)

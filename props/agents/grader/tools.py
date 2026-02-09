@@ -89,6 +89,50 @@ class ReportFailureArgs(OpenAIStrictModeBaseModel):
     message: str = Field(..., description="Description of why grading could not be completed")
 
 
+# --- Clustering tool argument models ---
+
+
+class ClusterMemberSpec(OpenAIStrictModeBaseModel):
+    """Identifies a critique issue to add to a cluster."""
+
+    run: UUID = Field(..., description="Critic run ID")
+    issue_id: str = Field(..., description="Critique issue ID")
+    rationale: str = Field(..., description="Why this issue belongs to this cluster")
+
+
+class ListClusteringPendingArgs(OpenAIStrictModeBaseModel):
+    run: UUID | None = Field(None, description="Filter to specific critic run ID")
+
+
+class ListClustersArgs(OpenAIStrictModeBaseModel):
+    pass
+
+
+class ShowClusterArgs(OpenAIStrictModeBaseModel):
+    cluster_id: str = Field(..., description="Cluster ID to show")
+
+
+class CreateClusterArgs(OpenAIStrictModeBaseModel):
+    cluster_id: str = Field(..., description="Descriptive slug (e.g. missing-null-check-parse-config)")
+    rationale: str = Field(..., description="Description of the shared underlying issue")
+    members: list[ClusterMemberSpec] = Field(..., description="Initial member issues", min_length=1)
+
+
+class AddToClusterArgs(OpenAIStrictModeBaseModel):
+    cluster_id: str = Field(..., description="Existing cluster ID")
+    members: list[ClusterMemberSpec] = Field(..., description="Issues to add", min_length=1)
+
+
+class RemoveFromClusterArgs(OpenAIStrictModeBaseModel):
+    cluster_id: str = Field(..., description="Cluster ID")
+    run: UUID = Field(..., description="Critic run ID of the issue to remove")
+    issue_id: str = Field(..., description="Critique issue ID to remove")
+
+
+class DeleteClusterArgs(OpenAIStrictModeBaseModel):
+    cluster_id: str = Field(..., description="Cluster ID to delete")
+
+
 # --- Result models ---
 
 
@@ -125,3 +169,38 @@ class GTDetails(BaseModel):
     rationale: str
     files: dict[str, tuple[int | None, int | None]] = Field(description="file -> (start_line, end_line)")
     note: str | None
+
+
+# --- Clustering result models ---
+
+
+class ClusteringPendingIssue(BaseModel):
+    """A critique issue that needs clustering."""
+
+    critique_run_id: UUID
+    critique_issue_id: str
+    snapshot_slug: str
+
+
+class ClusterMemberInfo(BaseModel):
+    """Info about a cluster member."""
+
+    critique_run_id: UUID
+    critique_issue_id: str
+    rationale: str
+
+
+class ClusterSummary(BaseModel):
+    """Summary of a cluster for list view."""
+
+    cluster_id: str
+    rationale: str
+    member_count: int
+
+
+class ClusterDetails(BaseModel):
+    """Full cluster details."""
+
+    cluster_id: str
+    rationale: str
+    members: list[ClusterMemberInfo]

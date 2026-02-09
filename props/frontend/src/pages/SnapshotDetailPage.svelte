@@ -3,8 +3,8 @@
   import { pathname, resolve } from "$lib/router";
   import { toast } from "svelte-sonner";
   import { splitBadgeClass } from "$lib/colors";
-  import type { SnapshotDetailResponse, FileContentResponse, FileTreeResponse } from "$lib/api/client";
-  import { fetchSnapshotDetail, fetchSnapshotTree, fetchSnapshotFile } from "$lib/api/client";
+  import type { SnapshotDetailResponse, FileContentResponse, FileTreeResponse, ClusterResponse } from "$lib/api/client";
+  import { fetchSnapshotDetail, fetchSnapshotTree, fetchSnapshotFile, fetchSnapshotClusters } from "$lib/api/client";
   import FileTree from "$components/FileTree.svelte";
   import FileViewer from "$components/FileViewer.svelte";
   import TabButton from "$components/TabButton.svelte";
@@ -52,11 +52,12 @@
   let error: string | null = $state(null);
 
   const expandedIssues = createExpansionState();
-  let activeTab: "files" | "tps" | "fps" | "stats" = $state("files");
+  let activeTab: "files" | "tps" | "fps" | "clusters" | "stats" = $state("files");
   let selectedFile: FileContentResponse | null = $state(null);
   let loadingFile = $state(false);
   let occurrenceStats: OccurrenceStatsRow[] = $state([]);
   let occurrenceStatsMap = $derived(new Map(occurrenceStats.map((o) => [`${o.tp_id}:${o.occurrence_id}`, o])));
+  let clusters: ClusterResponse[] = $state([]);
 
   async function loadData() {
     loading = true;
@@ -68,13 +69,21 @@
       ]);
       snapshot = snapshotData;
       tree = treeData;
-      // Fetch occurrence stats (non-blocking)
+      // Fetch occurrence stats and clusters (non-blocking)
       fetchOccurrenceStats(parsedSlug.snapshotSlug).then(
         (data) => {
           occurrenceStats = data.occurrences;
         },
         (e) => {
           toast.error(e instanceof Error ? e.message : "Failed to load occurrence stats");
+        }
+      );
+      fetchSnapshotClusters(parsedSlug.snapshotSlug).then(
+        (data) => {
+          clusters = data.clusters;
+        },
+        (e) => {
+          toast.error(e instanceof Error ? e.message : "Failed to load clusters");
         }
       );
     } catch (e) {
@@ -219,6 +228,9 @@
         </TabButton>
         <TabButton active={activeTab === "fps"} onclick={() => (activeTab = "fps")}>
           False Positives ({snapshot.false_positives.length})
+        </TabButton>
+        <TabButton active={activeTab === "clusters"} onclick={() => (activeTab = "clusters")}>
+          Clusters ({clusters.length})
         </TabButton>
         <TabButton active={activeTab === "stats"} onclick={() => (activeTab = "stats")}>Detection Stats</TabButton>
       </nav>
@@ -391,6 +403,63 @@
                               <div class="mt-1 text-xs text-gray-500">
                                 Relevant: {occ.relevant_files.join(", ")}
                               </div>
+                            {/if}
+                          </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else if activeTab === "clusters"}
+        <div class="max-h-[70vh] overflow-y-auto">
+          {#if clusters.length === 0}
+            <p class="text-gray-500">No clusters</p>
+          {:else}
+            <div class="space-y-2">
+              {#each clusters as cluster (cluster.cluster_id)}
+                <div class="border rounded">
+                  <button
+                    class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
+                    onclick={() => expandedIssues.toggle(`cluster-${cluster.cluster_id}`)}
+                  >
+                    <div class="flex items-center gap-2">
+                      <span class="text-gray-400"
+                        >{expandedIssues.isExpanded(`cluster-${cluster.cluster_id}`) ? "▼" : "▶"}</span
+                      >
+                      <span class="font-mono text-sm font-medium">{cluster.cluster_id}</span>
+                      <span class="text-xs text-gray-500">({cluster.members.length} issues)</span>
+                    </div>
+                  </button>
+
+                  {#if expandedIssues.isExpanded(`cluster-${cluster.cluster_id}`)}
+                    <div class="px-3 pb-3 border-t bg-gray-50">
+                      <div class="mt-2">
+                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Description</h4>
+                        <p class="text-sm whitespace-pre-wrap">{cluster.rationale}</p>
+                      </div>
+                      <div class="mt-3">
+                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Member Issues</h4>
+                        {#each cluster.members as member (`${member.critique_run_id}-${member.critique_issue_id}`)}
+                          <div class="bg-white border rounded p-2 mt-1">
+                            <div class="flex items-center gap-2 text-xs">
+                              <a
+                                href="#{resolve(`/runs/${member.critique_run_id}`)}"
+                                class="font-mono text-blue-600 hover:underline"
+                              >
+                                {member.critique_run_id.slice(0, 8)}
+                              </a>
+                              <span class="text-gray-400">/</span>
+                              <span class="font-mono font-medium">{member.critique_issue_id}</span>
+                            </div>
+                            {#if member.issue_rationale}
+                              <div class="mt-1 text-sm text-gray-700">{member.issue_rationale}</div>
+                            {/if}
+                            {#if member.rationale}
+                              <div class="mt-1 text-xs text-gray-500 italic">{member.rationale}</div>
                             {/if}
                           </div>
                         {/each}

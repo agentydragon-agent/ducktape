@@ -1,7 +1,7 @@
 """Pydantic models for grader pg_notify notifications.
 
 These models define the schema for notifications sent by PostgreSQL triggers
-and consumed by grader daemons.
+and consumed by graders.
 
 Notification structure: {operation, item: {table (discriminator), key columns}, snapshot_slug}
 """
@@ -111,7 +111,7 @@ class GradingPendingNotification(BaseModel):
     - Ground truth changes: notify_gt_changed() on TP/FP INSERT/DELETE
     - Critique changes: notify_critique_changed() on reported_issues/occurrences INSERT
 
-    Consumed by: DaemonState in main.py
+    Consumed by: GraderState in main.py
     """
 
     operation: Operation
@@ -125,7 +125,7 @@ class SnapshotCreatedNotification(BaseModel):
     Structure: {operation, snapshot_slug}
 
     Produced by PostgreSQL trigger: notify_snapshot_created() on snapshots INSERT
-    Consumed by: GraderSupervisor in orchestration/grader_supervisor.py to spawn new grader daemons
+    Consumed by: GraderSupervisor in orchestration/grader_supervisor.py to spawn new graders
     """
 
     operation: Operation
@@ -138,7 +138,7 @@ class GraderDefinitionChangedNotification(BaseModel):
     Produced by: registry proxy route (put_manifest) when a grader manifest
     is pushed by tag (not by digest), indicating the tag has moved.
 
-    Consumed by: GraderSupervisor to restart daemons that failed due to
+    Consumed by: GraderSupervisor to restart graders that failed due to
     missing grader image at startup.
     """
 

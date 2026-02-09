@@ -252,6 +252,19 @@ export async function fetchLLMRequests(runId: string) {
   return data;
 }
 
+// --- Clusters ---
+export type ClusterMemberResponse = components["schemas"]["ClusterMemberResponse"];
+export type ClusterResponse = components["schemas"]["ClusterResponse"];
+export type ClustersListResponse = components["schemas"]["ClustersListResponse"];
+
+export async function fetchSnapshotClusters(snapshotSlug: string) {
+  const { data, error } = await api.GET("/api/gt/snapshots/{snapshot_slug}/clusters", {
+    params: { path: { snapshot_slug: snapshotSlug } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch clusters"));
+  return data;
+}
+
 // --- Stats: occurrence stats, distributions, coverage ---
 
 export type OccurrenceStatsRow = components["schemas"]["OccurrenceStatsRow"];

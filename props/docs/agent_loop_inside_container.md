@@ -26,7 +26,7 @@ run_loop_agent()
 ### Key implementations
 
 - **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
-- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Daemon mode via `props/agents/grader/daemon.py` with pg_notify.
+- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, list_pending, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Snapshot grader mode via `props/agents/grader/main.py` with pg_notify.
 - **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, run_critic, wait_until_graded_tool, submit, report_failure tools.
 - **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
 
@@ -125,31 +125,31 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Completion    | "submit" tool validates → returns errors (agent retries) or succeeds → exit 0 |
 | Code reuse    | Uses `agent_core.Agent` with `DirectToolProvider`                             |
 
-### Grader Daemon Mode
+### Snapshot Grader Mode
 
 | Aspect        | Decision                                                          |
 | ------------- | ----------------------------------------------------------------- |
 | Lifecycle     | Container runs indefinitely (no exit between grading batches)     |
 | Wake/sleep    | Internal loop uses pg_notify on `grading_pending` channel         |
 | Drift handler | `GraderDriftHandler.on_before_sample()` returns `Abort()` → sleep |
-| Timeout       | No timeout for daemon graders (eternal)                           |
-| Scope         | One daemon per snapshot, grades all critiques for that snapshot   |
+| Timeout       | No timeout for snapshot graders (eternal)                         |
+| Scope         | One grader per snapshot, grades all critiques for that snapshot   |
 
-**How daemon graders work:**
+**How snapshot graders work:**
 
 - "Drift" = ungraded (critique issue, GT occurrence) pairs in `grading_pending` view
-- Daemon goal: make `grading_pending` empty for its snapshot
+- Grader goal: make `grading_pending` empty for its snapshot
 - Loop: check drift → grade until empty → sleep waiting for `NOTIFY grading_pending`
-- GT changes (new TPs/FPs, edits) trigger notifications that wake the daemon
+- GT changes (new TPs/FPs, edits) trigger notifications that wake the grader
 - Uses `asyncio.Event` for coordinated wake/sleep, background `pg_listen` task
-- On context length exceeded: daemon manager auto-restarts with fresh context
+- On context length exceeded: grader supervisor auto-restarts with fresh context
 
-**pg_notify permissions:** Daemon uses its temp user credentials (`agent_{uuid}`) for LISTEN. PostgreSQL allows any connected user to LISTEN on any channel without special grants. Notifications include `snapshot_slug` in the payload; the daemon filters to only process notifications for its snapshot.
+**pg_notify permissions:** Grader uses its temp user credentials (`agent_{uuid}`) for LISTEN. PostgreSQL allows any connected user to LISTEN on any channel without special grants. Notifications include `snapshot_slug` in the payload; the grader filters to only process notifications for its snapshot.
 
 **Single implementation, two modes:**
 
 - One-off (`GraderTypeConfig`): grades single critic run, has `submit` + `report_failure`
-- Daemon (`SnapshotGraderTypeConfig`): grades all critiques for snapshot, `report_failure` only (no `submit` - drift handler controls sleep)
+- Snapshot (`SnapshotGraderTypeConfig`): grades all critiques for snapshot, `report_failure` only (no `submit` - drift handler controls sleep)
 - Mode flag controls tool availability; all other tools identical
 
 **Grader Tools (DirectToolProvider):**
@@ -168,9 +168,9 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 
 **Edge model:** Every `(critique_issue, matchable_gt_occurrence)` pair needs an edge. Credit 0.0-1.0 for both TPs and FPs. Use credit=0 for non-matches, >0 for matches (quality of match).
 
-**Daemon loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
+**Grader loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
 
-**Grader supervisor:** `props/orchestration/grader_supervisor.py` manages daemon lifecycle — listens on `snapshot_created` channel, spawns one daemon per snapshot, handles restarts.
+**Grader supervisor:** `props/orchestration/grader_supervisor.py` manages grader lifecycle — listens on `snapshot_created` channel, spawns one grader per snapshot, handles restarts.
 
 ### Subagent Spawning
 

@@ -7,7 +7,7 @@ This document covers the OCI image architecture for agents. For the in-container
 ```
 props/
 ├── critic/                 # Critic agent (main.py entry point, DirectToolProvider)
-├── grader/                 # Grader agent (loop.py, daemon.py)
+├── grader/                 # Grader agent (loop.py, main.py)
 ├── critic_dev/             # Critic-dev agents
 │   ├── optimize/           # Critic developer (optimizer) agent
 │   └── improve/            # Critic developer (improver) agent
@@ -35,7 +35,7 @@ Critic-dev agents (optimizer, improvement) can also create custom critic images 
 | Grader           | No             | `BUILTIN_TAG`     | Evaluation infrastructure  |
 | Critic-dev (opt) | No             | `BUILTIN_TAG`     | Infrastructure agent       |
 | Critic-dev (imp) | No             | `BUILTIN_TAG`     | Infrastructure agent       |
-| Snapshot Grader  | No             | `BUILTIN_TAG`     | Long-running daemon        |
+| Snapshot Grader  | No             | `BUILTIN_TAG`     | Long-running grader        |
 
 ### ID Types
 

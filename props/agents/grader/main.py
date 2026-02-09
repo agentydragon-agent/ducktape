@@ -1,6 +1,6 @@
-"""Grader daemon main entry point for in-container execution.
+"""Grader main entry point for in-container execution.
 
-This is the CMD entrypoint for the daemon grader container. It:
+This is the CMD entrypoint for the grader container. It:
 1. Fetches the snapshot to /workspace
 2. Sets up pg_notify listener for grading_pending changes
 3. Runs a single persistent agent loop (sleep tool awaits notifications in-process)
@@ -26,20 +26,31 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import SystemMessage
-from props.agents.grader.drift_handler import check_grading_pending
+from props.agents.grader.drift_handler import check_all_pending, check_clustering_pending, check_grading_pending
 from props.agents.grader.notification_handler import GraderNotificationsHandler
 from props.agents.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
 from props.agents.grader.tools import (
+    AddToClusterArgs,
+    ClusterDetails,
+    ClusteringPendingIssue,
+    ClusterMemberInfo,
+    ClusterSummary,
+    CreateClusterArgs,
+    DeleteClusterArgs,
     DeleteEdgesArgs,
     FillRemainingArgs,
     FPRef,
     GTDetails,
     InsertEdgesArgs,
     IssueDetails,
+    ListClusteringPendingArgs,
+    ListClustersArgs,
     ListPendingArgs,
     LocationInfo,
     PendingEdge,
+    RemoveFromClusterArgs,
     ReportFailureArgs,
+    ShowClusterArgs,
     ShowFPArgs,
     ShowIssueArgs,
     ShowTPArgs,
@@ -57,10 +68,13 @@ from props.agents.runtime import (
 from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.models import (
+    ClusteringPending,
     FalsePositive,
     FalsePositiveOccurrenceORM,
     GradingEdge,
     GradingPending,
+    IssueCluster,
+    IssueClusterMember,
     ReportedIssue,
     ReportedIssueOccurrence,
     TruePositive,
@@ -76,17 +90,19 @@ logger = logging.getLogger(__name__)
 
 # Reminder sent when agent outputs text instead of using tools
 TEXT_OUTPUT_REMINDER = (
-    "You must use tools to grade issues. Do not output text directly. "
+    "You must use tools to grade and cluster issues. Do not output text directly. "
     "Use list_pending to see pending edges, then insert_edges or fill_remaining to grade them. "
-    "Call sleep when you believe all grading is complete."
+    "After grading, use list_clustering_pending to see issues needing clustering, "
+    "then create_cluster or add_to_cluster. "
+    "Call sleep when all grading and clustering is complete."
 )
 
 # Default workspace path
 _WORKSPACE = Path("/workspace")
 
 
-class DaemonState:
-    """Tracks daemon state for pg_notify wake/sleep coordination.
+class GraderState:
+    """Tracks grader state for pg_notify wake/sleep coordination.
 
     Shared between the sleep tool (which awaits wake_event) and the
     pg_notify listener callback (which sets it).
@@ -123,7 +139,7 @@ def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
 
 
 def _create_grader_tool_provider(
-    grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: DaemonState, db: Database
+    grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: GraderState, db: Database
 ) -> DirectToolProvider:
     """Create a tool provider with grader tools bound to the given run."""
     provider = DirectToolProvider()
@@ -316,32 +332,175 @@ def _create_grader_tool_provider(
 
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> None:
-        """Report that grading could not be completed. Terminates the daemon."""
+        """Report that grading could not be completed. Terminates the grader."""
         state.failed = True
         logger.info("Reported failure: %s", args.message)
 
     @provider.tool
     async def sleep(args: SleepArgs) -> str:
-        """Sleep until new grading work arrives.
+        """Sleep until new work arrives.
 
-        Call when all pending edges have been graded. Verifies grading_pending
-        is empty, then waits for pg_notify. Returns when new work is available.
+        Call when all pending grading edges AND clustering are complete.
+        Verifies both grading_pending and clustering_pending are empty,
+        then waits for pg_notify. Returns when new work is available.
         """
-        if check_grading_pending(snapshot_slug, db):
-            raise ValueError("There is still pending grading work. Continue grading before sleeping.")
+        grading_count = check_grading_pending(snapshot_slug, db)
+        if grading_count:
+            raise ValueError(f"There are {grading_count} pending grading edges. Continue grading before sleeping.")
+        clustering_count = check_clustering_pending(snapshot_slug, db)
+        if clustering_count:
+            raise ValueError(
+                f"There are {clustering_count} issues needing clustering. Cluster unmatched issues before sleeping."
+            )
         logger.info("Sleep requested: %s", args.summary)
         while True:
             state.wake_event.clear()
             await state.wake_event.wait()
-            if check_grading_pending(snapshot_slug, db):
+            if check_all_pending(snapshot_slug, db):
                 break
             logger.debug("Spurious wake — no pending work, going back to sleep")
-        return "Woke up — new grading work arrived."
+        return "Woke up — new work arrived."
+
+    # --- Clustering tools ---
+
+    @provider.tool
+    def list_clustering_pending(args: ListClusteringPendingArgs) -> list[ClusteringPendingIssue]:
+        """List critique issues that need clustering.
+
+        These are issues fully graded with no positive match (credit=0 everywhere)
+        and not yet assigned to any cluster.
+        """
+        with db.session() as session:
+            query = select(ClusteringPending).where(ClusteringPending.snapshot_slug == snapshot_slug)
+            if args.run:
+                query = query.where(ClusteringPending.critique_run_id == args.run)
+            rows = list(session.scalars(query))
+            return [
+                ClusteringPendingIssue(
+                    critique_run_id=r.critique_run_id,
+                    critique_issue_id=r.critique_issue_id,
+                    snapshot_slug=str(r.snapshot_slug),
+                )
+                for r in rows
+            ]
+
+    @provider.tool
+    def list_clusters(args: ListClustersArgs) -> list[ClusterSummary]:
+        """List all clusters for this snapshot."""
+        with db.session() as session:
+            clusters = (
+                session.query(IssueCluster)
+                .filter_by(snapshot_slug=snapshot_slug)
+                .order_by(IssueCluster.cluster_id)
+                .all()
+            )
+            return [
+                ClusterSummary(cluster_id=c.cluster_id, rationale=c.rationale, member_count=len(c.members))
+                for c in clusters
+            ]
+
+    @provider.tool
+    def show_cluster(args: ShowClusterArgs) -> ClusterDetails:
+        """Show full details of a cluster including all members."""
+        with db.session() as session:
+            cluster = (
+                session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug, cluster_id=args.cluster_id).first()
+            )
+            if not cluster:
+                raise ValueError(f"Cluster not found: {args.cluster_id}")
+            return ClusterDetails(
+                cluster_id=cluster.cluster_id,
+                rationale=cluster.rationale,
+                members=[
+                    ClusterMemberInfo(
+                        critique_run_id=m.critique_run_id, critique_issue_id=m.critique_issue_id, rationale=m.rationale
+                    )
+                    for m in cluster.members
+                ],
+            )
+
+    @provider.tool
+    def create_cluster(args: CreateClusterArgs) -> str:
+        """Create a new cluster with initial member issues.
+
+        Only issues with no positive grading edges can be added.
+        """
+        with db.session() as session:
+            cluster = IssueCluster(
+                snapshot_slug=snapshot_slug,
+                cluster_id=args.cluster_id,
+                rationale=args.rationale,
+                grader_run_id=grader_run_id,
+            )
+            session.add(cluster)
+            for member in args.members:
+                session.add(
+                    IssueClusterMember(
+                        snapshot_slug=snapshot_slug,
+                        cluster_id=args.cluster_id,
+                        critique_run_id=member.run,
+                        critique_issue_id=member.issue_id,
+                        rationale=member.rationale,
+                        grader_run_id=grader_run_id,
+                    )
+                )
+        return f"Created cluster '{args.cluster_id}' with {len(args.members)} members"
+
+    @provider.tool
+    def add_to_cluster(args: AddToClusterArgs) -> str:
+        """Add issues to an existing cluster."""
+        with db.session() as session:
+            cluster = (
+                session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug, cluster_id=args.cluster_id).first()
+            )
+            if not cluster:
+                raise ValueError(f"Cluster not found: {args.cluster_id}")
+            for member in args.members:
+                session.add(
+                    IssueClusterMember(
+                        snapshot_slug=snapshot_slug,
+                        cluster_id=args.cluster_id,
+                        critique_run_id=member.run,
+                        critique_issue_id=member.issue_id,
+                        rationale=member.rationale,
+                        grader_run_id=grader_run_id,
+                    )
+                )
+        return f"Added {len(args.members)} members to cluster '{args.cluster_id}'"
+
+    @provider.tool
+    def remove_from_cluster(args: RemoveFromClusterArgs) -> str:
+        """Remove an issue from a cluster. Fails if it would leave the cluster empty."""
+        with db.session() as session:
+            count = (
+                session.query(IssueClusterMember)
+                .filter_by(
+                    snapshot_slug=snapshot_slug,
+                    cluster_id=args.cluster_id,
+                    critique_run_id=args.run,
+                    critique_issue_id=args.issue_id,
+                )
+                .delete()
+            )
+            if count == 0:
+                raise ValueError(f"Member not found: {args.run}/{args.issue_id} in cluster '{args.cluster_id}'")
+        return f"Removed {args.run}/{args.issue_id} from cluster '{args.cluster_id}'"
+
+    @provider.tool
+    def delete_cluster(args: DeleteClusterArgs) -> str:
+        """Delete a cluster and all its memberships. Members become unclustered."""
+        with db.session() as session:
+            count = (
+                session.query(IssueCluster).filter_by(snapshot_slug=snapshot_slug, cluster_id=args.cluster_id).delete()
+            )
+            if count == 0:
+                raise ValueError(f"Cluster not found: {args.cluster_id}")
+        return f"Deleted cluster '{args.cluster_id}'"
 
     return provider
 
 
-async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state: DaemonState, db: Database) -> None:
+async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> None:
     """Run the grader agent loop.
 
     Runs a single persistent agent loop. The sleep tool awaits pg_notify
@@ -377,7 +536,7 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
     logger.error("Grading failed via report_failure")
 
 
-async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> None:
+async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: Database) -> None:
     """Set up pg_notify listener and run the agent loop.
 
     Waits for drift before starting the agent loop — avoids wasting an LLM
@@ -385,7 +544,7 @@ async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Datab
     is called (always a failure).  Normal operation is an infinite sleep/wake
     loop inside the agent.
     """
-    state = DaemonState(snapshot_slug)
+    state = GraderState(snapshot_slug)
 
     listener_conn = await db.config.asyncpg_connect()
     await listener_conn.add_listener(GRADING_PENDING_CHANNEL, state.notification_callback)
@@ -393,12 +552,12 @@ async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Datab
 
     try:
         # Wait for initial drift before starting the (expensive) agent loop.
-        if not check_grading_pending(snapshot_slug, db):
+        if not check_all_pending(snapshot_slug, db):
             logger.info("No pending drift yet — waiting for pg_notify")
             while True:
                 state.wake_event.clear()
                 await state.wake_event.wait()
-                if check_grading_pending(snapshot_slug, db):
+                if check_all_pending(snapshot_slug, db):
                     break
                 logger.debug("Spurious wake — still no pending work")
             logger.info("Initial drift detected, starting agent loop")
@@ -411,10 +570,10 @@ async def _run_daemon(snapshot_slug: SnapshotSlug, system_prompt: str, db: Datab
 
 
 async def main() -> int:
-    """Main entry point for daemon grader agent."""
+    """Main entry point for grader agent."""
     setup_logging()
 
-    logger.info("Grader daemon starting")
+    logger.info("Grader starting")
     db = Database.from_env()
 
     with db.session() as session:
@@ -431,9 +590,9 @@ async def main() -> int:
         "props/agents/grader/prompt.md.mako", db, helpers={"snapshot_slug": snapshot_slug}
     )
 
-    logger.info("Starting daemon loop")
-    await _run_daemon(snapshot_slug, system_prompt, db)
-    # _run_daemon only returns on report_failure
+    logger.info("Starting grader loop")
+    await _run_grader_loop(snapshot_slug, system_prompt, db)
+    # _run_grader_loop only returns on report_failure
     return 1
 
 

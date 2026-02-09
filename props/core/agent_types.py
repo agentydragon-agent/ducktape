@@ -28,7 +28,7 @@ class AgentType(StrEnum):
     """
 
     CRITIC = "critic"
-    GRADER = "grader"  # Grader daemon (grades all critiques for a snapshot)
+    GRADER = "grader"  # Grader agent (grades all critiques for a snapshot)
     CRITIC_DEV_OPTIMIZE = "critic_dev_optimize"  # Optimizes critic prompts via eval loops
     CRITIC_DEV_IMPROVE = "critic_dev_improve"  # Analyzes runs and proposes improved prompts
     FREEFORM = "freeform"  # Ad-hoc sub-agents created by other agents
@@ -46,9 +46,9 @@ class CriticTypeConfig(BaseModel):
 
 
 class GraderTypeConfig(BaseModel):
-    """Grader daemon configuration.
+    """Grader configuration.
 
-    Persistent grader that reconciles all critiques for a snapshot. This daemon:
+    Persistent grader that reconciles all critiques for a snapshot. The grader:
     - Grades ALL critiques for the snapshot (not just one)
     - Sleeps when no drift, wakes on pg_notify
     - Maintains GT context for token efficiency
@@ -57,7 +57,7 @@ class GraderTypeConfig(BaseModel):
     """
 
     agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
-    snapshot_slug: SnapshotSlug = Field(description="Snapshot this daemon is responsible for")
+    snapshot_slug: SnapshotSlug = Field(description="Snapshot this grader is responsible for")
 
 
 class FreeformTypeConfig(BaseModel):
