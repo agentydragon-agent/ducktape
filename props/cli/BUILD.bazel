@@ -66,37 +66,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "cmd_gt",
-    srcs = ["cmd_gt.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:ids",
-        "//props/db:database",
-        "//props/db/sync:export",
-        "@pypi//rich",
-        "@pypi//typer_slim",
-    ],
-)
-
-py_library(
-    name = "cmd_snapshot",
-    srcs = ["cmd_snapshot.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        ":common_options",
-        "//cli_util:decorators",
-        "//props/core:ids",
-        "//props/db:database",
-        "//props/db:models",
-        "//props/db/sync:export",
-        "@pypi//typer_di",
-        "@pypi//typer_slim",
-    ],
-)
-
 # =============================================================================
 # Main entry point
 # =============================================================================
@@ -109,8 +78,6 @@ py_library(
     deps = [
         ":cmd_db",
         ":cmd_gepa",
-        ":cmd_gt",
-        ":cmd_snapshot",
         "//cli_util:logging",
         "//props/db:database",
         "@pypi//rich",
