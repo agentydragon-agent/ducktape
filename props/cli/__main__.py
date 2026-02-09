@@ -14,8 +14,6 @@ from typer_di import TyperDI
 
 from cli_util.logging import LogLevel, make_logging_callback
 from props.cli.cmd_db import db_app
-from props.cli.cmd_gt import gt_app
-from props.cli.cmd_snapshot import snapshot_app
 from props.db.database import Database
 
 logger = logging.getLogger(__name__)
@@ -24,8 +22,6 @@ app = TyperDI(help="props — properties tooling", add_completion=False)
 
 # Subcommand groups
 app.add_typer(db_app, name="db")
-app.add_typer(gt_app, name="gt")
-app.add_typer(snapshot_app, name="snapshot")
 
 # Configure logging via shared callback (default: WARNING level for props)
 # Then add database initialization on top
