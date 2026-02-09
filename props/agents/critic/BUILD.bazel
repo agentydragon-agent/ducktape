@@ -16,7 +16,7 @@ The container runs an agent loop that:
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files(
@@ -38,8 +38,9 @@ py_library(
         "//props/agents/critic/variants:flag_propagation.md",
         "//props/agents/critic/variants:high_recall_critic.md",
         "//props/agents/critic/variants:verbose_docs.md",
-        "//props/agents/docs:database_access.md",
         "//props/agents/docs:db/critiques.md.mako",
+        "//props/agents/docs:source_inspection.md.mako",
+        "//props/agents/docs:system_access.md",
     ],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
@@ -89,6 +90,11 @@ py_image_layer(
     name = "layers",
     binary = ":critic_bin",
     visibility = ["//props:__subpackages__"],
+)
+
+py_python3_symlink(
+    name = "python3_symlink",
+    binary_name = "critic_bin",
 )
 
 # =============================================================================
@@ -162,11 +168,14 @@ docker_py_test(
         ":conftest",
         ":main",
         "//agent_core/testing:responses",
+        "//mcp_infra/exec:matchers",
         "//props:conftest",
+        "//props/agents/critic/testing:mocks",
         "//props/core:oci_utils",
         "//props/db:database",
         "//props/db:models",
         "//props/testing:constants",
+        "@pypi//pyhamcrest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -181,8 +190,11 @@ oci_image(
     name = "image",
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("critic_bin"),
-    env = py_image_env(),
-    tars = [":layers"],
+    env = py_image_env(binary_name = "critic_bin"),
+    tars = [
+        ":layers",
+        ":python3_symlink",
+    ],
     visibility = ["//visibility:public"],
     workdir = "/workspace",
 )

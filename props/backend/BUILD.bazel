@@ -6,16 +6,8 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
-# NOTE: No aggregator target - use specific per-file targets
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-#
-# Per-file targets in this directory:
-#   :app, :auth, :cli, :export_schema
-# Route targets in routes/:
-#   //props/backend/routes:agent_definitions, :ground_truth, :llm, :registry, :runs, :stats
-
 # =============================================================================
-# Per-file targets
+# Library targets
 # =============================================================================
 
 py_library(

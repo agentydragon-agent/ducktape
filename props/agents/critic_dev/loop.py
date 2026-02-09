@@ -24,6 +24,7 @@ from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import DefinitionId
 from props.core.models.examples import ExampleSpec
 from props.db.database import Database
+from props.db.snapshot_io import fetch_snapshot_to_path
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,13 @@ class WaitUntilGradedToolArgs(OpenAIStrictModeBaseModel):
 
     critic_run_id: UUID = Field(description="agent_run_id of the critic run to wait for grading")
     timeout_seconds: int = Field(default=300, ge=10, le=3600, description="Max time to wait (default 300s)")
+
+
+class FetchSnapshotArgs(OpenAIStrictModeBaseModel):
+    """Arguments for fetch_snapshot tool."""
+
+    snapshot_slug: str = Field(description="Snapshot slug (e.g., 'ducktape/2025-11-26-00')")
+    path: str = Field(default="/workspace", description="Directory to extract snapshot into")
 
 
 # =============================================================================
@@ -147,5 +155,16 @@ def create_tool_provider(
         )
         logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")
         return response
+
+    @provider.tool
+    def fetch_snapshot(args: FetchSnapshotArgs) -> str:
+        """Fetch a snapshot from the database and extract it to a local directory.
+
+        Use this to inspect snapshot source code and ground truth context.
+        """
+        dest = Path(args.path)
+        fetch_snapshot_to_path(args.snapshot_slug, dest, db)
+        logger.info("Fetched snapshot %s to %s", args.snapshot_slug, dest)
+        return f"Fetched snapshot {args.snapshot_slug} to {dest}"
 
     return provider

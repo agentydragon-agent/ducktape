@@ -1,9 +1,6 @@
 # gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# Gazelle will create per-file py_library targets
-# Subdirectories (cli/, planners/) will get their own BUILD files
-
 py_binary(
     name = "gmail_archiver",
     srcs = ["__main__.py"],
@@ -35,7 +32,6 @@ py_binary(
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
-    # deps will be filled by Gazelle
 )
 
 py_library(

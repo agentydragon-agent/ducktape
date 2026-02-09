@@ -1,7 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-# Gazelle will create per-file py_library targets (server, launcher, conftest)
-
 py_binary(
     name = "gitea_mirror_launcher",
     srcs = ["launcher.py"],

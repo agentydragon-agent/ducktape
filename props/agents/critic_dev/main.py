@@ -334,9 +334,9 @@ class ImprovementReminderHandler(BaseHandler):
             [
                 "",
                 "Next steps:",
-                "1. Create improved definition and call create_definition",
-                "2. Run evals on your definition with run_critic",
-                "3. Query recall views for grading results (handled by snapshot grader daemons)",
+                "1. Build a custom critic image with crane (overlay main.py, push by digest)",
+                "2. Run evals on your definition with run_critic (pass the digest as definition_id)",
+                "3. Wait for grading with wait_until_graded_tool, then check recall views",
                 "4. Iterate: refine definition, re-eval, until you beat baseline",
                 "",
                 "Do NOT send text messages - execute your plan with tools.",

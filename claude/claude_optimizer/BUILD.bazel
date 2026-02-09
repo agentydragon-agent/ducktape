@@ -1,8 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
-# NOTE: No aggregator target - use specific per-file targets like :generic_graders, :scoresheet
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 py_library(
     name = "generic_graders",
     srcs = ["generic_graders.py"],

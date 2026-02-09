@@ -1,7 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-# Gazelle-managed per-file py_library and py_binary targets
-
 py_library(
     name = "cli",
     srcs = ["cli.py"],

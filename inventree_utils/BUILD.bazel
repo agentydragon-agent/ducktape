@@ -3,8 +3,6 @@
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-# Gazelle manages beautifier/ subpackage
-
 # Samplebooks import (standalone script)
 py_library(
     name = "samplebooks_parts_data",

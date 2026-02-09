@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 
 from props.agents.critic.exceptions import CriticExecutionError
+from props.agents.critic_dev.shared import TargetMetric
 from props.backend.auth import (
     AgentDb,
     CallerType,
@@ -47,8 +48,10 @@ from props.db.models import (
     GradingTarget,
     LLMRequest,
     LLMRunCost,
+    RecallByDefinitionSplitKind,
     Snapshot,
 )
+from props.db.query_builders import query_recall_by_example
 from props.orchestration.agent_registry import AgentRegistry, BudgetExceededError, ImageResolutionError
 
 router = APIRouter()
@@ -548,6 +551,161 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry, db:
     except Exception:
         logger.exception(f"[Job {job.job_id}] Batch failed")
         job.status = JobStatus.FAILED
+
+
+# --- Optimize / Improve Endpoints ---
+
+
+class OptimizeRunRequest(BaseModel):
+    target_metric: TargetMetric = Field(description="Validation metric mode: whole-repo or targeted")
+    budget_usd: float = Field(gt=0, description="Dollar budget for optimization")
+    optimizer_model: str = Field(description="Model for the optimizer agent")
+    critic_model: str = Field(description="Model for critic evaluations")
+    timeout_seconds: int = Field(ge=60, le=86400, description="Container timeout in seconds")
+
+
+class OptimizeRunResponse(BaseModel):
+    agent_run_id: UUID
+
+
+@router.post("/optimize", dependencies=[Depends(require_admin_access)])
+async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> OptimizeRunResponse:
+    """Launch a critic developer optimize agent."""
+    registry = get_registry(request)
+    run_id = await registry.run_critic_dev_optimize(
+        budget=body.budget_usd,
+        optimizer_model=body.optimizer_model,
+        critic_model=body.critic_model,
+        target_metric=body.target_metric,
+        timeout_seconds=body.timeout_seconds,
+    )
+    return OptimizeRunResponse(agent_run_id=run_id)
+
+
+class ImproveRunRequest(BaseModel):
+    n_examples: int = Field(default=10, ge=1, le=100, description="Number of Pareto-optimal training examples")
+    budget_usd: float = Field(gt=0, description="Dollar budget for improvement")
+    improvement_model: str = Field(description="Model for the improvement agent")
+    critic_model: str = Field(description="Model for critic evaluations")
+    timeout_seconds: int = Field(ge=60, le=86400, description="Container timeout in seconds")
+    baseline_image_digests: list[str] | None = Field(
+        default=None, description="Baseline definitions to improve. If None, auto-selects best by validation LCB."
+    )
+    examples: list[ExampleSpec] | None = Field(
+        default=None, description="Training examples. If None, auto-selects Pareto-optimal from best definition."
+    )
+
+
+class ImproveRunResponse(BaseModel):
+    agent_run_id: UUID
+    definition_id: str = Field(description="Selected definition (provided or auto-selected)")
+    n_examples_selected: int
+
+
+@router.post("/improve", dependencies=[Depends(require_admin_access)])
+async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_db: AdminDb) -> ImproveRunResponse:
+    """Launch a critic developer improve agent.
+
+    When baseline_image_digests and examples are provided, uses them directly.
+    Otherwise, auto-selects the best critic definition (by validation LCB) and
+    top Pareto training examples.
+    """
+    registry = get_registry(request)
+
+    if body.baseline_image_digests and body.examples:
+        # Use provided values directly
+        definition_id = body.baseline_image_digests[0]
+        allowed_examples = body.examples
+    else:
+        # Auto-select definition and examples
+        with admin_db.session() as session:
+            # Find definitions with enough graded training examples
+            critic_runs = (
+                session.query(AgentRun)
+                .filter(
+                    AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
+                    AgentRun.status == AgentRunStatus.EXITED,
+                )
+                .all()
+            )
+
+            definition_to_examples: dict[str, set[ExampleSpec]] = {}
+            for cr in critic_runs:
+                critic_config = cr.critic_config()
+                example_spec = critic_config.example
+                snapshot = session.query(Snapshot).filter_by(slug=example_spec.snapshot_slug).first()
+                if not snapshot or snapshot.split != Split.TRAIN:
+                    continue
+                has_grader = (
+                    session.query(AgentRun)
+                    .filter(
+                        AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                        AgentRun.type_config["graded_agent_run_id"].astext == str(cr.agent_run_id),
+                    )
+                    .first()
+                )
+                if has_grader:
+                    definition_to_examples.setdefault(cr.image_digest, set()).add(example_spec)
+
+            eligible = [
+                (def_id, len(examples))
+                for def_id, examples in definition_to_examples.items()
+                if len(examples) >= body.n_examples
+            ]
+            if not eligible:
+                raise HTTPException(
+                    status_code=422, detail=f"No definitions have {body.n_examples}+ training examples with grader runs"
+                )
+
+            eligible_ids = {d for d, _ in eligible}
+
+            # Pick best by validation LCB (whole-snapshot)
+            valid_stats = (
+                session.query(RecallByDefinitionSplitKind)
+                .filter(
+                    RecallByDefinitionSplitKind.split == Split.VALID,
+                    RecallByDefinitionSplitKind.example_kind == ExampleKind.WHOLE_SNAPSHOT,
+                    RecallByDefinitionSplitKind.critic_image_digest.in_(eligible_ids),
+                )
+                .all()
+            )
+            with_runs = [
+                s for s in valid_stats if s.status_counts and s.status_counts.get(AgentRunStatus.EXITED, 0) > 0
+            ]
+            if not with_runs:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"No definitions with {body.n_examples}+ training examples have validation results",
+                )
+
+            def get_lcb(s: RecallByDefinitionSplitKind) -> float:
+                return s.recall_stats.lcb95 if s.recall_stats and s.recall_stats.lcb95 is not None else -1.0
+
+            best = max(with_runs, key=get_lcb)
+            definition_id = best.critic_image_digest
+
+            # Select Pareto-optimal training examples
+            recall_rows = query_recall_by_example(session, split=Split.TRAIN, critic_image_digest=definition_id)
+            if not recall_rows:
+                raise HTTPException(status_code=422, detail=f"No grader runs found for definition {definition_id[:16]}")
+
+            sorted_examples = sorted(
+                [(row.example, row.recall) for row in recall_rows], key=lambda x: x[1], reverse=True
+            )
+            allowed_examples = [ex for ex, _ in sorted_examples[: body.n_examples]]
+
+    run_id = await registry.run_critic_dev_improve(
+        examples=allowed_examples,
+        baseline_image_digests=body.baseline_image_digests or [definition_id],
+        budget_usd=body.budget_usd,
+        improvement_model=body.improvement_model,
+        critic_model=body.critic_model,
+        timeout_seconds=body.timeout_seconds,
+    )
+
+    return ImproveRunResponse(
+        agent_run_id=run_id, definition_id=definition_id, n_examples_selected=len(allowed_examples)
+    )
 
 
 # --- Critic Run Endpoints ---

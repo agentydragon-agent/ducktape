@@ -27,7 +27,7 @@ class SimpleData(BaseModel):
     value: int
 
 
-class TestTable(Base):
+class PydanticNullTable(Base):
     """Minimal test table with PydanticColumn."""
 
     __tablename__ = "test_pydantic_null"
@@ -64,11 +64,11 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
 
         # Insert row with JSON null (explicit NULL value gets serialized to 'null'::jsonb)
         # This simulates what happens in two-phase commit: GraderRun(output=None)
-        test_obj = TestTable(id=2, data=None)
+        test_obj = PydanticNullTable(id=2, data=None)
         session.add(test_obj)
 
         # Insert row with actual data
-        test_obj_with_data = TestTable(id=3, data=SimpleData(value=42))
+        test_obj_with_data = PydanticNullTable(id=3, data=SimpleData(value=42))
         session.add(test_obj_with_data)
 
         session.commit()
@@ -98,7 +98,7 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
     # THE FOOTGUN: .isnot(None) doesn't filter out JSON null
     with db.session() as session:
         # Query with .isnot(None) - should exclude NULL values, right?
-        stmt = select(TestTable).where(TestTable.data.isnot(None))
+        stmt = select(PydanticNullTable).where(PydanticNullTable.data.isnot(None))
         results = session.execute(stmt).scalars().all()
 
         # Expected: Only row 3 (with real data)
@@ -113,8 +113,8 @@ def test_sql_null_vs_json_null(test_pydantic_column_db):
     # FIX: Add explicit JSON null filter
     with db.session() as session:
         stmt = (
-            select(TestTable)
-            .where(TestTable.data.isnot(None))  # Excludes SQL NULL
+            select(PydanticNullTable)
+            .where(PydanticNullTable.data.isnot(None))  # Excludes SQL NULL
             .where(text("data != 'null'::jsonb"))  # Excludes JSON null
         )
         results = session.execute(stmt).scalars().all()
@@ -135,13 +135,13 @@ def test_defensive_none_check(test_pydantic_column_db):
     db = test_pydantic_column_db
     with db.session() as session:
         # Insert JSON null row
-        test_obj = TestTable(id=1, data=None)
+        test_obj = PydanticNullTable(id=1, data=None)
         session.add(test_obj)
         session.commit()
 
     with db.session() as session:
         # Query with .isnot(None) - but JSON null still passes!
-        stmt = select(TestTable).where(TestTable.data.isnot(None))
+        stmt = select(PydanticNullTable).where(PydanticNullTable.data.isnot(None))
         result = session.execute(stmt).scalar_one()
 
         # Without defensive check, this would crash:
@@ -154,7 +154,7 @@ def test_defensive_none_check(test_pydantic_column_db):
 def test_what_does_setting_none_create(test_pydantic_column_db):
     """Clarify what happens when you set a PydanticColumn field to None.
 
-    KEY QUESTION: Does TestTable(data=None) create SQL NULL or JSON null?
+    KEY QUESTION: Does PydanticNullTable(data=None) create SQL NULL or JSON null?
     ANSWER: It creates JSON null ('null'::jsonb), NOT SQL NULL.
 
     This is the source of confusion! When you write:
@@ -165,7 +165,7 @@ def test_what_does_setting_none_create(test_pydantic_column_db):
     db = test_pydantic_column_db
     with db.session() as session:
         # Set field to None - what gets stored?
-        obj = TestTable(id=1, data=None)
+        obj = PydanticNullTable(id=1, data=None)
         session.add(obj)
         session.commit()
 
@@ -176,18 +176,18 @@ def test_what_does_setting_none_create(test_pydantic_column_db):
         ).fetchone()
 
         assert result is not None
-        print("\nWhen you do: TestTable(data=None)")
+        print("\nWhen you do: PydanticNullTable(data=None)")
         print(f"  data IS NULL (SQL NULL): {result.is_sql_null}")
         print(f"  data::text: {result.data_text}")
 
         # RESULT: SQL NULL = False, data::text = 'null'
-        # So TestTable(data=None) creates JSON null, NOT SQL NULL!
+        # So PydanticNullTable(data=None) creates JSON null, NOT SQL NULL!
         assert result.is_sql_null is False  # Not SQL NULL!
         assert result.data_text == "null"  # JSON null string
 
     # When you query it back, you get Python None
     with db.session() as session:
-        loaded_obj = session.get(TestTable, 1)
+        loaded_obj = session.get(PydanticNullTable, 1)
         assert loaded_obj is not None
         assert loaded_obj.data is None  # PydanticColumn deserializes JSON null → Python None
 
@@ -220,7 +220,7 @@ def test_how_to_create_sql_null(test_pydantic_column_db):
 
     # ORM also sees it as None
     with db.session() as session:
-        obj = session.get(TestTable, 1)
+        obj = session.get(PydanticNullTable, 1)
         assert obj is not None
         assert obj.data is None
 
@@ -233,15 +233,15 @@ def test_proper_fix_with_json_filter(test_pydantic_column_db):
     with db.session() as session:
         # Insert various states
         session.execute(text("INSERT INTO test_pydantic_null (id) VALUES (1)"))  # SQL NULL
-        session.add(TestTable(id=2, data=None))  # JSON null
-        session.add(TestTable(id=3, data=SimpleData(value=42)))  # Real data
+        session.add(PydanticNullTable(id=2, data=None))  # JSON null
+        session.add(PydanticNullTable(id=3, data=SimpleData(value=42)))  # Real data
         session.commit()
 
     with db.session() as session:
         # Proper query: exclude both SQL NULL and JSON null
         stmt = (
-            select(TestTable)
-            .where(TestTable.data.isnot(None))  # SQL NULL
+            select(PydanticNullTable)
+            .where(PydanticNullTable.data.isnot(None))  # SQL NULL
             .where(text("data != 'null'::jsonb"))  # JSON null
         )
         results = session.execute(stmt).scalars().all()

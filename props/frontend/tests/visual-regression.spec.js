@@ -15,7 +15,9 @@
  * - Chrome flags for deterministic font rendering
  * - Hermetic Chromium via rules_playwright
  *
- * To update baselines: UPDATE_BASELINES=1 bazel test //props/frontend:visual_test
+ * To update baselines: run the test, then copy *-actual.png from test.outputs/ to
+ * tests/visual-regression.spec.ts-snapshots/ (renaming -actual to -chromium-linux).
+ * Actual screenshots are always saved to TEST_UNDECLARED_OUTPUTS_DIR.
  */
 
 import puppeteer from "puppeteer";
@@ -49,6 +51,18 @@ const scenarios = [
 
   // LLM requests list with expandable details and errors
   { page: "LLMRequests" },
+
+  // Distribution chart - recall histogram
+  { page: "DistributionChartRecall" },
+
+  // Distribution chart - TP count histogram
+  { page: "DistributionChartTP" },
+
+  // Coverage heatmap
+  { page: "CoverageHeatmap" },
+
+  // Occurrence stats table
+  { page: "OccurrenceStatsTable" },
 ];
 
 const CONTENT_TYPES = {
@@ -103,6 +117,9 @@ function compareBaseline(name, screenshot) {
     mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
+  // Always save actual screenshot for easy baseline extraction
+  writeFileSync(join(OUTPUT_DIR, `${name}-actual.png`), screenshot);
+
   // Update mode: always overwrite baselines
   if (UPDATE_BASELINES) {
     console.log(`  Updating baseline: ${name}`);
@@ -129,7 +146,6 @@ function compareBaseline(name, screenshot) {
     console.error(
       `  ✗ Dimensions differ: baseline=${baseline.width}x${baseline.height}, actual=${actual.width}x${actual.height}`
     );
-    writeFileSync(join(OUTPUT_DIR, `${name}-actual.png`), screenshot);
     return { passed: false, reason: "dimensions" };
   }
 
@@ -139,7 +155,6 @@ function compareBaseline(name, screenshot) {
   });
 
   if (numDiffPixels > 0) {
-    writeFileSync(join(OUTPUT_DIR, `${name}-actual.png`), screenshot);
     writeFileSync(join(OUTPUT_DIR, `${name}-diff.png`), PNG.sync.write(diff));
     console.error(`  ✗ ${numDiffPixels} pixels differ`);
     return { passed: false, reason: "pixels", diffCount: numDiffPixels };

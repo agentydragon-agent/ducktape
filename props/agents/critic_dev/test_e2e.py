@@ -7,11 +7,11 @@ Tests the orchestration workflow:
 4. Optimizer waits for grading and reports success
 
 Custom image flow:
-1. Create custom agent.md content with random token
-2. Use crane push to push OCI layout to registry proxy
-3. Proxy automatically creates agent_definitions row
-4. Run the newly created agent image via run_critic tool
-5. Verify new agent got the custom agent.md in its system message
+1. Pull built-in critic image via crane
+2. Replace entrypoint with custom Python script (appended layer + CMD mutate)
+3. Push modified image to registry proxy
+4. Run the custom image — script writes critique data directly to DB
+5. Grader detects drift and fills grading edges
 
 Uses the in-container architecture with:
 - FakeOpenAI server backed by CriticDevMock/CriticMock/GraderMock
@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import secrets
+import textwrap
 
 import pytest
 import pytest_bazel
@@ -46,7 +46,7 @@ from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
-from props.db.models import AgentRun, AgentRunStatus
+from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_message_text
 
@@ -157,117 +157,136 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
                 await grader_task
 
 
+# Custom Python script that replaces the critic's main.py in the image.
+# Bypasses the LLM agent loop: connects to the DB directly, inserts one
+# reported issue + occurrence, and exits. This creates grading drift that
+# the grader daemon picks up.
+#
+# Overlaid at the runfiles path so the existing entrypoint launcher
+# (critic_bin) runs this instead of the original main.py.
+_CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
+    from __future__ import annotations
+
+    import asyncio
+    import sys
+
+    from props.agents.runtime import get_current_agent_run_id
+    from props.db.database import Database
+    from props.db.models import ReportedIssue, ReportedIssueOccurrence
+    from props.db.snapshots import DBLocationAnchor
+
+
+    async def main() -> int:
+        db = Database.from_env()
+
+        with db.session() as session:
+            agent_run_id = get_current_agent_run_id(session)
+            print(f"Custom critic running as {agent_run_id}")
+
+        with db.session() as session:
+            agent_run_id = get_current_agent_run_id(session)
+            issue = ReportedIssue(
+                agent_run_id=agent_run_id,
+                issue_id="custom-test-issue",
+                rationale="Test issue from custom critic image",
+            )
+            session.add(issue)
+
+        with db.session() as session:
+            agent_run_id = get_current_agent_run_id(session)
+            occ = ReportedIssueOccurrence(
+                agent_run_id=agent_run_id,
+                reported_issue_id="custom-test-issue",
+                locations=[DBLocationAnchor(file="test.py", start_line=1, end_line=5)],
+            )
+            session.add(occ)
+
+        print("Custom critic completed: 1 issue, 1 occurrence")
+        return 0
+
+
+    if __name__ == "__main__":
+        sys.exit(asyncio.run(main()))
+""")
+
+
 @pytest.mark.timeout(300)
 @pytest.mark.slow
-async def test_po_creates_custom_critic_with_token(
+async def test_po_creates_custom_critic_image(
     synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
-    """Test full custom image flow: PO creates critic image, critic verifies prompt token.
+    """Test full custom image flow: pull → overlay main.py → push → run → grade.
 
-    This test verifies the complete workflow:
-    1. Optimizer creates a custom agent.md with a unique verification token
-    2. Optimizer uses crane push to push OCI layout to registry proxy
-    3. Optimizer calls run_critic with the new custom image
-    4. Critic receives system prompt and asserts it contains the token
-    5. Grading completes
+    Exercises the real crane workflow:
+    1. Optimizer writes custom Python script to workspace
+    2. Appends a layer that overlays main.py at the runfiles path
+    3. Pushes the modified image by digest to the registry proxy
+    4. Runs the custom image — the overlaid main.py writes critique data directly to DB
+    5. Grader daemon detects drift and fills grading edges
+    6. Optimizer's wait_until_graded returns successfully
+
+    The custom critic bypasses the LLM entirely — it directly inserts a
+    reported_issue + occurrence via SQLAlchemy, proving the container has
+    working DB credentials and the full OCI pull/append/push/run pipeline works.
     """
     snapshot_slug = SnapshotSlug(test_snapshot)
-    verification_token = f"VERIFY_{secrets.token_hex(8)}"
 
     @CriticDevMock.mock()
     def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
 
-        # Create custom critic directory with agent.md containing the random token
-        agent_md_content = f"""# Custom Critic with Verification Token
-
-You are a code critic. VERIFICATION_TOKEN: {verification_token}
-
-Find issues in the code and report them.
-"""
+        # Write the custom critic script into the workspace
         result = yield from m.exec_roundtrip(
-            [
-                "sh",
-                "-c",
-                f"""mkdir -p /workspace/custom_critic && \
-cat > /workspace/custom_critic/agent.md << 'AGENT_EOF'
-{agent_md_content}
-AGENT_EOF
-""",
-            ],
-            timeout_ms=15000,
+            ["sh", "-c", f"cat > /workspace/custom_main.py << 'PYEOF'\n{_CUSTOM_CRITIC_SCRIPT}PYEOF"], timeout_ms=15000
         )
         assert_that(result, exited_successfully())
 
-        # Push the custom image via crane to the registry proxy
-        result = yield from m.exec_roundtrip(
-            [
-                "sh",
-                "-c",
-                "crane push /workspace/custom_critic/ ${PROPS_BACKEND_URL#http://}/custom_critic:latest --insecure",
-            ],
-            timeout_ms=60000,
+        # Build custom image: overlay main.py at the runfiles path, push by digest.
+        # The aspect_py_binary "critic_bin" stores main.py under its runfiles tree.
+        # Appending a layer with the same path shadows the original file.
+        build_cmd = (
+            "set -e && "
+            "REGISTRY=$(echo $PROPS_BACKEND_URL | sed 's|https\\?://||') && "
+            "MAIN_PY=props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/main.py && "
+            "mkdir -p /tmp/layer/$(dirname $MAIN_PY) && "
+            "cp /workspace/custom_main.py /tmp/layer/$MAIN_PY && "
+            "tar -cf /tmp/layer.tar -C /tmp/layer . && "
+            "crane mutate $REGISTRY/critic:latest"
+            " --append /tmp/layer.tar"
+            " -o /tmp/image.tar"
+            " --insecure && "
+            "DIGEST=$(crane digest --tarball /tmp/image.tar) && "
+            "crane push /tmp/image.tar $REGISTRY/critic@$DIGEST --insecure && "
+            "echo $DIGEST"
         )
-        assert_that(result, exited_successfully())
-        logger.info(f"crane push output: {result.stdout}")
-
-        # Extract digest from the created agent definition
-        result = yield from m.exec_roundtrip(
-            ["psql", "-t", "-c", "SELECT digest FROM agent_definitions ORDER BY created_at DESC LIMIT 1"],
-            timeout_ms=10000,
-        )
+        result = yield from m.exec_roundtrip(["sh", "-c", build_cmd], timeout_ms=120000)
         assert_that(result, exited_successfully())
         stdout = result.stdout if isinstance(result.stdout, str) else result.stdout.truncated_text
-        new_digest = stdout.strip()
-        logger.info(f"Created custom critic with digest: {new_digest}")
+        new_digest = stdout.strip().split("\n")[-1]  # Last line is the digest
+        logger.info(f"Custom image digest: {new_digest}")
 
-        # Call run_critic with the CUSTOM critic image (DirectToolProvider)
+        # Run the custom critic image
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
         run_critic_args = RunCriticToolArgs(
-            definition_id=new_digest,  # Use the custom image!
-            example=example,
-            timeout_seconds=120,
-            budget_usd=1.0,
+            definition_id=new_digest, example=example, timeout_seconds=120, budget_usd=1.0
         )
-
         call = m.tool_call("run_critic", run_critic_args)
         run_critic_output: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
-
         critic_run_id = run_critic_output.critic_run_id
-        logger.info(f"PO got critic_run_id: {critic_run_id}")
+        logger.info(f"Custom critic run: {critic_run_id}")
 
-        # Wait for grading (polls database directly inside container)
+        # Wait for grading to complete
         wait_args = WaitUntilGradedToolArgs(critic_run_id=str(critic_run_id), timeout_seconds=60)
         wait_call = m.tool_call("wait_until_graded_tool", wait_args)
         wait_output: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
-        logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
+        logger.info(f"Grading complete: total_credit={wait_output.total_credit}")
 
-        # Report success
         yield m.report_success()
-
-    @CriticMock.mock()
-    def critic_mock(m: CriticMock) -> PlayGen:
-        # Capture first request to verify system message contains the token
-        first_request = yield None
-
-        # Verify the system message contains our expected token
-        system_text = get_system_message_text(first_request)
-        assert verification_token in system_text, (
-            f"Expected token '{verification_token}' not found in system message. "
-            f"System message starts with: {system_text[:200]}..."
-        )
-        logger.info(f"Critic received system message with expected token: {verification_token}")
-
-        # Submit zero issues
-        yield m.submit(issues_count=0, summary="Custom critic completed")
 
     grader_mock = make_orchestration_grader_mock()
 
-    mocks = {
-        ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,
-        ORCHESTRATION_CRITIC_MODEL: critic_mock,
-        ORCHESTRATION_GRADER_MODEL: grader_mock,
-    }
+    # No critic mock needed — custom critic bypasses the LLM entirely
+    mocks = {ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock, ORCHESTRATION_GRADER_MODEL: grader_mock}
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         grader_task = asyncio.create_task(
             stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
@@ -286,6 +305,15 @@ AGENT_EOF
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
                 assert optimizer_run.status == AgentRunStatus.EXITED
+
+                # Verify the custom critic created its issue
+                issues = session.query(ReportedIssue).filter_by(issue_id="custom-test-issue").all()
+                assert len(issues) == 1, f"Expected 1 custom issue, got {len(issues)}"
+
+                # Verify grading edges were created (grader processed the drift)
+                critic_run_id = issues[0].agent_run_id
+                edges = session.query(GradingEdge).filter_by(critique_run_id=critic_run_id).all()
+                assert len(edges) > 0, "Expected grading edges for the custom critic run"
 
         finally:
             grader_task.cancel()

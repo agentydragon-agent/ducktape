@@ -39,5 +39,4 @@
 - Configure Alembic properly for direct CLI migration commands (`alembic upgrade head`)
 - Need sane story for applying migrations without full `db recreate`
 - Consolidate shared envrc and directory structure across workspace members
-- Consider whether CLI stats command should be deprecated in favor of frontend dashboard
 - Add timeout warning handler for agents: send warning messages when running out of time (e.g., "5 minutes remaining"). Could use `created_at` + `timeout_seconds` to calculate remaining time and inject reminder messages via agent communication channel

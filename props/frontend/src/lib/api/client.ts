@@ -251,3 +251,45 @@ export async function fetchLLMRequests(runId: string) {
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch LLM requests"));
   return data;
 }
+
+// --- Stats: occurrence stats, distributions, coverage ---
+
+export type OccurrenceStatsRow = components["schemas"]["OccurrenceStatsRow"];
+export type OccurrenceStatsResponse = components["schemas"]["OccurrenceStatsResponse"];
+export type DistributionsResponse = components["schemas"]["DistributionsResponse"];
+export type CoverageResponse = components["schemas"]["CoverageResponse"];
+export type CoverageExample = components["schemas"]["CoverageExample"];
+export type CoverageDefinition = components["schemas"]["CoverageDefinition"];
+export type CoverageCell = components["schemas"]["CoverageCell"];
+
+export async function fetchOccurrenceStats(snapshotSlug?: string, split?: Split) {
+  const { data, error } = await api.GET("/api/stats/occurrences", {
+    params: {
+      query: {
+        limit: 500,
+        sort_by: "mean_credit",
+        sort_dir: "asc",
+        ...(snapshotSlug ? { snapshot_slug: snapshotSlug } : {}),
+        ...(split ? { split } : {}),
+      },
+    },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch occurrence stats"));
+  return data;
+}
+
+export async function fetchDistributions(split: Split) {
+  const { data, error } = await api.GET("/api/stats/distributions", {
+    params: { query: { split } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch distributions"));
+  return data;
+}
+
+export async function fetchCoverage(split: Split, limitDefinitions?: number) {
+  const { data, error } = await api.GET("/api/stats/coverage", {
+    params: { query: { split, ...(limitDefinitions ? { limit_definitions: limitDefinitions } : {}) } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch coverage"));
+  return data;
+}

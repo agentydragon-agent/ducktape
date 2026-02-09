@@ -4,9 +4,6 @@ load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_testonly = True)
 
-# NOTE: No aggregator target - use specific per-file targets like :db, :e2e, :ground_truth, etc.
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 py_library(
     name = "db",
     srcs = ["db.py"],

@@ -1,8 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 
-# NOTE: No aggregator target - use specific per-file targets like :ultra_long_cot, :ultra_long_cot_o4
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 py_binary(
     name = "ultra_long_cot",
     srcs = ["ultra_long_cot.py"],

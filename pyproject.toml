@@ -68,7 +68,7 @@ dependencies = [
     # Visualization
     "plotnine>=0.13.0",
     "matplotlib",
-    "plotext>=5.2.0",
+
 
     # Jupyter
     "ipykernel>=6",

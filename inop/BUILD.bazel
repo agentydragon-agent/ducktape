@@ -12,11 +12,6 @@ load("//tools/testing:docker.bzl", "docker_py_test")
 # help because the error occurs during module discovery, not import following.
 # See: https://github.com/python/mypy/issues/8944
 
-# Gazelle manages grading/ and runners/ subpackages
-
-# NOTE: No aggregator target - use specific per-file targets like :config, :model_factory, etc.
-# This is the Gazelle-compatible pattern (python_generation_mode = file)
-
 docker_py_test(
     name = "test_optimizer_two_iters",
     srcs = ["test_optimizer_two_iters.py"],

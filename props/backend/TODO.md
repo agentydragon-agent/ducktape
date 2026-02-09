@@ -50,11 +50,6 @@
 
 ## Future
 
-- [ ] **Ground truth update workflow**
-  - BUG: Staleness check marks everything as stale (compares wrong fields)
-  - Fix: Compare only TP/FP IDs, rationales, locations - not `critic_scopes_expected_to_recall`
-  - Then: `/api/stats/stale-runs` endpoint, dashboard indicator, regrade button
-
 - [ ] **Definitions browser page**
   - Filter by agent type
   - View definition details (tarball contents)

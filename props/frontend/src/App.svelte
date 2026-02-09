@@ -113,7 +113,13 @@
     <div class="bg-white rounded-lg shadow-md p-8 max-w-md w-full">
       <h1 class="text-xl font-bold mb-2">Props</h1>
       <p class="text-gray-600 text-sm mb-4">Paste the admin token from the backend console output to sign in.</p>
-      <form on:submit|preventDefault={handleTokenSubmit} class="flex gap-2">
+      <form
+        onsubmit={(e: SubmitEvent) => {
+          e.preventDefault();
+          handleTokenSubmit();
+        }}
+        class="flex gap-2"
+      >
         <input
           type="text"
           bind:value={tokenInput}

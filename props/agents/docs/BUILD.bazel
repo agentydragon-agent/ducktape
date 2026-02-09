@@ -1,10 +1,7 @@
-# NOTE: No aggregator target - use specific per-file targets like
-# :database_access.md, :db/critiques.md.mako
-# This is the Gazelle-compatible pattern.
-
 exports_files(
     [
-        "database_access.md",
+        "source_inspection.md.mako",
+        "system_access.md",
         "db/agent_definitions.md.mako",
         "db/agent_runs.md.mako",
         "db/critiques.md.mako",

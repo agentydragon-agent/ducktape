@@ -26,7 +26,7 @@ from hamcrest import assert_that
 
 from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully
-from props.agents.critic_dev.testing.mocks import CriticDevMock, make_cli_test_mock
+from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import AgentRun
@@ -141,53 +141,6 @@ async def test_prompt_improve_e2e_multiple_examples(
 
     with db.session() as session:
         session.query(AgentRun).filter_by(agent_run_id=result).one()
-
-
-# =============================================================================
-# CLI Helper Integration Tests
-# =============================================================================
-
-
-@pytest.mark.timeout(180)
-@pytest.mark.requires_docker
-async def test_cli_leaderboard_in_improvement_agent(
-    e2e_stack, subtract_file_example, test_train_example_with_runs, critic_dev_improve_image, critic_image
-):
-    """Test that leaderboard CLI command works from improvement agent container."""
-    mock = make_cli_test_mock(["critic-dev", "leaderboard", "--limit", "5"], expected_output="76%")
-
-    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
-        result = await stack.registry.run_critic_dev_improve(
-            examples=[subtract_file_example],
-            baseline_image_digests=[stack.image_digests["critic"]],
-            budget_usd=50.0,
-            improvement_model=stack.model,
-            critic_model=stack.model,
-            timeout_seconds=TEST_TIMEOUT_SECONDS,
-        )
-
-    assert result is not None
-
-
-@pytest.mark.timeout(180)
-@pytest.mark.requires_docker
-async def test_cli_hard_examples_in_improvement_agent(
-    e2e_stack, subtract_file_example, test_train_example_with_runs, critic_dev_improve_image, critic_image
-):
-    """Test that hard-examples CLI command works from improvement agent container."""
-    mock = make_cli_test_mock(["critic-dev", "hard-examples", "--limit", "5"], expected_output="76%")
-
-    async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
-        result = await stack.registry.run_critic_dev_improve(
-            examples=[subtract_file_example],
-            baseline_image_digests=[stack.image_digests["critic"]],
-            budget_usd=50.0,
-            improvement_model=stack.model,
-            critic_model=stack.model,
-            timeout_seconds=TEST_TIMEOUT_SECONDS,
-        )
-
-    assert result is not None
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@
   <!-- Definitions count -->
   <div class="bg-white rounded-lg shadow p-4">
     <h3 class="text-sm font-medium text-gray-500 mb-2">Definitions</h3>
-    <div class="text-2xl font-bold">{data.total_definitions}</div>
+    <div class="text-2xl font-bold">{data.definitions.length}</div>
     <div class="text-xs text-gray-500 mt-1">Critic definitions</div>
   </div>
 

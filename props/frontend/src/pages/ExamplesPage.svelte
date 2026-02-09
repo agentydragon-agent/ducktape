@@ -10,7 +10,9 @@
 
   let { initialData }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
   let example: ExampleDetailResponse | null = $state(initialData ?? null);
+  // svelte-ignore state_referenced_locally
   let loading = $state(!initialData);
   let error: string | null = $state(null);
 

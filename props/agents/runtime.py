@@ -92,21 +92,13 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
 
     ctx["describe_relation"] = _describe_relation
 
-    def _source_inspection(binary: str, files: list[tuple[str, str]]) -> str:
-        """Generate Source Code Inspection section for agent prompts."""
-        lines = [
-            "## Source Code Inspection",
-            "",
-            f"The `props` library is bundled in your container at `/app/{binary}.runfiles/_main/`. Key files:",
-            "",
-            "```bash",
-        ]
-        for path, desc in files:
-            lines.append(f"cat /app/{binary}.runfiles/_main/{path}   # {desc}")
-        lines.append("```")
-        lines.append("")
-        lines.append("For schema introspection (no DB connection needed), see the Schema Discovery section below.")
-        return "\n".join(lines)
+    def _source_inspection(image_name: str, modules: list[tuple[str, str]]) -> str:
+        """Render Source Code Inspection section from Mako template."""
+        content = (importlib.resources.files("props") / "agents/docs/source_inspection.md.mako").read_text()
+        rendered: str = Template(content, preprocessor=markdown_heading_preprocessor).render(
+            image_name=image_name, modules=modules
+        )
+        return rendered
 
     ctx["source_inspection"] = _source_inspection
 
