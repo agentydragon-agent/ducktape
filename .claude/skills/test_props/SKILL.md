@@ -23,6 +23,24 @@ runs the backend, pushes agent images, and tests agent workflows.
 - `OPENAI_API_KEY` must be in environment
 - Podman must be running (claude_hooks handles this)
 
+## Environment Detection
+
+Detect gVisor (Claude Code on the Web) by kernel version:
+
+```bash
+if [[ "$(uname -r)" == "4.4.0" ]]; then
+  IS_GVISOR=true
+else
+  IS_GVISOR=false
+fi
+```
+
+gVisor requires:
+
+- `PROPS_DOCKER_NETWORK=host` (agent containers must use host networking)
+- `--annotation run.oci.keep_original_groups=1` on all podman containers
+- `DOCKER_HOST` must be set (check `$DOCKER_HOST` env var)
+
 ## Phase 0: Specimens Repo
 
 Clone the specimens repo if not present:
@@ -64,15 +82,19 @@ git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/speci
    export ADGN_PROPS_SPECIMENS_ROOT=/home/user/specimens
    ```
 
-3. Initialize database if needed (check if `snapshots` table has rows):
+3. Initialize database. Use `db recreate` which drops and recreates the schema
+   from scratch, then syncs all data:
 
    ```bash
-   bazel run //props/cli:cli -- db upgrade
-   bazel run //props/cli:cli -- gt sync
+   PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
+   PGPASSWORD=$(cat props/.devenv/state/pg_password) \
+   PGDATABASE=eval_results \
+   ADGN_PROPS_SPECIMENS_ROOT=/home/user/specimens \
+   bazel run //props/cli:cli -- db recreate --yes
    ```
 
    If specimen data has validation errors, move the problematic specimen
-   directories out of `/home/user/specimens` and re-run `gt sync`.
+   directories out of `/home/user/specimens` and re-run.
 
 ## Phase 2: Start Backend
 
@@ -82,16 +104,29 @@ git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/speci
    curl -s http://127.0.0.1:8000/health
    ```
 
-   If not running, start it in the background with these env vars:
+   If not running, build and start it in the background:
 
    ```bash
-   export PROPS_CONFIG_FILE=props/config.podman.toml
-   export PROPS_REGISTRY_HOST=127.0.0.1
-   export PROPS_REGISTRY_PORT=8000
-   export PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050
-   export PROPS_DOCKER_NETWORK=host
-   bazel run //props/backend:backend_cli -- serve --host 127.0.0.1 --port 8000
+   bazel build //props/backend:backend_bin
    ```
+
+   Then start with all required env vars:
+
+   ```bash
+   PROPS_CONFIG_FILE=props/config.podman.toml \
+   PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
+   PGPASSWORD=$(cat props/.devenv/state/pg_password) \
+   PGDATABASE=eval_results \
+   ADGN_PROPS_SPECIMENS_ROOT=/home/user/specimens \
+   PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050 \
+   PROPS_DOCKER_NETWORK=host \
+   DOCKER_HOST=$DOCKER_HOST \
+   bazel-bin/props/backend/backend_bin serve > /tmp/backend.log 2>&1 &
+   ```
+
+   **Note**: `PROPS_DOCKER_NETWORK=host` is required on gVisor (Claude Code on
+   the Web) because the default Docker bridge network (`props-agents`) doesn't
+   work under gVisor's netavark. On native environments, `host` also works fine.
 
 ## Phase 3: Push Agent Images
 
@@ -99,44 +134,61 @@ Push images to the **registry proxy** (port 8000), not the direct registry
 (port 5050). The proxy records agent definitions and the grader supervisor
 listens for grader tag changes.
 
-```bash
-ADMIN_AUTH="postgres:$(cat props/.devenv/state/pg_password)"
-```
-
-For each agent type needed (critic, grader, improver):
-
-1. Build: `bazel run //props/agents/<type>:load`
-2. Tag: `podman tag localhost/props-<type>:latest 127.0.0.1:8000/<type>:latest`
-3. Push: `podman push --tls-verify=false --creds="$ADMIN_AUTH" 127.0.0.1:8000/<type>:latest`
-
-Alternatively, copy the manifest from the direct registry to the proxy:
+First, set up Docker auth for the registry proxy:
 
 ```bash
-curl -s -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-  http://127.0.0.1:5050/v2/<type>/manifests/latest -o /tmp/manifest.json
-curl -X PUT -u "$ADMIN_AUTH" \
-  -H "Content-Type: application/vnd.docker.distribution.manifest.v2+json" \
-  --data-binary @/tmp/manifest.json \
-  http://127.0.0.1:8000/v2/<type>/manifests/latest
+PG_PASSWORD=$(cat props/.devenv/state/pg_password)
+AUTH_B64=$(echo -n "postgres:$PG_PASSWORD" | base64)
+mkdir -p ~/.docker
+cat > ~/.docker/config.json <<EOF
+{
+  "auths": {
+    "localhost:8000": { "auth": "$AUTH_B64" }
+  }
+}
+EOF
 ```
+
+Then push each agent type using Bazel `oci_push` targets:
+
+```bash
+bazel run //props/agents/critic:push
+bazel run //props/agents/grader:push
+```
+
+These push to `localhost:8000/<type>:latest` using credentials from
+`~/.docker/config.json`.
 
 ## Phase 4: Test Workflows
 
 ### Critic
 
+First, find the critic image digest:
+
+```sql
+SELECT digest FROM agent_definitions WHERE agent_type = 'critic';
+```
+
 Run a critic on a snapshot via the API:
 
 ```bash
-ADMIN_TOKEN=$(echo -n "$ADMIN_AUTH" | base64)
-curl -X POST http://127.0.0.1:8000/api/runs/start \
-  -H "Authorization: Basic $ADMIN_TOKEN" \
+PG_PASSWORD=$(cat props/.devenv/state/pg_password)
+AUTH_TOKEN=$(echo -n "postgres:$PG_PASSWORD" | base64)
+CRITIC_DIGEST="<digest from above>"
+
+curl -s -X POST http://127.0.0.1:8000/api/runs/critic \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "agent_type": "critic",
-    "model": "gpt-5-mini",
-    "example": {"type": "whole_snapshot", "snapshot_slug": "<slug>"}
-  }'
+  -d "{
+    \"definition_id\": \"$CRITIC_DIGEST\",
+    \"example\": {\"kind\": \"whole_snapshot\", \"snapshot_slug\": \"<slug>\"},
+    \"critic_model\": \"gpt-5-mini\",
+    \"timeout_seconds\": 300,
+    \"budget_usd\": 5.0
+  }"
 ```
+
+**Note**: This call blocks until the critic container exits.
 
 **Verify critic completion:**
 
@@ -147,7 +199,7 @@ curl -X POST http://127.0.0.1:8000/api/runs/start \
    WHERE agent_run_id = '<run_id>';
    ```
 
-   Wait until `status = 'completed'`.
+   Wait until `status = 'exited'`.
 
 2. Check that `reported_issues` has findings:
 

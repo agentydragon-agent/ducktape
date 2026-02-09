@@ -1,19 +1,34 @@
 #!/bin/bash
 set -euo pipefail
 
-# Podman infrastructure startup script for props e2e testing
-# Uses host networking (no Docker network isolation)
+# Podman infrastructure startup script for props e2e testing.
 #
-# CRITICAL: All podman run commands MUST include:
-#   --annotation run.oci.keep_original_groups=1
-# This bypasses /proc/self/setgroups which is unavailable in gVisor.
-# Without this annotation, containers will fail to start.
+# Detects gVisor (Claude Code on the Web) vs native environments and adjusts:
+# - gVisor: --network=host, --annotation run.oci.keep_original_groups=1
+# - Native: --network=host (simplified; bridge networks optional)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="$SCRIPT_DIR/.devenv/state"
 PASSWORD_FILE="$STATE_DIR/pg_password"
 
-echo "=== Props Infrastructure Startup (Podman + Host Networking) ==="
+# Detect gVisor (Claude Code on the Web) by kernel version.
+# gVisor always reports kernel 4.4.0; real Linux kernels are 5.x+.
+if [[ "$(uname -r)" == "4.4.0" ]]; then
+  IS_GVISOR=true
+else
+  IS_GVISOR=false
+fi
+
+# Build common podman flags.
+# gVisor requires the keep_original_groups annotation to bypass
+# /proc/self/setgroups which is unavailable in the sandbox.
+PODMAN_EXTRA_FLAGS=("--network=host")
+if $IS_GVISOR; then
+  PODMAN_EXTRA_FLAGS+=("--annotation" "run.oci.keep_original_groups=1")
+fi
+
+echo "=== Props Infrastructure Startup ==="
+echo "Environment: $(if $IS_GVISOR; then echo "gVisor (Claude Code on the Web)"; else echo "native"; fi)"
 
 # Generate PostgreSQL password if not exists
 mkdir -p "$STATE_DIR"
@@ -33,8 +48,7 @@ podman rm -f props-postgres props-registry props-registry-proxy 2>/dev/null || t
 echo "Starting PostgreSQL on 127.0.0.1:5433..."
 podman run -d --rm \
   --replace \
-  --network=host \
-  --annotation run.oci.keep_original_groups=1 \
+  "${PODMAN_EXTRA_FLAGS[@]}" \
   --name props-postgres \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" \
@@ -62,8 +76,7 @@ done
 echo "Starting OCI Registry on 127.0.0.1:5050..."
 podman run -d --rm \
   --replace \
-  --network=host \
-  --annotation run.oci.keep_original_groups=1 \
+  "${PODMAN_EXTRA_FLAGS[@]}" \
   --name props-registry \
   -e REGISTRY_HTTP_ADDR=:5050 \
   -v props_registry_data:/var/lib/registry \
