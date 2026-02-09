@@ -9,7 +9,7 @@ spec:
   timeout: 10m
   chart:
     spec:
-      chart: ./charts/powerdns
+      chart: ./cluster/charts/powerdns
       sourceRef:
         kind: GitRepository
         name: powerdns-chart

@@ -6,6 +6,6 @@ metadata:
   namespace: dns-system
 spec:
   interval: 24h
-  url: https://github.com/agentydragon/cluster
+  url: https://github.com/agentydragon/ducktape
   ref:
-    branch: main
+    branch: devel
