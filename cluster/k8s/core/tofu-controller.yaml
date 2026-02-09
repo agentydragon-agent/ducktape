@@ -11,8 +11,8 @@ spec:
     crds: CreateReplace
   chart:
     spec:
-      chart: tf-controller
-      version: "0.15.1"
+      chart: tofu-controller
+      version: "0.16.1"
       sourceRef:
         kind: HelmRepository
         name: tofu-controller
