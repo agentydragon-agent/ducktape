@@ -48,10 +48,12 @@ ansible/collections/
 
 # Kubernetes and Helm
 **/Chart.lock
-**/charts/
 **/tmpcharts-*
 **/.helm-cache/
 **/.helm-config/
+# Helm subchart dependencies (downloaded by helm dep update)
+cluster/charts/*/charts/
+k8s_old/helm/*/charts/
 
 # Terraform
 **/.terraform/

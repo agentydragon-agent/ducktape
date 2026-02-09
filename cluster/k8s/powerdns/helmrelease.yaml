@@ -40,21 +40,10 @@ spec:
         operator: "Exists"
         effect: "NoSchedule"
 
-    # Run 2 replicas for HA (one per VPS node)
-    replicaCount: 2
-
+    # DaemonSet: runs one pod per matching node (no replicaCount needed)
     # Reloader: auto-restart pods when secrets change
     podAnnotations:
       reloader.stakater.com/auto: "true"
-
-    # Spread across different VPS nodes
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app.kubernetes.io/name: powerdns
-            topologyKey: kubernetes.io/hostname
 
     # Service configuration - ClusterIP for internal access
     service:

@@ -1,5 +1,11 @@
 # Default values for PowerDNS
-replicaCount: 1
+# Note: This is a DaemonSet, runs one pod per matching node (see nodeSelector)
+
+# DaemonSet update strategy
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
 
 image:
   repository: pschiffe/pdns-mysql
@@ -51,8 +57,7 @@ service:
     # because traffic arrives via controlplane nodes but pod is on worker node
     # Using default Cluster mode (SNAT) for Tailscale compatibility
     # externalTrafficPolicy: Local
-    annotations:
-      {}
+    annotations: {}
       # metallb.universe.tf/address-pool: dns-pool
       # metallb.universe.tf/loadBalancerIPs: 10.0.3.3
 
@@ -124,10 +129,13 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
-# Node selection
+# Network configuration
+hostNetwork: false
+dnsPolicy: ClusterFirst
+
+# Node selection (DaemonSet runs one pod per matching node)
 nodeSelector: {}
 tolerations: []
-affinity: {}
 
 # Pod annotations
 podAnnotations:
