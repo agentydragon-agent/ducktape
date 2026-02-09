@@ -162,6 +162,14 @@ resource "hcloud_firewall" "talos" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
+  # Cilium health checks (cluster health probes between nodes)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "4240"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
   # HTTPS ingress
   rule {
     direction  = "in"
