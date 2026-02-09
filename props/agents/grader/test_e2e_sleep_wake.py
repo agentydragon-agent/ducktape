@@ -25,7 +25,7 @@ import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
-from props.agents.grader.drift_handler import check_grading_pending
+from props.agents.grader.drift_handler import check_all_pending, check_grading_pending
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import EdgeSpec, TPRef
 from props.db.database import Database
@@ -203,6 +203,9 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             assert tp_edge_1.credit == pytest.approx(0.1)
             assert tp_edge_2.credit == pytest.approx(0.2)
             logger.info("Both edges verified: round 1 credit=0.1, round 2 credit=0.2")
+
+        # Assert no drift remains (grading + clustering)
+        assert check_all_pending(test_snapshot, db) == 0, "Drift should be zero after grading"
 
 
 if __name__ == "__main__":

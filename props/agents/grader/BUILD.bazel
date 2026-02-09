@@ -212,6 +212,7 @@ docker_py_test(
     deps = [
         ":conftest",
         ":drift_handler",
+        ":tools",
         "//agent_core/testing:responses",
         "//props:conftest",
         "//props/agents/grader/testing:mocks",
@@ -254,8 +255,36 @@ docker_py_test(
     ],
 )
 
+docker_py_test(
+    name = "test_e2e_clustering",
+    srcs = ["test_e2e_clustering.py"],
+    data = [
+        ":image",
+    ],
+    imports = ["../../.."],
+    tags = [
+        "e2e",
+    ],
+    deps = [
+        ":conftest",
+        ":drift_handler",
+        ":tools",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # =============================================================================
-# Container image (daemon grader)
+# Container image (snapshot grader)
 # =============================================================================
 
 oci_image(
