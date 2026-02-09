@@ -113,7 +113,7 @@ git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/speci
    Then start with all required env vars:
 
    ```bash
-   PROPS_CONFIG_FILE=props/config.podman.toml \
+   PROPS_CONFIG_FILE=.claude/skills/test_props/config.podman.toml \
    PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
    PGPASSWORD=$(cat props/.devenv/state/pg_password) \
    PGDATABASE=eval_results \
@@ -316,4 +316,4 @@ characters that break asyncpg DSN parsing).
 - **Agent containers**: Run with host networking, per-agent PostgreSQL roles,
   and RLS-scoped database access.
 - **Model selection**: Use at least gpt-5 level models for meaningful results.
-  Config file: `props/config.podman.toml`.
+  Config file: `.claude/skills/test_props/config.podman.toml`.
