@@ -70,6 +70,7 @@
   environment.systemPackages = with pkgs; [
     libsecret # secret-tool for keyring access (used by ansible vault)
     telegram-desktop
+    zoom-us
   ];
 
   # Steam
