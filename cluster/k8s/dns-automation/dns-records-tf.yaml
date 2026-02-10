@@ -32,7 +32,7 @@ spec:
     - kind: Secret
       name: powerdns-api-key
       varsKeys:
-        - powerdns_api_key:PDNS_API_KEY
+        - powerdns_api_key
       optional: false
 
   # AWS credentials as environment variables

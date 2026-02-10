@@ -24,7 +24,7 @@ spec:
               host: http://powerdns-api.dns-system:8081
               apiKeySecretRef:
                 name: powerdns-api-key
-                key: PDNS_API_KEY
+                key: powerdns_api_key
         selector:
           dnsZones:
             - "allegedly.works"

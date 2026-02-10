@@ -19,7 +19,7 @@ powerdns:
     enabled: true
     # API key will be sourced from secret
     secretName: powerdns-api-key
-    secretKey: PDNS_API_KEY
+    secretKey: powerdns_api_key
 
   # Web server configuration
   webserver:

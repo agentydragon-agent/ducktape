@@ -36,7 +36,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: powerdns-api-key # Reflector will copy from dns-system
-                  key: PDNS_API_KEY
+                  key: powerdns_api_key
           resources:
             requests:
               memory: "64Mi"
