@@ -368,7 +368,6 @@ manifest:
     platformdirs: platformdirs
     playhouse: peewee
     playwright: playwright
-
     plotnine: plotnine
     pluggy: pluggy
     ply: ply
@@ -579,4 +578,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: 57cddb2d2acd3423dfb6377625e3f24de8f37a3f9d6642d998fd15299552557c
+integrity: 65f370840a34a68e50f4593c4ed9370a57498e352a20e22882bbcd5c6a4faff0

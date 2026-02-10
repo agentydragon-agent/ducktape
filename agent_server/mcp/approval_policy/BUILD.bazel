@@ -159,7 +159,10 @@ docker_py_test(
 docker_py_test(
     name = "test_eval_abort",
     srcs = ["test_eval_abort.py"],
-    data = ["//third_party/python_slim:load"],
+    data = [
+        "//agent_server:load",
+        "//third_party/python_slim:load",
+    ],
     imports = ["../../.."],
     deps = [
         ":engine",
