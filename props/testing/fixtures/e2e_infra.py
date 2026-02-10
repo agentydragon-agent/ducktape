@@ -46,14 +46,22 @@ def e2e_registry() -> Generator[DockerContainer]:
     Function-scoped to match DB scope — each test gets a fresh registry so that
     crane push always records agent_definitions in the current test's DB.
     """
-    with (
-        tracer.start_as_current_span("e2e_registry startup"),
-        DockerContainer("registry:2")
-        .with_exposed_ports(5000)
-        .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
-        .waiting_for(LogMessageWaitStrategy("listening on")) as registry,
-    ):
+    with tracer.start_as_current_span("e2e_registry startup"):
+        with tracer.start_as_current_span("configure container"):
+            registry = (
+                DockerContainer("registry:2")
+                .with_exposed_ports(5000)
+                .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
+                .waiting_for(LogMessageWaitStrategy("listening on"))
+            )
+
+        with tracer.start_as_current_span("container start + wait"):
+            registry.start()
+
+    try:
         yield registry
+    finally:
+        registry.stop()
 
 
 @pytest.fixture

@@ -26,13 +26,15 @@ def load_image(tarball_rlocation: str) -> None:
     tarball_name = tarball_rlocation.rsplit("/", 1)[-1]
 
     with tracer.start_as_current_span(f"load_image({tarball_name})"):
-        tarball_path = runfiles.get_required_path(tarball_rlocation)
+        with tracer.start_as_current_span("resolve_runfiles_path"):
+            tarball_path = runfiles.get_required_path(tarball_rlocation)
 
         cmd = shutil.which("docker") or shutil.which("podman")
         if not cmd:
             raise RuntimeError("Neither docker nor podman CLI found")
 
-        result = subprocess.run([cmd, "load", "-i", str(tarball_path)], check=False, capture_output=True, text=True)
+        with tracer.start_as_current_span("docker load"):
+            result = subprocess.run([cmd, "load", "-i", str(tarball_path)], check=False, capture_output=True, text=True)
 
         if result.returncode != 0:
             raise RuntimeError(f"Failed to load image from {tarball_rlocation}: {result.stderr}")
