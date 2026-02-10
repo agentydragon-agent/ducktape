@@ -14,7 +14,7 @@ spec:
   wait: true
   # Health check ensures OIDC secret is synced from Vault before Harbor uses SSO
   healthChecks:
-    - apiVersion: external-secrets.io/v1beta1
+    - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: harbor-oauth-client-secret
       namespace: harbor

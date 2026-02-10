@@ -14,7 +14,7 @@ spec:
   wait: true
   # Health check ensures vault-token secret exists for Terraform authentication
   healthChecks:
-    - apiVersion: external-secrets.io/v1beta1
+    - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: vault-token
       namespace: flux-system
