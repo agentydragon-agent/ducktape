@@ -22,8 +22,8 @@ py_library(
 
 py_binary(
     name = "wt_cli",
-    srcs = ["__main__.py"],
-    main = "__main__.py",
+    imports = [".."],
+    main_module = "wt.cli",
     visibility = ["//visibility:public"],
     deps = [":cli"],
 )

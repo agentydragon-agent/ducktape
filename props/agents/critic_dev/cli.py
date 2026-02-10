@@ -150,3 +150,7 @@ def valid_leaderboard_cmd(
         console.print(f"\n[bold]Top {limit} Definitions by Validation Recall (Occurrence-Weighted)[/bold]\n")
         table = build_table_from_schema(results, columns)
         console.print(table)
+
+
+if __name__ == "__main__":
+    app()

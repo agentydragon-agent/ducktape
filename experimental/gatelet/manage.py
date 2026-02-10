@@ -34,32 +34,16 @@ async def _entity_counts(session: AsyncSession) -> list[tuple[str, int]]:
     return counts
 
 
-async def reset_db(*, force: bool = False) -> None:
-    """Drop and recreate tables and populate with sample data.
-
-    Args:
-        force: If True, skip confirmation prompt (for CI/automated use).
-    """
-    engine = create_async_engine(str(get_settings().database.dsn), future=True)
+async def reset_db(database_url: str) -> None:
+    """Drop and recreate tables and populate with sample data."""
+    engine = create_async_engine(database_url, future=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
-
-    async with session_factory() as session:
-        counts = await _entity_counts(session)
-        if any(cnt > 0 for _, cnt in counts) and not force:
-            print("Current entity counts:")
-            for name, cnt in counts:
-                print(f"  {name}: {cnt}")
-            if not _confirm("Drop and recreate the database?"):
-                print("Aborted.")
-                await engine.dispose()
-                return
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     async with session_factory.begin() as session:
-        # Sample integration and payloads for UI demos
         integ = WebhookIntegration(
             name="sample",
             description="Sample integration",
@@ -72,7 +56,6 @@ async def reset_db(*, force: bool = False) -> None:
         for i in range(3):
             session.add(WebhookPayload(integration_id=integ.id, payload={"sample": i}))
     await engine.dispose()
-    print("Database initialized with sample webhook payloads.")
 
 
 def change_password(config_path: Path, password: str | None) -> None:
@@ -91,7 +74,7 @@ def change_password(config_path: Path, password: str | None) -> None:
     print(f"Admin password updated in {config_path}.")
 
 
-def main() -> None:
+async def main() -> None:
     """Entry point for command line interface."""
     parser = argparse.ArgumentParser(description="Gatelet management utility")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -103,11 +86,26 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.cmd == "reset-db":
-        asyncio.run(reset_db(force=args.force))
+        url = str(get_settings().database.dsn)
+        if not args.force:
+            engine = create_async_engine(url, future=True)
+            session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+            async with session_factory() as session:
+                counts = await _entity_counts(session)
+            await engine.dispose()
+            if any(cnt > 0 for _, cnt in counts):
+                print("Current entity counts:")
+                for name, cnt in counts:
+                    print(f"  {name}: {cnt}")
+                if not _confirm("Drop and recreate the database?"):
+                    print("Aborted.")
+                    return
+        await reset_db(url)
+        print("Database initialized with sample webhook payloads.")
     elif args.cmd == "change-password":
         config_path = Path(os.getenv("GATELET_CONFIG", "gatelet.toml"))
         change_password(config_path, args.password)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

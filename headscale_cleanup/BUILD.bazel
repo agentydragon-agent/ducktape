@@ -2,14 +2,6 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
 py_library(
-    name = "__main__",
-    srcs = ["__main__.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [":cli"],
-)
-
-py_library(
     name = "cli",
     srcs = ["cli.py"],
     imports = [".."],
@@ -22,8 +14,8 @@ py_library(
 
 py_binary(
     name = "headscale_cleanup",
-    srcs = ["__main__.py"],
-    main = "__main__.py",
+    imports = [".."],
+    main_module = "headscale_cleanup.cli",
     visibility = ["//:__subpackages__"],
     deps = [":cli"],
 )
@@ -32,7 +24,6 @@ py_package(
     name = "headscale_cleanup_pkg",
     packages = ["headscale_cleanup"],
     deps = [
-        ":__main__",
         ":cli",
     ],
 )

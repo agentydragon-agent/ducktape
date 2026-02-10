@@ -146,9 +146,8 @@ py_library(
 
 py_binary(
     name = "critic_dev",
-    srcs = ["__main__.py"],
     imports = ["../../.."],
-    main = "__main__.py",
+    main_module = "props.agents.critic_dev.cli",
     visibility = ["//visibility:public"],
     deps = [
         ":cli",
