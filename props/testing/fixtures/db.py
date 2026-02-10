@@ -52,12 +52,15 @@ def postgres_container() -> Generator[PostgresContainer]:
     Starts a fresh PostgreSQL 16 container for the entire test session.
     All tests share this container but get isolated databases.
     """
-    load_image(RYUK_TARBALL)
-    load_image(POSTGRES_16_TARBALL)
+    with tracer.start_as_current_span("postgres_container fixture"):
+        load_image(RYUK_TARBALL)
+        load_image(POSTGRES_16_TARBALL)
 
-    with tracer.start_as_current_span("PostgresContainer startup"):
-        container = PostgresContainer(image="postgres:16", username="postgres", password="postgres", dbname="postgres")
-        container.start()
+        with tracer.start_as_current_span("PostgresContainer startup"):
+            container = PostgresContainer(
+                image="postgres:16", username="postgres", password="postgres", dbname="postgres"
+            )
+            container.start()
 
     try:
         yield container

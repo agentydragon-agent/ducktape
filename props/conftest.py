@@ -6,8 +6,10 @@ to these fixtures.
 """
 
 import logging
+from collections.abc import Generator
 
 import pytest
+from opentelemetry import trace
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core.testing.fixtures import *  # noqa: F403
@@ -104,3 +106,16 @@ def pytest_configure(config: pytest.Config) -> None:
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Export OTel traces at session end."""
     tracing.export_to_file()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item: pytest.Item) -> Generator[None]:
+    """Create a root span for each test to enable hierarchical traces.
+
+    All fixture setup/teardown and test execution runs within this span's context.
+    Child spans (from timed operations like db setup, image loading, etc.) will
+    automatically become children of this root span via OTel context propagation.
+    """
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(f"test: {item.nodeid}"):
+        yield
