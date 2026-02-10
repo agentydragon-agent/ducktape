@@ -39,8 +39,13 @@ Minimal scope policy for Route 53 record management:
     {
       "Sid": "ManageGlueRecords",
       "Effect": "Allow",
-      "Action": ["route53:ChangeResourceRecordSets", "route53:GetHostedZone", "route53:ListResourceRecordSets"],
-      "Resource": "arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I"
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53:GetChange"
+      ],
+      "Resource": ["arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I", "arn:aws:route53:::change/*"]
     },
     {
       "Sid": "ListZones",
