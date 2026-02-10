@@ -17,6 +17,7 @@ pkgs.mkShell {
     pkgs.nodePackages.prettier # For YAML formatting
     pkgs.tflint
     pkgs.hcloud # Hetzner Cloud CLI
+    pkgs.awscli2 # AWS CLI for Route 53 management
     pkgs.yq-go # YAML/JSON conversion tool
     pkgs.popeye # Kubernetes cluster health checker
     pkgs.python3 # For health-check.py

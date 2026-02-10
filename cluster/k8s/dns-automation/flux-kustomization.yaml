@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dns-automation
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/dns-automation
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: core # tofu-controller must be ready
+    - name: powerdns # PowerDNS must be running (API endpoint)
+    - name: reflector # Reflector must copy powerdns-api-key to flux-system

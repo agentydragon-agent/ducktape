@@ -59,3 +59,4 @@ resources:
   - authentik-blueprint/grafana-secret/flux-kustomization.yaml
   - authentik-blueprint/grafana-provider/flux-kustomization.yaml
   - authentik-blueprint/kagent/flux-kustomization.yaml
+  - dns-automation/flux-kustomization.yaml

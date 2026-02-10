@@ -65,11 +65,12 @@
 
 ## SealedSecrets in Repository
 
-| File                                                 | Purpose                | Namespace   |
-| ---------------------------------------------------- | ---------------------- | ----------- |
-| `k8s/storage/proxmox-csi-sealed.yaml`                | CSI driver credentials | csi-proxmox |
-| `k8s/applications/nix-cache/signing-key-sealed.yaml` | Nix cache signing      | nix-cache   |
-| `k8s/applications/nix-cache/jwt-token-sealed.yaml`   | Attic JWT token        | nix-cache   |
+| File                                                 | Purpose                 | Namespace   |
+| ---------------------------------------------------- | ----------------------- | ----------- |
+| `k8s/storage/proxmox-csi-sealed.yaml`                | CSI driver credentials  | csi-proxmox |
+| `k8s/applications/nix-cache/signing-key-sealed.yaml` | Nix cache signing       | nix-cache   |
+| `k8s/applications/nix-cache/jwt-token-sealed.yaml`   | Attic JWT token         | nix-cache   |
+| `k8s/dns-automation/aws-credentials-sealed.yaml`     | AWS Route 53 API access | flux-system |
 
 ## Common Failure Modes
 
