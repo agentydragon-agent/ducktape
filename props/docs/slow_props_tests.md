@@ -1,185 +1,180 @@
-# Props Tests Analysis
+# Props Tests Performance Analysis
 
-Generated: 2025-12-23
+Generated: 2026-02-10
 
-## Failing Tests Diagnosis
+## Profiling Results
 
-### 1. `test_specimen_references_are_valid`
+From `bazel test //props/agents/critic:test_e2e --test_arg=-s --test_arg=--durations=0`:
 
-**Status**: Timing out during fixture setup (`synced_production_db`)
+```
+30.16s call     test_critic_zero_issues     (first test: includes image push)
+20.82s setup    test_critic_zero_issues     (first test: postgres + db + migrations)
+ 7.25s call     test_python3_can_import_and_inspect_props
+ 5.63s call     test_critic_submit_with_issues
+ 1.22s setup    test_python3_can_import_and_inspect_props
+ 1.21s setup    test_critic_submit_with_issues
+```
 
-The test requires syncing ALL production specimens which takes too long.
-This is a legitimate slow test that should have a higher timeout or be marked as integration-only.
+**Total: 68.62s for 3 tests on RBE (BuildBuddy)**
 
----
+**Key findings:**
 
-## Test Fixture Types: Fast vs Slow
+- First test pays ~51s (21s setup + 30s call with image push)
+- Subsequent tests: ~6-8s each (shared postgres container)
+- Tests are **hermetic** - run on RBE without internet access
 
-### `synced_db` (FAST - test fixtures)
+## Root Causes
 
-Uses local git-tracked fixtures at `tests/props/fixtures/specimens/`:
+### 1. First Test Pays All Startup Costs (~18s)
 
-- `test-fixtures/train1` (TRAIN) - 4 small Python files
-- `test-fixtures/valid1` (VALID) - 1 file
-- `test-fixtures/valid2` (VALID) - 1 file
-- `test-fixtures/test1` (TEST) - 1 file
+- Loading Bazel-bundled images via `docker load` (~14s for postgres, ~1s for ryuk)
+- PostgreSQL testcontainer startup (~2.5s)
+- Database creation + Alembic migrations (~0.3s)
+- Fixture sync (~0.2s)
 
-These use `vcs: local` with `bundle: null` in their `manifest.yaml`, so:
+**Note:** Container images (postgres, registry, ryuk) are bundled as Bazel tarballs and loaded via `docker load`. No Docker Hub downloads occur at test time - this is fully hermetic.
 
-- **No hydration** - `resolve_source_root()` returns the original path directly with `needs_cleanup=False`
-- **No network** - No GitHub/Git cloning
-- **Fast sync** - Only reads a handful of small files for line counting
+### 2. RBE Starts Fresh MicroVMs with Empty Docker Cache
 
-Most tests use this fixture and sync should complete in <1 second.
+BuildBuddy RBE runs each test in a fresh Firecracker microVM. The Docker daemon starts with an **empty image cache**, so `docker load` must fully unpack images every run.
 
-### `synced_production_db` (SLOW - real specimens)
+Timing comparison:
 
-Uses production specimens from `ADGN_PROPS_SPECIMENS_ROOT` (typically `~/code/specimens`):
+- Local (warm cache): `docker load postgres` = **0.9s**
+- Local (cold cache): `docker load postgres` = **2.7s**
+- RBE (always cold): `docker load postgres` = **14s**
 
-- Multiple repositories with Git/GitHub sources
-- **Hydration required** - Downloads/clones repos, extracts tarballs
-- **Line counting** - Reads every file in every snapshot
+The 14s on RBE is due to cold Docker cache + microVM I/O overhead.
 
-This explains the 35s setup times for tests like `test_specimen_has_valid_split`.
+### 3. First Test Pushes Full Image (~30s call time)
 
-Tests marked `@pytest.mark.requires_production_specimens` use this fixture.
-To skip them: `pytest -m 'not requires_production_specimens'`
+From httpx logs, first test calls `crane_push()` which uploads 6 blobs:
 
----
+- sha256:b951... (1MB)
+- sha256:4831... (28MB)
+- sha256:4b55... (48MB)
+- sha256:0653... (118MB)
+- sha256:135c... (10KB)
+- sha256:39c7... (1.6KB)
 
-## Slow Tests Summary
+The registry is function-scoped (fresh per test), so each test pushes all blobs. Subsequent tests benefit from Docker layer caching but still pay registry overhead.
 
-Total test time: ~627s (~10.5 minutes) for 243 tests
+### 4. Per-Test Database Recreation
 
-- 5 failed
-- 228 passed
-- 10 skipped
+The `synced_db` fixture chain:
 
-## Slowest 30 Tests
+```
+synced_db → db (function-scoped) → postgres_base_config (session-scoped)
+```
 
-| Duration | Phase | Test                                                                                           |
-| -------- | ----- | ---------------------------------------------------------------------------------------------- |
-| 72.30s   | call  | `critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic`                          |
-| 35.19s   | setup | `db/test_splits.py::test_specimen_has_valid_split`                                             |
-| 32.65s   | call  | `critic/test_e2e.py::test_critic_http_mode_submit_with_issues`                                 |
-| 29.16s   | setup | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                    |
-| 19.54s   | call  | `critic_dev/optimize/test_e2e.py::test_cli_hard_examples_shows_metrics`                        |
-| 19.31s   | call  | `critic/test_e2e.py::test_critic_http_mode_zero_issues`                                        |
-| 19.31s   | call  | `critic_dev/optimize/test_e2e.py::test_cli_leaderboard_shows_recall`                           |
-| 19.29s   | call  | `critic/test_e2e.py::test_critic_does_not_infinite_loop_on_zero_issues`                        |
-| 19.10s   | call  | `critic_dev/optimize/test_e2e.py::test_optimizer_critic_workflow`                              |
-| 18.04s   | call  | `critic/test_e2e.py::test_critic_zero_issues`                                                  |
-| 17.52s   | setup | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                       |
-| 17.44s   | call  | `grader/test_e2e.py::test_grader_http_mode_sql_workflow`                                       |
-| 17.40s   | setup | `grader/test_e2e.py::test_grader_http_mode_zero_issues`                                        |
-| 16.75s   | call  | `specimens/test_validation.py::test_specimen_issues_and_false_positives_load`                  |
-| 16.72s   | call  | `grader/test_e2e.py::test_grader_http_mode_zero_issues`                                        |
-| 16.13s   | call  | `db/test_splits.py::test_all_specimens_in_splits_can_load`                                     |
-| 14.67s   | call  | `grader/test_e2e.py::test_grader_comprehensive_data_access`                                    |
-| 12.92s   | call  | `critic_dev/improve/test_e2e.py::test_cli_hard_examples_in_improvement_agent`                  |
-| 12.79s   | call  | `critic_dev/improve/test_e2e.py::test_prompt_improve_e2e_multiple_examples`                    |
-| 12.31s   | call  | `critic_dev/improve/test_e2e.py::test_prompt_improve_e2e_creates_package`                      |
-| 12.29s   | call  | `critic_dev/improve/test_e2e.py::test_cli_leaderboard_in_improvement_agent`                    |
-| 6.12s    | call  | `critic/test_temp_user_permissions.py::test_docker_minimal_insert`                             |
-| 1.68s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_multi_location_occurrence`             |
-| 1.63s    | setup | `critic/test_critic_sql_integration.py::test_critic_sql_rls_isolation`                         |
-| 1.47s    | setup | `grader/test_grader_sql_integration.py::test_grader_report_failure_prevents_subsequent_submit` |
-| 1.34s    | setup | `critic_dev/improve/test_e2e.py::test_prompt_improve_e2e_success`                              |
-| 1.31s    | call  | `critic/test_temp_user_permissions.py::test_docker_connection_info`                            |
-| 1.26s    | setup | `db/test_tp_occurrence_credits.py::test_occurrence_statistics_has_correct_n_critic_runs`       |
+Each test creates a fresh database (reusing postgres container). Migrations run every time.
 
-## Categories of Slow Tests
+## Optimization Opportunities
 
-### 1. Docker Container Startup (~15-35s each)
+### High Impact
 
-Tests that spin up Docker containers for agent execution:
+1. **Runner recycling** - Preserve microVM state across test runs. BuildBuddy supports recycling runners via exec properties:
 
-- All `*_http_mode_*` tests
-- `test_docker_*` tests in temp_user_permissions
+   ```python
+   # In BUILD.bazel
+   py_test(
+       name = "test_e2e",
+       exec_properties = {
+           "test.recycle-runner": "true",
+       },
+       ...
+   )
+   ```
 
-**Root cause**: Container creation, image pull checks, network setup, Python environment initialization inside container.
+   This keeps the Docker daemon and its image cache warm between test invocations, potentially reducing the 14s postgres load to ~1s (warm cache).
 
-**Potential optimizations**:
+2. **Session-scoped image push** - Push images once per pytest session, not per test. Tests can share the registry.
 
-- Reuse container across tests (session-scoped fixture)
-- Pre-warm container pool
-- Use lighter base image
-- Keep container running between tests
+3. **Module-scoped synced database** - For tests that don't conflict, share the synced database.
 
-### 2. Three-Agent Workflow (72s)
+4. **Split E2E tests into separate Bazel targets** - Each test becomes a parallel RBE job.
 
-`test_optimizer_orchestrates_critic` is the slowest single test.
+### Medium Impact
 
-**Root cause**: Runs critic → grader → critic_dev_optimize sequentially, each with its own container lifecycle.
+1. **Lazy blob push** - Only push blobs that changed since last push.
 
-**Potential optimizations**:
+2. **Pre-warmed registry** - Push images during session setup fixture.
 
-- Mock LLM responses more aggressively
-- Parallelize independent agent runs
-- Share container between agents
+3. **Podman instead of Docker** - BuildBuddy's RBE image includes podman. Podman may have faster cold-start performance for container operations since it doesn't require a daemon. Worth benchmarking.
 
-### 3. Specimen Loading (16-35s) - Production Specimens Only
+### Low Impact
 
-- `test_specimen_has_valid_split` (35s setup)
-- `test_specimen_issues_and_false_positives_load` (17s)
-- `test_all_specimens_in_splits_can_load` (16s)
+1. **Lighter base images** - Reduce blob sizes.
 
-**These tests use `synced_production_db`** (not `synced_db`), so they sync real specimens:
+## Test Timing by Category
 
-**Root cause**: The `synced_production_db` fixture runs `sync_all()` which for GitHub/Git sources:
+### E2E Tests (container-based, RBE)
 
-1. Loads snapshots from YAML (fast)
-2. **Hydrates each snapshot** - downloads from GitHub or clones Git repos (SLOW)
-3. **Reads every file and counts lines** for `snapshot_files` table (SLOW for large repos)
-4. Syncs issues from YAML (medium)
-5. Syncs file sets (fast)
-6. Syncs model metadata (fast)
-7. Syncs agent definitions (fast)
+| Test                                      | Setup  | Call   | Notes                                  |
+| ----------------------------------------- | ------ | ------ | -------------------------------------- |
+| test_critic_zero_issues                   | 20.82s | 30.16s | First: postgres + db + full image push |
+| test_critic_submit_with_issues            | 1.21s  | 5.63s  | Shared postgres, cached layers         |
+| test_python3_can_import_and_inspect_props | 1.22s  | 7.25s  | Simpler fixture chain                  |
 
-**Note**: For test fixtures (`synced_db`), snapshots use `vcs: local` so hydration is a no-op
-(returns original path with `needs_cleanup=False`). Only file line counting happens, which is fast
-for the ~8 small test files.
+### DB Tests (no containers)
 
-**Potential optimizations for production sync**:
+From `test_split_based_rls.py`:
 
-- **Skip file line counting for tests** - if tests don't need `snapshot_files.line_count`, skip this step
-- **Pre-sync database dump** - create a database dump and restore instead of syncing from scratch
-- **Parallel hydration** - hydrate snapshots concurrently (currently sequential)
-- **Lazy hydration** - only hydrate snapshots actually used by tests
-- **Hydration caching** - archives are cached in `~/.cache/adgn-llm/snapshots/` but still need extraction
-
-### 4. Expensive Setup Fixtures
-
-Several tests have 15-35s setup phases:
-
-- `test_grader_comprehensive_data_access` (29s setup)
-- `test_grader_http_mode_sql_workflow` (17s setup)
-- `test_grader_http_mode_zero_issues` (17s setup)
-
-**Root cause**: Complex fixture chains, DB seeding, Docker preparation.
-
-**Potential optimizations**:
-
-- Session-scoped fixtures for shared infrastructure
-- Parallel fixture setup
-- Fixture caching
+- First test: ~30s (postgres + db + migrations + sync)
+- Subsequent tests: <1s each (fast queries)
 
 ## Recommendations
 
-### Quick Wins
+### Quick Win: Split E2E Tests
 
-1. **Session-scoped Docker client**: Avoid recreating Docker client per test
-2. **Cache specimen parsing**: Parse YAML once per session
-3. **Reuse containers**: Keep agent containers warm between tests
+Each E2E test in its own `py_test` target allows Bazel to parallelize across RBE:
 
-### Medium-term
+```python
+# BUILD.bazel - instead of one py_test with all tests
+py_test(name = "test_critic_zero_issues", srcs = ["test_e2e.py"], ...)
+py_test(name = "test_critic_submit_with_issues", srcs = ["test_e2e.py"], ...)
+```
 
-1. **Container pooling**: Pre-create N containers at session start
-2. **Fixture optimization**: Audit fixture scope (function → class → module → session)
-3. **Parallel test groups**: Group tests by resource needs, run in parallel
+### Medium-Term: Session-Scoped Infrastructure
 
-### Long-term
+```python
+@pytest_asyncio.fixture(scope="session")
+async def pushed_images(e2e_registry_url):
+    """Push all images once at session start."""
+    digests = {}
+    for image in [critic_image, grader_image, ...]:
+        digests[image.name] = await crane_push(image, e2e_registry_url)
+    return digests
+```
 
-1. **Mock more aggressively**: Replace Docker calls with mocks for unit tests
-2. **Separate integration tests**: Mark slow tests, run separately in CI
-3. **Profile fixture chains**: Find redundant setup/teardown
+## Profiling Infrastructure
+
+### Logging with Timestamps
+
+Tests output timestamps via `conftest.py`:
+
+```
+HH:MM:SS.mmm LEVEL logger: message
+```
+
+Use `bazel run //target -- --durations=0` for per-phase timing breakdown.
+
+### Timing Context Manager
+
+`props/testing/timing.py` provides a reusable `timed()` context manager:
+
+```python
+from props.testing.timing import timed
+
+with timed("database.recreate"):
+    database.recreate()
+# Logs: "TIMING: database.recreate took 2.34s"
+```
+
+### Image Loading Timing
+
+`test_util/image_loader.py` logs detailed timing for each `load_image()` call:
+
+```
+TIMING: load_image(tarball.tar) took 1.23s total (resolve=0.01s, docker_load=1.22s): Loaded image: postgres:16
+```

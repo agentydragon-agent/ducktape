@@ -23,62 +23,82 @@ occurrences:
 
 ## Specifying Line Ranges
 
-Props supports multiple formats for specifying line ranges:
+The `files` field maps file paths to line specifications. All line numbers are 1-based (first line is 1). Ranges are inclusive on both ends.
 
-### Simple Formats
+### Supported Formats
+
+**1. List of `[start, end]` pairs** (most common):
 
 ```yaml
 files:
   file.py:
-    - [10, 20] # single range (lines 10-20)
-    - [25, 25] # single line (use same start and end)
+    - [10, 20] # lines 10-20
+    - [30, 40] # lines 30-40
+    - [50, 50] # single line 50 (start equals end)
 ```
 
-For multiple ranges, use separate list entries:
+**2. Inline single range** (shorthand when only one range):
 
 ```yaml
 files:
-  file.py:
-    - [10, 15]
-    - [20, 25]
+  file.py: [10, 20] # equivalent to - [10, 20]
 ```
 
-### Dict Format with Per-Range Notes
-
-**New in per-range notes feature**: You can now attach notes to individual ranges within an occurrence:
+**3. Null** (whole file anchor, no specific lines):
 
 ```yaml
 files:
-  file.py:
-    - start_line: 42
-      end_line: 42
-      note: "This line shows the primary issue"
-    - start_line: 100
-      end_line: 105
-      note: "Related manifestation of the same problem"
+  file.py: # null/omitted = no specific lines
 ```
 
-Or as a list of dict entries:
+**4. List of dicts with notes** (for per-range annotations):
 
 ```yaml
 files:
   file.py:
-    - start_line: 13
-      end_line: 14
-      note: "String interpolation creates SQL injection vector"
+    - start_line: 10
+      end_line: 15
+      note: "First issue location"
     - start_line: 20
-      end_line: 20
-      note: "Query execution with unsanitized input"
+      end_line: 25
+      note: "Related manifestation"
 ```
 
-### When to Use Per-Range Notes
+**5. Single dict** (shorthand for one range with note):
+
+```yaml
+files:
+  file.py:
+    start_line: 42
+    end_line: 45
+    note: "The problematic code"
+```
+
+### Invalid Formats
+
+```yaml
+# INVALID: bare integer
+file.py: 42
+
+# INVALID: empty list
+file.py: []
+
+# INVALID: single-element list
+file.py:
+  - [42]
+
+# INVALID: three-element list
+file.py:
+  - [10, 20, 30]
+```
+
+### Per-Range Notes
 
 Use per-range notes when:
 
 - A single occurrence spans multiple distinct locations that serve different purposes
 - You want to explain why each range matters independently (e.g., "definition site" vs "call site")
 - The ranges represent different aspects of the same logical issue
-- Graders need specific guidance about what to look for in each range
 
 **Example:**
 
@@ -96,9 +116,6 @@ occurrences:
         - start_line: 20
           end_line: 22
           note: "Query executed without parameterization"
-        - start_line: 28
-          end_line: 28
-          note: "Same pattern repeated in password reset function"
     note: |
       This occurrence demonstrates multiple injection points stemming from
       the same root cause: lack of parameterized queries.
@@ -109,17 +126,12 @@ occurrences:
 Props supports two levels of notes:
 
 1. **Occurrence-level notes** (`note` at occurrence level): Explain the overall occurrence and context
-2. **Range-level notes** (`note` within each range): Explain why specific line ranges matter
+2. **Range-level notes** (`note` within each range dict): Explain why specific line ranges matter
 
 Both are optional, but:
 
 - Multi-occurrence issues **must** have occurrence-level notes on all occurrences
 - Per-range notes are optional but recommended when ranges serve distinct purposes
-
-## UI Display
-
-- **Occurrence notes**: Displayed as expandable cards after the first line of the occurrence
-- **Per-range notes**: Displayed as small inline gray boxes after the last line of each annotated range
 
 ## True Positives (TPs)
 
@@ -136,7 +148,7 @@ occurrences:
     note: Occurrence-specific details (required for multi-occurrence issues)
     critic_scopes_expected_to_recall:
       - [file1.py, file2.py] # Files needed to detect this occurrence
-    graders_match_only_if_reported_on:
+    match_file_restriction:
       - file1.py # Files where critique must be reported (optional)
 ```
 
@@ -151,14 +163,14 @@ Defines which file scopes contribute to **recall denominator**:
 
 **NOTE:** This is a soft expectation - critics CAN find issues outside expected scopes (recall >100% possible).
 
-### graders_match_only_if_reported_on
+### match_file_restriction
 
 **HARD CONSTRAINT** on where graders can give credit:
 
-- `null` (default): Critique can match from any file
-- Non-empty list: Grader may only give credit if critique flagged overlapping files
+- `null` (default): Critique can match from any file (unrestricted)
+- Non-empty list: Grader may only give credit if critique flagged overlapping files (file-restricted)
 
-This is distinct from `critic_scopes_expected_to_recall` - see ground_truth.md.j2 for the full explanation.
+This is distinct from `critic_scopes_expected_to_recall` - see ground_truth.md.mako for the full explanation.
 
 - Independent of critic_scopes (detection source ≠ valid reporting targets)
 
@@ -177,11 +189,11 @@ occurrences:
     note: Why this specific case is acceptable
     relevant_files:
       - file1.py # Files that make this FP relevant
-    graders_match_only_if_reported_on:
+    match_file_restriction:
       - file1.py # Optional: restrict matching scope
 ```
 
-## Complete Example with Per-Range Notes
+## Complete Example
 
 ```yaml
 rationale: |
@@ -201,9 +213,20 @@ occurrences:
     note: Variable cid assigned then used in conditional check
     critic_scopes_expected_to_recall:
       - [adgn/agent/agent.py]
-    graders_match_only_if_reported_on:
+    match_file_restriction:
       - adgn/agent/agent.py
 ```
+
+## Auto-Inference Rules
+
+**For true positives:**
+
+- Single file in occurrence → `critic_scopes_expected_to_recall` auto-inferred as `[[that_file]]`
+- Multiple files in occurrence → Must provide explicit `critic_scopes_expected_to_recall`
+
+**For false positives:**
+
+- `relevant_files` auto-inferred from keys of `files` if not provided
 
 ## Best Practices
 
