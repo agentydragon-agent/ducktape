@@ -5,16 +5,25 @@
 #   bazel run //tools/format                        # Format all tracked files
 
 load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
 # Custom formatter that handles filenames with special characters correctly.
 # Unlike rules_lint's format.sh, this doesn't use `find` which breaks on filenames
 # containing dashes that look like predicates (e.g., "-recipe-").
+py_library(
+    name = "formatter",
+    srcs = ["formatter.py"],
+    deps = [
+        "//tools:env_utils",
+        "@pypi//pygit2",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 py_binary(
     name = "format",
-    srcs = ["__main__.py"],
     data = [
         "//tools/lint:prettier",
         "@aspect_rules_lint//format:ruff",
@@ -27,18 +36,13 @@ py_binary(
         "RUFF_BIN": "$(rlocationpath @aspect_rules_lint//format:ruff)",
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
     },
-    main = "__main__.py",
-    deps = [
-        "//tools:env_utils",
-        "@pypi//pygit2",
-        "@rules_python//python/runfiles",
-    ],
+    main_module = "tools.format.formatter",
+    deps = [":formatter"],
 )
 
 # Check-only mode - same script with FMT_CHECK=1
 py_binary(
     name = "format.check",
-    srcs = ["__main__.py"],
     data = [
         "//tools/lint:prettier",
         "@aspect_rules_lint//format:ruff",
@@ -52,12 +56,8 @@ py_binary(
         "SHFMT_BIN": "$(rlocationpath @aspect_rules_lint//format:shfmt)",
         "FMT_CHECK": "1",
     },
-    main = "__main__.py",
-    deps = [
-        "//tools:env_utils",
-        "@pypi//pygit2",
-        "@rules_python//python/runfiles",
-    ],
+    main_module = "tools.format.formatter",
+    deps = [":formatter"],
 )
 
 # Keep the old format_multirun as format_old for comparison/fallback

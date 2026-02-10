@@ -1,11 +1,10 @@
 # gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-py_binary(
-    name = "gmail_archiver",
-    srcs = ["__main__.py"],
-    main = "__main__.py",
-    visibility = ["//visibility:public"],
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         ":dirs",
         ":event_classifier",
@@ -32,6 +31,13 @@ py_binary(
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
+)
+
+py_binary(
+    name = "gmail_archiver",
+    main_module = "gmail_archiver.main",
+    visibility = ["//visibility:public"],
+    deps = [":main"],
 )
 
 py_library(

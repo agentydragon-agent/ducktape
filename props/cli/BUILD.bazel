@@ -59,7 +59,7 @@ py_library(
 
 py_library(
     name = "main",
-    srcs = ["__main__.py"],
+    srcs = ["main.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -75,7 +75,7 @@ py_library(
 
 py_binary(
     name = "cli",
-    main_module = "props.cli",
+    main_module = "props.cli.main",
     visibility = ["//visibility:public"],
     deps = [":main"],
 )

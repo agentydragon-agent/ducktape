@@ -6,8 +6,8 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "__main__",
-    srcs = ["__main__.py"],
+    name = "main",
+    srcs = ["main.py"],
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -243,9 +243,9 @@ py_library(
 py_binary(
     name = "py_detectors_cli",
     imports = [".."],
-    main_module = "py_detectors",
+    main_module = "py_detectors.main",
     visibility = ["//:__subpackages__"],
-    deps = [":__main__"],
+    deps = [":main"],
 )
 
 py_binary(
@@ -266,8 +266,8 @@ py_test(
     imports = ["."],
     main = "tests/test_detectors.py",
     deps = [
-        ":__main__",
         ":base",
+        ":main",
         ":models",
         ":registry",
         ":utils",

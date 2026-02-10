@@ -1,6 +1,6 @@
 # gazelle:python_library_naming_convention $package_name$_lib
-# gazelle:resolve py difftree.__main__ //difftree:__main__
-# gazelle:resolve py difftree.__main__.main //difftree:__main__
+# gazelle:resolve py difftree.cli //difftree:cli
+# gazelle:resolve py difftree.cli.main //difftree:cli
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # =============================================================================
@@ -52,8 +52,8 @@ py_library(
 )
 
 py_library(
-    name = "__main__",
-    srcs = ["__main__.py"],
+    name = "cli",
+    srcs = ["cli.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -68,17 +68,9 @@ py_library(
 
 py_binary(
     name = "difftree",
-    srcs = ["__main__.py"],
     imports = [".."],
-    main = "__main__.py",
-    deps = [
-        ":config",
-        ":diff_tree",
-        ":parser",
-        ":tree",
-        "@pypi//click",
-        "@pypi//rich",
-    ],
+    main_module = "difftree.cli",
+    deps = [":cli"],
 )
 
 # =============================================================================
@@ -110,7 +102,7 @@ py_test(
     srcs = ["test_cli.py"],
     imports = [".."],
     deps = [
-        ":__main__",
+        ":cli",
         ":conftest",
         "@pypi//click",
         "@pypi//pytest",

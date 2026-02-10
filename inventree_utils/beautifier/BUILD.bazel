@@ -73,10 +73,9 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "beautifier_bin",
-    srcs = ["__main__.py"],
-    main = "__main__.py",
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":assign_jellybean",
@@ -85,6 +84,13 @@ py_binary(
         ":upload_lcsc_images",
         "@pypi//structlog",
     ],
+)
+
+py_binary(
+    name = "beautifier_bin",
+    main_module = "inventree_utils.beautifier.cli",
+    visibility = ["//:__subpackages__"],
+    deps = [":cli"],
 )
 
 py_test(

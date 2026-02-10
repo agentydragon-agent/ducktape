@@ -24,7 +24,7 @@ async def mcp_client() -> AsyncIterator[Client]:
         MCPConfig(
             mcpServers={
                 "starter": StdioMCPServer(
-                    command=sys.executable, args=["-m", "mcp_starter", "--debug"], env=python_env(inherit=False)
+                    command=sys.executable, args=["-m", "mcp_starter.main", "--debug"], env=python_env(inherit=False)
                 )
             }
         )

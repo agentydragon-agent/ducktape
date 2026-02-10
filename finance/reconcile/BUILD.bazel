@@ -22,11 +22,9 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "reconcile",
-    srcs = ["__main__.py"],
-    main = "__main__.py",
-    visibility = ["//visibility:public"],
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
     deps = [
         ":splitwise_lib",
         "//finance:gnucash_util",
@@ -35,4 +33,11 @@ py_binary(
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
+)
+
+py_binary(
+    name = "reconcile",
+    main_module = "finance.reconcile.cli",
+    visibility = ["//visibility:public"],
+    deps = [":cli"],
 )

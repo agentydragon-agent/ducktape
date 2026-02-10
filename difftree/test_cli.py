@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from click.testing import CliRunner
 
-from difftree.__main__ import main
+from difftree.cli import main
 from difftree.conftest import create_file, git_add_commit
 
 

@@ -140,14 +140,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "__main__",
-    srcs = ["__main__.py"],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [":cli"],
-)
-
 # --- Binaries ---
 
 py_binary(

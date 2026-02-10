@@ -151,7 +151,7 @@ py_package(
         "openai_utils",
     ],
     deps = [
-        "//difftree:__main__",
+        "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
     ],
 )
@@ -162,8 +162,8 @@ py_wheel(
     entry_points = {
         "console_scripts": [
             "git-commit-ai = git_commit_ai.cli:main",
-            "difftree = difftree.__main__:main",
-            "gmail-archiver = gmail_archiver.__main__:app",
+            "difftree = difftree.cli:main",
+            "gmail-archiver = gmail_archiver.main:app",
         ],
     },
     python_requires = ">=3.13",

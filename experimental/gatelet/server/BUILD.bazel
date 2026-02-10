@@ -7,17 +7,17 @@ load("//tools/testing:docker.bzl", "docker_py_test")
 py_binary(
     name = "server",
     imports = ["../../.."],
-    main_module = "experimental.gatelet.server",
+    main_module = "experimental.gatelet.server.main",
     visibility = ["//experimental/gatelet:__pkg__"],
-    deps = [":__main__"],
+    deps = [":main"],
 )
 
 aspect_py_binary(
     name = "server_bin",
     imports = ["../../.."],
-    main = "__main__.py",
+    main = "main.py",
     visibility = ["//experimental/gatelet:__pkg__"],
-    deps = [":__main__"],
+    deps = [":main"],
 )
 
 py_image_layer(
@@ -27,8 +27,8 @@ py_image_layer(
 )
 
 py_library(
-    name = "__main__",
-    srcs = ["__main__.py"],
+    name = "main",
+    srcs = ["main.py"],
     imports = ["../../.."],
     visibility = ["//experimental/gatelet:__subpackages__"],
     deps = [
