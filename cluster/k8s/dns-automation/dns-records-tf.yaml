@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./terraform/gitops/dns-records
+  path: ./cluster/terraform/gitops/dns-records
   sourceRef:
     kind: GitRepository
     name: flux-system
