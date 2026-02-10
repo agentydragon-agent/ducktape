@@ -73,6 +73,10 @@ data "talos_machine_configuration" "vps" {
             enabled = true
             port    = 7445
           }
+          hostDNS = {
+            enabled              = true
+            forwardKubeDNSToHost = true
+          }
         }
         kubelet = {
           # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
