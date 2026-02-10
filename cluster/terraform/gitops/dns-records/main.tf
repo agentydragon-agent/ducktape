@@ -74,3 +74,17 @@ resource "powerdns_record" "ns" {
   ttl     = 3600
   records = [each.value.ip]
 }
+
+# Update registered domain nameservers to point to our PowerDNS
+# This changes the delegation at the TLD level from AWS Route 53 to our servers
+resource "aws_route53domains_registered_domain" "allegedly_works" {
+  domain_name = local.domain
+
+  dynamic "name_server" {
+    for_each = local.ns_records
+    content {
+      name     = "${name_server.value.ns_name}.${local.domain}"
+      glue_ips = [name_server.value.ip]
+    }
+  }
+}

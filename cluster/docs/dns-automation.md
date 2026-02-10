@@ -6,10 +6,11 @@ Automated propagation of VPS IPs to DNS records via tofu-controller.
 
 When VPS nodes are created/recreated with new public IPs, DNS records need updating:
 
-1. **Route 53 Glue Records** - `ns1.allegedly.works` and `ns2.allegedly.works` A records at the registrar
-2. **PowerDNS NS Records** - Same A records within the zone for internal resolution
+1. **Domain Nameservers** - Update registered domain to use `ns1/ns2.allegedly.works` with glue IPs
+2. **Route 53 Glue Records** - `ns1.allegedly.works` and `ns2.allegedly.works` A records in hosted zone
+3. **PowerDNS NS Records** - Same A records within the zone for internal resolution
 
-This is automated via tofu-controller reading VPS IPs from a ConfigMap and managing both Route 53 and PowerDNS records.
+This is automated via tofu-controller reading VPS IPs from a ConfigMap and managing Route 53, domain registration, and PowerDNS records.
 
 ## Architecture
 
@@ -22,7 +23,8 @@ terraform/01-infrastructure
 tofu-controller (in-cluster)
 ├── Reads VPS IPs from ConfigMap
 ├── AWS credentials from SealedSecret
-├── Route 53 glue records (AWS provider)
+├── Domain nameservers (route53domains - sets ns1/ns2 with glue IPs)
+├── Route 53 glue records (route53 - A records in hosted zone)
 └── PowerDNS NS A records (powerdns provider)
 ```
 
@@ -30,7 +32,7 @@ tofu-controller (in-cluster)
 
 ### IAM Policy: `Route53-allegedly-works-glue-records`
 
-Minimal scope policy for Route 53 record management:
+Minimal scope policy for Route 53 record and domain nameserver management:
 
 ```json
 {
@@ -52,10 +54,18 @@ Minimal scope policy for Route 53 record management:
       "Effect": "Allow",
       "Action": "route53:ListHostedZones",
       "Resource": "*"
+    },
+    {
+      "Sid": "ManageDomainNameservers",
+      "Effect": "Allow",
+      "Action": ["route53domains:GetDomainDetail", "route53domains:UpdateDomainNameservers"],
+      "Resource": "*"
     }
   ]
 }
 ```
+
+**Note**: Root/admin AWS credentials are only needed once to create the IAM user, policy, and access key. After that, the `cluster-dns-manager` credentials are self-sufficient.
 
 ### IAM User: `cluster-dns-manager`
 
@@ -138,7 +148,11 @@ kubectl get configmap cluster-info -n kube-system -o yaml
 # Check Terraform resource status
 kubectl get terraform dns-records -n flux-system
 
-# Verify Route 53 records
+# Verify domain nameservers (should show ns1/ns2.allegedly.works with glue IPs)
+aws route53domains get-domain-detail --domain-name allegedly.works \
+  --query 'Nameservers'
+
+# Verify Route 53 glue records
 aws route53 list-resource-record-sets --hosted-zone-id Z02901943N8ZFQFOD9P5I \
   --query "ResourceRecordSets[?Name=='ns1.allegedly.works.']"
 
@@ -146,6 +160,7 @@ aws route53 list-resource-record-sets --hosted-zone-id Z02901943N8ZFQFOD9P5I \
 kubectl exec -n dns-system -l app.kubernetes.io/name=powerdns -- \
   pdnsutil list-zone allegedly.works | grep "^ns"
 
-# Test DNS resolution
+# Test DNS resolution (after TLD propagation, may take up to 48h)
+dig +trace allegedly.works
 dig @ns1.allegedly.works allegedly.works
 ```
