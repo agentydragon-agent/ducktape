@@ -11,10 +11,7 @@ k8sServiceHost: "localhost"
 k8sServicePort: "7445"
 
 ipam:
-  mode: cluster-pool
-  operator:
-    clusterPoolIPv4PodCIDRList:
-      - "10.244.0.0/16"
+  mode: kubernetes # Use Kubernetes-assigned node.spec.podCIDR for consistency
 
 # Use tunnel mode for cloud environments (VPS nodes behind gateway)
 routingMode: tunnel
