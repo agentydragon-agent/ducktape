@@ -20,10 +20,10 @@ ipv4:
   enabled: true
 enableIPv4Masquerade: true
 
-# Enable IPv6 for KubeSpan mesh (fd05::/64 addresses)
+# Disable IPv6 for pods - KubeSpan uses its own WireGuard IPv6 independently
+# Enabling ipv6 here requires dual-stack podCIDRs from Kubernetes
 ipv6:
-  enabled: true
-enableIPv6Masquerade: true
+  enabled: false
 
 securityContext:
   capabilities:
