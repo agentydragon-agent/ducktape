@@ -594,3 +594,118 @@ This ensures the documentation serves both as operational procedures (docs/boots
 ## Secrets Management
 
 @docs/secrets.md
+
+## ⚠️ CRITICAL: Flux Kustomization Layering (CRD Dependencies)
+
+**Never mix HelmReleases with CRD instances from external operators in the same Kustomization.**
+
+### The Problem
+
+Flux has two controllers with separate API caches:
+
+- **kustomize-controller**: Applies YAML manifests, respects `dependsOn`
+- **helm-controller**: Templates and installs Helm charts, has its own REST mapper cache
+
+When a Kustomization contains both a HelmRelease AND resources using CRDs from another operator
+(e.g., `ExternalSecret`, `Password`, `Certificate`), helm-controller may fail because its API
+cache doesn't know about CRDs installed by other operators.
+
+**Root cause**: helm-controller only invalidates its cache when IT installs CRDs from a chart's
+`crds/` directory. CRDs installed by kustomize-controller or other HelmReleases are invisible
+to helm-controller's cache until it restarts.
+
+### The Rule
+
+**Separate resources into layers based on CRD dependencies:**
+
+```text
+Layer 1: CRD Operators (install CRDs)
+├── external-secrets-operator
+├── cert-manager
+└── kyverno
+
+Layer 2: CRD Instances (use CRDs from Layer 1)
+├── {app}-secrets (ExternalSecret, Password resources)
+├── cluster-certificates (Certificate resources)
+└── cluster-policies (ClusterPolicy resources)
+
+Layer 3: Applications (consume secrets/certs created in Layer 2)
+├── powerdns (HelmRelease only)
+├── authentik (HelmRelease only)
+└── gitea (HelmRelease only)
+```
+
+### Correct Pattern
+
+**WRONG** - Mixed resources in one Kustomization:
+
+```yaml
+# k8s/powerdns/kustomization.yaml
+resources:
+  - namespace.yaml
+  - helmrelease.yaml # Processed by helm-controller
+  - password-generator.yaml # Uses external-secrets CRD
+  - externalsecret.yaml # Uses external-secrets CRD
+```
+
+**CORRECT** - Separated into layers:
+
+```yaml
+# k8s/powerdns-secrets/kustomization.yaml (Layer 2)
+resources:
+  - namespace.yaml
+  - password-generator.yaml
+  - externalsecret.yaml
+
+# k8s/powerdns-secrets/flux-kustomization.yaml
+dependsOn:
+  - name: external-secrets-operator  # CRDs exist before we apply
+
+# k8s/powerdns/kustomization.yaml (Layer 3)
+resources:
+  - helmrelease.yaml
+
+# k8s/powerdns/flux-kustomization.yaml
+dependsOn:
+  - name: powerdns-secrets  # Secrets exist before HelmRelease
+```
+
+### CRD to Operator Mapping
+
+| CRD Kind             | API Group                        | Required Operator Kustomization |
+| -------------------- | -------------------------------- | ------------------------------- |
+| `ExternalSecret`     | `external-secrets.io`            | `external-secrets-operator`     |
+| `Password`           | `generators.external-secrets.io` | `external-secrets-operator`     |
+| `ClusterSecretStore` | `external-secrets.io`            | `external-secrets-operator`     |
+| `SecretStore`        | `external-secrets.io`            | `external-secrets-operator`     |
+| `Certificate`        | `cert-manager.io`                | `cert-manager`                  |
+| `ClusterIssuer`      | `cert-manager.io`                | `cert-manager`                  |
+| `Issuer`             | `cert-manager.io`                | `cert-manager`                  |
+| `ClusterPolicy`      | `kyverno.io`                     | `kyverno`                       |
+| `IPAddressPool`      | `metallb.io`                     | `metallb`                       |
+| `L2Advertisement`    | `metallb.io`                     | `metallb`                       |
+| `Vault`              | `vault.banzaicloud.com`          | `vault-operator`                |
+| `Terraform`          | `infra.contrib.fluxcd.io`        | `core` (tofu-controller)        |
+
+### Validation
+
+CRD layering violations are detected automatically by pre-commit via `validate_kustomizations.py`.
+
+The check detects:
+
+1. Kustomizations mixing HelmReleases with external CRD instances
+2. Potential helm-controller cache issues from incorrect layering
+
+### When Adding New Applications
+
+1. **Create `{app}-secrets/` directory** for ESO resources if the app needs secrets
+2. **Create flux-kustomization.yaml** with `dependsOn: external-secrets-operator`
+3. **Create main `{app}/` directory** for HelmRelease only
+4. **Add `dependsOn: {app}-secrets`** to the main flux-kustomization.yaml
+
+### Symptoms of Violation
+
+- `no matches for kind "ExternalSecret"` errors
+- HelmRelease stuck in "Reconciliation in progress"
+- helm-controller logs: `failed to get API group resources`
+- Intermittent failures that resolve after controller restart
