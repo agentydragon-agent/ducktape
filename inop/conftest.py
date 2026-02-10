@@ -2,6 +2,7 @@
 
 import pytest
 
+import runfiles as rf
 from agent_core.testing.mcp.responses import *  # noqa: F403
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
@@ -20,6 +21,19 @@ from inop.config import (
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode."""
     config.option.asyncio_mode = "auto"
+
+
+# Point tiktoken at bundled o200k_base encoding from Bazel runfiles so tests
+# work offline / on RBE workers without network access.
+_TIKTOKEN_CACHE_KEY = "fb374d419588a4632f3f557e76b4b70aebbca790"
+
+
+@pytest.fixture(scope="session")
+def tiktoken_cache():
+    path = rf.get_required_path(f"tiktoken_o200k_base/file/{_TIKTOKEN_CACHE_KEY}")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("TIKTOKEN_CACHE_DIR", str(path.parent))
+        yield
 
 
 @pytest.fixture

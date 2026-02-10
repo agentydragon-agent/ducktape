@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 import pytest_bazel
 import tiktoken
 
@@ -9,6 +10,7 @@ from inop.engine.models import FileInfo
 from inop.prompting.truncation_utils import TruncationManager
 
 
+@pytest.mark.usefixtures("tiktoken_cache")
 class TestFileTruncation:
     """Test centralized file truncation logic."""
 

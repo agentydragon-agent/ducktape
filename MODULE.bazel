@@ -401,6 +401,17 @@ use_repo(extra_deps, "xml_conduit")
 # ─ External binaries via http_archive ────────────────────────────────────────
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
+# Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
+http_file(
+    name = "tiktoken_o200k_base",
+    downloaded_file_path = "fb374d419588a4632f3f557e76b4b70aebbca790",
+    sha256 = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d",
+    urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
+)
+
 # gitstatusd - Git status daemon for wt tests
 # Build target: //third_party/gitstatusd
 http_archive(

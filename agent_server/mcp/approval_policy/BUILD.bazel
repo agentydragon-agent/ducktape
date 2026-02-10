@@ -84,7 +84,10 @@ docker_py_test(
 docker_py_test(
     name = "test_server",
     srcs = ["test_server.py"],
-    data = ["//third_party/python_slim:load"],
+    data = [
+        "//agent_server:load",
+        "//third_party/python_slim:load",
+    ],
     imports = ["../../.."],
     deps = [
         "//agent_core:agent",
