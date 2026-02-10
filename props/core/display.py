@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from functools import partial
-from typing import Any, Literal, Protocol, TypeVar
+from typing import Any, Literal, TypeVar
 from uuid import UUID
 
 from rich import box
 from rich.table import Table
-
-from props.db.models import AgentRunStatus, StatsWithCI
 
 # Display constants
 SHORT_UUID_LENGTH = 8
@@ -45,71 +42,6 @@ def fmt_float(value: float | None, decimals: int = 2) -> str:
 def fmt_model(model: str, max_length: int = 12) -> str:
     """Truncate model name for display."""
     return model[:max_length]
-
-
-class HasStatusCounts(Protocol):
-    """Row with status_counts dict (ORM models or raw SQL rows)."""
-
-    @property
-    def status_counts(self) -> dict[str, int] | None: ...
-
-
-# Status display mapping: AgentRunStatus -> (header, column width)
-# IN_PROGRESS excluded since it's transient, not a terminal outcome
-STATUS_DISPLAY: dict[AgentRunStatus, tuple[str, int]] = {
-    AgentRunStatus.EXITED: ("✓", 4),
-    AgentRunStatus.TIMED_OUT: ("T", 3),
-}
-
-
-def get_status_count(status: AgentRunStatus, row: HasStatusCounts) -> int:
-    """Get count for a specific status from row.status_counts dict."""
-    if row.status_counts is None:
-        return 0
-    # Handle both string keys (from raw SQL) and enum keys (from ORM)
-    count = row.status_counts.get(status) or row.status_counts.get(status.value, 0)
-    return count or 0
-
-
-def _make_status_column(status: AgentRunStatus) -> ColumnDef[HasStatusCounts, int]:
-    """Create a column definition for a status count."""
-    header, width = STATUS_DISPLAY[status]
-    return ColumnDef(header, partial(get_status_count, status), str, justify="right", width=width)
-
-
-def build_status_columns() -> list[ColumnDef[HasStatusCounts, int]]:
-    """Build list of status count columns (✓, T)."""
-    return [_make_status_column(status) for status in STATUS_DISPLAY]
-
-
-class HasRecallStats(Protocol):
-    """Row with recall_stats (StatsWithCI | None)."""
-
-    @property
-    def recall_stats(self) -> StatsWithCI | None: ...
-
-
-def get_recall_mean(row: HasRecallStats) -> float | None:
-    """Extract mean recall from row.recall_stats."""
-    return row.recall_stats.mean if row.recall_stats else None
-
-
-def get_recall_ucb(row: HasRecallStats) -> float | None:
-    """Extract UCB95 from row.recall_stats."""
-    return row.recall_stats.ucb95 if row.recall_stats else None
-
-
-def get_recall_lcb(row: HasRecallStats) -> float | None:
-    """Extract LCB95 from row.recall_stats."""
-    return row.recall_stats.lcb95 if row.recall_stats else None
-
-
-def build_recall_columns() -> list[ColumnDef[HasRecallStats, float | None]]:
-    """Build list of recall stats columns (Recall, UCB, LCB)."""
-    return [
-        ColumnDef(name, accessor, fmt_pct, justify="right", width=7)
-        for name, accessor in [("Recall", get_recall_mean), ("UCB", get_recall_ucb), ("LCB", get_recall_lcb)]
-    ]
 
 
 @dataclass

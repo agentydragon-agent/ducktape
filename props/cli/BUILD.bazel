@@ -8,24 +8,11 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 # =============================================================================
 
 py_library(
-    name = "types",
-    srcs = ["types.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:ids",
-        "@pypi//click",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "common_options",
     srcs = ["common_options.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":types",
         "@pypi//typer_slim",
     ],
 )
