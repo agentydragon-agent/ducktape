@@ -171,7 +171,7 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 1. [ ] Run `./bootstrap.sh` to create VPS nodes (new public IPs assigned)
 2. [ ] Verify VPS IPs in ConfigMap:
    ```bash
-   kubectl get configmap cluster-info -n flux-system -o jsonpath='{.data.vps_nodes}' | jq
+   kubectl get configmap cluster-info -n kube-system -o jsonpath='{.data.vps_nodes}' | jq
    ```
 3. [x] ~~Update cluster configs with new VPS IPs~~ - **Automated via DNS automation**
    - Route 53 glue records: tofu-controller creates automatically

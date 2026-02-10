@@ -127,8 +127,8 @@ dns-automation (creates Route 53 + PowerDNS records)
 ## Verification
 
 ```bash
-# Check ConfigMap exists
-kubectl get configmap cluster-info -n flux-system -o yaml
+# Check ConfigMap exists (in kube-system, created by infrastructure layer)
+kubectl get configmap cluster-info -n kube-system -o yaml
 
 # Check Terraform resource status
 kubectl get terraform dns-records -n flux-system

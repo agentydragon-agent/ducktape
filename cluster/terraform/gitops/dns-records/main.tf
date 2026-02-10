@@ -16,10 +16,11 @@ terraform {
 }
 
 # Read VPS IPs from ConfigMap created by infrastructure terraform
+# Note: ConfigMap is in kube-system (always exists during infra layer)
 data "kubernetes_config_map" "cluster_info" {
   metadata {
     name      = "cluster-info"
-    namespace = "flux-system"
+    namespace = "kube-system"
   }
 }
 
