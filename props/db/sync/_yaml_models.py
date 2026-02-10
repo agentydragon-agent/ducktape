@@ -41,7 +41,7 @@ class YAMLOccurrence(BaseModel):
         default=None, description="Critic scope file sets where this counts toward recall (TPs only)"
     )
     relevant_files: list[str] | None = Field(default=None, description="Files making this FP relevant (FPs only)")
-    graders_match_only_if_reported_on: list[str] | None = Field(
+    match_file_restriction: list[str] | None = Field(
         default=None,
         description=(
             "GRADING OPTIMIZATION: Restricts which critique outputs can match this occurrence. "
@@ -54,12 +54,12 @@ class YAMLOccurrence(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("graders_match_only_if_reported_on", mode="before")
+    @field_validator("match_file_restriction", mode="before")
     @classmethod
-    def validate_graders_match_only_if_reported_on(cls, v: list[str] | None) -> list[str] | None:
+    def validate_match_file_restriction(cls, v: list[str] | None) -> list[str] | None:
         """Reject empty list - must be null or non-empty."""
         if v is not None and len(v) == 0:
-            raise ValueError("graders_match_only_if_reported_on must be null or non-empty (got empty list)")
+            raise ValueError("match_file_restriction must be null or non-empty (got empty list)")
         return v
 
     @field_validator("files", mode="before")
@@ -148,8 +148,8 @@ class YAMLOccurrence(BaseModel):
             critic_scopes_expected_to_recall={
                 frozenset(Path(p) for p in trigger_set) for trigger_set in self.critic_scopes_expected_to_recall
             },
-            graders_match_only_if_reported_on={Path(p) for p in self.graders_match_only_if_reported_on}
-            if self.graders_match_only_if_reported_on
+            match_file_restriction={Path(p) for p in self.match_file_restriction}
+            if self.match_file_restriction
             else None,
         )
 
@@ -163,8 +163,8 @@ class YAMLOccurrence(BaseModel):
             files=self._build_files_dict(),
             note=self.note,
             relevant_files={Path(p) for p in self.relevant_files},
-            graders_match_only_if_reported_on={Path(p) for p in self.graders_match_only_if_reported_on}
-            if self.graders_match_only_if_reported_on
+            match_file_restriction={Path(p) for p in self.match_file_restriction}
+            if self.match_file_restriction
             else None,
         )
 

@@ -19,19 +19,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections import defaultdict
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
-from props.agents.grader.drift_handler import check_all_pending, check_grading_pending
+from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
 from props.db.database import Database
 from props.db.models import AgentRunStatus, GradingEdge, IssueCluster, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import DBLocationAnchor
+from props.testing.assertions import assert_no_pending
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run
 
@@ -42,7 +42,14 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 
 @pytest.mark.timeout(180)
 async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
-    """Test that snapshot grader detects, grades, and clusters new critique issues."""
+    """Test that snapshot grader detects, grades, and clusters new critique issues.
+
+    Train1 fixture for subtract.py produces 5 edges:
+    - 4 TP edges: tp-001/occ-1, tp-003/occ-1, tp-004/occ-1, tp-005/occ-1
+    - 1 FP edge: fp-001/fp-occ-1
+
+    All graded with credit=0, so issue appears in clustering_pending.
+    """
 
     grading_done = asyncio.Event()
 
@@ -50,32 +57,26 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 
-        # List pending items
-        pending = yield from m.list_pending_roundtrip()
-        logger.info(f"Grader found {len(pending)} pending items")
+        # Get pending edges for test-issue-1 on subtract.py
+        drift = yield from m.get_drift_roundtrip()
+        run_id = drift.grading[0].critique_run_id
 
-        # Group by (run_id, issue_id) and fill each group at once
-        by_issue: dict[tuple[UUID, str], int] = defaultdict(int)
-        for edge in pending:
-            by_issue[(edge.critique_run_id, edge.critique_issue_id)] += 1
+        # Fill all 5 edges with credit=0
+        yield from m.fill_remaining_roundtrip(run_id, "test-issue-1", 5, "No matching ground truth")
 
-        for (run_id, issue_id), count in by_issue.items():
-            logger.info(f"Grading {count} edges for issue {issue_id} from run {run_id}")
-            yield from m.fill_remaining_roundtrip(run_id, issue_id, count, "No matching ground truth")
+        # Issue has credit=0, so it appears in clustering_pending
+        drift = yield from m.get_drift_roundtrip()
+        assert len(drift.clustering) == 1, f"Expected 1 clustering issue, got {len(drift.clustering)}"
 
-        # Cluster unmatched issues
-        clustering_pending = yield from m.list_clustering_pending_roundtrip()
-        logger.info(f"Grader found {len(clustering_pending)} issues needing clustering")
-
-        if clustering_pending:
-            members = [
-                ClusterMemberSpec(run=cp.critique_run_id, issue_id=cp.critique_issue_id, rationale="Novel issue")
-                for cp in clustering_pending
-            ]
-            yield from m.create_cluster_roundtrip("novel-issues", "Novel issues not in ground truth", members)
+        # Cluster the single issue
+        yield from m.create_cluster_roundtrip(
+            "novel-issues",
+            "Novel issues not in ground truth",
+            [ClusterMemberSpec(run=run_id, issue_id="test-issue-1", rationale="Novel issue")],
+        )
 
         grading_done.set()
-        yield m.sleep("Graded and clustered all pending")
+        yield from m.sleep_forever("Graded and clustered all pending")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
         # Create drift BEFORE starting grader so it finds drift on first check.
@@ -107,8 +108,8 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
             logger.info(f"Created critic run {critic_run_id} with reported issue")
 
         # Precondition: verify grading_pending has rows before starting grader
-        pending_count = check_grading_pending(test_snapshot, db)
-        assert pending_count > 0, f"grading_pending should have rows but has {pending_count}"
+        drift = get_drift(test_snapshot, db)
+        assert drift.grading, "grading_pending should have rows but is empty"
 
         # Start snapshot grader in background task
         grader_task = asyncio.create_task(
@@ -148,7 +149,7 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
             assert cluster is not None, "Issue cluster was not created"
 
         # Assert no drift remains (grading + clustering)
-        assert check_all_pending(test_snapshot, db) == 0, "Drift should be zero after grading + clustering"
+        assert_no_pending(test_snapshot, db)
 
 
 if __name__ == "__main__":

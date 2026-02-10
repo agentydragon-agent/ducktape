@@ -42,6 +42,7 @@ from props.db.sync._yaml import load_yaml_issues
 from props.db.sync.loader import discover_snapshots
 
 if TYPE_CHECKING:
+    from props.config import PropsConfig
     from props.core.models.true_positive import LineRange
 
 logger = logging.getLogger(__name__)
@@ -354,8 +355,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         tp_id=issue.tp_id,
                         occurrence_id=occ.occurrence_id,
                         note=occ.note,
-                        graders_match_only_if_reported_on=ensure_file_set(
-                            session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
+                        match_file_restriction=ensure_file_set(
+                            session, issue.snapshot_slug, occ.match_file_restriction
                         ),
                     )
                     session.add(orm_occ)
@@ -384,8 +385,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             tp_id=issue.tp_id,
                             occurrence_id=occ.occurrence_id,
                             note=occ.note,
-                            graders_match_only_if_reported_on=ensure_file_set(
-                                session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
+                            match_file_restriction=ensure_file_set(
+                                session, issue.snapshot_slug, occ.match_file_restriction
                             ),
                         )
                         session.add(orm_occ)
@@ -411,8 +412,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         fp_id=fp.fp_id,
                         occurrence_id=fp_occ.occurrence_id,
                         note=fp_occ.note,
-                        graders_match_only_if_reported_on=ensure_file_set(
-                            session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
+                        match_file_restriction=ensure_file_set(
+                            session, fp.snapshot_slug, fp_occ.match_file_restriction
                         ),
                     )
                     session.add(fp_orm_occ)
@@ -449,8 +450,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             fp_id=fp.fp_id,
                             occurrence_id=fp_occ.occurrence_id,
                             note=fp_occ.note,
-                            graders_match_only_if_reported_on=ensure_file_set(
-                                session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
+                            match_file_restriction=ensure_file_set(
+                                session, fp.snapshot_slug, fp_occ.match_file_restriction
                             ),
                         )
                         session.add(fp_orm_occ)
@@ -653,13 +654,13 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
         file_sets_added += 1
 
     for slug, files_hash in to_delete:
-        # Clear graders_match_only_if_reported_on on occurrences before deleting file_set (FK RESTRICT)
+        # Clear match_file_restriction on occurrences before deleting file_set (FK RESTRICT)
         session.query(TruePositiveOccurrenceORM).filter_by(
-            snapshot_slug=slug, graders_match_only_if_reported_on=files_hash
-        ).update({TruePositiveOccurrenceORM.graders_match_only_if_reported_on: None})
+            snapshot_slug=slug, match_file_restriction=files_hash
+        ).update({TruePositiveOccurrenceORM.match_file_restriction: None})
         session.query(FalsePositiveOccurrenceORM).filter_by(
-            snapshot_slug=slug, graders_match_only_if_reported_on=files_hash
-        ).update({FalsePositiveOccurrenceORM.graders_match_only_if_reported_on: None})
+            snapshot_slug=slug, match_file_restriction=files_hash
+        ).update({FalsePositiveOccurrenceORM.match_file_restriction: None})
         session.query(FileSet).filter_by(snapshot_slug=slug, files_hash=files_hash).delete()
         file_sets_deleted += 1
 
@@ -701,28 +702,61 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
 
 
-def sync_model_metadata_with_session(session: Session) -> SyncStats:
-    """Sync model_metadata table from MODEL_METADATA source using provided session.
+def sync_model_metadata_with_session(session: Session, config: PropsConfig | None = None) -> SyncStats:
+    """Sync model_metadata table from MODEL_METADATA and config sources.
 
-    Ensures database exactly matches the source of truth.
+    Syncs from two sources:
+    - OpenAI models from openai_utils.model_metadata.MODEL_METADATA (upstream_name=NULL)
+    - Custom models from PropsConfig.models (upstream_name/upstream_model from config)
 
     Args:
         session: Active database session
+        config: Optional props config with custom model definitions
 
     Returns:
         Statistics about what changed
     """
+    # Build complete source model set
+    source_models: dict[str, ModelMetadata] = {}
+
+    # Add OpenAI models (no upstream fields = defaults)
+    for model_id, meta in MODEL_METADATA.items():
+        source_models[model_id] = ModelMetadata(
+            model_id=model_id,
+            input_usd_per_1m_tokens=meta.input_usd_per_1m_tokens,
+            cached_input_usd_per_1m_tokens=meta.cached_input_usd_per_1m_tokens,
+            output_usd_per_1m_tokens=meta.output_usd_per_1m_tokens,
+            context_window_tokens=meta.context_window_tokens,
+            max_output_tokens=meta.max_output_tokens,
+            upstream_name=None,
+            upstream_model=None,
+        )
+
+    # Add custom models from config
+    if config is not None:
+        for custom in config.models:
+            source_models[custom.name] = ModelMetadata(
+                model_id=custom.name,
+                input_usd_per_1m_tokens=custom.input_usd_per_1m_tokens,
+                cached_input_usd_per_1m_tokens=custom.cached_input_usd_per_1m_tokens,
+                output_usd_per_1m_tokens=custom.output_usd_per_1m_tokens,
+                context_window_tokens=custom.context_window_tokens,
+                max_output_tokens=custom.max_output_tokens,
+                upstream_name=custom.upstream,
+                upstream_model=custom.upstream_model,
+            )
+
     # Fast path: if count matches, assume synced
     existing_count = session.query(ModelMetadata).count()
-    if existing_count == len(MODEL_METADATA):
+    if existing_count == len(source_models):
         logger.debug(f"Model metadata already synced ({existing_count} models)")
         return SyncStats(added=0, updated=0, deleted=0, total=existing_count)
 
     # Full sync: make DB exactly match source
-    logger.info(f"Syncing model_metadata table (source: {len(MODEL_METADATA)} models, DB: {existing_count})...")
+    logger.info(f"Syncing model_metadata table (source: {len(source_models)} models, DB: {existing_count})...")
 
     db_models = {m.model_id: m for m in session.query(ModelMetadata).all()}
-    source_model_ids = set(MODEL_METADATA.keys())
+    source_model_ids = set(source_models.keys())
     db_model_ids = set(db_models.keys())
 
     added = 0
@@ -736,18 +770,9 @@ def sync_model_metadata_with_session(session: Session) -> SyncStats:
         deleted += 1
 
     # Add/update from source using merge (handles both cases)
-    for model_id, meta in MODEL_METADATA.items():
+    for model_id, model_meta in source_models.items():
         is_new = model_id not in db_model_ids
-        session.merge(
-            ModelMetadata(
-                model_id=model_id,
-                input_usd_per_1m_tokens=meta.input_usd_per_1m_tokens,
-                cached_input_usd_per_1m_tokens=meta.cached_input_usd_per_1m_tokens,
-                output_usd_per_1m_tokens=meta.output_usd_per_1m_tokens,
-                context_window_tokens=meta.context_window_tokens,
-                max_output_tokens=meta.max_output_tokens,
-            )
-        )
+        session.merge(model_meta)
         if is_new:
             logger.debug(f"  Adding model: {model_id}")
             added += 1
@@ -758,9 +783,9 @@ def sync_model_metadata_with_session(session: Session) -> SyncStats:
     session.flush()
 
     logger.info(
-        f"Model metadata synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={len(MODEL_METADATA)} total"
+        f"Model metadata synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={len(source_models)} total"
     )
-    return SyncStats(added=added, updated=updated, deleted=deleted, total=len(MODEL_METADATA))
+    return SyncStats(added=added, updated=updated, deleted=deleted, total=len(source_models))
 
 
 @dataclass
@@ -774,7 +799,9 @@ class FullSyncResult:
     model_metadata_stats: SyncStats
 
 
-def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = False) -> FullSyncResult:
+def sync_all(
+    session: Session, *, config: PropsConfig | None = None, use_staged: bool = False, dry_run: bool = False
+) -> FullSyncResult:
     """Sync snapshots, issues, files, file sets, and model metadata.
 
     Discovers snapshots once and passes data to all sync operations.
@@ -785,7 +812,7 @@ def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = Fals
     2. snapshot_files (reads from DB content column)
     3. issues (depends on snapshots)
     4. file_sets (depends on snapshot_files and issues via FK)
-    5. model_metadata (independent)
+    5. model_metadata (independent, but needs config for custom models)
     """
     specimens_dir = get_specimens_base_path()
 
@@ -817,7 +844,7 @@ def sync_all(session: Session, *, use_staged: bool = False, dry_run: bool = Fals
 
     # 5. Sync model metadata
     print("Syncing model metadata...")
-    model_metadata_stats = sync_model_metadata_with_session(session)
+    model_metadata_stats = sync_model_metadata_with_session(session, config)
     print(f"  {model_metadata_stats.summary_text}")
 
     if dry_run:

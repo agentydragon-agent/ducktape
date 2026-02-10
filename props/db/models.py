@@ -448,7 +448,7 @@ class TruePositiveOccurrenceORM(Base):
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    graders_match_only_if_reported_on: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_file_restriction: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -456,7 +456,7 @@ class TruePositiveOccurrenceORM(Base):
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "graders_match_only_if_reported_on"],
+            ["snapshot_slug", "match_file_restriction"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),
@@ -506,7 +506,7 @@ class FalsePositiveOccurrenceORM(Base):
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    graders_match_only_if_reported_on: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_file_restriction: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -514,7 +514,7 @@ class FalsePositiveOccurrenceORM(Base):
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "graders_match_only_if_reported_on"],
+            ["snapshot_slug", "match_file_restriction"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),
@@ -703,7 +703,7 @@ class CriticScopeExpectedToRecall(Base):
     DOES NOT CONSTRAIN: Critics CAN find issues outside expected scopes (recall >100% possible).
     A diligent critic reviewing file.py might discover issues in bar.py it depends on.
 
-    DISTINCT FROM graders_match_only_if_reported_on: That field is a HARD constraint on where
+    DISTINCT FROM match_file_restriction: That field is a HARD constraint on where
     graders can give credit. This field only affects metric denominators.
     """
 
@@ -999,10 +999,17 @@ class ClusteringPending(Base):
 
 
 class ModelMetadata(Base):
-    """OpenAI model metadata: pricing, context limits, and capabilities.
+    """Model metadata: pricing, context limits, and upstream routing.
 
-    Synchronized from openai_utils.model_metadata.MODEL_METADATA via CLI.
-    Enables post-hoc cost calculation and context validation in SQL.
+    Synchronized from:
+    - openai_utils.model_metadata.MODEL_METADATA (OpenAI models)
+    - PropsConfig.models (custom/local models)
+
+    Upstream routing:
+    - upstream_name: References [upstreams.*] in props config. NULL = "openai" default.
+    - upstream_model: Model name to send in API request. NULL = use model_id.
+
+    Enables post-hoc cost calculation, context validation, and multi-upstream routing.
     """
 
     __tablename__ = "model_metadata"
@@ -1013,6 +1020,8 @@ class ModelMetadata(Base):
     output_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
     context_window_tokens: Mapped[int] = mapped_column(nullable=False)
     max_output_tokens: Mapped[int] = mapped_column(nullable=False)
+    upstream_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    upstream_model: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )

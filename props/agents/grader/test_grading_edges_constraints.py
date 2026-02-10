@@ -102,20 +102,20 @@ def test_edge_partial_fp_target_invalid(session, add_edge, fp_occurrence):
 def test_edge_credit_range_valid(session, add_edge, tp_occurrences_multi):
     """Valid: credit can be any value between 0.0 and 1.0.
 
-    Uses cross-cutting TPs (tp-003, tp-004, tp-005 which have NULL graders_match_only_if_reported_on)
+    Uses unrestricted TPs (tp-003, tp-004, tp-005 which have NULL match_file_restriction)
     to avoid file scope conflicts. Each edge goes to a different occurrence to
     avoid the credit sum ≤ 1.0 constraint.
     """
-    # Get cross-cutting occurrences (tp-003+, which don't have graders_match_only_if_reported_on)
-    # tp-001 and tp-002 have graders_match_only_if_reported_on set, so skip them
-    cross_cutting = [(tp, occ) for tp, occ in tp_occurrences_multi if tp >= "tp-003"]
-    assert len(cross_cutting) >= 3, f"Need at least 3 cross-cutting TPs, got {len(cross_cutting)}"
+    # Get unrestricted occurrences (tp-003+, which don't have match_file_restriction)
+    # tp-001 and tp-002 have match_file_restriction set, so skip them
+    unrestricted = [(tp, occ) for tp, occ in tp_occurrences_multi if tp >= "tp-003"]
+    assert len(unrestricted) >= 3, f"Need at least 3 unrestricted TPs, got {len(unrestricted)}"
 
     # Create edges with different credit values, each to different occurrences
     test_cases = [
-        (0.0, "issue-001", cross_cutting[0][0], cross_cutting[0][1]),
-        (0.5, "issue-002", cross_cutting[1][0], cross_cutting[1][1]),
-        (1.0, "issue-003", cross_cutting[2][0], cross_cutting[2][1]),
+        (0.0, "issue-001", unrestricted[0][0], unrestricted[0][1]),
+        (0.5, "issue-002", unrestricted[1][0], unrestricted[1][1]),
+        (1.0, "issue-003", unrestricted[2][0], unrestricted[2][1]),
     ]
     for credit, issue_id, tp_id, occ_id in test_cases:
         add_edge(issue_id, tp_id=tp_id, tp_occurrence_id=occ_id, credit=credit, rationale=f"Valid credit: {credit}")

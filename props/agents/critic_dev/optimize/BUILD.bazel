@@ -48,6 +48,8 @@ docker_py_test(
         "//props/agents/critic_dev:main",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",
+        "//props/agents/grader:tools",
+        "//props/agents/grader/testing:mocks",
         "//props/core:agent_types",
         "//props/core:eval_api_models",
         "//props/core:oci_utils",

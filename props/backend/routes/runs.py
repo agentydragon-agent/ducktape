@@ -21,8 +21,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSo
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 
-from props.agents.critic.exceptions import CriticExecutionError
-from props.agents.critic_dev.shared import TargetMetric
 from props.backend.auth import (
     AgentDb,
     CallerType,
@@ -33,7 +31,7 @@ from props.backend.auth import (
 )
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import FileLocationInfo
-from props.core.agent_types import AgentType, CriticTypeConfig, TypeConfig
+from props.core.agent_types import AgentType, CriticTypeConfig, TargetMetric, TypeConfig
 from props.core.eval_api_models import RunCriticRequest, RunCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.models.true_positive import LineRange
@@ -636,15 +634,9 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
                 snapshot = session.query(Snapshot).filter_by(slug=example_spec.snapshot_slug).first()
                 if not snapshot or snapshot.split != Split.TRAIN:
                     continue
-                has_grader = (
-                    session.query(AgentRun)
-                    .filter(
-                        AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
-                        AgentRun.type_config["graded_agent_run_id"].astext == str(cr.agent_run_id),
-                    )
-                    .first()
-                )
-                if has_grader:
+                # Check if this critic run has been graded (has grading edges)
+                has_grading = session.query(GradingEdge).filter(GradingEdge.critique_run_id == cr.agent_run_id).first()
+                if has_grading:
                     definition_to_examples.setdefault(cr.image_digest, set()).add(example_spec)
 
             eligible = [
@@ -757,8 +749,6 @@ async def run_critic(
             parent_run_id=parent_run_id,
             budget_usd=body.budget_usd,
         )
-    except CriticExecutionError as e:
-        raise HTTPException(status_code=500, detail=f"Critic execution failed: {e}")
     except BudgetExceededError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ImageResolutionError as e:
@@ -816,18 +806,23 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
                 )
                 resolved_files = [m.file_path for m in members]
 
-            # Find grader runs that graded this critic
+            # Find grader runs for this snapshot
             grader_rows = (
                 session.query(AgentRun)
-                .filter(AgentRun.type_config["graded_agent_run_id"].astext == str(run_id))
+                .filter(
+                    AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                    AgentRun.type_config["snapshot_slug"].astext == example.snapshot_slug,
+                )
                 .order_by(AgentRun.created_at)
                 .all()
             )
 
-            # Fetch all edges for all graders in one query (avoid N+1)
+            # Fetch all edges for this critic run from all graders
             grader_run_ids = [g.agent_run_id for g in grader_rows]
             all_edges = (
-                session.query(GradingEdge).filter(GradingEdge.grader_run_id.in_(grader_run_ids)).all()
+                session.query(GradingEdge)
+                .filter(GradingEdge.grader_run_id.in_(grader_run_ids), GradingEdge.critique_run_id == run_id)
+                .all()
                 if grader_run_ids
                 else []
             )
@@ -835,16 +830,17 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
             for edge in all_edges:
                 edges_by_grader.setdefault(edge.grader_run_id, []).append(edge)
 
-            # Build GraderRunInfo with pre-grouped edges
+            # Build GraderRunInfo with pre-grouped edges (only include graders with edges for this run)
             for grader in grader_rows:
                 grader_edges = edges_by_grader.get(grader.agent_run_id, [])
-                grader_runs.append(
-                    GraderRunInfo(
-                        agent_run_id=grader.agent_run_id,
-                        status=grader.status,
-                        grading_edges=edges_to_info(grader_edges),
+                if grader_edges:  # Only include if there are edges for this critic run
+                    grader_runs.append(
+                        GraderRunInfo(
+                            agent_run_id=grader.agent_run_id,
+                            status=grader.status,
+                            grading_edges=edges_to_info(grader_edges),
+                        )
                     )
-                )
 
             # Get reported issues for critic runs
             def _group_locations_by_file(locations: list) -> list[FileLocationInfo]:

@@ -16,7 +16,7 @@ from agent_core.loop_control import InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
 
 if TYPE_CHECKING:
-    from props.agents.grader.notifications import GradingPendingNotification
+    from props.db.notifications import GradingPendingNotification
 
 logger = logging.getLogger(__name__)
 

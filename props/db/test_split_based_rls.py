@@ -38,8 +38,7 @@ import pytest_bazel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from props.agents.critic_dev.shared import TargetMetric
-from props.core.agent_types import CriticDevOptimizeTypeConfig, GraderTypeConfig
+from props.core.agent_types import CriticDevOptimizeTypeConfig, GraderTypeConfig, TargetMetric
 from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.examples import Example
@@ -65,10 +64,7 @@ pytestmark = [pytest.mark.integration]
 async def critic_dev_optimize_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
     """Create critic-dev agent credentials with a real Postgres role."""
     type_config = CriticDevOptimizeTypeConfig(
-        target_metric=TargetMetric.TARGETED,
-        optimizer_model="test-optimizer-model",
-        critic_model="test-critic-model",
-        budget_limit=100.0,
+        target_metric=TargetMetric.TARGETED, optimizer_model="test-optimizer-model", critic_model="test-critic-model"
     )
     yield await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DEV_OPTIMIZE_DIGEST)
 

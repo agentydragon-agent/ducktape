@@ -383,36 +383,6 @@ def critic_dev_run_costs_parameterized() -> Select:
 
 
 # ============================================================================
-# RLS blocked queries (examples showing what's blocked by RLS)
-# ============================================================================
-
-
-# TODO: Consider removing - compiled but never rendered in template
-def blocked_valid_grader_runs() -> Select:
-    """Example query that returns 0 rows due to RLS (valid split blocked).
-
-    Uses AgentRun with JSONB filtering for grader agent type.
-    Note: Graders derive snapshot_slug from the graded critic's type_config.
-
-    Returns:
-        Query attempting to select grader agent runs for valid split snapshots
-    """
-    # Grader runs: get snapshot_slug from the graded critic via a subquery
-    # graded_agent_run_id -> lookup critic's type_config->'example'->>'snapshot_slug'
-    graded_critic_snapshot = (
-        select(AgentRun.type_config["example"]["snapshot_slug"].astext)
-        .where(AgentRun.agent_run_id == func.cast(AgentRun.type_config["graded_agent_run_id"].astext, postgresql.UUID))
-        .correlate(AgentRun)
-        .scalar_subquery()
-    )
-
-    return select(AgentRun.agent_run_id, AgentRun.status).where(
-        AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
-        graded_critic_snapshot.in_(select(Snapshot.slug).where(Snapshot.split == Split.VALID)),
-    )
-
-
-# ============================================================================
 # Scope queries
 # ============================================================================
 

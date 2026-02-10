@@ -43,13 +43,13 @@ from uuid import UUID, uuid4
 import aiodocker
 import httpx
 
-from props.agents.critic_dev.shared import TargetMetric
 from props.core.agent_types import (
     AgentType,
     CriticDevImproveTypeConfig,
     CriticDevOptimizeTypeConfig,
     CriticTypeConfig,
     GraderTypeConfig,
+    TargetMetric,
 )
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
@@ -413,10 +413,7 @@ class AgentRegistry:
 
         with self._db.session() as session:
             type_config = CriticDevOptimizeTypeConfig(
-                target_metric=target_metric,
-                optimizer_model=optimizer_model,
-                critic_model=critic_model,
-                budget_limit=budget,
+                target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
             )
 
             agent_run = AgentRun(

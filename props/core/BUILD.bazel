@@ -53,7 +53,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":ids",
-        "//props/agents/critic_dev:shared",
         "//props/core/models:examples",
         "@pypi//pydantic",
     ],

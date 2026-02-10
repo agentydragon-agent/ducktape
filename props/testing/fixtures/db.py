@@ -19,6 +19,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import sync_all
+from props.testing.timing import timed
 from test_util.image_loader import load_image
 from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
 
@@ -51,10 +52,15 @@ def postgres_container() -> Generator[PostgresContainer]:
     """
     load_image(RYUK_TARBALL)
     load_image(POSTGRES_16_TARBALL)
-    with PostgresContainer(
-        image="postgres:16", username="postgres", password="postgres", dbname="postgres"
-    ) as postgres:
-        yield postgres
+
+    with timed("PostgresContainer startup"):
+        container = PostgresContainer(image="postgres:16", username="postgres", password="postgres", dbname="postgres")
+        container.start()
+
+    try:
+        yield container
+    finally:
+        container.stop()
 
 
 @pytest.fixture(scope="session")
@@ -120,14 +126,17 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
     sanitized_id = _sanitize_test_id(test_node_id)
     db_name = f"props_test_{sanitized_id}"
 
-    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
+    with timed("ensure_database_exists"):
+        ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
+
     test_config = postgres_base_config.with_database(db_name)
 
     postgres_config = postgres_base_config.with_database("postgres")
     postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
     database = Database(test_config)
-    database.recreate()
+    with timed("database.recreate"):
+        database.recreate()
 
     try:
         yield database
@@ -152,7 +161,7 @@ def engine(db: Database) -> Engine:
 def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database."""
     monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(TEST_FIXTURES_PATH))
-    with db.session() as session:
+    with timed("sync_all"), db.session() as session:
         sync_all(session, use_staged=True)
 
 

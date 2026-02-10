@@ -326,7 +326,7 @@
         {@const config = run.type_config as CriticDevOptimizeTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
-          <span><span class="text-gray-500">Budget:</span> ${config.budget_limit}</span>
+          <span><span class="text-gray-500">Budget:</span> ${run.budget_usd}</span>
           <span
             ><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model}</span
           >

@@ -42,7 +42,7 @@ def make_tp_occurrence(
         files=files,
         note=note,
         critic_scopes_expected_to_recall=critic_scopes_expected_to_recall,
-        graders_match_only_if_reported_on=None,
+        match_file_restriction=None,
     )
 
 
@@ -61,11 +61,7 @@ def make_fp_occurrence(
         relevant_files = {first_file}
 
     return FalsePositiveOccurrence(
-        occurrence_id=occurrence_id,
-        files=files,
-        note=note,
-        relevant_files=relevant_files,
-        graders_match_only_if_reported_on=None,
+        occurrence_id=occurrence_id, files=files, note=note, relevant_files=relevant_files, match_file_restriction=None
     )
 
 

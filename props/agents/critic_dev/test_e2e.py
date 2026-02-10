@@ -39,8 +39,9 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
-    make_orchestration_grader_mock,
 )
+from props.agents.grader.testing.mocks import GraderMock
+from props.agents.grader.tools import ClusterMemberSpec
 from props.core.agent_types import TargetMetric
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.ids import SnapshotSlug
@@ -120,7 +121,11 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         # Submit zero issues
         yield m.submit(issues_count=0, summary="Critic completed")
 
-    grader_mock = make_orchestration_grader_mock()
+    # Grader mock for zero-issue case: should never be woken
+    @GraderMock.mock(check_consumed=False)
+    def grader_mock(m: GraderMock) -> PlayGen:
+        yield None  # First request (waits for drift)
+        raise AssertionError("Grader should not be woken when critic submits 0 issues")
 
     mocks = {
         ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,
@@ -283,7 +288,31 @@ async def test_po_creates_custom_critic_image(
 
         yield m.report_success()
 
-    grader_mock = make_orchestration_grader_mock()
+    # Grader mock for custom critic: grades "custom-test-issue" on test.py
+    # test.py matches: tp-003/occ-1, tp-004/occ-1, tp-005/occ-1, fp-001/fp-occ-1 = 4 edges
+    @GraderMock.mock(check_consumed=False)
+    def grader_mock(m: GraderMock) -> PlayGen:
+        yield None  # First request
+
+        # Get pending edges for custom-test-issue
+        drift = yield from m.get_drift_roundtrip()
+        run_id = drift.grading[0].critique_run_id
+
+        # Fill all 4 edges with credit=0
+        yield from m.fill_remaining_roundtrip(run_id, "custom-test-issue", 4, "Mock: no GT matches")
+
+        # Issue has credit=0, appears in clustering
+        drift = yield from m.get_drift_roundtrip()
+        assert len(drift.clustering) == 1
+
+        # Cluster the issue
+        yield from m.create_cluster_roundtrip(
+            "novel-issues",
+            "Unmatched issues from orchestration",
+            [ClusterMemberSpec(run=run_id, issue_id="custom-test-issue", rationale="Novel issue")],
+        )
+
+        yield from m.sleep_forever("All edges graded and clustered")
 
     # No critic mock needed — custom critic bypasses the LLM entirely
     mocks = {ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock, ORCHESTRATION_GRADER_MODEL: grader_mock}

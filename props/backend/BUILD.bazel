@@ -16,6 +16,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//props:config",
         "//props/db:database",
         "@pypi//fastapi",
     ],
@@ -53,6 +54,7 @@ py_library(
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
+        "//props/db/sync",
         "//props/orchestration:agent_registry",
         "//props/orchestration:grader_supervisor",
         "@pypi//aiodocker",

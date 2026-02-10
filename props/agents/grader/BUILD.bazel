@@ -4,7 +4,7 @@ Build targets:
     bazel run //props/agents/grader:load  -- Load grader image
     bazel run //props/agents/grader:push  -- Push grader image
 
-The container runs a daemon agent loop that:
+The container runs a persistent agent loop that:
 1. Fetches snapshot to /workspace
 2. Renders system prompt from template
 3. Queries LLM via proxy (OPENAI_BASE_URL)
@@ -35,7 +35,7 @@ py_library(
 )
 
 # =============================================================================
-# In-container agent main entry point (daemon grader)
+# In-container agent main entry point (snapshot grader)
 # =============================================================================
 
 py_library(
@@ -56,7 +56,6 @@ py_library(
     deps = [
         ":drift_handler",
         ":notification_handler",
-        ":notifications",
         ":tools",
         "//agent_core:agent",
         "//agent_core:direct_provider",
@@ -70,6 +69,7 @@ py_library(
         "//props/core:ids",
         "//props/db:database",
         "//props/db:models",
+        "//props/db:notifications",
         "//props/db:snapshot_io",
         "@pypi//asyncpg",
         "@pypi//asyncpg_stubs",
@@ -120,8 +120,10 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//props/core:ids",
         "//props/db:database",
         "//props/db:models",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -132,21 +134,10 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":notifications",
         "//agent_core:handler",
         "//agent_core:loop_control",
         "//openai_utils:model",
-    ],
-)
-
-py_library(
-    name = "notifications",
-    srcs = ["notifications.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:ids",
-        "@pypi//pydantic",
+        "//props/db:notifications",
     ],
 )
 
@@ -160,9 +151,9 @@ py_test(
     imports = ["../../.."],
     deps = [
         ":notification_handler",
-        ":notifications",
         "//openai_utils:text_extraction",
         "//props/core:ids",
+        "//props/db:notifications",
         "@pypi//pytest_bazel",
     ],
 )
@@ -219,6 +210,7 @@ docker_py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
+        "//props/testing:assertions",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
@@ -247,6 +239,7 @@ docker_py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
+        "//props/testing:assertions",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
@@ -275,6 +268,7 @@ docker_py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
+        "//props/testing:assertions",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",

@@ -9,7 +9,7 @@ Incorporates:
 - SECURITY DEFINER functions for RLS bypasses
 - Optimized examples view with array containment
 - in_progress filter in recall views
-- graders_match_only_if_reported_on for sparse grading
+- match_file_restriction for sparse grading
 - Issue clustering: clusters of unmatched critique issues, DB-enforced invariants
 - Normalized occurrence ranges (replaces JSONB files/relevant_files columns)
 - Simplified grading views: tp_occurrence_credits (no grader_run_id dimension),
@@ -251,37 +251,6 @@ Returns NULL for lcb95/ucb95 when n < 2 (insufficient samples for CI).'
         $$
     """)
 
-    # Helper: get_graded_agent_run_id (SECURITY DEFINER)
-    op.execute("""
-        CREATE FUNCTION get_graded_agent_run_id(p_grader_run_id uuid) RETURNS uuid
-        LANGUAGE sql STABLE SECURITY DEFINER
-        AS $$
-            SELECT (type_config->>'graded_agent_run_id')::UUID
-            FROM agent_runs
-            WHERE agent_run_id = p_grader_run_id
-        $$
-    """)
-
-    # Helper: current_graded_agent_run_id (SECURITY DEFINER)
-    op.execute("""
-        CREATE FUNCTION current_graded_agent_run_id() RETURNS uuid
-        LANGUAGE sql STABLE SECURITY DEFINER
-        AS $$
-            SELECT get_graded_agent_run_id(current_agent_run_id())
-        $$
-    """)
-
-    # Helper: get_graded_snapshot_slug (SECURITY DEFINER)
-    op.execute("""
-        CREATE FUNCTION get_graded_snapshot_slug(grader_run_id uuid) RETURNS text
-        LANGUAGE sql STABLE SECURITY DEFINER
-        AS $$
-            SELECT type_config->'example'->>'snapshot_slug'
-            FROM agent_runs
-            WHERE agent_run_id = get_graded_agent_run_id(grader_run_id)
-        $$
-    """)
-
     # Helper: derive_agent_password (SECURITY DEFINER)
     op.execute("""
         CREATE FUNCTION derive_agent_password(run_id uuid) RETURNS text
@@ -375,7 +344,7 @@ Returns NULL for lcb95/ucb95 when n < 2 (insufficient samples for CI).'
             SELECT COALESCE(
                 CASE get_agent_type_config(run_id)->>'agent_type'
                     WHEN 'critic' THEN is_train_snapshot(get_agent_type_config(run_id)->'example'->>'snapshot_slug')
-                    WHEN 'grader' THEN is_train_snapshot(get_graded_snapshot_slug(run_id))
+                    WHEN 'grader' THEN is_train_snapshot(get_agent_type_config(run_id)->>'snapshot_slug')
                     ELSE FALSE
                 END,
                 FALSE
@@ -513,13 +482,13 @@ Used by reported_issues, reported_issue_occurrences SELECT policies.'
     #   critics CAN find issues outside these scopes (recall > 100% is possible!). It answers:
     #   "From which file scopes do we EXPECT a diligent critic to find this issue?"
     #
-    # - graders_match_only_if_reported_on: HARD CONSTRAINT on graders. If set, graders may only
+    # - match_file_restriction: HARD CONSTRAINT on graders. If set, graders may only
     #   give credit if the critique flagged files overlapping this set. It answers:
     #   "Where is the issue actually located / where must it be validly reported?"
     #
     # Example: file.py uses bar.py which has obvious dangerous code.
     # - critic_scopes_expected_to_recall: [[file.py], [bar.py]] - expect to find from either
-    # - graders_match_only_if_reported_on: [bar.py] - issue is IN bar.py, must flag bar.py for credit
+    # - match_file_restriction: [bar.py] - issue is IN bar.py, must flag bar.py for credit
     op.execute("""
         CREATE FUNCTION is_tp_in_expected_recall_scope(
             p_snapshot_slug text,
@@ -560,7 +529,7 @@ Used by reported_issues, reported_issue_occurrences SELECT policies.'
         'Returns TRUE if this TP occurrence should count toward recall denominator for the given scope.
 For whole-snapshot scope, always returns TRUE.
 NOTE: This determines the recall DENOMINATOR only. Critics CAN find issues outside expected scopes
-(achieving >100%% recall). The graders_match_only_if_reported_on field separately constrains
+(achieving >100%% recall). The match_file_restriction field separately constrains
 where graders can give credit.'
     """)
 
@@ -624,102 +593,6 @@ where graders can give credit.'
             IF current_total + NEW.credit > 1.0 THEN
                 RAISE EXCEPTION 'Credit sum for occurrence would exceed 1.0 (current: %, new: %)',
                     current_total, NEW.credit;
-            END IF;
-
-            RETURN NEW;
-        END;
-        $$
-    """)
-
-    op.execute("""
-        CREATE FUNCTION check_input_issue_exists() RETURNS trigger
-        LANGUAGE plpgsql
-        AS $$
-        DECLARE
-            graded_critic_run_id UUID;
-        BEGIN
-            -- Get the critic run ID being graded from the grader's type_config
-            graded_critic_run_id := get_graded_agent_run_id(NEW.agent_run_id);
-
-            IF graded_critic_run_id IS NULL THEN
-                RAISE EXCEPTION 'Grader run % has no graded_agent_run_id in type_config', NEW.agent_run_id;
-            END IF;
-
-            -- Check that the input_issue_id exists in reported_issues for that critic run
-            IF NOT EXISTS (
-                SELECT 1 FROM reported_issues
-                WHERE agent_run_id = graded_critic_run_id
-                  AND issue_id = NEW.input_issue_id
-            ) THEN
-                RAISE EXCEPTION 'Input issue % does not exist in critic run %',
-                    NEW.input_issue_id, graded_critic_run_id;
-            END IF;
-
-            RETURN NEW;
-        END;
-        $$
-    """)
-
-    # Validation function (for legacy compatibility)
-    op.execute("""
-        CREATE FUNCTION validate_input_issue_exists(grader_run_id uuid, input_issue_id text) RETURNS boolean
-        LANGUAGE sql STABLE SECURITY DEFINER
-        AS $_$
-            SELECT EXISTS (
-                SELECT 1
-                FROM reported_issues ri
-                JOIN agent_runs gr ON gr.agent_run_id = get_graded_agent_run_id($1)
-                WHERE ri.agent_run_id = gr.agent_run_id AND ri.issue_id = $2
-            )
-        $_$
-    """)
-
-    # Trigger function to validate grading target TP/FP exists
-    op.execute("""
-        CREATE FUNCTION check_grading_target_exists() RETURNS trigger
-        LANGUAGE plpgsql
-        AS $$
-        DECLARE
-            graded_critic_run_id UUID;
-            grader_snapshot_slug TEXT;
-        BEGIN
-            -- Get the critic run ID being graded
-            graded_critic_run_id := get_graded_agent_run_id(NEW.agent_run_id);
-
-            IF graded_critic_run_id IS NULL THEN
-                RAISE EXCEPTION 'Grader run % has no graded_agent_run_id in type_config', NEW.agent_run_id;
-            END IF;
-
-            -- Get the snapshot slug from the critic run's example
-            SELECT (type_config -> 'example' ->> 'snapshot_slug')
-            INTO grader_snapshot_slug
-            FROM agent_runs
-            WHERE agent_run_id = graded_critic_run_id;
-
-            -- Validate target TP occurrence exists
-            IF NEW.target_tp_id IS NOT NULL THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM true_positive_occurrences
-                    WHERE snapshot_slug = grader_snapshot_slug
-                      AND tp_id = NEW.target_tp_id
-                      AND occurrence_id = NEW.target_tp_occurrence_id
-                ) THEN
-                    RAISE EXCEPTION 'TP occurrence (tp_id=%, occurrence_id=%) does not exist in snapshot %',
-                        NEW.target_tp_id, NEW.target_tp_occurrence_id, grader_snapshot_slug;
-                END IF;
-            END IF;
-
-            -- Validate target FP occurrence exists
-            IF NEW.target_fp_id IS NOT NULL THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM false_positive_occurrences
-                    WHERE snapshot_slug = grader_snapshot_slug
-                      AND fp_id = NEW.target_fp_id
-                      AND occurrence_id = NEW.target_fp_occurrence_id
-                ) THEN
-                    RAISE EXCEPTION 'FP occurrence (fp_id=%, occurrence_id=%) does not exist in snapshot %',
-                        NEW.target_fp_id, NEW.target_fp_occurrence_id, grader_snapshot_slug;
-                END IF;
             END IF;
 
             RETURN NEW;
@@ -1089,14 +962,14 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
         sa.Column("tp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("graders_match_only_if_reported_on", sa.Text(), nullable=True),  # FK to file_sets
+        sa.Column("match_file_restriction", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "tp_id", "occurrence_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(
-            ["snapshot_slug", "graders_match_only_if_reported_on"],
+            ["snapshot_slug", "match_file_restriction"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="RESTRICT",
             name="fk_tp_occ_matchable_files",
@@ -1113,14 +986,14 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
         sa.Column("fp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("graders_match_only_if_reported_on", sa.Text(), nullable=True),  # FK to file_sets
+        sa.Column("match_file_restriction", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "fp_id", "occurrence_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(
-            ["snapshot_slug", "graders_match_only_if_reported_on"],
+            ["snapshot_slug", "match_file_restriction"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="RESTRICT",
             name="fk_fp_occ_matchable_files",
@@ -1297,7 +1170,7 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
             "M:N linking TP occurrences to file_sets defining EXPECTED recall scopes. "
             "Determines recall DENOMINATOR only - critics CAN find issues outside expected scopes. "
             "Each occurrence may have multiple alternative scopes (OR logic: any one suffices). "
-            "Distinct from graders_match_only_if_reported_on which is a HARD constraint on grader credit."
+            "Distinct from match_file_restriction which is a HARD constraint on grader credit."
         ),
     )
 
@@ -1474,6 +1347,8 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
         sa.Column("output_usd_per_1m_tokens", sa.Float(), nullable=False),
         sa.Column("context_window_tokens", sa.Integer(), nullable=False),
         sa.Column("max_output_tokens", sa.Integer(), nullable=True),
+        sa.Column("upstream_name", sa.String(), nullable=True),
+        sa.Column("upstream_model", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("model_id"),
@@ -1561,30 +1436,30 @@ A diligent critic reviewing file.py might discover issues in bar.py it depends o
             fp_id VARCHAR,
             fp_occurrence_id VARCHAR
         ) AS $$
-            -- TPs: cross-cutting (NULL) or file overlap
+            -- TPs: unrestricted (NULL) or file-restricted
             SELECT tpo.tp_id, tpo.occurrence_id, NULL::VARCHAR, NULL::VARCHAR
             FROM true_positive_occurrences tpo
             WHERE tpo.snapshot_slug = p_snapshot_slug
               AND (
-                  tpo.graders_match_only_if_reported_on IS NULL
+                  tpo.match_file_restriction IS NULL
                   OR EXISTS (
                       SELECT 1 FROM file_set_members fsm
                       WHERE fsm.snapshot_slug = tpo.snapshot_slug
-                        AND fsm.files_hash = tpo.graders_match_only_if_reported_on
+                        AND fsm.files_hash = tpo.match_file_restriction
                         AND fsm.file_path = ANY(p_files)
                   )
               )
             UNION ALL
-            -- FPs: cross-cutting (NULL) or file overlap
+            -- FPs: unrestricted (NULL) or file-restricted
             SELECT NULL, NULL, fpo.fp_id, fpo.occurrence_id
             FROM false_positive_occurrences fpo
             WHERE fpo.snapshot_slug = p_snapshot_slug
               AND (
-                  fpo.graders_match_only_if_reported_on IS NULL
+                  fpo.match_file_restriction IS NULL
                   OR EXISTS (
                       SELECT 1 FROM file_set_members fsm
                       WHERE fsm.snapshot_slug = fpo.snapshot_slug
-                        AND fsm.files_hash = fpo.graders_match_only_if_reported_on
+                        AND fsm.files_hash = fpo.match_file_restriction
                         AND fsm.file_path = ANY(p_files)
                   )
               )
@@ -1599,8 +1474,8 @@ Used by:
 - Edge validation trigger
 - Workload estimation
 
-NULL graders_match_only_if_reported_on = cross-cutting (any critique can match)
-Non-NULL = file-local (only critiques touching those files can match)'
+NULL match_file_restriction = unrestricted (any critique can match)
+Non-NULL = file-restricted (only critiques touching those files can match)'
     """)
 
     # Index for efficient file-local lookups
@@ -1672,31 +1547,48 @@ When this view returns no rows for a run, grading is complete for that run.
 recall_by_run.missing_grading_edges is derived from this view.'
     """)
 
-    # --- 10. can_access_snapshot() for grader ---
-    op.execute("DROP FUNCTION IF EXISTS can_access_snapshot(VARCHAR)")
+    # --- 10. Snapshot access helpers ---
 
+    # Helper: can optimizer list examples from this snapshot (for file_sets/file_set_members RLS)
     op.execute("""
-        CREATE FUNCTION can_access_snapshot(p_slug VARCHAR) RETURNS BOOLEAN
-        LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
-        BEGIN
-            RETURN (
-                (current_agent_type() = 'critic_dev_optimize' AND is_train_snapshot(p_slug))
-                OR (current_agent_type() = 'grader' AND p_slug = current_grader_snapshot_slug())
-                OR (current_agent_type() = 'critic_dev_improve' AND is_improvement_snapshot_allowed(p_slug))
-            );
-        END;
+        CREATE FUNCTION can_list_snapshot_examples(p_slug VARCHAR) RETURNS BOOLEAN
+        LANGUAGE sql STABLE SECURITY DEFINER AS $$
+            SELECT CASE
+                WHEN current_agent_type_config()->>'target_metric' = 'whole_repo'
+                    THEN is_train_snapshot(p_slug)
+                ELSE is_train_or_valid_snapshot(p_slug)
+            END
         $$
     """)
 
     op.execute("""
-        COMMENT ON FUNCTION can_access_snapshot(VARCHAR) IS
-        'Checks if current agent can access a snapshot''s ground truth.
-- critic_dev_optimize: TRAIN snapshots only
-- grader: the daemon''s assigned snapshot
-- improvement: allowed snapshots from config'
+        COMMENT ON FUNCTION can_list_snapshot_examples(VARCHAR) IS
+        'Can optimizer list file_sets/examples from this snapshot?
+whole_repo optimizers: TRAIN only (sample from train, validate on valid)
+other optimizers: TRAIN+VALID (need to see valid examples for selection)'
     """)
 
-    # --- 11. pg_notify triggers for GT and critique changes (daemon wake-up) ---
+    # Helper: can agent access ground truth for this snapshot (for TP/FP table RLS)
+    op.execute("DROP FUNCTION IF EXISTS can_access_snapshot_ground_truth(VARCHAR)")
+
+    op.execute("""
+        CREATE FUNCTION can_access_snapshot_ground_truth(p_slug VARCHAR) RETURNS BOOLEAN
+        LANGUAGE sql STABLE SECURITY DEFINER AS $$
+            SELECT (current_agent_type() = 'critic_dev_optimize' AND is_train_snapshot(p_slug))
+                OR (current_agent_type() = 'grader' AND p_slug = current_grader_snapshot_slug())
+                OR (current_agent_type() = 'critic_dev_improve' AND is_improvement_snapshot_allowed(p_slug))
+        $$
+    """)
+
+    op.execute("""
+        COMMENT ON FUNCTION can_access_snapshot_ground_truth(VARCHAR) IS
+        'Can agent access ground truth (TPs/FPs) for this snapshot?
+- critic_dev_optimize: TRAIN only (prevents overfitting to validation)
+- grader: assigned snapshot only
+- critic_dev_improve: allowed snapshots from config'
+    """)
+
+    # --- 11. pg_notify triggers for GT and critique changes (grader wake-up) ---
     op.execute("""
         CREATE FUNCTION notify_gt_changed() RETURNS TRIGGER AS $$
         DECLARE
@@ -1741,7 +1633,7 @@ recall_by_run.missing_grading_edges is derived from this view.'
             FOR EACH ROW EXECUTE FUNCTION notify_gt_changed()
         """)
 
-    # Critique change notification (for grader daemon wake-up when new critiques are reported)
+    # Critique change notification (for grader wake-up when new critiques are reported)
     op.execute("""
         CREATE FUNCTION notify_critique_changed() RETURNS TRIGGER AS $$
         DECLARE
@@ -1975,7 +1867,7 @@ recall_by_run.missing_grading_edges is derived from this view.'
     """)
 
     # --- 14. Match filter scope enforcement for grading_edges ---
-    # Ensures that if a TP/FP occurrence has graders_match_only_if_reported_on set,
+    # Ensures that if a TP/FP occurrence has match_file_restriction set,
     # edges to it can only come from critique issues reported on files in that set.
     op.execute("""
         CREATE FUNCTION check_edge_matches_filter_scope() RETURNS trigger
@@ -1984,15 +1876,15 @@ recall_by_run.missing_grading_edges is derived from this view.'
         DECLARE
             filter_hash TEXT;
         BEGIN
-            -- Get the graders_match_only_if_reported_on for the target occurrence
+            -- Get the match_file_restriction for the target occurrence
             IF NEW.tp_id IS NOT NULL THEN
-                SELECT graders_match_only_if_reported_on INTO filter_hash
+                SELECT match_file_restriction INTO filter_hash
                 FROM true_positive_occurrences
                 WHERE snapshot_slug = NEW.snapshot_slug
                   AND tp_id = NEW.tp_id
                   AND occurrence_id = NEW.tp_occurrence_id;
             ELSE
-                SELECT graders_match_only_if_reported_on INTO filter_hash
+                SELECT match_file_restriction INTO filter_hash
                 FROM false_positive_occurrences
                 WHERE snapshot_slug = NEW.snapshot_slug
                   AND fp_id = NEW.fp_id
@@ -2017,7 +1909,7 @@ recall_by_run.missing_grading_edges is derived from this view.'
                         AND files_hash = filter_hash
                   )
             ) THEN
-                RAISE EXCEPTION 'Critique issue % reports files outside target occurrence graders_match_only_if_reported_on scope (filter: %)',
+                RAISE EXCEPTION 'Critique issue % reports files outside target occurrence match_file_restriction scope (filter: %)',
                     NEW.critique_issue_id, filter_hash;
             END IF;
 
@@ -2028,7 +1920,7 @@ recall_by_run.missing_grading_edges is derived from this view.'
 
     op.execute("""
         COMMENT ON FUNCTION check_edge_matches_filter_scope() IS
-        'Validates that grading edges only target occurrences whose graders_match_only_if_reported_on
+        'Validates that grading edges only target occurrences whose match_file_restriction
 includes the files where the critique issue was reported. Prevents matching
 a critique to an occurrence that could not have been found from those files.'
     """)
@@ -2485,12 +2377,11 @@ Credit is preliminary until missing_grading_edges = 0.'
         CREATE POLICY agent_runs_agent_select ON agent_runs FOR SELECT USING (
             (current_agent_type() = 'critic_dev_optimize'
              AND (((type_config->>'agent_type') = 'critic' AND is_train_snapshot(type_config->'example'->>'snapshot_slug'))
-                  OR ((type_config->>'agent_type') = 'grader' AND is_train_snapshot(get_graded_snapshot_slug(agent_run_id)))))
+                  OR ((type_config->>'agent_type') = 'grader' AND is_train_snapshot(type_config->>'snapshot_slug'))))
             OR (agent_run_id = current_agent_run_id())
             OR (current_agent_type() = 'grader'
-                AND (agent_run_id = current_graded_agent_run_id()
-                     OR ((type_config->>'agent_type') = 'critic'
-                         AND (type_config->'example'->>'snapshot_slug') = current_grader_snapshot_slug())))
+                AND (type_config->>'agent_type') = 'critic'
+                AND (type_config->'example'->>'snapshot_slug') = current_grader_snapshot_slug())
             OR (current_agent_type() = 'critic_dev_improve'
                 AND (type_config->>'agent_type') IN ('critic', 'grader')
                 AND is_improvement_example_allowed(type_config->'example'->>'snapshot_slug', (type_config->'example'->>'kind')::example_kind_enum, (type_config->'example'->>'files_hash')))
@@ -2508,39 +2399,23 @@ Credit is preliminary until missing_grading_edges = 0.'
     # --- file_sets ---
     op.execute("""
         CREATE POLICY file_sets_agent_select ON file_sets FOR SELECT USING (
-            (current_agent_type() = 'critic_dev_optimize'
-             AND current_agent_type_config()->>'target_metric' = 'whole_repo'
-             AND is_train_snapshot(snapshot_slug))
-            OR (current_agent_type() = 'critic_dev_optimize'
-                AND (current_agent_type_config()->>'target_metric' IS NULL
-                     OR current_agent_type_config()->>'target_metric' != 'whole_repo')
-                AND is_train_or_valid_snapshot(snapshot_slug))
+            (current_agent_type() = 'critic_dev_optimize' AND can_list_snapshot_examples(snapshot_slug))
             OR (current_agent_type() = 'critic'
                 AND snapshot_slug = current_agent_type_config()->'example'->>'snapshot_slug'
                 AND files_hash = current_agent_type_config()->'example'->>'files_hash')
-            OR (current_agent_type() = 'grader'
-                AND snapshot_slug = get_graded_snapshot_slug(current_agent_run_id()))
-            OR (current_agent_type() = 'critic_dev_improve'
-                AND is_improvement_snapshot_allowed(snapshot_slug))
+            OR (current_agent_type() = 'grader' AND snapshot_slug = current_grader_snapshot_slug())
+            OR (current_agent_type() = 'critic_dev_improve' AND is_improvement_snapshot_allowed(snapshot_slug))
         )
     """)
 
     # --- file_set_members ---
     op.execute("""
         CREATE POLICY file_set_members_agent_select ON file_set_members FOR SELECT USING (
-            (current_agent_type() = 'critic_dev_optimize'
-             AND current_agent_type_config()->>'target_metric' = 'whole_repo'
-             AND is_train_snapshot(snapshot_slug))
-            OR (current_agent_type() = 'critic_dev_optimize'
-                AND (current_agent_type_config()->>'target_metric' IS NULL
-                     OR current_agent_type_config()->>'target_metric' != 'whole_repo')
-                AND is_train_or_valid_snapshot(snapshot_slug))
+            (current_agent_type() = 'critic_dev_optimize' AND can_list_snapshot_examples(snapshot_slug))
             OR (current_agent_type() = 'critic'
                 AND snapshot_slug = current_agent_type_config()->'example'->>'snapshot_slug')
-            OR (current_agent_type() = 'grader'
-                AND snapshot_slug = get_graded_snapshot_slug(current_agent_run_id()))
-            OR (current_agent_type() = 'critic_dev_improve'
-                AND is_improvement_snapshot_allowed(snapshot_slug))
+            OR (current_agent_type() = 'grader' AND snapshot_slug = current_grader_snapshot_slug())
+            OR (current_agent_type() = 'critic_dev_improve' AND is_improvement_snapshot_allowed(snapshot_slug))
         )
     """)
 
@@ -2549,7 +2424,7 @@ Credit is preliminary until missing_grading_edges = 0.'
         "CREATE POLICY snapshots_agent_select ON snapshots FOR SELECT USING (current_agent_run_id() IS NOT NULL)"
     )
 
-    # --- Ground truth tables: SELECT via can_access_snapshot() ---
+    # --- Ground truth tables: SELECT via can_access_snapshot_ground_truth() ---
     for table in [
         "true_positives",
         "false_positives",
@@ -2560,7 +2435,7 @@ Credit is preliminary until missing_grading_edges = 0.'
         "critic_scopes_expected_to_recall",
     ]:
         op.execute(
-            f"CREATE POLICY {table}_agent_select ON {table} FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+            f"CREATE POLICY {table}_agent_select ON {table} FOR SELECT USING (can_access_snapshot_ground_truth(snapshot_slug))"
         )
 
     # --- LLM requests ---

@@ -5,6 +5,8 @@ for pytest auto-discovery. Tests anywhere in props/ will have access
 to these fixtures.
 """
 
+import logging
+
 import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
@@ -71,6 +73,22 @@ from props.testing.fixtures.scopes import all_files_scope, subtract_file_example
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode and register custom markers."""
     config.option.asyncio_mode = "auto"
+
+    # Enable live logging by attaching pytest's log_cli_handler to root logger
+    # This replicates what log_cli=true does, but programmatically
+    logging_plugin = config.pluginmanager.get_plugin("logging-plugin")
+    if logging_plugin and hasattr(logging_plugin, "log_cli_handler"):
+        handler = logging_plugin.log_cli_handler
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(
+            logging.Formatter(fmt="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
+        )
+        # Attach to root logger so all loggers emit to console
+        root_logger = logging.getLogger()
+        if handler not in root_logger.handlers:
+            root_logger.addHandler(handler)
+            root_logger.setLevel(logging.INFO)
+
     config.addinivalue_line("markers", "integration: marks tests requiring external services (DB, Docker)")
     config.addinivalue_line("markers", "requires_docker: marks tests requiring Docker daemon")
     config.addinivalue_line("markers", "requires_production_specimens: marks tests needing production data")

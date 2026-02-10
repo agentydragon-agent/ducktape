@@ -11,5 +11,5 @@ occurrences:
         - [4, 6]
     critic_scopes_expected_to_recall:
       - - add.py
-    graders_match_only_if_reported_on:
+    match_file_restriction:
       - add.py

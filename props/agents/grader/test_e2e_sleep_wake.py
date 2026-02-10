@@ -18,19 +18,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections import defaultdict
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
 
 from agent_core.testing.responses import PlayGen
-from props.agents.grader.drift_handler import check_all_pending, check_grading_pending
+from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
-from props.agents.grader.tools import EdgeSpec, TPRef
+from props.agents.grader.tools import EdgeSpec, FPRef, TPRef
 from props.db.database import Database
 from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import DBLocationAnchor
+from props.testing.assertions import assert_no_pending
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run
 
@@ -41,12 +41,15 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 
 @pytest.mark.timeout(240)
 async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope, grader_image, db: Database):
-    """Test that snapshot grader sleeps after grading, wakes on new drift, grades again."""
+    """Test that snapshot grader sleeps after grading, wakes on new drift, grades again.
 
-    # Explicit signals for when each round's edges have been committed.
-    # Set in the mock generator (which runs in-process via FakeOpenAIServer)
-    # just before yielding the sleep tool call — at that point all preceding
-    # tool calls (insert_edges, fill_remaining) have completed.
+    Train1 fixture for subtract.py produces 5 edges per issue:
+    - 4 TP edges: tp-001/occ-1, tp-003/occ-1, tp-004/occ-1, tp-005/occ-1
+    - 1 FP edge: fp-001/fp-occ-1
+
+    Since we give TP edges credit > 0, issues won't appear in clustering_pending.
+    """
+
     round_1_complete = asyncio.Event()
     round_2_complete = asyncio.Event()
 
@@ -54,44 +57,50 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request (system prompt)
 
-        # === Round 1: grade critic-1's issue with credit 0.1 ===
-        pending_1 = yield from m.list_pending_roundtrip()
-        logger.info(f"Round 1: {len(pending_1)} pending edges")
+        # === Round 1: grade issue-1 ===
+        # Train1 fixture for subtract.py: 4 TPs + 1 FP
+        drift_1 = yield from m.get_drift_roundtrip()
+        run_1 = drift_1.grading[0].critique_run_id
 
-        by_issue_1: dict[tuple[UUID, str], list] = defaultdict(list)
-        for edge in pending_1:
-            by_issue_1[(edge.critique_run_id, edge.critique_issue_id)].append(edge)
+        yield from m.insert_edges_roundtrip(
+            run_1,
+            "issue-1",
+            [
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-001", occurrence_id="occ-1"), credit=0.1),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-003", occurrence_id="occ-1"), credit=0.1),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-004", occurrence_id="occ-1"), credit=0.1),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-005", occurrence_id="occ-1"), credit=0.1),
+                EdgeSpec(gt_ref=FPRef(fp_id="fp-001", occurrence_id="fp-occ-1"), credit=0.0),
+            ],
+            "All edges for issue-1",
+        )
 
-        for (run_id, issue_id), edges in by_issue_1.items():
-            tp_edges = [EdgeSpec(gt_ref=e.gt_ref, credit=0.1) for e in edges if isinstance(e.gt_ref, TPRef)]
-            # fill_remaining for any non-TP edges (FP edges get credit=0)
-            fp_count = len(edges) - len(tp_edges)
-            if tp_edges:
-                yield from m.insert_edges_roundtrip(run_id, issue_id, tp_edges, "Partial match round 1")
-            if fp_count > 0:
-                yield from m.fill_remaining_roundtrip(run_id, issue_id, fp_count, "No match round 1")
+        # No clustering expected (issue has credit > 0)
+        drift_1_post = yield from m.get_drift_roundtrip()
+        assert not drift_1_post.has_pending, f"Expected no pending after round 1: {drift_1_post!r}"
 
         round_1_complete.set()
         yield m.sleep("Round 1 complete")
 
-        # === Round 2: woken by pg_notify, grade critic-2's issue with credit 0.2 ===
-        pending_2 = yield from m.list_pending_roundtrip()
-        logger.info(f"Round 2: {len(pending_2)} pending edges")
+        # === Round 2: grade issue-2 ===
+        drift_2 = yield from m.get_drift_roundtrip()
+        run_2 = drift_2.grading[0].critique_run_id
 
-        by_issue_2: dict[tuple[UUID, str], list] = defaultdict(list)
-        for edge in pending_2:
-            by_issue_2[(edge.critique_run_id, edge.critique_issue_id)].append(edge)
-
-        for (run_id, issue_id), edges in by_issue_2.items():
-            tp_edges = [EdgeSpec(gt_ref=e.gt_ref, credit=0.2) for e in edges if isinstance(e.gt_ref, TPRef)]
-            fp_count = len(edges) - len(tp_edges)
-            if tp_edges:
-                yield from m.insert_edges_roundtrip(run_id, issue_id, tp_edges, "Partial match round 2")
-            if fp_count > 0:
-                yield from m.fill_remaining_roundtrip(run_id, issue_id, fp_count, "No match round 2")
+        yield from m.insert_edges_roundtrip(
+            run_2,
+            "issue-2",
+            [
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-001", occurrence_id="occ-1"), credit=0.2),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-003", occurrence_id="occ-1"), credit=0.2),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-004", occurrence_id="occ-1"), credit=0.2),
+                EdgeSpec(gt_ref=TPRef(tp_id="tp-005", occurrence_id="occ-1"), credit=0.2),
+                EdgeSpec(gt_ref=FPRef(fp_id="fp-001", occurrence_id="fp-occ-1"), credit=0.0),
+            ],
+            "All edges for issue-2",
+        )
 
         round_2_complete.set()
-        yield m.sleep("Round 2 complete")
+        yield from m.sleep_forever("Round 2 complete")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
         # --- Insert critic-1 BEFORE starting grader ---
@@ -116,7 +125,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             )
             session.commit()
 
-        assert check_grading_pending(test_snapshot, db) > 0
+        assert get_drift(test_snapshot, db).grading, "grading_pending should have rows"
 
         # --- Start snapshot grader ---
         grader_task = asyncio.create_task(
@@ -205,7 +214,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
             logger.info("Both edges verified: round 1 credit=0.1, round 2 credit=0.2")
 
         # Assert no drift remains (grading + clustering)
-        assert check_all_pending(test_snapshot, db) == 0, "Drift should be zero after grading"
+        assert_no_pending(test_snapshot, db)
 
 
 if __name__ == "__main__":

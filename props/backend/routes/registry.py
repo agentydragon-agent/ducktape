@@ -18,7 +18,6 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from sqlalchemy import text
 
-from props.agents.grader.notifications import GRADER_DEFINITION_CHANGED_CHANNEL, GraderDefinitionChangedNotification
 from props.backend.auth import (
     ACL_CAN_PUSH_REGISTRY,
     ACL_CAN_PUSH_TAGS,
@@ -31,6 +30,7 @@ from props.backend.deps import AdminDb
 from props.core.oci_utils import is_digest
 from props.db.database import Database
 from props.db.models import AgentDefinition, AgentType
+from props.db.notifications import GRADER_DEFINITION_CHANGED_CHANNEL, GraderDefinitionChangedNotification
 
 logger = logging.getLogger(__name__)
 

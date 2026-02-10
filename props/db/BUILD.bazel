@@ -27,6 +27,17 @@ py_library(
 )
 
 py_library(
+    name = "notifications",
+    srcs = ["notifications.py"],
+    imports = ["../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core:ids",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "snapshot_io",
     srcs = ["snapshot_io.py"],
     imports = ["../.."],
@@ -244,7 +255,6 @@ docker_py_test(
         ":examples",
         ":models",
         "//props:conftest",
-        "//props/agents/critic_dev:shared",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/orchestration:agent_credentials",

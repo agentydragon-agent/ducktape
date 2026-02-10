@@ -5,7 +5,7 @@
 # OPENAI_BASE_URL is derived from this (+ "/v1").
 backend_url = "http://props-backend:8000"
 
-# Model for snapshot grader daemons. If unset, daemon manager is disabled.
+# Model for snapshot graders. If unset, grader supervisor is disabled.
 grader_model = "gpt-5.1-codex-mini"
 
 # Environment variables injected into every agent container.

@@ -69,7 +69,7 @@ class OccurrenceInfo(BaseModel):
     occurrence_id: str
     files: list[FileLocationInfo]
     note: str | None
-    graders_match_only_if_reported_on: list[str] | None
+    match_file_restriction: list[str] | None
     # TP-specific fields
     critic_scopes_expected_to_recall: list[list[str]] | None = None
     # FP-specific fields
@@ -206,14 +206,14 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> Snaps
         )
 
         # Pre-fetch all matchable files to avoid N+1 queries
-        # Collect all unique graders_match_only_if_reported_on hashes from both TPs and FPs
-        # Note: whole-snapshot occurrences have graders_match_only_if_reported_on=None (no file filter)
+        # Collect all unique match_file_restriction hashes from both TPs and FPs
+        # Note: whole-snapshot occurrences have match_file_restriction=None (no file filter)
         file_set_hashes = {
-            occ.graders_match_only_if_reported_on
+            occ.match_file_restriction
             for issues in (tps, fps)
             for issue in issues
             for occ in issue.occurrences
-            if occ.graders_match_only_if_reported_on
+            if occ.match_file_restriction
         }
 
         # Bulk fetch all file set members for these hashes
@@ -234,16 +234,14 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> Snaps
             tp_occ_infos: list[OccurrenceInfo] = []
             for occ in tp.occurrences:
                 matchable_files = (
-                    matchable_files_by_hash.get(occ.graders_match_only_if_reported_on)
-                    if occ.graders_match_only_if_reported_on
-                    else None
+                    matchable_files_by_hash.get(occ.match_file_restriction) if occ.match_file_restriction else None
                 )
                 tp_occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
                         files=_build_file_locations_from_ranges(occ.ranges),
                         note=occ.note,
-                        graders_match_only_if_reported_on=matchable_files,
+                        match_file_restriction=matchable_files,
                         critic_scopes_expected_to_recall=_get_critic_scopes_expected_to_recall_paths(occ),
                     )
                 )
@@ -257,8 +255,8 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> Snaps
             fp_occ_infos: list[OccurrenceInfo] = []
             for fp_occ in fp.occurrences:
                 matchable_files = (
-                    matchable_files_by_hash.get(fp_occ.graders_match_only_if_reported_on)
-                    if fp_occ.graders_match_only_if_reported_on
+                    matchable_files_by_hash.get(fp_occ.match_file_restriction)
+                    if fp_occ.match_file_restriction
                     else None
                 )
                 fp_occ_infos.append(
@@ -266,7 +264,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> Snaps
                         occurrence_id=fp_occ.occurrence_id,
                         files=_build_file_locations_from_ranges(fp_occ.ranges),
                         note=fp_occ.note,
-                        graders_match_only_if_reported_on=matchable_files,
+                        match_file_restriction=matchable_files,
                         relevant_files=sorted(str(rf.file_path) for rf in fp_occ.relevant_file_orms),
                     )
                 )

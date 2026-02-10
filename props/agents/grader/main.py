@@ -26,13 +26,11 @@ from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.model import SystemMessage
-from props.agents.grader.drift_handler import check_all_pending, check_clustering_pending, check_grading_pending
+from props.agents.grader.drift_handler import Drift, get_drift as get_drift_fn
 from props.agents.grader.notification_handler import GraderNotificationsHandler
-from props.agents.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
 from props.agents.grader.tools import (
     AddToClusterArgs,
     ClusterDetails,
-    ClusteringPendingIssue,
     ClusterMemberInfo,
     ClusterSummary,
     CreateClusterArgs,
@@ -43,11 +41,8 @@ from props.agents.grader.tools import (
     GTDetails,
     InsertEdgesArgs,
     IssueDetails,
-    ListClusteringPendingArgs,
     ListClustersArgs,
-    ListPendingArgs,
     LocationInfo,
-    PendingEdge,
     RemoveFromClusterArgs,
     ReportFailureArgs,
     ShowClusterArgs,
@@ -68,7 +63,6 @@ from props.agents.runtime import (
 from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.models import (
-    ClusteringPending,
     FalsePositive,
     FalsePositiveOccurrenceORM,
     GradingEdge,
@@ -80,6 +74,7 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
+from props.db.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
 from props.db.snapshot_io import fetch_snapshot_to_path
 
 if TYPE_CHECKING:
@@ -150,35 +145,13 @@ def _create_grader_tool_provider(
         return await run_direct_exec(args, default_cwd=_WORKSPACE)
 
     @provider.tool
-    def list_pending(args: ListPendingArgs) -> list[PendingEdge]:
-        """List pending grading edges from grading_pending view.
+    def get_drift() -> Drift:
+        """Get all pending work: grading edges and clustering issues.
 
-        Returns edges that still need grading decisions.
+        Returns combined drift for this snapshot. Use to check what work remains
+        before sleeping or to get an overview of pending tasks.
         """
-        with db.session() as session:
-            query = select(GradingPending).where(GradingPending.snapshot_slug == snapshot_slug)
-
-            if args.run:
-                query = query.where(GradingPending.critique_run_id == args.run)
-            if args.issue:
-                query = query.where(GradingPending.critique_issue_id == args.issue)
-            if args.gt:
-                match args.gt:
-                    case TPRef(tp_id=tp_id, occurrence_id=occ_id):
-                        query = query.where(GradingPending.tp_id == tp_id, GradingPending.tp_occurrence_id == occ_id)
-                    case FPRef(fp_id=fp_id, occurrence_id=occ_id):
-                        query = query.where(GradingPending.fp_id == fp_id, GradingPending.fp_occurrence_id == occ_id)
-
-            pending = list(session.scalars(query))
-            return [
-                PendingEdge(
-                    critique_run_id=p.critique_run_id,
-                    critique_issue_id=p.critique_issue_id,
-                    snapshot_slug=str(p.snapshot_slug),
-                    gt_ref=_make_gt_ref(p),
-                )
-                for p in pending
-            ]
+        return get_drift_fn(snapshot_slug, db)
 
     @provider.tool
     def show_issue(args: ShowIssueArgs) -> IssueDetails:
@@ -344,45 +317,23 @@ def _create_grader_tool_provider(
         Verifies both grading_pending and clustering_pending are empty,
         then waits for pg_notify. Returns when new work is available.
         """
-        grading_count = check_grading_pending(snapshot_slug, db)
-        if grading_count:
-            raise ValueError(f"There are {grading_count} pending grading edges. Continue grading before sleeping.")
-        clustering_count = check_clustering_pending(snapshot_slug, db)
-        if clustering_count:
+        drift = get_drift_fn(snapshot_slug, db)
+        if drift.grading:
+            raise ValueError(f"There are {len(drift.grading)} pending grading edges. Continue grading before sleeping.")
+        if drift.clustering:
             raise ValueError(
-                f"There are {clustering_count} issues needing clustering. Cluster unmatched issues before sleeping."
+                f"There are {len(drift.clustering)} issues needing clustering. Cluster unmatched issues before sleeping."
             )
         logger.info("Sleep requested: %s", args.summary)
         while True:
             state.wake_event.clear()
             await state.wake_event.wait()
-            if check_all_pending(snapshot_slug, db):
+            if get_drift_fn(snapshot_slug, db).has_pending:
                 break
             logger.debug("Spurious wake — no pending work, going back to sleep")
         return "Woke up — new work arrived."
 
     # --- Clustering tools ---
-
-    @provider.tool
-    def list_clustering_pending(args: ListClusteringPendingArgs) -> list[ClusteringPendingIssue]:
-        """List critique issues that need clustering.
-
-        These are issues fully graded with no positive match (credit=0 everywhere)
-        and not yet assigned to any cluster.
-        """
-        with db.session() as session:
-            query = select(ClusteringPending).where(ClusteringPending.snapshot_slug == snapshot_slug)
-            if args.run:
-                query = query.where(ClusteringPending.critique_run_id == args.run)
-            rows = list(session.scalars(query))
-            return [
-                ClusteringPendingIssue(
-                    critique_run_id=r.critique_run_id,
-                    critique_issue_id=r.critique_issue_id,
-                    snapshot_slug=str(r.snapshot_slug),
-                )
-                for r in rows
-            ]
 
     @provider.tool
     def list_clusters(args: ListClustersArgs) -> list[ClusterSummary]:
@@ -552,12 +503,12 @@ async def _run_grader_loop(snapshot_slug: SnapshotSlug, system_prompt: str, db: 
 
     try:
         # Wait for initial drift before starting the (expensive) agent loop.
-        if not check_all_pending(snapshot_slug, db):
+        if not get_drift_fn(snapshot_slug, db).has_pending:
             logger.info("No pending drift yet — waiting for pg_notify")
             while True:
                 state.wake_event.clear()
                 await state.wake_event.wait()
-                if check_all_pending(snapshot_slug, db):
+                if get_drift_fn(snapshot_slug, db).has_pending:
                     break
                 logger.debug("Spurious wake — still no pending work")
             logger.info("Initial drift detected, starting agent loop")

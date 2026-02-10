@@ -26,6 +26,24 @@ py_library(
 )
 
 py_library(
+    name = "timing",
+    srcs = ["timing.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "assertions",
+    srcs = ["assertions.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/agents/grader:drift_handler",
+        "//props/db:database",
+    ],
+)
+
+py_library(
     name = "fake_openai_server",
     srcs = ["fake_openai_server.py"],
     imports = ["../.."],

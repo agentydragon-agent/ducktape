@@ -25,14 +25,14 @@ ${describe_relation("grading_pending")}
 
 **Source of truth for completeness:** Query `grading_pending` to see missing edges. Grading is complete when no rows remain. The grader `sleep` tool validates this and rejects sleep if any edges are pending.
 
-## Sparse Matching (graders_match_only_if_reported_on)
+## Sparse Matching (match_file_restriction)
 
-Not all occurrences are matchable from all critique issues. The `graders_match_only_if_reported_on` field on TP/FP occurrences controls which critiques can create edges to them:
+Not all occurrences are matchable from all critique issues. The `match_file_restriction` field on TP/FP occurrences controls which critiques can create edges to them:
 
-| `graders_match_only_if_reported_on` | Meaning | Who can match |
-|-------------------------------------|---------|---------------|
-| null/omitted | Cross-cutting issue | Any critique can match, regardless of files touched |
-| `["file1.py", "file2.py"]` | File-scoped issue | Only critiques that touched at least one file in that set |
+| `match_file_restriction` | Meaning | Who can match |
+|--------------------------|---------|---------------|
+| null/omitted | Unrestricted | Any critique can match, regardless of files touched |
+| `["file1.py", "file2.py"]` | File-restricted | Only critiques that touched at least one file in that set |
 
 The `grading_pending` view automatically enforces this - it only shows (issue, occurrence) pairs where the critique's files overlap.
 

@@ -38,19 +38,20 @@ Determines the **recall denominator** for metrics. "From which file scopes do we
 - Used by `is_tp_in_expected_recall_scope()` to compute `recall_denominator` in the `examples` VIEW
 - **SOFT EXPECTATION:** Critics CAN find issues outside expected scopes - recall >100% is possible!
 
-### graders_match_only_if_reported_on (Hard Constraint)
+### match_file_restriction (Hard Constraint)
 
 **HARD CONSTRAINT** on graders. "Where is the issue actually located? Where must it be validly reported?"
 
-- Stored as `graders_match_only_if_reported_on` column on occurrence tables (FK to file_sets)
+- Stored as `match_file_restriction` column on occurrence tables (FK to file_sets)
 - Enforced by `grading_pending` view - only shows (issue, occurrence) pairs with file overlap
-- If set, graders **cannot** give credit unless the critique flagged overlapping files
+- If set (file-restricted), graders **cannot** give credit unless the critique flagged overlapping files
+- If NULL (unrestricted), any critique can match regardless of files touched
 
 ### Why Two Fields?
 
 **Example:** `file.py` contains wrapper functions that call APIs in `bar.py`. `bar.py` has obvious dangerous code.
 
-- The TP occurrence has `graders_match_only_if_reported_on` = `[bar.py]` (the issue IS in bar.py)
+- The TP occurrence has `match_file_restriction` = `[bar.py]` (the issue IS in bar.py)
 - The occurrence has `critic_scopes_expected_to_recall` entries for BOTH `[file.py]` and `[bar.py]` (we expect a diligent critic reviewing file.py to investigate bar.py)
 
 **Result:**

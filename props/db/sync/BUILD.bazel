@@ -78,6 +78,7 @@ py_library(
         ":_yaml",
         ":loader",
         "//openai_utils:model_metadata",
+        "//props:config",
         "//props/core:ids",
         "//props/core:runs_context",
         "//props/core/models:snapshot",

@@ -11,5 +11,5 @@ occurrences:
         - [10, 15]
     critic_scopes_expected_to_recall:
       - - subtract.py
-    graders_match_only_if_reported_on:
+    match_file_restriction:
       - subtract.py

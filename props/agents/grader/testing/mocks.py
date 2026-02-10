@@ -1,22 +1,20 @@
 """Grader-specific mock utilities."""
 
 from collections.abc import Generator
+from typing import NoReturn
 from uuid import UUID
 
 from more_itertools import one
 
 from agent_core.testing.responses import DecoratorMock, _extract_text_from_content_list, tool_roundtrip
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest
+from props.agents.grader.drift_handler import Drift
 from props.agents.grader.tools import (
-    ClusteringPendingIssue,
     ClusterMemberSpec,
     CreateClusterArgs,
     EdgeSpec,
     FillRemainingArgs,
     InsertEdgesArgs,
-    ListClusteringPendingArgs,
-    ListPendingArgs,
-    PendingEdge,
     SleepArgs,
 )
 
@@ -35,33 +33,27 @@ class GraderMock(DecoratorMock):
     """Mock with grader-specific tool helpers.
 
     Grader tools are registered directly (not via MCP), so they use simple names
-    like 'list_pending', 'fill_remaining', 'insert_edges'.
+    like 'get_drift', 'fill_remaining', 'insert_edges'.
 
     Example:
         @GraderMock.mock()
         def mock(m: GraderMock) -> PlayGen:
             yield None  # First request
-            pending = yield from m.list_pending_roundtrip()
-            for edge in pending:
+            drift = yield from m.get_drift_roundtrip()
+            for edge in drift.grading:
                 yield from m.fill_remaining_roundtrip(
                     edge.critique_run_id, edge.critique_issue_id, 1, "No matches"
                 )
-            yield m.sleep("Graded all pending edges")
+            yield from m.sleep_forever("Graded all pending edges")
     """
 
     def sleep(self, summary: str) -> FunctionCallItem:
         """Signal that grading is complete and grader should sleep."""
         return self.tool_call("sleep", SleepArgs(summary=summary))
 
-    def list_pending_roundtrip(
-        self, *, issue: str | None = None, run: UUID | None = None
-    ) -> Generator[FunctionCallItem, ResponsesRequest, list[PendingEdge]]:
-        """Yield list_pending call and return parsed result as list of PendingEdge."""
-        return (
-            yield from tool_roundtrip(
-                self.tool_call("list_pending", ListPendingArgs(issue=issue, run=run)), list[PendingEdge]
-            )
-        )
+    def get_drift_roundtrip(self) -> Generator[FunctionCallItem, ResponsesRequest, Drift]:
+        """Yield get_drift call and return parsed Drift result."""
+        return (yield from tool_roundtrip(self.tool_call("get_drift", {}), Drift))
 
     def fill_remaining_roundtrip(
         self, run: UUID, issue_id: str, expected_count: int, rationale: str
@@ -84,17 +76,6 @@ class GraderMock(DecoratorMock):
         req = yield call
         return _extract_raw_output(req, call)
 
-    def list_clustering_pending_roundtrip(
-        self, *, run: UUID | None = None
-    ) -> Generator[FunctionCallItem, ResponsesRequest, list[ClusteringPendingIssue]]:
-        """Yield list_clustering_pending call and return parsed result."""
-        return (
-            yield from tool_roundtrip(
-                self.tool_call("list_clustering_pending", ListClusteringPendingArgs(run=run)),
-                list[ClusteringPendingIssue],
-            )
-        )
-
     def create_cluster_roundtrip(
         self, cluster_id: str, rationale: str, members: list[ClusterMemberSpec]
     ) -> Generator[FunctionCallItem, ResponsesRequest, str]:
@@ -104,3 +85,18 @@ class GraderMock(DecoratorMock):
         )
         req = yield call
         return _extract_raw_output(req, call)
+
+    def check_no_drift(self) -> Generator[FunctionCallItem, ResponsesRequest]:
+        """Assert no pending work (grading or clustering)."""
+        drift = yield from self.get_drift_roundtrip()
+        assert not drift.has_pending, f"Expected no pending work: {drift!r}"
+
+    def sleep_forever(self, summary: str) -> Generator[FunctionCallItem, ResponsesRequest, NoReturn]:
+        """Assert no pending work, sleep, and fail if woken up.
+
+        Use when the mock expects grading to be complete and the grader
+        should sleep indefinitely (until cancelled).
+        """
+        yield from self.check_no_drift()
+        yield self.sleep(summary)
+        raise AssertionError("Grader woke up unexpectedly after sleeping")

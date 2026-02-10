@@ -11,6 +11,7 @@ Features:
 - Enforces budget limits (rejects requests when budget exceeded)
 - Logs all requests/responses to llm_requests table
 - Extracts token usage from responses for cost tracking
+- Multi-upstream routing via model_metadata.upstream_name/upstream_model
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from dataclasses import dataclass
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -28,8 +30,9 @@ from sqlalchemy.orm import Session
 
 from openai_utils.model import ResponseUsage
 from props.backend.auth import Auth
-from props.backend.deps import AdminDb
-from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest
+from props.backend.deps import AdminDb, Config
+from props.config import PropsConfig, UpstreamConfig
+from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +41,58 @@ router = APIRouter()
 # Request timeout for upstream OpenAI calls
 UPSTREAM_TIMEOUT_SECONDS = 300  # 5 minutes
 
-
-def _upstream_api_key() -> str:
-    """Read upstream OpenAI API key at call time (not import time) for testability."""
-    return os.environ.get("OPENAI_API_KEY", "")
+# Default OpenAI upstream config used when model has no explicit upstream
+DEFAULT_OPENAI_UPSTREAM = UpstreamConfig(url_env="OPENAI_BASE_URL", api_key_env="OPENAI_API_KEY")
 
 
-def _upstream_base_url() -> str:
-    """Read upstream OpenAI base URL at call time (not import time) for testability."""
-    return os.environ.get("OPENAI_UPSTREAM_URL", "https://api.openai.com")
+@dataclass
+class UpstreamRoute:
+    """Resolved upstream routing info for a model."""
+
+    url: str
+    api_key: str
+    model_name: str  # Model name to send in API request
+
+
+def _resolve_upstream_url(config: UpstreamConfig) -> str:
+    """Resolve URL from static url or url_env."""
+    if config.url:
+        return config.url
+    if config.url_env:
+        return os.environ.get(config.url_env, "https://api.openai.com/v1")
+    raise ValueError("Upstream config must have url or url_env")
+
+
+def _get_upstream_route(model_id: str, session: Session, config: PropsConfig) -> UpstreamRoute:
+    """Look up upstream routing info for a model.
+
+    Returns UpstreamRoute with resolved URL, API key, and model name to send.
+    """
+    metadata = session.get(ModelMetadata, model_id)
+    if metadata is None:
+        raise HTTPException(status_code=400, detail=f"Unknown model: {model_id}")
+
+    # Determine which upstream to use (NULL = "openai" default)
+    upstream_name = metadata.upstream_name
+    upstream_config: UpstreamConfig
+    if upstream_name is None:
+        upstream_config = DEFAULT_OPENAI_UPSTREAM
+    else:
+        maybe_config = config.upstreams.get(upstream_name)
+        if maybe_config is None:
+            raise HTTPException(
+                status_code=500, detail=f"Model {model_id} references unknown upstream: {upstream_name}"
+            )
+        upstream_config = maybe_config
+
+    # Resolve URL and API key
+    upstream_url = _resolve_upstream_url(upstream_config)
+    api_key = os.environ.get(upstream_config.api_key_env, "")
+
+    # Determine model name to send (NULL = use model_id)
+    model_name = metadata.upstream_model if metadata.upstream_model else model_id
+
+    return UpstreamRoute(url=upstream_url, api_key=api_key, model_name=model_name)
 
 
 def _check_budget(session: Session, agent_run_id: UUID, budget_usd: float) -> None:
@@ -120,12 +166,15 @@ def _log_request(
 
 @router.post("/v1/responses")
 async def responses(
-    request: Request, admin_db: AdminDb, auth: Annotated[tuple[UUID, str, float], Depends(require_llm_access)]
+    request: Request,
+    admin_db: AdminDb,
+    config: Config,
+    auth: Annotated[tuple[UUID, str, float], Depends(require_llm_access)],
 ) -> JSONResponse:
     """Proxy OpenAI Responses API requests.
 
     Validates model against agent's allowed model, checks budget,
-    forwards to OpenAI, logs request/response with token usage, and returns the response.
+    resolves upstream routing, forwards request, logs with token usage, returns response.
     """
     agent_run_id, allowed_model, budget_usd = auth
 
@@ -154,20 +203,24 @@ async def responses(
     if body.get("previous_response_id"):
         raise HTTPException(status_code=400, detail="Stateful mode 'previous_response_id' is not supported")
 
-    # Check budget before forwarding
+    # Resolve upstream routing and check budget
     with admin_db.session() as session:
         _check_budget(session, agent_run_id, budget_usd)
+        upstream = _get_upstream_route(request_model, session, config)
 
-    # Forward request to OpenAI
+    # Rewrite model in request body to upstream model name
+    body["model"] = upstream.model_name
+
+    # Forward request to upstream
     start_time = time.monotonic()
-    upstream_url = f"{_upstream_base_url()}/v1/responses"
+    upstream_url = f"{upstream.url}/v1/responses"
 
     async with httpx.AsyncClient() as client:
         try:
             upstream_response = await client.post(
                 upstream_url,
                 json=body,
-                headers={"Authorization": f"Bearer {_upstream_api_key()}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {upstream.api_key}", "Content-Type": "application/json"},
                 timeout=UPSTREAM_TIMEOUT_SECONDS,
             )
         except httpx.TimeoutException:

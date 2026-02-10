@@ -158,62 +158,58 @@ def show_grading_summary(db: Database, agent_run_id: UUID) -> None:
                 print(f"Status: {cr.status.value} (exit_code={cr.container_exit_code})")
                 return
 
-            gr = (
-                session.query(AgentRun)
-                .filter(
-                    AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
-                    AgentRun.type_config["graded_agent_run_id"].astext == str(cr.agent_run_id),
-                )
-                .first()
-            )
-            if not gr:
+            # Check if this critic run has been graded (has grading edges)
+            first_edge = session.query(GradingEdge).filter_by(critique_run_id=cr.agent_run_id).first()
+            if not first_edge:
                 print("No grader result (not graded yet)")
                 return
+
+            # Show grader info
+            gr = session.get(AgentRun, first_edge.grader_run_id)
+            if gr:
+                print(f"Grader: {short_sha(str(gr.agent_run_id))}\n")
+
+            # Filter edges by critique_run_id for this critic
+            edge_filter = {"critique_run_id": cr.agent_run_id}
         elif agent_type == AgentType.GRADER:
             gr = run
+            if gr.status != AgentRunStatus.EXITED or gr.container_exit_code != 0:
+                print(f"Grader status: {gr.status.value} (exit_code={gr.container_exit_code})")
+                return
+            print(f"Grader: {short_sha(str(gr.agent_run_id))}\n")
+            # Filter edges by grader_run_id for all critic runs graded by this grader
+            edge_filter = {"grader_run_id": gr.agent_run_id}
         else:
             print(f"Expected critic or grader run, got: {agent_type}")
             return
 
-        if gr.status != AgentRunStatus.EXITED or gr.container_exit_code != 0:
-            print(f"Grader status: {gr.status.value} (exit_code={gr.container_exit_code})")
-            return
-
-        grader_run_id = gr.agent_run_id
-        print(f"Grader: {short_sha(str(grader_run_id))}\n")
-
         credit = (
             session.query(func.sum(GradingEdge.credit))
-            .filter_by(grader_run_id=grader_run_id)
+            .filter_by(**edge_filter)
             .filter(GradingEdge.tp_id.isnot(None))
             .scalar()
             or 0.0
         )
         n_occ = (
             session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
-            .filter_by(grader_run_id=grader_run_id)
+            .filter_by(**edge_filter)
             .filter(GradingEdge.tp_id.isnot(None))
             .distinct()
             .count()
         )
         n_tps = (
             session.query(GradingEdge.tp_id)
-            .filter_by(grader_run_id=grader_run_id)
+            .filter_by(**edge_filter)
             .filter(GradingEdge.tp_id.isnot(None))
             .distinct()
             .count()
         )
-        n_novel = (
-            session.query(GradingEdge)
-            .filter_by(grader_run_id=grader_run_id)
-            .filter(GradingEdge.tp_id.is_(None))
-            .count()
-        )
+        n_novel = session.query(GradingEdge).filter_by(**edge_filter).filter(GradingEdge.tp_id.is_(None)).count()
         print(f"Credit: {credit:.1f}/{n_occ} occ | {n_tps} TPs | {n_novel} unknown\n")
 
         missed_q = (
             session.query(GradingEdge)
-            .filter_by(grader_run_id=grader_run_id)
+            .filter_by(**edge_filter)
             .filter(GradingEdge.tp_id.isnot(None), GradingEdge.credit == 0.0)
         )
         total_missed = missed_q.count()

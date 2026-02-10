@@ -34,8 +34,9 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
     ORCHESTRATION_GRADER_MODEL,
     ORCHESTRATION_OPTIMIZER_MODEL,
-    make_orchestration_grader_mock,
 )
+from props.agents.grader.testing.mocks import GraderMock
+from props.agents.grader.tools import ClusterMemberSpec
 from props.core.agent_types import AgentType, TargetMetric
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
@@ -171,7 +172,31 @@ async def test_optimizer_orchestrates_critic(
         # Submit the critique
         yield m.submit(issues_count=1, summary="Found 1 orchestration test issue")
 
-    grader_mock = make_orchestration_grader_mock()
+    # Grader mock for "orchestration-test-001" on test.py
+    # test.py matches: tp-003/occ-1, tp-004/occ-1, tp-005/occ-1, fp-001/fp-occ-1 = 4 edges
+    @GraderMock.mock(check_consumed=False)
+    def grader_mock(m: GraderMock) -> PlayGen:
+        yield None  # First request
+
+        # Get pending edges for orchestration-test-001
+        drift = yield from m.get_drift_roundtrip()
+        run_id = drift.grading[0].critique_run_id
+
+        # Fill all 4 edges with credit=0
+        yield from m.fill_remaining_roundtrip(run_id, "orchestration-test-001", 4, "Mock: no GT matches")
+
+        # Issue has credit=0, appears in clustering
+        drift = yield from m.get_drift_roundtrip()
+        assert len(drift.clustering) == 1
+
+        # Cluster the issue
+        yield from m.create_cluster_roundtrip(
+            "novel-issues",
+            "Unmatched issues from orchestration",
+            [ClusterMemberSpec(run=run_id, issue_id="orchestration-test-001", rationale="Novel issue")],
+        )
+
+        yield from m.sleep_forever("All edges graded and clustered")
 
     mocks = {
         ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock,

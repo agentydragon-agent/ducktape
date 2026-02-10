@@ -23,16 +23,16 @@ from typing import TYPE_CHECKING, Any
 import asyncpg
 from asyncpg.pool import PoolConnectionProxy
 
-from props.agents.grader.notifications import (
+from props.core.ids import SnapshotSlug
+from props.db.config import DatabaseConfig
+from props.db.database import Database
+from props.db.models import Snapshot
+from props.db.notifications import (
     GRADER_DEFINITION_CHANGED_CHANNEL,
     SNAPSHOT_CREATED_CHANNEL,
     GraderDefinitionChangedNotification,
     SnapshotCreatedNotification,
 )
-from props.core.ids import SnapshotSlug
-from props.db.config import DatabaseConfig
-from props.db.database import Database
-from props.db.models import Snapshot
 
 if TYPE_CHECKING:
     from props.orchestration.agent_registry import AgentRegistry, GraderHandle

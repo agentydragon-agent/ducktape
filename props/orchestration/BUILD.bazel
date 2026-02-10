@@ -35,7 +35,6 @@ py_library(
     deps = [
         ":agent_credentials",
         ":docker_env",
-        "//props/agents/critic_dev:shared",
         "//props/core:agent_types",
         "//props/core:display",
         "//props/core:ids",
@@ -56,11 +55,11 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":agent_registry",
-        "//props/agents/grader:notifications",
         "//props/core:ids",
         "//props/db:config",
         "//props/db:database",
         "//props/db:models",
+        "//props/db:notifications",
         "@pypi//asyncpg",
     ],
 )

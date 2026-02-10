@@ -32,6 +32,7 @@ from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.db.sync.sync import sync_model_metadata_with_session
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.grader_supervisor import GraderSupervisor
 
@@ -68,6 +69,13 @@ def _make_lifespan(deps: BackendDeps):
         db_config = DatabaseConfig()
         db = Database(db_config)
         app.state.admin_db = db
+        app.state.config = deps.config
+
+        # Sync model metadata on boot (ensures custom models from config are in DB)
+        with db.session() as session:
+            stats = sync_model_metadata_with_session(session, deps.config)
+            if stats.added or stats.deleted:
+                logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
 
         app.state.registry = AgentRegistry(
             docker_client=docker_client,

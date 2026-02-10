@@ -111,14 +111,14 @@ class TruePositiveOccurrence(BaseModel):
             "Not 'can you detect this reading only these files in isolation'."
         )
     )
-    graders_match_only_if_reported_on: set[Path] | None = Field(
+    match_file_restriction: set[Path] | None = Field(
         description=(
             "GRADING OPTIMIZATION: Restricts which critique outputs can match this occurrence. "
             "If set, a critique reporting issues only in files OUTSIDE this set will be skipped "
             "during matching (assumed non-match without semantic comparison). "
             "\n\n"
-            "NULL = allow matching from any file. This is the conservative default when we haven't "
-            "determined the closed set of valid reporting files, OR for genuinely cross-cutting issues. "
+            "NULL = allow matching from any file (unrestricted). This is the conservative default when we haven't "
+            "determined the closed set of valid reporting files, OR for issues not bound to specific files. "
             "Non-empty = we know the closed set; skip matching if critique's files don't overlap. "
             "\n\n"
             "Independent of critic_scopes_expected_to_recall (detection source ≠ valid reporting targets). "
@@ -141,8 +141,8 @@ class TruePositiveOccurrence(BaseModel):
     def validate_non_empty(self) -> TruePositiveOccurrence:
         if not self.critic_scopes_expected_to_recall:
             raise ValueError("critic_scopes_expected_to_recall must be non-empty")
-        if self.graders_match_only_if_reported_on is not None and not self.graders_match_only_if_reported_on:
-            raise ValueError("graders_match_only_if_reported_on must be None or non-empty")
+        if self.match_file_restriction is not None and not self.match_file_restriction:
+            raise ValueError("match_file_restriction must be None or non-empty")
         return self
 
     model_config = ConfigDict(extra="forbid")
@@ -160,10 +160,10 @@ class FalsePositiveOccurrence(BaseModel):
     )
     note: str | None = Field(default=None, description="Occurrence-specific note")
     relevant_files: set[Path] = Field(description="Files that make this FP relevant (ANY logic). Must be non-empty.")
-    graders_match_only_if_reported_on: set[Path] | None = Field(
+    match_file_restriction: set[Path] | None = Field(
         description=(
             "Files a critique must report on to match this occurrence (sparse grading). "
-            "NULL = cross-cutting (any critique can match). Non-empty = file-local."
+            "NULL = unrestricted (any critique can match). Non-empty = file-restricted."
         )
     )
 
@@ -181,8 +181,8 @@ class FalsePositiveOccurrence(BaseModel):
     def validate_non_empty(self) -> FalsePositiveOccurrence:
         if not self.relevant_files:
             raise ValueError("relevant_files must be non-empty")
-        if self.graders_match_only_if_reported_on is not None and not self.graders_match_only_if_reported_on:
-            raise ValueError("graders_match_only_if_reported_on must be None or non-empty")
+        if self.match_file_restriction is not None and not self.match_file_restriction:
+            raise ValueError("match_file_restriction must be None or non-empty")
         return self
 
     model_config = ConfigDict(extra="forbid")

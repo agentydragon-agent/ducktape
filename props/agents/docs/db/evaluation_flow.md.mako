@@ -43,8 +43,8 @@ Every (critique_issue, matchable_gt_occurrence) pair needs an edge with credit:
 - **Partial** = issue partially captures the occurrence
 
 **Matchability:** An occurrence is matchable from a critique issue if:
-- No file restriction is specified (`graders_match_only_if_reported_on IS NULL`), OR
-- The critique touches files that overlap with the occurrence's file scope
+- No file restriction is specified (`match_file_restriction IS NULL`, i.e. unrestricted), OR
+- The critique touches files that overlap with the occurrence's file scope (file-restricted)
 
 **Output:** `grading_edges` table populated with edges between issues and GT occurrences.
 

@@ -1,9 +1,9 @@
 """Test matchable_occurrences() SQL function.
 
 This function determines which TP/FP occurrences are matchable from a given set of files.
-The filtering is based on graders_match_only_if_reported_on:
-- NULL = cross-cutting, matchable from any file
-- non-NULL = file-local, only matchable if files overlap with the file set
+The filtering is based on match_file_restriction:
+- NULL = unrestricted, matchable from any file
+- non-NULL = file-restricted, only matchable if files overlap with the file set
 """
 
 from __future__ import annotations
@@ -21,10 +21,10 @@ class TestMatchableOccurrences:
     The train1 snapshot has:
     - tp-001: TP in subtract.py with critic_scopes_expected_to_recall: [[subtract.py]]
     - tp-002: TP in add.py with critic_scopes_expected_to_recall: [[add.py]]
-    - tp-003 through tp-005: Additional TPs (may be cross-cutting)
+    - tp-003 through tp-005: Additional TPs (may be unrestricted)
     - fp-001: FP
 
-    The critic_scopes_expected_to_recall becomes graders_match_only_if_reported_on in the DB.
+    The critic_scopes_expected_to_recall becomes match_file_restriction in the DB.
     """
 
     def test_file_local_tp_matched_from_same_file(self, session, test_trivial_snapshot):
@@ -78,19 +78,19 @@ class TestMatchableOccurrences:
         assert "tp-001" in tp_ids, "tp-001 should be matchable from {subtract.py, add.py}"
         assert "tp-002" in tp_ids, "tp-002 should be matchable from {subtract.py, add.py}"
 
-    def test_cross_cutting_tp_matchable_from_any_file(self, session, test_trivial_snapshot):
-        """Cross-cutting TPs (NULL graders_match_only_if_reported_on) are matchable from any file."""
-        # First check if we have any cross-cutting TPs
-        cross_cutting = session.execute(
+    def test_unrestricted_tp_matchable_from_any_file(self, session, test_trivial_snapshot):
+        """Unrestricted TPs (NULL match_file_restriction) are matchable from any file."""
+        # First check if we have any unrestricted TPs
+        unrestricted = session.execute(
             text("""
                 SELECT tp_id FROM true_positive_occurrences
-                WHERE snapshot_slug = :snapshot AND graders_match_only_if_reported_on IS NULL
+                WHERE snapshot_slug = :snapshot AND match_file_restriction IS NULL
             """),
             {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
-        assert cross_cutting, "Expected cross-cutting TPs (tp-003..tp-005) in test fixtures"
-        cross_cutting_ids = {row.tp_id for row in cross_cutting}
+        assert unrestricted, "Expected unrestricted TPs (tp-003..tp-005) in test fixtures"
+        unrestricted_ids = {row.tp_id for row in unrestricted}
 
         # These should be matchable from ANY file
         result = session.execute(
@@ -103,8 +103,8 @@ class TestMatchableOccurrences:
 
         matched_ids = {row.tp_id for row in result}
 
-        for tp_id in cross_cutting_ids:
-            assert tp_id in matched_ids, f"Cross-cutting TP {tp_id} should be matchable from any file"
+        for tp_id in unrestricted_ids:
+            assert tp_id in matched_ids, f"Unrestricted TP {tp_id} should be matchable from any file"
 
     def test_edge_count_per_file(self, session, test_trivial_snapshot):
         """Verify edge count is smaller for single file vs all files.
@@ -147,8 +147,8 @@ class TestMatchableOccurrences:
         # Single file should have fewer matchable occurrences
         assert single_file <= all_files, "Single file should have <= matchable occurrences than all files"
 
-    def test_empty_file_array_only_matches_cross_cutting(self, session, test_trivial_snapshot):
-        """Empty file array should only match cross-cutting (NULL) occurrences."""
+    def test_empty_file_array_only_matches_unrestricted(self, session, test_trivial_snapshot):
+        """Empty file array should only match unrestricted (NULL) occurrences."""
         result = session.execute(
             text("""
                 SELECT tp_id, tp_occurrence_id, fp_id, fp_occurrence_id
@@ -157,19 +157,19 @@ class TestMatchableOccurrences:
             {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
-        # Check that all returned occurrences are cross-cutting
+        # Check that all returned occurrences are unrestricted
         for row in result:
             if row.tp_id:
-                is_cross_cutting = session.execute(
+                is_unrestricted = session.execute(
                     text("""
-                        SELECT graders_match_only_if_reported_on IS NULL
+                        SELECT match_file_restriction IS NULL
                         FROM true_positive_occurrences
                         WHERE snapshot_slug = :snapshot AND tp_id = :tp_id AND occurrence_id = :occ_id
                     """),
                     {"snapshot": test_trivial_snapshot.slug, "tp_id": row.tp_id, "occ_id": row.tp_occurrence_id},
                 ).scalar()
-                assert is_cross_cutting, (
-                    f"TP {row.tp_id}/{row.tp_occurrence_id} matched from empty array but isn't cross-cutting"
+                assert is_unrestricted, (
+                    f"TP {row.tp_id}/{row.tp_occurrence_id} matched from empty array but isn't unrestricted"
                 )
 
 

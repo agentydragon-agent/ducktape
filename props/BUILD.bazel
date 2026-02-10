@@ -4,6 +4,7 @@
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/deps:check.bzl", "assert_no_deps")
 
 exports_files([
     "config.toml",
@@ -24,6 +25,7 @@ py_library(
     imports = [".."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//openai_utils:model_metadata",
         "@pypi//pydantic",
     ],
 )
@@ -50,5 +52,22 @@ py_library(
         "//props/testing/fixtures:runs",
         "//props/testing/fixtures:scopes",
         "@pypi//pytest",
+    ],
+)
+
+# =============================================================================
+# Boundary enforcement tests
+# =============================================================================
+
+# Verify host-side code doesn't depend on agents/ (container-only code)
+assert_no_deps(
+    name = "test_no_agents_deps",
+    forbidden = ["//props/agents"],
+    targets = [
+        "//props/orchestration:agent_registry",
+        "//props/backend:app",
+        "//props/core:agent_types",
+        "//props/db:notifications",
+        "//props/cli:cli",
     ],
 )

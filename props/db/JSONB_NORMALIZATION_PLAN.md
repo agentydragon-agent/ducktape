@@ -299,7 +299,7 @@ Minimal - API responses can be constructed from either source:
    - **Option B**: Synthetic sentinel range (0, 0)
    - **Recommendation**: Option A - null in JSONB maps to zero rows
 
-3. What about graders_match_only_if_reported_on (used for grader optimization)?
+3. What about match_file_restriction (used for grader optimization)?
    - Keep on occurrence table - it's a hash of the file set, not per-range data
 
 4. Should we add line number validation against `snapshot_files.line_count`?

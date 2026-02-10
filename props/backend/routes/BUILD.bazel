@@ -41,6 +41,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//openai_utils:model",
+        "//props:config",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/db:models",
@@ -56,12 +57,12 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props/backend:__subpackages__"],
     deps = [
-        "//props/agents/grader:notifications",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:oci_utils",
         "//props/db:database",
         "//props/db:models",
+        "//props/db:notifications",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//sqlalchemy",
@@ -75,8 +76,6 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         ":ground_truth",
-        "//props/agents/critic:exceptions",
-        "//props/agents/critic_dev:shared",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:agent_types",
@@ -109,6 +108,23 @@ docker_py_test(
         "//props/db:models",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+docker_py_test(
+    name = "test_llm_routing",
+    srcs = ["test_llm_routing.py"],
+    imports = ["../../.."],
+    deps = [
+        ":llm",
+        "//props:config",
+        "//props:conftest",
+        "//props/backend:conftest",
+        "//props/db:database",
+        "//props/db:models",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

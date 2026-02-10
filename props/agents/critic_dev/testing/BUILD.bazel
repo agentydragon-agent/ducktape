@@ -24,8 +24,4 @@ py_library(
     srcs = ["orchestration_fixtures.py"],
     imports = ["../../../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        "//agent_core/testing:responses",
-        "//props/agents/grader/testing:mocks",
-    ],
 )

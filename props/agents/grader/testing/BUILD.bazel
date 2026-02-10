@@ -11,6 +11,7 @@ py_library(
     deps = [
         "//agent_core/testing:responses",
         "//openai_utils:model",
+        "//props/agents/grader:drift_handler",
         "//props/agents/grader:tools",
         "@pypi//more_itertools",
     ],

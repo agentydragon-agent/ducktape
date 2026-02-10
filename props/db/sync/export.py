@@ -137,11 +137,11 @@ def _export_tp_occurrence(session: Session, occ: TruePositiveOccurrenceORM) -> d
         critic_scopes_expected_to_recall.sort(key=lambda x: x[0] if x else "")
         result["critic_scopes_expected_to_recall"] = critic_scopes_expected_to_recall
 
-    # Get graders_match_only_if_reported_on if set
-    if occ.graders_match_only_if_reported_on:
-        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.graders_match_only_if_reported_on)
+    # Get match_file_restriction if set
+    if occ.match_file_restriction:
+        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.match_file_restriction)
         if paths:
-            result["graders_match_only_if_reported_on"] = paths
+            result["match_file_restriction"] = paths
 
     return result
 
@@ -157,11 +157,11 @@ def _export_fp_occurrence(session: Session, occ: FalsePositiveOccurrenceORM) -> 
     if occ.relevant_file_orms:
         result["relevant_files"] = sorted(str(rf.file_path) for rf in occ.relevant_file_orms)
 
-    # Get graders_match_only_if_reported_on if set
-    if occ.graders_match_only_if_reported_on:
-        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.graders_match_only_if_reported_on)
+    # Get match_file_restriction if set
+    if occ.match_file_restriction:
+        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.match_file_restriction)
         if paths:
-            result["graders_match_only_if_reported_on"] = paths
+            result["match_file_restriction"] = paths
 
     return result
 

@@ -7,13 +7,8 @@ import pytest_bazel
 from agent_core.loop_control import InjectItems, NoAction
 from openai_utils.text_extraction import extract_input_text_content
 from props.agents.grader.notification_handler import GraderNotificationsHandler
-from props.agents.grader.notifications import (
-    GradingPendingNotification,
-    Operation,
-    ReportedIssuesItem,
-    TruePositivesItem,
-)
 from props.core.ids import SnapshotSlug
+from props.db.notifications import GradingPendingNotification, Operation, ReportedIssuesItem, TruePositivesItem
 
 _SLUG = SnapshotSlug("test/snapshot")
 _RUN_ID = UUID("00000000-0000-0000-0000-000000000001")
