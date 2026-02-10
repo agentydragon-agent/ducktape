@@ -28,6 +28,7 @@ resources:
   - vault-ingress/flux-kustomization.yaml
   - vault-token/flux-kustomization.yaml
   - vault-oidc-auth/flux-kustomization.yaml
+  - external-secrets-crds/gitrepository.yaml
   - external-secrets-crds/flux-kustomization.yaml
   - external-secrets-operator/flux-kustomization.yaml
   - external-secrets/flux-kustomization.yaml
