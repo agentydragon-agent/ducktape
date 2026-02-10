@@ -98,28 +98,3 @@ variable "home_manager_host" {
   type        = string
   default     = "nixos-vm"
 }
-
-# =============================================================================
-# ENVIRONMENT VARIABLES
-# =============================================================================
-
-variable "custom_env_vars" {
-  description = "Custom environment variables to inject into VMs"
-  type        = map(string)
-  default     = {}
-  sensitive   = true
-}
-
-variable "openai_api_key" {
-  description = "OpenAI API key to inject into VMs"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "anthropic_api_key" {
-  description = "Anthropic API key to inject into VMs"
-  type        = string
-  default     = ""
-  sensitive   = true
-}

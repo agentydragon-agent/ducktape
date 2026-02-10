@@ -31,19 +31,6 @@ locals {
     local.ssh_key_path != "" ? trimspace(file(local.ssh_key_path)) : ""
   )
 
-  # Environment variables for VMs
-  proxmox_env_vars = {
-    PROXMOX_VE_ENDPOINT  = local.proxmox_endpoint
-    PROXMOX_VE_USERNAME  = local.proxmox_username
-    PROXMOX_VE_API_TOKEN = data.external.user_token.result.token
-    PROXMOX_VE_INSECURE  = tostring(local.proxmox_insecure)
-    PROXMOX_POOL_ID      = local.pool_name_computed
-  }
-
-  llm_api_keys = merge(
-    var.openai_api_key != "" ? { OPENAI_API_KEY = var.openai_api_key } : {},
-    var.anthropic_api_key != "" ? { ANTHROPIC_API_KEY = var.anthropic_api_key } : {}
-  )
 }
 
 # =============================================================================
