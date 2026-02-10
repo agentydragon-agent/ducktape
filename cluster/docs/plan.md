@@ -1,6 +1,6 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-07
+**Last Updated**: 2026-02-09
 
 ## 🎯 Target Architecture
 
@@ -31,20 +31,21 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Core Services (already configured)
 
-| Component              | Status | Notes                            |
-| ---------------------- | ------ | -------------------------------- |
-| Flux CD                | ✅     | GitOps                           |
-| MetalLB                | ✅     | VIP 10.2.3.2 for ingress         |
-| ingress-nginx          | ✅     | hostNetwork on VPS nodes         |
-| cert-manager           | ✅     | DNS-01 via PowerDNS              |
-| PowerDNS               | ✅     | hostNetwork on VPS nodes         |
-| Vault                  | ✅     | With OIDC auth                   |
-| Authentik              | ✅     | SSO provider                     |
-| External Secrets       | ✅     | Vault integration                |
-| Monitoring             | ✅     | Prometheus/Grafana/Loki          |
-| Proxmox CSI            | ✅     | Storage for home nodes           |
-| local-path-provisioner | ✅     | Storage for VPS nodes            |
-| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services) |
+| Component              | Status | Notes                                      |
+| ---------------------- | ------ | ------------------------------------------ |
+| Flux CD                | ✅     | GitOps                                     |
+| MetalLB                | ✅     | VIP 10.2.3.2 for ingress                   |
+| ingress-nginx          | ✅     | hostNetwork on VPS nodes                   |
+| cert-manager           | ✅     | DNS-01 via PowerDNS                        |
+| PowerDNS               | ✅     | hostNetwork on VPS nodes                   |
+| Vault                  | ✅     | With OIDC auth                             |
+| Authentik              | ✅     | SSO provider                               |
+| External Secrets       | ✅     | Vault integration                          |
+| Monitoring             | ✅     | Prometheus/Grafana/Loki                    |
+| Proxmox CSI            | ✅     | Storage for home nodes                     |
+| local-path-provisioner | ✅     | Storage for VPS nodes                      |
+| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)           |
+| DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS |
 
 ## Applications (already configured)
 
@@ -132,21 +133,26 @@ Internet → VPS public IP:53  → PowerDNS pod (hostNetwork) → DNS responses
 
 ### VPS IP Configuration
 
-After cluster boots and new VPS IPs are assigned:
+✅ **Automated via DNS Automation** (tofu-controller)
 
-1. Update `k8s/powerdns-zones/nameserver-glue-records.yaml` with new IPs
-2. Update `k8s/external-dns/deployment.yaml` `--default-targets` with new IPs
+After cluster boots:
+
+- Route 53 glue records (ns1/ns2.allegedly.works) are created automatically
+- PowerDNS NS A records within zone are created automatically
+- VPS IPs are read from `cluster-info` ConfigMap created by infrastructure terraform
+
+**Remaining manual step**:
+
+- `k8s/external-dns/deployment.yaml` `--default-targets` - still hardcoded (optional future automation)
 
 ### Registrar DNS Configuration
 
-At registrar (where `allegedly.works` is registered), set:
+✅ **Route 53 glue records managed by tofu-controller**
 
-| Record Type | Name                | Value                   |
-| ----------- | ------------------- | ----------------------- |
-| NS          | allegedly.works     | ns1.allegedly.works     |
-| NS          | allegedly.works     | ns2.allegedly.works     |
-| A (glue)    | ns1.allegedly.works | `<VPS-0 IP after boot>` |
-| A (glue)    | ns2.allegedly.works | `<VPS-1 IP after boot>` |
+NS delegation is configured at Route 53 (zone `Z02901943N8ZFQFOD9P5I`):
+
+- NS records pointing to ns1/ns2.allegedly.works
+- Glue A records automatically updated when VPS IPs change
 
 ### PowerDNS Zone
 
@@ -163,19 +169,22 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 ### Phase 1: Cluster Bootstrap
 
 1. [ ] Run `./bootstrap.sh` to create VPS nodes (new public IPs assigned)
-2. [ ] Get VPS IPs after bootstrap:
+2. [ ] Verify VPS IPs in ConfigMap:
    ```bash
-   cd terraform/01-infrastructure && tofu output -json | jq -r '.vps_ips.value'
+   kubectl get configmap cluster-info -n flux-system -o jsonpath='{.data.vps_nodes}' | jq
    ```
-3. [ ] Update cluster configs with new VPS IPs:
-   - `k8s/powerdns-zones/nameserver-glue-records.yaml` - NS1/NS2 A records
-   - `k8s/external-dns/deployment.yaml` - `--default-targets` flag
-4. [ ] Commit and push IP updates, reconcile Flux
-5. [ ] Configure Route 53 glue records at registrar:
-   - `ns1.allegedly.works` → VPS-0 IP
-   - `ns2.allegedly.works` → VPS-1 IP
-6. [ ] Verify DNS resolution: `dig @ns1.allegedly.works allegedly.works`
-7. [ ] Verify certs issue: `kubectl get certificates -A`
+3. [x] ~~Update cluster configs with new VPS IPs~~ - **Automated via DNS automation**
+   - Route 53 glue records: tofu-controller creates automatically
+   - PowerDNS NS A records: tofu-controller creates automatically
+   - `k8s/external-dns/deployment.yaml` `--default-targets`: still manual (optional)
+4. [ ] Verify DNS automation applied:
+   ```bash
+   kubectl get terraform dns-records -n flux-system
+   aws route53 list-resource-record-sets --hosted-zone-id Z02901943N8ZFQFOD9P5I \
+     --query "ResourceRecordSets[?Name=='ns1.allegedly.works.']"
+   ```
+5. [ ] Verify DNS resolution: `dig @ns1.allegedly.works allegedly.works`
+6. [ ] Verify certs issue: `kubectl get certificates -A`
 
 ### Phase 2: Deploy Missing Services
 
