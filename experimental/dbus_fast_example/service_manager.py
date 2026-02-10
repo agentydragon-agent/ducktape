@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 from dbus_fast.aio import MessageBus
 from dbus_fast.message import Message
@@ -11,16 +12,18 @@ from dbus_fast.message import Message
 class ServiceManager:
     """Launch and control the example service in a subprocess."""
 
-    def __init__(self, bus_address: str) -> None:
+    def __init__(self, bus_address: str, **subprocess_kwargs: Any) -> None:
         self.bus_address = bus_address
         self.proc: asyncio.subprocess.Process | None = None
+        self._subprocess_kwargs = subprocess_kwargs
 
     async def start(self) -> None:
         if self.proc:
             raise RuntimeError("service already running")
         script = Path(__file__).with_name("dbus_service.py")
-        # Using asyncio.create_subprocess_exec for async subprocess
-        self.proc = await asyncio.create_subprocess_exec(sys.executable, str(script), self.bus_address)
+        self.proc = await asyncio.create_subprocess_exec(
+            sys.executable, script, self.bus_address, **self._subprocess_kwargs
+        )
         await self._wait_until_running()
 
     async def _wait_until_running(self) -> None:

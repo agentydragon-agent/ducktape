@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +25,8 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+from test_util.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +55,6 @@ class TracingConfig:
             logger.debug("No OTel exporter configured, skipping trace export")
             return None
 
-        output_dir = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
-        if not output_dir:
-            logger.debug("TEST_UNDECLARED_OUTPUTS_DIR not set, skipping trace export")
-            return None
-
         spans = self.exporter.get_finished_spans()
         if not spans:
             logger.debug("No spans collected, skipping trace export")
@@ -66,8 +62,7 @@ class TracingConfig:
 
         traces = [_span_to_dict(s) for s in spans]
 
-        dest = Path(output_dir) / "traces.json"
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest = undeclared_outputs_dir() / "traces.json"
         dest.write_text(json.dumps(traces, indent=2))
         logger.info("Exported %d spans to %s", len(traces), dest)
         return dest

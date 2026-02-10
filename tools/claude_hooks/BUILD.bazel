@@ -331,6 +331,7 @@ py_test(
         ":settings",
         "//:runfiles",
         "//net_util:net",
+        "//test_util:undeclared_outputs",
         "//tools/claude_hooks/testing:fixtures",
         "//tools/claude_hooks/testing:mock_egress_proxy",
         "//tools/claude_hooks/testing:shell_helpers",

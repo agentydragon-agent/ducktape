@@ -169,7 +169,7 @@ dependencies = [
     "PyGObject>=3.40.0",
 
     # dbus_fast_example
-    "dbus-fast",
+    "dbus-fast>=4.0.0",
 
     # inventree_utils
     "inventree>=0.15",

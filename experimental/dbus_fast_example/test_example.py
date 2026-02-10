@@ -9,22 +9,32 @@ import pytest_bazel
 
 from experimental.dbus_fast_example.client import ExampleClient
 from experimental.dbus_fast_example.service_manager import ServiceManager
+from test_util.undeclared_outputs import undeclared_outputs_dir
 
 
 @pytest.fixture(scope="session")
 def bus_address() -> Iterator[str]:
+    out_dir = undeclared_outputs_dir()
+    dbus_stderr = (out_dir / "dbus_daemon_stderr.log").open("w")
     proc = subprocess.Popen(
-        ["dbus-daemon", "--session", "--nofork", "--print-address=1"], stdout=subprocess.PIPE, text=True
+        ["dbus-daemon", "--session", "--nofork", "--print-address=1"],
+        stdout=subprocess.PIPE,
+        stderr=dbus_stderr,
+        text=True,
     )
     assert proc.stdout
     address = proc.stdout.readline().strip()
     yield address
     proc.terminate()
     proc.wait(timeout=5)
+    dbus_stderr.close()
 
 
 async def test_signal_flow(bus_address: str) -> None:
-    manager = ServiceManager(bus_address)
+    out_dir = undeclared_outputs_dir()
+    svc_stdout = (out_dir / "dbus_service_stdout.log").open("w")
+    svc_stderr = (out_dir / "dbus_service_stderr.log").open("w")
+    manager = ServiceManager(bus_address, stdout=svc_stdout, stderr=svc_stderr)
     await manager.start()
 
     client = ExampleClient(bus_address)
@@ -64,6 +74,8 @@ async def test_signal_flow(bus_address: str) -> None:
 
     await client.disconnect()
     await manager.stop()
+    svc_stdout.close()
+    svc_stderr.close()
 
 
 if __name__ == "__main__":

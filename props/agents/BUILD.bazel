@@ -62,6 +62,7 @@ docker_py_test(
         ":runtime",
         "//props:conftest",
         "//props/db:database",
+        "//test_util:undeclared_outputs",
         "@pypi//mako",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

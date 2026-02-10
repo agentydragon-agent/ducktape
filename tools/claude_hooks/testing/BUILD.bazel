@@ -42,6 +42,7 @@ py_library(
     deps = [
         ":mock_egress_proxy",
         "//net_util:net",
+        "//test_util:undeclared_outputs",
         "//tools/claude_hooks:settings",
         "//tools/claude_hooks/supervisor:client",
         "@pypi//pytest",

@@ -24,6 +24,7 @@ import pytest_bazel
 
 from net_util.net import pick_free_port
 from runfiles import get_required_path
+from test_util.undeclared_outputs import undeclared_outputs_dir
 from tools.claude_hooks import settings
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from tools.claude_hooks.proxy_vars import PROXY_ENV_VARS
@@ -248,16 +249,9 @@ def _cleanup_supervisor(config_dir: Path) -> None:
             pidfile.unlink()
 
 
-def _get_outputs_dir() -> Path:
-    """Get the test outputs directory for log collection."""
-    return Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/test-outputs"))
-
-
 def _write_output_log(name: str, content: str) -> Path:
     """Write content to a log file in the outputs directory."""
-    outputs_dir = _get_outputs_dir()
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = outputs_dir / name
+    log_path = undeclared_outputs_dir() / name
     log_path.write_text(content)
     return log_path
 

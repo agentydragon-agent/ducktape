@@ -11,13 +11,12 @@ the result to TEST_UNDECLARED_OUTPUTS_DIR. This serves as:
 from __future__ import annotations
 
 import importlib.resources
-import os
-from pathlib import Path
 
 import pytest_bazel
 
 from props.agents.runtime import render_template_string
 from props.db.database import Database
+from test_util.undeclared_outputs import undeclared_outputs_dir
 
 
 def _render(db: Database, template_path: str, helpers: dict | None = None) -> str:
@@ -28,12 +27,9 @@ def _render(db: Database, template_path: str, helpers: dict | None = None) -> st
 
 
 def _write_output(name: str, content: str) -> None:
-    """Write rendered prompt to TEST_UNDECLARED_OUTPUTS_DIR."""
-    output_dir = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
-    if output_dir:
-        dest = Path(output_dir) / name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(content)
+    """Write rendered prompt to undeclared test outputs."""
+    dest = undeclared_outputs_dir() / name
+    dest.write_text(content)
 
 
 def test_critic_prompt(db: Database):

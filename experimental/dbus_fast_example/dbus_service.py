@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import asyncio
 import sys
 
 from dbus_fast.aio import MessageBus
+from dbus_fast.annotations import DBusStr
 from dbus_fast.service import ServiceInterface, method, signal
 
 
@@ -15,11 +14,11 @@ class ExampleService(ServiceInterface):
         self.stop_event = asyncio.Event()
 
     @method()
-    def Ping(self) -> str:  # noqa: N802 - DBus method name
+    def Ping(self) -> DBusStr:  # noqa: N802 - DBus method name
         return "pong"
 
     @method()
-    def EmitSignal(self, msg: str) -> None:  # noqa: N802 - DBus method name
+    def EmitSignal(self, msg: DBusStr) -> None:  # noqa: N802 - DBus method name
         self.Notify(msg)
 
     @method()
@@ -27,7 +26,7 @@ class ExampleService(ServiceInterface):
         self.stop_event.set()
 
     @signal()
-    def Notify(self, msg: str) -> str:  # noqa: N802 - DBus signal name
+    def Notify(self, msg: DBusStr) -> DBusStr:  # noqa: N802 - DBus signal name
         return msg
 
 

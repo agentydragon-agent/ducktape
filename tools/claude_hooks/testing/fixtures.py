@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from net_util.net import pick_free_port
+from test_util.undeclared_outputs import undeclared_outputs_dir
 from tools.claude_hooks import settings
 from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import try_connect
@@ -81,9 +82,7 @@ def mock_egress_proxy() -> Generator[MockEgressProxyFixture]:
 
     Yields a MockEgressProxyFixture with both the proxy and its log file path.
     """
-    outputs_dir = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/test-outputs"))
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    log_file = outputs_dir / "mock-egress-proxy.log"
+    log_file = undeclared_outputs_dir() / "mock-egress-proxy.log"
 
     proxy_logger = logging.getLogger("tools.claude_hooks.testing.mock_egress_proxy")
     proxy_logger.setLevel(logging.DEBUG)
@@ -104,19 +103,15 @@ def mock_egress_proxy() -> Generator[MockEgressProxyFixture]:
 
 
 def collect_supervisor_logs(supervisor_dir: Path) -> None:
-    """Copy supervisor files to TEST_UNDECLARED_OUTPUTS_DIR for CI artifact collection.
+    """Copy supervisor files to undeclared test outputs for CI artifact collection.
 
     Recursively collects all regular files (logs, config, pidfile, conf.d/ contents)
     from the supervisor directory tree.
-    No-op if TEST_UNDECLARED_OUTPUTS_DIR is not set.
     """
-    outputs_dir = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
-    if not outputs_dir:
-        return
     if not supervisor_dir.exists():
         return
 
-    dest = Path(outputs_dir) / "supervisor-logs"
+    dest = undeclared_outputs_dir() / "supervisor-logs"
     dest.mkdir(parents=True, exist_ok=True)
 
     for f in supervisor_dir.rglob("*"):

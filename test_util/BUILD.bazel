@@ -36,3 +36,10 @@ py_library(
         "//:runfiles",
     ],
 )
+
+py_library(
+    name = "undeclared_outputs",
+    srcs = ["undeclared_outputs.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
