@@ -34,10 +34,6 @@
 - [ ] Re-enable `bazel coverage` in CI once compatible with remote execution (RBE). Currently disabled because the Java-based `remote_coverage_tools` can't locate its runfiles on BuildBuddy workers, causing all tests to be marked as failed. See `bazel-test.yml`.
 - [ ] Set up BuildBuddy [remote runner features](https://www.buildbuddy.io/docs/remote-runner-features) for artifacts / extra test outputs
 
-## Testing
-
-- [ ] Add automated check for missing `pytest_bazel.main()` in py_test targets (validation test using `bazel query` + AST parsing, or pre-commit hook for new test files)
-
 ## Repository
 
 - [ ] Pick a sane license schema (probably AGPL)
