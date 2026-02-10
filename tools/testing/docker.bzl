@@ -11,7 +11,7 @@ load("@rules_python//python:defs.bzl", "py_test")
 DOCKER_EXEC_PROPERTIES = {
     "test.workload-isolation-type": "firecracker",
     "test.init-dockerd": "true",
-    "test.recycle-runner": "false",
+    "test.recycle-runner": "true",
     "test.EstimatedComputeUnits": "3",
 }
 
