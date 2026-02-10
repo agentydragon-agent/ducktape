@@ -73,18 +73,6 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 
-# Production base image: minimal (glibc + libstdc++ + libgcc_s + CA certs, ~25 MB)
-# Bazel's hermetic Python toolchain provides the full runtime, so we don't need
-# a Python base image. All our pip packages' native deps (grpcio, tokenizers,
-# pydantic_core) only need glibc + libstdc++.
-oci.pull(
-    name = "distroless_cc",
-    digest = "sha256:72344f7f909a8bf003c67f55687e6d51a441b49661af8f660aa7b285f00e57df",
-    image = "gcr.io/distroless/cc-debian12",
-    platforms = ["linux/amd64"],
-    tag = "latest",
-)
-
 # Production base image for py_image_layer containers.
 # aspect_rules_py's py_binary generates a bash launcher, so the base needs a
 # shell. Debian slim provides bash + glibc + libstdc++ at ~30 MB compressed.
@@ -132,7 +120,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
-use_repo(oci, "debian_slim_linux_amd64", "distroless_cc", "distroless_cc_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "python_slim", "python_slim_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
+use_repo(oci, "debian_slim_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "python_slim", "python_slim_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
 
 # Re-export crane binary with public visibility for py_test data deps
 crane = use_extension("//tools:crane_export.bzl", "crane_export")
