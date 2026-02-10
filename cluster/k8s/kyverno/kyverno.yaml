@@ -42,6 +42,12 @@ spec:
         requests:
           cpu: 100m
           memory: 128Mi
+      # Use cert-manager for TLS certificate management
+      # This ensures TLS certs exist BEFORE webhook registration,
+      # eliminating the race condition where webhook is registered
+      # before Kyverno's internal certmanager-controller creates certs
+      certManager:
+        enabled: true
 
     # Background controller for policy reports
     backgroundController:
