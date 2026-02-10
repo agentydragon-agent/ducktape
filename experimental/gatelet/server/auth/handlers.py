@@ -132,7 +132,7 @@ class AdminAuthContext:
         return AuthType.ADMIN
 
     def create_url(self, path: str) -> str:
-        return f"/{path}"
+        return f"/admin/{path}"
 
     def create_url_with_params(self, path: str, **query_params) -> str:
         base_url = self.create_url(path)

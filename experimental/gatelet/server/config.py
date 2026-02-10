@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
+ADMIN_SESSION_COOKIE = "admin_session"
+
 
 class LogLevel(StrEnum):
     """Logging level for server configuration."""
@@ -107,8 +109,9 @@ class AuthSettings(BaseModel):
 
 
 class HomeAssistantSettings(BaseModel):
-    api_url: str = Field(...)  # Required field
-    api_token: str = Field(...)  # Required field
+    enabled: bool = Field(default=False)
+    api_url: str = Field(default="")
+    api_token: str = Field(default="")
     entities: list[str] = Field(default_factory=list)
 
 
@@ -167,7 +170,7 @@ class Settings(BaseModel):
     database: DatabaseSettings
     server: ServerSettings
     auth: AuthSettings
-    home_assistant: HomeAssistantSettings
+    home_assistant: HomeAssistantSettings = Field(default_factory=HomeAssistantSettings)
     activitywatch: ActivityWatchSettings = Field(default=ActivityWatchSettings())
     webhook: WebhookSettings
     admin: AdminSettings

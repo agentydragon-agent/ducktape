@@ -43,3 +43,14 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "playwright",
+    srcs = ["playwright.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pytest",
+    ],
+)

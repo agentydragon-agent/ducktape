@@ -18,23 +18,22 @@ router = APIRouter(tags=["homeassistant"])
 
 async def fetch_states(settings: Settings = Depends(get_settings)) -> list[dict[str, Any]]:
     """Fetch states for configured entities."""
+    if not settings.home_assistant.enabled:
+        return []
     entities: list[dict[str, Any]] = []
     async with homeassistant_api.Client(
         settings.home_assistant.api_url, settings.home_assistant.api_token, use_async=True, verify_ssl=False
     ) as client:
         for entity_id in settings.home_assistant.entities:
-            try:
-                state = await client.async_get_state(entity_id=entity_id)
-                entities.append(
-                    {
-                        "entity_id": entity_id,
-                        "state": state.state,
-                        "last_changed": state.last_changed,
-                        "friendly_name": state.attributes.get("friendly_name", entity_id),
-                    }
-                )
-            except Exception as exc:  # pragma: no cover - network errors
-                logger.error("Failed fetching %s: %s", entity_id, exc)
+            state = await client.async_get_state(entity_id=entity_id)
+            entities.append(
+                {
+                    "entity_id": entity_id,
+                    "state": state.state,
+                    "last_changed": state.last_changed,
+                    "friendly_name": state.attributes.get("friendly_name", entity_id),
+                }
+            )
     return entities
 
 

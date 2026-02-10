@@ -13,6 +13,7 @@ py_library(
         "//experimental/gatelet/server:config",
         "//experimental/gatelet/server:database",
         "@pypi//fastapi",
+        "@pypi//sqlalchemy",
     ],
 )
 

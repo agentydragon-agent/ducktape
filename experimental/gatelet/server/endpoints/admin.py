@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from experimental.gatelet.server.auth.dependencies import Auth, get_admin_auth_with_context
-from experimental.gatelet.server.config import Settings, get_settings
+from experimental.gatelet.server.config import ADMIN_SESSION_COOKIE, Settings, get_settings
 from experimental.gatelet.server.database import get_db_session
 from experimental.gatelet.server.endpoints import activitywatch
 from experimental.gatelet.server.endpoints.homeassistant import fetch_states
@@ -29,7 +29,7 @@ SESSION_DURATION = timedelta(hours=1)
 
 
 async def _get_admin_session(
-    session_token: str | None = Cookie(None, alias="admin_session"), db_session: AsyncSession = DB_SESSION
+    session_token: str | None = Cookie(None, alias=ADMIN_SESSION_COOKIE), db_session: AsyncSession = DB_SESSION
 ) -> AdminSession:
     if not session_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
@@ -71,18 +71,22 @@ async def login(
         session_token=uuid.uuid4().hex, created_at=datetime.now(), expires_at=datetime.now() + SESSION_DURATION
     )
     db_session.add(session)
-    await db_session.flush()
+    # Commit before redirect so the session is visible to the next request.
+    # The generator-based get_db_session commits after the response is sent,
+    # which races with the browser following the redirect.
+    await db_session.commit()
     response = RedirectResponse("/admin/", status_code=302)
-    response.set_cookie("admin_session", session.session_token, httponly=True)
+    response.set_cookie(ADMIN_SESSION_COOKIE, session.session_token, httponly=True)
     _token, signed = csrf_protect.generate_csrf_tokens()
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 
 
 @router.get("/admin/", response_class=HTMLResponse, dependencies=[Depends(get_admin_auth_with_context)])
-async def admin_root(request: Request, auth: Auth, settings: Settings = Depends(get_settings)) -> HTMLResponse:
-    async with get_db_session(request) as db_session:
-        recent = await get_latest_payloads(db_session, limit=5)
+async def admin_root(
+    request: Request, auth: Auth, settings: Settings = Depends(get_settings), db_session: AsyncSession = DB_SESSION
+) -> HTMLResponse:
+    recent = await get_latest_payloads(db_session, limit=5)
     ha_states = await fetch_states(settings)
     aw_summary = await activitywatch.fetch_recent_activity(settings.activitywatch)
     return request.app.state.templates.TemplateResponse(
@@ -195,8 +199,8 @@ async def invalidate_admin_session(
         await db_session.flush()
 
     response = RedirectResponse("/admin/admin-sessions/", status_code=302)
-    if sess and sess.session_token == request.cookies.get("admin_session"):
-        response.delete_cookie("admin_session")
+    if sess and sess.session_token == request.cookies.get(ADMIN_SESSION_COOKIE):
+        response.delete_cookie(ADMIN_SESSION_COOKIE)
     return response
 
 
