@@ -12,9 +12,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from props.agents.critic_dev.shared import TargetMetric
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
+
+
+class TargetMetric(StrEnum):
+    """Prompt optimizer terminal metric mode.
+
+    Determines which validation examples are used for optimization:
+    - WHOLE_REPO: Only full-snapshot validation examples (black-box validation)
+    - TARGETED: Both per-file and full-snapshot validation examples (allows iteration)
+    """
+
+    WHOLE_REPO = "whole-repo"
+    TARGETED = "targeted"
 
 
 class AgentType(StrEnum):
@@ -91,7 +102,6 @@ class CriticDevOptimizeTypeConfig(BaseModel):
     target_metric: TargetMetric
     optimizer_model: str = Field(description="Model used for the optimizer agent itself")
     critic_model: str = Field(description="Model used for critic evaluations")
-    budget_limit: float = Field(description="Dollar budget limit for optimization")
 
 
 class CriticDevImproveTypeConfig(BaseModel):

@@ -60,7 +60,6 @@ class TestTypeConfigDiscriminatedUnion:
                     "target_metric": "whole-repo",
                     "optimizer_model": "test-optimizer",
                     "critic_model": "test-critic",
-                    "budget_limit": 100.0,
                 },
                 CriticDevOptimizeTypeConfig,
             ),

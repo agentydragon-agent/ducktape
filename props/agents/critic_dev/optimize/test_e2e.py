@@ -29,7 +29,6 @@ import pytest_bazel
 from agent_core.testing.responses import PlayGen, tool_roundtrip
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
-from props.agents.critic_dev.shared import TargetMetric
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -37,7 +36,7 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_OPTIMIZER_MODEL,
     make_orchestration_grader_mock,
 )
-from props.core.agent_types import AgentType
+from props.core.agent_types import AgentType, TargetMetric
 from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database

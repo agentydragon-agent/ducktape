@@ -46,7 +46,6 @@ docker_py_test(
         "//props/agents/critic/testing:mocks",
         "//props/agents/critic_dev:loop",
         "//props/agents/critic_dev:main",
-        "//props/agents/critic_dev:shared",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",
         "//props/core:agent_types",
