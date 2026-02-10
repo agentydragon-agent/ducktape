@@ -121,6 +121,66 @@ IMPORTANT CONTEXT:
 
 **The primary goal is to achieve a committed repo state where the bootstrap script → everything works.**
 
+## ⚠️ CRITICAL: DEBUGGING BROKEN BOOTSTRAP STATE
+
+**When bootstrap results in broken state, DO NOT restart pods or apply manual patches.**
+
+### Mandatory Investigation Process
+
+When a component fails after bootstrap:
+
+1. **Examine the failure** - What exactly failed? What error message?
+2. **Determine the timeline** - When did it fail? What was supposed to happen before it?
+3. **Identify the missing dependency** - Why did this component try to start before its prerequisites were ready?
+4. **Find the declarative fix** - What dependency declaration, kustomization order, or configuration change prevents this?
+5. **Update the configuration** - Commit the fix so future bootstraps don't have this problem
+6. **Test via full destroy→bootstrap cycle** - Verify the fix works
+
+### NEVER DO THIS
+
+```bash
+# ❌ WRONG: Blindly restart failing pods
+kubectl delete pod failing-pod -n some-namespace
+kubectl rollout restart deployment/broken-thing
+
+# ❌ WRONG: Manual patches to "fix" state
+kubectl patch configmap foo --patch '...'
+kubectl edit deployment bar
+```
+
+### DO THIS INSTEAD
+
+```bash
+# ✓ Check pod events to understand failure timeline
+kubectl get events -n namespace --field-selector involvedObject.name=pod-name --sort-by='.lastTimestamp'
+
+# ✓ Check what the pod was waiting for
+kubectl describe pod failing-pod -n namespace
+
+# ✓ Check dependency chain in Flux
+flux get kustomizations | grep -E "failed|not ready"
+
+# ✓ Check if there's a missing dependsOn
+cat k8s/component/flux-kustomization.yaml | grep -A5 dependsOn
+```
+
+### Root Cause Categories
+
+| Symptom                     | Likely Cause                            | Fix Location                          |
+| --------------------------- | --------------------------------------- | ------------------------------------- |
+| Pod fails before CRD exists | Missing kustomization dependency        | `flux-kustomization.yaml` `dependsOn` |
+| Image pull fails (DNS)      | Node-level DNS not ready                | Infrastructure timing/config          |
+| Secret not found            | Secret kustomization not deployed first | `flux-kustomization.yaml` `dependsOn` |
+| Connection refused          | Target service not ready                | `flux-kustomization.yaml` `dependsOn` |
+
+### The Goal
+
+After investigating and fixing:
+
+- `terraform destroy && ./bootstrap.sh` should succeed without intervention
+- The same failure should never happen again on fresh bootstrap
+- All fixes are committed configuration changes, not manual patches
+
 ## ⚠️ CRITICAL: PERSISTENT AUTH PROTECTION
 
 **AI agents and automated processes MUST NEVER destroy the persistent auth layer (00-persistent-auth) without
