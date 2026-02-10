@@ -1,8 +1,8 @@
 """Agent server package - root modules, binaries, and OCI image."""
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 exports_files(["conftest.py"])
 
@@ -97,26 +97,18 @@ py_binary(
 
 # --- OCI Runtime Image ---
 
-pkg_tar(
-    name = "runtime_image_tar",
-    srcs = [
-        "//agent_server/policy_eval:shim",
-    ],
-    include_runfiles = True,
-    package_dir = "/opt/adgn",
-    strip_prefix = ".",
-)
-
 oci_image(
     name = "image",
-    base = "@python_slim_linux_amd64",
-    entrypoint = ["/opt/adgn/policy_eval/shim"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
-    tars = [":runtime_image_tar"],
-    workdir = "/opt/adgn",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint(
+        "shim_bin",
+        binary_package = "agent_server/policy_eval",
+    ),
+    env = py_image_env(
+        "shim_bin",
+        binary_package = "agent_server/policy_eval",
+    ),
+    tars = ["//agent_server/policy_eval:layers"],
 )
 
 oci_load(

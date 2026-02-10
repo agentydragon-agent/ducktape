@@ -1,6 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "cli",
@@ -33,24 +34,24 @@ py_binary(
 
 # --- OCI Image ---
 
-# Package the py_binary and its runfiles into /app
-pkg_tar(
-    name = "editor_submit_tar",
-    srcs = [":editor_submit"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
+aspect_py_binary(
+    name = "editor_submit_bin",
+    imports = ["../.."],
+    main = "cli.py",
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":editor_submit_bin",
 )
 
 oci_image(
     name = "image",
-    base = "@python_slim_linux_amd64",
-    env = {
-        "PATH": "/app:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
-    tars = [":editor_submit_tar"],
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("editor_submit_bin"),
+    env = py_image_env("editor_submit_bin"),
+    tars = [":layers"],
     workdir = "/workspace",
 )
 
