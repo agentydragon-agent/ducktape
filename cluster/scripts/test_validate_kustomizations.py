@@ -8,17 +8,30 @@ from textwrap import dedent
 
 import pytest
 import pytest_bazel
+import yaml
 
 from cluster.scripts.validate_kustomizations import (
     CRD_TO_OPERATOR,
     DependsOn,
-    KustomizationSpec,
+    FluxKustomization,
+    KustomizeBuildResult,
     build_dependency_graph,
     check_crd_layering,
     check_required_dependencies,
     find_cycles,
-    load_kustomizations,
+    parse_flux_kustomization,
+    parse_k8s_resource,
 )
+
+
+def make_build_result(path: Path, yaml_output: str) -> KustomizeBuildResult:
+    """Create a KustomizeBuildResult from YAML output."""
+    resources = []
+    for doc in yaml.safe_load_all(yaml_output):
+        resource = parse_k8s_resource(doc)
+        if resource:
+            resources.append(resource)
+    return KustomizeBuildResult(kustomization_path=path, success=True, resources=resources)
 
 
 class TestCrdLayeringCheck:
@@ -37,7 +50,8 @@ class TestCrdLayeringCheck:
                   chart: test
         """)
         path = Path("/k8s/test-app/kustomization.yaml")
-        errors = check_crd_layering(path, output)
+        result = make_build_result(path, output)
+        errors = check_crd_layering(result)
         assert errors == []
 
     def test_valid_crd_only(self) -> None:
@@ -52,7 +66,8 @@ class TestCrdLayeringCheck:
                 name: vault-backend
         """)
         path = Path("/k8s/test-app/kustomization.yaml")
-        errors = check_crd_layering(path, output)
+        result = make_build_result(path, output)
+        errors = check_crd_layering(result)
         assert errors == []
 
     def test_detects_crd_layering_violation(self) -> None:
@@ -76,7 +91,8 @@ class TestCrdLayeringCheck:
                 name: vault-backend
         """)
         path = Path("/k8s/test-app/kustomization.yaml")
-        errors = check_crd_layering(path, output)
+        result = make_build_result(path, output)
+        errors = check_crd_layering(result)
         assert len(errors) == 1
         assert "CRD layering violation" in errors[0]
         assert "ExternalSecret" in errors[0]
@@ -96,7 +112,8 @@ class TestCrdLayeringCheck:
         """)
         # external-secrets-operator is in OPERATOR_KUSTOMIZATIONS
         path = Path("/k8s/external-secrets-operator/kustomization.yaml")
-        errors = check_crd_layering(path, output)
+        result = make_build_result(path, output)
+        errors = check_crd_layering(result)
         assert errors == []
 
     def test_skips_nested_operator_kustomizations(self) -> None:
@@ -114,7 +131,8 @@ class TestCrdLayeringCheck:
         """)
         # cert-manager-config/base is nested under cert-manager-config which is in OPERATOR_KUSTOMIZATIONS
         path = Path("/k8s/cert-manager-config/base/kustomization.yaml")
-        errors = check_crd_layering(path, output)
+        result = make_build_result(path, output)
+        errors = check_crd_layering(result)
         assert errors == []
 
     def test_skips_deeply_nested_operator_kustomizations(self) -> None:
@@ -132,7 +150,8 @@ class TestCrdLayeringCheck:
         """)
         # vault/config/base is nested under vault which is in OPERATOR_KUSTOMIZATIONS
         path = Path("/k8s/vault/config/base/kustomization.yaml")
-        errors = check_crd_layering(path, output)
+        result = make_build_result(path, output)
+        errors = check_crd_layering(result)
         assert errors == []
 
     def test_skips_overlay_directories(self) -> None:
@@ -149,7 +168,8 @@ class TestCrdLayeringCheck:
               name: test-secret
         """)
         path = Path("/k8s/test-app/overlays/production/kustomization.yaml")
-        errors = check_crd_layering(path, output)
+        result = make_build_result(path, output)
+        errors = check_crd_layering(result)
         assert errors == []
 
 
@@ -159,11 +179,15 @@ class TestDependencyGraph:
     def test_builds_graph_from_kustomizations(self) -> None:
         """Builds correct dependency graph."""
         kustomizations = {
-            "app-a": KustomizationSpec(path="./k8s/app-a", depends_on=[DependsOn(name="core")]),
-            "app-b": KustomizationSpec(
-                path="./k8s/app-b", depends_on=[DependsOn(name="core"), DependsOn(name="app-a")]
+            "app-a": FluxKustomization(
+                name="app-a", file_path=Path("./k8s/app-a"), depends_on=[DependsOn(name="core")]
             ),
-            "core": KustomizationSpec(path="./k8s/core", depends_on=[]),
+            "app-b": FluxKustomization(
+                name="app-b",
+                file_path=Path("./k8s/app-b"),
+                depends_on=[DependsOn(name="core"), DependsOn(name="app-a")],
+            ),
+            "core": FluxKustomization(name="core", file_path=Path("./k8s/core"), depends_on=[]),
         }
         graph = build_dependency_graph(kustomizations)
 
@@ -196,11 +220,12 @@ class TestRequiredDependencies:
 
     def test_detects_missing_dependency(self) -> None:
         """Detects when required dependency is missing."""
-
         # authentik should depend on external-secrets-config but doesn't
         kustomizations = {
-            "authentik": KustomizationSpec(path="./k8s/authentik", depends_on=[]),
-            "external-secrets-config": KustomizationSpec(path="./k8s/external-secrets", depends_on=[]),
+            "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"), depends_on=[]),
+            "external-secrets-config": FluxKustomization(
+                name="external-secrets-config", file_path=Path("./k8s/external-secrets"), depends_on=[]
+            ),
         }
         errors = check_required_dependencies(kustomizations)
         # Should have error about authentik missing external-secrets-config
@@ -210,20 +235,26 @@ class TestRequiredDependencies:
     def test_accepts_valid_dependencies(self) -> None:
         """No errors when required dependencies are present."""
         kustomizations = {
-            "authentik": KustomizationSpec(
-                path="./k8s/authentik",
+            "authentik": FluxKustomization(
+                name="authentik",
+                file_path=Path("./k8s/authentik"),
                 depends_on=[DependsOn(name="external-secrets-config"), DependsOn(name="ingress-nginx")],
             ),
-            "external-secrets-config": KustomizationSpec(
-                path="./k8s/external-secrets", depends_on=[DependsOn(name="vault")]
+            "external-secrets-config": FluxKustomization(
+                name="external-secrets-config",
+                file_path=Path("./k8s/external-secrets"),
+                depends_on=[DependsOn(name="vault")],
             ),
-            "ingress-nginx": KustomizationSpec(
-                path="./k8s/ingress-nginx",
+            "ingress-nginx": FluxKustomization(
+                name="ingress-nginx",
+                file_path=Path("./k8s/ingress-nginx"),
                 depends_on=[DependsOn(name="cert-manager"), DependsOn(name="metallb-config")],
             ),
-            "vault": KustomizationSpec(path="./k8s/vault", depends_on=[]),
-            "cert-manager": KustomizationSpec(path="./k8s/cert-manager", depends_on=[]),
-            "metallb-config": KustomizationSpec(path="./k8s/metallb-config", depends_on=[]),
+            "vault": FluxKustomization(name="vault", file_path=Path("./k8s/vault"), depends_on=[]),
+            "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager"), depends_on=[]),
+            "metallb-config": FluxKustomization(
+                name="metallb-config", file_path=Path("./k8s/metallb-config"), depends_on=[]
+            ),
         }
         errors = check_required_dependencies(kustomizations)
         # Should have no errors about authentik
@@ -231,14 +262,13 @@ class TestRequiredDependencies:
         assert len(authentik_errors) == 0
 
 
-class TestLoadKustomizations:
-    """Tests for loading kustomizations from testdata."""
+class TestParseFluxKustomization:
+    """Tests for parsing flux-kustomization.yaml files."""
 
-    def test_loads_valid_kustomization(self, tmp_path: Path) -> None:
-        """Loads flux-kustomization.yaml correctly."""
-        kust_dir = tmp_path / "test-app"
-        kust_dir.mkdir()
-        (kust_dir / "flux-kustomization.yaml").write_text(
+    def test_parses_valid_kustomization(self, tmp_path: Path) -> None:
+        """Parses flux-kustomization.yaml correctly."""
+        kust_file = tmp_path / "flux-kustomization.yaml"
+        kust_file.write_text(
             dedent("""
             apiVersion: kustomize.toolkit.fluxcd.io/v1
             kind: Kustomization
@@ -252,10 +282,11 @@ class TestLoadKustomizations:
                 - name: core
         """)
         )
-        kustomizations = load_kustomizations(tmp_path)
-        assert "test-app" in kustomizations
-        assert len(kustomizations["test-app"].depends_on) == 1
-        assert kustomizations["test-app"].depends_on[0].name == "core"
+        kustomizations = parse_flux_kustomization(kust_file)
+        assert len(kustomizations) == 1
+        assert kustomizations[0].name == "test-app"
+        assert len(kustomizations[0].depends_on) == 1
+        assert kustomizations[0].depends_on[0].name == "core"
 
     def test_loads_cycle_testdata(self) -> None:
         """Loads cycle testdata and detects the cycle."""
@@ -263,7 +294,11 @@ class TestLoadKustomizations:
         if not testdata_dir.exists():
             pytest.skip("Testdata not available in this context")
 
-        kustomizations = load_kustomizations(testdata_dir)
+        # Parse all flux-kustomization.yaml files in testdata
+        kustomizations = {}
+        for flux_file in testdata_dir.rglob("flux-kustomization.yaml"):
+            for kust in parse_flux_kustomization(flux_file):
+                kustomizations[kust.name] = kust
 
         # Build graph and check for cycles
         graph = build_dependency_graph(kustomizations)
@@ -283,6 +318,43 @@ class TestCrdToOperatorMapping:
         assert CRD_TO_OPERATOR["ClusterPolicy"] == "kyverno"
         assert CRD_TO_OPERATOR["IPAddressPool"] == "metallb"
         assert CRD_TO_OPERATOR["Terraform"] == "core"
+
+
+class TestParseK8sResource:
+    """Tests for K8sResource parsing."""
+
+    def test_parses_basic_resource(self) -> None:
+        """Parses basic K8s resource."""
+        doc = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "test-cm", "namespace": "default"}}
+        resource = parse_k8s_resource(doc)
+        assert resource is not None
+        assert resource.kind == "ConfigMap"
+        assert resource.api_version == "v1"
+        assert resource.name == "test-cm"
+        assert resource.namespace == "default"
+
+    def test_parses_helmrelease_chart_version(self) -> None:
+        """Parses HelmRelease with chart version."""
+        doc = {
+            "apiVersion": "helm.toolkit.fluxcd.io/v2",
+            "kind": "HelmRelease",
+            "metadata": {"name": "test-hr"},
+            "spec": {"chart": {"spec": {"version": "1.2.3"}}},
+        }
+        resource = parse_k8s_resource(doc)
+        assert resource is not None
+        assert resource.kind == "HelmRelease"
+        assert resource.chart_version == "1.2.3"
+
+    def test_returns_none_for_empty_doc(self) -> None:
+        """Returns None for empty document."""
+        assert parse_k8s_resource({}) is None
+        assert parse_k8s_resource(None) is None  # type: ignore[arg-type]
+
+    def test_returns_none_for_missing_kind(self) -> None:
+        """Returns None for document without kind."""
+        doc = {"apiVersion": "v1", "metadata": {"name": "test"}}
+        assert parse_k8s_resource(doc) is None
 
 
 if __name__ == "__main__":

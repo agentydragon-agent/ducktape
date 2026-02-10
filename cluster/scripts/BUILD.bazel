@@ -42,6 +42,7 @@ py_binary(
     deps = [
         ":runfiles_util",
         "//tools:env_utils",
+        "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
 )
@@ -87,6 +88,7 @@ py_library(
     deps = [
         ":runfiles_util",
         "//tools:env_utils",
+        "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
 )
@@ -100,5 +102,7 @@ py_test(
         ":validate_kustomizations_lib",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )

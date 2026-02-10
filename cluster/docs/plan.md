@@ -59,6 +59,16 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Headscale      | Tailscale control  | -   |
 | Website        | Static placeholder | -   |
 
+## Applications (disabled - need flux-kustomization.yaml)
+
+| App       | Purpose          | Status                                       |
+| --------- | ---------------- | -------------------------------------------- |
+| Firecrawl | Web scraping API | Helm chart + manifests exist, needs enabling |
+| Devbot    | Agent workload   | Manifests exist, needs enabling              |
+
+TODO: Re-add flux-kustomization.yaml files and integrate into root kustomization.yaml
+when ready to deploy these applications.
+
 ---
 
 ## 🚨 Minimal Requirements for Go-Live
