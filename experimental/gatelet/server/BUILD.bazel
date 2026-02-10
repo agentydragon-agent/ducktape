@@ -1,5 +1,6 @@
 """Gatelet server package."""
 
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
@@ -9,6 +10,20 @@ py_binary(
     main_module = "experimental.gatelet.server",
     visibility = ["//experimental/gatelet:__pkg__"],
     deps = [":__main__"],
+)
+
+aspect_py_binary(
+    name = "server_bin",
+    imports = ["../../.."],
+    main = "__main__.py",
+    visibility = ["//experimental/gatelet:__pkg__"],
+    deps = [":__main__"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":server_bin",
+    visibility = ["//experimental/gatelet:__pkg__"],
 )
 
 py_library(

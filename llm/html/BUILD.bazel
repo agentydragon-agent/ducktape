@@ -1,5 +1,5 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 filegroup(
     name = "content_files",
@@ -17,35 +17,19 @@ filegroup(
 
 # --- OCI Image ---
 
-pkg_tar(
-    name = "content_tar",
-    srcs = [":content_files"],
-    package_dir = "/app/content",
-)
-
-pkg_tar(
-    name = "server_tar",
-    srcs = ["//llm/html/llm_html:server"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
-)
-
 oci_image(
     name = "image",
-    base = "@distroless_cc_linux_amd64",
-    entrypoint = ["/app/server"],
-    env = {
-        "CONTENT_DIR": "/app/content",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint(
+        "server_bin",
+        binary_package = "llm/html/llm_html",
+    ),
+    env = py_image_env(
+        "server_bin",
+        binary_package = "llm/html/llm_html",
+    ),
     exposed_ports = ["9000/tcp"],
-    tars = [
-        ":content_tar",
-        ":server_tar",
-    ],
-    workdir = "/app",
+    tars = ["//llm/html/llm_html:layers"],
 )
 
 oci_load(

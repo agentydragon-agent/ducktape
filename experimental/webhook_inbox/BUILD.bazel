@@ -1,7 +1,8 @@
 # gazelle:ignore
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "webhook_inbox",
@@ -50,25 +51,29 @@ py_binary(
     ],
 )
 
-pkg_tar(
-    name = "server_tar",
-    srcs = [":server"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
+aspect_py_binary(
+    name = "server_bin",
+    srcs = ["server.py"],
+    imports = ["."],
+    main = "server.py",
+    deps = [
+        ":webhook_inbox",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":server_bin",
 )
 
 oci_image(
     name = "image",
-    base = "@distroless_cc_linux_amd64",
-    entrypoint = ["/app/server"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_bin"),
+    env = py_image_env("server_bin"),
     exposed_ports = ["8000/tcp"],
-    tars = [":server_tar"],
-    workdir = "/app",
+    tars = [":layers"],
 )
 
 oci_load(

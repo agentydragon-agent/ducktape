@@ -1,6 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_binary(
     name = "rspcache_cli",
@@ -14,17 +15,21 @@ py_binary(
 
 # --- OCI Image ---
 
-pkg_tar(
-    name = "cli_tar",
-    srcs = [":rspcache_cli"],
-    include_runfiles = True,
-    package_dir = "/app",
-    strip_prefix = ".",
+aspect_py_binary(
+    name = "rspcache_cli_bin",
+    imports = ["../.."],
+    main = "cli.py",
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":rspcache_cli_bin",
 )
 
 oci_image(
     name = "image",
-    base = "@distroless_cc_linux_amd64",
+    base = "@debian_slim_linux_amd64",
     cmd = [
         "run",
         "--app",
@@ -34,17 +39,13 @@ oci_image(
         "--port",
         "8000",
     ],
-    entrypoint = ["/app/rspcache_cli"],
-    env = {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONUNBUFFERED": "1",
-    },
+    entrypoint = py_image_entrypoint("rspcache_cli_bin"),
+    env = py_image_env("rspcache_cli_bin"),
     exposed_ports = [
         "8000/tcp",
         "8100/tcp",
     ],
-    tars = [":cli_tar"],
-    workdir = "/opt/adgn",
+    tars = [":layers"],
 )
 
 oci_load(
