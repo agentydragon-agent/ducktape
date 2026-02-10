@@ -68,11 +68,15 @@ from props.testing.fixtures.runs import (
     test_validation_snapshot_slug,
 )
 from props.testing.fixtures.scopes import all_files_scope, subtract_file_example
+from props.testing.otel_tracing import tracing
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode and register custom markers."""
     config.option.asyncio_mode = "auto"
+
+    # Configure OTel tracing for test profiling
+    tracing.configure()
 
     # Enable live logging by attaching pytest's log_cli_handler to root logger
     # This replicates what log_cli=true does, but programmatically
@@ -95,3 +99,8 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "timeout(seconds): test timeout in seconds (requires pytest-timeout)")
     config.addinivalue_line("markers", "slow: marks slow-running tests")
     config.addinivalue_line("markers", "live_openai_api: marks tests calling real OpenAI API")
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Export OTel traces at session end."""
+    tracing.export_to_file()

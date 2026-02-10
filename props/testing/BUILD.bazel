@@ -26,10 +26,14 @@ py_library(
 )
 
 py_library(
-    name = "timing",
-    srcs = ["timing.py"],
+    name = "otel_tracing",
+    srcs = ["otel_tracing.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+    ],
 )
 
 py_library(

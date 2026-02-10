@@ -6,14 +6,14 @@ oci_tarball) so Testcontainers doesn't need to pull from Docker Hub.
 
 from __future__ import annotations
 
-import logging
 import shutil
 import subprocess
-import time
+
+from opentelemetry import trace
 
 import runfiles
 
-logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 def load_image(tarball_rlocation: str) -> None:
@@ -23,28 +23,16 @@ def load_image(tarball_rlocation: str) -> None:
         tarball_rlocation: Runfiles-relative path to the tarball
             (e.g., "_main/props/testing/fixtures/postgres_16_tarball/tarball.tar").
     """
-    start = time.monotonic()
-    tarball_path = runfiles.get_required_path(tarball_rlocation)
-    resolve_elapsed = time.monotonic() - start
+    tarball_name = tarball_rlocation.rsplit("/", 1)[-1]
 
-    cmd = shutil.which("docker") or shutil.which("podman")
-    if not cmd:
-        raise RuntimeError("Neither docker nor podman CLI found")
+    with tracer.start_as_current_span(f"load_image({tarball_name})"):
+        tarball_path = runfiles.get_required_path(tarball_rlocation)
 
-    logger.info("Loading image from %s via %s", tarball_path, cmd)
-    load_start = time.monotonic()
-    result = subprocess.run([cmd, "load", "-i", str(tarball_path)], check=False, capture_output=True, text=True)
-    load_elapsed = time.monotonic() - load_start
+        cmd = shutil.which("docker") or shutil.which("podman")
+        if not cmd:
+            raise RuntimeError("Neither docker nor podman CLI found")
 
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to load image from {tarball_rlocation}: {result.stderr}")
+        result = subprocess.run([cmd, "load", "-i", str(tarball_path)], check=False, capture_output=True, text=True)
 
-    total_elapsed = time.monotonic() - start
-    logger.info(
-        "TIMING: load_image(%s) took %.2fs total (resolve=%.2fs, docker_load=%.2fs): %s",
-        tarball_rlocation.rsplit("/", 1)[-1],
-        total_elapsed,
-        resolve_elapsed,
-        load_elapsed,
-        result.stdout.strip(),
-    )
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to load image from {tarball_rlocation}: {result.stderr}")

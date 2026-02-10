@@ -159,17 +159,20 @@ HH:MM:SS.mmm LEVEL logger: message
 
 Use `bazel run //target -- --durations=0` for per-phase timing breakdown.
 
-### Timing Context Manager
+### OpenTelemetry Spans
 
-`props/testing/timing.py` provides a reusable `timed()` context manager:
+Slow operations are instrumented with OpenTelemetry spans. Traces are exported to `TEST_UNDECLARED_OUTPUTS_DIR/traces.json` at session end.
 
 ```python
-from props.testing.timing import timed
+from opentelemetry import trace
 
-with timed("database.recreate"):
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span("database.recreate"):
     database.recreate()
-# Logs: "TIMING: database.recreate took 2.34s"
 ```
+
+Configure tracing in `props/conftest.py` via `pytest_configure` and `pytest_sessionfinish` hooks.
 
 ### Image Loading Timing
 

@@ -16,6 +16,7 @@ from urllib.parse import urlunparse
 from urllib.request import urlopen
 
 import pygit2
+from opentelemetry import trace
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
     from props.core.models.true_positive import LineRange
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 def _add_ranges_to_occurrence(
@@ -814,47 +816,48 @@ def sync_all(
     4. file_sets (depends on snapshot_files and issues via FK)
     5. model_metadata (independent, but needs config for custom models)
     """
-    specimens_dir = get_specimens_base_path()
+    with tracer.start_as_current_span("sync_all"):
+        specimens_dir = get_specimens_base_path()
 
-    # Discover snapshots once
-    print(f"Discovering snapshots from {specimens_dir}...")
-    snapshots = discover_snapshots(specimens_dir)
-    slugs = list(snapshots.keys())
-    print(f"  Found {len(snapshots)} snapshots")
+        # Discover snapshots once
+        print(f"Discovering snapshots from {specimens_dir}...")
+        snapshots = discover_snapshots(specimens_dir)
+        slugs = list(snapshots.keys())
+        print(f"  Found {len(snapshots)} snapshots")
 
-    # 1. Sync snapshots (creates content archives from filesystem)
-    print("Syncing snapshots (creating tar archives)...")
-    snapshot_stats = sync_snapshots_to_db(session, snapshots, specimens_dir)
-    print(f"  {snapshot_stats.summary_text}")
+        # 1. Sync snapshots (creates content archives from filesystem)
+        print("Syncing snapshots (creating tar archives)...")
+        snapshot_stats = sync_snapshots_to_db(session, snapshots, specimens_dir)
+        print(f"  {snapshot_stats.summary_text}")
 
-    # 2. Sync snapshot files (reads from DB content column)
-    print("Syncing snapshot files...")
-    snapshot_file_stats = sync_snapshot_files_to_db(session, slugs)
-    print(f"  {snapshot_file_stats.summary_text}")
+        # 2. Sync snapshot files (reads from DB content column)
+        print("Syncing snapshot files...")
+        snapshot_file_stats = sync_snapshot_files_to_db(session, slugs)
+        print(f"  {snapshot_file_stats.summary_text}")
 
-    # 3. Sync issues (true_positives/false_positives)
-    print("Syncing issues...")
-    issue_stats = sync_issues_to_db(session, slugs, specimens_dir)
-    print(f"  {issue_stats.summary_text}")
+        # 3. Sync issues (true_positives/false_positives)
+        print("Syncing issues...")
+        issue_stats = sync_issues_to_db(session, slugs, specimens_dir)
+        print(f"  {issue_stats.summary_text}")
 
-    # 4. Sync file sets (examples VIEW is derived from these automatically)
-    print("Syncing file sets...")
-    file_set_stats = sync_file_sets_to_db(session, slugs, specimens_dir)
-    print(f"  {file_set_stats.summary_text}")
+        # 4. Sync file sets (examples VIEW is derived from these automatically)
+        print("Syncing file sets...")
+        file_set_stats = sync_file_sets_to_db(session, slugs, specimens_dir)
+        print(f"  {file_set_stats.summary_text}")
 
-    # 5. Sync model metadata
-    print("Syncing model metadata...")
-    model_metadata_stats = sync_model_metadata_with_session(session, config)
-    print(f"  {model_metadata_stats.summary_text}")
+        # 5. Sync model metadata
+        print("Syncing model metadata...")
+        model_metadata_stats = sync_model_metadata_with_session(session, config)
+        print(f"  {model_metadata_stats.summary_text}")
 
-    if dry_run:
-        logger.info("DRY-RUN: Rolling back all changes")
-        session.rollback()
+        if dry_run:
+            logger.info("DRY-RUN: Rolling back all changes")
+            session.rollback()
 
-    return FullSyncResult(
-        snapshot_stats=snapshot_stats,
-        issue_stats=issue_stats,
-        snapshot_file_stats=snapshot_file_stats,
-        file_set_stats=file_set_stats,
-        model_metadata_stats=model_metadata_stats,
-    )
+        return FullSyncResult(
+            snapshot_stats=snapshot_stats,
+            issue_stats=issue_stats,
+            snapshot_file_stats=snapshot_file_stats,
+            file_set_stats=file_set_stats,
+            model_metadata_stats=model_metadata_stats,
+        )

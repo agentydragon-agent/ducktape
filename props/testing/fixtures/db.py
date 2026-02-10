@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from opentelemetry import trace
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
@@ -19,9 +20,10 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.sync import sync_all
-from props.testing.timing import timed
 from test_util.image_loader import load_image
 from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
+
+tracer = trace.get_tracer(__name__)
 
 # Path to test specimens (git-tracked fixtures)
 TEST_FIXTURES_PATH = Path(__file__).parent / "testdata" / "specimens"
@@ -53,7 +55,7 @@ def postgres_container() -> Generator[PostgresContainer]:
     load_image(RYUK_TARBALL)
     load_image(POSTGRES_16_TARBALL)
 
-    with timed("PostgresContainer startup"):
+    with tracer.start_as_current_span("PostgresContainer startup"):
         container = PostgresContainer(image="postgres:16", username="postgres", password="postgres", dbname="postgres")
         container.start()
 
@@ -126,8 +128,7 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
     sanitized_id = _sanitize_test_id(test_node_id)
     db_name = f"props_test_{sanitized_id}"
 
-    with timed("ensure_database_exists"):
-        ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
+    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
 
     test_config = postgres_base_config.with_database(db_name)
 
@@ -135,8 +136,7 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
     postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
     database = Database(test_config)
-    with timed("database.recreate"):
-        database.recreate()
+    database.recreate()
 
     try:
         yield database
@@ -161,7 +161,7 @@ def engine(db: Database) -> Engine:
 def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database."""
     monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(TEST_FIXTURES_PATH))
-    with timed("sync_all"), db.session() as session:
+    with db.session() as session:
         sync_all(session, use_staged=True)
 
 

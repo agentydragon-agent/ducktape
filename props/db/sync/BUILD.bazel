@@ -84,6 +84,7 @@ py_library(
         "//props/core/models:snapshot",
         "//props/core/models:true_positive",
         "//props/db:models",
+        "@pypi//opentelemetry_api",
         "@pypi//pygit2",
         "@pypi//sqlalchemy",
     ],

@@ -138,6 +138,7 @@ py_library(
         ":config",
         ":models",
         "@pypi//alembic",
+        "@pypi//opentelemetry_api",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
     ],

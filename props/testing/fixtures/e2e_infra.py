@@ -14,10 +14,10 @@ Usage in tests:
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Generator
 
 import pytest
+from opentelemetry import trace
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
@@ -26,6 +26,7 @@ from test_util.oci import BazelImage
 from third_party.containers.rlocations import REGISTRY_2_TARBALL, RYUK_TARBALL
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 # --- Infrastructure ---
@@ -46,12 +47,12 @@ def e2e_registry() -> Generator[DockerContainer]:
     crane push always records agent_definitions in the current test's DB.
     """
     with (
+        tracer.start_as_current_span("e2e_registry startup"),
         DockerContainer("registry:2")
         .with_exposed_ports(5000)
         .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
-        .waiting_for(LogMessageWaitStrategy("listening on")) as registry
+        .waiting_for(LogMessageWaitStrategy("listening on")) as registry,
     ):
-        time.sleep(0.5)
         yield registry
 
 
