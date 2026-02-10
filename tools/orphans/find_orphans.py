@@ -4,6 +4,11 @@
 Usage:
     bazel run //tools/orphans:find_orphans           # List orphans
     bazel run //tools/orphans:find_orphans -- --check  # Fail if orphans exist
+
+TODO: Add a terraform coverage check — find directories with *.tf files containing
+a `terraform {` block that lack a corresponding tf_module BUILD target. Could use
+`bazel query 'kind("tf_module", //...)'` to get covered packages and diff against
+filesystem-discovered modules (excluding .terraform/ and modules/ subdirs).
 """
 
 import argparse

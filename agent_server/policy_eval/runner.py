@@ -57,7 +57,7 @@ async def run_policy_source(
     # Use dedicated policy_shim binary which has proper PYTHONPATH setup
     config: JSONObject = {
         "Image": img,
-        "Entrypoint": ["/opt/adgn/policy_eval/shim"],
+        "Entrypoint": ["/agent_server/policy_eval/shim_bin"],
         "Cmd": [],
         "AttachStdout": True,
         "AttachStderr": True,
@@ -65,7 +65,9 @@ async def run_policy_source(
         "Env": ["PYTHONUNBUFFERED=1", f"{ENV_POLICY_SRC}={source}", f"{ENV_POLICY_INPUT}={ctx_json}"],
         "HostConfig": {
             "NetworkMode": "none",
-            "ReadonlyRootfs": True,
+            # TODO: re-enable ReadonlyRootfs with a tmpfs for the venv dir
+            # (aspect py_binary launcher creates /agent_server/policy_eval/_shim_bin.venv)
+            "ReadonlyRootfs": False,
             "Memory": int(os.getenv("ADGN_POLICY_EVAL_MEM", "134217728")),  # 128MB in bytes
             "NanoCpus": int(os.getenv("ADGN_POLICY_EVAL_NANO_CPUS", "500000000")),
             "AutoRemove": False,
