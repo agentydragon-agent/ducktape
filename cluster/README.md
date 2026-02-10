@@ -26,22 +26,15 @@ Execute tools like these with the direnv loaded, or use `direnv exec .`.
 - Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4 bridge)
   - 10.2.0.1: Home router (gateway)
   - 10.2.0.2: Atlas (Proxmox host) - for CSI driver API access
-  - 10.2.1.x: Control plane nodes
-  - 10.2.2.x: Worker nodes
-  - 10.2.3.x: VIPs (kube-vip, MetalLB)
+  - 10.2.1.x: Control plane nodes (Proxmox)
+  - 10.2.2.x: Worker nodes (Proxmox)
 - Talos nodes:
-  - Controllers: talos-pve-cp-0 (10.2.1.1)
-  - Workers: talos-pve-worker-0 (10.2.2.1)
-  - VPS nodes: 2x Hetzner CPX31 (public IPs, hostNetwork ingress)
-- High availability VIP pools:
-  - 10.2.3.1: Cluster Kube API endpoint (kube-vip)
-  - 10.2.3.2 (`ingress-pool`): NGINX Ingress (MetalLB)
-  - 10.2.3.3 (`dns-pool`): PowerDNS (MetalLB)
-  - 10.2.3.4-20 (`services-pool`): Harbor, Gitea, etc.
+  - Proxmox: talos-pve-cp-0 (10.2.1.1), talos-pve-worker-0 (10.2.2.1)
+  - VPS: 2x Hetzner CPX31 (public IPs, hostNetwork for ingress/DNS)
 - Domain: `*.allegedly.works`
   - PowerDNS in k8s has authority on this domain and handles Let's Encrypt DNS-01 challenges
   - cert-manager provisions Let's Encrypt certs
-- HTTPS chain: Internet → VPS nginx reads CNI → Tailscale VPN → HA VIP → NGINX Ingress terminates TLS → app
+- HTTPS chain: Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → backend pods
 
 ## Services
 
@@ -57,8 +50,7 @@ Deployed services accessible via `*.allegedly.works`:
 - **Headscale**: <https://headscale.allegedly.works> (Tailscale coordination)
 - **Website**: <https://www.allegedly.works> (placeholder)
 
-All traffic routes: Internet (443) → VPS nginx (SNI passthrough) → Tailscale →
-MetalLB VIP (10.2.3.2:443) → NGINX Ingress → Services
+All traffic routes: Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → Services
 
 ### User Management
 
@@ -139,7 +131,6 @@ cluster/
 │       └── users/         # User provisioning via Terraform
 ├── k8s/                   # Kubernetes manifests (Flux-managed applications only)
 │   ├── core/              # CRDs and controllers (sealed-secrets, tofu-controller)
-│   ├── metallb/           # Load balancer
 │   ├── cert-manager/
 │   ├── ingress-nginx/     # HTTP(S) ingress
 │   ├── powerdns/          # DNS server (external)
@@ -158,23 +149,20 @@ cluster/
 
 ### Network Architecture
 
-Internet (443) → VPS nginx proxy → Tailscale VPN → MetalLB VIP (10.2.3.2:443) → NGINX Ingress → Apps
+Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → backend pods
+Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
 
-- VPS: `~/code/ducktape/ansible/nginx_sites/allegedly.works.j2`
 - DNS:
-  - Cluster PowerDNS (10.2.3.3) is primary authoritative server
-  - VPS PowerDNS is secondary, replicates zone via AXFR over Tailscale
-  - TCP MTU probing enabled for PMTUD blackhole mitigation (see `docs/AXFR_DEBUGGING.md`)
-  - Cluster PowerDNS handles Let's Encrypt DNS-01 challenges to obtain SSL certs
-- LoadBalancer: NGINX Ingress uses MetalLB VIP 10.2.3.2 instead of NodePort
+  - PowerDNS runs on VPS nodes with hostPort binding (public IPs)
+  - Handles Let's Encrypt DNS-01 challenges to obtain SSL certs
+  - CoreDNS forwards allegedly.works zone to PowerDNS ClusterIP for internal resolution
 - Cilium: `kubeProxyReplacement: true` with privileged port protection enabled
+- KubeSpan: WireGuard mesh connects VPS and Proxmox nodes
 
 - Terraform → Image Factory API → Custom QCOW2 with META key 10 → VMs with static IPs (no DHCP)
 - GitOps flow: Git commit → Flux detects change → applies k8s manifests
 - Deployment path: `k8s/` directory → Flux Kustomizations → HelmReleases → Running pods
 - Secret management: local `kubeseal` → sealed-secrets controller → K8s Secret → Application pods
-
-Kube VIP (10.2.3.1) is established after cluster formation, so bootstrap instead runs against first controller (10.2.1.1).
 
 ## Let's Encrypt Rate Limits
 

@@ -682,8 +682,6 @@ dependsOn:
 | `ClusterIssuer`      | `cert-manager.io`                | `cert-manager`                  |
 | `Issuer`             | `cert-manager.io`                | `cert-manager`                  |
 | `ClusterPolicy`      | `kyverno.io`                     | `kyverno`                       |
-| `IPAddressPool`      | `metallb.io`                     | `metallb`                       |
-| `L2Advertisement`    | `metallb.io`                     | `metallb`                       |
 | `Vault`              | `vault.banzaicloud.com`          | `vault-operator`                |
 | `Terraform`          | `infra.contrib.fluxcd.io`        | `core` (tofu-controller)        |
 

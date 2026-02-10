@@ -14,15 +14,9 @@ spec:
   wait: true
   dependsOn:
     - name: dns-system-namespace
-    - name: metallb-config # Wait for MetalLB + IPAddressPools
     - name: powerdns-secrets # Wait for password generation
     - name: reflector # Wait for Reflector to handle secret copying
-  # Ensure MetalLB can assign VIP and PowerDNS is operational
   healthChecks:
-    - apiVersion: metallb.io/v1beta1
-      kind: IPAddressPool
-      name: dns-pool
-      namespace: metallb-system
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: powerdns

@@ -13,8 +13,6 @@ resources:
   - monitoring-stack-secrets/flux-kustomization.yaml
   - monitoring-rules/flux-kustomization.yaml
   - loki/flux-kustomization.yaml
-  - metallb/flux-kustomization.yaml
-  - metallb/config-flux-kustomization.yaml
   - cert-manager/flux-kustomization.yaml
   - cert-manager-trust/flux-kustomization.yaml
   - cert-manager-environment/flux-kustomization.yaml

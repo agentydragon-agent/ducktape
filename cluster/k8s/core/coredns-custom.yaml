@@ -9,11 +9,13 @@ metadata:
   namespace: kube-system
 data:
   Corefile: |-
-    # Forward allegedly.works zone to PowerDNS
+    # Forward allegedly.works zone to PowerDNS ClusterIP service
+    # Uses service DNS name (resolved via kubernetes plugin) instead of MetalLB VIP
+    # so it works across hybrid VPS + Proxmox cluster via KubeSpan
     allegedly.works:53 {
         errors
         cache 30
-        forward . 10.2.3.3
+        forward . powerdns-dns.dns-system.svc.cluster.local
     }
 
     # Default configuration for all other domains

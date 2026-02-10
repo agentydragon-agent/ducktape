@@ -1,6 +1,6 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-09
+**Last Updated**: 2026-02-10
 
 ## 🎯 Target Architecture
 
@@ -34,7 +34,6 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Component              | Status | Notes                                      |
 | ---------------------- | ------ | ------------------------------------------ |
 | Flux CD                | ✅     | GitOps                                     |
-| MetalLB                | ✅     | VIP 10.2.3.2 for ingress                   |
 | ingress-nginx          | ✅     | hostNetwork on VPS nodes                   |
 | cert-manager           | ✅     | DNS-01 via PowerDNS                        |
 | PowerDNS               | ✅     | hostNetwork on VPS nodes                   |
@@ -269,7 +268,7 @@ workloads deploy.
 
 **Location**: `k8s/kyverno/` (separate from core)
 
-**Dependency chain**: cert-manager → kyverno → core/metallb/metrics-server → everything else
+**Dependency chain**: cert-manager → kyverno → core/metrics-server → everything else
 
 **Current mode**: `validationFailureAction: Audit` - logs violations but doesn't block.
 Change to `Enforce` after validation in live cluster.

@@ -13,20 +13,14 @@ spec:
   prune: true
   wait: true
   dependsOn:
-    - name: metallb-config # Wait for MetalLB + IPAddressPools
     - name: cert-manager # Wait for cert-manager for TLS certificates
-  # Ensure MetalLB can assign VIP before creating LoadBalancer service
+  # Verify ingress-nginx DaemonSet is ready (runs on VPS nodes with hostNetwork)
   healthChecks:
-    - apiVersion: metallb.io/v1beta1
-      kind: IPAddressPool
-      name: ingress-pool
-      namespace: metallb-system
-    # Verify ingress-nginx controller is ready
     - apiVersion: v1
       kind: Service
       name: ingress-nginx-controller
-      namespace: ingress-nginx
+      namespace: ingress-system
     - apiVersion: apps/v1
-      kind: Deployment
+      kind: DaemonSet
       name: ingress-nginx-controller
-      namespace: ingress-nginx
+      namespace: ingress-system
