@@ -19,11 +19,9 @@ spec:
       name: harbor
       namespace: harbor
   dependsOn:
+    - name: harbor-namespace
     - name: ingress-nginx
-      namespace: flux-system
     - name: harbor-secrets
-      namespace: flux-system
     - name: monitoring-stack
-      namespace: flux-system
     # Phase 1: Deploy without Authentik dependency
     # Phase 2: Add harbor-sso after Harbor is running

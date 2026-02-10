@@ -11,5 +11,6 @@ spec:
     kind: GitRepository
     name: flux-system
   dependsOn:
+    - name: authentik-namespace
     - name: external-secrets-config
     - name: vault

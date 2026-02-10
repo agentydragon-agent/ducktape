@@ -19,15 +19,10 @@ spec:
       name: gitea
       namespace: gitea
   dependsOn:
+    - name: gitea-namespace
     - name: ingress-nginx
-      namespace: flux-system
     - name: cert-manager
-      namespace: flux-system
     - name: vault
-      namespace: flux-system
     - name: gitea-secrets
-      namespace: flux-system
     - name: authentik-blueprint-gitea-provider # Wait for OIDC app in Authentik
-      namespace: flux-system
     - name: authentik-blueprint-gitea-secret # Wait for OAuth secret to be synced from Vault
-      namespace: flux-system

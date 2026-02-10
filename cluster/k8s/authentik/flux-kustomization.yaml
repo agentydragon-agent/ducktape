@@ -27,11 +27,8 @@ spec:
       name: authentik-worker
       namespace: authentik
   dependsOn:
+    - name: authentik-namespace
     - name: authentik-secrets
-      namespace: flux-system
     - name: sso-secrets # Wait for API token generation in Vault
-      namespace: flux-system
     - name: cert-manager # Wait for cert-manager for TLS certificates
-      namespace: flux-system
     - name: ingress-nginx # Wait for ingress controller for external access
-      namespace: flux-system

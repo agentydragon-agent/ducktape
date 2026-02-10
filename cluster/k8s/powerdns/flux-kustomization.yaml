@@ -13,6 +13,7 @@ spec:
   prune: true
   wait: true
   dependsOn:
+    - name: dns-system-namespace
     - name: metallb-config # Wait for MetalLB + IPAddressPools
     - name: powerdns-secrets # Wait for password generation
     - name: reflector # Wait for Reflector to handle secret copying

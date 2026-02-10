@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: kagent
 
 resources:
-  - namespace.yaml
   - gitrepository.yaml
   - crds-helmrelease.yaml
   - helmrelease.yaml
