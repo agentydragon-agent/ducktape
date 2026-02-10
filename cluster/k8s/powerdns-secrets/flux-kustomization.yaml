@@ -1,17 +1,14 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: kagent
+  name: powerdns-secrets
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/kagent
+  path: ./cluster/k8s/powerdns-secrets
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
   dependsOn:
-    - name: kagent-secrets
-    - name: ingress-nginx
-    - name: cert-manager-environment
-    - name: authentik-blueprint-kagent # SSO configuration and outpost
+    - name: external-secrets-config

@@ -270,7 +270,11 @@ async def run_pytest_main_check(files: list[Path], repo_root: Path) -> Validatio
 
 
 async def run_subprocess_validation(
-    name: str, bin_rlocation: str, files: list[Path], file_filter: Callable[[Path], bool]
+    name: str,
+    bin_rlocation: str,
+    files: list[Path],
+    file_filter: Callable[[Path], bool],
+    extra_args: list[str] | None = None,
 ) -> ValidationResult:
     """Run a subprocess validation if any files match the filter."""
     if not any(file_filter(f) for f in files):
@@ -278,9 +282,8 @@ async def run_subprocess_validation(
 
     start = time.perf_counter()
     validate_bin = resolve_bin(bin_rlocation)
-    proc = await asyncio.create_subprocess_exec(
-        validate_bin, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
+    cmd = [validate_bin] + (extra_args or [])
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     stdout, stderr = await proc.communicate()
     elapsed = time.perf_counter() - start
 
@@ -324,14 +327,14 @@ async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Reposito
             run_pytest_main_check(files, repo_root),
             run_terraform_centralization_check(files),
             run_filename_convention_check(repo),
+            # Unified cluster validation: kustomize build, CRD layering, dependencies
+            # Skip flux build in pre-commit (flaky when run in parallel) - CI runs it in isolation
             run_subprocess_validation(
-                "kustomize-validate", "_main/cluster/scripts/validate_kustomizations", files, is_cluster_k8s
-            ),
-            run_subprocess_validation(
-                "flux-validate", "_main/cluster/scripts/validate_flux_build", files, is_cluster_k8s
-            ),
-            run_subprocess_validation(
-                "gitops-deps", "_main/cluster/scripts/validate_dependencies", files, is_cluster_k8s
+                "cluster-validate",
+                "_main/cluster/scripts/validate_kustomizations",
+                files,
+                is_cluster_k8s,
+                extra_args=["--skip-flux-build"],
             ),
             run_subprocess_validation(
                 "helm-validate", "_main/cluster/scripts/validate_helm_templates", files, is_cluster_terraform_cilium
@@ -344,8 +347,9 @@ async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Reposito
 
 
 def get_all_files(repo: pygit2.Repository) -> list[Path]:
-    """Get all tracked files from git index (fast, unlike pygit2.status())."""
-    return [Path(entry.path) for entry in repo.index]
+    """Get all tracked files from git index, excluding deleted files."""
+    deleted = {path for path, flags in repo.status().items() if flags & pygit2.GIT_STATUS_WT_DELETED}
+    return [Path(entry.path) for entry in repo.index if entry.path not in deleted]
 
 
 async def main_async() -> int:

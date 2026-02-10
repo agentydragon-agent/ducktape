@@ -32,6 +32,9 @@ k8s_old/**
 # Flux-generated GitOps manifests
 cluster/k8s/flux-system/**
 
+# Root kustomization.yaml - prettier mangles the resources list
+cluster/k8s/kustomization.yaml
+
 # Helm chart templates - Go templating, not valid YAML
 cluster/charts/**/templates/**
 cluster/k8s/*-chart/templates/**

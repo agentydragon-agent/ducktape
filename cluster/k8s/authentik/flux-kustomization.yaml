@@ -27,9 +27,7 @@ spec:
       name: authentik-worker
       namespace: authentik
   dependsOn:
-    - name: vault
-      namespace: flux-system
-    - name: external-secrets-config
+    - name: authentik-secrets
       namespace: flux-system
     - name: sso-secrets # Wait for API token generation in Vault
       namespace: flux-system

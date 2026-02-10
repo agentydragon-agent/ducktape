@@ -25,7 +25,7 @@ spec:
       namespace: flux-system
     - name: authentik-blueprint-matrix-provider # Wait for Authentik OIDC application to be created
       namespace: flux-system
-    - name: external-secrets-config
+    - name: matrix-secrets
       namespace: flux-system
 # Note: Matrix Synapse needs OIDC discovery endpoint at startup (from provider),
 # but oauth-client-secret (from matrix-secret) is only needed for OAuth login flows later

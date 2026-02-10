@@ -14,7 +14,7 @@ spec:
   wait: true
   dependsOn:
     - name: metallb-config # Wait for MetalLB + IPAddressPools
-    - name: external-secrets-config # Wait for External Secrets ClusterSecretStore for bootstrap secret generation
+    - name: powerdns-secrets # Wait for password generation
     - name: reflector # Wait for Reflector to handle secret copying
   # Ensure MetalLB can assign VIP and PowerDNS is operational
   healthChecks:

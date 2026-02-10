@@ -21,9 +21,7 @@ spec:
   dependsOn:
     - name: ingress-nginx
       namespace: flux-system
-    - name: cert-manager
-      namespace: flux-system
-    - name: external-secrets-config
+    - name: harbor-secrets
       namespace: flux-system
     - name: monitoring-stack
       namespace: flux-system

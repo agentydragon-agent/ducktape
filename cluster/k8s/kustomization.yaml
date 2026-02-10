@@ -1,6 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# TODO LATER: Evaluate and implement layered approach once stable core components are identified
 resources:
   - flux-system/gotk-sync.yaml
   - kyverno/flux-kustomization.yaml
@@ -11,6 +10,7 @@ resources:
   - metrics-server/flux-kustomization.yaml
   - monitoring-namespace/flux-kustomization.yaml
   - monitoring-stack/flux-kustomization.yaml
+  - monitoring-stack-secrets/flux-kustomization.yaml
   - monitoring-rules/flux-kustomization.yaml
   - loki/flux-kustomization.yaml
   - metallb/flux-kustomization.yaml
@@ -20,6 +20,7 @@ resources:
   - cert-manager-environment/flux-kustomization.yaml
   - ingress-nginx/flux-kustomization.yaml
   - powerdns/flux-kustomization.yaml
+  - powerdns-secrets/flux-kustomization.yaml
   - powerdns-operator/flux-kustomization.yaml
   - powerdns-zones/flux-kustomization.yaml
   - vault-operator/flux-kustomization.yaml
@@ -32,15 +33,21 @@ resources:
   - reflector/flux-kustomization.yaml
   - external-dns/flux-kustomization.yaml
   - authentik/flux-kustomization.yaml
+  - authentik-secrets/flux-kustomization.yaml
   - sso-secrets/flux-kustomization.yaml
   - applications/harbor/flux-kustomization.yaml
+  - applications/harbor-secrets/flux-kustomization.yaml
   - harbor-proxy-cache/flux-kustomization.yaml
   - applications/gitea/flux-kustomization.yaml
+  - applications/gitea-secrets/flux-kustomization.yaml
   - applications/matrix/flux-kustomization.yaml
+  - applications/matrix-secrets/flux-kustomization.yaml
   - applications/nix-cache/flux-kustomization.yaml
   - applications/headscale/flux-kustomization.yaml
   - applications/website/flux-kustomization.yaml
   - applications/buildbuddy-executor/flux-kustomization.yaml
+  - kagent/flux-kustomization.yaml
+  - kagent-secrets/flux-kustomization.yaml
   - authentik-blueprint/gitea-provider/flux-kustomization.yaml
   - authentik-blueprint/gitea-secret/flux-kustomization.yaml
   - authentik-blueprint/matrix-provider/flux-kustomization.yaml

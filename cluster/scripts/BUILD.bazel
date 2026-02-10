@@ -6,13 +6,11 @@
 #
 # Usage:
 #   bazel run //cluster/scripts:validate_kustomizations
-#   bazel run //cluster/scripts:validate_flux_build
-#   bazel run //cluster/scripts:validate_dependencies
 #   bazel run //cluster/scripts:validate_sealed_secrets
 #   bazel run //cluster/scripts:validate_helm_templates
 #   bazel run //cluster/scripts:validate_tofu -- terraform/00-persistent-auth
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
     "//cluster:__subpackages__",
@@ -20,9 +18,7 @@ package(default_visibility = [
 ])
 
 exports_files([
-    "validate_flux_build.py",
     "validate_kustomizations.py",
-    "validate_dependencies.py",
     "validate_sealed_secrets.py",
     "validate_helm_templates.py",
     "validate_tofu.py",
@@ -34,33 +30,20 @@ py_library(
     deps = ["@rules_python//python/runfiles"],
 )
 
-# Validate all kustomization directories can build
+# Validate all kustomization directories can build, check CRD layering,
+# dependency graph, and flux build
 py_binary(
     name = "validate_kustomizations",
     srcs = ["validate_kustomizations.py"],
-    data = ["@multitool//tools/kustomize"],
+    data = [
+        "@multitool//tools/flux",
+        "@multitool//tools/kustomize",
+    ],
     deps = [
         ":runfiles_util",
+        "//tools:env_utils",
         "@pypi//pyyaml",
     ],
-)
-
-# Validate Flux can build the kustomization tree
-py_binary(
-    name = "validate_flux_build",
-    srcs = ["validate_flux_build.py"],
-    data = ["@multitool//tools/flux"],
-    deps = [
-        ":runfiles_util",
-        "@pypi//pyyaml",
-    ],
-)
-
-# Validate GitOps dependency graph (no external binaries needed)
-py_binary(
-    name = "validate_dependencies",
-    srcs = ["validate_dependencies.py"],
-    deps = ["@pypi//pyyaml"],
 )
 
 # Validate SealedSecrets can be decrypted with terraform keypair
@@ -91,4 +74,31 @@ py_binary(
     srcs = ["validate_tofu.py"],
     data = ["@multitool//tools/tofu"],
     deps = [":runfiles_util"],
+)
+
+# Library for validate_kustomizations (for testing)
+py_library(
+    name = "validate_kustomizations_lib",
+    srcs = ["validate_kustomizations.py"],
+    data = [
+        "@multitool//tools/flux",
+        "@multitool//tools/kustomize",
+    ],
+    deps = [
+        ":runfiles_util",
+        "//tools:env_utils",
+        "@pypi//pyyaml",
+    ],
+)
+
+# Tests for validate_kustomizations
+py_test(
+    name = "test_validate_kustomizations",
+    srcs = ["test_validate_kustomizations.py"],
+    data = glob(["testdata/**"]),
+    deps = [
+        ":validate_kustomizations_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

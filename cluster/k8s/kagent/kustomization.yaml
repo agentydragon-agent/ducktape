@@ -6,7 +6,6 @@ namespace: kagent
 resources:
   - namespace.yaml
   - gitrepository.yaml
-  - anthropic-secret.yaml
   - crds-helmrelease.yaml
   - helmrelease.yaml
   - authentik-proxy-service.yaml
