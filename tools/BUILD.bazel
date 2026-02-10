@@ -35,7 +35,7 @@ py_library(
     name = "check_pytest_main",
     srcs = ["check_pytest_main.py"],
     visibility = ["//visibility:public"],
-    deps = ["//:bazel_util"],
+    deps = ["//bazel_util:workspace"],
 )
 
 # Guard against missing pytest_bazel.main() calls in test files
@@ -46,7 +46,7 @@ py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":check_pytest_main",
-        "//:bazel_util",
+        "//bazel_util:workspace",
     ],
 )
 
@@ -68,7 +68,7 @@ py_test(
         "manual",  # Run explicitly, not in wildcard test patterns
     ],
     visibility = ["//visibility:public"],
-    deps = ["//:bazel_util"],
+    deps = ["//bazel_util:workspace"],
 )
 
 # === Gazelle (Python BUILD file generator) ===

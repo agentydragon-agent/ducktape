@@ -37,7 +37,7 @@ py_binary(
         ":agent_backend",
         ":config",
         ":editor",
-        "//:bazel_util",
+        "//bazel_util:workspace",
         "//cli_util:decorators",
         "@pypi//pygit2",
         "@pypi//typer",

@@ -16,7 +16,7 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 
-from bazel_subprocess import python_env
+from bazel_util.subprocess import python_env
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.resources_server import ResourcesServer

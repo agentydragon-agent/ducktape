@@ -23,7 +23,7 @@ from pathlib import Path
 import pygit2
 import typer
 
-from bazel_util import get_workspace_root
+from bazel_util.workspace import get_workspace_root
 from cli_util.decorators import async_run
 from git_commit_ai.agent_backend import generate_commit_message_agent
 from git_commit_ai.config import load_settings

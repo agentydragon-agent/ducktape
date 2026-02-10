@@ -2,11 +2,11 @@
 
 import pytest
 
-import runfiles as rf
 from agent_core.testing.mcp.responses import *  # noqa: F403
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core.testing.responses import *  # noqa: F403
+from bazel_util import runfiles
 from inop.config import (
     GraderConfig,
     OptimizerConfig,
@@ -30,7 +30,7 @@ _TIKTOKEN_CACHE_KEY = "fb374d419588a4632f3f557e76b4b70aebbca790"
 
 @pytest.fixture(scope="session")
 def tiktoken_cache():
-    path = rf.get_required_path(f"tiktoken_o200k_base/file/{_TIKTOKEN_CACHE_KEY}")
+    path = runfiles.get_required_path(f"tiktoken_o200k_base/file/{_TIKTOKEN_CACHE_KEY}")
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("TIKTOKEN_CACHE_DIR", str(path.parent))
         yield

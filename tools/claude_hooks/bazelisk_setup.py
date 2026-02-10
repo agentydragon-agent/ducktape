@@ -18,7 +18,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from bazel_subprocess import write_shell_wrapper
+from bazel_util.subprocess import write_shell_wrapper
 from tools.claude_hooks.settings import HookSettings
 
 logger = logging.getLogger(__name__)

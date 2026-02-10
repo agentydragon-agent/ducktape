@@ -96,7 +96,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":settings",
-        "//:bazel_subprocess",
+        "//bazel_util:subprocess",
     ],
 )
 
@@ -130,7 +130,7 @@ py_library(
         ":managed_files",
         ":proxy_vars",
         ":settings",
-        "//:bazel_subprocess",
+        "//bazel_util:subprocess",
         "//net_util:net",
         "//tools/claude_hooks/supervisor:client",
         "@pypi//cryptography",
@@ -234,7 +234,7 @@ py_binary(
 py_package(
     name = "claude_hooks_pkg",
     packages = [
-        "bazel_subprocess",
+        "bazel_util",
         "fmt_util",
         "net_util",
         "tools",
@@ -259,7 +259,7 @@ py_package(
         ":settings",
         ":streaming",
         ":tmpfs_setup",
-        "//:bazel_subprocess",
+        "//bazel_util:subprocess",
         "//net_util:net",
         "//tools/claude_hooks/auth_proxy:main",
         "//tools/claude_hooks/auth_proxy:proxy",
@@ -329,7 +329,7 @@ py_test(
         ":proxy_vars",
         ":session_start",
         ":settings",
-        "//:runfiles",
+        "//bazel_util:runfiles",
         "//net_util:net",
         "//test_util:undeclared_outputs",
         "//tools/claude_hooks/testing:fixtures",

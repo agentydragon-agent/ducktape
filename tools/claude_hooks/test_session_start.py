@@ -22,8 +22,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from bazel_util.runfiles import get_required_path
 from net_util.net import pick_free_port
-from runfiles import get_required_path
 from test_util.undeclared_outputs import undeclared_outputs_dir
 from tools.claude_hooks import settings
 from tools.claude_hooks.proxy_setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES

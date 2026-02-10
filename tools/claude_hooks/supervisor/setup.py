@@ -14,7 +14,7 @@ import logging
 import os
 from dataclasses import dataclass
 
-from bazel_subprocess import async_run_python_module
+from bazel_util.subprocess import async_run_python_module
 from net_util.net import is_port_in_use
 from tools.claude_hooks.errors import SupervisorError
 from tools.claude_hooks.managed_files import write_ini_config

@@ -5,7 +5,7 @@ import json
 import pytest
 import pytest_bazel
 
-from bazel_subprocess import run_python_module
+from bazel_util.subprocess import run_python_module
 from claude_hooks.actions import PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 

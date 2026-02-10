@@ -9,7 +9,7 @@ from pathlib import Path
 import pygit2
 from platformdirs import user_state_dir
 
-from bazel_subprocess import run_python_module
+from bazel_util.subprocess import run_python_module
 from claude_hooks.actions import PostToolAction, PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.base import PostToolUseHook
 from claude_hooks.config import AutofixerConfig

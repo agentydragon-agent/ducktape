@@ -39,7 +39,7 @@ py_library(
         ":simple_servers",
         ":stdio_app_lib",
         ":stdio_notifier_lib",
-        "//:bazel_subprocess",
+        "//bazel_util:subprocess",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
         "//mcp_infra/compositor:notifications_buffer",

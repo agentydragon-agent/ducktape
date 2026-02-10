@@ -16,7 +16,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import runfiles
+from bazel_util import runfiles
 
 logger = logging.getLogger(__name__)
 

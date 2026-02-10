@@ -80,9 +80,9 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//:runfiles",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
+        "//bazel_util:runfiles",
         "//inop:config",
         "@pypi//pytest",
     ],

@@ -10,7 +10,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//:runfiles",
+        "//bazel_util:runfiles",
         "@pypi//pytest",
     ],
 )
@@ -21,7 +21,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//:runfiles",
+        "//bazel_util:runfiles",
         "@pypi//opentelemetry_api",
     ],
 )
@@ -33,7 +33,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "//:runfiles",
+        "//bazel_util:runfiles",
     ],
 )
 

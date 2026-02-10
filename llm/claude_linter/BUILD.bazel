@@ -43,7 +43,7 @@ py_library(
     srcs = ["precommit_runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//:bazel_subprocess",
+        "//bazel_util:subprocess",
         "@pypi//platformdirs",
         "@pypi//pre_commit",
         "@pypi//pyyaml",

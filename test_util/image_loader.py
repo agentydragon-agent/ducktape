@@ -11,7 +11,7 @@ import subprocess
 
 from opentelemetry import trace
 
-import runfiles
+from bazel_util import runfiles
 
 tracer = trace.get_tracer(__name__)
 

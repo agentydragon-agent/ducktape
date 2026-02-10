@@ -1,4 +1,4 @@
-"""Tests for bazel_subprocess module."""
+"""Tests for bazel_util.subprocess module."""
 
 import os
 import sys
@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest_bazel
 
-from bazel_subprocess import generate_shell_wrapper, python_env, run_python_module, write_shell_wrapper
+from bazel_util.subprocess import generate_shell_wrapper, python_env, run_python_module, write_shell_wrapper
 
 
 def test_python_env_inherit_includes_pythonpath():

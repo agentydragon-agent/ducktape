@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-import runfiles
+from bazel_util import runfiles
 
 
 def load_bazel_image(load_script_path: str, image_tag: str) -> str:

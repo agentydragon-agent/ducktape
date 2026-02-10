@@ -43,7 +43,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple
 
-from bazel_util import get_workspace_root
+from bazel_util.workspace import get_workspace_root
 
 # Pre-compiled regex patterns for performance
 _TEST_FUNC_PATTERN = re.compile(r"^\s*(async\s+)?def\s+test_\w+", re.MULTILINE)

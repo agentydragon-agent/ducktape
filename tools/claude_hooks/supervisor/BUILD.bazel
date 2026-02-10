@@ -23,7 +23,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":client",
-        "//:bazel_subprocess",
+        "//bazel_util:subprocess",
         "//net_util:net",
         "//tools/claude_hooks:errors",
         "//tools/claude_hooks:managed_files",

@@ -15,7 +15,7 @@ import pytest_bazel
 import tomlkit
 from testcontainers.postgres import PostgresContainer
 
-from bazel_subprocess import python_env
+from bazel_util.subprocess import python_env
 from experimental.gatelet.manage import reset_db
 from experimental.gatelet.server.config import (
     AdminSettings,

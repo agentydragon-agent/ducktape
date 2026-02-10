@@ -20,7 +20,7 @@ from pathlib import Path
 from cryptography import x509
 from mako.template import Template
 
-from bazel_subprocess import python_env
+from bazel_util.subprocess import python_env
 from net_util.net import async_wait_for_port, is_port_in_use
 from tools.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
 from tools.claude_hooks.managed_files import write_config

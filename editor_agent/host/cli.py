@@ -16,7 +16,7 @@ from typing import Annotated
 import aiodocker
 import typer
 
-import runfiles
+from bazel_util import runfiles
 from cli_util.decorators import async_run
 from cli_util.logging import make_logging_callback
 from editor_agent.host.agent_runner import run_editor_docker_agent

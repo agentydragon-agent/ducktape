@@ -175,7 +175,7 @@ docker_py_test(
         ":app",
         ":config",
         ":security",
-        "//:bazel_subprocess",
+        "//bazel_util:subprocess",
         "//experimental/gatelet:manage_lib",
         "//test_util:playwright",
         "//test_util:undeclared_outputs",
