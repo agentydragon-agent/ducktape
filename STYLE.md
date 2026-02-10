@@ -109,6 +109,25 @@ Style and convention rules for this repository. Package-specific elaborations be
   - Use `itertools.batched` (stdlib since 3.12) instead of `for i in range(0, len(x), n): batch = x[i:i+n]`.
   - Choose `one()` vs `first()` based on semantics: if receiving multiple items is a bug, use `one()` to enforce the invariant. If multiple items are valid and you want the first, use `first()`.
 
+## SQLAlchemy
+
+- **Prefer SQLAlchemy ORM over raw SQL**: In projects using SQLAlchemy, prefer the ORM query interface over raw SQL strings. The ORM provides type safety, IDE support, and protection against SQL injection. Use raw SQL only when the ORM would make the query significantly less readable (e.g., complex window functions, CTEs, or database-specific features not well-supported by the ORM).
+
+  ```python
+  # ✓ Prefer ORM queries
+  session.query(User).filter(User.email == email).first()
+  session.query(TruePositiveOccurrenceORM).filter_by(snapshot_slug=slug).all()
+
+  # ❌ Avoid raw SQL for simple queries
+  session.execute(text("SELECT * FROM users WHERE email = :email"), {"email": email})
+  ```
+
+  Raw SQL is acceptable when:
+  - Using complex PostgreSQL-specific features (window functions, recursive CTEs, LATERAL joins)
+  - Performance-critical queries where the ORM generates suboptimal SQL
+  - Database administrative operations (GRANT, CREATE FUNCTION, etc.)
+  - The equivalent ORM query would be significantly harder to read or maintain
+
 ## Build System (Bazel)
 
 - **Use `main_module` for `py_binary` targets**: When a `py_binary` needs the same source file as a `py_library`, use `main_module` instead of duplicating `srcs`. The `py_library` declares all deps; the `py_binary` just references the library. This avoids dep duplication and ensures the mypy lint aspect checks deps in one place.
@@ -146,6 +165,27 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **Update tests with production code**: When editing production code, check what tests use the interfaces you touched and propagate edits. Type signature changes, parameter changes, renamed functions, or changed behavior require corresponding test updates.
 - **No lint silencing without approval**: Do not add ignore rules or silence individual lint errors unless explicitly approved.
 - **Use pre-commit**: Prefer `pre-commit run --all-files` over manually running individual tools (ruff, mypy, etc.) since pre-commit is configured correctly for this repository.
+- **Use `textwrap.dedent` for inline multiline strings**: When embedding multiline strings in tests (YAML, JSON, scripts), use `textwrap.dedent()` to maintain proper indentation in the test file while removing leading whitespace from the string content:
+
+  ```python
+  from textwrap import dedent
+
+  # ✓ Readable indentation with dedent
+  yaml_content = dedent("""
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: test
+  """)
+
+  # ❌ Flush-left strings break visual flow
+  yaml_content = """
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: test
+  """
+  ```
 
 ## Documentation
 
