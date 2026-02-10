@@ -10,12 +10,11 @@ metadata:
 data:
   Corefile: |-
     # Forward allegedly.works zone to PowerDNS ClusterIP service
-    # Uses service DNS name (resolved via kubernetes plugin) instead of MetalLB VIP
-    # so it works across hybrid VPS + Proxmox cluster via KubeSpan
+    # Uses fixed ClusterIP (pinned in powerdns helmrelease) for stable config across recreates
     allegedly.works:53 {
         errors
         cache 30
-        forward . powerdns-dns.dns-system.svc.cluster.local
+        forward . 10.96.53.53
     }
 
     # Default configuration for all other domains

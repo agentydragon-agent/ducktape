@@ -12,6 +12,9 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.service.dns.type }}
+  {{- if .Values.service.dns.clusterIP }}
+  clusterIP: {{ .Values.service.dns.clusterIP }}
+  {{- end }}
   ports:
     - port: {{ .Values.service.dns.port }}
       targetPort: dns-tcp

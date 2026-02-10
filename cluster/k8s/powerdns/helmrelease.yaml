@@ -50,10 +50,11 @@ spec:
       reloader.stakater.com/auto: "true"
 
     # Service configuration - ClusterIP for internal access
+    # Fixed clusterIP allows CoreDNS to forward allegedly.works zone reliably
     service:
       dns:
         type: ClusterIP
-        # No MetalLB needed - using hostNetwork
+        clusterIP: "10.96.53.53"
 
     # PowerDNS configuration
     powerdns:
