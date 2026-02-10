@@ -33,7 +33,7 @@ py_test(
 docker_py_test(
     name = "test_flow",
     srcs = ["test_flow.py"],
-    data = ["//third_party/python_slim:load"],
+    data = ["//third_party/debian_slim:load"],
     imports = ["../.."],
     deps = [
         ":notifications",

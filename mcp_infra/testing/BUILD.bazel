@@ -1,6 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-# Docker fixtures that depend on python-slim OCI image
+# Docker fixtures that depend on debian-slim OCI image
 # Only include in tests that actually need Docker execution
 py_library(
     name = "docker_fixtures",

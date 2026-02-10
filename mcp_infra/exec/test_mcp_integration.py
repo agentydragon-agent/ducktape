@@ -40,14 +40,12 @@ async def test_direct_inprocess_server(compositor, compositor_client) -> None:
 
 
 @pytest.mark.requires_docker
-async def test_inproc_container_exec_exposes_container_info_resource(
-    docker_exec_server_py312slim: ContainerExecServer,
-) -> None:
+async def test_inproc_container_exec_exposes_container_info_resource(docker_exec_server: ContainerExecServer) -> None:
     """in-proc container exec exposes a container.info resource."""
 
     # Call the server directly to read the resource; no manager needed here
-    async with Client(docker_exec_server_py312slim) as sess:
-        res = await sess.read_resource_mcp(docker_exec_server_py312slim.container_info_resource.uri)
+    async with Client(docker_exec_server) as sess:
+        res = await sess.read_resource_mcp(docker_exec_server.container_info_resource.uri)
         assert res.contents, "container.info returned no contents"
 
 

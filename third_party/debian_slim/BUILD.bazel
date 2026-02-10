@@ -1,0 +1,10 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
+
+# Load debian-slim base image into local Docker daemon for tests.
+# Tests that need this should add data = ["//third_party/debian_slim:load"]
+oci_load(
+    name = "load",
+    image = "@debian_slim_linux_amd64",
+    repo_tags = ["debian-slim:test"],
+    visibility = ["//visibility:public"],
+)

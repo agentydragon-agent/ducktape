@@ -85,15 +85,6 @@ oci.pull(
     tag = "bookworm-slim",
 )
 
-# Test-only: Python image for container exec tests (needs shell + Python)
-oci.pull(
-    name = "python_slim",
-    digest = "sha256:1f3781f578e17958f55ada96c0a827bf279a11e10d6a458ecb8bde667afbb669",
-    image = "docker.io/library/python",
-    platforms = ["linux/amd64"],
-    tag = "3.13-slim",
-)
-
 # Test infrastructure: PostgreSQL for Testcontainers
 oci.pull(
     name = "postgres_16",
@@ -120,7 +111,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
-use_repo(oci, "debian_slim_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "python_slim", "python_slim_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
+use_repo(oci, "debian_slim_linux_amd64", "oci_crane_linux_amd64", "postgres_16_linux_amd64", "registry_2_linux_amd64", "ryuk_linux_amd64")
 
 # Re-export crane binary with public visibility for py_test data deps
 crane = use_extension("//tools:crane_export.bzl", "crane_export")

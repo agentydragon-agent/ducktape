@@ -7,12 +7,12 @@ from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
 
 
 @pytest.fixture
-async def typed_docker_client(make_typed_mcp, docker_exec_server_py312slim):
-    """Typed MCP client for docker exec server with python:3.12-slim.
+async def typed_docker_client(make_typed_mcp, docker_exec_server):
+    """Typed MCP client for docker exec server with debian-slim.
 
     Yields (TypedClient, session) tuple for direct use in tests.
     """
-    async with make_typed_mcp(docker_exec_server_py312slim) as (client, session):
+    async with make_typed_mcp(docker_exec_server) as (client, session):
         yield client, session
 
 

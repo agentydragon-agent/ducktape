@@ -25,7 +25,7 @@ Docker test utilities are consolidated in `//test_util`:
 ```python
 from test_util.docker import (
     load_bazel_image,       # Load OCI image from Bazel oci_load target
-    python_slim_image,       # Session fixture for python-slim image
+    debian_slim_image,       # Session fixture for debian-slim image
 )
 ```
 

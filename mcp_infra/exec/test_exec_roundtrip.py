@@ -30,9 +30,9 @@ SERVER_NAME = MCPMountPrefix("box")
 
 
 @pytest.mark.requires_docker
-async def test_llm_exec_echo(mock_or_live, docker_exec_server_py312slim, compositor, compositor_client) -> None:
+async def test_llm_exec_echo(mock_or_live, docker_exec_server, compositor, compositor_client) -> None:
     """LLM calls box__exec to echo hello, agent returns stdout."""
-    await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server_py312slim)
+    await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server)
 
     @mock_or_live(MCPDecoratorMock)
     def client(m: MCPDecoratorMock):

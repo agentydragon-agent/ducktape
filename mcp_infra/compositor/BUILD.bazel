@@ -255,7 +255,7 @@ py_test(
 docker_py_test(
     name = "test_resources_flow",
     srcs = ["test_resources_flow.py"],
-    data = ["//third_party/python_slim:load"],
+    data = ["//third_party/debian_slim:load"],
     imports = ["../.."],
     deps = [
         ":conftest",

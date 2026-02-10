@@ -18,14 +18,14 @@ from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMes
 
 @pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
-    reasoning_model, docker_exec_server_py312slim, compositor, compositor_client, recording_handler
+    reasoning_model, docker_exec_server, compositor, compositor_client, recording_handler
 ) -> None:
     """Test model reading container info resources without policy gateway."""
     # Mount runtime server and capture Mounted object
-    mounted_runtime = await compositor.mount_inproc(MCPMountPrefix("runtime"), docker_exec_server_py312slim)
+    mounted_runtime = await compositor.mount_inproc(MCPMountPrefix("runtime"), docker_exec_server)
 
     # Get container info URI from server instance (convert to string)
-    container_info_uri = str(docker_exec_server_py312slim.container_info_resource.uri)
+    container_info_uri = str(docker_exec_server.container_info_resource.uri)
 
     @MCPDecoratorMock.mock()
     def mock(m: MCPDecoratorMock):

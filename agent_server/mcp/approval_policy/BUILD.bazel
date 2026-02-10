@@ -39,7 +39,7 @@ docker_py_test(
     srcs = ["test_engine.py"],
     data = [
         "//agent_server:load",
-        "//third_party/python_slim:load",
+        "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
     deps = [
@@ -61,7 +61,7 @@ docker_py_test(
     srcs = ["test_gateway_middleware.py"],
     data = [
         "//agent_server:load",
-        "//third_party/python_slim:load",
+        "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
     deps = [
@@ -86,7 +86,7 @@ docker_py_test(
     srcs = ["test_server.py"],
     data = [
         "//agent_server:load",
-        "//third_party/python_slim:load",
+        "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
     deps = [
@@ -113,7 +113,7 @@ docker_py_test(
     srcs = ["test_integration.py"],
     data = [
         "//agent_server:load",
-        "//third_party/python_slim:load",
+        "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
     deps = [
@@ -140,7 +140,7 @@ docker_py_test(
     srcs = ["test_default_policy.py"],
     data = [
         "//agent_server:load",
-        "//third_party/python_slim:load",
+        "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
     deps = [
@@ -161,7 +161,7 @@ docker_py_test(
     srcs = ["test_eval_abort.py"],
     data = [
         "//agent_server:load",
-        "//third_party/python_slim:load",
+        "//third_party/debian_slim:load",
     ],
     imports = ["../../.."],
     deps = [
