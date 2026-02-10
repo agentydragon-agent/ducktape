@@ -202,7 +202,7 @@ assert_no_deps(
         "@pypi//fastmcp",
         "@pypi//mcp",
     ],
-    target = "//mcp_infra/exec:models",
+    targets = ["//mcp_infra/exec:models"],
 )
 
 assert_no_deps(
@@ -211,7 +211,7 @@ assert_no_deps(
         "@pypi//fastmcp",
         "@pypi//mcp",
     ],
-    target = "//mcp_infra/exec:subprocess",
+    targets = ["//mcp_infra/exec:subprocess"],
 )
 
 py_library(
