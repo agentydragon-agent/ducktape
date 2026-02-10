@@ -61,7 +61,7 @@ spec:
       api:
         enabled: true
         secretName: powerdns-api-key
-        secretKey: PDNS_API_KEY
+        secretKey: powerdns_api_key
       webserver:
         enabled: true
         # Allow all IPs for health probes. Security model:
