@@ -36,10 +36,6 @@ terraform {
       version = "~> 3.1.0"
     }
     # Utility providers
-    external = {
-      source  = "hashicorp/external"
-      version = "~> 2.3.0"
-    }
     local = {
       source  = "hashicorp/local"
       version = "~> 2.5.0"
@@ -55,10 +51,6 @@ terraform {
     tls = {
       source  = "hashicorp/tls"
       version = "~> 4.1.0"
-    }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.12.0"
     }
   }
 }

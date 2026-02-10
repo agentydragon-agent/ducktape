@@ -8,7 +8,6 @@
 #   bazel run //cluster/scripts:validate_kustomizations
 #   bazel run //cluster/scripts:validate_sealed_secrets
 #   bazel run //cluster/scripts:validate_helm_templates
-#   bazel run //cluster/scripts:validate_tofu -- terraform/00-persistent-auth
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -21,7 +20,6 @@ exports_files([
     "validate_kustomizations.py",
     "validate_sealed_secrets.py",
     "validate_helm_templates.py",
-    "validate_tofu.py",
 ])
 
 py_library(
@@ -66,14 +64,6 @@ py_binary(
         "//cluster/terraform/01-infrastructure:cilium-values.yaml",
         "@multitool//tools/helm",
     ],
-    deps = [":runfiles_util"],
-)
-
-# Validate Terraform/OpenTofu configuration with tfmirror.dev
-py_binary(
-    name = "validate_tofu",
-    srcs = ["validate_tofu.py"],
-    data = ["@multitool//tools/tofu"],
     deps = [":runfiles_util"],
 )
 

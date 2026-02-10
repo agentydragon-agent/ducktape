@@ -3,19 +3,24 @@ terraform {
 
   required_providers {
     authentik = {
-      source = "goauthentik/authentik"
+      source  = "goauthentik/authentik"
+      version = "~> 2025.12.0"
     }
     harbor = {
-      source = "goharbor/harbor"
+      source  = "goharbor/harbor"
+      version = "~> 3.11"
     }
     kubernetes = {
-      source = "hashicorp/kubernetes"
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.38.0"
     }
     vault = {
-      source = "hashicorp/vault"
+      source  = "hashicorp/vault"
+      version = "~> 5.7.0"
     }
     random = {
-      source = "hashicorp/random"
+      source  = "hashicorp/random"
+      version = "~> 3.7.0"
     }
   }
 

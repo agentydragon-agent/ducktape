@@ -116,11 +116,11 @@ Only install cluster tools if `cluster/` directory exists (hooks are scoped to `
 ### Completed
 
 - **rules_tf integration** - Added to MODULE.bazel (v0.0.10) with OpenTofu 1.11.2, tflint 0.53.0
-- **tfmirror.dev validation** - Tested and working! Terraform validate works via network mirror
-- **tofu_validate.sh wrapper** - Created `cluster/scripts/tofu_validate.sh` using tfmirror.dev
-- **Terraform BUILD.bazel** - Added `cluster/terraform/00-persistent-auth/BUILD.bazel` with:
-  - `tf_module` for tflint (hermetic)
-  - `sh_test :validate` for terraform validate (with tfmirror.dev)
+- **rules_tf provider mirror** - Providers pre-fetched at Bazel fetch time via `mirror` dict in
+  `tf.download()`. Both `tflint` and `tofu validate` run hermetically (no network at test time).
+  This replaced the earlier `tfmirror.dev` network mirror approach which failed on RBE workers.
+- **Terraform BUILD.bazel** - `cluster/terraform/00-persistent-auth/BUILD.bazel` with:
+  - `tf_module` for both tflint and tofu validate (hermetic via provider mirror)
 - **rules_kustomize** - Added to MODULE.bazel (v0.5.2)
 - **http_archive binaries** - Added to MODULE.bazel:
   - `@kustomize//:kustomize` (v5.5.0)
@@ -254,46 +254,36 @@ Tested rules_tf (v0.0.10) with OpenTofu 1.11.2 on `cluster/terraform/00-persiste
 - rules_tf's `mirror` parameter is for declaring providers to download locally, not network mirror URLs
 - Error: "provider registry.opentofu.org/hashicorp/local was not found in any of the search locations"
 
-### Option A: Use tfmirror.dev Network Mirror (TESTED - WORKS!)
+### Option A: rules_tf Provider Mirror (IMPLEMENTED)
 
-[tfmirror.dev](https://tfmirror.dev/) is a free public network mirror for Terraform/OpenTofu providers.
-
-**Tested successfully on 2026-01-08:**
-
-```bash
-# Create .tofurc with tfmirror.dev
-cat > /tmp/tofurc <<'EOF'
-provider_installation {
-  network_mirror {
-    url = "https://tfmirror.dev/"
-  }
-}
-EOF
-export TF_CLI_CONFIG_FILE=/tmp/tofurc
-
-# Run validation
-cd cluster/terraform/00-persistent-auth
-tofu init -backend=false -input=false
-tofu validate
-# Result: Success! The configuration is valid.
-```
-
-**Implementation approach:**
-
-1. Create `cluster/scripts/tofu_validate.sh` wrapper (already created)
-2. Use sh_test with `tags = ["requires-network"]` to allow tfmirror.dev access
-3. The tofu binary comes from rules_tf toolchain
+The `mirror` dict on `tf.download()` in `MODULE.bazel` pre-fetches provider plugin
+binaries at Bazel repository fetch time (`tofu providers mirror`). These are then
+served to `tofu init` via `-plugin-dir` at test time, making both lint and validate
+fully hermetic — no network needed during `bazel test`.
 
 ```starlark
-# cluster/terraform/00-persistent-auth/BUILD.bazel
-sh_test(
-    name = "validate",
-    srcs = ["//cluster/scripts:tofu_validate.sh"],
-    data = glob(["**/*.tf"]) + ["@tf_toolchains//:tofu"],
-    args = ["$(location .)"],
-    tags = ["requires-network"],  # Allow tfmirror.dev access
+# MODULE.bazel
+tf.download(
+    mirror = {
+        "external": "hashicorp/external:2.3.5",
+        "null": "hashicorp/null:3.2.4",
+        "random": "hashicorp/random:3.8.1",
+        "talos": "siderolabs/talos:0.9.0",
+        "tls": "hashicorp/tls:4.2.1",
+    },
+    use_tofu = True,
+    version = "1.11.2",
 )
 ```
+
+This replaced the earlier `tfmirror.dev` network mirror approach (`validate_tofu.py`)
+which failed on BuildBuddy RBE workers (no outbound network access).
+
+**Adding a new terraform module to Bazel:**
+
+1. Add any new providers to the `mirror` dict in `MODULE.bazel` (exact versions from `.terraform.lock.hcl`)
+2. Create `BUILD.bazel` with `tf_providers_versions` + `tf_module` (see `00-persistent-auth` as template)
+3. `bazel test //cluster/terraform/<module>:validate` works hermetically
 
 ### Option B: rules_kustomize for K8s + sh_test for Terraform
 
@@ -323,19 +313,15 @@ sh_test(
 
 **Trade-off:** Full hermeticity but significant setup and storage overhead.
 
-### Recommendation
+### Recommendation (Implemented)
 
-1. **Use rules_tf for tflint** - Works hermetically, finds real issues
-2. **Add sh_test with tfmirror.dev for validate** - Network access but cached results
-3. **Keep `terraform_fmt` in pre-commit** - Trivial, fast, no deps
+1. **Use rules_tf for tflint + validate** - Both hermetic via provider mirror
+2. **Keep `terraform_fmt` in pre-commit** - Trivial, fast, no deps
 
 **What rules_tf replaces:**
 
 - `terraform_tflint` hook -> `tf_module :lint` target
-
-**What sh_test with tfmirror.dev adds:**
-
-- `terraform_validate` hook -> `sh_test :validate` target (with network access)
+- `terraform_validate` hook -> `tf_module :validate` target
 
 **What stays in pre-commit:**
 
@@ -518,7 +504,6 @@ jobs:
 - Conflict marker check (trivial, no deps)
 - YAML/TOML syntax (trivial)
 - `terraform_fmt` (trivial, fast)
-- `terraform_validate` (needs network for providers)
 - Ansible playbook syntax (fast)
 
 ### What Moves to Bazel
@@ -534,7 +519,7 @@ jobs:
 
 ## Open Questions for Discussion
 
-1. ~~**rules_tf provider validation**: Can we use tfmirror.dev as network mirror?~~ **RESOLVED**: Yes! Created `tofu_validate.sh` wrapper that sets `TF_CLI_CONFIG_FILE` to use tfmirror.dev. Test passes: `bazel test //cluster/terraform/00-persistent-auth:validate`
+1. ~~**rules_tf provider validation**: Can we use tfmirror.dev as network mirror?~~ **RESOLVED**: Using rules_tf's built-in `mirror` dict for hermetic provider downloads. Providers pre-fetched at Bazel fetch time, no network at test time. Works on RBE.
 
 2. **ansible-galaxy**: The ansible-lint job needs galaxy dependencies. How should Bazel handle this? (Network access in test? Pre-fetch? Skip?)
 
@@ -542,7 +527,7 @@ jobs:
 
 1. ~~**Immediate**: Fix CI with `bazelbuild/setup-bazelisk`~~ (DONE - props-frontend-build, visual-regression, bazel-build jobs)
 2. ~~**Short-term**: Add gitstatusd via http_archive~~ (DONE - added to MODULE.bazel)
-3. ~~**Phase 3**: Keep rules_tf for tflint, explore tfmirror.dev for terraform validate~~ (DONE - working!)
+3. ~~**Phase 3**: rules_tf for tflint + validate with hermetic provider mirror~~ (DONE - provider mirror replaces tfmirror.dev)
 4. ~~**Phase 4**: Add rules_kustomize + http_archive for kubeconform/flux~~ (DONE - binaries added)
 5. ~~**CI pre-commit job**: Replace nix with official GitHub Actions for opentofu, tflint, flux~~ (DONE - using official actions + binary downloads)
 6. ~~**Session start hook**: Add cluster tool installation (opentofu, tflint, flux, kustomize, kubeseal, helm) via binary downloads~~ (DONE)

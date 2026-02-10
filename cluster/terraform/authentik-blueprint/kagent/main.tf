@@ -3,13 +3,8 @@ terraform {
 
   required_providers {
     authentik = {
-      source = "goauthentik/authentik"
-    }
-    http = {
-      source = "hashicorp/http"
-    }
-    null = {
-      source = "hashicorp/null"
+      source  = "goauthentik/authentik"
+      version = "~> 2025.12.0"
     }
   }
 
