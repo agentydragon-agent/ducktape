@@ -133,6 +133,14 @@ podSecurityContext:
 hostNetwork: false
 dnsPolicy: ClusterFirst
 
+# HostPort configuration (preferred over hostNetwork)
+# Cilium handles hostPort binding at eBPF level, allowing non-root pods
+# to bind privileged ports via Cilium's privileged socket operations
+hostPort:
+  enabled: false
+  dnsPort: 53
+  # apiPort: 8081  # Uncomment to expose API on host
+
 # Node selection (DaemonSet runs one pod per matching node)
 nodeSelector: {}
 tolerations: []

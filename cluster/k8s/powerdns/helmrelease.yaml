@@ -22,10 +22,14 @@ spec:
       tag: "4.9"
       pullPolicy: IfNotPresent
 
-    # hostNetwork mode: bind directly to VPS public IPs on port 53
-    # This allows serving public DNS traffic without MetalLB
-    hostNetwork: true
-    dnsPolicy: ClusterFirstWithHostNet
+    # hostPort mode: Cilium handles port binding at eBPF level
+    # Allows non-root pods to bind privileged ports via Cilium's privileged operations
+    # Better security than hostNetwork (pod stays in its network namespace)
+    hostNetwork: false
+    dnsPolicy: ClusterFirst
+    hostPort:
+      enabled: true
+      dnsPort: 53
 
     # Only run on Hetzner VPS nodes (which have public IPs)
     nodeSelector:

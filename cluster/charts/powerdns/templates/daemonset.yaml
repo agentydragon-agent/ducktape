@@ -104,13 +104,22 @@ spec:
         - name: dns-tcp
           containerPort: 53
           protocol: TCP
+          {{- if .Values.hostPort.enabled }}
+          hostPort: {{ .Values.hostPort.dnsPort | default 53 }}
+          {{- end }}
         - name: dns-udp
           containerPort: 53
           protocol: UDP
+          {{- if .Values.hostPort.enabled }}
+          hostPort: {{ .Values.hostPort.dnsPort | default 53 }}
+          {{- end }}
         {{- if .Values.powerdns.webserver.enabled }}
         - name: api
           containerPort: {{ .Values.powerdns.webserver.port }}
           protocol: TCP
+          {{- if and .Values.hostPort.enabled .Values.hostPort.apiPort }}
+          hostPort: {{ .Values.hostPort.apiPort }}
+          {{- end }}
         {{- end }}
 
         {{- if .Values.healthChecks.enabled }}
