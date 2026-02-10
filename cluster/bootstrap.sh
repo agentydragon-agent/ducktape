@@ -17,9 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TERRAFORM_DIR="${SCRIPT_DIR}/terraform"
 
 # Timestamp function for all output
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" }
 
 # Parse command line arguments
 START_FROM_LAYER=""
@@ -64,16 +62,12 @@ if [ "$HELP" = true ]; then
   exit 0
 fi
 
-log "🚀 Starting layered Talos cluster bootstrap..."
-log "📂 Terraform directory: ${TERRAFORM_DIR}"
+log "Starting cluster bootstrap. Terraform directory: ${TERRAFORM_DIR}"
 if [ -n "$START_FROM_LAYER" ]; then
   log "⏩ Starting from layer: $START_FROM_LAYER"
 fi
 
-# Phase 0: Preflight Validation
-echo ""
 log "🔍 Phase 0: Preflight Validation"
-echo "=================================="
 
 # Get repo root first - must run git commands from there because cluster/.git is broken.
 # Claude Code's sandbox creates phantom dotfiles including an empty .git file in cluster/
@@ -108,16 +102,13 @@ done
 
 # Phase 0.5: Persistent Auth Layer (if needed)
 if [ "$START_FROM_LAYER" != "infrastructure" ] && [ "$START_FROM_LAYER" != "services" ] && [ "$START_FROM_LAYER" != "configuration" ]; then
-  echo ""
   log "⚡ Layer 0: Persistent Auth Setup"
-  echo "================================"
 
   cd "${TERRAFORM_DIR}/00-persistent-auth"
 
   # Check if persistent auth already exists
   if [ -f "terraform.tfstate" ] && tofu show -json | jq -e '.values.root_module.resources | length > 0' >/dev/null 2>&1; then
-    log "ℹ️  Persistent auth layer already exists - skipping deployment"
-    echo "    Use 'cd terraform/00-persistent-auth && tofu destroy' to reset auth"
+    log "ℹ️  Persistent auth already exists - skipping ('cd terraform/00-persistent-auth && tofu destroy' to reset auth)"
   else
     log "🚀 Deploying persistent auth layer..."
     echo "     📋 CSI-TOKENS → SEALED-SECRETS-KEYPAIR → GIT-COMMIT"
@@ -133,20 +124,16 @@ fi
 
 # Phase 1: Infrastructure Layer
 if [ "$START_FROM_LAYER" != "services" ]; then
-  echo ""
   log "⚡ Layer 1: Infrastructure Deployment"
-  echo "===================================="
 
   cd "${TERRAFORM_DIR}/01-infrastructure"
-  log "🚀 Deploying infrastructure layer..."
-  echo "     📋 PVE-AUTH → VMs → TALOS → CILIUM → SEALED-SECRETS"
+  log "🚀 Deploying infrastructure layer... (PVE-AUTH → VMs → TALOS → CILIUM → SEALED-SECRETS)"
 
   if ! tofu apply -auto-approve; then
     log "❌ FATAL: Infrastructure deployment failed"
     exit 1
   fi
 
-  # Verify infrastructure readiness
   log "🔍 Verifying infrastructure readiness..."
   KUBECONFIG_PATH="${TERRAFORM_DIR}/01-infrastructure/kubeconfig"
   export KUBECONFIG="$KUBECONFIG_PATH"
@@ -169,10 +156,7 @@ if [ "$START_FROM_LAYER" != "services" ]; then
   echo "✅ Infrastructure layer ready"
 fi
 
-# Phase 2: Services Layer
-echo ""
-log "⚡ Layer 2: Services Deployment"
-echo "=============================="
+log "⚡ Layer 2: Services"
 
 # Ensure kubeconfig is available for services layer
 if [ -z "$KUBECONFIG" ]; then
@@ -181,40 +165,28 @@ if [ -z "$KUBECONFIG" ]; then
 fi
 
 cd "${TERRAFORM_DIR}/02-services"
-log "🚀 Deploying services layer..."
-echo "     📋 GITOPS → AUTHENTIK → POWERDNS → HARBOR → GITEA → MATRIX"
+log "🚀 Deploying services layer... (GITOPS → AUTHENTIK → POWERDNS → HARBOR → GITEA → MATRIX)"
 
 if ! tofu apply -auto-approve; then
   log "❌ FATAL: Services deployment failed"
   exit 1
 fi
 
-# Wait for critical services to be ready
-log "⏳ Waiting for services to be ready..."
-
-# Wait for Authentik
 log "⏳ Waiting for Authentik deployment..."
 timeout 300 bash -c 'until kubectl get deployment authentik -n authentik-system 2>/dev/null; do sleep 10; done'
 kubectl wait --for=condition=available deployment/authentik -n authentik-system --timeout=600s
 
-# Wait for PowerDNS
 log "⏳ Waiting for PowerDNS deployment..."
 timeout 300 bash -c 'until kubectl get deployment powerdns -n powerdns-system 2>/dev/null; do sleep 10; done'
 kubectl wait --for=condition=available deployment/powerdns -n powerdns-system --timeout=600s
 
-# Wait for PowerDNS API to be responsive
-log "⏳ Waiting for PowerDNS API to be ready..."
+log "⏳ Waiting for PowerDNS API..."
 CLUSTER_VIP="10.2.3.1" # TODO: Get from terraform output
 timeout 300 bash -c "until curl -sf http://${CLUSTER_VIP}:8081/api/v1/servers; do sleep 5; done"
 
 log "✅ Services layer ready"
 
-echo ""
 log "🎉 Cluster bootstrap completed!"
-echo "📊 Bootstrap phases:"
-echo "   ✅ Phase 0: Persistent auth (CSI tokens, sealed secrets keypair)"
-echo "   ✅ Phase 1: Infrastructure (VMs, Talos, Cilium)"
-echo "   ✅ Phase 2: Services (Flux, Vault, Authentik, applications)"
 echo ""
 echo "📋 Post-bootstrap automation (via Flux/GitOps):"
 echo "   • DNS: PowerDNS Operator (zone) + external-dns (records from Ingresses)"
