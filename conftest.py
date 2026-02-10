@@ -18,14 +18,12 @@ def pytest_configure(config: pytest.Config) -> None:
     config.option.asyncio_mode = "auto"
 
     # Test categories
-    config.addinivalue_line("markers", "unit: fast unit tests")
     config.addinivalue_line("markers", "integration: integration tests")
     config.addinivalue_line("markers", "slow: marks tests as slow")
     config.addinivalue_line("markers", "e2e: end-to-end UI tests using playwright")
 
     # External requirements - LLM APIs
     config.addinivalue_line("markers", "live_openai_api: tests requiring OPENAI_API_KEY")
-    config.addinivalue_line("markers", "live_anthropic_api: tests requiring ANTHROPIC_API_KEY")
     config.addinivalue_line("markers", "real_github: tests requiring network access to GitHub")
     config.addinivalue_line("markers", "requires_docker: tests requiring Docker daemon")
     config.addinivalue_line("markers", "requires_sandbox_exec: tests requiring macOS sandbox-exec")
@@ -54,9 +52,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     # in CI and Claude Code web bazelrc, so this only fires on explicit invocations.
     if item.get_closest_marker("live_openai_api") is not None and not os.getenv("OPENAI_API_KEY"):
         pytest.fail("OPENAI_API_KEY not set — cannot run live OpenAI test")
-
-    if item.get_closest_marker("live_anthropic_api") is not None and not os.getenv("ANTHROPIC_API_KEY"):
-        pytest.skip("ANTHROPIC_API_KEY not set")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

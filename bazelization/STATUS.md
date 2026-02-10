@@ -21,7 +21,6 @@ Run `bazel run //tools/orphans:find_orphans` to list orphaned Python files.
 ### High Priority
 
 - **Unified check command (Phase 3)**: Create `bazel check //...` that runs all linters + type checkers. Simplify pre-commit to single command. Update CI to use it.
-- **Enable remote cache write in CI**: Currently read-only (`--remote_upload_local_results=false`). Enable for main branch.
 - **Migrate `claude_optimizer` Docker images**: 8 variant Dockerfiles in `claude/claude_optimizer/docker/` (go, node, python, python-data, ruby, rust, system, claude-base).
 
 ### Lower Priority
@@ -54,9 +53,6 @@ Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Do
 ### Commands
 
 ```bash
-bazel build //...                       # Build everything
-bazel test //...                        # Test everything
-bazel lint //...                        # Lint all languages
 bazel build --config=check //...        # Lint + typecheck
 bazel build --config=typecheck //...    # Mypy only
 bazel run //:requirements.update        # Update Python requirements lock
@@ -84,9 +80,3 @@ Ruff uses a custom `rules_multitool` lockfile (`tools/multitool/lockfile.json`) 
 ### Hook Lifecycle
 
 **Git pre-commit** (via `.pre-commit-config.yaml`): safety checks, syntax validation, Ansible check, Bazel format/lint, ruff autofix, markdownlint, kubeconform, nixfmt.
-
-**Claude Code session start** (via `.claude/settings.json`): installs Bazelisk, starts local auth proxy for Claude Code web's egress proxy, creates CA bundles + Java truststore, writes `~/.cache/bazel-proxy/bazelrc`, installs bazel wrapper, runs `pre-commit install`. Package is `tools/claude_hooks/`, entry point is `session_start.py`.
-
-### Known Issues
-
-- Python 3.13: watch for `datetime.datetime.utcnow()` deprecation warnings.
