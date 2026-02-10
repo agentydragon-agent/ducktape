@@ -81,6 +81,11 @@ data "talos_machine_configuration" "vps" {
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
           }
         }
+        sysctls = {
+          # Allow non-root processes to bind to privileged ports (< 1024)
+          # Required for PowerDNS hostNetwork pods to bind port 53 as non-root
+          "net.ipv4.ip_unprivileged_port_start" = "0"
+        }
       }
       cluster = {
         # Each VPS controlplane node consumes a whole VPS instance, so we need
