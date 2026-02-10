@@ -1,8 +1,12 @@
 """Testcontainers-based e2e infrastructure fixtures.
 
 Provides test infrastructure:
-- Docker registry (testcontainers registry:2, function-scoped to match DB)
+- Docker registry (testcontainers registry:2, session-scoped with per-test cleanup)
 - BazelImage fixtures for agent images (from Bazel oci_image layouts)
+
+The registry container is session-scoped to avoid 28-76s startup overhead on RBE,
+but manifests are deleted at the start of each test to ensure crane push always
+triggers agent_definition recording via the backend proxy.
 
 Usage in tests:
     @pytest.mark.requires_docker
@@ -16,11 +20,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Generator
 
+import httpx
 import pytest
 from opentelemetry import trace
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
+from props.db.models import AgentType
 from test_util.image_loader import load_image
 from test_util.oci import BazelImage
 from third_party.containers.rlocations import REGISTRY_2_TARBALL, RYUK_TARBALL
@@ -39,12 +45,11 @@ def _preload_registry_images() -> None:
     load_image(REGISTRY_2_TARBALL)
 
 
-@pytest.fixture
-def e2e_registry() -> Generator[DockerContainer]:
-    """Function-scoped Docker registry for e2e tests.
+@pytest.fixture(scope="session")
+def _e2e_registry_container() -> Generator[DockerContainer]:
+    """Session-scoped Docker registry container (internal).
 
-    Function-scoped to match DB scope — each test gets a fresh registry so that
-    crane push always records agent_definitions in the current test's DB.
+    Use e2e_registry instead, which adds per-test cleanup.
     """
     with tracer.start_as_current_span("e2e_registry startup"):
         with tracer.start_as_current_span("configure container"):
@@ -52,6 +57,7 @@ def e2e_registry() -> Generator[DockerContainer]:
                 DockerContainer("registry:2")
                 .with_exposed_ports(5000)
                 .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
+                .with_env("REGISTRY_STORAGE_DELETE_ENABLED", "true")
                 .waiting_for(LogMessageWaitStrategy("listening on"))
             )
 
@@ -62,6 +68,56 @@ def e2e_registry() -> Generator[DockerContainer]:
         yield registry
     finally:
         registry.stop()
+
+
+def _delete_all_manifests(registry_url: str) -> None:
+    """Delete all agent manifests from registry to ensure clean state for next test."""
+    with tracer.start_as_current_span("delete registry manifests"):
+        for agent_type in AgentType:
+            repo = agent_type.value
+            # List tags for this repo
+            try:
+                resp = httpx.get(f"{registry_url}/v2/{repo}/tags/list", timeout=5.0)
+                if resp.status_code == 404:
+                    continue  # Repo doesn't exist yet
+                resp.raise_for_status()
+                tags = resp.json().get("tags") or []
+            except httpx.HTTPError:
+                continue
+
+            # Delete each tag's manifest
+            for tag in tags:
+                try:
+                    # Get manifest digest
+                    head_resp = httpx.head(
+                        f"{registry_url}/v2/{repo}/manifests/{tag}",
+                        headers={"Accept": "application/vnd.oci.image.manifest.v1+json"},
+                        timeout=5.0,
+                    )
+                    if head_resp.status_code != 200:
+                        continue
+                    digest = head_resp.headers.get("Docker-Content-Digest")
+                    if not digest:
+                        continue
+
+                    # Delete by digest
+                    httpx.delete(f"{registry_url}/v2/{repo}/manifests/{digest}", timeout=5.0)
+                    logger.debug(f"Deleted {repo}:{tag} ({digest})")
+                except httpx.HTTPError as e:
+                    logger.warning(f"Failed to delete {repo}:{tag}: {e}")
+
+
+@pytest.fixture
+def e2e_registry(_e2e_registry_container: DockerContainer) -> DockerContainer:
+    """Function-scoped registry fixture that clears manifests before each test.
+
+    The underlying container is session-scoped (avoids 28-76s startup on RBE),
+    but manifests are deleted at the start of each test so crane push always
+    triggers agent_definition recording via the proxy.
+    """
+    registry_url = f"http://localhost:{_e2e_registry_container.get_exposed_port(5000)}"
+    _delete_all_manifests(registry_url)
+    return _e2e_registry_container
 
 
 @pytest.fixture
