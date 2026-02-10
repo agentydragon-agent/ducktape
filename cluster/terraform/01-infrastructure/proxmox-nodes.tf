@@ -220,6 +220,5 @@ resource "talos_machine_configuration_apply" "proxmox" {
 
   depends_on = [
     proxmox_virtual_environment_vm.talos,
-    talos_machine_bootstrap.cluster # Wait for cluster to be bootstrapped first
   ]
 }

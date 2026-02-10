@@ -236,7 +236,10 @@ resource "talos_machine_bootstrap" "cluster" {
   endpoint             = hcloud_server.vps[local.bootstrap_node].ipv4_address
   node                 = hcloud_server.vps[local.bootstrap_node].ipv4_address
 
-  depends_on = [talos_machine_configuration_apply.vps]
+  depends_on = [
+    talos_machine_configuration_apply.vps,
+    talos_machine_configuration_apply.proxmox, # Wait for ALL controlplane configs before bootstrap
+  ]
 }
 
 # Generate kubeconfig
