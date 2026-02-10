@@ -18,5 +18,5 @@ spec:
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
-      name: operator
+      name: operator-vault-operator
       namespace: vault
