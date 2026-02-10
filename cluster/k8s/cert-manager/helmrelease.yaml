@@ -19,6 +19,12 @@ spec:
     crds:
       enabled: true
 
+    # Use external DNS servers for ACME challenge verification
+    # This avoids hairpin NAT issues where pods can't reach their own node's public IP
+    extraArgs:
+      - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53
+      - --dns01-recursive-nameservers-only
+
     # Enable metrics
     prometheus:
       enabled: true
