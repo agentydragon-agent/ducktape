@@ -4,10 +4,11 @@ kind: Namespace
 metadata:
   name: buildbuddy-executor
   labels:
-    # Privileged PSA required: chart defaults to enable_oci=true which uses crun
-    # to create child containers for build isolation. This needs privileged mode.
-    # The only non-privileged option (bare runner) provides zero isolation and
-    # no container image support, which breaks our RBE platform.
+    # TODO: check if privileged PSA is actually necessary for buildbuddy executor.
+    # Chart defaults to enable_oci=true which uses crun to create child containers
+    # for build isolation. This needs privileged mode. The only non-privileged
+    # option (bare runner) provides zero isolation and no container image support,
+    # which breaks our RBE platform.
     pod-security.kubernetes.io/enforce: privileged
 
 ---

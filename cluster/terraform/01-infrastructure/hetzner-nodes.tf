@@ -120,6 +120,9 @@ data "talos_machine_configuration" "vps" {
       machine = {
         network = {
           hostname = each.value.name
+          # Hetzner DHCP provides link-local DNS (169.254.116.108) which breaks
+          # when forwardKubeDNSToHost interacts with Cilium VXLAN. Use public DNS.
+          nameservers = ["1.1.1.1", "8.8.8.8"]
           kubespan = {
             enabled             = true
             allowDownPeerBypass = true
@@ -135,8 +138,12 @@ data "talos_machine_configuration" "vps" {
             port    = 7445
           }
           hostDNS = {
-            enabled              = true
-            forwardKubeDNSToHost = true
+            enabled = true
+            # forwardKubeDNSToHost breaks DNS resolution on Hetzner VPS with
+            # Cilium VXLAN: containerd image pulls fail with "server misbehaving"
+            # from 127.0.0.53 even after patching nameservers to public DNS.
+            # Disabling lets pods use CoreDNS directly (which forwards to 1.1.1.1/8.8.8.8).
+            forwardKubeDNSToHost = false
           }
         }
         kubelet = {
