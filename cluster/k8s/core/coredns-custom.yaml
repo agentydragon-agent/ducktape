@@ -34,7 +34,9 @@ data:
             fallthrough in-addr.arpa ip6.arpa
             ttl 30
         }
-        forward . /etc/resolv.conf {
+        # Use public DNS instead of /etc/resolv.conf because Hetzner VPS nodes
+        # have link-local DNS (169.254.116.108) which is unreachable from pod network.
+        forward . 1.1.1.1 8.8.8.8 {
            max_concurrent 1000
         }
         cache 30 {

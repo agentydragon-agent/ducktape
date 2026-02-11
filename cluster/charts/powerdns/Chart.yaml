@@ -2,7 +2,7 @@ apiVersion: v2
 name: powerdns
 description: A Helm chart for PowerDNS authoritative DNS server with modern secret management
 type: application
-version: 0.3.2
+version: 0.3.3
 appVersion: "4.7.3"
 keywords:
   - dns

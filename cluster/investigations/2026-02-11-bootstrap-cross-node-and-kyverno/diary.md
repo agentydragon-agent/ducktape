@@ -1,7 +1,7 @@
 # Bootstrap Cross-Node Convergence and Kyverno Webhook Timeouts
 
 **Date**: 2026-02-11, continued 2026-02-10
-**Status**: Fix committed (`91e801346`), awaiting verification via bootstrap
+**Status**: Packer snapshot boot implemented, Helm provider replaced with CLI, bootstrap in progress
 
 ## Problem
 
@@ -171,31 +171,87 @@ path when it occurs. But:
 | Single-pod Cilium check | Yes            | Only checked from first pod                    |
 | KubeSpan dual-identity  | **Root cause** | AllowedIP collision creates routing black hole |
 
-## Committed Fix (partial)
+## Committed Fixes
 
-Commit `91e801346`: Full-mesh Cilium health check with structured JSON.
+### Fix 1: Full-mesh Cilium health check (`91e801346`)
 
-This is necessary but may not be sufficient. It catches the symptom (broken
-connectivity) but can't prevent the underlying AllowedIP oscillation from
+Check from ALL cilium pods with structured JSON, not just first pod.
+
+### Fix 2: Packer snapshot boot (eliminates dual identity)
+
+Implemented Option 1 from below. VPS nodes now boot from a pre-baked Hetzner
+snapshot containing Talos on disk. Single Talos boot = single identity = no
 phantom peers.
 
-## What Would Actually Fix This
+**Packer flow**: rescue mode → `dd` Talos disk image → snapshot → servers boot
+from snapshot. Idempotency check skips Packer build if matching snapshot exists.
 
-### Option 1: Eliminate dual identity (rescue+dd boot)
+Commits: `ad303ef25` (Packer snapshot + idempotency), `a1e5483f9` (Helm boolean
+workarounds, superseded).
 
-Boot Hetzner VPS via rescue mode, `dd` Talos disk image directly. Single Talos
-boot = single identity = no phantom peers = no AllowedIP collision.
+### Fix 3: Replace Helm provider with CLI (`2a23d8eda`)
+
+Helm provider v3 has unfixed plan consistency bugs with OpenTofu — computed
+fields (`status`, `id`, `metadata`) return null during plan but non-null during
+apply. OpenTofu's stricter plan check rejects this. PR hashicorp/terraform-provider-helm#1739
+is stalled.
+
+Replaced both `helm_release` resources (Cilium, hcloud-csi) with
+`null_resource` + `helm` CLI. Removed helm provider entirely.
+
+### Fix 4: Cilium health stderr/stdout separation
+
+The Python kubernetes client's `stream()` with `_preload_content=True` (default)
+merges stdout and stderr into one string. `cilium-health status -o json` writes
+errors to stderr (e.g., `health.sock: no such file or directory` during startup),
+corrupting the JSON output. Fix: use `_preload_content=False` and read
+`STDOUT_CHANNEL` separately.
+
+This was causing the "Cilium health unparseable" message that hid the real
+connectivity status.
+
+### Fix 5: Remove unnecessary Cilium restart
+
+Bootstrap was doing a rolling restart of Cilium immediately after `helm install`
+"to refresh BPF state for API servers." But Cilium was just installed — there's
+no stale BPF state. The restart added ~1-2 minutes of unnecessary downtime and
+caused transient `health.sock: no such file or directory` errors during the
+convergence check.
+
+## Bootstrap Attempt Results
+
+### Attempt 8 (2026-02-11 ~01:10 UTC) — Infrastructure succeeds
+
+First successful infrastructure deployment after all fixes:
+
+- Packer snapshot: pre-existing, skipped build
+- VPS servers: booted from snapshot (single identity confirmed)
+- Cilium + hcloud-csi: deployed via `helm` CLI (no provider bugs)
+- All 4 nodes Ready
+- Cross-node convergence: passed after Cilium restart settled (~7 min)
+- KubeSpan: 3/3 expected peers up (previously saw 9 due to phantoms — now clean)
+- **Kyverno deployed without webhook timeouts** — the original problem is fixed
+
+### Attempt 9 (2026-02-11 ~01:23 UTC) — Re-run with stderr fix
+
+Idempotent re-run to test stdout/stderr fix. Infrastructure layer: 0 changes
+(already applied). Convergence check now shows actual errors:
 
 ```text
-1. hcloud_server created with image=debian-12 (no ISO)
-2. Enable rescue mode → reboot into rescue Linux
-3. In rescue: download Talos hcloud disk image, dd to /dev/sda
-4. Disable rescue, reboot → Talos boots from disk (first and only boot)
-5. STATE partition created, identity generated once
-6. talos_machine_configuration_apply → config updated, no reinstall
+01:24:56 stdout='' stderr='Error: Cannot get status: ... health.sock: no such file or directory'
+01:25:12 Cilium: talos-pve-cp-0 → vps-cp-0 host/http: connection refused
+01:26:15 Cross-node networking converged
 ```
 
-Two reboots but only ONE Talos boot. Eliminates the problem entirely.
+Previously this loop showed "unparseable" with no diagnostic info for 10+ minutes.
+
+Flux kustomization convergence in progress (19/64 Ready at 2 min 54s).
+
+## Original Options Analysis (for reference)
+
+### Option 1: Eliminate dual identity (rescue+dd boot) — IMPLEMENTED
+
+See Fix 2 above.
 
 ### Option 2: Wait for phantom TTL expiry
 

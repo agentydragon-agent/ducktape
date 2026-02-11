@@ -20,6 +20,10 @@ powerdns:
     # API key will be sourced from secret
     secretName: powerdns-api-key
     secretKey: powerdns_api_key
+    # Additional keys to include in the generated secret (same value, different key names).
+    # Useful for consumers that expect a specific env var name (e.g., PDNS_API_KEY).
+    extraSecretKeys:
+      - PDNS_API_KEY
 
   # Web server configuration
   webserver:

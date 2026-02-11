@@ -419,6 +419,20 @@ Add to post-apply hook or document as manual step.
 
 ---
 
+### TODO: Flux Kustomization Dependency Graph UI
+
+**Priority**: Low
+
+Deploy a web UI that visualizes Flux kustomization status and dependency DAG as a node/edge graph.
+
+**Options**:
+
+- **Weave GitOps** — official Flux UI, shows kustomizations, HelmReleases, sources, dependency graph. Helm chart at `oci://ghcr.io/weaveworks/charts/weave-gitops`.
+- **Capacitor** — lighter Flux dashboard, less mature.
+- **Custom Grafana panel** — Flux Prometheus metrics exist but no dependency graph support.
+
+---
+
 ## 🔀 Future Directions
 
 ### Terraform State Backup (rclone + Google Drive)

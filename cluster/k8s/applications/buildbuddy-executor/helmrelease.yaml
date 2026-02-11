@@ -3,6 +3,12 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: buildbuddy-executor
+  labels:
+    # Privileged PSA required: chart defaults to enable_oci=true which uses crun
+    # to create child containers for build isolation. This needs privileged mode.
+    # The only non-privileged option (bare runner) provides zero isolation and
+    # no container image support, which breaks our RBE platform.
+    pod-security.kubernetes.io/enforce: privileged
 
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
