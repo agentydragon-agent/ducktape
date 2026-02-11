@@ -214,7 +214,10 @@ data "talos_machine_configuration" "proxmox" {
   ]
 }
 
-# Apply machine configuration to Proxmox nodes
+# ============================================================================
+# MACHINE CONFIGURATION APPLY
+# ============================================================================
+
 resource "talos_machine_configuration_apply" "proxmox" {
   for_each = local.proxmox_nodes
 
@@ -222,7 +225,5 @@ resource "talos_machine_configuration_apply" "proxmox" {
   machine_configuration_input = data.talos_machine_configuration.proxmox[each.key].machine_configuration
   node                        = each.value.ip
 
-  depends_on = [
-    proxmox_virtual_environment_vm.talos,
-  ]
+  depends_on = [proxmox_virtual_environment_vm.talos]
 }

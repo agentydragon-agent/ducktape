@@ -344,6 +344,23 @@ Options:
 
 ---
 
+### TODO: Multi-Endpoint Kubeconfig via DNS
+
+**Current state**: `local_file.kubeconfig` points to a single VPS IP (the bootstrap node). If that node is down, `kubectl` can't connect.
+
+**Desired state**: Kubeconfig uses a DNS name (e.g., `api.allegedly.works`) that resolves to all control plane nodes. Clients automatically fail over to a healthy node.
+
+**Prerequisites**: Cluster DNS (PowerDNS) must be running first — chicken-and-egg with bootstrap.
+
+**Implementation**:
+
+1. Add `api.allegedly.works` A records pointing to all VPS control plane IPs (via DNS automation)
+2. Change `local_file.kubeconfig` to use `https://api.allegedly.works:6443`
+3. Bootstrap still needs direct IP for initial kubeconfig (before DNS is available)
+4. Post-bootstrap step: regenerate kubeconfig with DNS name once DNS is live
+
+---
+
 ### TODO: Terraform State Backup
 
 **Problem**: If `terraform/00-persistent-auth/terraform.tfstate` is lost, all SealedSecrets become

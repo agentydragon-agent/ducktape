@@ -15,7 +15,10 @@ exclude: |
     tana/testdata/.*|
 
     # Generated content
-    llm/instruct_logseq/.*
+    llm/instruct_logseq/.*|
+
+    # Specimens committed snapshot code
+    props/specimens/[^/]+/[^/]+/code/.*
   )$
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -133,6 +136,22 @@ repos:
         pass_filenames: true
         # Triggers on: formattable files, Bazel files, test files, cluster files
         files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash|tf)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$|MODULE\\.bazel$|^cluster/"
+
+      # Specimens: block changes to committed snapshot code/ directories
+      - id: block-specimen-code-changes
+        name: Block changes to committed specimen code
+        entry: props/specimens/hooks/block_snapshot_code_changes.py
+        language: python
+        pass_filenames: false
+        always_run: true
+
+      # Specimens: validate issue ID format in issues/*.yaml filenames
+      - id: validate-specimen-issue-ids
+        name: Validate specimen issue ID format
+        entry: props/specimens/hooks/validate_issue_ids.py
+        language: python
+        pass_filenames: false
+        always_run: true
 
       # Kubernetes manifest validation (auto-installed via go install)
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,

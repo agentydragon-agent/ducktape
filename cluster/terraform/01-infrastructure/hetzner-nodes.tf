@@ -1,20 +1,22 @@
 # Hetzner VPS Nodes
 # 2x CPX31 controlplane+worker nodes in Hillsboro, OR
+#
+# All nodes get config applied in parallel. They install to disk, reboot,
+# and wait in an etcd join retry loop until talos_machine_bootstrap is called
+# on one node. etcd handles sequential learner promotion internally.
 
 # ============================================================================
 # VPS SERVERS
 # ============================================================================
 
-# VPS servers using Hetzner's public Talos ISO
-# ISO boots → reads user_data → auto-installs to disk → reboots
 resource "hcloud_server" "vps" {
   for_each = local.vps_nodes
 
   name        = each.value.name
   server_type = each.value.server_type
   location    = var.hetzner_location
-  image       = "debian-12"     # Base image for disk provisioning (overwritten by Talos install)
-  iso         = local.talos_iso # Boot from Talos ISO
+  image       = "debian-12"
+  iso         = local.talos_iso
   ssh_keys    = [hcloud_ssh_key.talos.id]
   user_data   = data.talos_machine_configuration.vps[each.key].machine_configuration
 
@@ -102,7 +104,10 @@ data "talos_machine_configuration" "vps" {
   ]
 }
 
-# Apply machine configuration to each VPS node
+# ============================================================================
+# MACHINE CONFIGURATION APPLY
+# ============================================================================
+
 resource "talos_machine_configuration_apply" "vps" {
   for_each = local.vps_nodes
 
@@ -113,12 +118,13 @@ resource "talos_machine_configuration_apply" "vps" {
   depends_on = [hcloud_server.vps]
 }
 
-# Detach ISO after Talos is installed to disk
-# This ensures future reboots boot from disk, not the ISO
+# ============================================================================
+# ISO DETACHMENT
+# ============================================================================
+
 resource "terraform_data" "detach_iso" {
   for_each = local.vps_nodes
 
-  # Re-run if server ID changes (new server)
   triggers_replace = [hcloud_server.vps[each.key].id]
 
   provisioner "local-exec" {

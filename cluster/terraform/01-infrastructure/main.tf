@@ -230,7 +230,8 @@ resource "hcloud_firewall" "talos" {
 # TALOS BOOTSTRAP & KUBECONFIG
 # ============================================================================
 
-# Bootstrap the cluster from the first VPS node
+# Bootstrap etcd on the first VPS node. All other nodes are already configured
+# and waiting in the etcd join retry loop — they join automatically after this.
 resource "talos_machine_bootstrap" "cluster" {
   client_configuration = local.client_configuration
   endpoint             = hcloud_server.vps[local.bootstrap_node].ipv4_address
@@ -238,7 +239,7 @@ resource "talos_machine_bootstrap" "cluster" {
 
   depends_on = [
     talos_machine_configuration_apply.vps,
-    talos_machine_configuration_apply.proxmox, # Wait for ALL controlplane configs before bootstrap
+    talos_machine_configuration_apply.proxmox,
   ]
 }
 
