@@ -56,7 +56,7 @@ resource "terraform_data" "talos_hcloud_image" {
 }
 
 data "hcloud_image" "talos" {
-  with_selector     = "os=talos,version=${var.talos_version},schematic_id=${talos_image_factory_schematic.hcloud.id}"
+  with_selector     = "os=talos,version=${var.talos_version},schematic_id=${substr(talos_image_factory_schematic.hcloud.id, 0, 8)}"
   most_recent       = true
   with_architecture = "x86"
 

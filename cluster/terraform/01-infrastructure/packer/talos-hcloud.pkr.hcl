@@ -42,11 +42,11 @@ source "hcloud" "talos" {
   server_type  = "cpx11"
   ssh_username = "root"
 
-  snapshot_name = "talos-${var.talos_version}-${var.schematic_id}"
+  snapshot_name = "talos-${var.talos_version}-${substr(var.schematic_id, 0, 8)}"
   snapshot_labels = {
     os           = "talos"
     version      = var.talos_version
-    schematic_id = var.schematic_id
+    schematic_id = substr(var.schematic_id, 0, 8)
   }
 }
 
