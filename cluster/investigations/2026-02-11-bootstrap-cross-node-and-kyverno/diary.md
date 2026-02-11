@@ -1,7 +1,7 @@
 # Bootstrap Cross-Node Convergence and Kyverno Webhook Timeouts
 
 **Date**: 2026-02-11, continued 2026-02-10
-**Status**: Packer snapshot boot implemented, Helm provider replaced with CLI, bootstrap in progress
+**Status**: VPS DNS fix committed, awaiting full destroy → bootstrap (Proxmox unreachable, need home network)
 
 ## Problem
 
@@ -314,6 +314,55 @@ Internet → VPS public IPs → ingress-nginx (hostNetwork) → backend pods
 ```
 
 Proxmox nodes boot from disk image directly — single identity, no phantom.
+
+### Attempt 9 continued — VPS DNS failure blocks convergence
+
+Bootstrap reached 36/64 Ready then stalled. Root blocker: **VPS nodes cannot resolve
+external DNS** — containerd image pulls fail with `lookup ghcr.io on 127.0.0.53:53: server misbehaving`.
+
+**Diagnosis chain:**
+
+1. cert-manager challenges all `pending` — SOA lookup for `_acme-challenge.*.allegedly.works`
+   returns `SERVFAIL` from public DNS (8.8.8.8, 1.1.1.1)
+2. PowerDNS zones not created — `powerdns-operator` pod on VPS in `ImagePullBackOff` (DNS failure)
+3. `dns-records` terraform stuck "Initializing" — tofu-controller can't run terraform
+4. `sso-secrets` terraform stuck "Initializing"
+5. Kyverno webhook timeouts for headscale/website — cross-node webhook calls failing
+
+**Three distinct DNS layers affected:**
+
+| Layer                 | Symptom                                                                                   | Root Cause                                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Host DNS (127.0.0.53) | containerd image pulls fail                                                               | `forwardKubeDNSToHost` intercepts kube-dns VIP queries via Talos host-dns proxy, but interaction with Cilium VXLAN breaks resolution |
+| CoreDNS pods          | `forward . /etc/resolv.conf` → 169.254.116.108 (link-local, unreachable from pod network) | Hetzner DHCP provides link-local DNS that's only reachable from host network                                                         |
+| Public DNS            | SERVFAIL for allegedly.works                                                              | PowerDNS zone not serving because operator can't pull image                                                                          |
+
+**Fix 6 (committed `347c36d8`)**: CoreDNS Corefile — changed `forward . /etc/resolv.conf`
+to `forward . 1.1.1.1 8.8.8.8` in `k8s/core/coredns-custom.yaml`.
+
+**Fix 7 (committed `3d170032`)**: VPS Talos machine config — added explicit
+`nameservers = ["1.1.1.1", "8.8.8.8"]` and set `forwardKubeDNSToHost = false`
+in `terraform/01-infrastructure/hetzner-nodes.tf`.
+
+**Why `forwardKubeDNSToHost = false`**: Even after patching nameservers to public
+DNS via live `talosctl` patch, host-dns at 127.0.0.53 still returned SERVFAIL.
+The feature intercepts pod DNS queries to the kube-dns ClusterIP and routes them
+through the host-dns proxy. On Hetzner VPS with Cilium VXLAN, this breaks in a
+way that's not fixed by upstream DNS changes alone. Disabling it lets pods use
+CoreDNS directly (which forwards to 1.1.1.1/8.8.8.8).
+
+**Current state**: Fixes committed and pushed to `devel`. Full destroy → bootstrap
+needed to apply VPS machine config changes, but Proxmox is unreachable (not on
+home network). Targeted `terraform apply` of VPS machine config resources would
+work but terraform state is locked from a previous apply.
+
+**Additional findings:**
+
+- `buildbuddy-executor` HelmRelease `Failed` — needs Proxmox-only scheduling
+  (`topology.kubernetes.io/region: proxmox`) but BuildBuddy chart likely can't
+  pull images either. Separate issue.
+- PowerDNS `extraSecretKeys` fix working — operator pod on pve-cp-0 (cached image)
+  started successfully with both `powerdns_api_key` and `PDNS_API_KEY` keys.
 
 ### Source Code References
 

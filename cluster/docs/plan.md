@@ -1,6 +1,55 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-10
+**Last Updated**: 2026-02-11
+
+## 🔥 Immediate Next Steps
+
+Bootstrap stalled at 36/64 Ready. VPS DNS fix is committed (`3d170032`) but
+the current cluster was bootstrapped before the fix. Need full destroy → bootstrap.
+
+### Blockers
+
+1. **Proxmox unreachable** — `terraform destroy` / `bootstrap.py` requires
+   SSH to atlas (10.2.0.2). Only works from home network.
+2. **Terraform state locked** — stale lock from previous `bootstrap.py` run
+   (ID `1daa1d90-179e-77ee-0670-3fbbdd61f102`). Needs `tofu force-unlock`.
+
+### When on Home Network
+
+```bash
+cd terraform/01-infrastructure
+tofu force-unlock -force 1daa1d90-179e-77ee-0670-3fbbdd61f102
+tofu destroy -auto-approve
+cd ../..
+./bootstrap.py
+```
+
+### What to Verify After Bootstrap
+
+1. **VPS DNS resolution** — containerd can pull images on VPS nodes:
+   ```bash
+   talosctl -n <vps-ip> -e <vps-ip> image pull docker.io/library/alpine:3.19
+   ```
+2. **No KubeSpan phantom peers** — single identity per node:
+   ```bash
+   talosctl -n <vps-ip> -e <vps-ip> get kubespanpeerstatuses
+   # Expect: exactly 3 peers, all "up", no duplicates
+   ```
+3. **cert-manager challenges resolve** — SOA lookup returns NOERROR:
+   ```bash
+   dig @8.8.8.8 SOA _acme-challenge.vault.allegedly.works
+   ```
+4. **Full convergence** — all 64 kustomizations Ready
+5. **Kyverno webhook** — no context deadline exceeded errors
+
+### Known Issues to Watch
+
+- **BuildBuddy executor** `Failed` — pinned to Proxmox nodes
+  (`topology.kubernetes.io/region: proxmox`), may need resource adjustment
+- **Kyverno webhook timeouts** — may be cross-node networking transient
+  (same root cause as original investigation, but post-DNS-fix should be better)
+
+---
 
 ## 🎯 Target Architecture
 
