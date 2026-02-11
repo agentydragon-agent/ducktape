@@ -39,7 +39,7 @@ source "hcloud" "talos" {
   rescue       = "linux64"
   image        = "debian-12"
   location     = var.server_location
-  server_type  = "cx22"
+  server_type  = "cpx11"
   ssh_username = "root"
 
   snapshot_name = "talos-${var.talos_version}-${var.schematic_id}"
