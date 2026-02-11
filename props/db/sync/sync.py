@@ -39,8 +39,8 @@ from props.db.models import (
     TruePositive,
     TruePositiveOccurrenceORM,
 )
-from props.db.sync._yaml import load_yaml_issues
 from props.db.sync.loader import discover_snapshots
+from props.db.sync.yaml_loader import SyncValidationError, load_yaml_issues
 
 if TYPE_CHECKING:
     from props.config import PropsConfig
@@ -307,15 +307,21 @@ def sync_snapshots_to_db(
             session.execute(stmt)
             updated += 1
 
-    session.commit()
+    session.flush()
     total = len(snapshots)
     print(f"  Total archive size: {total_archive_bytes / 1024 / 1024:.1f} MB")
     logger.info(f"Snapshots synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir: Path) -> SyncStats:
-    """Sync issues and false positives from filesystem to database."""
+def sync_issues_to_db(
+    session: Session, slugs: list[SnapshotSlug], specimens_dir: Path, *, collect_errors: bool = False
+) -> SyncStats:
+    """Sync issues and false positives from filesystem to database.
+
+    When collect_errors is True, per-snapshot errors are collected using
+    savepoints. Raises SyncValidationError at the end if any snapshots failed.
+    """
 
     # Track stats across both TPs and FPs
     total = 0
@@ -323,64 +329,37 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
     updated = 0
     deleted = 0
 
-    # Get existing issues and FPs from DB
+    errors: list[str] = []
+    failed_slugs: set[SnapshotSlug] = set()
 
+    # Get existing issues and FPs from DB
     existing_issues = {(i.snapshot_slug, i.tp_id): i for i in session.query(TruePositive).all()}
     existing_fps = {(fp.snapshot_slug, fp.fp_id): fp for fp in session.query(FalsePositive).all()}
 
     # Track which issues/FPs we've seen (to detect deletions)
-    seen_issue_keys = set()
-    seen_fp_keys = set()
+    seen_issue_keys: set[tuple[SnapshotSlug, str]] = set()
+    seen_fp_keys: set[tuple[SnapshotSlug, str]] = set()
 
     # Process each snapshot
     for slug in slugs:
-        true_positives, false_positives = load_yaml_issues(slug, specimens_dir)
+        savepoint = session.begin_nested()
+        try:
+            true_positives, false_positives = load_yaml_issues(slug, specimens_dir, collect_errors=collect_errors)
 
-        # Sync true positives
-        for issue in true_positives:
-            key = (issue.snapshot_slug, issue.tp_id)
-            seen_issue_keys.add(key)
+            # Sync true positives
+            for issue in true_positives:
+                key = (issue.snapshot_slug, issue.tp_id)
+                seen_issue_keys.add(key)
 
-            if key not in existing_issues:
-                # New issue - create ORM instance and occurrences
-                logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
-                orm_issue = TruePositive(
-                    snapshot_slug=issue.snapshot_slug, tp_id=issue.tp_id, rationale=issue.rationale
-                )
-                session.add(orm_issue)
-                # Add occurrences to normalized table
-                # Note: critic_scopes_expected_to_recall is stored in critic_scopes_expected_to_recall M:N table, not as column
-                # Note: files/line ranges are stored in tp_occurrence_ranges table, not as column
-                for occ in issue.occurrences:
-                    orm_occ = TruePositiveOccurrenceORM(
-                        snapshot_slug=issue.snapshot_slug,
-                        tp_id=issue.tp_id,
-                        occurrence_id=occ.occurrence_id,
-                        note=occ.note,
-                        match_file_restriction=ensure_file_set(
-                            session, issue.snapshot_slug, occ.match_file_restriction
-                        ),
+                if key not in existing_issues:
+                    # New issue - create ORM instance and occurrences
+                    logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
+                    orm_issue = TruePositive(
+                        snapshot_slug=issue.snapshot_slug, tp_id=issue.tp_id, rationale=issue.rationale
                     )
-                    session.add(orm_occ)
-                    _add_ranges_to_occurrence(orm_occ, occ.files)
-                added += 1
-                total += 1
-            else:
-                # Existing issue - check if update needed
-                existing = existing_issues[key]
-                needs_update = False
-
-                if existing.rationale != issue.rationale:
-                    logger.debug(f"Updating issue rationale: {key}")
-                    needs_update = True
-
-                # For now, always update occurrences if any change detected
-                # TODO: Implement proper occurrence comparison
-                if needs_update:
-                    existing.rationale = issue.rationale
-                    # Delete existing occurrences and re-add (cascade handles this)
-                    for occ_orm in list(existing.occurrences):
-                        session.delete(occ_orm)
+                    session.add(orm_issue)
+                    # Note: critic_scopes_expected_to_recall is stored in M:N table, not as column
+                    # Note: files/line ranges are stored in tp_occurrence_ranges table, not as column
                     for occ in issue.occurrences:
                         orm_occ = TruePositiveOccurrenceORM(
                             snapshot_slug=issue.snapshot_slug,
@@ -393,59 +372,51 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         )
                         session.add(orm_occ)
                         _add_ranges_to_occurrence(orm_occ, occ.files)
-                    updated += 1
+                    added += 1
                     total += 1
                 else:
-                    total += 1
+                    # Existing issue - check if update needed
+                    existing = existing_issues[key]
+                    needs_update = False
 
-        # Sync false positives
-        for fp in false_positives:
-            fp_key = (fp.snapshot_slug, fp.fp_id)
-            seen_fp_keys.add(fp_key)
+                    if existing.rationale != issue.rationale:
+                        logger.debug(f"Updating issue rationale: {key}")
+                        needs_update = True
 
-            if fp_key not in existing_fps:
-                # New FP - create ORM instance and occurrences
-                logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
-                orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
-                session.add(orm_fp)
-                for fp_occ in fp.occurrences:
-                    fp_orm_occ = FalsePositiveOccurrenceORM(
-                        snapshot_slug=fp.snapshot_slug,
-                        fp_id=fp.fp_id,
-                        occurrence_id=fp_occ.occurrence_id,
-                        note=fp_occ.note,
-                        match_file_restriction=ensure_file_set(
-                            session, fp.snapshot_slug, fp_occ.match_file_restriction
-                        ),
-                    )
-                    session.add(fp_orm_occ)
-                    _add_ranges_to_occurrence(fp_orm_occ, fp_occ.files)
-                    for relevant_file in fp_occ.relevant_files:
-                        fp_orm_occ.relevant_file_orms.append(
-                            FalsePositiveRelevantFileORM(
-                                snapshot_slug=fp.snapshot_slug,
-                                occurrence_id=fp_occ.occurrence_id,
-                                file_path=relevant_file,
+                    # For now, always update occurrences if any change detected
+                    # TODO: Implement proper occurrence comparison
+                    if needs_update:
+                        existing.rationale = issue.rationale
+                        # Delete existing occurrences and re-add (cascade handles this)
+                        for occ_orm in list(existing.occurrences):
+                            session.delete(occ_orm)
+                        for occ in issue.occurrences:
+                            orm_occ = TruePositiveOccurrenceORM(
+                                snapshot_slug=issue.snapshot_slug,
+                                tp_id=issue.tp_id,
+                                occurrence_id=occ.occurrence_id,
+                                note=occ.note,
+                                match_file_restriction=ensure_file_set(
+                                    session, issue.snapshot_slug, occ.match_file_restriction
+                                ),
                             )
-                        )
-                added += 1
-                total += 1
-            else:
-                # Existing FP - check if update needed
-                existing_fp = existing_fps[fp_key]
-                fp_needs_update = False
+                            session.add(orm_occ)
+                            _add_ranges_to_occurrence(orm_occ, occ.files)
+                        updated += 1
+                        total += 1
+                    else:
+                        total += 1
 
-                if existing_fp.rationale != fp.rationale:
-                    logger.debug(f"Updating FP rationale: {fp_key}")
-                    fp_needs_update = True
+            # Sync false positives
+            for fp in false_positives:
+                fp_key = (fp.snapshot_slug, fp.fp_id)
+                seen_fp_keys.add(fp_key)
 
-                # For now, always update occurrences if any change detected
-                # TODO: Implement proper occurrence comparison
-                if fp_needs_update:
-                    existing_fp.rationale = fp.rationale
-                    # Delete existing occurrences and re-add (cascade handles this)
-                    for fp_occ_orm in list(existing_fp.occurrences):
-                        session.delete(fp_occ_orm)
+                if fp_key not in existing_fps:
+                    # New FP - create ORM instance and occurrences
+                    logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
+                    orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
+                    session.add(orm_fp)
                     for fp_occ in fp.occurrences:
                         fp_orm_occ = FalsePositiveOccurrenceORM(
                             snapshot_slug=fp.snapshot_slug,
@@ -466,25 +437,84 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                                     file_path=relevant_file,
                                 )
                             )
-                    updated += 1
+                    added += 1
                     total += 1
                 else:
-                    total += 1
+                    # Existing FP - check if update needed
+                    existing_fp = existing_fps[fp_key]
+                    fp_needs_update = False
 
-    # Delete orphaned issues (in DB but not in source)
+                    if existing_fp.rationale != fp.rationale:
+                        logger.debug(f"Updating FP rationale: {fp_key}")
+                        fp_needs_update = True
+
+                    # For now, always update occurrences if any change detected
+                    # TODO: Implement proper occurrence comparison
+                    if fp_needs_update:
+                        existing_fp.rationale = fp.rationale
+                        # Delete existing occurrences and re-add (cascade handles this)
+                        for fp_occ_orm in list(existing_fp.occurrences):
+                            session.delete(fp_occ_orm)
+                        for fp_occ in fp.occurrences:
+                            fp_orm_occ = FalsePositiveOccurrenceORM(
+                                snapshot_slug=fp.snapshot_slug,
+                                fp_id=fp.fp_id,
+                                occurrence_id=fp_occ.occurrence_id,
+                                note=fp_occ.note,
+                                match_file_restriction=ensure_file_set(
+                                    session, fp.snapshot_slug, fp_occ.match_file_restriction
+                                ),
+                            )
+                            session.add(fp_orm_occ)
+                            _add_ranges_to_occurrence(fp_orm_occ, fp_occ.files)
+                            for relevant_file in fp_occ.relevant_files:
+                                fp_orm_occ.relevant_file_orms.append(
+                                    FalsePositiveRelevantFileORM(
+                                        snapshot_slug=fp.snapshot_slug,
+                                        occurrence_id=fp_occ.occurrence_id,
+                                        file_path=relevant_file,
+                                    )
+                                )
+                        updated += 1
+                        total += 1
+                    else:
+                        total += 1
+
+            session.flush()
+        except Exception as e:
+            savepoint.rollback()
+            if not collect_errors:
+                raise
+            if isinstance(e, SyncValidationError):
+                errors.extend(e.errors)
+            else:
+                errors.append(f"{slug}: {e}")
+            failed_slugs.add(slug)
+        else:
+            savepoint.commit()
+
+    # Delete orphaned issues (in DB but not in source, skip failed slugs)
     for key in set(existing_issues.keys()) - seen_issue_keys:
+        if key[0] in failed_slugs:
+            continue
         logger.info(f"Deleting orphaned issue: {key[0]}/{key[1]}")
         session.delete(existing_issues[key])
         deleted += 1
 
-    # Delete orphaned FPs (in DB but not in source)
+    # Delete orphaned FPs (in DB but not in source, skip failed slugs)
     for key in set(existing_fps.keys()) - seen_fp_keys:
+        if key[0] in failed_slugs:
+            continue
         logger.info(f"Deleting orphaned false positive: {key[0]}/{key[1]}")
         session.delete(existing_fps[key])
         deleted += 1
 
-    session.commit()
+    session.flush()
     logger.info(f"Issues synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
+
+    if errors:
+        raise SyncValidationError(errors, failed_slugs=failed_slugs)
+
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
@@ -549,7 +579,7 @@ def sync_snapshot_files_to_db(session: Session, slugs: list[SnapshotSlug]) -> Sy
         session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, file_path=file_path).delete()
         deleted += 1
 
-    session.commit()
+    session.flush()
     logger.info(f"Snapshot files synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
@@ -692,7 +722,7 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
         ).delete(synchronize_session=False)
         critic_scopes_expected_to_recall_deleted = len(triggers_to_delete)
 
-    session.commit()
+    session.flush()
     logger.info(
         "File sets synced: +%d added, -%d deleted; critic_scopes_expected_to_recall +%d, -%d",
         file_sets_added,
@@ -802,7 +832,12 @@ class FullSyncResult:
 
 
 def sync_all(
-    session: Session, *, config: PropsConfig | None = None, use_staged: bool = False, dry_run: bool = False
+    session: Session,
+    *,
+    config: PropsConfig | None = None,
+    use_staged: bool = False,
+    dry_run: bool = False,
+    collect_errors: bool = False,
 ) -> FullSyncResult:
     """Sync snapshots, issues, files, file sets, and model metadata.
 
@@ -815,6 +850,9 @@ def sync_all(
     3. issues (depends on snapshots)
     4. file_sets (depends on snapshot_files and issues via FK)
     5. model_metadata (independent, but needs config for custom models)
+
+    When collect_errors is True, stages 3-4 collect per-snapshot errors instead
+    of failing on the first one. The entire transaction is rolled back on any failure.
     """
     with tracer.start_as_current_span("sync_all"):
         specimens_dir = get_specimens_base_path()
@@ -835,14 +873,23 @@ def sync_all(
         snapshot_file_stats = sync_snapshot_files_to_db(session, slugs)
         print(f"  {snapshot_file_stats.summary_text}")
 
-        # 3. Sync issues (true_positives/false_positives)
+        # 3. Sync issues (collect errors per-snapshot when enabled)
+        all_errors: list[str] = []
+        failed_slugs: set[SnapshotSlug] = set()
+
         print("Syncing issues...")
-        issue_stats = sync_issues_to_db(session, slugs, specimens_dir)
+        try:
+            issue_stats = sync_issues_to_db(session, slugs, specimens_dir, collect_errors=collect_errors)
+        except SyncValidationError as e:
+            all_errors.extend(e.errors)
+            failed_slugs.update(e.failed_slugs)
+            issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
         print(f"  {issue_stats.summary_text}")
 
-        # 4. Sync file sets (examples VIEW is derived from these automatically)
+        # 4. Sync file sets (skip failed slugs from stage 3)
+        remaining_slugs = [s for s in slugs if s not in failed_slugs]
         print("Syncing file sets...")
-        file_set_stats = sync_file_sets_to_db(session, slugs, specimens_dir)
+        file_set_stats = sync_file_sets_to_db(session, remaining_slugs, specimens_dir)
         print(f"  {file_set_stats.summary_text}")
 
         # 5. Sync model metadata
@@ -850,9 +897,15 @@ def sync_all(
         model_metadata_stats = sync_model_metadata_with_session(session, config)
         print(f"  {model_metadata_stats.summary_text}")
 
+        # Final commit/rollback
+        if all_errors:
+            session.rollback()
+            raise SyncValidationError(all_errors, failed_slugs=failed_slugs)
         if dry_run:
             logger.info("DRY-RUN: Rolling back all changes")
             session.rollback()
+        else:
+            session.commit()
 
         return FullSyncResult(
             snapshot_stats=snapshot_stats,

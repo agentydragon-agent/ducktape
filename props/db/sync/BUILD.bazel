@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
@@ -6,41 +6,16 @@ load("//tools/testing:docker.bzl", "docker_py_test")
 # =============================================================================
 
 py_library(
-    name = "_models",
-    srcs = ["_models.py"],
+    name = "yaml_loader",
+    srcs = ["yaml_loader.py"],
     imports = ["../../.."],
     visibility = ["//props/db:__subpackages__"],
     deps = [
-        "//props/core:ids",
-        "//props/core/models:true_positive",
-        "//props/core/models:types",
-    ],
-)
-
-py_library(
-    name = "_yaml_models",
-    srcs = ["_yaml_models.py"],
-    imports = ["../../.."],
-    visibility = ["//props/db:__subpackages__"],
-    deps = [
-        ":_models",
         "//props/core:ids",
         "//props/core/models:true_positive",
         "//props/core/models:types",
         "@pypi//more_itertools",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "_yaml",
-    srcs = ["_yaml.py"],
-    imports = ["../../.."],
-    visibility = ["//props/db:__subpackages__"],
-    deps = [
-        ":_models",
-        ":_yaml_models",
-        "//props/core:ids",
         "@pypi//pyyaml",
     ],
 )
@@ -75,8 +50,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":_yaml",
         ":loader",
+        ":yaml_loader",
         "//openai_utils:model_metadata",
         "//props:config",
         "//props/core:ids",
@@ -108,6 +83,21 @@ docker_py_test(
         "//props/db:examples",
         "//props/db:models",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_collect_errors",
+    srcs = ["test_collect_errors.py"],
+    imports = ["../../.."],
+    deps = [
+        ":yaml_loader",
+        "//props:conftest",
+        "//props/core:ids",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

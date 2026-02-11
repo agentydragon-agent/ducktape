@@ -133,11 +133,15 @@ py_test(
 docker_py_test(
     name = "test_production_specimens",
     srcs = ["test_production_specimens.py"],
+    # TODO: Specimens dir is .bazelignored because snapshot code/ dirs contain
+    # BUILD.bazel files that create spurious Bazel packages, blocking glob().
+    # Test reads from source tree via Path.resolve() + local=True. This prevents
+    # RBE and loses Bazel cache invalidation on specimen changes. To fix: find a
+    # way to include specimens as Bazel data without treating their BUILD files
+    # as packages (Bazel doesn't support this natively as of 2026-02).
     imports = ["../.."],
-    tags = [
-        "integration",
-        "requires_production_specimens",
-    ],
+    local = True,
+    tags = ["integration"],
     deps = [
         ":splits",
         "//props:conftest",
@@ -146,11 +150,13 @@ docker_py_test(
         "//props/db:models",
         "//props/db:setup",
         "//props/db/sync",
+        "//test_util:image_loader",
+        "//third_party/containers:rlocations",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 
