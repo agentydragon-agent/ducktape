@@ -1,5 +1,7 @@
 {
-  pkgs ? import <nixpkgs> { },
+  pkgs ? import <nixpkgs> {
+    config.allowUnfreePredicate = pkg: builtins.elem (pkg.pname or "") [ "packer" ];
+  },
 }:
 let
   # Pin to nixpkgs-unstable for latest kubeseal
@@ -17,7 +19,7 @@ pkgs.mkShell {
     pkgs.nodePackages.prettier # For YAML formatting
     pkgs.tflint
     pkgs.hcloud # Hetzner Cloud CLI
-    pkgs.packer # Packer for building Hetzner Talos snapshots
+    pkgs.packer # Packer for building Hetzner Talos snapshots (BSL license)
     pkgs.awscli2 # AWS CLI for Route 53 management
     pkgs.yq-go # YAML/JSON conversion tool
     pkgs.popeye # Kubernetes cluster health checker
