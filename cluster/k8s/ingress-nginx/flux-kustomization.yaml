@@ -14,6 +14,7 @@ spec:
   wait: true
   dependsOn:
     - name: cert-manager # Wait for cert-manager for TLS certificates
+    - name: kyverno # Kyverno VWC must be operational before creating resources
   # Verify ingress-nginx DaemonSet is ready (runs on VPS nodes with hostNetwork)
   healthChecks:
     - apiVersion: v1
