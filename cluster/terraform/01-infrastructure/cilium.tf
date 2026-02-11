@@ -31,11 +31,30 @@ resource "helm_release" "cilium_bootstrap" {
   force_update    = false
   reset_values    = false
 
+  # Workaround: Helm provider v3 + OpenTofu plan consistency bug.
+  # Optional bool attributes return null during plan but real defaults during apply.
+  # Explicitly setting them avoids "Provider produced inconsistent final plan".
+  # String fields (description, keyring) can't be set to "" (provider nullifies them).
+  # Tracking: https://github.com/hashicorp/terraform-provider-helm/pull/1739
+  pass_credentials           = false
+  render_subchart_notes      = true
+  dependency_update          = false
+  replace                    = false
+  disable_webhooks           = false
+  disable_crd_hooks          = false
+  skip_crds                  = false
+  recreate_pods              = false
+  lint                       = false
+  reuse_values               = false
+  disable_openapi_validation = false
+  verify                     = false
+  devel                      = false
+
   # Prevent accidental networking breakage
   lifecycle {
     ignore_changes = [
       version,
-      values
+      values,
     ]
   }
 

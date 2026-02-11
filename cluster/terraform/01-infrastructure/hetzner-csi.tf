@@ -56,6 +56,22 @@ resource "helm_release" "hcloud_csi" {
     })
   ]
 
+  # Workaround: Helm provider v3 + OpenTofu plan consistency bug.
+  # https://github.com/hashicorp/terraform-provider-helm/pull/1739
+  pass_credentials           = false
+  render_subchart_notes      = true
+  dependency_update          = false
+  replace                    = false
+  disable_webhooks           = false
+  disable_crd_hooks          = false
+  skip_crds                  = false
+  recreate_pods              = false
+  lint                       = false
+  reuse_values               = false
+  disable_openapi_validation = false
+  verify                     = false
+  devel                      = false
+
   depends_on = [
     kubernetes_secret.hcloud_csi,
     null_resource.add_hcloud_repo,
