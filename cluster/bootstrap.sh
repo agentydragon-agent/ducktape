@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TERRAFORM_DIR="${SCRIPT_DIR}/terraform"
 
 # Timestamp function for all output
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" }
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # Parse command line arguments
 START_FROM_LAYER=""
@@ -172,17 +172,10 @@ if ! tofu apply -auto-approve; then
   exit 1
 fi
 
-log "⏳ Waiting for Authentik deployment..."
-timeout 300 bash -c 'until kubectl get deployment authentik -n authentik-system 2>/dev/null; do sleep 10; done'
-kubectl wait --for=condition=available deployment/authentik -n authentik-system --timeout=600s
-
-log "⏳ Waiting for PowerDNS deployment..."
-timeout 300 bash -c 'until kubectl get deployment powerdns -n powerdns-system 2>/dev/null; do sleep 10; done'
-kubectl wait --for=condition=available deployment/powerdns -n powerdns-system --timeout=600s
-
-log "⏳ Waiting for PowerDNS API..."
-CLUSTER_VIP="10.2.3.1" # TODO: Get from terraform output
-timeout 300 bash -c "until curl -sf http://${CLUSTER_VIP}:8081/api/v1/servers; do sleep 5; done"
+log "⏳ Waiting for Authentik and PowerDNS..."
+kubectl wait --for=condition=available deployment/authentik -n authentik-system --timeout=600s &
+kubectl wait --for=condition=available deployment/powerdns -n powerdns-system --timeout=600s &
+wait
 
 log "✅ Services layer ready"
 
