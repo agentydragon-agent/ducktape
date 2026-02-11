@@ -65,7 +65,7 @@ This creates:
 
 ```bash
 export HCLOUD_TOKEN="your-hetzner-api-token"
-./bootstrap.py
+bazel run //cluster:bootstrap
 ```
 
 The bootstrap script executes a 3-phase layered deployment:

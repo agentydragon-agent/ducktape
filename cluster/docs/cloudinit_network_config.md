@@ -108,7 +108,7 @@ git commit -m "feat: add cloud-init network config option for Proxmox nodes
    ```bash
    cd terraform/01-infrastructure
    terraform destroy -auto-approve
-   ./bootstrap.py
+   bazel run //cluster:bootstrap
    ```
 
 3. **Verify**:

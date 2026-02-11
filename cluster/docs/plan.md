@@ -4,50 +4,96 @@
 
 ## 🔥 Immediate Next Steps
 
-Bootstrap stalled at 36/64 Ready. VPS DNS fix is committed (`3d170032`) but
-the current cluster was bootstrapped before the fix. Need full destroy → bootstrap.
+**Status**: Cluster torn down. Blocked on VPS KubeSpan identity collision.
 
-### Blockers
+### Problem: VPS KubeSpan Mesh Broken — Shared Node Identity
 
-1. **Proxmox unreachable** — `terraform destroy` / `bootstrap.py` requires
-   SSH to atlas (10.2.0.2). Only works from home network.
-2. **Terraform state locked** — stale lock from previous `bootstrap.py` run
-   (ID `1daa1d90-179e-77ee-0670-3fbbdd61f102`). Needs `tofu force-unlock`.
+Last bootstrap (2026-02-11) stalled at 34/64 Ready. Only 1 of 4 nodes joined
+Kubernetes. Root cause: **KubeSpan mesh completely non-functional**.
 
-### When on Home Network
+**Observed symptoms**:
 
-```bash
-cd terraform/01-infrastructure
-tofu force-unlock -force 1daa1d90-179e-77ee-0670-3fbbdd61f102
-tofu destroy -auto-approve
-cd ../..
-./bootstrap.py
-```
+- Both VPS member entries in Talos discovery showed the **same IP** (crossed/wrong IPs)
+- All KubeSpan peers stuck in `state: unknown`, zero WireGuard handshakes
+- `pve-cp-0` etcd crash-looping: "cannot fetch cluster info from peer urls: EOF"
+- `vps-cp-1` etcd stuck in "Preparing" — waiting to join
+- Phantom KubeSpan address (`fd05:...:4b69`) not matching any current node
+- Only 1 of 4 nodes visible in `kubectl get nodes`
 
-### What to Verify After Bootstrap
+**Suspected root cause (unconfirmed)**: Both VPS nodes boot from the **same
+Hetzner snapshot** (built by Packer via rescue+dd of a single Talos Image Factory
+image). This _might_ cause shared Talos node identity or shared KubeSpan identity,
+but we do not have positive confirmation of identity collision. We only know
+KubeSpan ended up in a broken state.
 
-1. **VPS DNS resolution** — containerd can pull images on VPS nodes:
-   ```bash
-   talosctl -n <vps-ip> -e <vps-ip> image pull docker.io/library/alpine:3.19
-   ```
-2. **No KubeSpan phantom peers** — single identity per node:
+### How Talos Installation Currently Works
+
+| Node type   | Image source             | Disk mechanism                  | Identity isolation            |
+| ----------- | ------------------------ | ------------------------------- | ----------------------------- |
+| Hetzner VPS | Packer snapshot (shared) | Both servers boot same snapshot | **Unknown — likely broken**   |
+| Proxmox     | QCOW2 download (shared)  | `import_from` copies per-VM     | Each VM gets independent disk |
+
+**VPS flow**: Image Factory → raw.xz → Packer dd's to `/dev/sda` in rescue mode
+→ snapshot → both `hcloud_server.vps` boot from it.
+
+**Proxmox flow**: Image Factory → QCOW2 → `proxmox_virtual_environment_download_file`
+→ `import_from` (copies per VM) → each VM boots independent disk.
+
+Proxmox nodes get unique identities because `import_from` creates a copy. Hetzner
+nodes share the exact same disk content from the snapshot.
+
+### Research Needed
+
+1. **When does Talos initialize `node-identity.yaml`?** During image build, or
+   on first boot? If on first boot, the snapshot should be identity-free and both
+   VPS nodes should get unique identities. If it's in the image, that's the bug.
+
+2. **Is the collision in node identity or KubeSpan identity?** KubeSpan ULA
+   address is derived from `ClusterID + first NIC MAC`. If both VPS nodes happen
+   to get the same MAC from Hetzner (unlikely but possible), that would collide
+   independently of node identity.
+
+3. **Could stale discovery entries cause this?** The cluster ID (from persistent
+   machine secrets in layer 00) survives destroy/recreate. Old node registrations
+   at `discovery.talos.dev` may poison the mesh for new incarnations.
+
+4. **What changed in last 48 hours?** Commit `4a82c185a` switched VPS from ISO
+   boot to Packer snapshot boot. This is the most likely change that introduced
+   the identity sharing.
+
+### Proposed Fix: Per-Node Packer Snapshots
+
+Generate independent Hetzner snapshots per VPS node. Each Packer build creates a
+separate snapshot → separate disk content → separate identity initialization.
+
+**TODO**: This is a **workaround without full understanding** of the root cause.
+We do not have positive confirmation that shared identity is the problem — we
+only observed broken KubeSpan state with crossed IPs. The research questions
+above should be answered first to determine whether per-node snapshots actually
+fix the issue, or if the root cause is something else entirely (stale discovery
+entries, MAC collision, timing issue, etc.).
+
+### After Fix: What to Verify
+
+1. **Unique KubeSpan identities** — each node has distinct peer address:
    ```bash
    talosctl -n <vps-ip> -e <vps-ip> get kubespanpeerstatuses
    # Expect: exactly 3 peers, all "up", no duplicates
    ```
-3. **cert-manager challenges resolve** — SOA lookup returns NOERROR:
+2. **VPS DNS resolution** — containerd can pull images:
+   ```bash
+   talosctl -n <vps-ip> -e <vps-ip> image pull docker.io/library/alpine:3.19
+   ```
+3. **Full convergence** — all 64 kustomizations Ready
+4. **cert-manager challenges resolve**:
    ```bash
    dig @8.8.8.8 SOA _acme-challenge.vault.allegedly.works
    ```
-4. **Full convergence** — all 64 kustomizations Ready
-5. **Kyverno webhook** — no context deadline exceeded errors
 
 ### Known Issues to Watch
 
-- **BuildBuddy executor** `Failed` — pinned to Proxmox nodes
-  (`topology.kubernetes.io/region: proxmox`), may need resource adjustment
+- **BuildBuddy executor** `Failed` — pinned to Proxmox nodes, may need resource adjustment
 - **Kyverno webhook timeouts** — may be cross-node networking transient
-  (same root cause as original investigation, but post-DNS-fix should be better)
 
 ---
 
@@ -226,7 +272,7 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 
 ### Phase 1: Cluster Bootstrap
 
-1. [ ] Run `./bootstrap.py` to create VPS nodes (new public IPs assigned)
+1. [ ] Run `bazel run //cluster:bootstrap` to create VPS nodes (new public IPs assigned)
 2. [ ] Verify VPS IPs in ConfigMap:
    ```bash
    kubectl get configmap cluster-info -n kube-system -o jsonpath='{.data.vps_nodes}' | jq
