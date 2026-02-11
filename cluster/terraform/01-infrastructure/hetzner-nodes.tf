@@ -156,12 +156,8 @@ data "talos_machine_configuration" "vps" {
         proxy = { disabled = true }
       }
     }),
-    # Talos v1.12 multi-document config (replaces deprecated machine.network.hostname)
-    yamlencode({
-      apiVersion = "v1alpha1"
-      kind       = "HostnameConfig"
-      hostname   = each.value.name
-    }),
+    # Hostname: hcloud platform auto-detects from server name (hcloud_server.vps.name)
+    # Do NOT add explicit HostnameConfig — conflicts with platform's auto hostname
   ]
 }
 
