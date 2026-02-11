@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "bootstrap_lib",
@@ -9,6 +9,7 @@ py_library(
         "//bazel_util:workspace",
         "//cluster/scripts:runfiles_util",
         "@pypi//kubernetes",
+        "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//tenacity",
     ],
@@ -19,4 +20,15 @@ py_binary(
     data = ["@multitool//tools/tofu"],
     main_module = "cluster.bootstrap",
     deps = [":bootstrap_lib"],
+)
+
+py_test(
+    name = "test_bootstrap",
+    srcs = ["test_bootstrap.py"],
+    data = ["@multitool//tools/tofu"],
+    imports = [".."],
+    deps = [
+        ":bootstrap_lib",
+        "@pypi//pytest_bazel",
+    ],
 )
