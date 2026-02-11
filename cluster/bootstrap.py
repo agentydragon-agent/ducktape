@@ -234,24 +234,51 @@ def _check_convergence(v1: client.CoreV1Api, bootstrap_ip: str, talosconfig: Pat
 
 
 def _check_cilium_health(v1: client.CoreV1Api) -> bool:
-    """Check Cilium health by execing into a cilium pod."""
+    """Check Cilium health from ALL nodes to verify full mesh connectivity.
+
+    A single-pod check only verifies connectivity from that pod's node. During
+    bootstrap, other node pairs (e.g., vps-cp-1 → pve-worker-0) may still have
+    unstable VXLAN tunnels. Checking from every cilium pod ensures the full mesh
+    is healthy before proceeding.
+    """
     pods = v1.list_namespaced_pod("kube-system", label_selector="k8s-app=cilium")
     if not pods.items:
         return False
-    try:
-        health = stream(
-            v1.connect_get_namespaced_pod_exec,
-            pods.items[0].metadata.name,
-            "kube-system",
-            command=["cilium-health", "status"],
-            stderr=True,
-            stdin=False,
-            stdout=True,
-            tty=False,
-        )
-    except ApiException:
-        return False
-    return "OK" in health and not any(bad in health for bad in ("unreachable", "refused", "timeout"))
+    for pod in pods.items:
+        try:
+            output = stream(
+                v1.connect_get_namespaced_pod_exec,
+                pod.metadata.name,
+                "kube-system",
+                command=["cilium-health", "status", "-o", "json"],
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+            )
+        except ApiException:
+            return False
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            log.info("  Cilium health unparseable on %s", pod.spec.node_name)
+            return False
+        for node in data.get("nodes", []):
+            for section in ("host", "health-endpoint"):
+                addr = node.get(section, {}).get("primary-address", {})
+                for proto in ("icmp", "http"):
+                    status = addr.get(proto, {}).get("status", "")
+                    if status != "":
+                        log.info(
+                            "  Cilium: %s → %s %s/%s: %s",
+                            pod.spec.node_name,
+                            node.get("name", "?"),
+                            section,
+                            proto,
+                            status,
+                        )
+                        return False
+    return True
 
 
 def deploy_services() -> None:

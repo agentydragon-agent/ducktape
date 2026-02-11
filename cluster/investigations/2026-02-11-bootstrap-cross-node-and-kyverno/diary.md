@@ -440,3 +440,80 @@ the webhook timeout that triggered this investigation.
 
 **Long-term**: Option H (rescue+dd) — eliminates the dual-identity root cause,
 makes VPS boot flow consistent with Proxmox.
+
+---
+
+## 2026-02-10 — Convergence Check Bug Found and Fixed
+
+### Kyverno Source Code Analysis
+
+Cross-referenced kyverno source (`/code/github.com/kyverno/kyverno`) against
+commit `8204c99a5` claims. Key findings:
+
+**Readiness probe only checks certificate validity** — NOT webhook operational:
+
+- `pkg/utils/runtime/utils.go:52`: `IsReady()` calls `validateCertificates()`
+- `pkg/tls/renewer.go:180-190`: Checks CA+TLS secrets exist and aren't expired
+- Does NOT check: TCP listener ready, VWC created, API server loaded VWC
+
+**VWC creation is async** — happens in controller worker thread after leader election:
+
+- `cmd/kyverno/main.go:922`: `server.Run()` starts TLS server in background goroutine
+- `cmd/kyverno/main.go:934`: `le.Run()` blocks on leader election
+- `pkg/controllers/webhook/controller.go:621-634`: VWC created in worker goroutine
+
+**So the claim "VWC existence = webhook ready" was partially correct**: the VWC
+is only created after certs are ready and the TLS server has started. But there's
+still a gap — the API server needs time to load the VWC and start routing requests.
+
+### However: The VWC Check Was NOT the Bug
+
+The Flux healthCheck for VWC existence was passing correctly — kyverno WAS
+operationally ready when Flux said so. The diary timeline confirms:
+
+- 05:12:33: Kyverno HelmRelease InstallSucceeded
+- 05:12:36: Kyverno kustomization health check passed (VWC exists)
+- 05:12:47: tofu-controller install failed — webhook timeout
+
+The webhook was registered and kyverno was serving. The failure was cross-node
+VXLAN connectivity: TLS handshake EOF from vps-cp-1 → pve-worker-0.
+
+### The Real Bug: Single-Pod Cilium Health Check
+
+`bootstrap.py` had `wait_for_convergence()` which checked Cilium health, but
+`_check_cilium_health()` only exec'd into `pods.items[0]` — the **first** cilium
+pod. This verified connectivity from ONE node only.
+
+If the first pod was on vps-cp-0, the check verified:
+
+- vps-cp-0 → vps-cp-1: OK
+- vps-cp-0 → pve-cp-0: OK
+- vps-cp-0 → pve-worker-0: OK
+
+But it DID NOT verify:
+
+- **vps-cp-1 → pve-worker-0**: UNSTABLE (the exact path that failed!)
+
+### Fix Applied
+
+Changed `_check_cilium_health()` to iterate over ALL cilium pods and check
+health from each one using structured JSON output (`cilium-health status -o json`).
+
+JSON structure (from `api/v1/health/models/`):
+
+- `nodes[].host.primary-address.{icmp,http}.status` — empty when healthy, error msg when not
+- `nodes[].health-endpoint.primary-address.{icmp,http}.status` — same
+
+The `status` field uses Go's `omitempty` tag — absent in JSON when healthy, present
+with error message when unhealthy. This eliminates the previous string-matching
+approach ("OK" in output, no "unreachable"/"timeout").
+
+### Summary
+
+| Component                | Was it the bug? | Notes                              |
+| ------------------------ | --------------- | ---------------------------------- |
+| Kyverno VWC healthCheck  | No              | Correctly gates on VWC existence   |
+| dependsOn: kyverno       | No              | core/ingress-nginx already have it |
+| Kyverno internal certs   | No              | VWC creation timing is correct     |
+| `_check_cilium_health()` | **YES**         | Only checked from first pod        |
+| KubeSpan dual-identity   | Contributing    | Slows pve-worker-0 convergence     |
