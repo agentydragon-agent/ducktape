@@ -139,7 +139,7 @@ def deploy_persistent_auth() -> None:
 def deploy_infrastructure() -> None:
     log.info("Layer 1: Infrastructure Deployment")
     log.info("Deploying infrastructure (VMs, Talos, Cilium, sealed-secrets)...")
-    tofu(Layer.INFRASTRUCTURE, "apply", "-auto-approve")
+    tofu(Layer.INFRASTRUCTURE, "apply", "-auto-approve", timeout=1800)
 
     kubeconfig = Layer.INFRASTRUCTURE.tf_dir / "kubeconfig"
     os.environ["KUBECONFIG"] = str(kubeconfig)
