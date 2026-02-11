@@ -4,7 +4,7 @@ metadata:
   name: kagent-ui
   namespace: kagent
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "letsencrypt"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     # Authentik forward auth - use dedicated kagent outpost
     nginx.ingress.kubernetes.io/auth-url: "http://ak-outpost-kagent-outpost.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/nginx"

@@ -5,7 +5,7 @@ metadata:
   namespace: headscale
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: "letsencrypt"
     external-dns.alpha.kubernetes.io/hostname: headscale.allegedly.works
     # Pass through WebSocket connections for DERP
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"

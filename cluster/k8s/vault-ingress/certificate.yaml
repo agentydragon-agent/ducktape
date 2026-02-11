@@ -8,7 +8,7 @@ metadata:
 spec:
   secretName: vault-ingress-tls
   issuerRef:
-    name: letsencrypt-prod
+    name: letsencrypt
     kind: ClusterIssuer
   dnsNames:
     - vault.allegedly.works
