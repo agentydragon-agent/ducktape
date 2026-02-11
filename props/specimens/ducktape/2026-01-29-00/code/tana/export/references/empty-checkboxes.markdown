@@ -1,7 +1,0 @@
-Exercise
-=====
-
-- [ ] ball
-- [ ] elastic band open
-- [ ] elastic band closed
-- [ ] shoe inserts (inlays) - for arch collapse
