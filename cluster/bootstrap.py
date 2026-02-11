@@ -1,11 +1,7 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["kubernetes>=32.0", "tenacity>=9.0"]
-# ///
 """Layered Talos cluster bootstrap.
 
 This is the ONLY supported way to bootstrap the cluster.
+Run via: bazel run //cluster:bootstrap
 
 Multi-layer deployment with persistent auth separation:
   Layer 0: Persistent Auth (CSI tokens, sealed secrets keypair)
@@ -27,7 +23,13 @@ from kubernetes.client import ApiException
 from kubernetes.stream import stream
 from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 
-SCRIPT_DIR = Path(__file__).parent.resolve()
+from bazel_util.workspace import get_build_workspace_directory
+from cluster.scripts.runfiles_util import resolve_path
+
+_TOFU_BIN = resolve_path("multitool/tools/tofu/tofu")
+
+
+SCRIPT_DIR = get_build_workspace_directory() / "cluster"
 TERRAFORM_DIR = SCRIPT_DIR / "terraform"
 
 logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
@@ -60,16 +62,16 @@ def run(
 
 
 def tofu(layer: Layer, *args: str, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    return run(["tofu", *args], cwd=layer.tf_dir, timeout=timeout)
+    return run([_TOFU_BIN, *args], cwd=layer.tf_dir, timeout=timeout)
 
 
 def tofu_output(layer: Layer, name: str) -> str:
-    result = run(["tofu", "output", "-raw", name], cwd=layer.tf_dir, capture=True)
+    result = run([_TOFU_BIN, "output", "-raw", name], cwd=layer.tf_dir, capture=True)
     return result.stdout.strip()
 
 
 def tofu_state_has_resources(layer: Layer) -> bool:
-    result = run(["tofu", "show", "-json"], cwd=layer.tf_dir, capture=True, check=False)
+    result = run([_TOFU_BIN, "show", "-json"], cwd=layer.tf_dir, capture=True, check=False)
     if result.returncode != 0:
         return False
     resources = json.loads(result.stdout).get("values", {}).get("root_module", {}).get("resources", [])
@@ -90,12 +92,6 @@ def parse_json_objects(text: str) -> list[dict]:
         except json.JSONDecodeError:
             idx += 1
     return results
-
-
-def repo_root() -> Path:
-    # Run from parent dir — cluster/.git may be a phantom file from sandbox
-    result = run(["git", "rev-parse", "--show-toplevel"], cwd=SCRIPT_DIR / "..", capture=True)
-    return Path(result.stdout.strip())
 
 
 def preflight(root: Path) -> None:
@@ -280,7 +276,7 @@ def main() -> None:
     os.environ["PIP_USER"] = "false"
     os.environ["PRE_COMMIT_USE_UV"] = "1"
 
-    root = repo_root()
+    root = SCRIPT_DIR.parent
 
     start_layer = {"infrastructure": Layer.INFRASTRUCTURE, "services": Layer.SERVICES}.get(
         args.start_from, Layer.PERSISTENT_AUTH

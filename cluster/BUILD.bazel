@@ -1,0 +1,21 @@
+# gazelle:ignore
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "bootstrap_lib",
+    srcs = ["bootstrap.py"],
+    deps = [
+        "//bazel_util:workspace",
+        "//cluster/scripts:runfiles_util",
+        "@pypi//kubernetes",
+        "@pypi//tenacity",
+    ],
+)
+
+py_binary(
+    name = "bootstrap",
+    data = ["@multitool//tools/tofu"],
+    main_module = "cluster.bootstrap",
+    deps = [":bootstrap_lib"],
+)
