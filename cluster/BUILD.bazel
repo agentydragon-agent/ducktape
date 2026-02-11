@@ -9,6 +9,7 @@ py_library(
         "//bazel_util:workspace",
         "//cluster/scripts:runfiles_util",
         "@pypi//kubernetes",
+        "@pypi//pygit2",
         "@pypi//tenacity",
     ],
 )

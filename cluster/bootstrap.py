@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from enum import IntEnum
 from pathlib import Path
 
+import pygit2
 from kubernetes import client, config
 from kubernetes.client import ApiException
 from kubernetes.stream import stream
@@ -97,13 +98,17 @@ def parse_json_objects(text: str) -> list[dict]:
 def preflight(root: Path) -> None:
     log.info("Phase 0: Preflight Validation")
 
-    result = run(["git", "diff-index", "--quiet", "HEAD", "--", "cluster/"], cwd=root, check=False)
-    if result.returncode != 0:
-        raise SystemExit("Git working tree is not clean in cluster/. Commit or stash changes before bootstrap.")
+    # Only GitOps-managed paths need to be committed (Flux fetches from git).
+    # Terraform, scripts, docs, and bootstrap.py itself run locally.
+    repo = pygit2.Repository(root)
+    gitops_prefixes = ("cluster/k8s/", "cluster/charts/", "cluster/flux-system/")
+    diff = repo.index.diff_to_tree(repo.head.peel(pygit2.Tree))
+    dirty = [d.delta.new_file.path for d in diff if d.delta.new_file.path.startswith(gitops_prefixes)]
+    if dirty:
+        raise SystemExit(f"Uncommitted changes in GitOps paths: {', '.join(dirty)}. Commit or stash before bootstrap.")
 
     log.info("Running pre-commit validation on cluster files...")
-    cluster_files_result = run(["git", "ls-files", "--", "cluster/"], cwd=root, capture=True)
-    files = cluster_files_result.stdout.strip().split("\n")
+    files = [e.path for e in repo.index if e.path.startswith("cluster/")]
     run(["pre-commit", "run", "--files", *files], cwd=root)
 
     for layer in Layer:
@@ -133,7 +138,7 @@ def deploy_infrastructure() -> None:
     kubeconfig = Layer.INFRASTRUCTURE.tf_dir / "kubeconfig"
     os.environ["KUBECONFIG"] = str(kubeconfig)
 
-    config.load_kube_config(kubeconfig)
+    config.load_kube_config(str(kubeconfig))
     v1 = client.CoreV1Api()
 
     log.info("Verifying cluster access...")
