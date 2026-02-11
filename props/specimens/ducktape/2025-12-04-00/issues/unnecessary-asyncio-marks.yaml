@@ -1,0 +1,86 @@
+rationale: |
+  The test suite has `asyncio_mode = "auto"` configured in pyproject.toml, which means
+  pytest-asyncio automatically detects and runs async test functions without requiring
+  explicit `@pytest.mark.asyncio` decorators.
+
+  From pyproject.toml:196:
+    asyncio_mode = "auto"
+
+  With this setting, all `@pytest.mark.asyncio` marks are redundant and should be removed.
+  pytest-asyncio's auto mode will automatically:
+  - Detect async def test functions
+  - Create appropriate event loops
+  - Run them as async tests
+
+  The marks add visual noise and maintenance burden (must remember to add them) without
+  providing any value when auto mode is enabled.
+
+  This affects numerous test files across the codebase. Here are representative examples
+  showing the pattern:
+
+  - test_compaction.py: 4 unnecessary marks
+  - test_preset_policy_loading.py: 6 unnecessary marks
+  - test_bundle_validation.py: 5 unnecessary marks
+  - test_agents_server.py: 5 unnecessary marks
+  - test_integration.py: 13 unnecessary marks
+  - And many more across the test suite
+
+  All of these marks should be removed since they're redundant with auto mode.
+
+  Reference: https://pytest-asyncio.readthedocs.io/en/latest/reference/configuration.html#asyncio-mode
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/agent/test_compaction.py:
+        - - 39
+          - 39
+        - - 92
+          - 92
+        - - 119
+          - 119
+        - - 149
+          - 149
+    note: Four unnecessary asyncio marks
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/test_compaction.py
+    match_file_restriction:
+      - adgn/tests/agent/test_compaction.py
+  - occurrence_id: occ-1
+    files:
+      adgn/tests/mcp/approval_policy/test_preset_policy_loading.py:
+        - - 59
+          - 59
+        - - 79
+          - 79
+        - - 98
+          - 98
+        - - 112
+          - 112
+        - - 132
+          - 132
+        - - 149
+          - 149
+    note: Six unnecessary asyncio marks
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/approval_policy/test_preset_policy_loading.py
+    match_file_restriction:
+      - adgn/tests/mcp/approval_policy/test_preset_policy_loading.py
+  - occurrence_id: occ-2
+    files:
+      adgn/tests/props/bundles/test_bundle_validation.py:
+        - - 101
+          - 101
+        - - 117
+          - 117
+        - - 131
+          - 131
+        - - 154
+          - 154
+        - - 195
+          - 195
+    note: Five unnecessary asyncio marks
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/props/bundles/test_bundle_validation.py
+    match_file_restriction:
+      - adgn/tests/props/bundles/test_bundle_validation.py

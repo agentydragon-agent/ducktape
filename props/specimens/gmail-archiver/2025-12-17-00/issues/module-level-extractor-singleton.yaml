@@ -1,0 +1,24 @@
+rationale: |
+  Module-level singleton creates hidden global state:
+
+      _extractor = EmailTemplateExtractor()
+
+  This instantiates an OpenAI client and cache at import time. Problems:
+  - Hidden dependency (not visible in function/class signatures)
+  - Hard to test (can't inject mock extractor)
+  - Imports have side effects (client creation, env var access)
+  - Can't configure differently per use case
+
+  Fix: Use dependency injection - pass EmailTemplateExtractor into
+  DbsaEventPlanner.__init__() and store as instance attribute. The caller
+  (autoclean_inbox) creates one extractor and passes it to planners that need it.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/dbsa.py:
+        - [20, 20]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/dbsa.py]

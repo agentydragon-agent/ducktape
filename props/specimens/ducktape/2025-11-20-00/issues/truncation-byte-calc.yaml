@@ -1,0 +1,16 @@
+rationale: |
+  `_truncate_text` (line 132) reports truncated bytes as
+  `len(s.encode('utf-8')) - len(raw)`. At this point `s` was just decoded from
+  `raw` (line 131), so re-encoding it produces nearly the same byte count —
+  the difference is at most a few bytes from `errors="replace"` substituting
+  broken trailing bytes with U+FFFD. The message always says something like
+  "truncated (+0 bytes)" or "+3 bytes" instead of the actual amount removed.
+  The original byte length should be captured before truncation.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/event_renderer.py:
+        - [128, 132] # encode → truncate → decode → re-encode ≈ same size
+    critic_scopes_expected_to_recall:
+      - [adgn/src/adgn/agent/event_renderer.py]

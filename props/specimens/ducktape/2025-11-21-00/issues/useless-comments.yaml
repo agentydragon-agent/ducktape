@@ -1,0 +1,68 @@
+rationale: |
+  Comments that add no value: either restating obvious code or providing
+  incorrect information about field requirements.
+
+  **Pattern 1: Obvious operation comments** (agents.py:785-792)
+  Lines 785-792 have three comments that merely restate simple operations:
+  generating an agent ID, calling create_agent, and returning a brief.
+  Function already has a docstring; these add noise without information.
+
+  **Pattern 2: Incorrect "REQUIRED" comments** (persist/__init__.py)
+  Three Pydantic models claim "All fields are REQUIRED" but have optional
+  fields with defaults (e.g., Decision.reason has default None). Pydantic
+  type annotations already define requirements; comments contradict the code.
+
+  Problems: noise obscures actual code, comments become stale/incorrect as code
+  evolves, code and type annotations already show what's required.
+
+  Fix: Delete these comments. Code operations and Pydantic annotations are
+  self-documenting. Comments should explain WHY, not restate WHAT.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - - 785
+          - 792
+        - - 785
+          - 785
+        - - 787
+          - 787
+        - - 788
+          - 788
+        - - 790
+          - 790
+        - - 791
+          - 791
+    note: "Obvious operation comments restating generate ID, call create_agent, return brief"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [292, 294]
+    note: Comment "Strict mapping; surface invalid data" restates obvious Pydantic behavior
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/persist/__init__.py:
+        - - 90
+          - 98
+        - - 93
+          - 93
+        - - 101
+          - 109
+        - - 104
+          - 104
+        - - 123
+          - 123
+    note: 'Incorrect "All fields are REQUIRED" comments on Pydantic models with optional fields'
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/__init__.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/__init__.py

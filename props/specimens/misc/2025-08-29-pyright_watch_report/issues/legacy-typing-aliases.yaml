@@ -1,0 +1,24 @@
+rationale: |
+  Code uses legacy `typing` aliases (`List`/`Dict`/`Set`/`Tuple`).
+  Switch to modern built‑in generics (`list`/`dict`/`set`/`tuple`) and using `collections.abc` for protocols
+  like
+  `Iterable`, to keep types concise and idiomatic.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - - 30
+          - 30
+        - - 36
+          - 36
+        - - 90
+          - 90
+        - - 192
+          - 192
+        - - 198
+          - 198
+        - - 211
+          - 211
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

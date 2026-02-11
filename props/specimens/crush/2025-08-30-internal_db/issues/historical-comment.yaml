@@ -1,0 +1,13 @@
+rationale: |-
+  Historical "deadcode pruned" comment appears to document an edit history ("emitStage1 was unused") and is no
+  longer useful to readers; delete the comment to avoid confusion.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      e2e/mock_openai_responses.go:
+        - [218, 219]
+    critic_scopes_expected_to_recall:
+      - - e2e/mock_openai_responses.go
+    match_file_restriction:
+      - e2e/mock_openai_responses.go

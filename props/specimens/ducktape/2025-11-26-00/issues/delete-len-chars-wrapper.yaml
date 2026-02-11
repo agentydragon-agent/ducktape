@@ -1,0 +1,41 @@
+rationale: |
+  Lines 14-15 define `_len_chars(s: str) -> int` which just returns `len(s)`. This
+  is a trivial wrapper that should be deleted.
+
+  **Current:**
+  ```python
+  def _len_chars(s: str) -> int:
+      return len(s)
+
+  # Used at:
+  current_chars = sum(_len_chars(p) for p in parts)  # line 20
+  needed_chars = _len_chars(chunk)  # line 21
+  if _len_chars(out) > MAX_PROMPT_CONTEXT_CHARS:  # line 152
+  ```
+
+  **Fix:**
+  - Delete lines 14-15
+  - Line 20: Use `len(p)` instead of `_len_chars(p)`
+  - Line 21: Use `len(chunk)` instead of `_len_chars(chunk)`
+  - Line 152: Use `len(out)` instead of `_len_chars(out)`
+
+  **Note:** This function was likely created thinking strings might be measured differently
+  than their length, but Python's `len()` on strings returns character count, which is
+  what we want.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/core.py:
+        - - 14
+          - 15
+        - - 20
+          - 20
+        - - 21
+          - 21
+        - - 152
+          - 152
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/core.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/core.py

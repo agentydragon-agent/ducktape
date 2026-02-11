@@ -1,0 +1,21 @@
+rationale: |
+  `_handle_pre_tool_use` (line 331) calls `self.diff_intelligence.analyze()`
+  with keyword arguments `tool_name=`, `tool_input=`, `tool_response=`,
+  `violations=`. The actual signature (intelligence.py line 30) is
+  `analyze(self, tool_call: ToolCall, violations: list[Violation])` — it
+  expects a single `ToolCall` object, not three separate keyword args. This
+  crashes with `TypeError: analyze() got an unexpected keyword argument
+  'tool_name'` whenever the pre-hook processes an Edit or MultiEdit tool.
+  The correct call pattern is visible at handler.py line 729 which constructs
+  a `ToolCall` first.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/hooks/handler.py:
+        - [331, 336] # analyze() called with wrong kwargs
+        - [729, 729] # correct call pattern for comparison
+      ducktape_llm_common/claude_linter_v2/diff/intelligence.py:
+        - [30, 32] # actual signature: analyze(self, tool_call, violations)
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/hooks/handler.py]

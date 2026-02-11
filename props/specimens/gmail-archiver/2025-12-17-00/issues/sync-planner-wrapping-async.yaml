@@ -1,0 +1,27 @@
+rationale: |
+  DbsaEventPlanner.plan() is sync but calls async code via asyncio.run() per email:
+
+      def parse_dbsa_sf(email: GmailMessage) -> DBSASFEvent:
+          async def extract_async():
+              return await _extractor.extract(...)
+          extraction = asyncio.run(extract_async())
+
+  This creates a new event loop per email, preventing concurrent API calls.
+  The extractor already supports batching via extract_batch() with asyncio.gather().
+
+  The fix is to make the planner async end-to-end:
+  - Make Planner.plan() an async method
+  - Make DbsaEventPlanner.plan() async and use extract_batch() or gather
+  - Thread async through the caller (autoclean_inbox)
+
+  This allows concurrent OpenAI calls instead of sequential with event loop overhead.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/dbsa.py:
+        - [26, 32]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/dbsa.py]

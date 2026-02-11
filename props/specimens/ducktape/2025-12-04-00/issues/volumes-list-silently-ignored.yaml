@@ -1,0 +1,20 @@
+rationale: |
+  `_build_host_config` silently ignores `opts.volumes` when it's a `list[str]`, despite
+  the type allowing it (line 54). Lines 122-130 only handle the dict case—if volumes is
+  a list, it's silently dropped.
+
+  Fix: Either handle list[str] (pass through as Docker binds format), or remove it from
+  the type signature.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/container_session.py:
+        - - 54
+          - 54
+        - - 122
+          - 130
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/container_session.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/container_session.py

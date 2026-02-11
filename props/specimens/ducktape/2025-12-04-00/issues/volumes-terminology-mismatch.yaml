@@ -1,0 +1,38 @@
+rationale: |
+  Field is named `volumes` but we're just passing data straight to Docker's `HostConfig.Binds`.
+  We're not adding any abstraction or doing anything different—just using a different name for
+  the same concept. Comments even say "Convert volumes to binds format" (line 111), but there's
+  no actual conversion, just a rename.
+
+  "Volumes" is kinda-correct (colloquially people say "mount a volume") but actually wrong in
+  Docker terminology: "volumes" are managed storage in /var/lib/docker/volumes/, while "bind
+  mounts" are host paths. Our code only handles bind mounts.
+
+  No benefit to our own terminology. Rename to `binds` to align with Docker: ContainerOptions
+  (line 48), ContainerSessionState (line 34), _build_host_config (lines 96-129).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/container_session.py:
+        - - 34
+          - 34
+        - - 48
+          - 48
+        - - 39
+          - 39
+        - - 100
+          - 100
+        - - 111
+          - 125
+        - - 237
+          - 237
+        - - 248
+          - 248
+        - - 393
+          - 393
+      adgn/src/adgn/mcp/exec/docker/server.py:
+        - [5, 5]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/container_session.py
+      - - adgn/src/adgn/mcp/exec/docker/server.py

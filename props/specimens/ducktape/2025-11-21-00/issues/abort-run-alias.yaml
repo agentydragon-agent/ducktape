@@ -1,0 +1,34 @@
+rationale: |
+  The `abort_run` function (L672-689) is a trivial alias that wraps `abort_agent` (L642-651), adding
+  only a `SimpleOk` return value. It should be deleted.
+
+  **Why this is problematic:**
+
+  1. **Unnecessary alias**: The function just calls `abort_agent` and wraps the result in `SimpleOk`.
+     This provides no value - callers should just call `abort_agent` directly.
+  2. **Confusing API**: Having two functions that do the same thing creates confusion about which
+     one to use.
+  3. **Return type inconsistency**: `None` vs `SimpleOk`.
+     This is described as "for consistency" but it's actually inconsistent - now there are two
+     different return types for the same operation.
+  4. **Verbose docstring for trivial code**: 15-line docstring on a 2-line function.
+  5. **Misleading docstring**: Says "This is a semantic alias for abort_agent that returns SimpleOk
+     for consistency." What consistency? If it's just an alias, why does it exist?
+  6. **YAGNI violation**: There's no evidence that this alias is needed. If some callers prefer
+     `SimpleOk` return type, they can wrap it themselves.
+
+  Delete L672-689 entirely. Callers should use `abort_agent` directly and wrap in `SimpleOk` at call
+  site if needed.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - - 672
+          - 689
+        - - 642
+          - 651
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py

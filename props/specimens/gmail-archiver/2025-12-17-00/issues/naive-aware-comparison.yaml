@@ -1,0 +1,24 @@
+rationale: |
+  `compute_deadline()` returns naive datetimes from both code paths:
+  `extract_delivered_date` returns `datetime(year, month, day)` (line 112,
+  no tzinfo), and the fallback explicitly strips timezone with
+  `.replace(tzinfo=None)` (line 131). But `AliExpressPlanner.plan()` creates
+  `now = datetime.now(UTC)` (line 181, timezone-aware) and then compares
+  `full_parsed.confirmation_deadline < now` (line 199). Comparing a naive
+  datetime against an aware datetime raises `TypeError: can't compare
+  offset-naive and offset-aware datetimes`. Fix by making
+  `compute_deadline()` return aware datetimes. The delivered date is a bare
+  calendar date ("Delivered DD/MM/YYYY") with no intrinsic timezone — what
+  zone to assign is somewhat ambiguous (user-local would be most precise
+  for "has this day passed," but UTC is fine given the 15-day window).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/aliexpress.py:
+        - [112, 112] # datetime(year, month, day) — naive
+        - [131, 131] # .replace(tzinfo=None) — strips tz
+        - [181, 181] # datetime.now(UTC) — aware
+        - [199, 199] # naive < aware → TypeError
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/aliexpress.py]

@@ -1,0 +1,14 @@
+rationale: |
+  SessionData.id field is typed as str but should be typed as SessionID (UUID).
+  Pydantic 2 supports UUID serialization/deserialization natively, so there's
+  no need to store it as a string. Using the correct type provides type safety
+  and avoids unnecessary str() conversions in tests and application code.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/session/manager.py:
+        - [33, 43]
+    note: "SessionData model has id field typed as str instead of SessionID (UUID)"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/session/manager.py]

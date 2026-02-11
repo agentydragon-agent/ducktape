@@ -1,0 +1,59 @@
+rationale: |
+  Chat message IDs are integers (database auto-increment PKs) but unnecessarily stringified throughout the chat
+  server
+  API. The `ChatMessage.id`, `PostResult.id`, and `ReadPendingResult.last_id` fields are all typed as `str` when
+  they
+  should be `int`.
+
+  This causes:
+  - Unnecessary type conversions: `str(seq)`, `str(row["id"])`, `str(cur.lastrowid)` at multiple boundaries
+  - Less precise types: methods like `get_message(msg_id: str)` take strings when the underlying data is
+  integers
+  - Potential confusion: the MCP resource URI uses the ID (line 303: `async def message(id: str)`),
+  but this is the only place where string representation might be justified
+
+  The internal sequence counter `_seq` is an int, database IDs are ints, but every API surface converts to
+  string
+  without
+  clear benefit. Pydantic can serialize int fields to JSON automatically, so there's no need for manual
+  stringification.
+
+  Affected locations:
+  - Line 22: `id: str` in ChatMessage model (should be `int`)
+  - Line 46: `id: str` in PostResult model (should be `int`)
+  - Line 55: `last_id: str | None` in ReadPendingResult (should be `int | None`)
+  - Line 115: `id=str(seq)` - unnecessary conversion
+  - Line 122, 132: `get_message(msg_id: str)` methods (should take `int`)
+  - Line 210: `new_id = str(cur.lastrowid)` - unnecessary conversion
+  - Line 303: MCP resource parameter `id: str` (this could stay string for URI consistency)
+
+  Recommended fix:
+  1. Change all model fields to `int` types
+  2. Remove `str()` conversions from `append()` and other methods
+  3. Let Pydantic handle JSON serialization automatically
+  4. Keep MCP resource URI parameter as `str` if needed, but convert to `int` immediately for lookup
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/chat/server.py:
+        - - 22
+          - 22
+        - - 46
+          - 46
+        - - 55
+          - 55
+        - - 115
+          - 115
+        - - 122
+          - 122
+        - - 132
+          - 132
+        - - 210
+          - 210
+        - - 303
+          - 303
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/chat/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/chat/server.py

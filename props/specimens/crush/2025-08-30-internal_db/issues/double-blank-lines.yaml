@@ -1,0 +1,14 @@
+rationale: |-
+  Collapse double blank lines in internal/config/config.go Options struct; keep at most one blank line between
+  logical groups or use a header comment (e.g., "// ---- Tool options ----") with exactly one blank line above
+  it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/config/config.go:
+        - [166, 176]
+    critic_scopes_expected_to_recall:
+      - - internal/config/config.go
+    match_file_restriction:
+      - internal/config/config.go

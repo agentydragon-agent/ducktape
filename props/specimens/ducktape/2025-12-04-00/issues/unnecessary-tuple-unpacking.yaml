@@ -1,0 +1,30 @@
+rationale: |
+  The active_policy() resource handler unnecessarily calls get_policy() which
+  returns a tuple (source, version), then unpacks and discards the version:
+
+  Current code (lines 566-568):
+    def active_policy() -> str:
+        content, _version = self.get_policy()
+        return content
+
+  This is awkward and requires unpacking a tuple just to discard half of it.
+  Since the function only needs the policy source, it should directly access
+  the private field:
+
+    def active_policy() -> str:
+        return self._policy_source
+
+  Note: get_policy() has legitimate users that need both source and version
+  (tests in test_preset_policy_loading.py verify version increments). But this
+  resource handler only needs the source.
+
+  Similar pattern exists in agent/policy_eval/container.py:38, but that's in
+  a different context (agent layer calling into MCP layer).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/approval_policy/engine.py:
+        - [566, 568]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/approval_policy/engine.py

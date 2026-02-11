@@ -1,0 +1,32 @@
+rationale: |
+  Functions with zero call sites in the codebase should be deleted as dead code.
+  Reduces maintenance burden, eliminates confusion about unused code paths, and
+  improves readability. Can always restore from git history if needed.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [219, 225]
+    note: AssistantMessageOut.from_input_item - reverse conversion never used
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - - 280
+          - 281
+        - - 231
+          - 253
+    note: ResponsesResult.to_input_items and its dependency response_out_item_to_input singledispatch - unused
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/mcp/policy_gateway/signals.py:
+        - [96, 145]
+    note: detect_policy_gateway_error - 50 lines of complex error detection logic, documented as unused at line 110
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/policy_gateway/signals.py

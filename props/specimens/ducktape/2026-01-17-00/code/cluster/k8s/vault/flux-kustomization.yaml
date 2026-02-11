@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: vault
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/vault"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: vault-operator # Vault instance needs operator and CRDs
+    - name: local-path-provisioner # Vault uses local-path storage
+  # Verify Bank-Vaults operator and Vault StatefulSet are ready
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: operator-vault-operator
+      namespace: vault
+    - apiVersion: apps/v1
+      kind: StatefulSet
+      name: instance
+      namespace: vault

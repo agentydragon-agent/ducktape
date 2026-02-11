@@ -1,0 +1,113 @@
+rationale: |
+  Code explicitly calls .value on StrEnum instances, but StrEnum automatically
+  coerces to its string value in string contexts.
+
+  Pattern like PolicyStatus.ACTIVE.value in WHERE clauses is unnecessary
+  verbosity. Should use PolicyStatus.ACTIVE directly in SQLAlchemy comparisons
+  and assignments.
+
+  Benefits:
+  - Cleaner code: leverages StrEnum design
+  - Type safety: keeps enum type longer in data flow
+  - Refactoring support: easier to rename enum members
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [192, 192]
+    note: .value call on StrEnum at line 192
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [207, 207]
+    note: .value call on StrEnum at line 207
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [208, 208]
+    note: .value call on StrEnum at line 208
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [213, 213]
+    note: .value call on StrEnum at line 213
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [301, 301]
+    note: .value call on StrEnum at line 301
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [302, 302]
+    note: .value call on StrEnum at line 302
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-6
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [306, 306]
+    note: .value call on StrEnum at line 306
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-7
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [342, 342]
+    note: .value call on StrEnum at line 342
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-8
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [356, 356]
+    note: .value call on StrEnum at line 356
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-9
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [381, 381]
+    note: .value call on StrEnum at line 381
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-10
+    files:
+      adgn/src/adgn/agent/server/history.py:
+        - [36, 36]
+    note: .value call on StrEnum in history module
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/history.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/history.py

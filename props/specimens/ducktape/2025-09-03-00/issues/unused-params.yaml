@@ -1,0 +1,24 @@
+rationale: |
+  Function parameters declared but never used in the function body. Unused parameters
+  add cognitive overhead and misleading API surface. Remove them to tighten signatures.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [544, 549]
+        - [615, 615]
+    note: ParallelTaskRunner.__init__ accepts master_fd but never stores/uses it
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+  - occurrence_id: occ-1
+    files:
+      llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py:
+        - [192, 208]
+    note: _write_sandboxed_kernelspec declares workspace param but never uses it
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py

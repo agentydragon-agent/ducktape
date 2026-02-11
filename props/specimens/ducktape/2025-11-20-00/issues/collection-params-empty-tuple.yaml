@@ -1,0 +1,57 @@
+rationale: |
+  Functions accept collection parameters as Optional, defaulting to None, then
+  check for None and convert to empty collection. Should use empty collection
+  as default instead.
+
+  Benefits:
+  - Simpler type: no Optional/union with None
+  - No None checks or reassignments needed
+  - Empty tuple is immutable and safe as default
+  - Clearer intent: "no items" vs "missing value"
+  - Empty collections are falsy if bool check needed
+
+  This is a standard Python idiom for collection parameters.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/local_runtime.py:
+        - - 73
+          - 73
+        - - 84
+          - 84
+    note: extra_handlers defaults to None, then converted with `list(extra_handlers or [])`
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/local_runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/local_runtime.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/policies/scaffold.py:
+        - - 11
+          - 11
+        - - 21
+          - 21
+    note: tests defaults to None, then guarded with `if tests:`
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/policies/scaffold.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/policies/scaffold.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - - 99
+          - 99
+        - - 101
+          - 102
+    note: attach/detach default to None, then reassigned with `attach or {}` and `detach if detach is not None else
+      []`
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/persist/__init__.py:
+        - [141, 141]
+    note: Protocol signature uses Optional instead of default empty collection
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/__init__.py

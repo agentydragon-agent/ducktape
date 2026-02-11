@@ -1,0 +1,68 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: vault-oidc-auth
+  namespace: flux-system
+spec:
+  interval: 15m
+  path: ./cluster/terraform/vault-oidc-auth
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  # Wait for Authentik OIDC provider to be created
+  dependsOn:
+    - name: authentik-blueprint-vault
+      namespace: flux-system
+
+  # Use in-cluster service account
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  # Configure runner to trust cluster CA
+  runnerPodTemplate:
+    spec:
+      volumes:
+        - name: cluster-ca
+          configMap:
+            name: cluster-internal-ca-bundle
+      volumeMounts:
+        - name: cluster-ca
+          mountPath: /etc/ssl/certs/cluster-ca
+          readOnly: true
+      env:
+        - name: VAULT_CACERT
+          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
+
+  # Store Terraform state in Kubernetes secret
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "vault-oidc-auth"
+        namespace        = "flux-system"
+      }
+
+  # Variables for Terraform
+  vars:
+    - name: vault_address
+      value: "https://instance.vault.svc.cluster.local:8200"
+    - name: kubernetes_api_url
+      value: "https://kubernetes.default.svc.cluster.local"
+    - name: authentik_oidc_discovery_url
+      value: "http://authentik-server.authentik/application/o/vault/"
+    - name: vault_external_url
+      value: "https://vault.test-cluster.agentydragon.com"
+
+  # Get secrets from Kubernetes
+  varsFrom:
+    - kind: Secret
+      name: vault-token
+      varsKeys:
+        - vault_token
+      optional: false
+    - kind: Secret
+      name: vault-oauth-client-secret
+      varsKeys:
+        - client_secret:vault_client_secret
+      optional: true

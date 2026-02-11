@@ -1,0 +1,37 @@
+rationale: |
+  5 functions check both `get_agent_mode(agent_id) != AgentMode.LOCAL` and then
+  `get_local_runtime(agent_id) is None`. The latter check is redundant given the invariant:
+  **mode == LOCAL ⟺ local_runtime is not None**.
+
+  Evidence: RunningAgent class (server.py:43) defines `local_runtime: LocalAgentRuntime | None`
+  with comment "None for bridge agents"; get_local_runtime docstring says "Returns None if
+  agent is not local"; register_local_agent always sets mode=LOCAL with a local_runtime value.
+
+  L322-326, 345-349, 367-371: fully redundant (check mode != LOCAL, then check
+  local_runtime is None). If mode is LOCAL, local_runtime is never None.
+
+  L561-566, 644-649: partially redundant (check mode != LOCAL, then check
+  `local_runtime is None or local_runtime.session is None`). The `local_runtime is None`
+  part is redundant; only the `.session` / `.agent` field checks are valid.
+
+  Remove redundant checks; trust the documented invariant. Benefits: clearer code, simpler
+  error handling.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - - 322
+          - 326
+        - - 345
+          - 349
+        - - 367
+          - 371
+        - - 561
+          - 566
+        - - 644
+          - 649
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py

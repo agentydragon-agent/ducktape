@@ -1,0 +1,24 @@
+rationale: |
+  Four functions in `container_session.py` have underscore prefixes but are imported
+  and used by `docker/server.py` (lines 19-22): `_session_state_from_ctx`,
+  `_run_session_container`, `_run_ephemeral_container`, `_render_container_result`.
+
+  Underscore prefix indicates private/internal, but these are public API. This violates
+  PEP 8 naming conventions and is inconsistent with non-underscore exports from the
+  same module (`make_container_lifespan`, `scoped_container`, `ContainerOptions`).
+
+  Fix: Remove underscore prefixes from the four exported functions.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/container_session.py:
+        - - 100
+          - 102
+        - - 388
+          - 403
+      adgn/src/adgn/mcp/exec/docker/server.py:
+        - [19, 22]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/container_session.py
+      - - adgn/src/adgn/mcp/exec/docker/server.py

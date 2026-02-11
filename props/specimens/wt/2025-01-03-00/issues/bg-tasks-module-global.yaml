@@ -1,0 +1,12 @@
+rationale: |
+  _bg_tasks is a module-level mutable global set for tracking fire-and-forget
+  background tasks. This creates test isolation concerns - tasks from one test
+  could leak into another. Consider scoping to a service or passing explicitly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      src/wt/server/handlers/status_handler.py:
+        - [29, 29]
+    critic_scopes_expected_to_recall:
+      - [src/wt/server/handlers/status_handler.py]

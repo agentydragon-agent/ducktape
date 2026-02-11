@@ -1,0 +1,15 @@
+rationale: |
+  Building a set incrementally with .add() then converting to frozenset is
+  inconsistent when other code paths already produce frozensets directly.
+  normalize_yaml_rule builds add_labels and remove_labels as mutable sets then
+  returns them as frozensets. Using set comprehensions or frozenset() directly
+  would be more idiomatic.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/filter_sync.py:
+        - [76, 87]
+    note: "add_labels and remove_labels built as set() then converted - could use frozenset comprehension"
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py

@@ -1,0 +1,24 @@
+rationale: |
+  Agent.id (models.py:70) uses Mapped[str], but code wraps with AgentID() at
+  runtime (sqlite.py:131,147). If SQLAlchemy supports NewType, should declare
+  as AgentID to eliminate runtime wrappers.
+
+  Using domain types provides:
+  - Type safety: can't mix different ID types
+  - Semantic clarity: not just any string, but specific identifier
+  - No runtime conversions/validation
+  - Clear type contracts in signatures
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/models.py:
+        - [70, 70]
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - - 131
+          - 131
+        - - 147
+          - 147
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/models.py
+        - adgn/src/adgn/agent/persist/sqlite.py

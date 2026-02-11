@@ -1,0 +1,59 @@
+rationale: |
+  Test files call analyze_code(), format_code(), and check_code() without a consistent
+  file_path parameter. Multiple occurrences use:
+    - No file_path at all
+    - Inline strings like "/tmp/test.py"
+    - Ad-hoc tmp_path constructions
+
+  Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
+  to use consistently across all tests. This provides:
+    - Consistent behavior for path-dependent logic
+    - Clear indication that tests are using synthetic paths
+    - Single place to update if path handling changes
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tests/claude_linter_v2/test_python_ast.py:
+        - [18, 18]
+        - [36, 36]
+        - [49, 49]
+        - [65, 65]
+        - [79, 79]
+        - [92, 92]
+        - [109, 109]
+        - [127, 127]
+        - [202, 202]
+        - [221, 221]
+    note: "analyze_code(code) should use analyze_code(code, TEST_FILE)"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_python_ast.py]
+  - occurrence_id: occ-1
+    files:
+      tests/claude_linter_v2/test_python_formatter.py:
+        - [38, 38]
+        - [64, 64]
+        - [88, 88]
+        - [103, 103]
+        - [136, 136]
+        - [147, 147]
+        - [166, 166]
+        - [185, 185]
+        - [194, 194]
+    note: "format_code() should pass file_path=TEST_FILE"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_python_formatter.py]
+  - occurrence_id: occ-2
+    files:
+      tests/claude_linter_v2/test_python_ruff.py:
+        - [49, 49]
+        - [71, 71]
+        - [101, 101]
+        - [118, 118]
+        - [145, 145]
+        - [162, 162]
+        - [175, 175]
+        - [198, 198]
+    note: "check_code() should pass file_path=TEST_FILE"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_python_ruff.py]

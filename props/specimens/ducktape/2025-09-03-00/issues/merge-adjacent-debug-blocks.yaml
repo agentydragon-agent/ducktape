@@ -1,0 +1,22 @@
+rationale: |
+  Two adjacent `if known.debug:` blocks perform closely related logging/setup:
+
+    if known.debug:
+      print(f"# Resolved model=..., timeout=...", file=sys.stderr)
+
+    if known.debug:
+      console_handler = logging.StreamHandler(sys.stderr)
+      ...
+
+  Combine them into a single `if known.debug:` to reduce duplicated conditionals,
+  group related debug behavior together, and simplify control flow.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [792, 807]
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py

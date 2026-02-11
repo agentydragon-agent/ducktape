@@ -1,0 +1,33 @@
+rationale: |
+  The `proposal_detail` resource handler should use the walrus operator (`:=`) to combine
+  the assignment and None check of the `got` variable into a single expression.
+
+  **Current code (lines 165-167):**
+  ```python
+  got = await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)
+  if got is None:
+      raise KeyError(id)
+  ```
+
+  **Why this should be improved:**
+  - The pattern "assign, then immediately check for None" is verbose
+  - Python 3.8+ walrus operator allows combining assignment with conditional
+  - Reduces visual noise and makes the None-check pattern more obvious
+  - Common Python idiom for this pattern
+
+  **Recommended fix:**
+  Use walrus operator to combine assignment and check:
+  ```python
+  if (got := await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)) is None:
+      raise KeyError(id)
+  ```
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/approval_policy/server.py:
+        - [165, 167]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/approval_policy/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/approval_policy/server.py

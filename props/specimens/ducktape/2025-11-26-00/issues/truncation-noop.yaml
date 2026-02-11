@@ -1,0 +1,16 @@
+rationale: |
+  `truncate_file_by_bytes` (line 162) calls
+  `self._truncated_content(content, len(content))` at line 178.
+  `_truncated_content` (line 36) returns `content` unchanged when
+  `len(content) <= max_chars`. Since `max_chars` equals `len(content)`, the
+  condition is always true — the call is equivalent to an identity function
+  and the truncation suffix is never appended.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/inop/prompting/truncation_utils.py:
+        - [36, 40] # _truncated_content: guard that is always true
+        - [162, 181] # truncate_file_by_bytes: buggy call at line 178
+    critic_scopes_expected_to_recall:
+      - [adgn/src/adgn/inop/prompting/truncation_utils.py]

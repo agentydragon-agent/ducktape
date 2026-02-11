@@ -1,0 +1,32 @@
+rationale: |
+  Lines 19-20 define a trivial function `_safe_root()` that just returns
+  `Path.cwd().resolve()`:
+
+  def _safe_root() -> Path:
+      return Path.cwd().resolve()
+
+  This function has only one call site (line 41: `root = _safe_root()`) and
+  provides no meaningful abstraction. The function name doesn't add clarity
+  beyond what the method chain already conveys.
+
+  The function should be removed and its body inlined at the call site:
+
+  root = Path.cwd().resolve()
+
+  This reduces indirection without losing any clarity or functionality.
+  Single-use trivial wrappers like this add maintenance cost (another
+  definition to read/understand) without providing benefit (no reuse, no
+  complex logic being named, no testability improvement).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/tools/arg0_runner.py:
+        - - 19
+          - 20
+        - - 41
+          - 41
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/tools/arg0_runner.py
+    match_file_restriction:
+      - adgn/src/adgn/tools/arg0_runner.py

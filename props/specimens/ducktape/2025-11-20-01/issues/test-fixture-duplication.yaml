@@ -1,0 +1,74 @@
+rationale: |
+  The test file `test_proposals_resources.py` has significant duplication that should be
+  refactored into fixtures and constants:
+
+  **Policy content duplication:**
+  - The "allow" policy (class ApprovalPolicy with decision="allow") is duplicated 3+ times
+    across tests (lines 32-36, 60-64, 86-90, 159-163, 176)
+  - The "deny_abort" policy appears at lines 127-131
+  - The "deny_continue" policy appears at lines 164-168
+  - No shared policy constants exist in the codebase for these common test policies
+
+  **Client instantiation duplication:**
+  - `ApprovalPolicyProposerServer(engine=approval_engine)` created in 6 different tests
+  - `ApprovalPolicyAdminServer(engine=approval_engine)` created in 3 tests
+  - `ApprovalPolicyServer(approval_engine)` (reader) created in 6 tests
+  - Each wrapped individually with `make_typed_mcp` context manager
+
+  **Recommended fixes:**
+  1. Create module-level constants for common policy strings (POLICY_ALLOW, POLICY_DENY_ABORT,
+     POLICY_DENY_CONTINUE)
+  2. Create pytest fixtures or fixture factories for creating typed clients:
+     - `proposer_client` fixture that yields configured proposer client
+     - `admin_client` fixture that yields configured admin client
+     - `reader_client` fixture that yields configured reader client
+     - Or a fixture factory like `make_policy_client(role)` that returns appropriate client
+  3. This reduces test boilerplate and makes tests focus on behavior rather than setup
+
+  The duplication makes tests harder to maintain - changes to policy format or client
+  initialization patterns require updates in many places.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/mcp/approval_policy/test_proposals_resources.py:
+        - - 25
+          - 25
+        - - 32
+          - 36
+        - - 44
+          - 44
+        - - 59
+          - 59
+        - - 60
+          - 64
+        - - 71
+          - 71
+        - - 86
+          - 90
+        - - 93
+          - 93
+        - - 99
+          - 99
+        - - 106
+          - 106
+        - - 127
+          - 131
+        - - 134
+          - 134
+        - - 140
+          - 140
+        - - 147
+          - 147
+        - - 159
+          - 168
+        - - 171
+          - 171
+        - - 181
+          - 181
+        - - 187
+          - 187
+        - - 204
+          - 204
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/approval_policy/test_proposals_resources.py

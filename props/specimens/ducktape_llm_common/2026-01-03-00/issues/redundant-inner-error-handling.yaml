@@ -1,0 +1,13 @@
+rationale: |
+  Inner try/except for request parsing is redundant when an outer error boundary
+  already catches all exceptions. The pattern duplicates error handling and
+  clutters the code. Let the outer boundary handle it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_hook.py:
+        - [125, 128]
+    note: "Inner try/except duplicates outer boundary at line 170"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_hook.py]

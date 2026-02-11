@@ -1,0 +1,24 @@
+rationale: |
+  Both `_commit_immediately()` and `_run_editor_flow()` end by calling `git commit`
+  with similar passthru argument handling. The commit logic is duplicated when it
+  should be factored out into a shared helper.
+
+  **The correct approach:**
+
+  Refactor into two helpers: `_prepare_commit_message()` (handles accept-AI vs editor
+  flow, returns final message string) and `_execute_commit(message, passthru)` (filters
+  passthru, spawns `git commit -m`, returns exit code). Main logic becomes: prepare
+  message → execute commit.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - - 558
+          - 564
+        - - 611
+          - 615
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py

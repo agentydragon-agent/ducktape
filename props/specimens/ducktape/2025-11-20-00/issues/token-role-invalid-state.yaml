@@ -1,0 +1,24 @@
+rationale: |
+  TokenRole + agent_id (mcp_routing.py:76-97) accepts role and agent_id
+  separately, allowing invalid state (AGENT role without agent_id). Should
+  use discriminated union (HumanTokenInfo | AgentTokenInfo) to make invalid
+  state unrepresentable.
+
+  Current code has runtime check `if not agent_id` at line 86 to handle
+  the invalid state that the type system allows.
+
+  Using discriminated union provides:
+  - Type safety: invalid states unrepresentable
+  - No runtime validation needed
+  - Clear type contracts in signatures
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/mcp_routing.py:
+        - - 76
+          - 97
+        - - 86
+          - 86
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/mcp_routing.py

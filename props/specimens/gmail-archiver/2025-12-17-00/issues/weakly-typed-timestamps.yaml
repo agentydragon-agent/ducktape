@@ -1,0 +1,28 @@
+rationale: |
+  GmailMessage has two timestamp fields stored as primitives instead of
+  `datetime`: `date: str` (line 23) is the RFC 2822 Date header, parsed
+  independently by 5 consumers using 3 different approaches (`strptime`
+  with `%z` in anthem_eob/anthem_reimbursement/square, `parsedate_to_datetime`
+  in aliexpress, raw string passthrough in dbsa). `internal_date: int`
+  (line 24) is epoch milliseconds from the Gmail API, used for sorting in
+  one_medical and aliexpress but left as a raw int. Both should be `datetime`
+  — parsed once at construction time in the `gmail_client.py` callback that
+  builds GmailMessage instances (lines 463-474, 248-256, 529-537). This
+  eliminates the duplicated parsing, the divergent format strings, and the
+  lossy timezone handling that each planner re-invents.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/models.py:
+        - [23, 23] # date: str
+    note: "date field is raw RFC 2822 string, parsed 5 different ways downstream"
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/models.py]
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/models.py:
+        - [24, 24] # internal_date: int (epoch millis)
+    note: "internal_date is raw epoch milliseconds, should be datetime"
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/models.py]

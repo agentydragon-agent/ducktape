@@ -1,0 +1,34 @@
+rationale: |
+  The git_ro formatting module uses single-character strings for status fields instead of the appropriate pygit2
+  enums.
+  Pygit2 provides GIT_DELTA_* constants (e.g., GIT_DELTA_ADDED, GIT_DELTA_MODIFIED, GIT_DELTA_DELETED,
+  GIT_DELTA_RENAMED)
+  for delta status and GIT_STATUS_* constants for working tree and index status.
+
+  Using string literals like "M", "A", "D", "R" loses type safety and requires manual mapping. Pydantic can
+  serialize
+  enums appropriately, so the models should use the native pygit2 enum types instead of str fields.
+
+  This applies to StatusEntry (lines 68-69 for index and worktree fields) and ChangedFileItem (line 89 for
+  status
+  field).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/git_ro/formatting.py:
+        - [68, 69]
+    note: StatusEntry uses str for index and worktree instead of GIT_STATUS_* enums
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/git_ro/formatting.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/git_ro/formatting.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/mcp/git_ro/formatting.py:
+        - [89, 89]
+    note: ChangedFileItem uses str for status instead of GIT_DELTA_* enum
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/git_ro/formatting.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/git_ro/formatting.py

@@ -1,0 +1,13 @@
+rationale: |
+  ExtractionCache.get() catches all exceptions and silently returns None (line 78-79).
+  This swallows errors like JSON decode failures or schema mismatches without any logging.
+  Should either not catch, or at minimum log the error before returning None.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/event_classifier.py:
+        - [78, 79]
+    note: bare except returning None in cache get
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/event_classifier.py

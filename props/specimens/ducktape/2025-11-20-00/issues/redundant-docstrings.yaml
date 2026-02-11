@@ -1,0 +1,36 @@
+rationale: |
+  Docstrings duplicate information already present in type system, creating
+  maintenance burden without adding information.
+
+  Problems with redundant docstrings:
+  - Create desync risk when types change
+  - Duplicate maintenance (must update multiple locations)
+  - Violate DRY principle
+  - Add no information beyond type definitions
+
+  Correct approach: Document types at their definition sites. Functions/models
+  using those types should reference the type name, not duplicate its documentation.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/reducer.py:
+        - [46, 52]
+    note: |-
+      reduce_ui_state docstring lists all accepted event types with descriptions, duplicating the UiStateEvent union
+      definition at line 33
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/reducer.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/reducer.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/persist/models.py:
+        - [135, 145]
+    note: |-
+      Policy model docstring documents PolicyStatus enum states (ACTIVE/PROPOSED/REJECTED/SUPERSEDED) which should
+      only exist on the PolicyStatus StrEnum definition
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/models.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/models.py

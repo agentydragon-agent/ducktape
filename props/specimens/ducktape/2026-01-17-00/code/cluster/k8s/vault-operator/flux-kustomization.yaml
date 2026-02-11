@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: vault-operator
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/vault-operator"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: storage # Operator will create Vault instances that need storage
+  # Verify operator deployment is ready
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: operator
+      namespace: vault

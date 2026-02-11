@@ -1,0 +1,21 @@
+rationale: |
+  Two identical functions for creating a GmailClient:
+
+  - gmail_archiver/__main__.py:46-47 defines get_gmail_client()
+  - gmail_archiver/cli/common.py:14-15 defines get_client()
+
+  Both do the same thing: return GmailClient(token_file or GMAIL_TOKEN_FILE).
+  The cli/common.py version exists specifically for shared CLI utilities, but
+  __main__.py defines its own copy instead of importing from common.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [46, 47]
+      gmail_archiver/cli/common.py:
+        - [14, 15]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/__main__.py, gmail_archiver/cli/common.py]

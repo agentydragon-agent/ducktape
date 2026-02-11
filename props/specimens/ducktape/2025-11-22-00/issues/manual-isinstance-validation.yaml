@@ -1,0 +1,19 @@
+rationale: |
+  The `reload()` method manually validates that the loaded JSON is a dict with string
+  keys and values using `isinstance()` checks, but this can be done automatically and
+  more robustly using Pydantic's `TypeAdapter`.
+
+  **Current implementation:** Manual validation loop checking isinstance on each token/agent_id
+  pair, raising generic ValueError on mismatch (auth.py, lines 60-69).
+
+  **The correct approach:**
+  Use Pydantic's `TypeAdapter(dict[str, AgentID])` to validate and parse in one step.
+  Can call `validate_python(data)` after `json.loads()` or `validate_json(text)` directly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/auth.py:
+        - [60, 69]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/auth.py

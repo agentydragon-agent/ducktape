@@ -1,0 +1,13 @@
+rationale: |
+  The code logs the length of the initial prompt instead of the prompt itself.
+  Since the prompt is not private and is very short, it should be logged directly for debugging purposes.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [205, 207]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py

@@ -1,0 +1,21 @@
+rationale: |
+  autoclean_inbox's execute_action makes individual API calls per message per label:
+
+      for label in action.labels_to_add:
+          client.add_label(message_id, label)
+
+  This is slow for bulk operations. The filters CLI (cli/filters.py:368-391) properly
+  batches by grouping messages with identical label changes and using batchModify.
+  autoclean should use the same batching pattern for efficiency.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [108, 118]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/__main__.py]
+    match_file_restriction:
+      - gmail_archiver/__main__.py

@@ -1,0 +1,35 @@
+rationale: |
+  list_runs uses imperative loop-and-append pattern (sqlite.py:403-417):
+
+  out: list[RunRow] = []
+  for run in runs:
+      out.append(RunRow(...))
+  return out
+
+  Should use list comprehension:
+  return [
+      RunRow(
+          id=UUID(run.id),
+          agent_id=AgentID(run.agent_id),
+          ...
+      )
+      for run in runs
+  ]
+
+  Benefits:
+  - More Pythonic and concise
+  - Clearer intent: transforming collection
+  - Slightly more efficient (no append overhead)
+  - Removes intermediate variable
+
+  Loop-and-append is imperative style; list comprehension is functional/declarative.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [403, 417]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py

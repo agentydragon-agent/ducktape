@@ -1,0 +1,19 @@
+rationale: |
+  The optimize_with_gepa function returns tuple[str, Any] where the second element
+  is typed as Any. This should be replaced with a concrete type for the GEPA result,
+  likely the return type of gepa.optimize(). Using Any loses type safety and IDE support.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/gepa/gepa_adapter.py:
+        - - 373
+          - 373
+        - - 394
+          - 394
+        - - 406
+          - 406
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/gepa/gepa_adapter.py
+    match_file_restriction:
+      - adgn/src/adgn/props/gepa/gepa_adapter.py

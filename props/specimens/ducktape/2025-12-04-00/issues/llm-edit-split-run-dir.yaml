@@ -1,0 +1,13 @@
+rationale: |
+  The run_dir path is constructed over two lines (62-63) when it could be a single
+  expression. The intermediate assignment adds no clarity.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/llm/llm_edit.py:
+        - [62, 63]
+    critic_scopes_expected_to_recall:
+      - [adgn/src/adgn/llm/llm_edit.py]
+    match_file_restriction:
+      - adgn/src/adgn/llm/llm_edit.py

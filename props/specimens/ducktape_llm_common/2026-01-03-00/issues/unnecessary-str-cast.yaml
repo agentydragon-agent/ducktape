@@ -1,0 +1,20 @@
+rationale: |
+  Redundant `str(file_path)` conversions when file_path is already Path and the
+  receiving function/method accepts os.PathLike or when Path methods should be used
+  directly. Python 3.13+ subprocess and ast.parse accept Path objects natively.
+
+  Remove the str() casts and use Path methods (.suffix, .name) instead of string
+  operations (.endswith).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/checker.py:
+        - [50, 50]
+        - [73, 73]
+        - [76, 76]
+        - [81, 81]
+        - [87, 87]
+    note: "Multiple str(file_path) casts in check_file method"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/checker.py]

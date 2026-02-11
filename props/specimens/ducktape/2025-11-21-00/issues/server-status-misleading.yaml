@@ -1,0 +1,26 @@
+rationale: |
+  L197-201 define `ServerStatus` enum with docstring "Agent server runtime status" and values
+  `RUNNING`/`STOPPED`. L216 includes `status: ServerStatus` field in `AgentInfoDetailed` model.
+
+  This is misleading: name suggests server status, but actually tracks local agent status (not server).
+  For remote agents (`mode == AgentMode.REMOTE`), neither "running" nor "stopped" are semantically
+  correct (we don't know if remote agent is running, and "stopped" implies control we don't have).
+  Status confuses local infrastructure availability with agent operational state. Unclear semantics:
+  does "running" mean process running, infrastructure loaded, processing request, or registered?
+
+  Needs redesign for clearer semantics and correct remote agent modeling.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - - 197
+          - 201
+        - - 216
+          - 216
+        - - 198
+          - 198
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py

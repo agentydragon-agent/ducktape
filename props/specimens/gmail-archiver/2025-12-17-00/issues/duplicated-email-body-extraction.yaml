@@ -1,0 +1,53 @@
+rationale: |
+  Email body extraction and HTML-to-text parsing logic is duplicated across multiple
+  files with inconsistent behavior. MIME extraction (text/plain from raw email) exists
+  in gmail_client.py and __main__.py with different fallback strategies. HTML-to-text
+  conversion (BeautifulSoup with script/style removal and whitespace cleanup) is
+  copy-pasted identically in anthem_reimbursement.py and square.py planners.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [430, 448]
+    note: MIME body extraction with text/plain + HTML fallback
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/gmail_client.py:
+        - [450, 461]
+    note: get_messages_batch() MIME extraction, plaintext-only
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/gmail_client.py:
+        - [517, 524]
+    note: get_message() MIME extraction, plaintext-only
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/planners/anthem_reimbursement.py:
+        - [35, 43]
+    note: HTML-to-text with BeautifulSoup, script/style removal, whitespace cleanup
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/planners/anthem_reimbursement.py
+    match_file_restriction:
+      - gmail_archiver/planners/anthem_reimbursement.py
+  - occurrence_id: occ-4
+    files:
+      gmail_archiver/planners/square.py:
+        - [45, 53]
+    note: identical HTML-to-text logic as anthem_reimbursement.py
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/planners/square.py
+    match_file_restriction:
+      - gmail_archiver/planners/square.py

@@ -1,0 +1,42 @@
+rationale: |
+  Line 132 has a useless comment "# Apply network mode if not 'none'" that merely restates what the immediately
+  following
+  code does, without adding any useful context or explanation.
+
+  **Current code:**
+  ```python
+  # Apply network mode if not 'none'
+  if opts.network_mode != "none":
+      host_config["NetworkMode"] = opts.network_mode
+  ```
+
+  **Why this comment is useless:**
+  - The comment literally restates the condition ("if not 'none'") visible in the code
+  - It doesn't explain WHY we guard against "none" (which is actually questionable - see related issue about
+  unnecessary guards)
+  - It doesn't provide context that isn't immediately obvious from reading the code
+  - "Apply network mode" is self-evident from the assignment statement
+
+  **Good comments explain WHY, not WHAT:**
+  - A useful comment would explain the reasoning: "Docker requires explicit NetworkMode setting even for 'none'"
+  - Or document a gotcha: "Setting NetworkMode='none' causes issue X, so we omit it"
+  - But this comment just narrates the code
+
+  **Fix:**
+  Remove the comment entirely. If the guard is kept (though it shouldn't be - see related issue), the code is
+  self-documenting. If there IS a reason for the guard, document that reason instead.
+
+  **Related issues:**
+  - The guard `if opts.network_mode != "none"` is itself unnecessary (see separate issue about unnecessary
+  guards in
+  _build_host_config)
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/container_session.py:
+        - [132, 132]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/container_session.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/container_session.py

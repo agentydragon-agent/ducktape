@@ -1,0 +1,36 @@
+rationale: |
+  Several functions take `file_path: str` or `paths: list[str]` when they should
+  take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+  os.PathLike directly. Using str forces callers to convert and loses Path methods.
+
+  Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/linters/python_ruff.py:
+        - [57, 57]
+    note: "check_code takes file_path: str | None instead of Path"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/linters/python_ruff.py]
+  - occurrence_id: occ-1
+    files:
+      ducktape_llm_common/claude_linter_v2/check_python.py:
+        - [10, 12]
+    note: "check_python_file takes file_path: str instead of Path"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/check_python.py]
+  - occurrence_id: occ-2
+    files:
+      ducktape_llm_common/claude_linter/precommit_runner.py:
+        - [21, 21]
+    note: "run() takes paths: list[str] instead of list[Path]"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter/precommit_runner.py]
+  - occurrence_id: occ-3
+    files:
+      ducktape_llm_common/claude_linter/config.py:
+        - [58, 58]
+    note: "get_merged_config takes paths: list[str] instead of list[Path]"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter/config.py]

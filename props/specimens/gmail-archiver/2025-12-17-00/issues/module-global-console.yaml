@@ -1,0 +1,50 @@
+rationale: |
+  Module-level `console = Console()` creates global state. Console should be
+  passed in or created at call sites to allow for testing and flexibility.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/core.py:
+        - [17, 17]
+    note: global console = Console() at module level
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/core.py
+    match_file_restriction:
+      - gmail_archiver/core.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/inbox.py:
+        - [11, 11]
+    note: global console = Console() at module level
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/inbox.py
+    match_file_restriction:
+      - gmail_archiver/inbox.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/__main__.py:
+        - [39, 39]
+    note: global console = Console() at module level
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/cli/filters.py:
+        - [31, 31]
+    note: global console = Console() at module level
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/cli/filters.py
+    match_file_restriction:
+      - gmail_archiver/cli/filters.py
+  - occurrence_id: occ-4
+    files:
+      gmail_archiver/cli/labels.py:
+        - [12, 12]
+    note: global console = Console() at module level
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/cli/labels.py
+    match_file_restriction:
+      - gmail_archiver/cli/labels.py

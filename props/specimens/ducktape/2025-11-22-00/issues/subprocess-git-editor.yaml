@@ -1,0 +1,28 @@
+rationale: |
+  The `_get_editor()` function spawns a subprocess (`git var GIT_EDITOR`) to get
+  the configured editor, but pygit2 already provides direct access to git config
+  through `repo.config`.
+
+  **Problems:**
+
+  1. **Subprocess overhead**: Spawning `git var` is slower than reading config directly
+  2. **Inconsistent**: Code uses pygit2 for everything else, but shells out for config
+
+  **The correct approach:**
+
+  Use pygit2's config API with a synchronous function that checks `repo.config.get('core.editor')`
+  and falls back to environment variables (`EDITOR`, optionally `GIT_EDITOR`/`VISUAL`) and
+  finally `'vi'`. This replicates `git var GIT_EDITOR` precedence without subprocess overhead.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - - 649
+          - 656
+        - - 583
+          - 583
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py

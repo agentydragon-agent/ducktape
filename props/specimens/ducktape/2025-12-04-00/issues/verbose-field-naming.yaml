@@ -1,0 +1,25 @@
+rationale: |
+  The field name `_events_path` is unnecessarily verbose. It should be shortened to `_path` since the
+  context (TranscriptHandler that writes events) makes it clear what the path is for. The same applies
+  to the `__init__` parameter `events_path`. Shorter names improve readability without losing clarity.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/transcript_handler.py:
+        - - 34
+          - 34
+        - - 35
+          - 35
+        - - 37
+          - 37
+        - - 39
+          - 39
+        - - 40
+          - 40
+        - - 47
+          - 47
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/transcript_handler.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/transcript_handler.py

@@ -1,0 +1,48 @@
+rationale: |
+  Python 3.8+ supports f"{variable=}" syntax which is more concise than f"variable={variable}":
+
+  auth.py line 99:
+  ```python
+  logger.debug(f"Authenticated request: token → agent_id={agent_id}")
+  ```
+
+  server.py line 122:
+  ```python
+  logger.info(f"Infrastructure ready for agent_id={agent_id}")
+  ```
+
+  Both can be shortened using the = suffix in f-strings.
+
+  Use f"{variable=}" syntax:
+
+  auth.py:
+  ```python
+  logger.debug(f"Authenticated request: token → {agent_id=}")
+  ```
+
+  server.py:
+  ```python
+  logger.info(f"Infrastructure ready for {agent_id=}")
+  ```
+
+  This is more concise and makes it clear we're debugging/logging a variable's value.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/auth.py:
+        - [99, 99]
+    note: f"agent_id={agent_id}" should use f"{agent_id=}"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/auth.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/auth.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - [122, 122]
+    note: f"agent_id={agent_id}" should use f"{agent_id=}"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/server.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/server.py

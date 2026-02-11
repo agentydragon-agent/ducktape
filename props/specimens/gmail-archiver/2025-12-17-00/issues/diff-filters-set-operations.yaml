@@ -1,0 +1,15 @@
+rationale: |
+  diff_filters() converts to sets but then uses list comprehensions instead of
+  set operations. Since NormalizedFilter is already frozen and hashable, could
+  use set difference directly: yaml_set - gmail_set, gmail_set - yaml_set, etc.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/filter_sync.py:
+        - [135, 148]
+    note: diff_filters function
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py
+    match_file_restriction:
+      - gmail_archiver/filter_sync.py

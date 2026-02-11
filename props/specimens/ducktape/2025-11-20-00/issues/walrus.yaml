@@ -1,0 +1,121 @@
+rationale: |
+  Twelve locations use assign-then-check patterns instead of walrus operator (:=). Common patterns:
+  assign value then check if None (registry.py:93-95, approvals.py:243-245, agent.py:335-336),
+  assign for ternary/conditional (server.py:162-163), dict.get with None check (mcp_routing.py:107-111
+  with useless "Look up token" comment), and multiple occurrences of assign-then-None-check in
+  state.py (lines 131-133, 151-153, 176-178) and servers/agents.py (lines 327-329, 351-353, 374-376).
+
+  Use walrus operator to combine assignment and condition: `if (row := await get_agent(...)) is None`,
+  `return x.y if (x := expr) else None`, `if not (info := dict.get(...)): ...`. This is more concise
+  (combines two lines into one), clearer scope (variable exists only where needed), and standard Python
+  idiom (PEP 572). Not applicable when variable is reassigned inside conditional block.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/registry.py:
+        - [93, 95]
+    note: In get_agent() - assign agent row then check None
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/registry.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/registry.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/approvals.py:
+        - [243, 245]
+    note: In get_policy_proposal() - assign proposal then check None
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/approvals.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/approvals.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/agent.py:
+        - [335, 336]
+    note: In agent.py - assign results.get() then check None
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/agent.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/agent.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/server/state.py:
+        - [131, 133]
+    note: In state.py - assign _find_last_tool_index then check None (occurrence 1)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/state.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/state.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/agent/server/state.py:
+        - [151, 153]
+    note: In state.py - assign _find_last_tool_index then check None (occurrence 2)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/state.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/state.py
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/agent/server/state.py:
+        - [176, 178]
+    note: In state.py - assign _find_last_tool_index then check None (occurrence 3)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/state.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/state.py
+  - occurrence_id: occ-6
+    files:
+      adgn/src/adgn/agent/mcp_bridge/auth.py:
+        - [93, 95]
+    note: In get_agent_id() - assign token lookup then check None
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/auth.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/auth.py
+  - occurrence_id: occ-7
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - [327, 329]
+    note: In servers/agents.py - assign get_local_runtime then check None (occurrence 1)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+  - occurrence_id: occ-8
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - [351, 353]
+    note: In servers/agents.py - assign get_local_runtime then check None (occurrence 2)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+  - occurrence_id: occ-9
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - [374, 376]
+    note: In servers/agents.py - assign get_local_runtime then check None (occurrence 3)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+  - occurrence_id: occ-10
+    files:
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - [162, 163]
+    note: In server.py - assign for ternary expression
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/server.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/server.py
+  - occurrence_id: occ-11
+    files:
+      adgn/src/adgn/agent/server/mcp_routing.py:
+        - [107, 111]
+    note: In mcp_routing.py - dict.get with useless "Look up token" comment
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/mcp_routing.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/mcp_routing.py

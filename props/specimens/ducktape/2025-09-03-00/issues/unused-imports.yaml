@@ -1,0 +1,29 @@
+rationale: |
+  Unused imports.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py:
+        - [5, 6]
+    note: "Unused: os, subprocess"
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py
+  - occurrence_id: occ-1
+    files:
+      llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py:
+        - - 4
+          - 4
+        - - 14
+          - 14
+        - - 17
+          - 17
+        - - 19
+          - 19
+    note: "Unused: asyncio, dataclass, Any, Field, model_validator (BaseModel is used)"
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py

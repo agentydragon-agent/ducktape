@@ -1,0 +1,11 @@
+rationale: |
+  dict(items.items()) is redundant - items is already a dict. Either use items
+  directly or dict(items) if a copy is needed.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      src/wt/server/handlers/status_handler.py:
+        - [240, 240]
+    critic_scopes_expected_to_recall:
+      - [src/wt/server/handlers/status_handler.py]

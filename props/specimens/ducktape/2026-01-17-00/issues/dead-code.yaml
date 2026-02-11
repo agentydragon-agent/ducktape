@@ -1,0 +1,120 @@
+rationale: |
+  Code that is defined but never used. Should be deleted to reduce maintenance
+  burden and avoid confusion.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/exec/test_seatbelt.py:
+        - [51, 63]
+    note: >-
+      _extract_payload function is defined but never called. Tests use typed stubs with
+      direct attribute access instead. Delete.
+    critic_scopes_expected_to_recall:
+      - - mcp_infra/exec/test_seatbelt.py
+    match_file_restriction:
+      - mcp_infra/exec/test_seatbelt.py
+  - occurrence_id: occ-1
+    files:
+      agent_core_testing/steps.py:
+        - [83, 89]
+    note: "`AssistantMessage` step class — never imported or used outside steps.py"
+    critic_scopes_expected_to_recall:
+      - - agent_core_testing/steps.py
+  - occurrence_id: occ-2
+    files:
+      agent_core_testing/steps.py:
+        - [93, 100]
+    note: "`EchoCall` step class — never imported or used outside steps.py"
+    critic_scopes_expected_to_recall:
+      - - agent_core_testing/steps.py
+  - occurrence_id: occ-3
+    files:
+      agent_core_testing/steps.py:
+        - [116, 126]
+    note: "`CheckThenCall` step class — never imported or used outside steps.py"
+    critic_scopes_expected_to_recall:
+      - - agent_core_testing/steps.py
+  - occurrence_id: occ-4
+    files:
+      agent_core_testing/steps.py:
+        - [130, 140]
+    note: "`ExtractThenCall` step class — never imported or used outside steps.py"
+    critic_scopes_expected_to_recall:
+      - - agent_core_testing/steps.py
+  - occurrence_id: occ-5
+    files:
+      agent_core_testing/steps.py:
+        - [144, 152]
+    note: "`Finish` step class — never imported or used outside steps.py"
+    critic_scopes_expected_to_recall:
+      - - agent_core_testing/steps.py
+  - occurrence_id: occ-6
+    files:
+      agent_core_testing/steps.py:
+        - [180, 191]
+    note: "`AssertDockerExecThenFinish` step class — never imported or used outside steps.py"
+    critic_scopes_expected_to_recall:
+      - - agent_core_testing/steps.py
+  - occurrence_id: occ-7
+    files:
+      agent_core_testing/steps.py:
+        - [195, 208]
+    note: "`AssertDockerExecThenCall` step class — never imported or used outside steps.py"
+    critic_scopes_expected_to_recall:
+      - - agent_core_testing/steps.py
+  - occurrence_id: occ-8
+    files:
+      wt/testing/constants.py:
+        - [1, 4]
+    note: "Dead module — `GITSTATUSD_PATH` defined but never imported anywhere."
+  - occurrence_id: occ-9
+    files:
+      agent_server/mcp/approval_policy/clients.py:
+        - [1, 22]
+    note: "Dead module — `PolicyReaderStub` and `PolicyApproverStub` defined but never imported."
+  - occurrence_id: occ-10
+    files:
+      agent_server/policies/presets.py:
+        - [1, 12]
+    note: "Dead module — re-exports `decide` from `approve_all` but nothing imports from it."
+  - occurrence_id: occ-11
+    files:
+      claude/claude_optimizer/requirement_templates.py:
+        - [1, 121]
+    note: "Dead module — `RequirementSpec` and `create_behavioral_requirement` never imported."
+  - occurrence_id: occ-12
+    files:
+      agent_server/testing/steps.py:
+        - [1, 52]
+    note: "Dead module — `UiEndTurnCall`, `UiSendMessageCall`, `ApprovalPolicyAdminSetPolicyCall` never imported."
+  - occurrence_id: occ-13
+    files:
+      agent_server/ui_asserts.py:
+        - [1, 34]
+    note: "Dead module — all five assertion helpers defined but never imported."
+  - occurrence_id: occ-14
+    files:
+      sysrw/validation.py:
+        - [1, 26]
+    note: >-
+      Dead module — `validate_template_file` moved to
+      `sysrw/templates/__init__.py`; all callers use the new location.
+  - occurrence_id: occ-15
+    files:
+      agent_server/server/status_shared.py:
+        - [1, 62]
+    note: >-
+      Dead module — nothing imports from `status_shared`. `determine_run_phase`,
+      `AgentLifecycle`, `AgentStatusCore`, `RunPhase`, `UiStateLite`, and
+      `ContainerState` are all defined but never referenced outside this file.
+  - occurrence_id: occ-16
+    files:
+      agent_server/server/exceptions.py:
+        - [1, 40]
+    note: >-
+      Dead module — `AgentNotFoundError`, `AgentSessionNotReadyError`,
+      `PolicyOperationError`, and `ApprovalNotFoundError` are defined but never
+      raised, caught, or imported. No FastAPI exception handlers are registered.

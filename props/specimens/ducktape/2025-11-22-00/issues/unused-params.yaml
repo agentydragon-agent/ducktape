@@ -1,0 +1,24 @@
+rationale: |
+  Function parameters declared but never used in the function body. Vestigial from
+  previous implementations. Unused parameters add cognitive overhead and misleading
+  API surface. Remove them to tighten signatures. Use Ruff ARG001/ARG002 to detect.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/auto_attach.py:
+        - [40, 42]
+    note: attach_default_servers() has unused agent_id, persistence, docker_client params
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/auto_attach.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/auto_attach.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/runtime/handlers.py:
+        - [19, 31]
+    note: build_handlers() has unused approval_engine, approval_hub, agent_id params
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/handlers.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/handlers.py

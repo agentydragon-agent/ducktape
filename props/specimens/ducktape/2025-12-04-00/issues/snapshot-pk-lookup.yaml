@@ -1,0 +1,35 @@
+rationale: |
+  Snapshot lookups by slug use .filter_by(slug=...).one() or .filter_by(slug=...).first(), but slug is the
+  primary key
+  (see models.py line 153). SQLAlchemy's .get() method should be used for primary key lookups as it's more
+  efficient and
+  clearer: session.get(Snapshot, slug_value).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/prompt_optimizer.py:
+        - [225, 225]
+    note: Uses .filter_by(slug=...).first() for PK lookup
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/prompt_optimizer.py
+    match_file_restriction:
+      - adgn/src/adgn/props/prompt_optimizer.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/props/db/sync_specimens.py:
+        - [101, 101]
+    note: Uses .filter_by(slug=...).one() for PK lookup
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/sync_specimens.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/sync_specimens.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/props/db/sync_specimens.py:
+        - [118, 118]
+    note: Uses .filter_by(slug=...).one() for PK lookup
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/sync_specimens.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/sync_specimens.py

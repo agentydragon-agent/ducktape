@@ -1,0 +1,32 @@
+rationale: |
+  The function `_configure_logging_info` is duplicated in two files. While slightly different in implementation
+  (cli.py
+  has a longer version that also sets handler level to INFO, matrix_bot.py just calls configure_logging), they
+  serve the
+  same purpose: configure INFO-level logging before running commands.
+
+  The cli.py version (lines 91-96) explicitly sets StreamHandler level to INFO after calling configure_logging.
+  The
+  matrix_bot.py version (lines 35-36) just calls configure_logging.
+
+  These should be unified into a single shared implementation, likely in a common logging configuration module.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/cli.py:
+        - [91, 96]
+    note: Full implementation with StreamHandler level setting
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/cli.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/matrix_bot.py:
+        - [35, 36]
+    note: Simpler implementation just calling configure_logging
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/matrix_bot.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/matrix_bot.py

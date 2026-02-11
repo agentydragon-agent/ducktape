@@ -1,0 +1,51 @@
+rationale: |
+  Scoped try/except blocks swallow errors instead of failing loudly.
+  Where there is no specific recovery/handling need, do not catch at all — let exceptions bubble normally.
+  Where there is a specific reason to handle, catch only the narrow exception and do not swallow silently (log
+  and/or
+  re-raise as appropriate).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [138, 138]
+    note: scoped try/except swallows errors
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+  - occurrence_id: occ-1
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [157, 157]
+    note: scoped try/except swallows errors
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+  - occurrence_id: occ-2
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [177, 177]
+    note: scoped try/except swallows errors
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+  - occurrence_id: occ-3
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [196, 196]
+    note: scoped try/except swallows errors
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+  - occurrence_id: occ-4
+    files:
+      llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py:
+        - [55, 59]
+    note: mkdir failure silently falls back to cwd, hiding operational problems
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py

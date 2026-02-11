@@ -1,0 +1,18 @@
+rationale: |
+  ViolationTracker methods take `file_path: str` instead of `file_path: Path`.
+  Even though the paths are stored as strings in dicts, callers already have Path
+  objects and must convert to str. The interface should accept Path and convert
+  internally if needed for storage.
+
+  Change signatures to `file_path: Path` and convert to str only at storage point.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/session/violations.py:
+        - [34, 34]
+        - [60, 60]
+        - [73, 73]
+    note: "add_violation, add_violations, mark_file_fixed all take file_path: str"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/session/violations.py]

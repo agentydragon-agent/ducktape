@@ -1,0 +1,106 @@
+rationale: |
+  Dead code that should be removed. These are definitions with zero call sites,
+  commented-out code, or infrastructure left over from migrations.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/protocol.py:
+        - [128, 133]
+    note: Dead Snapshot class from WebSocket → MCP migration
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/protocol.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/protocol.py
+
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [137, 156]
+    note: Dead build_snapshot() method that constructs dead Snapshot objects
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+
+  - occurrence_id: occ-2
+    files:
+      adgn/tests/mcp/test_gitea_mirror_server.py:
+        - - 33
+          - 36
+    note: Unused _iter() helper function
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_gitea_mirror_server.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_gitea_mirror_server.py
+
+  - occurrence_id: occ-3
+    files:
+      adgn/tests/mcp/test_gitea_mirror_server.py:
+        - - 39
+          - 51
+    note: Unused _extract_payload() helper function
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_gitea_mirror_server.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_gitea_mirror_server.py
+
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/props/models/lint.py:
+        - [117, 136]
+    note: Commented-out ChecklistItem class (~20 lines, "checklist handling is currently disabled")
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/models/lint.py
+    match_file_restriction:
+      - adgn/src/adgn/props/models/lint.py
+
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/mcp/exec/models.py:
+        - [241, 264]
+    note: Unused read_stream_limited_sync() function (async variant is used, sync never called)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/exec/models.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/exec/models.py
+
+  - occurrence_id: occ-6
+    files:
+      adgn/src/adgn/props/cli_app/main.py:
+        - [448, 448]
+      adgn/src/adgn/props/cli_app/shared.py:
+        - [76, 111]
+      adgn/src/adgn/props/prompts/_base.j2.md:
+        - [86, 86]
+      adgn/src/adgn/props/prompts/_partials.j2:
+        - [8, 21]
+      adgn/src/adgn/props/prompts/util.py:
+        - - 86
+          - 88
+        - - 105
+          - 105
+        - - 108
+          - 108
+    note: Dead tool detection machinery (detect_tools(), tools_section() macro) - include_tools hardcoded False
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/shared.py
+      - - adgn/src/adgn/props/cli_app/main.py
+      - - adgn/src/adgn/props/prompts/_partials.j2
+      - - adgn/src/adgn/props/prompts/_base.j2.md
+
+  - occurrence_id: occ-7
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [348, 357]
+    note: Dead `responses` property providing unused .responses.create() interface
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+
+  - occurrence_id: occ-8
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [218, 230]
+    note: Dead _coerce_text validator in AssistantMessageOut - coercion logic never triggered
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py

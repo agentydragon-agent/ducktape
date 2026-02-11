@@ -1,0 +1,30 @@
+---
+# ACME server selection: Change 'server' URL to switch between staging and production
+# Staging: https://acme-staging-v02.api.letsencrypt.org/directory (30,000 certs/week)
+# Production: https://acme-v02.api.letsencrypt.org/directory (5 certs/week)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # Using staging for development to avoid rate limits
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: agentydragon@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+      # DNS-01 solver for all test-cluster subdomains
+      # HTTP-01 doesn't work because VPS only routes HTTPS via SNI passthrough
+      - dns01:
+          webhook:
+            groupName: acme.zacharyseguin.ca
+            solverName: pdns
+            config:
+              host: http://powerdns-api.dns-system:8081
+              apiKeySecretRef:
+                name: powerdns-api-key
+                key: PDNS_API_KEY
+        selector:
+          dnsZones:
+            - "test-cluster.agentydragon.com"

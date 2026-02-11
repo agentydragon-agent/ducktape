@@ -1,0 +1,33 @@
+rationale: |
+  L120-124 define `PendingApproval` wrapper with fields `tool_call: ToolCall` and `timestamp: datetime`.
+  L50-59 define `_convert_pending_approvals()` that loops over `pending_map.items()`, wraps each
+  `ToolCall` in `PendingApproval` with `timestamp=datetime.now()`. Used at 3 call sites (L386, 404, 444).
+
+  This is unnecessary indirection with misleading timestamp: L56 sets `datetime.now()` at query time,
+  not creation time (TODO comment acknowledges this is wrong). After removing timestamp, wrapper and
+  conversion become trivial. Creates intermediate objects when callers could use dict values directly.
+
+  Delete `PendingApproval` (L120-124) and `_convert_pending_approvals()` (L50-59).
+  Replace calls with `list(pending_map.values())`. Update return types from `list[PendingApproval]`
+  to `list[ToolCall]`. Eliminates misleading timestamp, unnecessary wrapper, and conversions.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - - 120
+          - 124
+        - - 50
+          - 59
+        - - 56
+          - 56
+        - - 386
+          - 386
+        - - 404
+          - 404
+        - - 444
+          - 444
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py

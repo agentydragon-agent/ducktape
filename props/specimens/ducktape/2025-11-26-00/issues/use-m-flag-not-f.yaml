@@ -1,0 +1,36 @@
+rationale: |
+  Lines 641-647 extract the commit message from the editor file (removing scissors
+  and comments), then pass the file path to `git commit -F ... --cleanup=strip`.
+
+  **Problem:** We already did the cleanup ourselves in `_extract_commit_content()`.
+  There's no need to use `-F` (read from file) when we have the clean message in
+  `commit_message` variable.
+
+  **Current:**
+  ```python
+  commit_message = _extract_commit_content(final_content)
+  if not commit_message:
+      print("Aborting commit due to empty commit message.", file=sys.stderr)
+      raise ExitWithCode(1)
+  await _execute_git_commit(["-F", str(commit_msg_path), "--cleanup=strip"], passthru)
+  ```
+
+  **Simplified:**
+  ```python
+  commit_message = _extract_commit_content(final_content)
+  # Empty check removed - see issue 035 (let Git handle it)
+  await _execute_git_commit(message=commit_message, passthru=passthru)
+  ```
+
+  **Note:** This change pairs well with issue 034 (making message an explicit
+  required string parameter in `_execute_git_commit`).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - [641, 647]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py

@@ -1,0 +1,14 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: proxmox-csi-plugin
+  namespace: csi-proxmox
+spec:
+  encryptedData:
+    config.yaml: AgAFtm2Pq7Y/AREmF3TW64V65AmNPCf76DTu3cxgUa9CQbCgtwKokSZvAxbAKGgG0/hAhHfrLSYjYiTfpgWqv2jicZ5wJ1FfafAv6DgzPyYRfE3tPlyc5bl5ysT0grfBQweatH1ZypkHkCL9ck5uThJJimkHyHhKO028yeTrvzICQQq6U4yKKLu72vh1oupCgQNYUreS3uhwXEUTCJEP+JE4trAysU/+floJf2n+tXT/vja1ukkQKtrOuybmtC1E4zeBffRDJDpENejs/g5XA/WbmDaqMA5JgABOppe+/dDH6wD949vnXBczrKueukifl+GaZ9eHbSsxlIbKxyNBYa/5OaJdCKKHNMVXqAHasUWu8zQ7s67cKwFHRtO6yRx8LKyKVbs8AZlx0rqtUlrD9bpxYMTgWKgoA4X6In8dYvTtWoKVTEmMHI/+hkbaCHs4I6JuIaaHe49aFTCOZzmhigL7+4suHgP+jRV6Cz+u8fzNMHKDlNDucoguha2FdtRjKzZCLSYu5loiNWQ6m0gaThjqlz/+WQG55uqUOnp05SzJyfdF+OcmWMBMg10pXROH4gJ8fxRj/hntbe3IYp8d25nEsF0vnxcg5Bk5cf2df8088V9NdK70OK7EHa73ieOIgdYTXT6gK+MHYGu76lBDJ8h+IkDa9TflUbRheIM5jsYwHQ3RupZFzFyRaU3gWB++V5CseLKy+FmMtXeDq8IhdTJ9rd41kxoFhgEm7VLWbRQPwhUbhzZdb+FcfAhIzBrz6v/JTU/I4J2b7Z1wh7bdNFRCJfDQB+qKNeU9+cVajWn+33D7ekb4mWGdUR3nIetHI3HG8SMgO7ul6GnJ1rUSgCXFELAarqQGI30fn3kzmUi0CIXmAl8dXs9WptLpn/WO7CXis3uH+Kwli9I0XcpafchZQcWAHhkGTFnE9T7pY6L1UDcleh3DGretd3O+jVK9w6Q=
+  template:
+    metadata:
+      name: proxmox-csi-plugin
+      namespace: csi-proxmox
+    type: Opaque

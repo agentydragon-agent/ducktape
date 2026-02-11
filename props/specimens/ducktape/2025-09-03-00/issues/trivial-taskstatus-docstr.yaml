@@ -1,0 +1,13 @@
+rationale: |
+  The docstring "Status of a task." adds no information beyond the class name `TaskStatus` and repeats
+  the obvious. Trivial docstrings like this create noise without signal; remove them.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [468, 470]
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py

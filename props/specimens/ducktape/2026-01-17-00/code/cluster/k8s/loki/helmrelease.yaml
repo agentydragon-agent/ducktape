@@ -1,0 +1,244 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki-stack
+  namespace: loki
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: loki-stack
+      version: "2.10.2"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      interval: 12h
+  values:
+    # Loki configuration
+    loki:
+      enabled: true
+
+      # Use filesystem for small cluster (simpler than distributed)
+      isDefault: true
+
+      # Persistence configuration - use Proxmox CSI
+      persistence:
+        enabled: true
+        storageClassName: proxmox-csi-retain
+        accessModes:
+          - ReadWriteOnce
+        size: 20Gi
+
+      # Loki config
+      config:
+        # Authentication disabled for internal use
+        auth_enabled: false
+
+        # Ingester configuration
+        ingester:
+          chunk_idle_period: 3m
+          chunk_block_size: 262144
+          chunk_retain_period: 1m
+          max_transfer_retries: 0
+          lifecycler:
+            ring:
+              kvstore:
+                store: inmemory
+              replication_factor: 1
+
+        # Limits configuration
+        limits_config:
+          enforce_metric_name: false
+          reject_old_samples: true
+          reject_old_samples_max_age: 168h
+          ingestion_rate_mb: 10
+          ingestion_burst_size_mb: 20
+          per_stream_rate_limit: 5MB
+          per_stream_rate_limit_burst: 10MB
+
+        # Schema configuration - use boltdb-shipper for Loki 2.6.x
+        schema_config:
+          configs:
+            - from: "2024-01-01"
+              store: boltdb-shipper
+              object_store: filesystem
+              schema: v11
+              index:
+                prefix: index_
+                period: 24h
+
+        # Storage configuration
+        storage_config:
+          boltdb_shipper:
+            active_index_directory: /data/loki/boltdb-shipper-active
+            cache_location: /data/loki/boltdb-shipper-cache
+            shared_store: filesystem
+          filesystem:
+            directory: /data/loki/chunks
+
+        # Chunk store configuration
+        chunk_store_config:
+          max_look_back_period: 0s
+
+        # Table manager (for retention)
+        table_manager:
+          retention_deletes_enabled: true
+          retention_period: 168h # 7 days retention
+
+        # Compactor for cleanup
+        compactor:
+          working_directory: /data/loki/compactor
+          compaction_interval: 10m
+          retention_enabled: true
+          retention_delete_delay: 2h
+          retention_delete_worker_count: 150
+
+      # Resource limits for Loki
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+      # Security context
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+
+      # Service configuration
+      service:
+        type: ClusterIP
+        port: 3100
+
+    # Promtail configuration - DaemonSet for log collection
+    promtail:
+      enabled: true
+
+      # Promtail config
+      config:
+        # Server config
+        server:
+          http_listen_port: 9080
+          grpc_listen_port: 0
+
+        # Client - send to Loki
+        clients:
+          - url: http://loki-stack:3100/loki/api/v1/push
+            tenant_id: ""
+
+        # Position tracking
+        positions:
+          filename: /run/promtail/positions.yaml
+
+        # Scrape configs
+        scrape_configs:
+          # Kubernetes pod logs
+          - job_name: kubernetes-pods
+            pipeline_stages:
+              - cri: {}
+            kubernetes_sd_configs:
+              - role: pod
+            relabel_configs:
+              # Only scrape running pods
+              - source_labels:
+                  - __meta_kubernetes_pod_phase
+                regex: Pending|Succeeded|Failed|Completed
+                action: drop
+
+              # Add namespace label
+              - source_labels:
+                  - __meta_kubernetes_namespace
+                target_label: namespace
+
+              # Add pod name label
+              - source_labels:
+                  - __meta_kubernetes_pod_name
+                target_label: pod
+
+              # Add container name label
+              - source_labels:
+                  - __meta_kubernetes_pod_container_name
+                target_label: container
+
+              # Add node name label
+              - source_labels:
+                  - __meta_kubernetes_pod_node_name
+                target_label: node
+
+              # Set log path from pod metadata
+              - source_labels:
+                  - __meta_kubernetes_pod_uid
+                  - __meta_kubernetes_pod_container_name
+                target_label: __path__
+                separator: /
+                replacement: /var/log/pods/*$1/*.log
+
+              # Add app label if exists
+              - source_labels:
+                  - __meta_kubernetes_pod_label_app
+                target_label: app
+                regex: (.+)
+
+              # Add job label
+              - source_labels:
+                  - __meta_kubernetes_pod_label_app_kubernetes_io_name
+                target_label: job
+                regex: (.+)
+
+      # Resource limits for Promtail
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+
+      # Mount host paths for log collection
+      volumeMounts:
+        - name: pods
+          mountPath: /var/log/pods
+          readOnly: true
+        - name: run
+          mountPath: /run/promtail
+
+      volumes:
+        - name: pods
+          hostPath:
+            path: /var/log/pods
+        - name: run
+          hostPath:
+            path: /run/promtail
+
+      # Security context for Promtail
+      securityContext:
+        privileged: false
+        runAsUser: 0 # Need root to read /var/log/pods
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+
+      # Tolerations to run on all nodes
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+
+    # Disable components we don't need
+    grafana:
+      enabled: false # We already have Grafana from kube-prometheus-stack
+
+    prometheus:
+      enabled: false # We already have Prometheus
+
+    fluent-bit:
+      enabled: false # Using Promtail instead
+
+    logstash:
+      enabled: false # Not needed

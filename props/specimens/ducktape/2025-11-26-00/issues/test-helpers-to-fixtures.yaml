@@ -1,0 +1,106 @@
+rationale: |
+  Multiple test files define helper functions (`def _...`) that create test servers or
+  resources. These basic factories should be pytest fixtures instead of directly-called
+  functions.
+
+  **Pattern:** Functions like `_make_origin()`, `_backend()`, `_make_server()` are called
+  directly in tests instead of using pytest's dependency injection.
+
+  **Problems:**
+  1. Called directly instead of using pytest's dependency injection
+  2. Not reusable across test files without duplication
+  3. Can't easily override or mock for specific test scenarios
+  4. Doesn't follow pytest best practices
+
+  **Fix:** Convert to `@pytest.fixture` decorated functions. Tests receive them as
+  parameters instead of calling directly. Benefits: follows pytest conventions, reusable
+  via conftest.py, easy to override with fixture scope, can be parameterized, better
+  test isolation.
+
+  **Affected functions across 9 files:** `_make_origin()` (2x), `_backend()`, `_make_notifier()`,
+  `_make_backend()` (2x), `_make_server()`, `create_chat_servers()`, `make_echo_server()`.
+  Note: some similar functions are already fixtures (e.g., `bus()` in test_ui_server.py)
+  or take fixture parameters and are correctly implemented.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/mcp/compositor/test_admin_client.py:
+        - [8, 15]
+    note: _make_origin() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/compositor/test_admin_client.py
+    match_file_restriction:
+      - adgn/tests/mcp/compositor/test_admin_client.py
+  - occurrence_id: occ-1
+    files:
+      adgn/tests/mcp/compositor/test_meta_inproc_proxies.py:
+        - [11, 18]
+    note: _make_origin() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/compositor/test_meta_inproc_proxies.py
+    match_file_restriction:
+      - adgn/tests/mcp/compositor/test_meta_inproc_proxies.py
+  - occurrence_id: occ-2
+    files:
+      adgn/tests/mcp/compositor/test_pinned_unmount.py:
+        - [9, 16]
+    note: _backend() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/compositor/test_pinned_unmount.py
+    match_file_restriction:
+      - adgn/tests/mcp/compositor/test_pinned_unmount.py
+  - occurrence_id: occ-3
+    files:
+      adgn/tests/mcp/exec/test_docker_unit.py:
+        - [10, 12]
+    note: _make_notifier() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/exec/test_docker_unit.py
+    match_file_restriction:
+      - adgn/tests/mcp/exec/test_docker_unit.py
+  - occurrence_id: occ-4
+    files:
+      adgn/tests/mcp/resources/test_subscriptions_index.py:
+        - [31, 43]
+    note: _make_backend() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/resources/test_subscriptions_index.py
+    match_file_restriction:
+      - adgn/tests/mcp/resources/test_subscriptions_index.py
+  - occurrence_id: occ-5
+    files:
+      adgn/tests/mcp/test_chat_server.py:
+        - [23, 29]
+    note: create_chat_servers() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_chat_server.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_chat_server.py
+  - occurrence_id: occ-6
+    files:
+      adgn/tests/mcp/test_mcp_flat_model_helper.py:
+        - [23, 31]
+    note: _make_server() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_mcp_flat_model_helper.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_mcp_flat_model_helper.py
+  - occurrence_id: occ-7
+    files:
+      adgn/tests/mcp/test_notifications_envelope.py:
+        - [9, 26]
+    note: make_echo_server() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_notifications_envelope.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_notifications_envelope.py
+  - occurrence_id: occ-8
+    files:
+      adgn/tests/mcp/test_resources_subscriptions_index.py:
+        - [31, 42]
+    note: _make_backend() helper should be fixture
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_resources_subscriptions_index.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_resources_subscriptions_index.py

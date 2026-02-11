@@ -1,0 +1,20 @@
+rationale: |
+  execute_action only handles INBOX removal, silently ignoring all other labels_to_remove:
+
+      if label == "INBOX":
+          client.remove_from_inbox(message_id)
+      # TODO: Handle other label removals
+
+  If an action specifies removing UNREAD, STARRED, or any other label, it's silently
+  dropped. This is a bug - the TODO acknowledges it but the fix is trivial:
+  call client.remove_label(message_id, label) for non-INBOX labels.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [114, 116]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/__main__.py]

@@ -1,0 +1,51 @@
+rationale: |
+  Functions manually parse `passthru: list[str]` with string checks to determine CLI flags:
+  `include_all_from_passthru()` checks for `-a`/`--all` (core.py:61-63), `filter_commit_passthru()`
+  removes those flags (cli.py:508-510), `_validate_no_message_flag()` checks `-m`/`--message`
+  (cli.py:513-520), and inline checks for `--amend` (cli.py:672) and `-v`/`--verbose`
+  (editor_template.py:77).
+
+  This is fragile (doesn't handle `-m=value`, `-am` combined flags, `--all=false`), unclear
+  interface (functions accept generic passthru but only care about specific flags), couples core
+  logic to CLI syntax, no type safety (can't type-check "passthru should contain -a"), inconsistent
+  handling (some validated, some checked, some filtered), and hard to test (must construct string lists).
+
+  Use argparse/click to parse flags explicitly: `-a`/`--all` as `action='store_true'` → `bool`,
+  `--amend`/`-v` similarly. Replace `passthru: list[str]` parameters with typed bools (`include_all: bool`).
+  CLI framework handles all flag formats, functions declare exact needs, type-safe, and easier testing.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - - 52
+          - 52
+        - - 128
+          - 128
+        - - 145
+          - 145
+        - - 153
+          - 153
+        - - 508
+          - 510
+        - - 513
+          - 520
+        - - 524
+          - 524
+        - - 672
+          - 672
+        - - 698
+          - 698
+      adgn/src/adgn/git_commit_ai/core.py:
+        - - 61
+          - 63
+        - - 170
+          - 170
+        - - 190
+          - 190
+      adgn/src/adgn/git_commit_ai/editor_template.py:
+        - [77, 77]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/core.py
+      - - adgn/src/adgn/git_commit_ai/cli.py
+      - - adgn/src/adgn/git_commit_ai/editor_template.py

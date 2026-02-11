@@ -1,0 +1,45 @@
+rationale: |
+  Tests in the git_ro test suite repeatedly use `async with typed_git_ro() as client:` (8 occurrences across
+  test_diff.py, test_show.py, test_status_log.py, and conftest.py). This is a violation of the DRY principle -
+  the `typed_git_ro` fixture should be converted to a yield fixture to eliminate this boilerplate.
+
+  The fixture currently returns a factory function (lines 75-80 in conftest.py), forcing every test to use
+  `async with typed_git_ro() as client:`.
+
+  Suggested refactoring: Convert to a yield fixture:
+  ```python
+  @pytest.fixture
+  async def typed_git_ro(repo_git_ro: Path, make_typed_mcp):
+      server = GitRoServer(repo_git_ro)
+      async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, _session):
+          yield client
+  ```
+
+  This eliminates 8 instances of the `async with` boilerplate, allowing tests to use the fixture directly:
+  `await typed_git_ro.diff(...)`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/mcp/git_ro/conftest.py:
+        - [65, 80]
+      adgn/tests/mcp/git_ro/test_diff.py:
+        - - 7
+          - 8
+        - - 29
+          - 30
+      adgn/tests/mcp/git_ro/test_show.py:
+        - - 8
+          - 8
+        - - 22
+          - 22
+      adgn/tests/mcp/git_ro/test_status_log.py:
+        - - 8
+          - 8
+        - - 14
+          - 14
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/git_ro/conftest.py
+      - - adgn/tests/mcp/git_ro/test_diff.py
+      - - adgn/tests/mcp/git_ro/test_show.py
+      - - adgn/tests/mcp/git_ro/test_status_log.py

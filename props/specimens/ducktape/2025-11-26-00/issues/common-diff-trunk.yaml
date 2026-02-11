@@ -1,0 +1,14 @@
+rationale: |
+  Lines 130-139 have `repo.diff(...).patch or ""` duplicated in both branches. Only the base commit differs.
+  Factor out the common diff call so branches only determine the base commit and header, with diff call as
+  common trunk.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - [130, 139]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py

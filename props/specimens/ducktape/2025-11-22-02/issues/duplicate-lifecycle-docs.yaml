@@ -1,0 +1,23 @@
+rationale: |
+  The ToolCallRecord lifecycle states are documented identically in two places: the ToolCallRecord class
+  docstring (lines 104-109) and the save_tool_call method docstring (lines 167-171).
+
+  This violates DRY. The lifecycle states are a property of the ToolCallRecord type itself, not specific to
+  the save_tool_call method.
+
+  Fix: Document the lifecycle states only once in the ToolCallRecord class docstring. The save_tool_call
+  method should either remove the lifecycle documentation entirely or reference it briefly: "See
+  ToolCallRecord for lifecycle stages". This ensures single source of truth and prevents documentation drift.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/__init__.py:
+        - - 104
+          - 109
+        - - 167
+          - 171
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/__init__.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/__init__.py

@@ -1,0 +1,20 @@
+rationale: |
+  `file_path: str | None` parameters in python_formatter.py are only nullable for
+  test convenience. Production callers (checker.py:87, handler.py:671) always pass
+  a file_path. The None case triggers fallback to "temp.py" for ruff's --stdin-filename.
+
+  The signature should be `file_path: Path` with no default, and tests should pass
+  explicit test paths instead of relying on None defaults. This eliminates unnecessary
+  nullability guards and makes the production contract explicit.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/linters/python_formatter.py:
+        - [38, 40]
+        - [86, 86]
+        - [102, 102]
+        - [126, 126]
+        - [145, 145]
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/linters/python_formatter.py]

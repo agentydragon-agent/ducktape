@@ -1,0 +1,14 @@
+rationale: |
+  Line 27 in transcript_handler.py contains a false comment: "The parent directory must already exist
+  (created by run managers)." This is contradicted by lines 36-37 which explicitly create the parent
+  directory with `mkdir(parents=True, exist_ok=True)`. The comment should be removed as it's inaccurate.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/transcript_handler.py:
+        - [27, 27]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/transcript_handler.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/transcript_handler.py

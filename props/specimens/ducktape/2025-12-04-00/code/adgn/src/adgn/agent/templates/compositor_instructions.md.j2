@@ -1,0 +1,35 @@
+{% set ns = namespace(had_block=false) %}
+{% for name, state in states|dictsort %}
+  {% if state.state == 'running' %}
+    {% set instr = (state.initialize.instructions or '') %}
+    {% set caps = state.initialize.capabilities %}
+    {% if instr or caps %}
+      {% if not ns.had_block %}
+
+The following MCP servers have provided instructions or capabilities:
+        {% set ns.had_block = true %}
+      {% endif %}
+
+# {# Show mount key and advertised name (if different) #}
+{% set sinfo = state.initialize.serverInfo if state.initialize.serverInfo is defined else none %}
+{% set advertised = (sinfo.title if sinfo and sinfo.title else (sinfo.name if sinfo and sinfo.name else '')) %}
+# {{ name }}{% if advertised and advertised != name %} — {{ advertised }}{% endif %}
+## Instructions
+{{ instr|default('')|trim if instr else "None available" }}
+
+## Additional capabilities
+{% if caps and caps.resources is not none -%}
+* Resources
+{%- else -%}
+None available
+{%- endif %}
+
+{% if caps %}
+## Capabilities (raw)
+{{ caps | model_dump_json() }}
+
+Semantics: resources.subscribe/listChanged → notifications support; presence of a section implies feature is supported.
+{% endif %}
+    {% endif %}
+  {% endif %}
+{% endfor %}

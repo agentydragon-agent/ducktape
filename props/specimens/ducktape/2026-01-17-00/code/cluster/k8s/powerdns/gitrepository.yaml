@@ -1,0 +1,11 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: powerdns-chart
+  namespace: dns-system
+spec:
+  interval: 24h
+  url: https://github.com/agentydragon/cluster
+  ref:
+    branch: main

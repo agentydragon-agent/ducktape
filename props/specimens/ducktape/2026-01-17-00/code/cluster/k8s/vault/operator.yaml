@@ -1,0 +1,46 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: bank-vaults
+  namespace: vault
+spec:
+  interval: 24h
+  type: oci
+  url: oci://ghcr.io/bank-vaults/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: operator
+  namespace: vault
+spec:
+  interval: 15m
+  chart:
+    spec:
+      chart: vault-operator
+      sourceRef:
+        kind: HelmRepository
+        name: bank-vaults
+        namespace: vault
+  values:
+    # Bank-Vaults operator configuration
+    replicaCount: 1
+
+    image:
+      repository: ghcr.io/bank-vaults/vault-operator
+      tag: "1.23.0"
+      pullPolicy: IfNotPresent
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi

@@ -1,0 +1,20 @@
+rationale: |
+  Lines 179-182 have inline imports with comment claiming "circular dependency with registry setup", but no
+  circular
+  dependency exists. Investigation shows mcp_bridge modules do NOT import from app.py.
+
+  Move imports to top of file (standard import organization), delete misleading comment, remove noqa PLC0415
+  suppressions.
+  If a circular dependency actually existed, the correct fix would be architecture refactoring, not hidden
+  inline
+  imports.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/app.py:
+        - [179, 182]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/app.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/app.py

@@ -1,0 +1,68 @@
+rationale: |-
+  Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
+  nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
+  Early bailout).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/tui/components/chat/chat.go:
+        - - 508
+          - 516
+        - - 837
+          - 841
+    note: |-
+      Combine nested type+value checks into single if (e.g., asMsg,ok := item.(MessageCmp); ok &&
+      asMsg.GetMessage().ID == messageID) and guard for tc.Spinning with a single condition.
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/chat.go
+  - occurrence_id: occ-1
+    files:
+      internal/message/content.go:
+        - [211, 300]
+    note: |-
+      Flatten nested type/id/finished guards across Content/Reasoning/Finish helper methods to reduce repetition and
+      nesting.
+    critic_scopes_expected_to_recall:
+      - - internal/message/content.go
+  - occurrence_id: occ-2
+    files:
+      internal/app/app.go:
+        - [310, 319]
+    note: |-
+      Flatten trivial guards when deriving MCP topic; prefer small guard or local helper to reduce nesting in the
+      hot loop.
+    critic_scopes_expected_to_recall:
+      - - internal/app/app.go
+  - occurrence_id: occ-3
+    files:
+      internal/lsp/client.go:
+        - [340, 356]
+    note: "WaitForServerReady: remove unnecessary else after an early return and use guard clauses."
+    critic_scopes_expected_to_recall:
+      - - internal/lsp/client.go
+  - occurrence_id: occ-4
+    files:
+      e2e/scenario.go:
+        - [196, 201]
+    note: |-
+      Combine E2E_PER_STEP_SECS env read and value check into a single expression (read+parse+validate) to reduce
+      nested conditionals.
+    critic_scopes_expected_to_recall:
+      - - e2e/scenario.go
+  - occurrence_id: occ-5
+    files:
+      internal/pubsub/broker.go:
+        - [180, 184]
+    note: 'Use short if with initializer: if s := f.String(); s != "" { ... } instead of separate lines.'
+    critic_scopes_expected_to_recall:
+      - - internal/pubsub/broker.go
+  - occurrence_id: occ-6
+    files:
+      internal/history/file.go:
+        - [77, 115]
+    note: |-
+      createWithVersion: flatten UNIQUE-constraint retry guard; use clearer retry loop and guard-clauses to avoid
+      deep nesting.
+    critic_scopes_expected_to_recall:
+      - - internal/history/file.go

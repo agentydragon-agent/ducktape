@@ -1,0 +1,55 @@
+rationale: |
+  Line 1 in mcp/_shared/constants.py has a comment that should be a module docstring:
+  "# Shared constants for MCP mcp/_shared modules"
+
+  Current code:
+
+  # Shared constants for MCP mcp/_shared modules
+
+  from pathlib import Path
+  from typing import Final
+
+  Problems:
+
+  1. **Wrong documentation style**: Module-level documentation should use docstrings
+     (triple-quoted strings), not comments. Docstrings are:
+     - Accessible via `__doc__` attribute
+     - Shown by `help()` function
+     - Extracted by documentation tools (Sphinx, pdoc)
+     - Standard Python convention (PEP 257)
+
+  2. **Not discoverable**: Comments at the top of files are not accessible
+     programmatically or by documentation tools. This makes the module's purpose
+     invisible to introspection and automated documentation.
+
+  3. **Inconsistent with Python conventions**: PEP 257 specifies that module
+     docstrings should be the first statement in a file (after any shebang/encoding).
+
+  Suggested fix:
+
+  """Shared constants for MCP _shared modules."""
+
+  from pathlib import Path
+  from typing import Final
+
+  After refactoring:
+
+  - Module purpose is accessible via `constants.__doc__`
+  - `help(constants)` shows the description
+  - Documentation tools can extract and display it
+  - Follows Python conventions (PEP 257)
+  - More maintainable and discoverable
+
+  This is a common anti-pattern where developers use comments for module/class/function
+  documentation instead of docstrings. Always prefer docstrings for documentation that
+  describes what something IS or DOES.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/constants.py:
+        - [1, 1]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/constants.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/constants.py

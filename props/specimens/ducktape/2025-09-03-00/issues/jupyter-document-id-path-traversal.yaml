@@ -1,0 +1,15 @@
+rationale: |
+  False positive: document_id is CLI-controlled (wrapper --document-id), not an MCP tool input.
+  The value is used to create a notebook path under the configured workspace; this is an internal
+  parameter under our control rather than an untrusted input.
+should_flag: false
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py:
+        - - 37
+          - 52
+        - - 480
+          - 506
+    relevant_files:
+      - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py

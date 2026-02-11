@@ -1,0 +1,52 @@
+rationale: |
+  Multiple places instantiate `Compositor` with explicit name arguments (e.g., `Compositor("test")`,
+  `Compositor("comp")`), but these names serve no functional purpose in most cases.
+
+  The `Compositor` class has a default name of `"compositor"` (server.py:134), so passing a name explicitly is
+  redundant
+  unless:
+  1. The compositor is being mounted inside another compositor (two-level pattern)
+  2. There's a specific need to distinguish compositors in logs/debugging
+
+  **Why this is a problem:**
+  - The explicit names don't affect behavior or functionality
+  - They add visual noise and unnecessary parameters
+  - They create inconsistency (different tests use different arbitrary names: "test", "comp", "compositor")
+  - In test fixtures, the name is completely unused since compositors are not nested
+
+  **Exception: Two-level compositor pattern**
+  The `compositor_factory.py` case is special - it creates a "global" compositor that mounts an agents server.
+  If this
+  compositor itself can be mounted in another compositor, the name might be meaningful for debugging nested
+  compositor
+  structures. However, even there, the default name would likely suffice.
+
+  **Fix:**
+  Remove the explicit name argument and rely on the default: `Compositor()` instead of `Compositor("name")`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/conftest.py:
+        - - 81
+          - 81
+        - - 355
+          - 355
+        - - 379
+          - 379
+        - - 411
+          - 411
+        - - 473
+          - 473
+    note: Test fixtures using arbitrary "comp" name - name never referenced
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/conftest.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/mcp_bridge/compositor_factory.py:
+        - [45, 45]
+    note: Creates "global" compositor - may be justified for two-level compositor pattern but likely still redundant
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/compositor_factory.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/compositor_factory.py

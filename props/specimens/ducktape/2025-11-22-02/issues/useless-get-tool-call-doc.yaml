@@ -1,0 +1,35 @@
+rationale: |
+  The get_tool_call method has a docstring that provides zero value beyond what's
+  already obvious from the method signature:
+
+  ```python
+  async def get_tool_call(self, call_id: str) -> ToolCallRecord | None:
+      """Get a tool call record by call_id."""
+  ```
+
+  The docstring merely restates: method name, parameter name and return type.
+  This is a textbook example of useless documentation that should be removed.
+  Good documentation explains WHY or HOW, not WHAT (which is already clear from
+  the signature).
+
+  Remove the docstring, the method signature is self-documenting.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/__init__.py:
+        - [175, 176]
+    note: "Useless docstring in abstract interface"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/__init__.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/__init__.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [466, 467]
+    note: "Useless docstring in SQLite implementation"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py

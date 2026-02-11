@@ -1,0 +1,19 @@
+rationale: |
+  Pinned server tracking uses a separate set _pinned_servers instead of storing the flag in _MountState.
+  The pinned flag should be a boolean field in _MountState (e.g., pinned: bool = False).
+  This centralizes all mount state in one place and eliminates the need to keep _pinned_servers synchronized.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - - 89
+          - 89
+        - - 306
+          - 307
+        - - 314
+          - 314
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py

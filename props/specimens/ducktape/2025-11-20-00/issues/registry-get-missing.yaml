@@ -1,0 +1,21 @@
+rationale: |
+  InfrastructureRegistry.get() method is called but does not exist in the class definition.
+
+  The calls should likely use get_running_infrastructure() instead,
+  based on the usage pattern where the result is checked for None.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/status_shared.py:
+        - [114, 114]
+    note: "Called in build_agent_status_core: c = registry.get(agent_id)"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/status_shared.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - [516, 516]
+    note: "Called in agent_ui_state_resource: runtime = registry.get(agent_id)"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py

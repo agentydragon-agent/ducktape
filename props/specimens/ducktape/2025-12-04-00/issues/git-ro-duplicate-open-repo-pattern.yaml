@@ -1,0 +1,43 @@
+rationale: |
+  The `GitRoState` wrapper class (lines 217-219) is an unnecessary abstraction that adds no value and causes
+  performance issues.
+
+  Root problem: The wrapper exists only to hold a Path. Without storing the open repository, every tool must
+  reopen it. This pattern appears in 8 tool implementations (lines 244-245, 278, 300-301, 327-328, 367-368,
+  421-422, 438-439, 447-448).
+
+  Problems:
+  1. Repeated I/O: Each tool call reopens the repository (expensive file system operations)
+  2. Unnecessary indirection: Wrapper just provides `.git_repo` access to a Path
+  3. Stores Path when we need Repository: The Path is only used to open the repo
+  4. Dataclass overhead: Boilerplate for simple pass-through that should not exist
+
+  Correct pattern: Eliminate the wrapper, open repository once in `__init__`, store the Repository directly in
+  state. Tools can then access it directly without reopening.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/git_ro/server.py:
+        - - 221
+          - 223
+        - - 244
+          - 245
+        - - 278
+          - 278
+        - - 300
+          - 301
+        - - 327
+          - 328
+        - - 367
+          - 368
+        - - 421
+          - 422
+        - - 438
+          - 439
+        - - 447
+          - 448
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/git_ro/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/git_ro/server.py

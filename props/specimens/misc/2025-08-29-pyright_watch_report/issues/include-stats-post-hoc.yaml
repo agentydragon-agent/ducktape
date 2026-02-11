@@ -1,0 +1,20 @@
+rationale: |
+  Account include and exclude pattern hits symmetrically: accumulate include stats inside the main walk instead
+  of reconstructing later. This avoids a second pass and keeps ordering semantics obvious.
+
+  Lines 218 and 236 perform post-hoc reconstruction of include hits from `kept_union`, requiring iteration
+  over all kept files again.
+
+  Better approach: gather hits during the scan by tracking which patterns match each file inside the os.walk
+  loop. This reduces moving parts and cognitive load needed to understand the pipeline.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - - 218
+          - 218
+        - - 236
+          - 236
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

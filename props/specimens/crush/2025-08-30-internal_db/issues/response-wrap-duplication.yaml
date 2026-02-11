@@ -1,0 +1,90 @@
+rationale: |
+  Many tools duplicate the pattern `WithResponseMetadata(NewTextResponse(text), SomeResponseMetadata{...})`.
+  Introduce a
+  small helper (e.g., WrapTextWithMeta(text string, meta any) (ToolResponse, error)) and per-tool unexported
+  constructors
+  to reduce duplication and clarify metadata shaping.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/llm/tools/glob.go:
+        - [133, 134]
+    note: Glob tool uses WithResponseMetadata/NewTextResponse at these lines; factor via WrapTextWithMeta.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/glob.go
+    match_file_restriction:
+      - internal/llm/tools/glob.go
+  - occurrence_id: occ-1
+    files:
+      internal/llm/tools/bash.go:
+        - [487, 490]
+    note: Bash tool wraps stdout/no-output with BashResponseMetadata - use helper to centralize.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/bash.go
+    match_file_restriction:
+      - internal/llm/tools/bash.go
+  - occurrence_id: occ-2
+    files:
+      internal/llm/tools/view.go:
+        - [249, 251]
+    note: |-
+      View tool wraps output and ViewResponseMetadata at these lines; extract per-tool helper delegating to
+      WrapTextWithMeta.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/view.go
+    match_file_restriction:
+      - internal/llm/tools/view.go
+  - occurrence_id: occ-3
+    files:
+      internal/llm/tools/write.go:
+        - [236, 237]
+    note: Write tool wraps result with WriteResponseMetadata - consolidate.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/write.go
+    match_file_restriction:
+      - internal/llm/tools/write.go
+  - occurrence_id: occ-4
+    files:
+      internal/llm/tools/grep.go:
+        - [175, 177]
+    note: Grep wraps matches with GrepResponseMetadata; prefer a per-tool helper.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/grep.go
+    match_file_restriction:
+      - internal/llm/tools/grep.go
+  - occurrence_id: occ-5
+    files:
+      internal/llm/tools/ls.go:
+        - [181, 183]
+    note: LS wraps listing output with LSResponseMetadata; centralize call shape.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/ls.go
+    match_file_restriction:
+      - internal/llm/tools/ls.go
+  - occurrence_id: occ-6
+    files:
+      internal/llm/tools/edit.go:
+        - - 267
+          - 269
+        - - 404
+          - 406
+        - - 543
+          - 545
+    note: Edit tool has multiple wrap sites; provide newEditResult helper that uses WrapTextWithMeta.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/edit.go
+    match_file_restriction:
+      - internal/llm/tools/edit.go
+  - occurrence_id: occ-7
+    files:
+      internal/llm/tools/multiedit.go:
+        - - 313
+          - 315
+        - - 454
+          - 456
+    note: MultiEdit uses MultiEditResponseMetadata in multiple places; factor to helper.
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/multiedit.go
+    match_file_restriction:
+      - internal/llm/tools/multiedit.go

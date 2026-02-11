@@ -1,0 +1,15 @@
+rationale: |
+  Lines 346-348 construct headers dict, then pass headers=headers or None to StreamableHttpTransport.
+  The code should verify whether StreamableHttpTransport treats headers=None differently from headers={}.
+  If they are equivalent, simplify to headers=headers (remove the "or None" check).
+  This eliminates unnecessary complexity unless there's a semantic difference.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - [346, 349]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py

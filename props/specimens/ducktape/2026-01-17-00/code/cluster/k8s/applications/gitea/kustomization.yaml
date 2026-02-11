@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - secrets.yaml
+  - helmrelease.yaml
+  - admin-token-job.yaml
+# Gitea admin token job creates API token for administration
+# OAuth OIDC credentials synced from Vault via authentik-blueprint/gitea-secret ExternalSecret

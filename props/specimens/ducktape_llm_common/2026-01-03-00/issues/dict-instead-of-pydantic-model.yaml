@@ -1,0 +1,18 @@
+rationale: |
+  Tests construct `edits` as a list of raw dicts `[{"old_string": ..., "new_string": ...}]`
+  when the typed `EditOperation` Pydantic model exists (claude_linter/models.py:45-58).
+
+  Per STYLE.md: "Instantiate Pydantic models with explicit keyword arguments rather than
+  passing raw dicts." While Pydantic coerces dicts, explicit construction provides type
+  safety and makes the expected type clear at the call site.
+
+  Use `[EditOperation(old_string="foo", new_string="bar")]` instead.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tests/claude_linter_v2/test_diff_intelligence.py:
+        - [49, 49]
+    note: "edits=[{...}] should use EditOperation models"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_diff_intelligence.py]

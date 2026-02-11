@@ -1,0 +1,17 @@
+rationale: |
+  `list_labels` (lines 29-32) and `prune` (lines 97-100) use different
+  definitions of "used by filters." `list_labels` counts both
+  `add_label_ids` and `remove_label_ids`; `prune` only counts
+  `add_label_ids` with a comment saying removals are "typically system
+  labels." A user label that appears only in a filter's `removeLabelIds`
+  displays as used ("✓") in the list command but is treated as unused and
+  deleted by prune. The two commands should agree on the definition.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/cli/labels.py:
+        - [29, 32] # list_labels: counts add + remove
+        - [97, 100] # prune: counts add only
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/cli/labels.py]

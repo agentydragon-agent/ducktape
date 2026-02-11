@@ -1,0 +1,24 @@
+rationale: |
+  Short-lived variables used only once immediately after creation add noise without value.
+  Inline the expression at the call site to reduce lines and one-off names the reader must
+  mentally map.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/event_classifier.py:
+        - [181, 182]
+    note: tasks variable in extract_batch() - can inline into gather()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/event_classifier.py
+    match_file_restriction:
+      - gmail_archiver/event_classifier.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/__main__.py:
+        - [86, 87]
+    note: plan variable - can inline into plans.append()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py

@@ -1,0 +1,13 @@
+rationale: |
+  download_matching() in __main__.py manually implements paginated Gmail query
+  (lines 155-174) instead of using the existing GmailClient.list_messages_by_query()
+  which already handles pagination.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [155, 174]
+    note: manual pagination loop duplicates GmailClient.list_messages_by_query()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py

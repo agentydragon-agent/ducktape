@@ -1,0 +1,14 @@
+rationale: |
+  extract_batch() takes emails as list[tuple[str, str, str, str]] - a raw tuple
+  with no indication of what each element means (message_id, subject, body,
+  received_date). Should use one of the existing Pydantic Gmail models like
+  GmailMessage, or a subset model if full GmailMessage is too heavy.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/event_classifier.py:
+        - [171, 171]
+    note: emails parameter in extract_batch() - tuple of (message_id, subject, body, received_date)
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/event_classifier.py

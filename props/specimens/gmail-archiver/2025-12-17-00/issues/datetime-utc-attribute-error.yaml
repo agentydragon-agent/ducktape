@@ -1,0 +1,19 @@
+rationale: |
+  Line 74 uses `datetime.now(datetime.UTC)`, but `datetime` here is the class
+  (imported via `from datetime import datetime` on line 5), not the module.
+  `UTC` is a module-level constant added in Python 3.11 (`datetime.UTC` on
+  the module), not a class attribute. This raises `AttributeError` every time
+  the timestamp-parsing branch in `_get_retry_after` executes. The bug is
+  currently masked by the surrounding `except Exception` (separate issue),
+  making the entire Retry-After timestamp path dead code. Fix: `from datetime
+  import UTC` and use `datetime.now(UTC)`, as done in other modules
+  (e.g., `aliexpress.py` line 4, `anthem_eob.py` line 3).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_client.py:
+        - [5, 5] # from datetime import datetime (class, not module)
+        - [74, 74] # datetime.now(datetime.UTC) — AttributeError at runtime
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/gmail_client.py]

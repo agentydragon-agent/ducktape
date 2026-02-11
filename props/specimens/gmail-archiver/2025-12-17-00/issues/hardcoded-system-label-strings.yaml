@@ -1,0 +1,42 @@
+rationale: |
+  normalize_yaml_rule() and format_filter_for_display() use hardcoded string literals
+  like "IMPORTANT", "STARRED", "INBOX", "UNREAD" instead of the SystemLabel enum
+  from gmail_api_models.py.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/filter_sync.py:
+        - [73, 123]
+    note: normalize_yaml_rule uses hardcoded label strings
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py
+    match_file_restriction:
+      - gmail_archiver/filter_sync.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/filter_sync.py:
+        - [215, 264]
+    note: format_filter_for_display uses hardcoded label strings
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py
+    match_file_restriction:
+      - gmail_archiver/filter_sync.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/filter_planner.py:
+        - [97, 105]
+    note: hardcoded STARRED, IMPORTANT, INBOX, UNREAD strings
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_planner.py
+    match_file_restriction:
+      - gmail_archiver/filter_planner.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/cli/filters.py:
+        - [163, 169]
+    note: _gmail_filter_to_rule uses hardcoded label strings in checks
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/cli/filters.py
+    match_file_restriction:
+      - gmail_archiver/cli/filters.py

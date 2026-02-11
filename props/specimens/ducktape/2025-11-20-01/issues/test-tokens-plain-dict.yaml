@@ -1,0 +1,19 @@
+rationale: |
+  The `test_tokens` fixture (lines 15-21) uses plain dict instead of Pydantic model for type safety.
+
+  Why this is problematic:
+  - Test data doesn't match production types (loses type safety)
+  - Type errors only caught at runtime, not at test construction
+  - Refactoring is unsafe (Pydantic model changes won't break tests immediately)
+  - Structure is implicit rather than explicit
+
+  Recommended fix: Use TokenConfig or similar Pydantic model to construct test data. This ensures test data
+  matches production types, catches errors early, and makes refactoring safer.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/agent/server/test_mcp_routing.py:
+        - [15, 21]
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/server/test_mcp_routing.py

@@ -1,0 +1,20 @@
+rationale: |
+  The code constructs XDG user data directory paths (using `user_data_dir("adgn", ...)`)
+  in multiple places instead of defining these paths once in a central location.
+
+  **Current implementation:** Each module independently calls `user_data_dir("adgn", "agentydragon")`
+  and constructs paths like `DEFAULT_DB_PATH = Path(...) / "mcp-bridge.db"` (mcp_bridge/cli.py, line 36).
+
+  **The correct approach:**
+  Create a central paths module (e.g., `adgn/paths.py`) that defines XDG directories once
+  (USER_DATA_DIR, USER_CACHE_DIR, USER_CONFIG_DIR) and specific application paths
+  (MCP_BRIDGE_DB, RESPONSES_CACHE_DB, AUTH_TOKENS_FILE, etc.). Import these constants
+  throughout the codebase.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/cli.py:
+        - [36, 36]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/cli.py

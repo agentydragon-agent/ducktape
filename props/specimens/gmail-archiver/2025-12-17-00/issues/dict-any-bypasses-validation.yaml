@@ -1,0 +1,24 @@
+rationale: |
+  Line 65 allows `dict[str, Any]` in the union type for `CompoundCondition.not_`:
+  `not_: Union[str, "CompoundCondition", dict[str, Any]] | None`
+
+  This bypasses Pydantic validation entirely. If the YAML contains an invalid
+  nested structure, Pydantic will accept it as a raw dict rather than validating
+  it against the CompoundCondition schema. The model already supports recursive
+  CompoundCondition via forward references, so the dict[str, Any] fallback serves
+  no purpose except to silently accept malformed input.
+
+  Remove `dict[str, Any]` from the union. The type should be:
+  `not_: str | CompoundCondition | None`
+
+  This ensures all nested `not` conditions are validated against the
+  CompoundCondition schema.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_yaml_filters_models.py:
+        - - 65
+          - 65
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_yaml_filters_models.py

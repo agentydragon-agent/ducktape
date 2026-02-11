@@ -1,0 +1,23 @@
+rationale: |
+  Using `.endswith(".py")` on paths instead of Path's `.suffix == ".py"` method.
+  Using `.endswith("__init__.py")` instead of `.name == "__init__.py"`.
+
+  Path methods are clearer, more idiomatic, and don't require str() conversion.
+  Replace string operations with Path methods.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/checker.py:
+        - [50, 50]
+        - [73, 73]
+    note: ".endswith() on str(file_path) instead of Path.suffix/.name"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/checker.py]
+  - occurrence_id: occ-1
+    files:
+      ducktape_llm_common/claude_linter_v2/check_python.py:
+        - [55, 55]
+    note: "file_path.endswith('__init__.py') instead of Path(file_path).name"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/check_python.py]

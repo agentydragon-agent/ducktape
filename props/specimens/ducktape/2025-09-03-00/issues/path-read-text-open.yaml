@@ -1,0 +1,19 @@
+rationale: |
+  For simple file I/O, prefer using Path.read_text()/Path.write_text() or Path.open() instead of calling
+  open(str(path),
+  ...) manually.
+
+  Benefits:
+  - Concise one-liners for common patterns.
+  - Keeps types as Path objects and avoids repeated str() conversions.
+  - Clearer intent and small performance/readability improvements.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/mini_codex/agent.py:
+        - [85, 92]
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/agent.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mini_codex/agent.py

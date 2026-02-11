@@ -1,0 +1,24 @@
+rationale: |
+  Comments and docstrings that merely restate what the code obviously does add noise
+  without value. Delete such comments; only add comments explaining WHY something is
+  done, caveats, workarounds, or complex logic that isn't self-evident.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/agent/test_policy_validation_reload.py:
+        - [86, 87]
+    note: Comment "Save a policy to persistence" just describes the next line
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/test_policy_validation_reload.py
+    match_file_restriction:
+      - adgn/tests/agent/test_policy_validation_reload.py
+  - occurrence_id: occ-1
+    files:
+      adgn/tests/mcp/approval_policy/test_policy_resources.py:
+        - [19, 25]
+    note: Docstring in persistence fixture adds no value; function name and code are self-documenting
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/approval_policy/test_policy_resources.py
+    match_file_restriction:
+      - adgn/tests/mcp/approval_policy/test_policy_resources.py

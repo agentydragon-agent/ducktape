@@ -1,0 +1,54 @@
+{% macro scope_block(scope_text, static_action, ambiguity_tail) %}
+Scope (freeform):
+- {{ scope_text }}
+
+Scope interpretation rules:
+- The scope may describe either:
+  1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or
+  2) a static set of files/paths
+- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use `git diff --unified=0` for references.
+- If it's a static file set: {{ static_action }} only those files.
+- On ambiguity, choose the most conservative interpretation, state the resolved scope, and {{ ambiguity_tail }}
+{% endmacro %}
+
+{% macro constraints_read_only() %}
+Constraints:
+- Read-only sandbox: do not execute commands that modify files or the repo
+- You MAY run read-only commands to inspect context (e.g., `git status`, `git diff --unified=0`)
+- You MUST check every changed hunk within scope
+{% endmacro %}
+
+{% macro tools_section(available_tools) %}
+{% if available_tools and available_tools|length > 0 %}
+
+Detected analysis tools on PATH: {{ available_tools | join(', ') }}
+Suggested order (analyze): ruff check → mypy/pyright → vulture → bandit → dupes (pylint R0801/lizard) → radon (report).
+Suggested order (fix): ruff --fix → pyupgrade --py312-plus → refurb → flynt; re-run ruff check.
+After applying fixes, run the analysis tools again and include any remaining issues.
+Include a short 'Missing tools' note in your final report if any commonly useful tools were unavailable and how that limited you (if at all).
+{% if 'jscpd(npx)' in available_tools %}
+Tools with special invocation:
+- jscpd(npx): npx --yes --no-install jscpd --path . --reporters json --ignore 'node_modules/**'
+{% endif %}
+{% endif %}
+{% endmacro %}
+
+{% macro supplemental_section_md(supplemental_text) %}
+
+{% if supplemental_text %}
+
+Supplemental files (golden reviews):
+These cover both the formal properties defined below and additional not-yet-formalized feedback.
+Your analysis must ensure code passes all formal property definitions and also the additional criteria captured here.
+Generalize patterns from these supplements and flag similar issues in the input code.
+{{ supplemental_text }}
+{% endif %}
+{% endmacro %}
+
+{% macro reporting_requirements(no_empty_reports=True) %}
+Reporting requirements:
+- For each finding: 1-line rationale and precise anchors (e.g., file:41-45, function names, or concise symbol paths)
+- For many similar cases, write one short description then follow with a compact list of cases (file:lines or symbol names).
+{% if no_empty_reports %}- Do not list properties/files without violations; omit any "No violations" lines.{% endif %}
+- Do not include preparatory narration; print only the report.
+{% endmacro %}

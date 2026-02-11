@@ -1,0 +1,23 @@
+rationale: |
+  Lines 232-244 use nested loops with temporary counters for per-include unique counts. Use comprehension +
+  seen-update pattern to make the code shorter and less nested while remaining readable and correct.
+
+  After (shorter/flattened):
+  ```python
+  per_include_unique: dict[str, set[Path]] = {}
+  seen: set[Path] = set()
+  for pat in include:
+      paths = {p for p in sorted(kept_union) if p not in seen and matches_any(rel(p, root), [pat])}
+      per_include_unique[pat] = paths
+      seen.update(paths)
+  ```
+
+  This primarily reduces nesting and temporary counters while keeping the same semantics.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - [232, 244]
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

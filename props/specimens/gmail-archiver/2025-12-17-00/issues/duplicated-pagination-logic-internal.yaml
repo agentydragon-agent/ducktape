@@ -1,0 +1,35 @@
+rationale: |
+  GmailClient has two nearly identical pagination loops in list_messages_by_labels()
+  and list_messages_by_query(). Both do:
+  - Initialize message_ids = [], page_token = None
+  - Loop: build query_params, add pageToken if set, call messages().list()
+  - Extend message_ids, check max_results limit, check nextPageToken
+
+  The only difference is the query parameter: labelIds vs q.
+
+  Fix: Extract a private _list_messages(extra_params, max_results) helper that
+  handles the pagination loop, then both public methods become one-liners:
+    return self._list_messages({"labelIds": label_ids}, max_results)
+    return self._list_messages({"q": query}, max_results)
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_client.py:
+        - [125, 150]
+    note: list_messages_by_labels pagination loop
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/gmail_client.py]
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/gmail_client.py:
+        - [153, 178]
+    note: list_messages_by_query pagination loop (identical to occ-0)
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/gmail_client.py]
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py

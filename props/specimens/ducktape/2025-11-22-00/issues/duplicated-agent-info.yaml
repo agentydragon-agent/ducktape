@@ -1,0 +1,35 @@
+rationale: |
+  The code has two problems in server.py:
+
+  **Problem 1: Duplicated agent info construction**
+
+  Both `list_agents()` and `get_agent_info()` build the same `AgentInfo` object with identical
+  logic (determine run phase, check mode, build capabilities), but the implementation is
+  duplicated line-by-line instead of extracting a shared helper (server.py, lines 252-302).
+
+  **The correct approach:**
+  Extract a `_build_agent_info(agent_id, agent)` helper method and call it from both resources.
+  Alternatively, have `list_agents` call `get_agent_info` for each agent.
+
+  **Problem 2: Thin wrapper methods**
+
+  Methods `get_infrastructure()`, `get_agent_mode()`, and `get_local_runtime()` are trivial
+  wrappers that just call `_get_agent_or_raise()` and access one field (server.py, lines 187-198).
+
+  **The correct approach:**
+  Let callers use `_get_agent_or_raise()` directly and access fields themselves
+  (`agent.running`, `agent.mode`, `agent.local_runtime`). Or if public access is needed,
+  rename `_get_agent_or_raise` to `get_agent` and let callers access fields directly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - - 252
+          - 279
+        - - 285
+          - 302
+        - - 187
+          - 198
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/server.py

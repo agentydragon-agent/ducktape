@@ -1,0 +1,75 @@
+rationale: |
+  Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
+  }` and
+  then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...);
+  err !=
+  nil
+  { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash
+  renderer
+  already
+  uses the guard-clause style.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [290, 297]
+    note: "editRenderer.Render: use guard clause for json unmarshal of params, proceed on happy path."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-1
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [335, 344]
+    note: "multiEditRenderer.Render: use guard clause for params unmarshal."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-2
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [384, 390]
+    note: "writeRenderer.Render: prefer guard-clause style when unmarshalling params."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-3
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [410, 416]
+    note: "fetchRenderer.Render: use early bailout on unmarshal error then happy-path."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-4
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [457, 463]
+    note: "downloadRenderer.Render: prefer guard-clause for metadata/params parsing."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-5
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [483, 488]
+    note: "globRenderer.Render: use guard-clause pattern."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-6
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [508, 515]
+    note: "grepRenderer.Render: prefer early-return on unmarshal error then continue."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-7
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [535, 543]
+    note: "lsRenderer.Render: use guard clause for unmarshalling params."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go
+  - occurrence_id: occ-8
+    files:
+      internal/tui/components/chat/messages/renderer.go:
+        - [563, 569]
+    note: "sourcegraphRenderer.Render: prefer guard-clause for params/metadata parsing."
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/renderer.go

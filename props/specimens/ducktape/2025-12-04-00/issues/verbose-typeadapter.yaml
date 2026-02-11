@@ -1,0 +1,17 @@
+rationale: |
+  Using TypeAdapter wrapper unnecessarily for Pydantic model validation. Pydantic BaseModel classes have
+  model_validate_json() class method that is more direct and idiomatic.
+
+  Current: TypeAdapter(mcp_types.CallToolResult).validate_json(item.output)
+
+  Better: mcp_types.CallToolResult.model_validate_json(item.output)
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/agent.py:
+        - [554, 554]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/agent.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/agent.py

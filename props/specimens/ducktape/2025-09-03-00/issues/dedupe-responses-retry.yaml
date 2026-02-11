@@ -1,0 +1,14 @@
+rationale: |
+  `_responses_create_with_retry` is duplicated in mini_codex/agent.py and mini_codex/cli.py. Define it once
+  (e.g., in agent.py) and import in the CLI to avoid drift and keep retry policy centralized.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/mini_codex/agent.py:
+        - [42, 42]
+      llm/adgn_llm/src/adgn_llm/mini_codex/cli.py:
+        - [184, 185]
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/agent.py
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/cli.py

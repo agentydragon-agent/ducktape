@@ -1,0 +1,12 @@
+rationale: |
+  _LiveServer.close() awaits session.__aexit__() and only afterwards closes the stdio
+  transport context manager. If the session close raises, the stdio cleanup never runs,
+  leaking subprocess pipes and file descriptors.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py:
+        - [95, 101]
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py

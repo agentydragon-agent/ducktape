@@ -1,0 +1,14 @@
+rationale: |
+  create_filter_planners() uses an explicit loop with append when a list comprehension
+  would be cleaner and more idiomatic.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/filter_planner.py:
+        - [123, 143]
+    note: create_filter_planners function
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_planner.py
+    match_file_restriction:
+      - gmail_archiver/filter_planner.py

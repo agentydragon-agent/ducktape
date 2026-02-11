@@ -1,0 +1,27 @@
+rationale: |
+  Docker containers created by ContainerOptions and _build_host_config() do not
+  specify memory limits. While containers are isolated by network mode ("none") and
+  read-only volumes, it would be healthier to set explicit memory constraints.
+
+  Setting memory limits helps:
+  - Prevent runaway processes from affecting host stability
+  - Make resource usage predictable and debuggable
+  - Align with containerization best practices
+
+  Docker supports Memory (hard limit) and MemoryReservation (soft limit) in HostConfig.
+  A reasonable default could be 2-4GB for agent runtime containers and 1-2GB for
+  critics/graders, with the option to override per use case.
+
+  Example addition to _build_host_config():
+    host_config["Memory"] = opts.mem_limit or (2 * 1024 * 1024 * 1024)  # 2GB default
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/container_session.py:
+        - - 99
+          - 129
+        - - 52
+          - 61
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/container_session.py

@@ -1,0 +1,13 @@
+rationale: |
+  Try/except around Plan.merge() is unnecessary defensive coding. If merge
+  fails with ValueError (plan collision), that's a bug in planners that should
+  crash loudly, not be silently caught and return early.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [93, 97]
+    note: try/except ValueError around Plan.merge() - should just call unguarded
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py

@@ -1,0 +1,35 @@
+rationale: |
+  `LocalAgentRuntime` has lifecycle issues: missing type annotations
+  (ui_bus, connection_manager at 81-82), "may be initialized" antipattern
+  (session/agent nullable at 85-88, runtime checks at 155-158), incomplete
+  cleanup (close() doesn't null fields at 160-165), and not being a proper
+  context manager despite having start()/close() methods.
+
+  "May be initialized" antipattern impact: object exists but isn't usable
+  (half-initialized), every method must check initialization, type system
+  can't help (fields are `T | None`), easy to forget start() call.
+
+  Solutions: (1) async context manager (move start() logic to __aenter__,
+  cleanup to __aexit__, automatic lifecycle, strong types, guaranteed
+  cleanup), or (2) factory pattern (classmethod create() with async init,
+  manual lifecycle but strong types).
+
+  Current approach: manual unclear lifecycle, weak type safety, incomplete
+  cleanup.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/local_runtime.py:
+        - - 81
+          - 82
+        - - 85
+          - 88
+        - - 90
+          - 153
+        - - 155
+          - 158
+        - - 160
+          - 165
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/local_runtime.py

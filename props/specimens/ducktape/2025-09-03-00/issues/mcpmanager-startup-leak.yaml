@@ -1,0 +1,25 @@
+rationale: |
+  McpManager.from_config() and from_servers() start _LiveServer instances sequentially without
+  cleanup on failure. If await h.start() raises on server N, or if _collect_tools_live() fails,
+  the method propagates the exception without closing the already-started servers in handles,
+  leaving MCP subprocesses running. The startup should clean up any already started servers on failure.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py:
+        - [191, 224]
+    note: In from_config()
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py
+  - occurrence_id: occ-1
+    files:
+      llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py:
+        - [226, 258]
+    note: In from_servers()
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py

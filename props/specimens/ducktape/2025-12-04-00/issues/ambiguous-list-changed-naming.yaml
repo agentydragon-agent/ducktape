@@ -1,0 +1,32 @@
+rationale: |
+  The naming "list_changed" is ambiguous - it could refer to any list changing.
+  These handlers specifically react to resource list changes on mounted servers (MCP resources/list_changed
+  notifications).
+  The semantic meaning is that the list of *resources* on a server changed, not some generic "list".
+  All references should use explicit "resource_list_changed" naming to clarify this contract.
+  This affects field names (_list_changed_listeners, _pending_list_changed), method names
+  (add_list_changed_listener,
+  _notify_list_changed, pop_recent_list_changed), and the comment at line 82.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - - 82
+          - 84
+        - - 109
+          - 109
+        - - 116
+          - 116
+        - - 142
+          - 142
+        - - 143
+          - 143
+        - - 145
+          - 145
+        - - 151
+          - 154
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py

@@ -1,0 +1,51 @@
+rationale: |
+  The policy gateway tracks in-flight tool calls via direct Python field access
+  (_policy_gateway.has_inflight_calls()) instead of exposing state through MCP
+  resources and notifications. This breaks the architectural pattern where all
+  state is accessed through MCP.
+
+  **Architectural inconsistency:**
+  - compositor_meta exposes mount state as MCP resources (lines 35-47)
+  - AgentSession (runtime.py:90-95) and status builder (status_shared.py:60-65)
+    directly access _policy_gateway.has_inflight_calls()
+  - Frontend listens to MCP notifications but can't see "executing" state
+
+  **Problems:**
+  1. Inconsistent: everything else uses MCP resources, this uses direct access
+  2. Tight coupling: direct field access creates module dependencies
+  3. Missing states: tool calls show only WAITING_APPROVAL vs completed, no
+     intermediate "executing" state
+  4. Frontend can't show "executing" status
+
+  **Fix:** Expose tool call states (pending_approval, executing, completed) as
+  MCP resources. Policy gateway emits resource_updated notifications when state
+  changes. AgentSession/status read state via MCP resources instead of direct access.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/container.py:
+        - - 197
+          - 197
+        - - 372
+          - 372
+      adgn/src/adgn/agent/server/runtime.py:
+        - [90, 95]
+      adgn/src/adgn/agent/server/status_shared.py:
+        - [60, 65]
+      adgn/src/adgn/mcp/compositor_meta/server.py:
+        - [35, 47]
+      adgn/src/adgn/mcp/policy_gateway/middleware.py:
+        - - 128
+          - 128
+        - - 130
+          - 136
+        - - 145
+          - 180
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/policy_gateway/middleware.py
+        - adgn/src/adgn/agent/server/runtime.py
+      - - adgn/src/adgn/mcp/policy_gateway/middleware.py
+        - adgn/src/adgn/agent/server/status_shared.py
+      - - adgn/src/adgn/mcp/policy_gateway/middleware.py
+        - adgn/src/adgn/mcp/compositor_meta/server.py

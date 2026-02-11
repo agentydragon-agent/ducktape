@@ -1,0 +1,19 @@
+rationale: |
+  `_StepRunner` (lines 130-153) uses `make_mock(runner.handle_request_async)` to conform
+  to OpenAIModelProto, but could implement the protocol directly. The indirection obscures
+  intent and requires awkward method binding.
+
+  Fix: Have `_StepRunner` implement `OpenAIModelProto` directly with a `responses_create`
+  method instead of `handle_request_async`, eliminating the `make_mock()` wrapper.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/support/responses.py:
+        - - 130
+          - 153
+      adgn/tests/llm/support/openai_mock.py:
+        - - 75
+          - 92
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/support/responses.py

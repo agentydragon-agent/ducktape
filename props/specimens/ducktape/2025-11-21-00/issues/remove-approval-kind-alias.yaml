@@ -1,0 +1,29 @@
+rationale: |
+  Line 41 defines `ApprovalKind = UserApprovalDecision` type alias. Used in state.py:73,
+  state.py:130, servers/agents.py:30, servers/agents.py:609.
+
+  Alias adds no semantic value: doesn't convey anything different from UserApprovalDecision,
+  adds indirection (readers must look up), inconsistent naming (actual type has different
+  name), not a true abstraction (1:1 with no behavior), import clutter.
+
+  Fix: remove alias (line 41), replace all usages with `UserApprovalDecision` directly.
+  Benefits: one canonical name, clearer code, less cognitive overhead, easier to search/refactor.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - - 30
+          - 30
+        - - 609
+          - 609
+      adgn/src/adgn/agent/server/state.py:
+        - - 41
+          - 41
+        - - 73
+          - 73
+        - - 130
+          - 130
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/state.py
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py

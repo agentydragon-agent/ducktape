@@ -1,0 +1,25 @@
+rationale: |
+  Lines 261-273 contain three redundant `@singledispatch` registered functions that are identical - they all
+  just return `item` unchanged with the same comment "No conversion needed, X is already an InputItem".
+
+  While `@singledispatch.register` doesn't support Union types, you CAN register the same function for
+  multiple types to avoid duplication:
+
+  ```python
+  def _identity(item: InputItem) -> InputItem:
+      return item
+
+  response_out_item_to_input.register(ReasoningItem)(_identity)
+  response_out_item_to_input.register(FunctionCallItem)(_identity)
+  response_out_item_to_input.register(FunctionCallOutputItem)(_identity)
+  ```
+
+  This eliminates the redundant function definitions while maintaining the same dispatch behavior.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [261, 273]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py

@@ -1,0 +1,29 @@
+rationale: |
+  The `prefix` parameter is accepted, normalized (`prefix = prefix or name`), then
+  completely ignored - `self.mount()` hardcodes `prefix=name` instead of using
+  the computed value. The parameter creates an illusion of configurability that
+  doesn't exist. Remove the parameter and the dead computation.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - [251, 251]
+        - [255, 255]
+        - [277, 277]
+    note: mount_server prefix parameter computed then ignored
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - [280, 280]
+        - [284, 284]
+        - [302, 302]
+    note: mount_inproc prefix parameter computed then ignored
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py

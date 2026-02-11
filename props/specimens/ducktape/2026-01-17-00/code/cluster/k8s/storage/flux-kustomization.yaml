@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: storage
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/storage"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: core # Wait for sealed-secrets CRD and controller to be ready
+  # Note: CNI (Cilium) now managed by Terraform, not Flux
+  # Storage components deploy after cluster networking is ready
+  # Verify Proxmox CSI controller is ready
+  healthChecks:
+    - apiVersion: v1
+      kind: Secret
+      name: proxmox-csi-plugin
+      namespace: csi-proxmox
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: proxmox-csi-controller
+      namespace: csi-proxmox

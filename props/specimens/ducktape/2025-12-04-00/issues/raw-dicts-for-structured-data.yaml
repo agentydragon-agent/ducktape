@@ -1,0 +1,29 @@
+rationale: |
+  Raw dicts are used to collect structured snapshot and issue data instead of using
+  Pydantic models or dataclasses. This loses type safety and validation at construction time.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/db/sync.py:
+        - - 51
+          - 54
+        - - 75
+          - 80
+    note: "In sync_snapshots_to_db: snapshot_data dict"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/sync.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/sync.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/props/db/sync.py:
+        - - 179
+          - 184
+        - - 229
+          - 234
+    note: "In sync_issues_to_db: issue_data and fp_data dicts"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/sync.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/sync.py

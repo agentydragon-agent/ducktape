@@ -1,0 +1,24 @@
+rationale: |
+  The shim.py module docstring (lines 14-17) says "Keep this tiny and dependency-free; only stdlib is used" but
+  this is misleading. While the shim itself uses only stdlib, policy programs routinely import and use
+  types/enums from the `adgn` package, which is installed in the container image.
+
+  "Dependency-free" could mean:
+  1. The shim.py module doesn't import non-stdlib (TRUE)
+  2. Policy programs don't use adgn package (FALSE - they do!)
+  3. No external packages needed in container (FALSE - adgn is needed)
+
+  The current wording suggests interpretation #2, which is wrong.
+
+  Correct approach: Clarify that the shim itself is stdlib-only, but policy programs can import from adgn
+  package, and the container must have adgn installed.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/policy_eval/shim.py:
+        - [14, 17]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/policy_eval/shim.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/policy_eval/shim.py

@@ -1,0 +1,35 @@
+rationale: |
+  The test file has duplicate initialization of `GiteaMirrorServer` with identical arguments at lines 70 and 97:
+
+  ```python
+  mirror_server = server.make_gitea_mirror_server(
+      base_url="https://gitea.local",
+      token="secret-token"
+  )
+  ```
+
+  This pattern appears in multiple test functions with the same test credentials. Should be extracted into a
+  shared
+  pytest
+  fixture (e.g., `gitea_mirror_server`) in conftest.py to:
+  - Eliminate duplication
+  - Centralize test configuration
+  - Make it easier to update test credentials in one place
+  - Follow DRY principle for test fixtures
+
+  The fixture should return the initialized server instance, allowing tests to use it directly via dependency
+  injection
+  rather than creating it inline.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/mcp/test_gitea_mirror_server.py:
+        - - 70
+          - 70
+        - - 97
+          - 97
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_gitea_mirror_server.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_gitea_mirror_server.py

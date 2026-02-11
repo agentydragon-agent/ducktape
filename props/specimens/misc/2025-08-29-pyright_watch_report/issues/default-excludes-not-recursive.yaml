@@ -1,0 +1,25 @@
+rationale: |
+  Default exclude patterns are not recursive, so nested files under these directories are still included.
+
+  In pyright_watch_report.py, excludes like "build", "dist", and ".mypy_cache" are used as literal patterns.
+  With fnmatch on relative paths, a pattern of "dist" matches only a path named exactly "dist" — it does not
+  match
+  "dist/foo.py". As a result, files within these directories are not excluded.
+
+  Example: 'dist/foo.py' will not be excluded by the pattern 'dist'.
+
+  Note: Correct fix here would depend on specifics of how the program should behave and potential differences
+  in matching semantics between python and pyrightconfig.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - - 204
+          - 214
+        - - 60
+          - 76
+        - - 134
+          - 141
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

@@ -1,0 +1,33 @@
+rationale: |
+  SQLAlchemy models define created_at fields without default values, requiring every
+  creation site to manually pass created_at=datetime.now(). SQLAlchemy supports automatic
+  timestamps via server_default=func.now() or default=lambda: datetime.now(UTC).
+
+  Benefits of auto-defaults:
+  - DRY: timestamp logic in one place
+  - Can't forget to set created_at
+  - Consistent timestamp source
+  - Less code at creation sites
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/models.py:
+        - [32, 32]
+    note: Agent.created_at field
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/models.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/persist/models.py:
+        - [119, 119]
+    note: ToolCall.created_at field
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/models.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/persist/models.py:
+        - [153, 153]
+    note: Policy.created_at field
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/models.py

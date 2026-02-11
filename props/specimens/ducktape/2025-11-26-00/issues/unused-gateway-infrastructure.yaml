@@ -1,0 +1,53 @@
+rationale: |
+  Unused gateway-related infrastructure that should be deleted.
+
+  **1. Test stub classes and variables never used after definition**
+
+  - test_list_changes_subscriptions.py: stub classes (12-22), `gw = _StubGatewayClient()`
+    instantiated at lines 30, 53 but never referenced
+  - test_subscriptions_index.py: stub classes (14-28), `gw = _StubGatewayClient()` at
+    line 51 never referenced
+  - test_resources_subscriptions_index.py: stub classes (14-28) defined but never
+    instantiated; also `async with Client(comp) as gw:` at line 52 creates unused gw
+
+  **2. Unused context manager (test_notifications.py:29-31)**
+
+  Creates `gw_server = FastMCP("gw")` and `async with Client(gw_server) as gw:` but
+  gw is never used.
+
+  **3. Unused parameter (setup.py:21)**
+
+  `gateway_client` parameter checked with `if gateway_client is not None` but value
+  never passed to anything. Comment on line 29 even says "gateway_client parameter is
+  no longer used".
+
+  Delete all unused stubs, variables, and the dead parameter.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/compositor/setup.py:
+        - [21, 21]
+      adgn/tests/mcp/resources/test_list_changes_subscriptions.py:
+        - - 12
+          - 22
+        - - 30
+          - 30
+        - - 53
+          - 53
+      adgn/tests/mcp/resources/test_notifications.py:
+        - [29, 31]
+      adgn/tests/mcp/resources/test_subscriptions_index.py:
+        - - 14
+          - 28
+        - - 51
+          - 51
+      adgn/tests/mcp/test_resources_subscriptions_index.py:
+        - [14, 28]
+        - [52, 52]
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/resources/test_list_changes_subscriptions.py
+      - - adgn/tests/mcp/resources/test_subscriptions_index.py
+      - - adgn/tests/mcp/test_resources_subscriptions_index.py
+      - - adgn/tests/mcp/resources/test_notifications.py
+      - - adgn/src/adgn/mcp/compositor/setup.py

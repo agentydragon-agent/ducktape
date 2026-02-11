@@ -1,0 +1,41 @@
+rationale: |
+  The pattern "if is_system_label -> use as-is, else look up in dict" appears multiple times.
+  Should extract a helper function for name->id resolution that handles system labels.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_client.py:
+        - [117, 123]
+    note: list_messages_by_labels() label resolution loop
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/filter_sync.py:
+        - [163, 172]
+    note: normalized_to_create_request() add_label_ids conversion
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py
+    match_file_restriction:
+      - gmail_archiver/filter_sync.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/filter_sync.py:
+        - [174, 182]
+    note: normalized_to_create_request() remove_label_ids conversion
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py
+    match_file_restriction:
+      - gmail_archiver/filter_sync.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/filter_sync.py:
+        - [204, 212]
+    note: LabelMaps.ensure_label() - same pattern
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py
+    match_file_restriction:
+      - gmail_archiver/filter_sync.py

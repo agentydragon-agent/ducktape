@@ -1,0 +1,27 @@
+rationale: |
+  Lines 65 and 70 call `normalize_pattern` inside `matches_any` for every match. This scatters the
+  responsibility for "patterns should be normalized" all over the code.
+
+  Better approach: Pass input un-normalized patterns (both include/exclude) exactly once through a
+  normalization boundary, then consistently deal only with normalized patterns:
+
+  ```python
+  include = expand_include_patterns(include)  # returns normalized
+  exclude = [normalize_pattern(p) for p in exclude]
+  def matches_any(path_rel: str, patterns: Iterable[str]) -> bool:
+    return any(
+        fnmatch.fnmatch(path_rel, p) or fnmatch.fnmatch("/" + path_rel, p)
+        for p in patterns
+    )
+  ```
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - - 65
+          - 65
+        - - 70
+          - 70
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

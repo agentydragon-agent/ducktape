@@ -1,0 +1,92 @@
+rationale: |
+  Policy proposal_id (models.py:149) database column is int, but all APIs
+  accept str and convert with try/except int() at runtime. 13 locations have
+  identical conversion logic.
+
+  Using domain types provides:
+  - Type safety: can't mix different ID types
+  - Semantic clarity: not just any string/int, but specific identifier
+  - No runtime conversions/validation
+  - Clear type contracts in signatures
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/models.py:
+        - [149, 149]
+    note: Database model uses int for proposal_id
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/models.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - - 223
+          - 223
+        - - 259
+          - 259
+        - - 280
+          - 289
+        - - 311
+          - 321
+    note: SQLite layer converts str to int with try/except
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/persist/__init__.py:
+        - - 202
+          - 202
+        - - 204
+          - 204
+        - - 205
+          - 205
+        - - 206
+          - 206
+    note: Protocol interface uses str return/param types
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/__init__.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/approvals.py:
+        - [211, 211]
+    note: Approvals module uses str proposal_id at line 211
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/approvals.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/approvals.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/agent/approvals.py:
+        - [237, 237]
+    note: Approvals module uses str proposal_id at line 237
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/approvals.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/approvals.py
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/agent/approvals.py:
+        - [254, 254]
+    note: Approvals module uses str proposal_id at line 254
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/approvals.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/approvals.py
+  - occurrence_id: occ-6
+    files:
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - [747, 747]
+    note: MCP tool uses str proposal_id
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+  - occurrence_id: occ-7
+    files:
+      adgn/src/adgn/agent/mcp_bridge/resources.py:
+        - [67, 67]
+    note: Resources module uses str proposal_id
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/resources.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/resources.py

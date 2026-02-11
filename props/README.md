@@ -38,6 +38,7 @@ props/
 │   └── critic_dev/           # Meta-agents that develop critics
 │       ├── improve/          # Creates improved critic definitions
 │       └── optimize/         # Runs eval loops to select best critics
+├── specimens/                # Frozen code snapshots with labeled issues
 ├── standards/                # Property definitions (issue taxonomies)
 ├── testing/                  # Shared test fixtures and utilities
 ├── docs/                     # Documentation
@@ -45,13 +46,6 @@ props/
 ```
 
 ## Initial Setup
-
-### Prerequisites
-
-- Specimens repository cloned at `../specimens` (relative to ducktape root):
-  `git clone https://github.com/agentydragon/specimens ../specimens`
-
-### First-Time Setup
 
 ```bash
 cd props
@@ -111,39 +105,21 @@ bazelisk run //props/cli -- db restore <backup_file>
 
 ## Specimens Dataset
 
-**Specimens data lives in a separate repository**: <https://github.com/agentydragon/specimens>
+Specimens live in `props/specimens/` (previously a [separate repository](https://github.com/agentydragon/specimens)).
 
 Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
 
 - Per-snapshot directories with `manifest.yaml` (source, split, bundle metadata) and issue files (`.yaml`)
 - Each snapshot has its own `manifest.yaml` defining source commit and train/valid/test split
 
-### Configuration
-
-Set the `ADGN_PROPS_SPECIMENS_ROOT` environment variable to point to the specimens repository:
-
-```bash
-export ADGN_PROPS_SPECIMENS_ROOT=/path/to/specimens
-```
-
-When using direnv (recommended), this is configured in `.envrc`:
-
-```bash
-REPO_ROOT=$(git rev-parse --show-toplevel)
-export ADGN_PROPS_SPECIMENS_ROOT="$REPO_ROOT/../specimens"
-```
-
-**Required**: The environment variable must be set. The package will raise an error if it's not configured.
-
-### Authoring
-
-See the [specimens repository](https://github.com/agentydragon/specimens) for format specs and authoring guides.
+The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by direnv (`.envrc`) to
+`props/specimens/`. See <specimens/docs/authoring-guide.md> for the format spec.
 
 ## Evaluation Workflow
 
 The props system evaluates LLM critic agents through a fitness-based selection process:
 
-1. **Specimens** - Code snapshots with canonical issues identified by humans (maintained in separate [specimens repository](https://github.com/agentydragon/specimens))
+1. **Specimens** - Code snapshots with canonical issues identified by humans (in `props/specimens/`)
 2. **Critiques** - Agent-generated issue reports for each specimen
 3. **Grading** - Comparison of critiques against canonical issues to compute metrics (TP/FP/FN/recall/precision)
 4. **Selection** - Agents are selected based on fitness scores derived from how well they identify canonical issues

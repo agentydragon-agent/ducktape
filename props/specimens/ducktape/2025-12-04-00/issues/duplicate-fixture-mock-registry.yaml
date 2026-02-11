@@ -1,0 +1,52 @@
+rationale: |
+  The `mock_registry` pytest fixture is duplicated in two test files with nearly
+  identical implementations:
+
+  1. tests/mcp_bridge/test_integration.py (lines 74-79):
+     def mock_registry(sqlite_persistence):
+         """Create mock infrastructure registry using real persistence."""
+         registry = MagicMock()
+         registry.list_agents.return_value = []
+         registry.persistence = sqlite_persistence
+         return registry
+
+  2. tests/mcp/agents/test_agents_server.py (lines 21-30):
+     def mock_registry(sqlite_persistence):
+         """Create a mock registry for testing agents server.
+
+         Uses real persistence for data storage, but mocks the agent container tracking.
+         """
+         registry = MagicMock()
+         registry.persistence = sqlite_persistence
+         registry.list_agents.return_value = []
+         registry.is_external.return_value = False
+         return registry
+
+  Both fixtures:
+  - Have the same name and signature
+  - Accept sqlite_persistence parameter
+  - Create a MagicMock for the registry
+  - Set persistence attribute
+  - Mock list_agents to return empty list
+
+  The second fixture adds one additional mock (is_external), but this is a minor
+  difference that could be handled by having the shared fixture mock it by default
+  (or by parameterizing the fixture).
+
+  This duplication should be eliminated by consolidating the fixture into a
+  shared conftest.py file (e.g., tests/conftest.py or tests/mcp/conftest.py).
+
+  The consolidated fixture should include all mocked methods needed across both
+  test files, or use a factory pattern if different tests need different mock
+  configurations.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/mcp/agents/test_agents_server.py:
+        - [21, 30]
+      adgn/tests/mcp_bridge/test_integration.py:
+        - [74, 79]
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp_bridge/test_integration.py
+      - - adgn/tests/mcp/agents/test_agents_server.py

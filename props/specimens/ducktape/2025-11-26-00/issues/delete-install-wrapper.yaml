@@ -1,0 +1,32 @@
+rationale: |
+  Lines 279-298 define `install_policy_gateway()` which is just a wrapper around
+  constructor + `add_middleware()`. This is unnecessary indirection.
+
+  **Current pattern:**
+  `install_policy_gateway(comp, hub=..., policy_reader=..., ...)` creates a
+  `PolicyGatewayMiddleware` instance, calls `comp.add_middleware(middleware)`, and
+  returns the middleware.
+
+  **Problem:** This is just a wrapper around `middleware = PolicyGatewayMiddleware(...);
+  comp.add_middleware(middleware)`. Callers can do this themselves in 2 lines.
+
+  **Fix:** Delete the function. Callers should do:
+  ```python
+  middleware = PolicyGatewayMiddleware(hub=hub, policy_reader=policy_reader, ...)
+  comp.add_middleware(middleware)
+  ```
+
+  **Docstring claim:** "This mirrors production wiring in the container; tests should
+  reuse this helper to avoid drift." This is not a good reason - tests should just
+  use the same 2-line pattern as production. The "drift" risk is minimal and the
+  indirection cost is higher.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/policy_gateway/middleware.py:
+        - [279, 298]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/policy_gateway/middleware.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/policy_gateway/middleware.py

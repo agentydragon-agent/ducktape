@@ -1,0 +1,25 @@
+rationale: |
+  `run_prompt_async` (lines 34-65) is only called once from `run_check_minicodex_async`
+  (line 152). This single-use abstraction adds indirection without enabling reuse.
+
+  Additional issues:
+  - `model` parameter (line 145) is never used in the function body
+  - Function always returns 0 (line 157) - meaningless return value
+  - Both functions are in "shared.py" but neither is actually shared (each called once)
+
+  Fix: Inline `run_prompt_async` into `run_check_minicodex_async`, remove dead `model`
+  parameter, change return type to None, and move to main.py next to its single call site.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/cli_app/main.py:
+        - [148, 148]
+      adgn/src/adgn/props/cli_app/shared.py:
+        - - 34
+          - 65
+        - - 141
+          - 157
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/shared.py
+        - adgn/src/adgn/props/cli_app/main.py

@@ -1,0 +1,72 @@
+# Cilium CNI configuration for hybrid cluster
+# Uses KubePrism (localhost:7445) for k8s API since there's no VIP across regions
+# Uses VXLAN tunnel mode since Hetzner VPS nodes are not on the same L2 network
+
+cluster:
+  name: talos-cluster
+  id: 1
+
+# Use KubePrism for API access - works on all nodes regardless of region
+k8sServiceHost: "localhost"
+k8sServicePort: "7445"
+
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4PodCIDRList:
+      - "10.244.0.0/16"
+
+# Use tunnel mode for cloud environments (VPS nodes behind gateway)
+routingMode: tunnel
+tunnelProtocol: vxlan
+ipv4:
+  enabled: true
+enableIPv4Masquerade: true
+
+# Enable IPv6 for KubeSpan mesh (fd05::/64 addresses)
+ipv6:
+  enabled: true
+enableIPv6Masquerade: true
+
+securityContext:
+  capabilities:
+    ciliumAgent:
+      [CHOWN, KILL, NET_ADMIN, NET_RAW, IPC_LOCK, SYS_ADMIN, SYS_RESOURCE, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    cleanCiliumState: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE]
+
+cgroup:
+  hostRoot: /sys/fs/cgroup
+  autoMount:
+    enabled: false
+
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: true
+
+loadBalancer:
+  algorithm: random
+
+l2announcements:
+  enabled: true
+
+kubeProxyReplacement: "true"
+
+bpf:
+  hostLegacyRouting: true
+
+endpointRoutes:
+  enabled: true
+
+socketLB:
+  enabled: true
+
+hostServices:
+  enabled: true
+  protocols: tcp,udp
+
+nodePort:
+  enabled: true
+  bindProtection: true

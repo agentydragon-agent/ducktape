@@ -1,0 +1,29 @@
+rationale: |
+  Line 40 in server/app.py contains a comment above the create_app function:
+  "# Factory to create an isolated app with fresh manager/session"
+
+  This should be the function's docstring instead of a comment. Comments above
+  function definitions that describe the function's purpose should always be
+  docstrings for several reasons:
+
+  1. Docstrings are accessible via help() and IDE introspection
+  2. Docstrings are the standard Python convention for documenting functions
+  3. Tools like Sphinx can extract docstrings for documentation generation
+  4. Type checkers and linters understand docstrings
+
+  The comment should be converted to:
+
+  def create_app(*, require_static_assets: bool = True) -> FastAPI:
+      """Factory to create an isolated app with fresh manager/session."""
+      app = FastAPI()
+      ...
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/app.py:
+        - [40, 40]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/app.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/app.py

@@ -1,0 +1,19 @@
+rationale: |
+  Lines 105-115 return fabricated string `"unknown"` when no server matches
+  the URI. This fails silently: callers might not handle it specially, it
+  could be used as an actual server name downstream, and bugs become harder
+  to track (error happens far from source).
+
+  Fix: raise `ValueError` with clear message including the URI and available
+  servers. This fails fast and loud, provides context, and forces callers
+  to handle the error case properly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/notifications/buffer.py:
+        - [105, 115]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/notifications/buffer.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/notifications/buffer.py

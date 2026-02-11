@@ -1,0 +1,113 @@
+rationale: |
+  Comments that just restate what the next line of code does provide no value.
+  "# Display unified table" before display_plan() is obvious from the code.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [104, 104]
+    note: '"# Display unified table" comment before display_plan() call'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/__main__.py:
+        - [346, 346]
+    note: '"# Connect to Gmail" comment before get_gmail_client() call'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/__main__.py:
+        - [67, 67]
+    note: '"# Create inbox interface with caching" - GmailInbox() is self-explanatory'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/__main__.py:
+        - [70, 70]
+    note: '"# Initialize all planners" - list assignment is obvious'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-4
+    files:
+      gmail_archiver/__main__.py:
+        - [92, 92]
+    note: '"# Merge all plans" - Plan.merge(plans) is self-explanatory'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-5
+    files:
+      gmail_archiver/__main__.py:
+        - [149, 149]
+    note: '"# Connect to Gmail" - same pattern as occ-1'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-6
+    files:
+      gmail_archiver/__main__.py:
+        - [297, 297]
+    note: '"# Summary" before print statements'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-7
+    files:
+      gmail_archiver/__main__.py:
+        - [466, 466]
+    note: '"# Display results" before console.print'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py
+  - occurrence_id: occ-8
+    files:
+      gmail_archiver/inbox.py:
+        - [43, 43]
+    note: '"# Fetch from API" before client.get_message()'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/inbox.py
+    match_file_restriction:
+      - gmail_archiver/inbox.py
+  - occurrence_id: occ-9
+    files:
+      gmail_archiver/inbox.py:
+        - [55, 55]
+    note: '"# Get message IDs from query" before list_messages_by_query()'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/inbox.py
+    match_file_restriction:
+      - gmail_archiver/inbox.py
+  - occurrence_id: occ-10
+    files:
+      gmail_archiver/cli/labels.py:
+        - [109, 109]
+    note: '"# Display unused labels" before table creation'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/cli/labels.py
+    match_file_restriction:
+      - gmail_archiver/cli/labels.py
+  - occurrence_id: occ-11
+    files:
+      gmail_archiver/cli/filters.py:
+        - [364, 364]
+    note: '"# Display plan" before display_plan() call'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/cli/filters.py
+    match_file_restriction:
+      - gmail_archiver/cli/filters.py

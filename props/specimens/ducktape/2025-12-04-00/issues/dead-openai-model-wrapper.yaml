@@ -1,0 +1,18 @@
+rationale: |
+  The `OpenAIModel` adapter defined in `adgn/src/adgn/openai_utils/model.py` (lines ~345-379) is dead code. All
+  production call sites build `BoundOpenAIModel` via `client_factory.build_client`, and tests use their own
+  `FakeOpenAIModel`/`CapturingOpenAIModel` doubles that implement `OpenAIModelProto`. No code instantiates or
+  references `OpenAIModel`, and `rg "OpenAIModel("` shows only the class definition itself.
+
+  Keeping an unused adapter increases maintenance surface and risks divergence from the bound wrapper. It should
+  be deleted to simplify the module and avoid confusion about which adapter is active.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [345, 379]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+    match_file_restriction:
+      - adgn/src/adgn/openai_utils/model.py

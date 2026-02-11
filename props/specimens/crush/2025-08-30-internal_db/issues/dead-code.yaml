@@ -1,0 +1,27 @@
+rationale: |-
+  Remove unreachable or redundant code paths (dead code). Delete unreachable branches and simplify conditionals
+  that return identical results to avoid confusion and maintenance burden.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/lsp/watcher/watcher.go:
+        - [699, 709]
+    note: |-
+      Second `if basePath == ""` branch is unreachable because earlier branch already handled basePath==""; remove
+      the dead branch.
+    critic_scopes_expected_to_recall:
+      - - internal/lsp/watcher/watcher.go
+    match_file_restriction:
+      - internal/lsp/watcher/watcher.go
+  - occurrence_id: occ-1
+    files:
+      internal/tui/components/chat/messages/tool.go:
+        - [200, 213]
+    note: |-
+      View(): both nested and non-nested branches return the same `box.Render(content)`; remove the conditional and
+      return once.
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/tool.go
+    match_file_restriction:
+      - internal/tui/components/chat/messages/tool.go

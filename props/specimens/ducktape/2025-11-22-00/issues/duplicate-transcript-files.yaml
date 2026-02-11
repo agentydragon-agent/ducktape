@@ -1,0 +1,24 @@
+rationale: |
+  `TranscriptHandler` writes the same events to two nearly-identical files: `events.jsonl`
+  (with timestamps) and `transcript.jsonl` (without timestamps). Lines 38-39 define both
+  paths, lines 53-57 write to both files on every event.
+
+  **Fix:** Choose one format. Keep the timestamped format (`events.jsonl`) as primary since
+  it preserves temporal information (timestamps are useful for debugging, analysis, replay;
+  you can strip them if needed but can't add them back). Remove `_transcript_path` and the
+  second write. If both formats are needed, generate the compact format on-demand from the
+  timestamped one via an `export_compact_transcript()` method. Benefits: single source of
+  truth, half the I/O, no redundant data, easier maintenance.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/transcript_handler.py:
+        - - 38
+          - 39
+        - - 41
+          - 42
+        - - 53
+          - 57
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/transcript_handler.py

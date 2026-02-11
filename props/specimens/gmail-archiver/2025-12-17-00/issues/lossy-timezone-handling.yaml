@@ -1,0 +1,40 @@
+rationale: |
+  Multiple planners parse timezone-aware dates with `strptime(..., "%z")`,
+  then immediately strip the timezone with `.replace(tzinfo=None)`, then later
+  re-assign UTC with `.replace(tzinfo=UTC)`. This silently reinterprets the
+  original local time as UTC. For example, an email sent at 17:31:44-0800
+  becomes 17:31:44+0000 (8 hours off). While the error is immaterial for the
+  current day-scale thresholds, the pattern is semantically wrong. The root
+  cause is that `GmailMessage.date` is `str` (models.py line 23), forcing
+  every planner to independently parse the Date header — and each does it
+  with its own format string and its own incorrect timezone handling. The
+  model already has `internal_date: int` (epoch millis from the Gmail API),
+  which is a proper timestamp. Either `date` should be parsed to `datetime`
+  once at construction time (in `gmail_client.py` where the GmailMessage is
+  built), or planners should use `internal_date` for age comparisons and
+  avoid parsing the header at all.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/anthem_eob.py:
+        - [22, 23] # strptime then .replace(tzinfo=None)
+        - [51, 53] # .replace(tzinfo=UTC)
+    note: "parse_anthem_eob + AnthemEobPlanner.plan"
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/anthem_eob.py]
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/planners/anthem_reimbursement.py:
+        - [29, 30] # strptime then .replace(tzinfo=None)
+        - [101, 103] # .replace(tzinfo=UTC)
+    note: "parse_anthem_reimbursement + AnthemReimbursementPlanner.plan"
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/anthem_reimbursement.py]
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/planners/square.py:
+        - [41, 42] # strptime then .replace(tzinfo=None)
+    note: "parse_square email_date handling"
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/square.py]

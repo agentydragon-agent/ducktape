@@ -1,0 +1,16 @@
+rationale: |
+  chat_param_message_content_as_text (lines 75-105) has repetitive match cases with nearly
+  identical logic for each role. Instead of handling each role separately (ASSISTANT, USER,
+  SYSTEM, TOOL/FUNCTION/DEVELOPER) with duplicated content-parsing code, it could have a single
+  upfront check that the role is in a list of understood roles (fail-fast if not), then apply
+  the same content-parsing logic for all cases.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/llm/sysrw/openai_typing.py:
+        - [80, 105]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/llm/sysrw/openai_typing.py
+    match_file_restriction:
+      - adgn/src/adgn/llm/sysrw/openai_typing.py

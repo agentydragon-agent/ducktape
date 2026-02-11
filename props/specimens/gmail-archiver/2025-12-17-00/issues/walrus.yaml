@@ -1,0 +1,50 @@
+rationale: |
+  Uses separate assignment followed by conditional check that can be simplified
+  with walrus operator (:=).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_client.py:
+        - [590, 592]
+    note: label_id in remove_label()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/event_classifier.py:
+        - [99, 101]
+    note: cached in EmailTemplateExtractor.extract()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/event_classifier.py
+    match_file_restriction:
+      - gmail_archiver/event_classifier.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/planners/aliexpress.py:
+        - [124, 125]
+    note: delivered in compute_deadline()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/planners/aliexpress.py
+    match_file_restriction:
+      - gmail_archiver/planners/aliexpress.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/gmail_client.py:
+        - [71, 72]
+    note: match = re.search(...); if match in _extract_retry_after_from_error()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-4
+    files:
+      gmail_archiver/__main__.py:
+        - [335, 336]
+    note: match = re.search(...); if not match in download_email()
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py

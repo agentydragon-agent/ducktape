@@ -1,0 +1,32 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ingress-nginx
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/ingress-nginx"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: metallb-config # Wait for MetalLB + IPAddressPools
+    - name: cert-manager # Wait for cert-manager for TLS certificates
+  # Ensure MetalLB can assign VIP before creating LoadBalancer service
+  healthChecks:
+    - apiVersion: metallb.io/v1beta1
+      kind: IPAddressPool
+      name: ingress-pool
+      namespace: metallb-system
+    # Verify ingress-nginx controller is ready
+    - apiVersion: v1
+      kind: Service
+      name: ingress-nginx-controller
+      namespace: ingress-nginx
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: ingress-nginx-controller
+      namespace: ingress-nginx

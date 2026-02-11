@@ -1,0 +1,18 @@
+rationale: |
+  `_dump_call_tool_result` (line 101) checks `len(result) > MAX_TOOL_RESULT_BYTES`
+  where `result` is a Python `str` and `MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024`
+  (line 177). `len(str)` returns character count, not byte count. Because
+  `json.dumps(..., ensure_ascii=False)` (line 97) preserves multi-byte characters,
+  a string with non-ASCII content (e.g., CJK text, emoji) can have significantly
+  more UTF-8 bytes than characters, bypassing the guard. The error message
+  (line 103) also reports `len(result)` as MB, further misrepresenting the size.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/agent.py:
+        - [97, 97] # json.dumps(..., ensure_ascii=False)
+        - [101, 101] # len(result) > MAX_TOOL_RESULT_BYTES — chars vs bytes
+        - [177, 177] # MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024
+    critic_scopes_expected_to_recall:
+      - [adgn/src/adgn/agent/agent.py]

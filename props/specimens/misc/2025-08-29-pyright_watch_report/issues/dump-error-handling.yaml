@@ -1,0 +1,22 @@
+rationale: |
+  The end-of-program dump (lines 292-301) catches Exception, prints a short warning, and allows the program to
+  exit 0. This hides real failures (permission errors, full disk, etc.) and removes useful stack traces.
+
+  Let exceptions propagate so failures are visible:
+  ```python
+  dump_path.parent.mkdir(parents=True, exist_ok=True)
+  with dump_path.open("w", encoding="utf-8") as f:
+      for p in sorted(kept_union):
+          f.write(str(p) + "\n")
+  sys.stderr.write(f"Written {len(kept_union)} paths to {dump_path}\n")
+  ```
+
+  This makes real problems visible and avoids silent data loss.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - [292, 301]
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

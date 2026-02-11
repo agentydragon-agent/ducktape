@@ -1,0 +1,13 @@
+rationale: |
+  Line 108's comment "Removed parse_tool_call..." refers to deleted functions and should be
+  removed as useless historical noise.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/llm/sysrw/openai_typing.py:
+        - [108, 108]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/llm/sysrw/openai_typing.py
+    match_file_restriction:
+      - adgn/src/adgn/llm/sysrw/openai_typing.py

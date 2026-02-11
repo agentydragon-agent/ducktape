@@ -1,0 +1,31 @@
+rationale: |
+  String-based forward references in type annotations (e.g., `-> "ClassName"`) should
+  be avoided when possible. Better alternatives exist:
+  1. Use `from __future__ import annotations` (PEP 563) which makes all annotations lazy
+  2. Use `Self` from typing for classmethods that return the same class
+  3. Reorder definitions to avoid forward references
+  4. When cross-module cycles exist, use `if TYPE_CHECKING:` imports with real symbols
+
+  String forward references require `model_rebuild()` for Pydantic models, add complexity
+  to static analysis tools, and are unnecessary with modern Python patterns.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/inop/config.py:
+        - [125, 125]
+    note: OptimizerConfig.from_file() returns "OptimizerConfig" - should use Self
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/inop/config.py
+    match_file_restriction:
+      - adgn/src/adgn/inop/config.py
+
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/inop/runners/containerized_claude.py:
+        - [602, 602]
+    note: TaskClaude.__aenter__() returns "TaskClaude" - should use Self
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/inop/runners/containerized_claude.py
+    match_file_restriction:
+      - adgn/src/adgn/inop/runners/containerized_claude.py

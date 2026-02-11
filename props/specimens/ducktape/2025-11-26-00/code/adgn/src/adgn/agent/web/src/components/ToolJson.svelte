@@ -1,0 +1,86 @@
+<script lang="ts">
+  import { z } from 'zod'
+  import type { ToolItem, JsonContent } from '../../shared/types'
+  import JsonDisclosure from './JsonDisclosure.svelte'
+
+  export let item: ToolItem
+
+  // Use discriminated union type guard for type-safe access
+  $: jsonContent = item.content?.content_kind === 'Json' ? item.content : null
+
+  function copyText(text: string) {
+    if (!text) return
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {})
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy') } finally { document.body.removeChild(ta) }
+    }
+  }
+
+  function copyJson() {
+    try { copyText(JSON.stringify(displayResult ?? {}, null, 2)) } catch {}
+  }
+
+  // Prefer structured_content when present (FastMCP CallToolResult)
+  const CallToolResultZ = z.object({ structured_content: z.unknown().optional() }).passthrough()
+  const StructuredOutZ = z.object({
+    error: z.string().optional(),
+    ok: z.boolean().optional(),
+    rationale: z.string().optional(),
+  }).passthrough()
+
+  function pickDisplayResult(): unknown {
+    if (!jsonContent) return undefined
+    const res: unknown = jsonContent.result
+    if (res && typeof res === 'object') {
+      const parsed = CallToolResultZ.safeParse(res)
+      if (parsed.success && parsed.data.structured_content !== undefined) {
+        return parsed.data.structured_content
+      }
+    }
+    return res
+  }
+  let displayResult: unknown = null
+  $: displayResult = pickDisplayResult()
+  $: errorMessage = (() => {
+    const v = displayResult
+    if (v && typeof v === 'object') {
+      const parsed = StructuredOutZ.safeParse(v)
+      if (parsed.success && typeof parsed.data.error === 'string') return parsed.data.error
+    }
+    return null
+  })()
+
+  // JSON rendering is delegated to JsonDisclosure component
+</script>
+
+<div class="tool-json">
+  <div class="tool-header"><code>{item.tool}</code>
+    {#if displayResult}
+      <button class="copy" title="Copy JSON output" on:click={copyJson}>Copy</button>
+    {/if}
+  </div>
+  {#if jsonContent?.args}
+    <JsonDisclosure label="Arguments" value={jsonContent.args} persistKey={`args:${item.id}`} />
+  {/if}
+  {#if typeof item.tool === 'string' && item.tool.endsWith('__sandbox_exec') && jsonContent?.args?.policy}
+    <JsonDisclosure label="SBPL Policy" value={jsonContent.args.policy} persistKey={`sbpl:${item.id}`} />
+  {/if}
+  {#if displayResult}
+    {#if errorMessage}
+      <div class="term-error">{errorMessage}</div>
+    {/if}
+    <JsonDisclosure label={`Output${jsonContent?.is_error ? ' [error]' : ''}`} value={displayResult} open persistKey={`out:${item.id}`} />
+    <JsonDisclosure label="Raw tool result" value={jsonContent?.result} persistKey={`rawres:${item.id}`} />
+  {/if}
+</div>
+
+<style>
+  .tool-json .tool-header { display: flex; align-items: center; gap: 0.5rem; }
+  .copy { margin-left: 0.5rem; font-size: 0.7rem; padding: 0.1rem 0.4rem; }
+  .term-error { color: #c62828; font-size: 0.8rem; margin: 0.2rem 0; font-weight: 600; }
+</style>

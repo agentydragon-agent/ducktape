@@ -1,0 +1,16 @@
+rationale: |
+  Manual file existence check when typer provides `exists=True` parameter for
+  path arguments. Should use `typer.Argument(exists=True)` instead of manual
+  check with print_error + typer.Exit.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - - 402
+          - 402
+        - - 414
+          - 416
+    note: eml_file argument in classify_event() - should use exists=True in typer.Argument
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py

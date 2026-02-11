@@ -1,0 +1,53 @@
+rationale: |
+  The agents MCP bridge uses a complex two-layer observer pattern (business logic → callbacks
+  → AgentsServer → MCP clients) instead of the simpler compositor pattern already used
+  successfully on the agent side.
+
+  **Current Architecture Problems:**
+
+  1. **Two-layer complexity:** Business logic calls sync callbacks that schedule async tasks
+     that eventually broadcast. Lines 833-932 contain ~100 lines of factory functions.
+
+  2. **Clobbered notifier bug:** ApprovalPolicyEngine has only ONE notifier slot. When
+     agents.py:855 wires its notifier, it replaces the one from ApprovalPolicyServer.
+
+  3. **Monolithic server:** AgentsServer aggregates resources from 6+ business logic classes.
+
+  4. **URI scoping inconsistency:** Global URIs (`resource://approval-policy/*`) mixed with
+     agent-scoped URIs (`resource://agents/{id}/*`).
+
+  **Better: Compositor Pattern**
+
+  Replace monolithic AgentsServer with small focused servers mounted in a compositor, like
+  the agent-side does (agent/runtime/infrastructure.py:100-114). Each server wraps one
+  business logic class and directly broadcasts MCP notifications.
+
+  Example structure:
+  - ApprovalPolicyServer wraps ApprovalPolicyEngine
+  - ApprovalsServer wraps ApprovalHub
+  - SessionStateServer wraps Session
+  - AgentRegistryServer wraps AgentRegistry
+
+  Mount all in compositor with proper namespacing (`agent_{id}_policy`, etc.). Notifications
+  propagate automatically via compositor's _ChildHandler (compositor/server.py:446-469).
+  Delete the ~100 lines of manual wiring code (lines 833-932).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/approvals.py:
+        - - 96
+          - 110
+        - - 146
+          - 195
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - [1, 256]
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - - 1
+          - 932
+        - - 833
+          - 932
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+      - - adgn/src/adgn/agent/mcp_bridge/server.py
+      - - adgn/src/adgn/agent/approvals.py

@@ -1,0 +1,61 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: authentik-blueprint-matrix
+  namespace: flux-system
+spec:
+  interval: 15m
+  path: ./cluster/terraform/authentik-blueprint/matrix
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  # Use in-cluster service account
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  # Store Terraform state in Kubernetes secret
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "authentik-blueprint-matrix"
+        namespace        = "flux-system"
+      }
+
+  # Variables for Terraform
+  vars:
+    - name: authentik_url
+      value: "http://authentik-server.authentik:80"
+    - name: matrix_url
+      value: "https://matrix.test-cluster.agentydragon.com"
+    - name: vault_address
+      value: "https://instance.vault.svc.cluster.local:8200"
+
+  # Get secrets from Kubernetes secrets
+  varsFrom:
+    - kind: Secret
+      name: authentik-api-token
+      varsKeys:
+        - authentik_token
+      optional: false
+    - kind: Secret
+      name: vault-token
+      varsKeys:
+        - vault_token
+      optional: false
+
+  # Configure runner to trust cluster CA
+  runnerPodTemplate:
+    spec:
+      volumes:
+        - name: cluster-ca
+          configMap:
+            name: cluster-internal-ca-bundle
+      volumeMounts:
+        - name: cluster-ca
+          mountPath: /etc/ssl/certs/cluster-ca
+          readOnly: true
+      env:
+        - name: VAULT_CACERT
+          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt

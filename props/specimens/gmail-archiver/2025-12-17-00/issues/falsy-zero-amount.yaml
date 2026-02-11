@@ -1,0 +1,14 @@
+rationale: |
+  `SquarePlanner.plan` uses `if not parsed.amount:` (line 112) to detect
+  missing amounts. `parsed.amount` is `Decimal | None`. `Decimal("0.00")` is
+  falsy in Python, so a genuine $0.00 receipt is treated as "no amount found"
+  and skipped instead of being evaluated against the threshold. The check
+  should be `if parsed.amount is None:`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/square.py:
+        - [112, 112]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/square.py]

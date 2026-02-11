@@ -1,0 +1,14 @@
+rationale: |
+  STATUS_PATTERNS uses compiled regex for simple substring checks. All patterns
+  are plain strings with no regex metacharacters - just "delivered", "out for
+  delivery", etc. with IGNORECASE. Should use simple str.lower() + "in" check
+  instead of regex.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/aliexpress.py:
+        - [62, 77]
+    note: STATUS_PATTERNS - regex overkill for case-insensitive substring checks
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/planners/aliexpress.py

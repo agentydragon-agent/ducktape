@@ -1,0 +1,38 @@
+rationale: |
+  The _raise_if_reserved_code() function defensively guards access to error.code
+  and error.message with try/except Exception blocks, but this is unnecessary:
+
+  - error.code is typed as int (not Optional[int]) in ErrorData
+  - error.message is typed as str (not Optional[str]) in ErrorData
+
+  Current code (lines 168-179):
+    code: int | None = None
+    msg: str | None = None
+    error = e.error
+    try:
+        code = int(error.code)
+    except Exception:
+        code = None
+    try:
+        msg = str(error.message)
+    except Exception:
+        msg = None
+
+  The int() and str() conversions are also redundant - the fields are already
+  the correct types. The function should directly use error.code and error.message:
+
+    code = error.code  # already int
+    msg = error.message  # already str
+
+  This simplifies the code and removes unnecessary exception handling that can
+  never trigger (unless there's a fundamental type system violation).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/approval_policy/engine.py:
+        - [166, 196]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/approval_policy/engine.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/approval_policy/engine.py

@@ -1,0 +1,15 @@
+rationale: |
+  Early return for empty list is unnecessary - the following loop would simply
+  not execute any iterations and return the same empty result. Adds noise without
+  changing behavior.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/aliexpress.py:
+        - [165, 166]
+    note: '"if not messages: return plan" - loop would just be a no-op anyway'
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/planners/aliexpress.py
+    match_file_restriction:
+      - gmail_archiver/planners/aliexpress.py

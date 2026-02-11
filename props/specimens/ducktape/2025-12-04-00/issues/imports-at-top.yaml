@@ -1,0 +1,33 @@
+rationale: |
+  Imports not at module top. Per project conventions, all imports should be at module top unless they break a
+  circular
+  dependency (in which case they require a one-line comment explaining the cycle).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/db/models.py:
+        - [8, 8]
+    note: Conditional import for type checking inside function body instead of at module top
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/models.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/models.py
+  - occurrence_id: occ-1
+    files:
+      adgn/tests/props/conftest.py:
+        - [1, 15]
+    note: Missing DatabaseConfig import at module top
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/props/conftest.py
+    match_file_restriction:
+      - adgn/tests/props/conftest.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/props/grader/models.py:
+        - [20, 22]
+    note: TYPE_CHECKING conditional import below normal imports instead of at module top
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/models.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/models.py

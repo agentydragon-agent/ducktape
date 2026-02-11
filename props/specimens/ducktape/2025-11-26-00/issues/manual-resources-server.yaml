@@ -1,0 +1,43 @@
+rationale: |
+  Tests manually create resources servers with `make_resources_server(name="resources", compositor=comp)`
+  instead of using shared pytest fixtures (`resources_server`, `resources_client`, `typed_resources_client`).
+  This duplicates creation logic, uses redundant `name="resources"` (the default), and adds boilerplate.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/mcp/resources/test_list_changes_subscriptions.py:
+        - [31, 31]
+        - [54, 54]
+    note: Two tests manually create resources server with make_resources_server
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/resources/test_list_changes_subscriptions.py
+    match_file_restriction:
+      - adgn/tests/mcp/resources/test_list_changes_subscriptions.py
+  - occurrence_id: occ-1
+    files:
+      adgn/tests/mcp/resources/test_subscriptions_index.py:
+        - [52, 52]
+    note: Test manually creates resources server with make_resources_server
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/resources/test_subscriptions_index.py
+    match_file_restriction:
+      - adgn/tests/mcp/resources/test_subscriptions_index.py
+  - occurrence_id: occ-2
+    files:
+      adgn/tests/mcp/test_resources_subscriptions_index.py:
+        - [53, 53]
+    note: Test manually creates resources server with make_resources_server
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/test_resources_subscriptions_index.py
+    match_file_restriction:
+      - adgn/tests/mcp/test_resources_subscriptions_index.py
+  - occurrence_id: occ-3
+    files:
+      adgn/tests/mcp/resources/test_notifications.py:
+        - [35, 35]
+    note: Test manually creates resources server with make_resources_server
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/resources/test_notifications.py
+    match_file_restriction:
+      - adgn/tests/mcp/resources/test_notifications.py

@@ -1,0 +1,25 @@
+rationale: |
+  Helper functions with single call chains should be inlined to reduce unnecessary
+  indirection. The `_make_error_result` function is called only from `_abort_result`,
+  and `_abort_result` is called only 3 times without any reason argument, making the
+  abstraction unnecessary.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/agent.py:
+        - - 132
+          - 133
+        - - 139
+          - 140
+        - - 412
+          - 412
+        - - 427
+          - 427
+        - - 623
+          - 623
+    note: _make_error_result and _abort_result helper functions have single call chains; inline
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/agent.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/agent.py

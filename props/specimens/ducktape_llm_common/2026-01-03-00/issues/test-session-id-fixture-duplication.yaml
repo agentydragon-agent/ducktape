@@ -1,0 +1,19 @@
+rationale: |
+  Multiple test classes define their own session_id fixture with different UUIDs:
+    - TestMCPTools: "550e8400-e29b-41d4-a716-446655440000"
+    - TestMCPToolsUnexpectedFormats: "770e8400-e29b-41d4-a716-446655440002"
+    - TestMCPToolLogging: "660e8400-e29b-41d4-a716-446655440001"
+
+  These should be consolidated into a shared conftest.py fixture with a
+  "nothing-up-my-sleeve" UUID (e.g., all zeros: 00000000-0000-0000-0000-000000000000).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [26, 29]
+        - [294, 297]
+        - [567, 570]
+    note: "session_id fixtures should be shared in conftest.py"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_mcp_tools.py]

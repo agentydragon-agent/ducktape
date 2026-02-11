@@ -1,0 +1,102 @@
+# Claude Linter v2 Modular Configuration
+version = "2.0"
+
+# Display settings
+max_errors_to_show = 3
+
+# Path-based access control
+[[access_control]]
+paths = ["production/**", "*.prod.py"]
+tools = ["Write", "Edit", "MultiEdit"]
+action = "deny"
+message = "Production files are read-only"
+
+# Python tools
+python.tools = ["ruff", "mypy"]
+
+# Python checks
+[python.bare_except]
+enabled = true
+
+[python.hasattr]
+enabled = true
+
+[python.getattr]
+enabled = true
+
+[python.setattr]
+enabled = true
+
+[python.barrel_init]
+enabled = true
+
+# Critical ruff rules
+[ruff.E722]
+enabled = true
+
+[ruff.BLE001]
+enabled = true
+
+[ruff.B009]
+enabled = true
+
+[ruff.B010]
+enabled = true
+
+[ruff.S113]
+enabled = true
+
+[ruff.B008]
+enabled = true
+
+[ruff.E402]
+enabled = true
+
+[ruff.PLC0415]
+enabled = true
+
+[ruff.S608]
+enabled = true
+
+[ruff.B904]
+enabled = true
+
+[ruff.B006]
+enabled = true
+
+[ruff.PGH003]
+enabled = true
+
+# Hook behaviors
+[hooks.pre]
+auto_fix = false
+
+[hooks.post]
+auto_fix = true
+autofix_categories = ["formatting"]
+inject_permissions = true
+
+[hooks.stop]
+auto_fix = false
+inject_permissions = false
+quality_gate = true
+
+# Test file patterns
+test_patterns = [
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/tests/**/*.py"
+]
+
+# Task profiles
+[[profiles]]
+name = "refactoring"
+description = "Python refactoring with git and tests"
+predicate = 'Edit("**/*.py") and Bash("git:*") and Bash("pytest:*")'
+duration = "4h"
+
+[[profiles]]
+name = "debugging"
+description = "Full read access, limited write"
+predicate = 'Read("**/*") and Edit("debug/**/*")'
+duration = "2h"

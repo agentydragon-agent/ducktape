@@ -1,0 +1,135 @@
+rationale: |
+  Multiple fields that semantically represent agent IDs use generic str type instead
+  of the AgentID newtype from adgn.agent.types.
+
+  Replace `id: str` with `id: AgentID`. Pydantic handles NewType aliases correctly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/agents_ws.py:
+        - [30, 30]
+    note: AgentBrief.id uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/agents_ws.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/agents_ws.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/server/agents_ws.py:
+        - [49, 49]
+    note: AgentIdData.id uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/agents_ws.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/agents_ws.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/server/agents_ws.py:
+        - [66, 66]
+    note: AgentStatusData.id uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/agents_ws.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/agents_ws.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/runtime/container.py:
+        - [154, 154]
+    note: AgentContainer.agent_id uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/container.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/container.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/agent/runtime/registry.py:
+        - [23, 23]
+        - [30, 30]
+        - [45, 45]
+        - [58, 58]
+    note: Registry methods use agent_id str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/registry.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/registry.py
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/agent/policy_eval/container.py:
+        - [27, 27]
+    note: ContainerPolicyEvaluator.agent_id uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/policy_eval/container.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/policy_eval/container.py
+  - occurrence_id: occ-6
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [59, 59]
+    note: AgentRuntime._status_agent_id uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-7
+    files:
+      adgn/src/adgn/agent/server/status_shared.py:
+        - [90, 90]
+    note: build_agent_status_core agent_id param uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/status_shared.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/status_shared.py
+  - occurrence_id: occ-8
+    files:
+      adgn/src/adgn/agent/server/ws.py:
+        - [21, 21]
+    note: broadcast_status_changed agent_id param uses str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/ws.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/ws.py
+  - occurrence_id: occ-9
+    files:
+      adgn/src/adgn/agent/server/exceptions.py:
+        - [13, 14]
+        - [21, 22]
+    note: Exception classes store agent_id as str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/exceptions.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/exceptions.py
+  - occurrence_id: occ-10
+    files:
+      adgn/src/adgn/agent/server/agents_ws.py:
+        - [146, 146]
+        - [150, 150]
+        - [154, 154]
+        - [189, 189]
+    note: AgentsWSHub method params use str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/agents_ws.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/agents_ws.py
+  - occurrence_id: occ-11
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [134, 134]
+        - [162, 162]
+        - [180, 180]
+    note: AgentSession agent_id param and field use str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-12
+    files:
+      adgn/src/adgn/agent/approvals.py:
+        - [129, 129]
+        - [140, 140]
+        - [245, 245]
+    note: ApprovalPolicyEngine and factory use agent_id str instead of AgentID
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/approvals.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/approvals.py

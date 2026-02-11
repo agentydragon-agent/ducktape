@@ -1,0 +1,42 @@
+rationale: |
+  Comments that add no value: obvious narration, historical notes, or trivial restatements
+  of what code already shows. Good comments explain non-obvious decisions; these should
+  be deleted.
+
+  **Four categories of useless comments in cli.py:**
+
+  **1. Historical/archaeology comment (line 873)**
+  "Factor out task creation to a single place" - carries historical intent rather than
+  present-tense information. The refactoring already happened; comment is archaeology.
+
+  **2. Trivial narration comments (lines 772, 686-687, 694-695)**
+  Three comments that merely restate the next line without adding context:
+  - "Detect --amend flag" → next line checks for --amend
+  - "Build status string" → next line constructs status string
+  - "Print the status" → next line prints output
+
+  The code itself is self-explanatory. Narration comments add noise without information.
+
+  **Correct approach:**
+
+  Delete comments that:
+  - Restate what code/naming already shows
+  - Carry historical intent (use git history)
+  - Are trivial narration of next line
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - - 873
+          - 873
+        - - 772
+          - 772
+        - - 686
+          - 687
+        - - 694
+          - 695
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py

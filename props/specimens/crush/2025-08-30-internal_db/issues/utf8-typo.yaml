@@ -1,0 +1,24 @@
+rationale: |
+  Identifier typo: `isValidUt8` appears to be a misspelling of `isValidUTF8` (typo of UTF8). Correct identifier
+  improves
+  clarity/truthfulness of code and avoids confusion.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/llm/tools/fetch.go:
+        - [188, 191]
+    note: isValidUt8 := utf8.ValidString(content) — rename to isValidUTF8
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/fetch.go
+    match_file_restriction:
+      - internal/llm/tools/fetch.go
+  - occurrence_id: occ-1
+    files:
+      internal/llm/tools/view.go:
+        - [226, 230]
+    note: isValidUt8 := utf8.ValidString(content) — rename to isValidUTF8
+    critic_scopes_expected_to_recall:
+      - - internal/llm/tools/view.go
+    match_file_restriction:
+      - internal/llm/tools/view.go

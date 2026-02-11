@@ -1,0 +1,20 @@
+rationale: |
+  The five `_safe_get_*` helpers on `GitStatusdParser` are inconsistent in
+  error handling. `_safe_get_string` (line 302) and `_safe_get_repository_state`
+  (line 343) catch `IndexError` and raise `GitStatusdValidationError`, while
+  `_safe_get_optional_string` (line 313), `_safe_get_int` (line 319), and
+  `_safe_get_commit_hash` (line 330) do bare `fields[index]` with no guard.
+  Either all should catch `IndexError` or none should — the current mix is
+  inconsistent.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      src/wt/server/gitstatusd_listener.py:
+        - [313, 316] # _safe_get_optional_string — no IndexError guard
+        - [319, 327] # _safe_get_int — no IndexError guard
+        - [330, 340] # _safe_get_commit_hash — no IndexError guard
+        - [302, 310] # _safe_get_string — correctly catches IndexError (for contrast)
+        - [343, 348] # _safe_get_repository_state — correctly catches IndexError (for contrast)
+    critic_scopes_expected_to_recall:
+      - [src/wt/server/gitstatusd_listener.py]

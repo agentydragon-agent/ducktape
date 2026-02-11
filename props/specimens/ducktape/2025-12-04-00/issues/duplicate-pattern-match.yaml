@@ -1,0 +1,15 @@
+rationale: |
+  The expression "any(matches_pattern(f, pattern) for pattern in <list>)" appears
+  twice in apply_gitignore_patterns (lines 38 and 42). This should be extracted to
+  a local helper function to eliminate duplication and improve readability. The helper
+  could be named something like matches_any_pattern(path, patterns).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/cli_app/cmd_build_bundle.py:
+        - [38, 42]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/cmd_build_bundle.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/cmd_build_bundle.py

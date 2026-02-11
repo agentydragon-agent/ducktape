@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-blueprint-gitea-provider
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/authentik-blueprint/gitea-provider"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: core # Wait for tofu-controller to install Terraform CRD
+      namespace: flux-system
+    - name: authentik # Wait for authentik to be ready
+      namespace: flux-system
+    - name: vault-token # Wait for Vault authentication
+      namespace: flux-system

@@ -1,0 +1,19 @@
+rationale: |
+  Module docstring claims tools are exposed as "mcp:{server}.{tool}" (line 12), but
+  _collect_tools_live actually creates "mcp__{server}__{tool}" format (lines 121, 133).
+  Docstring should match implementation.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py:
+        - - 12
+          - 12
+        - - 121
+          - 121
+        - - 133
+          - 133
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py

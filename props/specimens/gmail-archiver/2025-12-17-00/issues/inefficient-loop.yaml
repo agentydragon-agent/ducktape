@@ -1,0 +1,15 @@
+rationale: |
+  Loop iterating just to call advance(1) repeatedly should use advance=len(errors) instead.
+  Lines 294-295 loop over errors calling advance(1) each time, but should batch the
+  progress update with a single advance(len(errors)) call.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/__main__.py:
+        - [294, 295]
+    note: loop iterating errors just to advance(1) - should use advance=len(errors)
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/__main__.py
+    match_file_restriction:
+      - gmail_archiver/__main__.py

@@ -1,0 +1,14 @@
+rationale: |-
+  ToolCallCmp.Spinning currently checks m.spinning, then iterates nested.Spinning and returns true, and finally
+  returns m.spinning. Simplify to early-return on nested.Spining() and then return m.spinning at the end to make
+  the intent clearer.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/tui/components/chat/messages/tool.go:
+        - [994, 1004]
+    critic_scopes_expected_to_recall:
+      - - internal/tui/components/chat/messages/tool.go
+    match_file_restriction:
+      - internal/tui/components/chat/messages/tool.go

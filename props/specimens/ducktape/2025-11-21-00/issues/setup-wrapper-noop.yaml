@@ -1,0 +1,24 @@
+rationale: |
+  YAGNI violation:
+  L578-585 define _setup_wrapper() as explicit no-op "for future extensibility."
+  Docstring says functionality works without this method. L519 calls it once.
+
+  Delete the method (L578-585), call site (L519).
+  Update comment at L518 which becomes incorrect
+
+  Benefits: Less code, no misleading no-ops, clearer control flow.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/inop/runners/containerized_claude.py:
+        - - 578
+          - 585
+        - - 519
+          - 519
+        - - 518
+          - 518
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/inop/runners/containerized_claude.py
+    match_file_restriction:
+      - adgn/src/adgn/inop/runners/containerized_claude.py

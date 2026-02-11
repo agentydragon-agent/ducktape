@@ -1,0 +1,42 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: authentik-blueprint-users
+  namespace: flux-system
+spec:
+  interval: 1h
+  path: ./cluster/terraform/authentik-blueprint/users
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+
+  # Use in-cluster service account
+  serviceAccountName: tf-runner
+  approvePlan: "auto"
+
+  # Store Terraform state in Kubernetes secret
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "authentik-blueprint-users"
+        namespace        = "flux-system"
+      }
+
+  # Variables for Terraform
+  vars:
+    - name: authentik_url
+      value: "http://authentik-server.authentik:80"
+
+  # Get secrets from Kubernetes secrets
+  varsFrom:
+    - kind: Secret
+      name: authentik-api-token
+      varsKeys:
+        - authentik_token
+      optional: false
+    - kind: Secret
+      name: agentydragon-user-password
+      varsKeys:
+        - user_password
+      optional: false

@@ -1,0 +1,17 @@
+rationale: |
+  `open(id)` (lines 136-138) just calls `setAgentId(id)`. Called at lines 254-257,
+  but `setAgentId()` is called directly elsewhere (lines 156, 173, 188, 200).
+  Two names for the same action. Inline it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte:
+        - - 136
+          - 138
+        - - 254
+          - 257
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte

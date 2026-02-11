@@ -1,0 +1,20 @@
+rationale: |
+  There are two GmailLabel model definitions:
+  - gmail_archiver/models.py:30 - simple version with just id, name, type
+  - gmail_archiver/gmail_api_models.py:30 - full version with all API fields
+
+  This is confusing and error-prone. There should be one canonical GmailLabel
+  model that matches the Gmail API shape, living in gmail_api_models.py.
+  The simple version in models.py should be removed and usages updated.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/models.py:
+        - [30, 33]
+      gmail_archiver/gmail_api_models.py:
+        - [30, 45]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/models.py, gmail_archiver/gmail_api_models.py]

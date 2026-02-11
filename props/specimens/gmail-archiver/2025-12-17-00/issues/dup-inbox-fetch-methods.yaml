@@ -1,0 +1,23 @@
+rationale: |
+  `fetch_messages` (lines 54-76) and `fetch_messages_minimal` (lines 78-103)
+  are structurally identical: search by query, filter uncached IDs, batch-fetch,
+  cache results, return in order. They differ only in which batch method they
+  call (`get_messages_batch` vs `get_messages_minimal_batch`) and the progress
+  message. The duplication also exposes a deeper caching model problem: both
+  methods write into the same `_message_cache` dict, but a "minimal" message
+  (missing body, with empty-string placeholders for fields not fetched) is
+  indistinguishable from a fully-fetched message once cached. If
+  `fetch_messages_minimal` runs first, subsequent `fetch_messages` calls for
+  the same IDs will return the incomplete cached version. Refactoring to a
+  single fetch method parameterized by detail level would force addressing
+  this cache-coherence issue (e.g., tracking fetch level per message, or
+  upgrading cached entries when a fuller fetch is requested).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/inbox.py:
+        - [54, 76]
+        - [78, 103]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/inbox.py]

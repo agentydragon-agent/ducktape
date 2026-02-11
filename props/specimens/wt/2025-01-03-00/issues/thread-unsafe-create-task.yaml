@@ -1,0 +1,22 @@
+rationale: |
+  `GitHubRefreshSystem.trigger_refresh` (line 78) calls
+  `asyncio.create_task()` directly, but this method is invoked from watchdog
+  `FileSystemEventHandler` callbacks (`on_modified` line 135, `on_created`
+  line 143) which run in the watchdog observer thread, not the asyncio event
+  loop thread. `create_task` with no running loop in the current thread
+  raises `RuntimeError`. `self.pending_files.add()` (line 74) and
+  `self.pending_refresh_task.cancel()` (line 77) are also not thread-safe.
+  The sibling `DebouncedGitstatusRefresh.trigger` in `gitstatus_refresh.py`
+  (lines 69-84) does the same debounced-refresh-from-watchdog pattern
+  correctly, wrapping the scheduling in `self._loop.call_soon_threadsafe()`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      src/wt/server/github_refresh.py:
+        - [72, 78] # trigger_refresh: bare create_task from watchdog thread
+        - [129, 143] # watchdog callbacks that call trigger_refresh
+      src/wt/server/gitstatus_refresh.py:
+        - [69, 84] # correct pattern: call_soon_threadsafe
+    critic_scopes_expected_to_recall:
+      - [src/wt/server/github_refresh.py, src/wt/server/gitstatus_refresh.py]

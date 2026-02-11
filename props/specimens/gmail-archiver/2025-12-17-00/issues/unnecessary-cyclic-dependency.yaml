@@ -1,0 +1,19 @@
+rationale: |
+  PlannedAction and Plan reference the Planner type, but only use planner.name
+  for error messages and display grouping. This creates a cyclic dependency
+  (Plan references Planner, Planner.plan() returns Plan) that requires forward
+  references. Storing planner_name: str instead of planner: Planner would break
+  the cycle and simplify the type structure.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/core.py:
+        - [57, 58]
+        - [68, 69]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/core.py]
+    match_file_restriction:
+      - gmail_archiver/core.py

@@ -1,0 +1,10 @@
+# Create gitea namespace so ExternalSecret can be deployed
+# This breaks the circular dependency:
+#   gitea depends on authentik-blueprint-gitea-secret
+#   authentik-blueprint-gitea-secret needs gitea namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitea
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

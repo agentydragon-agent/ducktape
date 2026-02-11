@@ -1,0 +1,16 @@
+rationale: |
+  The except clause at line 516 catches `TimeoutError | ConnectionError |
+  FileNotFoundError | OSError | json.JSONDecodeError | ValidationError`.
+  `RpcError` inherits from `RuntimeError` (line 87), which is not in that
+  tuple, so the `isinstance(e, RpcError)` check on line 519 is dead code —
+  `e` can never be an `RpcError` inside this handler.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      src/wt/client/wt_client.py:
+        - [87, 91] # class RpcError(RuntimeError)
+        - [513, 513] # raise RpcError(...)
+        - [516, 522] # except clause that doesn't catch RpcError
+    critic_scopes_expected_to_recall:
+      - [src/wt/client/wt_client.py]

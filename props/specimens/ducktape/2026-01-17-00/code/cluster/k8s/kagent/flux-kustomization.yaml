@@ -1,0 +1,17 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kagent
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/kagent
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: external-secrets-config
+    - name: ingress-nginx
+    - name: cert-manager-environment
+    - name: authentik-blueprint-kagent # SSO configuration and outpost

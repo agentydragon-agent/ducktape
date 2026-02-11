@@ -1,0 +1,17 @@
+rationale: |
+  SessionManager has two occurrences of `SessionID(session_file.stem)` that directly
+  construct a SessionID from a string without validation. The `parse_session_id()`
+  function exists to validate UUID format before constructing SessionID.
+
+  Pattern should be `parse_session_id(session_file.stem)` to ensure the stem is a
+  valid UUID before wrapping it in SessionID.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/session/manager.py:
+        - [144, 144]
+        - [166, 166]
+    note: "Use parse_session_id() instead of direct SessionID() construction"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/session/manager.py]

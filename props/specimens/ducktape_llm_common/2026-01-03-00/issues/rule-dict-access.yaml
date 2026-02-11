@@ -1,0 +1,18 @@
+rationale: |
+  `_build_permissions_info` (line 770) accesses `rule["action"]` and
+  `rule["predicate"]` using dict subscript syntax. `get_session_rules()`
+  (manager.py line 180) returns `list[Rule]` where `Rule` is a Pydantic
+  `BaseModel` (manager.py line 22). Pydantic v2 models do not support
+  `__getitem__`; this raises `TypeError: 'Rule' object is not subscriptable`.
+  Should use attribute access: `rule.action`, `rule.predicate`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/hooks/handler.py:
+        - [770, 771] # rule["action"], rule["predicate"] — subscript on BaseModel
+      ducktape_llm_common/claude_linter_v2/session/manager.py:
+        - [22, 30] # class Rule(BaseModel) — no __getitem__
+        - [180, 180] # get_session_rules() -> list[Rule]
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/hooks/handler.py]

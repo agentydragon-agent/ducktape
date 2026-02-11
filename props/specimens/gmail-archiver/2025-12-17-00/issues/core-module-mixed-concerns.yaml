@@ -1,0 +1,24 @@
+rationale: |
+  "core.py" is a meaningless name like "util.py" or "misc.py". There's no way to
+  know what belongs in "core" vs "not core" - it's just a dumping ground for
+  things that didn't fit elsewhere.
+
+  Delete core.py and name modules after what they actually contain:
+  - plan.py: Plan, Action, PlannedAction classes
+  - plan_display.py: display_plan, summarize_plan, table formatting functions
+
+  If you can't name a module after its contents, that's a sign the contents
+  don't belong together.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/core.py:
+        - [1, 340]
+    note: |
+      Domain types (Action, PlannedAction, Plan, Planner) mixed with display
+      functions (summarize_plan, display_plan, _add_table_row, _collect_display_columns)
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/core.py
+    match_file_restriction:
+      - gmail_archiver/core.py

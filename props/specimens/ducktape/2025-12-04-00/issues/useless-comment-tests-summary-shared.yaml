@@ -1,0 +1,32 @@
+rationale: |
+  Line 36 in server/protocol.py contains a useless comment:
+  "## Tests summary/error model shared in adgn.agent.models.policy_error"
+
+  This comment should be deleted because:
+
+  1. It merely states that something is "shared" elsewhere without explaining:
+     - WHY it is shared
+     - WHAT specific aspects are shared
+     - WHAT implications this sharing has
+
+  2. The location reference adds no value:
+     - If you need to find where something is used/imported, use grep or IDE navigation
+     - Imports already document dependencies
+     - This comment will become stale if the code moves
+
+  3. It's unclear what "Tests summary/error model" even refers to without context
+
+  Comments that just point to other locations or state "this is shared" without
+  explaining the reasoning, implications, or design decisions add noise without
+  value. Either explain WHY something is shared (design rationale, constraints,
+  trade-offs) or remove the comment entirely.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/protocol.py:
+        - [36, 36]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/protocol.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/protocol.py

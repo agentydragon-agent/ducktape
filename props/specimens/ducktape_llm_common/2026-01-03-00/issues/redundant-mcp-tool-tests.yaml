@@ -1,0 +1,110 @@
+rationale: |
+  Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+  They create different MCP tool payloads with various field types (stock prices,
+  weather data, blockchain addresses, calendar events, etc.) but all just verify
+  that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+  code paths - they're "the same thing painted orange".
+
+  The meaningful tests are the ones that exercise distinct handler behavior:
+  - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+  - test_mcp_filesystem_tool_with_path: tests path-based access control
+  - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+  - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+  - test_mcp_tool_name_variations: tests different naming conventions
+  - test_mcp_tool_python_detection: parametrized test for Python detection logic
+  - test_mcp_tool_session_tracking: verifies session file creation
+  - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+  - test_empty_tool_input: edge case of no parameters
+  - test_tool_with_none_values: edge case of null handling
+  - test_tool_with_special_characters: edge case of unusual field names
+  - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+
+  The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+  into a single parametrized test that verifies "arbitrary fields don't crash".
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [52, 63]
+    note: "test_mcp_puppeteer_tool - just verifies PostToolSuccess"
+
+  - occurrence_id: occ-1
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [92, 109]
+    note: "test_unknown_mcp_tool_fields - just verifies PreToolApprove"
+
+  - occurrence_id: occ-2
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [177, 198]
+    note: "test_mcp_tool_with_complex_result - just verifies PostToolSuccess"
+
+  - occurrence_id: occ-3
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [200, 212]
+    note: "test_mcp_tool_error_result - just verifies PostToolSuccess"
+
+  - occurrence_id: occ-4
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [298, 311]
+    note: "test_stock_price_tool - just verifies PreToolApprove"
+
+  - occurrence_id: occ-5
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [313, 335]
+    note: "test_weather_tool_nested_structure - just verifies PostToolSuccess"
+
+  - occurrence_id: occ-6
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [337, 352]
+    note: "test_ai_model_tool_with_arrays - just verifies PreToolApprove"
+
+  - occurrence_id: occ-7
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [354, 370]
+    note: "test_database_tool_with_sql - just verifies PreToolApprove"
+
+  - occurrence_id: occ-8
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [372, 388]
+    note: "test_iot_device_control - just verifies PostToolSuccess"
+
+  - occurrence_id: occ-9
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [390, 409]
+    note: "test_blockchain_tool_with_hex_data - just verifies PreToolApprove"
+
+  - occurrence_id: occ-10
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [411, 429]
+    note: "test_calendar_tool_with_datetime - just verifies PreToolApprove"
+
+  - occurrence_id: occ-11
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [431, 453]
+    note: "test_image_processing_tool - just verifies PostToolSuccess"
+
+  - occurrence_id: occ-12
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [455, 474]
+    note: "test_scientific_computation_tool - just verifies PreToolApprove"
+
+  - occurrence_id: occ-13
+    files:
+      tests/claude_linter_v2/test_mcp_tools.py:
+        - [476, 496]
+    note: "test_completely_unknown_format - just verifies PreToolApprove"

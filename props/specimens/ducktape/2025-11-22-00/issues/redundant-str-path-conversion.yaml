@@ -1,0 +1,34 @@
+rationale: |
+  Code calls `str(Path.cwd())` before passing to `pygit2.discover_repository()`
+  (cli.py:662, minicodex_backend.py:163), but pygit2's signature accepts
+  `str | Path`. The conversion is redundant.
+
+  Problems: unnecessary conversion (Path already accepted), less readable
+  (extra call adds noise), type loss, suggests API requires strings when
+  it doesn't.
+
+  Fix: pass `Path.cwd()` directly. Simpler, clearer intent, type-safe.
+
+  General principle: when an API accepts `str | Path`, prefer passing Path
+  objects. Only convert when API requires exactly `str`, or for string
+  operations/logging.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - [662, 662]
+    note: str(Path.cwd()) passed to pygit2.discover_repository()
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/git_commit_ai/minicodex_backend.py:
+        - [163, 163]
+    note: str(Path.cwd()) passed to pygit2.discover_repository()
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/minicodex_backend.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/minicodex_backend.py

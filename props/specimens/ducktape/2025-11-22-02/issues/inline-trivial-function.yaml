@@ -1,0 +1,18 @@
+rationale: |
+  Helper function with single call site should be inlined to reduce unnecessary indirection.
+  The get_json_schema helper wraps TypeAdapter().json_schema() and is called only once at
+  line 250. Inline to: TypeAdapter(model_class).json_schema(mode="serialization").
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/scripts/generate_frontend_code.py:
+        - - 183
+          - 186
+        - - 250
+          - 250
+    note: get_json_schema helper has single call site
+    critic_scopes_expected_to_recall:
+      - - adgn/scripts/generate_frontend_code.py
+    match_file_restriction:
+      - adgn/scripts/generate_frontend_code.py

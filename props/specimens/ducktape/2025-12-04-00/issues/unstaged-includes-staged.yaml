@@ -1,0 +1,23 @@
+rationale: |
+  Line 46 calls `_format_name_status(repo, include_all=True)` for unstaged files.
+  With `include_all=True`, `_diff()` uses `cached=False` which computes HEAD→worktree,
+  including both staged and unstaged changes. Should use index→worktree diff
+  (e.g., `repo.diff()` with no args) to show only unstaged changes.
+
+  This is a design/logic error around `_diff()` and the `include_all` parameter.
+  The abstraction is confused: by the time diffs are computed, staging has already
+  happened (either explicitly via `git add` or via `-a` flag which calls
+  `repo.index.add_all()` at cli.py:711-713). The boolean conflates two distinct
+  diff types that should be explicit:
+  - Staged: HEAD → index (what will be committed)
+  - Unstaged: index → worktree (modified but not staged)
+
+  Fix: delete `_diff()` entirely and inline the two correct pygit2 calls.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/editor_template.py:
+        - [46, 56]

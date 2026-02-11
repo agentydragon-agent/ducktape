@@ -1,0 +1,45 @@
+rationale: |
+  Short-lived variables used only once immediately after creation add noise without value.
+  Inline the expression at the call site to reduce lines and one-off names the reader must
+  mentally map.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - [246, 246]
+    note: policies variable assigned before list comprehension
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/policy_eval/runner.py:
+        - [44, 45]
+    note: cmd/env variables assigned before passing to containers.create
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/policy_eval/runner.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/policy_eval/runner.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - - 577
+          - 578
+        - - 592
+          - 594
+    note: edit_path and saved variables used only once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/policy_eval/container.py:
+        - [52, 52]
+    note: payload variable used once; also use model_dump() instead of manual dict
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/policy_eval/container.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/policy_eval/container.py

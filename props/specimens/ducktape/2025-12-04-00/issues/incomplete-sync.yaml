@@ -1,0 +1,19 @@
+rationale: |
+  The recreate_database_schema function (line 66) should call sync_all() to ensure
+  complete synchronization of all data sources (snapshots, issues, detector prompts,
+  and model metadata). Currently it only syncs snapshots and issues, omitting detector
+  prompts and model metadata that sync_all() handles.
+
+  The function name "_schema" is also misleading since it does more than just schema
+  operations - it also syncs data. Renaming to recreate_database() would better reflect
+  that it handles tables, roles, RLS, and data sync.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/cli_app/cmd_db.py:
+        - [66, 83]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/cmd_db.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/cmd_db.py

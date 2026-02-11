@@ -1,0 +1,29 @@
+rationale: |
+  GmailMessage extracts and stores only `body: str` from the raw email, discarding the
+  original MIME data. This is premature data reduction - it loses information (HTML body,
+  attachments, headers) and prevents fixing parsing bugs or adding new derived fields
+  without re-fetching from the API. The model should preserve the raw email bytes and
+  derive text content on demand.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/models.py:
+        - [25, 25]
+    note: GmailMessage.body is single str field, loses MIME structure
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/models.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/gmail_client.py:
+        - [450, 461]
+    note: get_messages_batch() plaintext extraction (no HTML fallback)
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/gmail_client.py:
+        - [517, 524]
+    note: get_message() plaintext extraction (no HTML fallback)
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/gmail_client.py

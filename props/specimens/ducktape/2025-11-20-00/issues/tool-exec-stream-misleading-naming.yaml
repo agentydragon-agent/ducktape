@@ -1,0 +1,32 @@
+rationale: |
+  The function name update_tool_exec_stream (state.py:142) and reducer comment "merge
+  stdout/stderr/exit" (reducer.py:101) both suggest FunctionCallOutput events
+  may arrive progressively for a single tool call, requiring merging/appending of output streams.
+  However, actual execution flow guarantees exactly one FunctionCallOutput per call_id: tools
+  return complete results in a single event (on_tool_result_event in runtime.py:209-214 receives
+  one ToolCallOutput and creates one FunctionCallOutput from it). The naming and comment are
+  misleading - they suggest streaming/progressive updates that never happen.
+  The function should be named something like set_tool_exec_result or
+  update_tool_output to reflect that it sets the complete output once, and the "merge" comment
+  should say it's extracting fields from a single complete result, not merging across
+  multiple events.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/state.py:
+        - [142, 142]
+    note: "Misleading function name update_tool_exec_stream implies streaming"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/state.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/state.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/server/reducer.py:
+        - [101, 101]
+    note: 'Misleading comment "merge stdout/stderr/exit" implies progressive merging'
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/reducer.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/reducer.py

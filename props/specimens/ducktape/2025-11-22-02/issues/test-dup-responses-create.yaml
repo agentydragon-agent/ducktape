@@ -1,0 +1,53 @@
+rationale: |
+  The pattern of creating stateful mock response handlers (a dict with `{"i": 0}` and an
+  `async def responses_create(_req)` function that increments the counter and returns
+  tool calls from a sequence) is duplicated 16+ times across the test suite.
+
+  **Fix:** Extract into a shared `make_stateful_responses(responses_factory, response_sequence)`
+  helper in conftest.py or tests/agent/helpers.py that takes a list of (function_name,
+  server_name, params) tuples and returns the stateful handler. This eliminates duplication
+  across all 16+ instances.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/agent/e2e/test_mcp_concurrent.py:
+        - - 100
+          - 110
+        - - 159
+          - 169
+        - - 269
+          - 283
+    note: Three instances in test_mcp_concurrent.py
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/e2e/test_mcp_concurrent.py
+  - occurrence_id: occ-1
+    files:
+      adgn/tests/agent/e2e/test_mcp_errors.py:
+        - - 73
+          - 82
+        - - 127
+          - 135
+        - - 184
+          - 193
+        - - 249
+          - 256
+    note: Four instances in test_mcp_errors.py
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/e2e/test_mcp_errors.py
+  - occurrence_id: occ-2
+    files:
+      adgn/tests/agent/e2e/test_mcp_edge_cases.py:
+        - - 38
+          - 51
+        - - 100
+          - 101
+        - - 139
+          - 152
+        - - 207
+          - 220
+        - - 275
+          - 283
+    note: Five instances in test_mcp_edge_cases.py
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/e2e/test_mcp_edge_cases.py

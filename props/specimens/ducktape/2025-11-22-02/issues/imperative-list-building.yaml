@@ -1,0 +1,16 @@
+rationale: |
+  Imperative list building with append() should use list comprehension or literal.
+  Lines 268-274 create ts_output as empty list then imperatively append to it.
+  Replace with list comprehension for cleaner, more Pythonic code.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/scripts/generate_frontend_code.py:
+        - - 268
+          - 274
+    note: ts_output list created empty then imperatively appended; should use list literal
+    critic_scopes_expected_to_recall:
+      - - adgn/scripts/generate_frontend_code.py
+    match_file_restriction:
+      - adgn/scripts/generate_frontend_code.py

@@ -1,0 +1,14 @@
+rationale: |
+  `system_prompt` parameter (line 38) has a default value but is never explicitly passed
+  by any caller. The only call site (line 152) always uses the default. Remove the
+  parameter and inline the literal at line 58.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/cli_app/shared.py:
+        - [38, 58]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/shared.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/shared.py

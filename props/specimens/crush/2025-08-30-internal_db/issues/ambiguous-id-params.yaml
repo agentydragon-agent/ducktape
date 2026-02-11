@@ -1,0 +1,49 @@
+rationale: |-
+  Function parameters named generically `id` are ambiguous; prefer explicit names like `messageID` or
+  `sessionID` to make intent/units obvious and avoid accidental misuses.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/message/middleware/debounce.go:
+        - - 33
+          - 41
+        - - 94
+          - 105
+    note: |-
+      debounce.getOrCreate/deleteEntry/Delete use `id string` where this represents message IDs — rename to
+      messageID.
+    critic_scopes_expected_to_recall:
+      - - internal/message/middleware/debounce.go
+    match_file_restriction:
+      - internal/message/middleware/debounce.go
+  - occurrence_id: occ-1
+    files:
+      internal/message/middleware/serialized.go:
+        - - 27
+          - 36
+        - - 134
+          - 141
+        - - 134
+          - 152
+    note: |-
+      sessionWorker.id / newSessionWorker(id) / Delete(ctx,id) opaque `id` represents sessionID or messageID in
+      different contexts — make names explicit.
+    critic_scopes_expected_to_recall:
+      - - internal/message/middleware/serialized.go
+    match_file_restriction:
+      - internal/message/middleware/serialized.go
+  - occurrence_id: occ-2
+    files:
+      internal/message/message.go:
+        - - 61
+          - 72
+        - - 239
+          - 246
+    note: |-
+      Service.Delete(ctx, id string) and other interfaces use `id` param name — prefer messageID for clarity across
+      API boundaries.
+    critic_scopes_expected_to_recall:
+      - - internal/message/message.go
+    match_file_restriction:
+      - internal/message/message.go

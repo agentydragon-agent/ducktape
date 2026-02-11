@@ -1,0 +1,30 @@
+rationale: |
+  The _extract_commit_content function in git_commit_ai incorrectly strips all blank lines from commit messages,
+  not just comment lines. The condition `if line.strip() and not line.strip().startswith("#")` filters out any
+  line that is empty or contains only whitespace.
+
+  This breaks the standard git commit message format where the subject line should be separated from the body
+  by a blank line. A commit message like:
+
+    Fix the bug
+
+    This is the body explaining the fix.
+
+  becomes:
+
+    Fix the bug
+    This is the body explaining the fix.
+
+  The fix is to change the condition to `if not line.strip().startswith("#")` so that blank lines are preserved
+  while still filtering out comment lines starting with #.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - [549, 549]
+    note: Condition filters out blank lines instead of only comment lines
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py

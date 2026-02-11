@@ -1,0 +1,11 @@
+rationale: |
+  `hook_name: str = ""` with a runtime check (lines 64-65) is a weak enforcement pattern.
+  Use `hook_name: ClassVar[str]` without a default - Python raises AttributeError at
+  access time if subclass doesn't define it, no explicit check needed.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_hook.py:
+        - [61, 61]
+        - [64, 65]

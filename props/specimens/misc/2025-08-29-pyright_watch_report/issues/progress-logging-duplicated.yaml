@@ -1,0 +1,33 @@
+rationale: |
+  The same progress-logging snippet is duplicated in five places (lines 165, 179, 196, 241, 253) inside
+  gather_files_single_pass. Extract a small helper to reduce duplication, make intent obvious, and avoid
+  copy/paste drift.
+
+  After extracting a helper:
+  ```python
+  def maybe_log_progress() -> None:
+      nonlocal last_print
+      if progress and time.monotonic() - last_print >= 1.0:
+          sys.stderr.write(
+              f"scan dirs={scanned_dirs} files={scanned_files} kept={len(kept_union)} at {rp}\n",
+          )
+          sys.stderr.flush()
+          last_print = time.monotonic()
+  ```
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - - 165
+          - 165
+        - - 179
+          - 179
+        - - 196
+          - 196
+        - - 241
+          - 241
+        - - 253
+          - 253
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

@@ -1,0 +1,33 @@
+rationale: |
+  Code uses assign-then-check pattern with `.scalar_one_or_none()` where walrus
+  operator (:=) would be more concise.
+
+  **Pattern:**
+  ```python
+  policy = result.scalar_one_or_none()
+  if not policy:
+      return None
+  # use policy
+  ```
+
+  This assign-then-check pattern appears in multiple SQLAlchemy query methods.
+
+  **Correct approach using walrus operator:**
+  ```python
+  if not (policy := result.scalar_one_or_none()):
+      return None
+  # use policy
+  ```
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/persist/sqlite.py:
+        - - 263
+          - 264
+        - - 401
+          - 402
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py

@@ -1,0 +1,17 @@
+rationale: |
+  `dump_path` type annotation is misleading - it types it as `Path | None`, but the rhs is never `None`:
+
+  ```python
+  dump_path: Path | None = Path(args.dump).resolve() if args.dump else (root /
+  "scratch/pyright_watched_files.txt")
+  ```
+
+  Annotate as `Path` (not `Path | None`).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      pyright_watch_report.py:
+        - [50, 50]
+    critic_scopes_expected_to_recall:
+      - - pyright_watch_report.py

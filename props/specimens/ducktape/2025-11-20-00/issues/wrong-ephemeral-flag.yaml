@@ -1,0 +1,15 @@
+rationale: |
+  Line 622 creates the runtime container with `ephemeral=True`, but line 629
+  stores `self.runtime_ephemeral = False`. The comment on 628 says "Persist
+  runtime ephemerality for status reporting (explicit)" — the value contradicts
+  both the comment's intent and the actual container configuration. Status
+  reports will incorrectly show the runtime as non-ephemeral.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/container.py:
+        - [622, 622] # ContainerOptions(..., ephemeral=True)
+        - [628, 629] # self.runtime_ephemeral = False — contradicts line 622
+    critic_scopes_expected_to_recall:
+      - [adgn/src/adgn/agent/runtime/container.py]

@@ -1,0 +1,44 @@
+rationale: |
+  The --ui-port flag is defined and accepted but misleads users about a non-existent Management UI.
+
+  In single-agent mode: the flag is completely unused (no UI app created).
+  In multi-agent mode: the flag binds a stub FastAPI app with unimplemented features:
+  - WebSocket at /ws/mcp returns "not_implemented" (server.py:287-289)
+  - No web frontend exists (no HTML/JS/Svelte files for "Management UI")
+
+  Log messages compound the problem:
+  - "Management UI: http://{host}:{ui_port}" - suggests functional UI (doesn't exist)
+  - "MCP: ws://{host}:{ui_port}/ws/mcp" - suggests working WebSocket (unimplemented)
+
+  The flag's only functional use is binding uvicorn (cli.py:166), but the server serves
+  nothing beyond stubs and proxies. This creates unnecessary complexity (two ports instead
+  of one) and false expectations about Management UI capabilities.
+
+  Fix: Remove --ui-port flag. Either implement the promised UI or consolidate all endpoints
+  onto mcp-port.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/cli.py:
+        - - 63
+          - 63
+        - - 72
+          - 72
+        - - 103
+          - 103
+        - - 116
+          - 116
+        - - 160
+          - 160
+        - - 161
+          - 161
+        - - 166
+          - 166
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - - 260
+          - 270
+        - - 283
+          - 289
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/cli.py

@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: metallb
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 20m # Must exceed HelmRelease timeout (15m) to avoid race condition
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/metallb"
+  prune: true
+  wait: true
+  # Note: CNI (Cilium) now managed by Terraform, not Flux
+  # MetalLB deploys after cluster networking is ready
+  # Verify MetalLB controller and speaker are ready
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: metallb-controller
+      namespace: metallb-system
+    - apiVersion: apps/v1
+      kind: DaemonSet
+      name: metallb-speaker
+      namespace: metallb-system

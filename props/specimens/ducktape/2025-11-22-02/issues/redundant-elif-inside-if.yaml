@@ -1,0 +1,24 @@
+rationale: |
+  Lines 264-267 have confusing "elif live:" inside "if infra:" block. The `live` variable equals `infra is not
+  None`, so inside the `if infra:` block, `live` is always True, making the elif test redundant and confusing.
+
+  Should flatten the logic:
+  ```python
+  if not infra:
+      run_phase = RunPhase.IDLE
+      pending_approvals = 0
+  elif (pending_approvals := len(infra.approval_hub.pending)) > 0:
+      run_phase = RunPhase.WAITING_APPROVAL
+  else:
+      run_phase = RunPhase.SAMPLING
+  ```
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - [264, 267]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/server.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/server.py

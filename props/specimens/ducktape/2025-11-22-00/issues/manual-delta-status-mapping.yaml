@@ -1,0 +1,32 @@
+rationale: |
+  The code manually maps pygit2 delta status constants to single-letter codes
+  (A/M/D/R/T) in two places, but pygit2 provides a built-in method for this:
+  `DiffDelta.status_char()`.
+
+  **Current implementation:**
+  Manual if/elif chains mapping pygit2.GIT_DELTA_* constants to single letters (A/M/D/R/T)
+  appear in both `_format_name_status` (lines 36-54) and `diffstat` (lines 169-186).
+
+  **Problem:** Ignores available library utility. pygit2 provides `DiffDelta.status_char()`
+  which wraps libgit2's `git_diff_status_char()` - the canonical implementation.
+
+  **Correct approach:**
+  Use `delta.status_char()` to get single-character abbreviations directly. Handle
+  renames by checking `d.status == pygit2.GIT_DELTA_RENAMED` for the two-path format.
+
+  **Note:** The `STATUS_LETTER_TO_TEXT` dict (lines 67-73) can remain as-is since
+  it maps to display text ("new file:", "modified:"), which is presentation-specific.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/core.py:
+        - - 36
+          - 54
+        - - 169
+          - 186
+      adgn/src/adgn/mcp/git_ro/formatting.py:
+        - [99, 108]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/core.py
+      - - adgn/src/adgn/mcp/git_ro/formatting.py

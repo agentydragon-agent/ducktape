@@ -1,0 +1,26 @@
+rationale: |
+  Silent ignoring of invalid configuration should be replaced with explicit validation.
+  When receiving structured inputs, code should assert expected values rather than
+  silently skipping unknown options. This catches configuration errors early.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/gepa/gepa_adapter.py:
+        - [274, 276]
+    note: |-
+      Silent continue for component != "system_prompt" should assert that components_to_update contains only
+      "system_prompt"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/gepa/gepa_adapter.py
+    match_file_restriction:
+      - adgn/src/adgn/props/gepa/gepa_adapter.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/props/cli_app/cmd_build_bundle.py:
+        - [220, 221]
+    note: yaml.safe_load() fallback "or {}" suppresses None result which should be an error
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/cmd_build_bundle.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/cmd_build_bundle.py

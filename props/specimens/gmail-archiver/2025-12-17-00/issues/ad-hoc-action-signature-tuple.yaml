@@ -1,0 +1,30 @@
+rationale: |
+  The code constructs an ad-hoc tuple-of-tuples to represent an action's label changes
+  for grouping purposes:
+
+      sig = (tuple(sorted(pa.action.labels_to_add)), tuple(sorted(pa.action.labels_to_remove)))
+
+  Problems:
+  - Uses tuples instead of frozensets (order shouldn't matter for set comparison)
+  - Ad-hoc structure with gnarly type annotation
+  - Duplicates knowledge of what makes an action "the same" for batching
+
+  Fix: Create a frozen ActionSignature dataclass with frozenset fields in core.py:
+
+      @dataclass(frozen=True)
+      class ActionSignature:
+          labels_to_add: frozenset[str]
+          labels_to_remove: frozenset[str]
+
+  Add Action.signature property that returns ActionSignature | None (None when no-op).
+  Then grouping becomes: by_signature[pa.action.signature].append(message_id)
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/cli/filters.py:
+        - [370, 376]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/cli/filters.py]

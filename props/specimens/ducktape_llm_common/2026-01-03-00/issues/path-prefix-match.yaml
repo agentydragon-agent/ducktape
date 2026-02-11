@@ -1,0 +1,17 @@
+rationale: |
+  `add_rule` uses `str.startswith()` (line 149) to test whether a session's
+  directory is under the target directory. String prefix matching is not
+  equivalent to path containment: a target of `/home/user/proj` incorrectly
+  matches `/home/user/project-old` because the string starts with the same
+  prefix. The rule is then applied to sessions belonging to unrelated
+  directories. Should use `Path.is_relative_to()` or compare with a trailing
+  separator.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/session/manager.py:
+        - [129, 129] # directory_str = str(directory.resolve())
+        - [148, 150] # str.startswith check
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/session/manager.py]

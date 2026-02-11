@@ -1,0 +1,29 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# NOTE: No aggregator target - use specific per-file targets
+# This is the Gazelle-compatible pattern (python_generation_mode = file)
+
+py_library(
+    name = "workspace",
+    srcs = ["workspace.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana/domain:nodes",
+        "//tana/domain:types",
+        "//tana/graph:workspace",
+        "//tana/io:json",
+        "//tana/query/search:materializer",
+    ],
+)
+
+py_test(
+    name = "test_convert",
+    srcs = ["test_convert.py"],
+    data = glob(["testdata/**/*"]),
+    deps = [
+        "//tana/export:convert",
+        "//tana/io:json",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

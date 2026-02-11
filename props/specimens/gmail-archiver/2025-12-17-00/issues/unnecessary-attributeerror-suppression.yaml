@@ -1,0 +1,28 @@
+rationale: |
+  The contextlib.suppress includes AttributeError but this exception cannot occur:
+  - email.date is a str field (not optional), so no AttributeError from accessing it
+  - datetime.strptime() raises ValueError on parse failure, not AttributeError
+  - datetime.replace() is always available on datetime objects
+
+  Even if AttributeError could somehow occur, suppressing it would mask a real bug
+  (e.g., typo in attribute name, wrong object type). Suppressing AttributeError is
+  almost never correct - it hides programming errors rather than handling expected
+  failure modes.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/square.py:
+        - [40, 40]
+    note: contextlib.suppress(ValueError, AttributeError) for date parsing
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/square.py]
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/planners/anthem_eob.py:
+        - [25, 26]
+    note: except (ValueError, AttributeError) for date parsing
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/anthem_eob.py]

@@ -1,0 +1,43 @@
+rationale: |
+  Modules under packages that are executed via console_scripts should not carry a `#!/usr/bin/env python3`
+  shebang or be executable; the packaging shim handles invocation. Keeping shebangs on importable modules
+  is misleading and unnecessary. Remove the shebang from library modules; reserve shebangs for true scripts
+  under bin/ (if any).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [1, 1]
+    note: shebang on library module exposed via console_scripts
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+  - occurrence_id: occ-1
+    files:
+      llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py:
+        - [1, 1]
+    note: shebang on library module exposed via console_scripts
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py
+  - occurrence_id: occ-2
+    files:
+      llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_mcp_launch.py:
+        - [1, 1]
+    note: shebang on library module exposed via console_scripts
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_mcp_launch.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_mcp_launch.py
+  - occurrence_id: occ-3
+    files:
+      llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py:
+        - [1, 1]
+    note: shebang on library module exposed via console_scripts
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py

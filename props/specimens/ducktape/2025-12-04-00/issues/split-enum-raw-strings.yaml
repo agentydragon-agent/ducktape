@@ -1,0 +1,78 @@
+rationale: |
+  Multiple SQL queries compare Snapshot.split using raw string literals ("train", "valid") instead of the Split
+  enum
+  (Split.TRAIN, Split.VALID). This bypasses type safety and makes typos harder to catch at static analysis time.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/prompt_optimizer.py:
+        - [230, 230]
+    note: Compares db_snapshot.split == "valid" in validation
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/prompt_optimizer.py
+    match_file_restriction:
+      - adgn/src/adgn/props/prompt_optimizer.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/props/db/query_builders.py:
+        - [77, 77]
+    note: Query with Snapshot.split == "train"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/query_builders.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/query_builders.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/props/db/query_builders.py:
+        - [138, 138]
+    note: Where clause with Snapshot.split == "train"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/query_builders.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/query_builders.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/props/db/query_builders.py:
+        - [152, 152]
+    note: Where clause with Snapshot.split == "train"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/query_builders.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/query_builders.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/props/db/query_builders.py:
+        - [225, 225]
+    note: Where clause with Snapshot.split == "train"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/query_builders.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/query_builders.py
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/props/db/query_builders.py:
+        - [503, 503]
+    note: Subquery with Snapshot.split == "valid"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/query_builders.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/query_builders.py
+  - occurrence_id: occ-6
+    files:
+      adgn/src/adgn/props/db/query_builders.py:
+        - [514, 514]
+    note: Subquery with Snapshot.split == "valid"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/query_builders.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/query_builders.py
+  - occurrence_id: occ-7
+    files:
+      adgn/src/adgn/props/db/query_builders.py:
+        - [526, 526]
+    note: Where clause with Snapshot.split == "valid"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/db/query_builders.py
+    match_file_restriction:
+      - adgn/src/adgn/props/db/query_builders.py

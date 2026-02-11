@@ -39,6 +39,9 @@ cluster/k8s/kustomization.yaml
 cluster/charts/**/templates/**
 cluster/k8s/*-chart/templates/**
 
+# Specimens committed snapshot code
+props/specimens/*/*/code/**
+
 # Lock files - managed by package managers
 **/pnpm-lock.yaml
 **/package-lock.json

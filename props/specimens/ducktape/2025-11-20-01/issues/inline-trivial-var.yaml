@@ -1,0 +1,65 @@
+rationale: |
+  Short-lived variables used only once immediately after creation add noise without value.
+  Inline the expression at the call site to reduce lines and one-off names the reader must
+  mentally map.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/mcp/approval_policy/test_policy_resources.py:
+        - [19, 25]
+    note: db_path variable in fixture should be inlined
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/mcp/approval_policy/test_policy_resources.py
+    match_file_restriction:
+      - adgn/tests/mcp/approval_policy/test_policy_resources.py
+  - occurrence_id: occ-1
+    files:
+      adgn/tests/agent/test_policy_validation_reload.py:
+        - [86, 88]
+    note: new_policy single-use variable with redundant comment
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/test_policy_validation_reload.py
+    match_file_restriction:
+      - adgn/tests/agent/test_policy_validation_reload.py
+  - occurrence_id: occ-2
+    files:
+      adgn/tests/agent/test_reasoning_threading.py:
+        - - 89
+          - 94
+        - - 96
+          - 101
+        - - 113
+          - 114
+        - - 115
+          - 116
+        - - 124
+          - 129
+        - - 131
+          - 132
+    note: fc1/fco1/fc2/fco2 variables used once in assertions
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/test_reasoning_threading.py
+    match_file_restriction:
+      - adgn/tests/agent/test_reasoning_threading.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/mcp_bridge/cli.py:
+        - - 139
+          - 141
+        - - 155
+          - 158
+    note: mcp_config_obj single-use before uvicorn.Server
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/cli.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - [63, 67]
+    note: builder variable used once in return statement
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/server.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/server.py

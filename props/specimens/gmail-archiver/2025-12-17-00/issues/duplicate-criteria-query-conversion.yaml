@@ -1,0 +1,39 @@
+rationale: |
+  The pattern of building "from:/to:/subject:" strings is duplicated across models:
+  - criteria_to_gmail_query(FilterCriteria)
+  - rule_to_gmail_query(FilterRule)
+  - GmailFilterPlanner.__init__ (from FilterCriteria)
+  - format_filter_for_display(NormalizedFilter)
+
+  NormalizedFilter has same criteria fields as FilterCriteria. Fix: add to_criteria()
+  methods or use a Protocol, then single criteria_to_gmail_query() everywhere.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/filter_planner.py:
+        - [9, 22]
+    note: criteria_to_gmail_query(FilterCriteria)
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_planner.py
+  - occurrence_id: occ-1
+    files:
+      gmail_archiver/filter_planner.py:
+        - [25, 59]
+    note: rule_to_gmail_query(FilterRule)
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_planner.py
+  - occurrence_id: occ-2
+    files:
+      gmail_archiver/filter_planner.py:
+        - [156, 163]
+    note: GmailFilterPlanner.__init__ name building from FilterCriteria
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_planner.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/filter_sync.py:
+        - [215, 231]
+    note: format_filter_for_display() from NormalizedFilter
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/filter_sync.py

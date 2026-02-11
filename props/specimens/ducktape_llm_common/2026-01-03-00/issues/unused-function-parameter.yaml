@@ -1,0 +1,17 @@
+rationale: |
+  `_parse_llm_result(file_path: str)` accepts a `file_path` parameter that is never
+  used in the function body. The parameter is passed at the call site (line 62) but
+  the function doesn't reference it. Dead parameters add noise and mislead readers
+  about what the function actually needs.
+
+  Remove the unused parameter from both signature and call site.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter_v2/llm_analyzer.py:
+        - [135, 135]
+        - [62, 62]
+    note: "file_path param in signature (135) and call site (62) - param unused in body"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/llm_analyzer.py]

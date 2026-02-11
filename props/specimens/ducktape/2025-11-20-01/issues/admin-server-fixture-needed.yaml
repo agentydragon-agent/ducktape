@@ -1,0 +1,36 @@
+rationale: |
+  Repeated admin_server creation should be a shared fixture.
+
+  Every test creates its own `ApprovalPolicyAdminServer(engine=engine)`. This appears at lines 43, 56, 70, 90,
+  107, 122,
+  133, 146.
+
+  Should be a fixture that depends on the `engine` fixture.
+
+  Benefits:
+  - DRY principle
+  - Consistent setup across tests
+  - Easy to modify server configuration
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/tests/agent/test_policy_validation_reload.py:
+        - - 43
+          - 43
+        - - 56
+          - 56
+        - - 70
+          - 70
+        - - 90
+          - 90
+        - - 107
+          - 107
+        - - 122
+          - 122
+        - - 133
+          - 133
+        - - 146
+          - 146
+    critic_scopes_expected_to_recall:
+      - - adgn/tests/agent/test_policy_validation_reload.py

@@ -1,0 +1,39 @@
+rationale: |
+  Lines 25-31 in arg0_runner.py include a try/except AttributeError guard for
+  Python versions older than 3.11:
+
+  try:
+      # Python 3.11+: use is_relative_to for robust ancestor check
+      if not p.is_relative_to(root):
+          raise ValueError
+  except AttributeError:  # pragma: no cover - fallback for older Pythons
+      if str(p).startswith(str(root)) is False:
+          raise ValueError
+
+  However, the project's pyproject.toml requires Python >=3.12:
+
+  requires-python = ">=3.12,<3.14"
+
+  The `is_relative_to()` method was added in Python 3.9, so this compatibility
+  guard is completely unnecessary. The code can never run on a Python version
+  that lacks this method.
+
+  The guard should be removed, leaving only:
+
+  if not p.is_relative_to(root):
+      raise ValueError
+
+  Unnecessary compatibility guards add complexity and mislead readers about
+  the supported Python versions. When the minimum Python version is clearly
+  specified in pyproject.toml, the code should assume that version's features
+  are available.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/tools/arg0_runner.py:
+        - [25, 31]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/tools/arg0_runner.py
+    match_file_restriction:
+      - adgn/src/adgn/tools/arg0_runner.py

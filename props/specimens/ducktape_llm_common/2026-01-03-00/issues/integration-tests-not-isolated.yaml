@@ -1,0 +1,16 @@
+rationale: |
+  Integration tests use hardcoded session IDs and write to the real user data
+  directory (~/.local/share/claude-linter-v2/sessions/). This causes:
+  1. Tests to interfere with each other across runs
+  2. Tests to pick up stale state from previous runs
+  3. Potential interference with real user session data
+  4. Non-deterministic test failures when stale data has incompatible format
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tests/claude_linter_v2/test_integration.py:
+        - [27, 27]
+    note: "Uses fixed session_id '12345678-1234-5678-1234-567812345678' that persists to real ~/.local/share path"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_integration.py]

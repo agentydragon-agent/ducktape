@@ -1,0 +1,22 @@
+rationale: |
+  AgentSession.agent_id (runtime.py:234,251) uses str | None, but AgentID is
+  the semantic identifier type used throughout codebase.
+
+  Using domain types provides:
+  - Type safety: can't mix different ID types
+  - Semantic clarity: not just any string, but specific identifier
+  - No runtime conversions/validation
+  - Clear type contracts in signatures
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - - 234
+          - 234
+        - - 251
+          - 251
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py

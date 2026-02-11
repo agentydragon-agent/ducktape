@@ -1,0 +1,20 @@
+rationale: |
+  Lines 532-536 define `_stage_all_if_requested()` which takes a boolean and is
+  a no-op if the boolean is False. This is an antipattern: the function exists only
+  to wrap an if-statement, the caller already has the boolean, and the function name
+  encodes the condition ("if_requested").
+
+  Fix: Inline the logic at call site (line 728) and delete the function.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - - 532
+          - 536
+        - - 728
+          - 728
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py

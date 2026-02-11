@@ -1,0 +1,34 @@
+rationale: |
+  Lines 268-272 construct `ts_output` using repeated `.append()` calls when a list literal would be cleaner.
+
+  Should be:
+  ```python
+  ts_code = generate_typescript_from_schema(unified_schema, "AgentTypes")
+  ts_output = [
+      "// Auto-generated TypeScript types from Pydantic models",
+      "// Do not edit manually - regenerate with: npm run codegen",
+      "",
+      ts_code.strip(),
+  ]
+  ```
+
+  Why list literal is better:
+  - More concise and readable
+  - All elements visible at once without scanning multiple lines
+  - No mutation - construct the list once rather than building it incrementally
+  - Standard Python pattern for known list contents
+
+  The list is immediately consumed at line 274, so there's no benefit to incremental construction.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/scripts/generate_frontend_code.py:
+        - - 268
+          - 272
+        - - 274
+          - 274
+    critic_scopes_expected_to_recall:
+      - - adgn/scripts/generate_frontend_code.py
+    match_file_restriction:
+      - adgn/scripts/generate_frontend_code.py

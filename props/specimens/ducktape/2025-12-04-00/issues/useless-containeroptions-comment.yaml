@@ -1,0 +1,18 @@
+rationale: |
+  The docstring comment "Callers must pass a fully constructed ContainerOptions (no kwargs)" in
+  `make_container_exec_server` is obvious and useless. The function signature already shows `opts:
+  ContainerOptions` as
+  a
+  required parameter with no kwargs accepted for the opts itself.
+
+  This comment adds no information beyond what the type annotation already communicates. Delete it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/exec/docker/server.py:
+        - [25, 25]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/exec/docker/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/exec/docker/server.py

@@ -1,0 +1,15 @@
+rationale: |
+  Tuple element is stored but never used. unparseable is typed as
+  list[tuple[GmailMessage, str]] and stores the error string, but when
+  iterated it's ignored with _error. Should just be list[GmailMessage].
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/aliexpress.py:
+        - [171, 171]
+        - [179, 179]
+        - [186, 186]
+    note: unparseable stores error string that is never used
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/planners/aliexpress.py

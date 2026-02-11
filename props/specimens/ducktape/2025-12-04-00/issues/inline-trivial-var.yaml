@@ -1,0 +1,234 @@
+rationale: |
+  Short-lived variables used only once immediately after creation add noise without value.
+  Inline the expression at the call site to reduce lines and one-off names the reader must
+  mentally map.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/llm/sysrw/extract_dataset_crush.py:
+        - [63, 64]
+    note: dt variable used once immediately after assignment
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/llm/sysrw/extract_dataset_crush.py
+    match_file_restriction:
+      - adgn/src/adgn/llm/sysrw/extract_dataset_crush.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/props/cli_app/cmd_build_bundle.py:
+        - [188, 190]
+    note: author, committer, message variables used once each immediately after assignment
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/cmd_build_bundle.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/cmd_build_bundle.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/db_event_handler.py:
+        - - 52
+          - 52
+        - - 59
+          - 59
+    note: event_type variable extracted then immediately used once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/db_event_handler.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/db_event_handler.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/agent/db_event_handler.py:
+        - - 56
+          - 56
+        - - 63
+          - 63
+    note: event variable created then immediately used once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/db_event_handler.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/db_event_handler.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - - 59
+          - 59
+        - - 60
+          - 60
+    note: bus variable extracted then immediately used once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - - 82
+          - 82
+        - - 83
+          - 83
+    note: tasks variable created then immediately used once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-6
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [85, 86]
+    note: "on_user_text_event: ut variable should be inlined"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-7
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [92, 93]
+    note: "on_tool_call_event: tc variable should be inlined"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-8
+    files:
+      adgn/src/adgn/agent/server/runtime.py:
+        - [100, 101]
+    note: "on_tool_result_event: fco variable should be inlined"
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/runtime.py
+  - occurrence_id: occ-9
+    files:
+      adgn/src/adgn/props/prompt_optimizer.py:
+        - [294, 296]
+    note: return statement could be inlined
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/prompt_optimizer.py
+    match_file_restriction:
+      - adgn/src/adgn/props/prompt_optimizer.py
+  - occurrence_id: occ-10
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [104, 104]
+    note: tp_files variable
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py
+  - occurrence_id: occ-11
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [107, 107]
+    note: critique_files variable
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py
+  - occurrence_id: occ-12
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [201, 201]
+    note: db_run variable in session.add
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py
+  - occurrence_id: occ-13
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [224, 224]
+    note: inputs variable passed to one function call
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py
+  - occurrence_id: occ-14
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [226, 226]
+    note: submit_tool_name variable
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py
+  - occurrence_id: occ-15
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [229, 235]
+    note: prompt variable passed to one function call
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py
+  - occurrence_id: occ-16
+    files:
+      adgn/src/adgn/props/grader/grader.py:
+        - [249, 257]
+    note: handlers variable
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/grader/grader.py
+    match_file_restriction:
+      - adgn/src/adgn/props/grader/grader.py
+  - occurrence_id: occ-17
+    files:
+      adgn/src/adgn/mcp/_shared/resources.py:
+        - [55, 57]
+    note: rr and s variables assigned once and immediately used
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/resources.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/resources.py
+  - occurrence_id: occ-18
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - [173, 174]
+    note: client_factory variable assigned and used only once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py
+  - occurrence_id: occ-19
+    files:
+      adgn/src/adgn/props/cluster_unknowns.py:
+        - [146, 147]
+    note: timestamp variable assigned and used only once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cluster_unknowns.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cluster_unknowns.py
+  - occurrence_id: occ-20
+    files:
+      adgn/src/adgn/props/cluster_unknowns.py:
+        - [151, 155]
+    note: out_spec and tasks variables should be inlined with asyncio.gather generator
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cluster_unknowns.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cluster_unknowns.py
+  - occurrence_id: occ-21
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [283, 291]
+    note: part variable in loop should be list comprehension
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+    match_file_restriction:
+      - adgn/src/adgn/openai_utils/model.py
+  - occurrence_id: occ-22
+    files:
+      adgn/src/adgn/openai_utils/model.py:
+        - [315, 318]
+    note: summary_items variable should be inlined
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/openai_utils/model.py
+    match_file_restriction:
+      - adgn/src/adgn/openai_utils/model.py
+  - occurrence_id: occ-23
+    files:
+      adgn/src/adgn/mcp/approval_policy/engine.py:
+        - [384, 385]
+    note: tmpl variable should be inlined into Template(raw).render(...)
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/approval_policy/engine.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/approval_policy/engine.py

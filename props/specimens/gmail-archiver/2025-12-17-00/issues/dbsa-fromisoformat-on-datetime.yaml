@@ -1,0 +1,22 @@
+rationale: |
+  Line 37 calls `datetime.fromisoformat(extraction.data.event_datetime)`,
+  but `extraction.data` is a `DBSASFGroupReminderData` Pydantic model whose
+  `event_datetime` field is typed `datetime | None` (event_classifier.py
+  line 42). Pydantic v2 coerces the ISO 8601 string from the OpenAI JSON
+  response into a `datetime` during deserialization, so by the time line 37
+  executes the value is already a `datetime` object. `fromisoformat()` expects
+  `str`, so this raises `TypeError`. The `except ValueError` on line 39 does
+  not catch `TypeError`, so the exception propagates and crashes the DBSA
+  planner for every email where OpenAI successfully extracts a datetime.
+  Fix: drop the `fromisoformat` call and use `extraction.data.event_datetime`
+  directly.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/planners/dbsa.py:
+        - [35, 40] # fromisoformat on already-parsed datetime
+      gmail_archiver/event_classifier.py:
+        - [42, 42] # event_datetime: datetime | None
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/planners/dbsa.py, gmail_archiver/event_classifier.py]

@@ -1,0 +1,93 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ingress-nginx
+  namespace: ingress-system
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: ingress-nginx
+      version: "4.11.3"
+      sourceRef:
+        kind: HelmRepository
+        name: ingress-nginx
+        namespace: flux-system
+      interval: 12h
+  values:
+    controller:
+      # Enable snippet annotations for Authentik forward auth X-Forwarded-Host header
+      allowSnippetAnnotations: true
+
+      # Use NodePort to expose on node interfaces (now that Cilium kube-proxy replacement is enabled)
+      hostNetwork: false
+      hostPort:
+        enabled: false
+
+      # Use Deployment instead of DaemonSet for NodePort
+      kind: Deployment
+
+      # Allow running on all nodes for better HA with VIP
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+        - key: "node-role.kubernetes.io/master" # Legacy key
+          operator: "Exists"
+          effect: "NoSchedule"
+
+      # Spread pods across different nodes for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: ingress-nginx
+                    app.kubernetes.io/component: controller
+                topologyKey: kubernetes.io/hostname
+
+      # Service configuration - LoadBalancer with MetalLB
+      service:
+        type: LoadBalancer
+        loadBalancerIP: 10.2.3.2 # Dedicated ingress VIP
+        annotations:
+          metallb.universe.tf/address-pool: ingress-pool
+        ports:
+          http: 80
+          https: 443
+        # Keep NodePort as backup/fallback
+        # nodePorts:
+        #   http: 30080
+        #   https: 30443
+
+      # Ingress class configuration
+      ingressClassResource:
+        name: nginx
+        enabled: true
+        default: true
+        controllerValue: "k8s.io/ingress-nginx"
+
+      # Enable metrics for monitoring
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: false # Enable later when we have Prometheus
+
+      # Resource limits
+      resources:
+        limits:
+          cpu: 200m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+
+      # HA replicas on worker nodes
+      replicaCount: 2
+
+      # Pod disruption budget for HA
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1

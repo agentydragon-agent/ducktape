@@ -1,0 +1,29 @@
+rationale: |
+  MCP abort_agent tool calls agent.abort() method that doesn't exist on MiniCodex.
+
+  The abort_agent tool at agents.py:656 calls:
+  await local_runtime.agent.abort()  # type: ignore[attr-defined]  # TODO: Implement abort() on MiniCodex
+
+  The type ignore and TODO comment explicitly acknowledge the method is missing.
+
+  Impact:
+  - Calling abort_agent MCP tool raises AttributeError at runtime
+  - Tool is unusable despite being exposed to agents/users
+
+  The MiniCodex class only has abort_pending_tool_calls() which synthesizes
+  error results for pending tool calls but doesn't provide a full abort() method.
+
+  Fix: Implement abort() method on MiniCodex or remove the broken tool.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/agent.py:
+        - [547, 552]
+      adgn/src/adgn/agent/mcp_bridge/servers/agents.py:
+        - [656, 656]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+      - adgn/src/adgn/agent/agent.py

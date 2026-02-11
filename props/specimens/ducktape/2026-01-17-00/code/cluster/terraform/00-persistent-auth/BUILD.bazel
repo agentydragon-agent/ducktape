@@ -1,0 +1,55 @@
+# Terraform validation for 00-persistent-auth layer
+# Uses rules_tf for hermetic linting and sh_test with tfmirror.dev for validation
+
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+package(default_visibility = ["//cluster:__subpackages__"])
+
+# Provider versions for this layer
+# Based on ../terraform.tf (shared provider definitions)
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "kubernetes": "hashicorp/kubernetes:~>2.38.0",
+        "vault": "hashicorp/vault:~>5.4.0",
+        "authentik": "goauthentik/authentik:~>2025.10.0",
+        "random": "hashicorp/random:~>3.7.0",
+        "tls": "hashicorp/tls:~>4.1.0",
+        "local": "hashicorp/local:~>2.5.0",
+    },
+    tf_version = "1.9.8",
+)
+
+# Terraform module linting via tflint (hermetic)
+tf_module(
+    name = "00-persistent-auth",
+    providers = [
+        "kubernetes",
+        "vault",
+        "authentik",
+        "random",
+        "tls",
+        "local",
+    ],
+    providers_versions = ":providers",
+    skip_validation = True,  # Use :validate target instead (with tfmirror.dev)
+)
+
+# Terraform validate with tfmirror.dev network mirror
+# This test requires network access to fetch providers from tfmirror.dev
+sh_test(
+    name = "validate",
+    srcs = ["//cluster/scripts:tofu_validate.sh"],
+    args = [
+        "$(location @tf_toolchains//:tofu)",
+        "cluster/terraform/00-persistent-auth",
+    ],
+    data = [
+        "@tf_toolchains//:tofu",
+    ] + glob(["**/*.tf"]),
+    tags = [
+        "external",  # Uses external network resources
+        "requires-network",  # Needs network for tfmirror.dev
+    ],
+)

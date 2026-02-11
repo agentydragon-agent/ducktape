@@ -1,0 +1,223 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adgn"
+version = "0.0.0"
+authors = [{name = "Rai"}]
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "pydantic>=2.0.0",
+  "fastapi>=0.115.0",
+  "httpx>=0.27.0",
+  "aiosqlite>=0.18.0",
+  "typer>=0.12.0",
+  "uvicorn>=0.30.0",
+  "click",
+  "psutil",
+  "platformdirs",
+  "aiohttp>=3.9.0",
+  "colorama",
+  "PyYAML",
+  "PyGithub>=1.77",
+  "pygit2>=1.18",
+  "types-pygit2>=1.15.0",
+  "tabulate",
+  "watchdog",
+  "pluggy>=1.3.0",
+  "punq>=0.6.2",
+  # LLM stack (merged from former adgn-llm)
+  "openai>=1.40.0",
+  "tenacity>=8.2.0",
+  "docker>=7.0.0",
+  "aiodocker>=0.22.0",
+  "pandas>=2.2.0",
+  "tiktoken>=0.7.0",
+  "sqlalchemy[asyncio]>=2.0.32",
+  "alembic>=1.13.0",
+  "psycopg[binary]>=3.1",
+  "psycopg2-binary>=2.9",
+  "plotnine>=0.13.0",
+  "claude-code-sdk<=0.0.21",
+  "ipykernel>=6",
+  "jupyter-mcp-server>=0.11.0",
+  "jupyter-server",
+  "jupyter-core",
+  "structlog",
+  "anthropic",
+  "numpy",
+  "pathspec",
+  "anyio>=4.4",
+  "mcp[cli]>=1.13.1",
+  "jsonnet>=0.20.0",
+  "requests>=2.32.5",
+  "aiolimiter>=1.1.0",
+  "pyhamcrest>=2.1",
+  "rich>=13.0.0",
+  "textual>=0.78.0",
+  "canonicaljson>=1.6.0",
+  "asyncpg>=0.29.0",
+  "unidiff>=0.7.5",
+  "fastmcp>=2.13",
+  "jinja2>=3.1",
+  "kubernetes>=29.0.0",
+  "filelock>=3.13.0",
+  "compact-json>=1.4.0",
+]
+
+[project.optional-dependencies]
+# Developer tools and test dependencies
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.23",
+  "pytest-timeout>=2.3",
+  "pytest-xdist>=3.0",
+  'pytest-mock>=3.10.0',
+  'pytest-env>=1.1.3',
+  # UI E2E (browser) testing
+  'pytest-playwright>=0.5.0',
+  'playwright>=1.45.0',
+  "ruff>=0.5",
+  # Pin to match .pre-commit-config.yaml (v1.18.2)
+  # TODO: Ensure mypy versions stay consistent across all tool configs in the repo
+  "mypy==1.18.2",
+  "sqlalchemy[mypy]>=2.0.32",
+  "click>=8.0",
+  "pygit2>=1.18",
+  "pre-commit>=3.5",
+  'types-colorama',
+  'types-psutil',
+  'types-PyYAML',
+  'types-requests',
+  'types-tabulate',
+  'types-docker',
+  'pandas-stubs',
+  'types-Jinja2',
+]
+typing = [
+    'types-colorama',
+    'types-psutil',
+    'types-PyYAML',
+    'types-requests',
+    'types-tabulate',
+    'types-docker',
+    'pandas-stubs',
+    'types-Jinja2',
+]
+# GNOME console script deps (install when needed)
+gnome = [
+  "absl-py>=1.0.0",
+  "dbus-python>=1.3.0",
+  "PyGObject>=3.40.0",
+]
+matrix = [
+  "mautrix>=0.20.0",
+]
+gepa = [
+  "gepa>=0.0.22",
+  "litellm>=1.0.0",
+  "nest-asyncio>=1.5.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["adgn*"]
+
+[tool.setuptools.package-data]
+"adgn.props" = [
+  "definitions/*.md",
+  "definitions/**/*.md",
+  "specimens/**",
+  "prompts/*.j2",
+  "prompts/**/*.j2",
+  "prompts/*.j2.md",
+  "prompts/**/*.j2.md",
+]
+"adgn.agent.server" = [
+  "static/*",
+  "static/**/*",
+]
+"adgn.agent.templates" = [
+  "*.j2",
+]
+"adgn.mcp.approval_policy" = [
+  "instructions.md",
+]
+
+[tool.pytest.ini_options]
+# Default timeout (seconds) for all tests via pytest-timeout
+timeout = 30
+timeout_method = "thread"
+# Run tests in parallel using xdist by default
+addopts = [
+    "-n=16",
+    "--dist=loadscope",
+    "-m",
+    "not live_llm",
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--disable-warnings",
+    "--durations=25",
+    "-p",
+    "no:pytest_playwright",
+    "-p",
+    "no:playwright",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "e2e: end-to-end UI tests using playwright",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "shell: marks tests that test shell integration",
+    "real_github: tests that talk to real GitHub/network",
+    "live_llm: live LLM tests requiring network/API keys",
+    "macos: macOS-only tests",
+    "requires_docker: tests that require Docker to run",
+    "requires_sandbox_exec: tests that require local sandbox exec capabilities",
+    "requires_postgres: tests that require PostgreSQL database to run",
+]
+# Ensure hermetic git by default via pytest-env plugin
+# These are static-safe; dynamic HOME/XDG are set by autouse fixture
+# TODO: ensure in code, not here
+env = [
+    "GIT_CONFIG_NOSYSTEM=1",
+    "GIT_CONFIG_GLOBAL=/dev/null",
+]
+# Use modern asyncio auto mode for compatibility across plugins
+asyncio_mode = "auto"
+# Ensure per-test loops for fixtures to prevent session-level loops
+asyncio_default_fixture_loop_scope = "function"
+# Discover tests under the top-level tests/ directory
+testpaths = ["tests"]
+
+
+[tool.adgn.trivial-patterns]
+skip-globs = ["tests/detectors/fixtures/**"]
+
+[project.scripts]
+rspcache = "adgn.rspcache.cli:app"
+# LLM console scripts
+adgn-sysrw = "adgn.llm.sysrw.cli:app"
+adgn-mini-codex = "adgn.agent.cli:main"
+adgn-properties = "adgn.props.cli_app.main:app"
+git-commit-ai = "adgn.git_commit_ai.cli:main"
+sandbox-jupyter = "adgn.mcp.sandboxed_jupyter.wrapper:main"
+adgn-sandboxer = "adgn.llm.sandboxer:main"
+adgn-llm-edit = "adgn.llm.llm_edit:app"
+adgn-openai-probe = "adgn.openai_utils.probe:main"
+adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
+adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"
+adgn-mcp-docker-exec = "adgn.mcp.exec.docker.launcher:main"
+adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
+adgn-matrix-bot = "adgn.agent.matrix_bot:main"
+adgn-detectors-custom = "adgn.props.detectors.cli_custom:main"
+adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
+adgn-generate-frontend-code = "adgn.scripts.generate_frontend_code:main"
+
+# Mypy configuration moved to central /mypy.ini at repo root
+
+[[tool.mypy.overrides]]
+module = ["tests.detectors.fixtures.*"]
+ignore_errors = true

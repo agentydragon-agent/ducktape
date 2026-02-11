@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-blueprint-vault
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  path: ./cluster/k8s/authentik-blueprint/vault
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: core # Wait for tofu-controller to install Terraform CRD
+      namespace: flux-system
+    - name: authentik # Wait for Authentik API to be ready before creating OAuth apps
+      namespace: flux-system
+    - name: vault
+      namespace: flux-system
+    - name: external-secrets-config
+      namespace: flux-system
+    - name: reflector
+      namespace: flux-system
+    - name: vault-token
+      namespace: flux-system

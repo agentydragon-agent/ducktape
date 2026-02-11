@@ -1,0 +1,18 @@
+rationale: |
+  Line 370 contains a default parameter value (reflection_model: str = "gpt-4o") in optimize_with_gepa. The
+  function is
+  called from a CLI entrypoint that already provides the default, creating layered defaults without clear design
+  intent.
+  Defaults should exist at a single layer (preferably the CLI/entrypoint level) to avoid confusion about which
+  default
+  applies.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/gepa/gepa_adapter.py:
+        - [370, 370]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/gepa/gepa_adapter.py
+    match_file_restriction:
+      - adgn/src/adgn/props/gepa/gepa_adapter.py

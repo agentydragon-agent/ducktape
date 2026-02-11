@@ -1,0 +1,15 @@
+# Reduce build context size
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/venv
+**/.DS_Store
+events.db
+optimizer.db
+uv.lock
+*.log

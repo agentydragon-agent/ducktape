@@ -1,0 +1,13 @@
+rationale: |
+  Calling list() on a set when passing to an API that accepts any iterable is
+  unnecessary. The Gmail batchModify API accepts any iterable for label IDs,
+  so the conversion adds noise without benefit.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/cli/filters.py:
+        - [386, 388]
+    note: "list(add_labels) and list(remove_labels) - Gmail API accepts iterables"
+    critic_scopes_expected_to_recall:
+      - - gmail_archiver/cli/filters.py

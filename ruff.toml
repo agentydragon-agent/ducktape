@@ -22,6 +22,7 @@ exclude = [
     "experimental/sandboxed_jupyter/testdata",
     "sysrw/testdata",
     "tana/testdata",
+    "props/specimens/*/*/code",
 ]
 
 [format]

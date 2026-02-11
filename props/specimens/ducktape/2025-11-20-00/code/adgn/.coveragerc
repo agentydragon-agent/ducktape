@@ -1,0 +1,15 @@
+[run]
+source = adgn
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */conftest.py
+
+[report]
+fail_under = 80
+show_missing = True
+skip_covered = False
+
+[html]
+directory = htmlcov

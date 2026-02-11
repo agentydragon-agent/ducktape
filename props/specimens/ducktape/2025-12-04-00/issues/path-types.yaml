@@ -1,0 +1,29 @@
+rationale: |
+  File path parameters should use pathlib.Path instead of str for type safety and cleaner path operations.
+  Using Path types enables method chaining (.parent, .name, .exists()) and avoids manual string concatenation.
+  Current code mixes str and Path types or unnecessarily converts Path to str.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/gepa/gepa_adapter.py:
+        - [66, 66]
+    note: SnapshotInput.target_files uses set[Path] but other path parameters like specimen_slug are plain str
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/gepa/gepa_adapter.py
+    match_file_restriction:
+      - adgn/src/adgn/props/gepa/gepa_adapter.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/props/cli_app/cmd_build_bundle.py:
+        - - 18
+          - 44
+        - - 47
+          - 62
+        - - 239
+          - 363
+    note: Functions use list[str] and str for file paths instead of Path objects
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/cmd_build_bundle.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/cmd_build_bundle.py

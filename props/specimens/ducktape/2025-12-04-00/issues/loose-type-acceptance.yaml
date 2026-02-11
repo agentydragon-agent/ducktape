@@ -1,0 +1,18 @@
+rationale: |
+  Function extract_structured_content accepts both FMCallToolResult and mcp_types.CallToolResult, making type
+  reasoning
+  harder.
+  This loose typing forces runtime normalization and isinstance checks throughout the function.
+  The function should accept only mcp_types.CallToolResult, and callers should explicitly convert using
+  fastmcp_to_mcp_result if needed.
+  This pushes the conversion to the boundary, making the core logic simpler and type-safe.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/calltool.py:
+        - [56, 56]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/calltool.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/calltool.py

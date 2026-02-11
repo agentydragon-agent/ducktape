@@ -1,0 +1,17 @@
+rationale: |
+  `_get_retry_after` wraps its timestamp-parsing logic (lines 66-77) in
+  `except Exception` (line 78), which stores the error string in debug_info
+  and falls through to returning None. This is too broad: the only expected
+  failure is `ValueError` from `fromisoformat()` on a malformed timestamp.
+  Catching `Exception` silently swallows programming errors — currently it
+  masks an `AttributeError` from `datetime.UTC` on line 74 (separate issue),
+  making the entire Retry-After timestamp branch dead code without any
+  visible error. Narrow to `except ValueError` so real bugs surface.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/gmail_client.py:
+        - [66, 79] # try/except Exception around timestamp parsing
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/gmail_client.py]

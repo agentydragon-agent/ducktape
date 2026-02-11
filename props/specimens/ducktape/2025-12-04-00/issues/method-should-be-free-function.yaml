@@ -1,0 +1,16 @@
+rationale: |
+  Method _fm_transport_from_spec at lines 343-352 is an instance method but accesses no instance state.
+  It's a pure transformation function: MCPServerTypes → ClientTransport.
+  This should be a module-level function outside the class, not a method.
+  As a free function, it's easier to test in isolation and signals that it has no side effects or class
+  dependencies.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - [343, 352]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py

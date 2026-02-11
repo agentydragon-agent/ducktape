@@ -1,0 +1,29 @@
+rationale: |
+  Tests use hardcoded /tmp/ paths instead of pytest's tmp_path fixture, and scan
+  the actual working directory instead of a predictable test directory. This causes:
+  1. Tests to operate on real filesystem locations that may have stale state
+  2. Stop hook tests to find violations in the actual codebase, not test fixtures
+  3. Non-deterministic test behavior depending on cwd and /tmp/ contents
+  4. Potential interference between parallel test runs
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tests/claude_linter_v2/test_integration.py:
+        - [19, 19]
+        - [50, 50]
+        - [86, 86]
+        - [122, 122]
+        - [165, 165]
+        - [201, 201]
+        - [218, 218]
+    note: "Multiple tests use hardcoded /tmp/ paths like '/tmp/test_bare_except.py' instead of tmp_path fixture"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_integration.py]
+  - occurrence_id: occ-1
+    files:
+      tests/claude_linter_v2/test_stop_hook_quality_gate.py:
+        - [1, 190]
+    note: "Stop hook tests scan actual cwd for violations instead of using isolated test directories with known content"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_stop_hook_quality_gate.py]

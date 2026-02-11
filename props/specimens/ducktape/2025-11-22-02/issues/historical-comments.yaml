@@ -1,0 +1,62 @@
+rationale: |
+  Comments reference historical code states or duplicate log messages/method names.
+
+  Pattern 1 (compositor_factory.py:40, 45): "Mount...engine (now an MCP server)" references historical
+  refactoring state
+  irrelevant after completion.
+
+  Pattern 2 (server.py:209, 237, 361, 363): "Notify that..." comments duplicate what method names/log messages
+  already
+  convey.
+
+  Pattern 3 (server.py:416): Confusing middleware comment with "except... Actually, we want..." contradicts
+  itself
+  instead
+  of stating what it does.
+
+  These comments create maintenance burden and must be updated as code changes. Delete them; log messages and
+  method
+  names
+  are sufficient.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/mcp_bridge/compositor_factory.py:
+        - - 40
+          - 40
+        - - 45
+          - 45
+    note: 'Lines 40, 45: "Mount approval policy engine (now an MCP server)", "Mount approvals hub (now an MCP server)"'
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/compositor_factory.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/compositor_factory.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/mcp_bridge/server.py:
+        - - 209
+          - 209
+        - - 237
+          - 237
+        - - 361
+          - 361
+        - - 363
+          - 363
+        - - 416
+          - 416
+        - - 429
+          - 429
+        - - 431
+          - 431
+        - - 441
+          - 441
+        - - 443
+          - 443
+    note: |-
+      Lines 209, 237, 361, 363: "Notify that..." comments; Line 416: Confusing auth comment with "Actually, we
+      want..."; Lines 429, 431, 441, 443: Implementation detail comments
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/mcp_bridge/server.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/server.py

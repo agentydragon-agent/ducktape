@@ -1,0 +1,40 @@
+rationale: |
+  The codebase conflates two distinct concepts both called "upstream":
+
+  1. **Git's upstream**: The remote tracking branch for push/pull (e.g., origin/feature-foo).
+     - `gitstatusd_listener.py:90-91` defines `commits_ahead_upstream` and `commits_behind_upstream`
+     - These come from gitstatusd's protocol and refer to the remote tracking branch
+     - Answers: "Do I need to push/pull?"
+
+  2. **wt's upstream_branch config**: The base branch for worktree creation (e.g., main).
+     - `repo_status.py:62-66` computes ahead/behind relative to `config.upstream_branch`
+     - This is the branch worktrees are created from and PRs target
+     - Answers: "How big will my PR be?"
+
+  The `protocol.py:232-235` fields (`ahead_count`, `behind_count`, `upstream_branch`) don't
+  clarify which meaning they use. The descriptions say "upstream branch" ambiguously.
+
+  Currently wt correctly uses the config-based upstream (repo_status.py) for its ahead/behind
+  display. However, if code were added that uses gitstatusd's ahead/behind values for the
+  same purpose, it would produce incorrect results (comparing to origin/feature-foo instead
+  of main).
+
+  At minimum, the terminology should be disambiguated. Options include:
+  - Rename config field to `base_branch` or `target_branch`
+  - Rename gitstatusd fields to `tracking_ahead`/`tracking_behind`
+  - Add clarifying comments/docstrings
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      src/wt/server/gitstatusd_listener.py:
+        - [90, 91]
+      src/wt/server/repo_status.py:
+        - [62, 66]
+      src/wt/shared/protocol.py:
+        - [232, 235]
+    critic_scopes_expected_to_recall:
+      - [src/wt/server/gitstatusd_listener.py, src/wt/server/repo_status.py]
+      - [src/wt/shared/protocol.py, src/wt/server/repo_status.py]

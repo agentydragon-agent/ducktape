@@ -1,0 +1,24 @@
+rationale: |
+  Container leak when container.start() fails after container.create() succeeds.
+
+  In `_start_container()` (lines 132-140), if `container.start()` fails after
+  `container.create()` succeeds, the exception propagates before the container ID
+  is returned. In `make_container_lifespan()`, `container_dict` remains None, so
+  the finally block skips cleanup. The container is leaked in Docker.
+
+  Impact: Containers accumulate on repeated failures, consuming resources until
+  manual `docker container prune`.
+
+  Fix: Capture container ID immediately after create(), before calling start(),
+  so cleanup can run even if start() fails. Use a context manager that owns the
+  full create-start-cleanup lifecycle.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/container_session.py:
+        - [132, 174]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/container_session.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/container_session.py

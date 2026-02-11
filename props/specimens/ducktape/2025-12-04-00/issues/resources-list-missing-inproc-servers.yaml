@@ -1,0 +1,48 @@
+rationale: |
+  The resources server's `list_resources_tool` function (lines 343-368) only inspects servers mounted from
+  specs,
+  missing
+  resources from inproc servers. This is a design inconsistency - tools are multiplexed across ALL servers (both
+  spec-based and inproc), but the resources list only shows spec-based servers.
+
+  **The bug:**
+  Lines 348-349 use `compositor.mount_specs()` which only returns spec-based (external/HTTP) servers:
+  ```python
+  specs = await compositor.mount_specs()
+  mount_names = list(specs.keys())
+  ```
+
+  This means resources from inproc servers (like `compositor_meta`, `resources` itself, policy servers, etc.)
+  are
+  silently
+  filtered out when `derive_origin_server` raises `ValueError` on line 354 because their names aren't in
+  `mount_names`.
+
+  **Evidence of the correct pattern:**
+  Lines 250-254 show the `_present_servers()` function using the correct approach with an explicit comment:
+  ```python
+  async def _present_servers() -> set[str]:
+      # Include all mounted servers, including in-proc mounts without typed specs.
+      # Use compositor._mount_names() directly; do not swallow errors.
+      names = await compositor._mount_names()
+      return set(names)
+  ```
+
+  **The fix:**
+  Replace lines 348-349 with:
+  ```python
+  mount_names = await compositor._mount_names()
+  ```
+
+  This ensures resources from ALL mounted servers (both spec-based and inproc) are included in the list results,
+  maintaining consistency with how tools are already multiplexed.
+
+  **Impact:** Agents cannot discover resources from inproc servers like compositor_meta or resources server itself.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/resources/server.py:
+        - [348, 349]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/resources/server.py

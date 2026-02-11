@@ -1,0 +1,16 @@
+rationale: |
+  Conditional at lines 169-190 nests the complex branch inside an if, making the code harder to follow.
+  The mount.proxy is None case (line 190) is simple and should be handled with early bailout:
+  - Check if mount.proxy is None, set InitializingServerEntry, continue to next mount
+  - Remove the else branch and un-indent the complex logic
+  This reduces nesting depth by one level for the main logic path.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/compositor/server.py:
+        - [169, 190]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/server.py

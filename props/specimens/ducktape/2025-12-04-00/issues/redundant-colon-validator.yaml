@@ -1,0 +1,23 @@
+rationale: |
+  Lines 34-38 define `_reject_colon` validator that rejects colons in BaseIssueID values. However, this
+  validator is redundant because the pattern constraint on line 47 already excludes colons.
+
+  The pattern `r"^[a-z0-9_-]+$"` only allows lowercase letters, digits, underscores, and hyphens. Colons are not
+  in this character class, so any string containing a colon will fail pattern validation before reaching the
+  `BeforeValidator(_reject_colon)` on line 48.
+
+  The validator function and its usage should be deleted as they add no value beyond what the pattern already
+  enforces.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/ids.py:
+        - - 34
+          - 38
+        - - 48
+          - 48
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/ids.py
+    match_file_restriction:
+      - adgn/src/adgn/props/ids.py

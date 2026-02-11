@@ -1,0 +1,206 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: harbor
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: harbor
+  namespace: harbor
+spec:
+  interval: 24h
+  url: https://helm.goharbor.io
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: harbor
+  namespace: harbor
+spec:
+  interval: 15m
+  chart:
+    spec:
+      chart: harbor
+      version: "1.15.1"
+      sourceRef:
+        kind: HelmRepository
+        name: harbor
+        namespace: harbor
+  install:
+    timeout: 10m
+    crds: CreateReplace
+  upgrade:
+    timeout: 10m
+    crds: CreateReplace
+  values:
+    # Core Harbor configuration
+    expose:
+      type: ingress
+      tls:
+        enabled: true
+        certSource: secret
+        secret:
+          secretName: "harbor-tls"
+      ingress:
+        hosts:
+          core: registry.test-cluster.agentydragon.com
+        annotations:
+          kubernetes.io/ingress.class: "nginx"
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+    # External URL (used for OIDC redirects)
+    externalURL: https://registry.test-cluster.agentydragon.com
+
+    # CRITICAL: Use Recreate strategy for RWO volumes (global setting for all components)
+    # Harbor registry (5Gi) and jobservice (1Gi) use RWO persistent volumes.
+    # RollingUpdate + RWO volumes = deadlock when pods fail during initialization.
+    # Init:Error pods hold RWO volumes, preventing new pods from attaching.
+    # This has caused production deadlocks requiring manual intervention (3rd occurrence).
+    # See docs/RWO_VOLUME_DEPLOYMENT_STRATEGY.md for complete explanation.
+    # Brief downtime during updates is acceptable vs manual deadlock recovery.
+    updateStrategy:
+      type: Recreate
+
+    # Persistence configuration
+    persistence:
+      enabled: true
+      # Use default storage class
+      resourcePolicy: "keep"
+      persistentVolumeClaim:
+        registry:
+          size: 5Gi
+        jobservice:
+          size: 1Gi
+        database:
+          size: 1Gi
+        redis:
+          size: 1Gi
+        trivy:
+          size: 5Gi
+
+    # Admin password from Password generator (bootstrap phase)
+    # TODO: Migrate to Vault-backed harbor-secrets once SSO is configured
+    harborAdminPassword: "" # Will be set via existingSecret
+    existingSecretAdminPassword: "harbor-admin-initial"
+    existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
+
+    # Core services
+    core:
+      replicas: 1
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+          cpu: 500m
+
+    # Registry configuration
+    registry:
+      replicas: 1
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+          cpu: 200m
+
+    # PostgreSQL database
+    database:
+      type: internal
+      internal:
+        password: "changeit"
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 512Mi
+            cpu: 200m
+
+    # Redis cache
+    redis:
+      type: internal
+      internal:
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 512Mi
+            cpu: 200m
+
+    # Trivy vulnerability scanner
+    trivy:
+      enabled: true
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+
+    # Notary (optional)
+    notary:
+      enabled: false
+
+    # Job service
+    jobservice:
+      replicas: 1
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+          cpu: 200m
+
+    # Portal (web UI)
+    portal:
+      replicas: 1
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+          cpu: 200m
+
+    # Metrics and monitoring
+    metrics:
+      enabled: true
+      core:
+        path: /metrics
+        port: 8001
+      registry:
+        path: /metrics
+        port: 8001
+      jobservice:
+        path: /metrics
+        port: 8001
+      exporter:
+        path: /metrics
+        port: 8001
+      serviceMonitor:
+        enabled: true
+        # Match kube-prometheus-stack selector
+        additionalLabels:
+          prometheus: kube-prometheus-stack
+        interval: 30s
+
+    # Harbor exporter for Prometheus metrics
+    exporter:
+      replicas: 1
+      resources:
+        requests:
+          memory: 128Mi
+          cpu: 50m
+        limits:
+          memory: 256Mi
+          cpu: 200m

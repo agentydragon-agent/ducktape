@@ -1,0 +1,16 @@
+rationale: |
+  Field docstrings like `"""Human-readable explanation..."""` after Field declarations
+  are not semantically attached to those fields. Use Field(description="...") instead -
+  it's more semantic, discoverable, and appears in JSON schema.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_linter/models.py:
+        - [27, 28]
+        - [30, 32]
+        - [34, 35]
+        - [37, 38]
+    note: "HookResponse fields have trailing docstrings instead of Field descriptions"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter/models.py]

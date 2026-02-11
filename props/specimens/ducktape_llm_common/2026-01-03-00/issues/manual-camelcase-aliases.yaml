@@ -1,0 +1,25 @@
+rationale: |
+  Response models use manual `alias="camelCase"` on each field instead of
+  `alias_generator=to_camel` in model_config. This creates boilerplate and
+  risks inconsistency. Use a CamelCaseModel base class with alias_generator.
+
+  Note: Request models must stay snake_case (Claude Code sends snake_case for requests).
+  Only response/outbound models can use to_camel.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_code_api.py:
+        - [153, 167]
+    note: "BaseResponse has manual aliases: stop_reason='stopReason', suppress_output='suppressOutput'"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_code_api.py]
+  - occurrence_id: occ-1
+    files:
+      ducktape_llm_common/claude_linter/models.py:
+        - [24, 31]
+        - [44, 48]
+        - [58, 64]
+    note: "HookResponse, PatchLine, ToolResponse all have manual camelCase aliases"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter/models.py]

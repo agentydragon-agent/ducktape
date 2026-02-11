@@ -1,0 +1,9 @@
+rationale: |
+  StatefulHookMixin (lines 36-104) is defined but never used anywhere in the codebase.
+  Delete it or implement something that uses it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/hook_session_state.py:
+        - [36, 104]

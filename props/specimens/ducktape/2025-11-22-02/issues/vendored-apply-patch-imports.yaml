@@ -1,0 +1,27 @@
+rationale: |
+  The apply_patch.py file is vendored from OpenAI Cookbook and deliberately kept in its original form.
+  Vendored third-party code should not be modified to match project style conventions.
+  Imports-not-at-top (E402) in vendored code should not be flagged.
+should_flag: false
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/third_party/openai_cookbook/apply_patch.py:
+        - [51, 51]
+    note: Vendored file - pydantic import after code
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/third_party/openai_cookbook/apply_patch.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/third_party/openai_cookbook/apply_patch.py:
+        - [71, 71]
+    note: Vendored file - duplicate pydantic import after code
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/third_party/openai_cookbook/apply_patch.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/third_party/openai_cookbook/apply_patch.py:
+        - [364, 366]
+    note: Vendored file - os/sys/typing imports after class definitions
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/third_party/openai_cookbook/apply_patch.py

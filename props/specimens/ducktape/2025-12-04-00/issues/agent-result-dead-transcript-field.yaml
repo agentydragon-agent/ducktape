@@ -1,0 +1,26 @@
+rationale: |
+  `AgentResult.transcript` (lines 28-32) is always an empty list. The `transcript`
+  variable is initialized to [] at line 45, never appended to, and returned still
+  empty at line 65. Callers only access `res.final_text` (lines 153-156).
+
+  The TranscriptHandler writes to a file, not to a returned collection - there's
+  no mechanism to populate this field.
+
+  Fix: Remove the dead `transcript` field from AgentResult.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/cli_app/shared.py:
+        - - 28
+          - 32
+        - - 45
+          - 45
+        - - 65
+          - 65
+        - - 152
+          - 156
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/shared.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/shared.py

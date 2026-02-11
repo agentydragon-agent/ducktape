@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-secrets
+  namespace: flux-system
+spec:
+  interval: 15m0s
+  path: ./cluster/k8s/sso-secrets
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 10m0s
+  wait: true
+  dependsOn:
+    - name: core # Wait for tofu-controller to install Terraform CRD
+      namespace: flux-system
+    - name: vault-token # Wait for Vault token to be available for Terraform authentication
+      namespace: flux-system
+    - name: external-secrets-config # Wait for ESO to be configured
+      namespace: flux-system

@@ -1,0 +1,31 @@
+rationale: |
+  The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
+  implementations. Extract to a shared runner function or base class method.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_hook.py:
+        - [122, 125]
+        - [166, 167]
+        - [171, 174]
+    note: "ClaudeCodeHookBase.run() has 3 instances of print(response.model_dump_json(...)); sys.exit(0)"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_hook.py]
+
+  - occurrence_id: occ-1
+    files:
+      ducktape_llm_common/claude_linter/cli.py:
+        - [226, 235]
+    note: "main() serializes and exits"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter/cli.py]
+
+  - occurrence_id: occ-2
+    files:
+      ducktape_llm_common/claude_linter_v2/cli.py:
+        - [180, 180]
+        - [202, 202]
+    note: "run_hook() serializes and exits separately"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter_v2/cli.py]

@@ -1,0 +1,7 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - admin-password-generator.yaml
+  - secrets.yaml # Commented out - Phase 2 only
+  - helmrelease.yaml
+  - certificate.yaml

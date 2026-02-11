@@ -1,0 +1,33 @@
+rationale: |
+  The `describe` field in ContainerOptions and the `--describe` CLI argument are defined but never used. The
+  field is
+  set
+  from the CLI argument in launcher.py (line 94),
+  but the value is never checked or referenced anywhere in the codebase.
+  Image history is unconditionally fetched in container_session.py (line 393) regardless of this flag's value,
+  making
+  the
+  entire field and its CLI argument dead code.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/mcp/_shared/container_session.py:
+        - [60, 60]
+    note: Field definition in ContainerOptions dataclass
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/_shared/container_session.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/container_session.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/mcp/exec/docker/launcher.py:
+        - - 63
+          - 63
+        - - 94
+          - 94
+    note: CLI argument definition and usage in launcher
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/exec/docker/launcher.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/exec/docker/launcher.py

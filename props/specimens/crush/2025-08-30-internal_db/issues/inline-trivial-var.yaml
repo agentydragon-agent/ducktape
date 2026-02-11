@@ -1,0 +1,69 @@
+rationale: |
+  Inline single-use temporaries and trivial wrapper locals (prefer struct literals or direct expressions) to
+  reduce noise and make intent clearer.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      internal/csync/maps.go:
+        - [111, 114]
+    note: JSONSchemaAlias returns a throwaway temp map `m` — inline the literal return value.
+    critic_scopes_expected_to_recall:
+      - - internal/csync/maps.go
+    match_file_restriction:
+      - internal/csync/maps.go
+  - occurrence_id: occ-1
+    files:
+      internal/format/spinner.go:
+        - [44, 69]
+    note: |-
+      NewSpinner builds a local `model` and `prog` only used once to construct Spinner — inline into the returned
+      struct where sensible.
+    critic_scopes_expected_to_recall:
+      - - internal/format/spinner.go
+    match_file_restriction:
+      - internal/format/spinner.go
+  - occurrence_id: occ-2
+    files:
+      internal/session/session.go:
+        - [150, 156]
+    note: |-
+      NewService creates a one-off `broker` local and then returns a struct containing it — inline into the struct
+      literal.
+    critic_scopes_expected_to_recall:
+      - - internal/session/session.go
+    match_file_restriction:
+      - internal/session/session.go
+  - occurrence_id: occ-3
+    files:
+      internal/config/provider.go:
+        - [82, 85]
+    note: |-
+      Providers(): inline one-off locals `client := catwalk.NewWithURL(...)` and `path := providerCacheFileData()`
+      into the call site or helper to reduce noise.
+    critic_scopes_expected_to_recall:
+      - - internal/config/provider.go
+    match_file_restriction:
+      - internal/config/provider.go
+  - occurrence_id: occ-4
+    files:
+      internal/lsp/watcher/watcher.go:
+        - [568, 576]
+    note: |-
+      isPathWatched: `isMatch` is assigned then returned immediately; return expression directly or inline the match
+      check.
+    critic_scopes_expected_to_recall:
+      - - internal/lsp/watcher/watcher.go
+    match_file_restriction:
+      - internal/lsp/watcher/watcher.go
+  - occurrence_id: occ-5
+    files:
+      internal/lsp/watcher/watcher.go:
+        - [653, 672]
+    note: |-
+      matchesSimpleGlob: several single-use `isMatch` temporaries in the ** handling branch can be inlined into
+      their return expressions.
+    critic_scopes_expected_to_recall:
+      - - internal/lsp/watcher/watcher.go
+    match_file_restriction:
+      - internal/lsp/watcher/watcher.go

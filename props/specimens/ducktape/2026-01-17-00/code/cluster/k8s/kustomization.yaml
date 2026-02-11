@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# TODO LATER: Evaluate and implement layered approach once stable core components are identified
+resources:
+  - flux-system/gotk-sync.yaml
+  - core/flux-kustomization.yaml
+  - storage/flux-kustomization.yaml
+  - local-path-provisioner/flux-kustomization.yaml
+  - metrics-server/flux-kustomization.yaml
+  - monitoring-namespace/flux-kustomization.yaml
+  - monitoring-stack/flux-kustomization.yaml
+  - loki/flux-kustomization.yaml
+  - metallb/flux-kustomization.yaml
+  - metallb/config-flux-kustomization.yaml
+  - cert-manager/flux-kustomization.yaml
+  - cert-manager-trust/flux-kustomization.yaml
+  - cert-manager-environment/flux-kustomization.yaml
+  - ingress-nginx/flux-kustomization.yaml
+  - powerdns/flux-kustomization.yaml
+  - powerdns-operator/flux-kustomization.yaml
+  - powerdns-zones/flux-kustomization.yaml
+  - vault-operator/flux-kustomization.yaml
+  - vault/flux-kustomization.yaml
+  - vault-ingress/flux-kustomization.yaml
+  - vault-token/flux-kustomization.yaml
+  - vault-oidc-auth/flux-kustomization.yaml
+  - external-secrets-operator/flux-kustomization.yaml
+  - external-secrets/flux-kustomization.yaml
+  - reflector/flux-kustomization.yaml
+  - external-dns/flux-kustomization.yaml
+  - authentik/flux-kustomization.yaml
+  - sso-secrets/flux-kustomization.yaml
+  - applications/harbor/flux-kustomization.yaml
+  - harbor-proxy-cache/flux-kustomization.yaml
+  - applications/gitea/flux-kustomization.yaml
+  - applications/matrix/flux-kustomization.yaml
+  - applications/test-app/flux-kustomization.yaml
+  - applications/nix-cache/flux-kustomization.yaml
+  - authentik-blueprint/gitea-provider/flux-kustomization.yaml
+  - authentik-blueprint/gitea-secret/flux-kustomization.yaml
+  - authentik-blueprint/matrix-provider/flux-kustomization.yaml
+  - authentik-blueprint/matrix-secret/flux-kustomization.yaml
+  - authentik-blueprint/harbor-provider/flux-kustomization.yaml
+  - authentik-blueprint/harbor-secret/flux-kustomization.yaml
+  - authentik-blueprint/vault/flux-kustomization.yaml
+  - authentik-blueprint/users/flux-kustomization.yaml
+  - authentik-blueprint/grafana-secret/flux-kustomization.yaml
+  - authentik-blueprint/grafana-provider/flux-kustomization.yaml
+  - authentik-blueprint/kagent/flux-kustomization.yaml

@@ -1,0 +1,15 @@
+rationale: |
+  Line 70 has `import os` inside the `find_presets()` function. Python imports
+  should be at module top, not inside functions.
+
+  **Fix:** Move `import os` to line 3 (after `from __future__ import annotations`).
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/presets.py:
+        - [70, 70]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/presets.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/presets.py

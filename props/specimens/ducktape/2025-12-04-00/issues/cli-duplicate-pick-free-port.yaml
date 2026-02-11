@@ -1,0 +1,18 @@
+rationale: |
+  _pick_free_port() in agent/cli.py reimplements port-finding logic that closely matches
+  pick_free_port() in util/net.py. The CLI version adds a "preferred port" feature (scan
+  from a starting port). Either the CLI should use the shared utility, or the CLI's
+  version should be moved to util/net.py for reuse.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/cli.py:
+        - [70, 83]
+    note: "_pick_free_port in CLI - should use shared util"
+    critic_scopes_expected_to_recall:
+      - [adgn/src/adgn/agent/cli.py]
+      - [adgn/src/adgn/util/net.py]
+    match_file_restriction:
+      - adgn/src/adgn/agent/cli.py
+      - adgn/src/adgn/util/net.py

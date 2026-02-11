@@ -1,0 +1,36 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"github.com/agentydragon/worthy/ibdock"
+	"time"
+)
+
+var login = flag.String("login", "", "IB login to test")
+var password = flag.String("password", "", "IB password to test")
+
+func main() {
+	flag.Parse()
+	if *login == "" || *password == "" {
+		panic("login and password are required")
+	}
+	//ibdock.Run(*login, *password)
+
+	dock, err := ibdock.StartNew(*login, *password)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Will RunExec in 10 s.")
+	time.Sleep(10 * time.Second)
+	fmt.Println("RunExec")
+	err = dock.RunExec()
+	if err != nil {
+		panic(err)
+	}
+	time.Sleep(30 * time.Second)
+	// TODO(prvak): Now here we should run the Python thing to get the
+	// stocks out of there.
+	fmt.Println("Killing.")
+	dock.Kill()
+}

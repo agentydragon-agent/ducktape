@@ -1,0 +1,22 @@
+rationale: |
+  Line 719 creates `include_all = args.stage_all`, then uses it throughout. This
+  variable adds no value - just use `args.stage_all` directly.
+
+  Fix: Delete line 719 and replace all `include_all` uses with `args.stage_all`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - - 719
+          - 719
+        - - 728
+          - 728
+        - - 733
+          - 733
+        - - 753
+          - 753
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py

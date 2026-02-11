@@ -1,0 +1,35 @@
+rationale: |
+  Short-lived variables used only once immediately after creation add noise without value.
+  Inline the expression at the call site to reduce lines and one-off names the reader must
+  mentally map.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/approvals.py:
+        - - 160
+          - 160
+        - - 169
+          - 169
+        - - 196
+          - 204
+        - - 215
+          - 216
+        - - 227
+          - 228
+        - - 382
+          - 393
+    note: pending_map, approvals_list, decision, proposals variables used only once
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/approvals.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/approvals.py
+  - occurrence_id: occ-1
+    files:
+      adgn/scripts/generate_frontend_code.py:
+        - [255, 255]
+    note: main_schema dict comprehension assigned and immediately used to update all_defs
+    critic_scopes_expected_to_recall:
+      - - adgn/scripts/generate_frontend_code.py
+    match_file_restriction:
+      - adgn/scripts/generate_frontend_code.py

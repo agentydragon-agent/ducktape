@@ -1,0 +1,13 @@
+rationale: |
+  Line 197 types `_policy_gateway` as `Any | None` with a comment saying it's
+  `PolicyGatewayMiddleware`. Use the proper type annotation instead of `Any`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/container.py:
+        - [197, 197]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/container.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/container.py

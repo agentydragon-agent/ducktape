@@ -1,0 +1,80 @@
+# Phase 1: Bootstrap - Make Vault root token available for Terraform
+# This creates a vault-token secret that Terraform resources can use to write to Vault.
+# The token value is fetched from Bank Vaults' instance-unseal-keys secret.
+#
+# Phase 2: TODO: Create a dedicated Terraform service token with limited permissions
+# instead of using the root token
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-token-reader
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-secret-reader
+  namespace: vault
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["instance-unseal-keys"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-token-reader-binding
+  namespace: vault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-secret-reader
+subjects:
+  - kind: ServiceAccount
+    name: vault-token-reader
+    namespace: flux-system
+---
+# SecretStore to read from vault namespace secrets
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: vault-secret-store
+  namespace: flux-system
+spec:
+  provider:
+    kubernetes:
+      # Read from vault namespace
+      remoteNamespace: vault
+      server:
+        caProvider:
+          type: ConfigMap
+          name: kube-root-ca.crt
+          key: ca.crt
+      auth:
+        serviceAccount:
+          name: vault-token-reader
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: vault-token
+  namespace: flux-system
+spec:
+  refreshInterval: 24h
+  secretStoreRef:
+    kind: SecretStore
+    name: vault-secret-store
+  target:
+    name: vault-token
+    creationPolicy: Owner
+    template:
+      type: Opaque
+      data:
+        # Terraform expects key "vault_token"
+        vault_token: '{{ index . "vault-root" }}'
+  dataFrom:
+    - extract:
+        key: instance-unseal-keys
+        conversionStrategy: Default

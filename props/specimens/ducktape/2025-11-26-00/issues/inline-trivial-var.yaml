@@ -1,0 +1,63 @@
+rationale: |
+  Short-lived variables used only once immediately after creation add noise without value.
+  Inline the expression at the call site to reduce lines and one-off names the reader must
+  mentally map.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/runtime/container.py:
+        - - 323
+          - 332
+        - - 372
+          - 372
+    note: policy_gateway variable immediately stored in field; inline
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/runtime/container.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/container.py
+  - occurrence_id: occ-1
+    files:
+      adgn/src/adgn/agent/server/app.py:
+        - [290, 296]
+    note: rows and items variables immediately consumed; inline into return
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/server/app.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/app.py
+  - occurrence_id: occ-2
+    files:
+      adgn/src/adgn/agent/reducer.py:
+        - [200, 201]
+    note: tagged variable immediately returned; inline
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/reducer.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/reducer.py
+  - occurrence_id: occ-3
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - [154, 156]
+    note: raw variable immediately passed to function; inline
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py
+  - occurrence_id: occ-4
+    files:
+      adgn/src/adgn/git_commit_ai/cli.py:
+        - [735, 736]
+    note: status variable immediately used in if-check; inline
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/cli.py
+  - occurrence_id: occ-5
+    files:
+      adgn/src/adgn/mcp/compositor/setup.py:
+        - [31, 31]
+    note: res_server variable immediately passed to mount_inproc
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/mcp/compositor/setup.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/compositor/setup.py

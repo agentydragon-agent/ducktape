@@ -1,0 +1,15 @@
+rationale: |
+  Lines 293-301 type the snapshot parameter as nullable (`specimen_str: str | None`)
+  but immediately check for None and exit with an error. This is a misleading type
+  signature that should be replaced with a required parameter, and checking for presence
+  should be left up to Typer.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/props/cli_app/cmd_detector.py:
+        - [293, 301]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/props/cli_app/cmd_detector.py
+    match_file_restriction:
+      - adgn/src/adgn/props/cli_app/cmd_detector.py

@@ -1,0 +1,21 @@
+rationale: |
+  Example llm_message strings in HookOutcome docstrings are unnecessarily verbose
+  and multi-line. A one-liner like "Permission denied, can't edit production files"
+  suffices to demonstrate usage.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_outcomes.py:
+        - [48, 55]
+    note: "PreToolDeny example has multi-line message with override instructions"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_outcomes.py]
+
+  - occurrence_id: occ-1
+    files:
+      ducktape_llm_common/claude_outcomes.py:
+        - [127, 135]
+    note: "StopPrevent example has multi-line error list"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_outcomes.py]

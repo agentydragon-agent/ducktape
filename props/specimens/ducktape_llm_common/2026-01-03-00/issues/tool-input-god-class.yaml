@@ -1,0 +1,26 @@
+rationale: |
+  ToolInput is a god class with all optional fields representing multiple distinct tool
+  types. This loses type safety - you can construct an "Edit" with no old_string/new_string,
+  or a "Bash" with file_path. Should be a discriminated union of per-tool input types.
+
+  One possible approach: define EditToolInput, BashToolInput, MCPToolInput (with extra="allow"
+  for arbitrary MCP tools), then use a discriminated union based on tool_name. Since tool_name
+  and tool_input are sibling fields in the wire format, a model_validator(mode="before") can
+  restructure them into a nested ToolCall object for Pydantic to discriminate.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      ducktape_llm_common/claude_code_api.py:
+        - [22, 58]
+    note: "Main ToolInput with MCP fields and extra='allow'"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_code_api.py]
+
+  - occurrence_id: occ-1
+    files:
+      ducktape_llm_common/claude_linter/models.py:
+        - [61, 91]
+    note: "Duplicate ToolInput for file manipulation tools"
+    critic_scopes_expected_to_recall:
+      - [ducktape_llm_common/claude_linter/models.py]

@@ -1,0 +1,19 @@
+rationale: |
+  Manual batch slicing pattern:
+
+      for i in range(0, len(msg_ids), batch_size):
+          batch = msg_ids[i : i + batch_size]
+
+  Python 3.12+ has itertools.batched() which handles this cleanly:
+
+      for batch in itertools.batched(msg_ids, batch_size):
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/cli/filters.py:
+        - [382, 383]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/cli/filters.py]

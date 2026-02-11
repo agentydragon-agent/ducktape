@@ -1,0 +1,27 @@
+rationale: |
+  Plan.merge() uses __new__ to bypass __init__ and manually initializes fields:
+
+      merged = Plan.__new__(Plan)
+      merged.planner = None
+      merged.actions = {}
+      merged.messages_by_id = {}
+      merged.messages = []
+
+  This is fragile - if __init__ ever adds setup logic, logging, validation, or new
+  fields, this code will silently produce broken Plan instances. The hack exists
+  because Plan.__init__ requires a planner, but merged plans have no single owner.
+
+  Better alternatives:
+  - Make planner optional in __init__: def __init__(self, planner: Planner | None = None)
+  - Use a @classmethod factory: Plan.create_merged(plans)
+  - Use a dataclass with default_factory for fields
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      gmail_archiver/core.py:
+        - [120, 124]
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/core.py]

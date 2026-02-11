@@ -1,0 +1,17 @@
+rationale: |
+  The config stores a redundant composite `model_str` solely for a debug print, while `provider` and
+  `model_name`
+  already
+  exist.
+  Prefer printing provider and model_name directly (e.g., `provider=..., model=...`) and drop `model_str`.
+  If a composite is ever needed, derive `f"{provider}:{model_name}"` at the point of use.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py:
+        - [74, 95]
+    critic_scopes_expected_to_recall:
+      - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py

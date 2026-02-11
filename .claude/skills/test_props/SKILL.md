@@ -41,22 +41,6 @@ gVisor requires:
 - `--annotation run.oci.keep_original_groups=1` on all podman containers
 - `DOCKER_HOST` must be set (check `$DOCKER_HOST` env var)
 
-## Phase 0: Specimens Repo
-
-Clone the specimens repo if not present:
-
-```bash
-if [ ! -d /home/user/specimens ]; then
-  git clone https://github.com/agentydragon/specimens /home/user/specimens
-fi
-```
-
-If authentication is needed, use the GitHub token:
-
-```bash
-git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/specimens /home/user/specimens
-```
-
 ## Phase 1: Infrastructure Setup
 
 1. Check if podman containers `props-postgres` and `props-registry` are running:
@@ -79,7 +63,7 @@ git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/speci
    export PGUSER=postgres
    export PGPASSWORD=$(cat props/.devenv/state/pg_password)
    export PGDATABASE=eval_results
-   export ADGN_PROPS_SPECIMENS_ROOT=/home/user/specimens
+   export ADGN_PROPS_SPECIMENS_ROOT=$(git rev-parse --show-toplevel)/props/specimens
    ```
 
 3. Initialize database. Use `db recreate` which drops and recreates the schema
@@ -89,12 +73,9 @@ git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/speci
    PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
    PGPASSWORD=$(cat props/.devenv/state/pg_password) \
    PGDATABASE=eval_results \
-   ADGN_PROPS_SPECIMENS_ROOT=/home/user/specimens \
+   ADGN_PROPS_SPECIMENS_ROOT=$(git rev-parse --show-toplevel)/props/specimens \
    bazel run //props/cli:cli -- db recreate --yes
    ```
-
-   If specimen data has validation errors, move the problematic specimen
-   directories out of `/home/user/specimens` and re-run.
 
 ## Phase 2: Start Backend
 
@@ -117,7 +98,7 @@ git clone https://${DUCKTAPE_CI_READ_GITHUB_TOKEN}@github.com/agentydragon/speci
    PGHOST=127.0.0.1 PGPORT=5433 PGUSER=postgres \
    PGPASSWORD=$(cat props/.devenv/state/pg_password) \
    PGDATABASE=eval_results \
-   ADGN_PROPS_SPECIMENS_ROOT=/home/user/specimens \
+   ADGN_PROPS_SPECIMENS_ROOT=$(git rev-parse --show-toplevel)/props/specimens \
    PROPS_REGISTRY_UPSTREAM_URL=http://127.0.0.1:5050 \
    PROPS_DOCKER_NETWORK=host \
    DOCKER_HOST=$DOCKER_HOST \

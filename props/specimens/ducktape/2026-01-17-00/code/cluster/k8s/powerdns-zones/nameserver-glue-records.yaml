@@ -1,0 +1,31 @@
+---
+# Glue records for nameservers - required for DNS-01 ACME challenges
+# Without these A records, cert-manager cannot resolve ns1/ns2.test-cluster.agentydragon.com
+# when verifying DNS challenges, causing all certificate issuance to fail
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: ns1-glue-record
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: test-cluster.agentydragon.com
+  name: ns1 # Relative to zone
+  type: A
+  ttl: 3600
+  records:
+    - "172.235.48.86" # VPS public IP (ns1.agentydragon.com)
+---
+apiVersion: dns.cav.enablers.ob/v1alpha2
+kind: ClusterRRset
+metadata:
+  name: ns2-glue-record
+spec:
+  zoneRef:
+    kind: ClusterZone
+    name: test-cluster.agentydragon.com
+  name: ns2 # Relative to zone
+  type: A
+  ttl: 3600
+  records:
+    - "172.235.48.86" # VPS public IP (ns1.agentydragon.com, same server)

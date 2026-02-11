@@ -1,0 +1,32 @@
+rationale: |
+  ApprovalTimeline tests (L486, 512, 538, 601) reference `/ws/approvals` endpoint that doesn't
+  exist in the backend.
+
+  WebSocket routes are commented out in app.py:332 (`# register_agents_ws(app)`).
+
+  Comments in stores_channels.ts indicate `/ws/approvals` was replaced by MCP resource
+  `resource://agents/{agentId}/approvals/pending`.
+
+  Tests are testing a dead API that was replaced by MCP resources. Either update tests to MCP resources,
+  or put back/uncomment the ws endpoint, but current state is broken.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/web/src/components/ApprovalTimeline.test.ts:
+        - - 486
+          - 486
+        - - 512
+          - 512
+        - - 538
+          - 538
+        - - 601
+          - 601
+      adgn/src/adgn/agent/server/app.py:
+        - [332, 332]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/components/ApprovalTimeline.test.ts
+      - - adgn/src/adgn/agent/server/app.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/components/ApprovalTimeline.test.ts
+      - adgn/src/adgn/agent/server/app.py

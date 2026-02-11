@@ -1,0 +1,26 @@
+rationale: |
+  Line 80 does `json.loads(...)` to parse JSON, then passes the dict to `PolicyResponse.model_validate(data)`.
+  Pydantic provides `model_validate_json()` which does both steps in one call and is more efficient.
+
+  **Correct approach:**
+
+  Use `model_validate_json()` directly on bytes:
+  ```python
+  logs = container.logs(stdout=True, stderr=True) or b""
+  if status != 0:
+      text = logs.decode("utf-8", errors="replace")
+      raise RuntimeError(f"policy eval failed (exit={status}): {text.strip()}")
+  try:
+      return PolicyResponse.model_validate_json(logs.strip())
+  except Exception as e:
+      text = logs.decode("utf-8", errors="replace")
+      raise RuntimeError(f"invalid JSON from policy eval: {e}; output={text!r}") from e
+  ```
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      adgn/src/adgn/agent/policy_eval/runner.py:
+        - [76, 83]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/policy_eval/runner.py

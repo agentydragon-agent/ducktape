@@ -1,0 +1,28 @@
+rationale: |
+  Tests construct PreToolUseRequest/PostToolUseRequest payloads as raw dicts:
+    request_data = {"hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {...}}
+
+  Instead, use Pydantic models directly:
+    request = PreToolUseRequest(
+        session_id=session_id,
+        hook_event_name="PreToolUse",
+        tool_name="Write",
+        tool_input={"file_path": ..., "content": ...},
+    )
+
+  Using typed models provides compile-time checking and makes test intent clearer.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      tests/claude_linter_v2/test_integration.py:
+        - [15, 28]
+        - [46, 58]
+        - [76, 89]
+        - [112, 125]
+        - [146, 159]
+        - [191, 204]
+        - [216, 219]
+    note: "request_data dict should be PreToolUseRequest model"
+    critic_scopes_expected_to_recall:
+      - [tests/claude_linter_v2/test_integration.py]
