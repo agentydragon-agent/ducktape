@@ -1,9 +1,67 @@
 # Hetzner VPS Nodes
 # 2x CPX31 controlplane+worker nodes in Hillsboro, OR
 #
-# All nodes get config applied in parallel. They install to disk, reboot,
-# and wait in an etcd join retry loop until talos_machine_bootstrap is called
-# on one node. etcd handles sequential learner promotion internally.
+# Talos is pre-installed on a Hetzner snapshot (built by Packer via rescue+dd).
+# Servers boot directly from the snapshot — single Talos boot, single identity.
+# This eliminates the KubeSpan phantom peer problem from ISO-to-disk reboot.
+
+# ============================================================================
+# TALOS IMAGE FACTORY - Generate custom Talos image for Hetzner
+# ============================================================================
+
+resource "talos_image_factory_schematic" "hcloud" {
+  schematic = yamlencode({
+    customization = {
+      systemExtensions = {
+        officialExtensions = [
+          "siderolabs/qemu-guest-agent"
+        ]
+      }
+    }
+  })
+}
+
+data "talos_image_factory_urls" "hcloud" {
+  schematic_id  = talos_image_factory_schematic.hcloud.id
+  talos_version = var.talos_version
+  platform      = "hcloud"
+  architecture  = "amd64"
+}
+
+# ============================================================================
+# HETZNER SNAPSHOT - Built by Packer (rescue mode + dd)
+# ============================================================================
+
+resource "terraform_data" "talos_hcloud_image" {
+  triggers_replace = [
+    var.talos_version,
+    talos_image_factory_schematic.hcloud.id,
+  ]
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/packer"
+    command     = <<-EOT
+      packer init talos-hcloud.pkr.hcl && \
+      packer build \
+        -var 'talos_image_url=${data.talos_image_factory_urls.hcloud.urls.disk_image}' \
+        -var 'talos_version=${var.talos_version}' \
+        -var 'schematic_id=${talos_image_factory_schematic.hcloud.id}' \
+        -var 'server_location=${var.hetzner_location}' \
+        talos-hcloud.pkr.hcl
+    EOT
+    environment = {
+      HCLOUD_TOKEN = nonsensitive(var.hcloud_token)
+    }
+  }
+}
+
+data "hcloud_image" "talos" {
+  with_selector     = "os=talos,version=${var.talos_version},schematic_id=${talos_image_factory_schematic.hcloud.id}"
+  most_recent       = true
+  with_architecture = "x86"
+
+  depends_on = [terraform_data.talos_hcloud_image]
+}
 
 # ============================================================================
 # VPS SERVERS
@@ -15,8 +73,7 @@ resource "hcloud_server" "vps" {
   name        = each.value.name
   server_type = each.value.server_type
   location    = var.hetzner_location
-  image       = "debian-12"
-  iso         = local.talos_iso
+  image       = data.hcloud_image.talos.id
   ssh_keys    = [hcloud_ssh_key.talos.id]
   user_data   = data.talos_machine_configuration.vps[each.key].machine_configuration
 
@@ -55,10 +112,6 @@ data "talos_machine_configuration" "vps" {
   config_patches = [
     yamlencode({
       machine = {
-        # Auto-install to disk when booting from ISO
-        install = {
-          disk = "/dev/sda"
-        }
         network = {
           hostname = each.value.name
           kubespan = {
@@ -116,23 +169,4 @@ resource "talos_machine_configuration_apply" "vps" {
   node                        = hcloud_server.vps[each.key].ipv4_address
 
   depends_on = [hcloud_server.vps]
-}
-
-# ============================================================================
-# ISO DETACHMENT
-# ============================================================================
-
-resource "terraform_data" "detach_iso" {
-  for_each = local.vps_nodes
-
-  triggers_replace = [hcloud_server.vps[each.key].id]
-
-  provisioner "local-exec" {
-    command = "hcloud server detach-iso ${hcloud_server.vps[each.key].id}"
-    environment = {
-      HCLOUD_TOKEN = var.hcloud_token
-    }
-  }
-
-  depends_on = [talos_machine_configuration_apply.vps]
 }

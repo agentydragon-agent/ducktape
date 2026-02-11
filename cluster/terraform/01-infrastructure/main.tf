@@ -26,9 +26,6 @@ locals {
   # Cluster configuration
   cluster_endpoint = "https://localhost:7445" # KubePrism - avoids circular dependency
 
-  # Hetzner public Talos ISO (amd64 with qemu-guest-agent)
-  talos_iso = "122630"
-
   # Node topology - VPS nodes (controlplane + schedulable)
   vps_nodes = {
     vps0 = { name = "talos-vps-cp-0", server_type = "cpx31" }
