@@ -3,7 +3,7 @@
 ## Problem
 
 Gitea SSO configuration via Terraform requires an admin API token. Need declarative token generation
-that survives `terraform destroy && bootstrap.sh` cycles.
+that survives `terraform destroy && bootstrap.py` cycles.
 
 ## Solution: Kubernetes Job with curl API Call
 

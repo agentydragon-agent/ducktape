@@ -2,7 +2,7 @@
 
 Small Talos k8s cluster with GitOps and HTTPS.
 
-- Deploy: Single command `./bootstrap.sh` (automated layered deployment)
+- Deploy: Single command `./bootstrap.py` (automated layered deployment)
 - VMs:
   - Run Talos, configured and bootstrapped with Terraform.
   - Disks are pre-baked per-node from Image Factory with static IPs and Tailscale + QEMU guest agent
@@ -173,7 +173,7 @@ Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
 - Applies per domain (e.g., `registry.allegedly.works`)
 - Rolling 7-day window, refills at ~1 cert per 34 hours
 - No overrides available
-- **Problem**: Each `terraform destroy && ./bootstrap.sh` cycle requests fresh certificates
+- **Problem**: Each `terraform destroy && ./bootstrap.py` cycle requests fresh certificates
 
 **For Development/Testing**: Use Let's Encrypt **staging environment**
 

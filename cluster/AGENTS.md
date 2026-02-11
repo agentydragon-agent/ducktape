@@ -27,7 +27,7 @@
 ### DEFAULT SCOPE: Layer 01 (Infrastructure) and above
 
 - `terraform destroy` in `terraform/01-infrastructure/` (VMs)
-- `./bootstrap.sh` (recreates VMs, installs Talos, deploys services)
+- `./bootstrap.py` (recreates VMs, installs Talos, deploys services)
 - Layers affected: 01-infrastructure, 02-services, 03-configuration
 
 ### EXCLUDED BY DEFAULT: Layer 00 (Persistent Auth)
@@ -177,7 +177,7 @@ cat k8s/component/flux-kustomization.yaml | grep -A5 dependsOn
 
 After investigating and fixing:
 
-- `terraform destroy && ./bootstrap.sh` should succeed without intervention
+- `terraform destroy && ./bootstrap.py` should succeed without intervention
 - The same failure should never happen again on fresh bootstrap
 - All fixes are committed configuration changes, not manual patches
 
@@ -196,7 +196,7 @@ explicit user authorization.**
 
 - VM lifecycle: `cd terraform/01-infrastructure && terraform destroy && terraform apply`
 - Services reset: Layers 02-services, 03-configuration
-- Selective bootstrap: `./bootstrap.sh --start-from=infrastructure`
+- Selective bootstrap: `./bootstrap.py --start-from=infrastructure`
 
 **RATIONALE:** The persistent auth layer contains:
 
@@ -257,7 +257,7 @@ git add -A && git commit && git push  # Too late, already tried to deploy
 
 Achieve a committed repository state such that:
 
-1. `./bootstrap.sh` (the ONLY supported bootstrap method)
+1. `./bootstrap.py` (the ONLY supported bootstrap method)
 2. **Everything works**
 
 Where "everything" means everything currently in plan.md scope as specified by user.
@@ -279,14 +279,14 @@ Where "everything" means everything currently in plan.md scope as specified by u
 
 **You are NOT done unless:**
 
-1. You have turnkey `./bootstrap.sh` (the ONLY supported method)
+1. You have turnkey `./bootstrap.py` (the ONLY supported method)
 2. That **reliably** results in everything in-scope functioning
 3. **Without needing ANY further manual tweaks**
 4. **All in-scope applications have working SSO authentication**
 
 **Completion criteria:**
 
-- `terraform destroy` → `./bootstrap.sh` → run all health checks
+- `terraform destroy` → `./bootstrap.py` → run all health checks
 - **If ANY component is unhealthy, it does NOT work by definition**
 - **If ANY in-scope application lacks functional SSO login, it does NOT work**
 - No declaring "good enough" or aborting work on broken turnkey flow
@@ -319,7 +319,7 @@ Applications with SSO in scope must have:
 ```bash
 # Primary loop for all changes:
 terraform destroy --auto-approve
-./bootstrap.sh
+./bootstrap.py
 # Verify: does it work end-to-end declaratively?
 ```
 
@@ -380,7 +380,7 @@ kubectl get externalsecret -n gitea
 
 ## Bootstrap Script - ONLY Supported Method
 
-**CRITICAL**: The cluster MUST only be bootstrapped using `./bootstrap.sh`
+**CRITICAL**: The cluster MUST only be bootstrapped using `./bootstrap.py`
 
 ### Why Bootstrap Script (Not Direct Terraform)
 
@@ -406,7 +406,7 @@ kubectl get externalsecret -n gitea
 
 ```bash
 cd terraform/infrastructure
-./bootstrap.sh
+./bootstrap.py
 ```
 
 **That's it.** The script handles everything from validation to complete cluster deployment.
@@ -436,7 +436,7 @@ running state.
 - **"The cluster works" ≠ DONE**
 - Getting current broken instance functioning via patches is NOT completion
 - **DONE = teardown & bootstrap results in working cluster**
-- Must pass: `terraform destroy && ./bootstrap.sh` → all components healthy
+- Must pass: `terraform destroy && ./bootstrap.py` → all components healthy
 
 ## SSH Access
 

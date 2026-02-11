@@ -177,7 +177,7 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 
 ### Phase 1: Cluster Bootstrap
 
-1. [ ] Run `./bootstrap.sh` to create VPS nodes (new public IPs assigned)
+1. [ ] Run `./bootstrap.py` to create VPS nodes (new public IPs assigned)
 2. [ ] Verify VPS IPs in ConfigMap:
    ```bash
    kubectl get configmap cluster-info -n kube-system -o jsonpath='{.data.vps_nodes}' | jq

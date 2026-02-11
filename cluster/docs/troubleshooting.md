@@ -495,7 +495,7 @@ with the terraform keypair. No cluster access needed.
 
 **When to run:**
 
-- Automatically by pre-commit hook and bootstrap.sh
+- Automatically by pre-commit hook and bootstrap.py
 - Manually after `terraform apply` in `00-persistent-auth`
 - When debugging SealedSecret decryption failures
 

@@ -124,14 +124,14 @@ immutable unless you manually ALTER USER or destroy the PVC.
 
 ## Why This Is Critical
 
-**Violates PRIMARY DIRECTIVE**: The turnkey bootstrap requirement means `terraform destroy && bootstrap.sh` must
+**Violates PRIMARY DIRECTIVE**: The turnkey bootstrap requirement means `terraform destroy && bootstrap.py` must
 result in working cluster. But with volatile passwords:
 
 1. First bootstrap: Works (everything uses same initial password)
 2. Wait 1-24 hours
 3. ESO refreshes → passwords change
 4. Services break → authentication failures
-5. `terraform destroy && bootstrap.sh` again → Works temporarily
+5. `terraform destroy && bootstrap.py` again → Works temporarily
 6. Cycle repeats
 
 **This is not acceptable for production** - services should not spontaneously break after 1-24 hours of uptime.
