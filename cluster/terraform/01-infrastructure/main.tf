@@ -1,6 +1,6 @@
 # LAYER 1: HYBRID INFRASTRUCTURE
 # 4-node Talos cluster: 2x Hetzner VPS (controlplane) + 2x Proxmox home (1 cp + 1 worker)
-# Uses shared machine secrets from 00-persistent-auth layer
+# Machine secrets generated fresh per lifecycle (prevents stale KubeSpan discovery)
 
 # ============================================================================
 # REMOTE STATE: Import shared secrets from persistent auth layer
@@ -19,9 +19,9 @@ data "terraform_remote_state" "persistent_auth" {
 # ============================================================================
 
 locals {
-  # Import machine secrets from persistent auth layer
-  machine_secrets      = data.terraform_remote_state.persistent_auth.outputs.talos_machine_secrets
-  client_configuration = data.terraform_remote_state.persistent_auth.outputs.talos_client_configuration
+  # Machine secrets generated locally (fresh per lifecycle)
+  machine_secrets      = talos_machine_secrets.cluster.machine_secrets
+  client_configuration = talos_machine_secrets.cluster.client_configuration
 
   # Cluster configuration
   cluster_endpoint = "https://localhost:7445" # KubePrism - avoids circular dependency

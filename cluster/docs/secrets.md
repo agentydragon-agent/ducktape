@@ -18,8 +18,11 @@
 │ - Proxmox API tokens (CSI, Terraform)                      │
 │ - Nix cache signing key                                    │
 │ - Flux deploy key                                          │
-│ - Talos machine secrets                                    │
 │ Storage: Local terraform.tfstate (gitignored)              │
+│                                                            │
+│ NOTE: Talos machine secrets are in Layer 1 (ephemeral).    │
+│ Fresh cluster.id per lifecycle prevents stale KubeSpan     │
+│ discovery entries from previous incarnations.              │
 └─────────────────────────────────┬───────────────────────────┘
                                   │
                                   ▼

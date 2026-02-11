@@ -33,7 +33,8 @@
 ### EXCLUDED BY DEFAULT: Layer 00 (Persistent Auth)
 
 - `terraform/00-persistent-auth/` is NOT destroyed unless explicitly stated
-- Includes: Sealed secrets keypair, CSI tokens, Nix signing keys, JWT tokens
+- Includes: Sealed secrets keypair, CSI tokens, Nix signing keys, JWT tokens, Flux deploy key
+- NOTE: Talos machine secrets are NOT in layer 00 — they live in layer 01 (fresh per lifecycle)
 - These persist in terraform state across cluster lifecycles
 - Only destroy when user explicitly says "including persistent auth" or "from scratch"
 
@@ -42,6 +43,7 @@
 - Sealed secrets re-encryption (entire repo would need commits)
 - Proxmox token regeneration causing desynchronization
 - Nix cache signing key regeneration breaking cache trust
+- (Machine secrets are intentionally ephemeral to get fresh KubeSpan discovery namespace)
 
 **EXAMPLES:**
 

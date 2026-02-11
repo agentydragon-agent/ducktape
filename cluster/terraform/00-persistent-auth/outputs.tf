@@ -27,19 +27,6 @@ output "persistent_auth_ready" {
   }
 }
 
-# Talos machine secrets for hybrid cluster
-output "talos_machine_secrets" {
-  description = "Talos machine secrets (shared across all cluster nodes)"
-  value       = talos_machine_secrets.cluster.machine_secrets
-  sensitive   = true
-}
-
-output "talos_client_configuration" {
-  description = "Talos client configuration for talosctl access"
-  value       = talos_machine_secrets.cluster.client_configuration
-  sensitive   = true
-}
-
 # Attic JWT token output
 output "attic_jwt_token_base64" {
   description = "Attic JWT token (base64-encoded) for HTTP API authentication"

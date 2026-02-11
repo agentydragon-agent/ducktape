@@ -9,9 +9,3 @@ variable "proxmox_ssh_host" {
   type        = string
   default     = "atlas"
 }
-
-variable "talos_version" {
-  description = "Talos Linux version for machine secrets generation"
-  type        = string
-  default     = "v1.12.3"
-}

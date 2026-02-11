@@ -1,6 +1,5 @@
 # LAYER 1: Infrastructure Provider Versions
 # Hybrid cluster: Hetzner VPS + Proxmox home nodes
-# Uses shared machine secrets from 00-persistent-auth
 
 terraform {
   required_version = ">= 1.0"

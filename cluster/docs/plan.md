@@ -4,87 +4,26 @@
 
 ## 🔥 Immediate Next Steps
 
-**Status**: Cluster torn down. Blocked on VPS KubeSpan identity collision.
+**Status**: Cluster torn down. Pending bootstrap with fresh machine secrets.
 
-### Problem: VPS KubeSpan Mesh Broken — Shared Node Identity
+### Recent Fixes (2026-02-11)
 
-Last bootstrap (2026-02-11) stalled at 34/64 Ready. Only 1 of 4 nodes joined
-Kubernetes. Root cause: **KubeSpan mesh completely non-functional**.
+1. **Cilium stripped to Talos-recommended defaults** + `mtu: 1370` + hubble.
+   Reverted DNS workarounds to defaults.
+2. **Machine secrets moved from layer 00 to layer 01** — fresh `cluster.id` per
+   lifecycle prevents stale KubeSpan discovery entries from previous incarnations.
+3. **HostnameConfig conflict fixed** — removed explicit HostnameConfig from VPS
+   config patches (hcloud platform auto-sets hostname from server name).
 
-**Observed symptoms**:
-
-- Both VPS member entries in Talos discovery showed the **same IP** (crossed/wrong IPs)
-- All KubeSpan peers stuck in `state: unknown`, zero WireGuard handshakes
-- `pve-cp-0` etcd crash-looping: "cannot fetch cluster info from peer urls: EOF"
-- `vps-cp-1` etcd stuck in "Preparing" — waiting to join
-- Phantom KubeSpan address (`fd05:...:4b69`) not matching any current node
-- Only 1 of 4 nodes visible in `kubectl get nodes`
-
-**Suspected root cause (unconfirmed)**: Both VPS nodes boot from the **same
-Hetzner snapshot** (built by Packer via rescue+dd of a single Talos Image Factory
-image). This _might_ cause shared Talos node identity or shared KubeSpan identity,
-but we do not have positive confirmation of identity collision. We only know
-KubeSpan ended up in a broken state.
-
-### How Talos Installation Currently Works
-
-| Node type   | Image source             | Disk mechanism                  | Identity isolation            |
-| ----------- | ------------------------ | ------------------------------- | ----------------------------- |
-| Hetzner VPS | Packer snapshot (shared) | Both servers boot same snapshot | **Unknown — likely broken**   |
-| Proxmox     | QCOW2 download (shared)  | `import_from` copies per-VM     | Each VM gets independent disk |
-
-**VPS flow**: Image Factory → raw.xz → Packer dd's to `/dev/sda` in rescue mode
-→ snapshot → both `hcloud_server.vps` boot from it.
-
-**Proxmox flow**: Image Factory → QCOW2 → `proxmox_virtual_environment_download_file`
-→ `import_from` (copies per VM) → each VM boots independent disk.
-
-Proxmox nodes get unique identities because `import_from` creates a copy. Hetzner
-nodes share the exact same disk content from the snapshot.
-
-### Research Needed
-
-1. **When does Talos initialize `node-identity.yaml`?** During image build, or
-   on first boot? If on first boot, the snapshot should be identity-free and both
-   VPS nodes should get unique identities. If it's in the image, that's the bug.
-
-2. **Is the collision in node identity or KubeSpan identity?** KubeSpan ULA
-   address is derived from `ClusterID + first NIC MAC`. If both VPS nodes happen
-   to get the same MAC from Hetzner (unlikely but possible), that would collide
-   independently of node identity.
-
-3. **Could stale discovery entries cause this?** The cluster ID (from persistent
-   machine secrets in layer 00) survives destroy/recreate. Old node registrations
-   at `discovery.talos.dev` may poison the mesh for new incarnations.
-
-4. **What changed in last 48 hours?** Commit `4a82c185a` switched VPS from ISO
-   boot to Packer snapshot boot. This is the most likely change that introduced
-   the identity sharing.
-
-### Proposed Fix: Per-Node Packer Snapshots
-
-Generate independent Hetzner snapshots per VPS node. Each Packer build creates a
-separate snapshot → separate disk content → separate identity initialization.
-
-**TODO**: This is a **workaround without full understanding** of the root cause.
-We do not have positive confirmation that shared identity is the problem — we
-only observed broken KubeSpan state with crossed IPs. The research questions
-above should be answered first to determine whether per-node snapshots actually
-fix the issue, or if the root cause is something else entirely (stale discovery
-entries, MAC collision, timing issue, etc.).
-
-### After Fix: What to Verify
+### What to Verify After Next Bootstrap
 
 1. **Unique KubeSpan identities** — each node has distinct peer address:
    ```bash
    talosctl -n <vps-ip> -e <vps-ip> get kubespanpeerstatuses
    # Expect: exactly 3 peers, all "up", no duplicates
    ```
-2. **VPS DNS resolution** — containerd can pull images:
-   ```bash
-   talosctl -n <vps-ip> -e <vps-ip> image pull docker.io/library/alpine:3.19
-   ```
-3. **Full convergence** — all 64 kustomizations Ready
+2. **Cross-node networking** — VPS↔Proxmox connectivity works
+3. **Full convergence** — all kustomizations Ready
 4. **cert-manager challenges resolve**:
    ```bash
    dig @8.8.8.8 SOA _acme-challenge.vault.allegedly.works
@@ -94,19 +33,6 @@ entries, MAC collision, timing issue, etc.).
 
 - **BuildBuddy executor** `Failed` — pinned to Proxmox nodes, may need resource adjustment
 - **Kyverno webhook timeouts** — may be cross-node networking transient
-
-### Next Action: Strip Cilium to Talos-Recommended Defaults
-
-See <../investigations/2026-02-11-bootstrap-cross-node-and-kyverno/recommendation-minimal-networking.md>
-for full analysis, proposed config, network stack diagrams, and diagnostic checklist.
-
-**Summary**: The current Cilium config has 10+ non-default options that Talos docs
-explicitly warn against with KubeSpan. The DNS failure and cross-node instability
-were consequences of these options, not inherent incompatibilities. Strip to the 7
-Talos-recommended values + `mtu: 1370` (for VXLAN+WireGuard double encapsulation)
-
-- hubble. Revert DNS workarounds (`forwardKubeDNSToHost`, explicit nameservers,
-  CoreDNS upstream) to defaults. Fallback plan ready if HostDNS still fails.
 
 ---
 
