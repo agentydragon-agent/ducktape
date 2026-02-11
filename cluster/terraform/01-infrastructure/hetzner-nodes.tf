@@ -41,6 +41,12 @@ resource "terraform_data" "talos_hcloud_image" {
   provisioner "local-exec" {
     working_dir = "${path.module}/packer"
     command     = <<-EOT
+      set -e
+      SELECTOR="os=talos,version=${var.talos_version},schematic_id=${substr(talos_image_factory_schematic.hcloud.id, 0, 8)}"
+      if hcloud image list --type snapshot --selector "$SELECTOR" -o noheader 2>/dev/null | grep -q .; then
+        echo "Snapshot already exists (selector: $SELECTOR), skipping Packer build"
+        exit 0
+      fi
       packer init talos-hcloud.pkr.hcl && \
       packer build \
         -var 'talos_image_url=${data.talos_image_factory_urls.hcloud.urls.disk_image}' \
