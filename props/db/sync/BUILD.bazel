@@ -1,4 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/deps:check.bzl", "assert_no_deps")
 load("//tools/testing:docker.bzl", "docker_py_test")
 
 # =============================================================================
@@ -63,6 +64,30 @@ py_library(
         "@pypi//pygit2",
         "@pypi//sqlalchemy",
     ],
+)
+
+# =============================================================================
+# Boundary enforcement
+# =============================================================================
+
+# yaml_loader and loader are pure parsing layers — they must not depend on
+# the DB/ORM layer (sqlalchemy, props/db:models).
+assert_no_deps(
+    name = "test_yaml_loader_no_db_deps",
+    forbidden = [
+        "@pypi//sqlalchemy",
+        "//props/db:models",
+    ],
+    targets = ["//props/db/sync:yaml_loader"],
+)
+
+assert_no_deps(
+    name = "test_loader_no_db_deps",
+    forbidden = [
+        "@pypi//sqlalchemy",
+        "//props/db:models",
+    ],
+    targets = ["//props/db/sync:loader"],
 )
 
 # =============================================================================
