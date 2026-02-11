@@ -1,69 +1,40 @@
-# Cilium CNI configuration for hybrid cluster
-# Uses KubePrism (localhost:7445) for k8s API since there's no VIP across regions
-# Uses VXLAN tunnel mode since Hetzner VPS nodes are not on the same L2 network
+# Cilium CNI — Talos-recommended defaults + KubeSpan-compatible MTU
+#
+# IMPORTANT: Do not add non-default options without verifying KubeSpan compatibility.
+# See: https://docs.siderolabs.com/talos/v1.11/networking/kubespan
+# See: https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium
 
-cluster:
-  name: talos-cluster
-  id: 1
+# Required: Talos-recommended IPAM
+ipam:
+  mode: kubernetes
 
-# Use KubePrism for API access - works on all nodes regardless of region
+# Required: kube-proxy replacement (kube-proxy disabled in Talos config)
+kubeProxyReplacement: "true"
 k8sServiceHost: "localhost"
 k8sServicePort: "7445"
 
-ipam:
-  mode: kubernetes # Use Kubernetes-assigned node.spec.podCIDR for consistency
-
-# Use tunnel mode for cloud environments (VPS nodes behind gateway)
-routingMode: tunnel
-tunnelProtocol: vxlan
-ipv4:
-  enabled: true
-enableIPv4Masquerade: true
-
-# Disable IPv6 for pods - KubeSpan uses its own WireGuard IPv6 independently
-# Enabling ipv6 here requires dual-stack podCIDRs from Kubernetes
-ipv6:
-  enabled: false
-
+# Required: Talos security context (no SYS_MODULE — Talos blocks kernel module loading)
 securityContext:
   capabilities:
     ciliumAgent:
       [CHOWN, KILL, NET_ADMIN, NET_RAW, IPC_LOCK, SYS_ADMIN, SYS_RESOURCE, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
     cleanCiliumState: [NET_ADMIN, SYS_ADMIN, SYS_RESOURCE]
 
+# Required: Talos cgroup configuration
 cgroup:
   hostRoot: /sys/fs/cgroup
   autoMount:
     enabled: false
 
+# Required: Account for double encapsulation (VXLAN + KubeSpan WireGuard)
+# eth0 MTU (1500) - VXLAN overhead (50) - WireGuard overhead (80) = 1370
+# Without this, packets >1370 bytes fragment at the WireGuard interface.
+mtu: 1370
+
+# Observability (optional, not networking-critical)
 hubble:
   enabled: true
   relay:
     enabled: true
   ui:
     enabled: true
-
-loadBalancer:
-  algorithm: random
-
-l2announcements:
-  enabled: true
-
-kubeProxyReplacement: "true"
-
-bpf:
-  hostLegacyRouting: true
-
-endpointRoutes:
-  enabled: true
-
-socketLB:
-  enabled: true
-
-hostServices:
-  enabled: true
-  protocols: tcp,udp
-
-nodePort:
-  enabled: true
-  bindProtection: true

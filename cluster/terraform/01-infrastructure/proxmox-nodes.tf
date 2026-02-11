@@ -179,10 +179,6 @@ data "talos_machine_configuration" "proxmox" {
             enabled = true
             port    = 7445
           }
-          hostDNS = {
-            enabled              = true
-            forwardKubeDNSToHost = true
-          }
         }
         kubelet = {
           extraArgs = {

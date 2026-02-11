@@ -134,14 +134,6 @@ data "talos_machine_configuration" "vps" {
             enabled = true
             port    = 7445
           }
-          hostDNS = {
-            enabled = true
-            # forwardKubeDNSToHost breaks DNS resolution on Hetzner VPS with
-            # Cilium VXLAN: containerd image pulls fail with "server misbehaving"
-            # from 127.0.0.53 even after patching nameservers to public DNS.
-            # Disabling lets pods use CoreDNS directly (which forwards to 1.1.1.1/8.8.8.8).
-            forwardKubeDNSToHost = false
-          }
         }
         kubelet = {
           # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
@@ -169,15 +161,6 @@ data "talos_machine_configuration" "vps" {
       apiVersion = "v1alpha1"
       kind       = "HostnameConfig"
       hostname   = each.value.name
-    }),
-    # Talos v1.12 multi-document config (replaces deprecated machine.network.nameservers)
-    # Talos HostDNS writes 169.254.116.108 (its own link-local listener) into
-    # resolv.conf when forwardKubeDNSToHost is enabled. Use public DNS to
-    # ensure containerd and host-level resolution don't depend on it.
-    yamlencode({
-      apiVersion  = "v1alpha1"
-      kind        = "ResolverConfig"
-      nameservers = [{ address = "1.1.1.1" }, { address = "8.8.8.8" }]
     }),
   ]
 }
