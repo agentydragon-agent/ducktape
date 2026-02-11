@@ -5,6 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m0s
+  retryInterval: 30s
   path: ./cluster/k8s/external-secrets
   prune: true
   sourceRef:

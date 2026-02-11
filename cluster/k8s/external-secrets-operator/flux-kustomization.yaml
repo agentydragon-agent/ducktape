@@ -26,7 +26,10 @@ spec:
       kind: Deployment
       name: external-secrets-webhook
       namespace: external-secrets-system
-    # Ensure webhook is registered and functional before dependents create ExternalSecrets
+    # Ensure both webhook configurations are registered before dependents create resources
     - apiVersion: admissionregistration.k8s.io/v1
       kind: ValidatingWebhookConfiguration
       name: externalsecret-validate
+    - apiVersion: admissionregistration.k8s.io/v1
+      kind: ValidatingWebhookConfiguration
+      name: secretstore-validate
