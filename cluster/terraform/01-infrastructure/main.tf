@@ -91,16 +91,6 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.ca_certificate)
 }
 
-# Helm provider - configured after cluster bootstrap
-provider "helm" {
-  kubernetes = {
-    host                   = "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
-    client_certificate     = base64decode(talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_certificate)
-    client_key             = base64decode(talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_key)
-    cluster_ca_certificate = base64decode(talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.ca_certificate)
-  }
-}
-
 # ============================================================================
 # HETZNER VPS NODES (see hetzner-nodes.tf for server resources)
 # ============================================================================

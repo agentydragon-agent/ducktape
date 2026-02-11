@@ -9,7 +9,7 @@ locals {
 
 # Apply our stable keypair to the cluster so sealed-secrets controller uses it
 resource "kubernetes_secret" "sealed_secrets_key" {
-  depends_on = [local_file.kubeconfig, null_resource.wait_for_k8s_api, helm_release.cilium_bootstrap]
+  depends_on = [local_file.kubeconfig, null_resource.wait_for_k8s_api, null_resource.cilium_bootstrap]
   metadata {
     name      = "sealed-secrets-key"
     namespace = "kube-system"

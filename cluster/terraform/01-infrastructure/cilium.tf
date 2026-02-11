@@ -1,68 +1,36 @@
-# Cilium CNI deployment via Terraform Helm provider
-# Infrastructure layer management - prevents GitOps circular dependencies
+# Cilium CNI deployment via helm CLI (null_resource)
+#
+# Uses helm CLI instead of helm_release resource because Helm provider v3
+# has unfixed plan consistency bugs with OpenTofu (computed fields like
+# status/id/metadata return null during plan but non-null during apply).
+# https://github.com/hashicorp/terraform-provider-helm/pull/1739
+#
+# Infrastructure layer management - prevents GitOps circular dependencies.
 
-# Add Cilium helm repository
-resource "null_resource" "add_cilium_repo" {
-  provisioner "local-exec" {
-    command = "helm repo add cilium https://helm.cilium.io/ && helm repo update"
-  }
-  depends_on = [null_resource.wait_for_k8s_api, local_file.kubeconfig]
-}
-
-resource "helm_release" "cilium_bootstrap" {
-  name             = "cilium"
-  repository       = "cilium"
-  chart            = "cilium"
-  version          = "1.16.5"
-  namespace        = "kube-system"
-  create_namespace = true
-
-  values = [
-    file("${path.module}/cilium-values.yaml")
-  ]
-
-  # Native Helm provider reliability and health checking
-  wait            = true
-  wait_for_jobs   = true
-  atomic          = true
-  cleanup_on_fail = true
-  timeout         = 600
-  max_history     = 3
-  force_update    = false
-  reset_values    = false
-
-  # Workaround: Helm provider v3 + OpenTofu plan consistency bug.
-  # Optional bool attributes return null during plan but real defaults during apply.
-  # Explicitly setting them avoids "Provider produced inconsistent final plan".
-  # String fields (description, keyring) can't be set to "" (provider nullifies them).
-  # Tracking: https://github.com/hashicorp/terraform-provider-helm/pull/1739
-  pass_credentials           = false
-  render_subchart_notes      = true
-  dependency_update          = false
-  replace                    = false
-  disable_webhooks           = false
-  disable_crd_hooks          = false
-  skip_crds                  = false
-  recreate_pods              = false
-  lint                       = false
-  reuse_values               = false
-  disable_openapi_validation = false
-  verify                     = false
-  devel                      = false
-
-  # Prevent accidental networking breakage
-  lifecycle {
-    ignore_changes = [
-      version,
-      values,
-    ]
-  }
-
+resource "null_resource" "cilium_bootstrap" {
   depends_on = [
     null_resource.wait_for_k8s_api,
-    null_resource.add_cilium_repo,
-    local_file.kubeconfig
+    local_file.kubeconfig,
   ]
+
+  provisioner "local-exec" {
+    environment = {
+      KUBECONFIG = local_file.kubeconfig.filename
+    }
+    command = <<-EOT
+      set -e
+      helm repo add cilium https://helm.cilium.io/ && helm repo update cilium
+      helm upgrade --install cilium cilium/cilium \
+        --version 1.16.5 \
+        --namespace kube-system \
+        --create-namespace \
+        -f ${path.module}/cilium-values.yaml \
+        --wait \
+        --wait-for-jobs \
+        --atomic \
+        --timeout 600s
+    EOT
+  }
 }
 
 # Wait for Kubernetes API to be accessible before installing Cilium
@@ -83,7 +51,7 @@ resource "null_resource" "wait_for_k8s_api" {
 
 # Wait for all nodes to be Ready using kubectl wait (has native retry/polling)
 resource "null_resource" "wait_for_nodes_ready" {
-  depends_on = [helm_release.cilium_bootstrap]
+  depends_on = [null_resource.cilium_bootstrap]
 
   provisioner "local-exec" {
     environment = {

@@ -30,11 +30,6 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.38.0"
     }
-    # Helm for CNI deployment
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 3.1.0"
-    }
     # Utility providers
     local = {
       source  = "hashicorp/local"
