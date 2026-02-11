@@ -172,18 +172,10 @@ if ! tofu apply -auto-approve; then
   exit 1
 fi
 
-log "⏳ Waiting for Authentik and PowerDNS..."
-kubectl wait --for=condition=available deployment/authentik -n authentik-system --timeout=600s &
-kubectl wait --for=condition=available deployment/powerdns -n powerdns-system --timeout=600s &
-wait
-
-log "✅ Services layer ready"
-
-log "🎉 Cluster bootstrap completed!"
-echo ""
-echo "📋 Post-bootstrap automation (via Flux/GitOps):"
-echo "   • DNS: PowerDNS Operator (zone) + external-dns (records from Ingresses)"
-echo "   • SSO: tofu-controller applies terraform/authentik-blueprint/ configurations"
-echo "   • Gitea: Automated token generation + OAuth config via Jobs"
+log "🎉 Bootstrap complete — Flux is now reconciling kustomizations."
 echo ""
 echo "🔗 Access cluster: export KUBECONFIG='${KUBECONFIG_PATH}'"
+echo ""
+echo "📊 Monitor convergence:"
+echo "   kubectl get kustomizations -A"
+echo "   kubectl get pods -A | grep -v Running"
