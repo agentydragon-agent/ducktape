@@ -26,6 +26,7 @@ import pygit2
 from kubernetes import client, config
 from kubernetes.client import ApiException
 from kubernetes.stream import stream
+from kubernetes.stream.ws_client import STDERR_CHANNEL, STDOUT_CHANNEL
 from pydantic import BaseModel
 from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 
@@ -154,55 +155,16 @@ def deploy_infrastructure() -> None:
         ready = any(c.type == "Ready" and c.status == "True" for c in conditions)
         log.info("  %s: %s", node.metadata.name, "Ready" if ready else "NotReady")
 
-    # API servers are static pods started before Cilium — their sockets were created
-    # without BPF interception. Restarting Cilium forces re-attachment of BPF programs
-    # to all processes, fixing ClusterIP routing for webhooks.
-    log.info("Restarting Cilium to refresh BPF state for API servers...")
-    apps_v1 = client.AppsV1Api()
-    apps_v1.patch_namespaced_daemon_set(
-        "cilium",
-        "kube-system",
-        {
-            "spec": {
-                "template": {
-                    "metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": datetime.now(UTC).isoformat()}}
-                }
-            }
-        },
-    )
-
-    _wait_for_daemonset_rollout(apps_v1, "cilium", "kube-system")
-    log.info("Cilium restarted, BPF state refreshed")
-
     wait_for_convergence(v1)
     log.info("Infrastructure layer ready")
 
 
-def _check_daemonset_ready(apps_v1: client.AppsV1Api, name: str, namespace: str) -> bool:
-    ds = apps_v1.read_namespaced_daemon_set_status(name, namespace)
-    desired = ds.status.desired_number_scheduled or 0
-    updated = ds.status.updated_number_scheduled or 0
-    available = ds.status.number_available or 0
-    unavailable = ds.status.number_unavailable or 0
-    return updated >= desired and unavailable == 0 and available >= desired
-
-
-def _wait_for_daemonset_rollout(
-    apps_v1: client.AppsV1Api, name: str, namespace: str, timeout: int = 300, interval: int = 5
-) -> None:
-    Retrying(stop=stop_after_delay(timeout), wait=wait_fixed(interval), retry=retry_if_result(lambda ready: not ready))(
-        _check_daemonset_ready, apps_v1, name, namespace
-    )
-
-
 def wait_for_convergence(v1: client.CoreV1Api, timeout: int = 600, interval: int = 15) -> None:
-    """Wait for cross-node networking to converge.
+    """Wait for KubeSpan peers and Cilium health mesh to converge.
 
-    During bootstrap, KubeSpan WireGuard tunnels take time to stabilize due to
-    dual-identity from ISO-to-disk reboot (phantom peers persist for ~30 min TTL).
-    Deploying webhook-based services (kyverno) before tunnels converge causes
-    webhook timeout failures from API servers that can't reach webhook pods.
-    See: investigations/2026-02-11-bootstrap-cross-node-and-kyverno/diary.md
+    Deploying webhook-based services (kyverno) before cross-node networking
+    converges causes webhook timeout failures from API servers that can't reach
+    webhook pods on other nodes.
     """
     log.info("Waiting for cross-node networking to converge...")
 
@@ -251,7 +213,7 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
         return False
     for pod in pods.items:
         try:
-            output = stream(
+            resp = stream(
                 v1.connect_get_namespaced_pod_exec,
                 pod.metadata.name,
                 "kube-system",
@@ -260,13 +222,22 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
                 stdin=False,
                 stdout=True,
                 tty=False,
+                _preload_content=False,
             )
+            resp.run_forever(timeout=30)
+            output = resp.read_channel(STDOUT_CHANNEL)
         except ApiException:
             return False
         try:
             data = json.loads(output)
         except json.JSONDecodeError:
-            log.info("  Cilium health unparseable on %s", pod.spec.node_name)
+            stderr = resp.read_channel(STDERR_CHANNEL)
+            log.info(
+                "  Cilium health unparseable on %s: stdout=%r stderr=%r",
+                pod.spec.node_name,
+                output[:200],
+                stderr[:200] if stderr else "",
+            )
             return False
         for node in data.get("nodes", []):
             for section in ("host", "health-endpoint"):

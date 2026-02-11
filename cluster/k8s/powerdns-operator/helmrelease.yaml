@@ -15,6 +15,12 @@ spec:
         name: powerdns-operator
         namespace: powerdns-operator
       interval: 12h
+  # Inject PDNS_API_KEY from reflected secret (key is powerdns_api_key in source)
+  valuesFrom:
+    - kind: Secret
+      name: powerdns-api-key
+      valuesKey: powerdns_api_key
+      targetPath: credentials.data.PDNS_API_KEY
   values:
     # PowerDNS API configuration
     api:
@@ -22,10 +28,6 @@ spec:
       vhost: "localhost"
       tls:
         insecure: false
-
-    # Use existing secret for API key (created by Reflector from dns-system)
-    credentials:
-      existingSecret: "powerdns-api-key"
 
     # Resource limits
     resources:
