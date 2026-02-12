@@ -5,7 +5,6 @@ metadata:
   name: harbor-proxy-cache
   namespace: flux-system
 spec:
-  suspend: true
   interval: 10m0s
   path: ./cluster/k8s/harbor-proxy-cache
   prune: true

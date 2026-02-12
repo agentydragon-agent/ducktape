@@ -8,8 +8,9 @@
 
 ### Recent Fixes (2026-02-11)
 
-1. **Cilium stripped to Talos-recommended defaults** + `mtu: 1370` + hubble.
-   Reverted DNS workarounds to defaults.
+1. **Cilium stripped to Talos-recommended defaults** + `MTU: 1370` + hubble.
+   Reverted DNS workarounds to defaults. Note: the Helm key is uppercase `MTU`
+   (case-sensitive; lowercase `mtu` is silently ignored).
 2. **Machine secrets moved from layer 00 to layer 01** — fresh `cluster.id` per
    lifecycle prevents stale KubeSpan discovery entries from previous incarnations.
 3. **HostnameConfig conflict fixed** — removed explicit HostnameConfig from VPS
@@ -662,7 +663,8 @@ See **DNS Architecture** section below for details.
 - Native routing fails: "gateway must be directly reachable"
 - VXLAN encapsulates pod traffic between nodes
 - KubeSpan docs warn non-default Cilium options cause "asymmetric routing"
-- MTU must be set to 1370 to avoid fragmentation (VXLAN 50 + WireGuard 80 = 130 byte overhead)
+- `MTU: 1370` in Helm values (uppercase key — case-sensitive, lowercase is silently ignored)
+- Avoids fragmentation: VXLAN overhead (50) + WireGuard overhead (80) = 130, so 1500 - 130 = 1370
 
 **Firewall**: UDP 8472 required for VXLAN overlay
 

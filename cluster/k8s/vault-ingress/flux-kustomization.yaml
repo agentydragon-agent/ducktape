@@ -5,14 +5,20 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  timeout: 10m
+  # 15m timeout accounts for DNS-01 challenge resolution on fresh bootstrap.
+  # Public resolvers (8.8.8.8) may cache SERVFAIL for ~5 min when PowerDNS
+  # is starting up, then cert-manager retries + Let's Encrypt verification
+  # adds another ~2-3 min. Total: ~12 min worst case.
+  timeout: 15m
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: "./cluster/k8s/vault-ingress"
   prune: true
   wait: true
-  # Health check ensures TLS certificate is issued before dependents try to access Vault via HTTPS
+  # Health check on the Certificate auto-created by cert-manager from Ingress annotation.
+  # cert-manager retries DNS-01 challenges until PowerDNS is ready — no explicit
+  # powerdns dependency needed. 15m timeout covers worst-case DNS resolution.
   healthChecks:
     - apiVersion: cert-manager.io/v1
       kind: Certificate

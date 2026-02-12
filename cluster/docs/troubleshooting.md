@@ -4,6 +4,82 @@ Quick diagnostic commands for common cluster issues.
 
 ## Known Issues
 
+### Cilium MTU Case Sensitivity (Cross-Node Packet Loss)
+
+**Symptoms**:
+
+- 10-30% TCP connection failures between VPS and Proxmox nodes
+- Webhook timeouts during bootstrap (Kyverno, ESO webhooks timing out with 5-10s deadlines)
+- Bootstrap stalls at ~18/64 Ready kustomizations
+- `kubectl exec` and API server calls intermittently fail with "context deadline exceeded"
+- IP fragmentation statistics show hundreds of reassembly failures (`ReasmFails` in `/proc/net/snmp`)
+
+**Root Cause**:
+
+The Cilium Helm chart (v1.16.x) defines the MTU parameter as **uppercase** `MTU`, not lowercase `mtu`.
+Helm values are case-sensitive — using `mtu: 1370` is silently ignored, leaving all pod interfaces
+at the default MTU of 1500.
+
+With VXLAN + KubeSpan (WireGuard), the maximum payload without fragmentation is:
+
+- eth0 MTU (1500) - VXLAN overhead (50) - WireGuard overhead (80) = **1370 bytes**
+
+When pod MTU is 1500 (wrong), VXLAN-encapsulated packets (up to 1550 bytes) exceed the kubespan
+interface MTU (1420), forcing kernel fragmentation at the WireGuard interface. UDP fragments
+traversing NAT/middleboxes between Hetzner VPS and home Proxmox are intermittently dropped.
+
+**Diagnosis**:
+
+```bash
+# 1. Check if Cilium MTU was actually applied
+kubectl get configmap cilium-config -n kube-system -o yaml | grep -i mtu
+# Should show: mtu: "1370" — if missing, MTU was not applied
+
+# 2. Check actual interface MTUs on a node
+talosctl -n <node-ip> read /proc/sys/net/ipv4/ip_no_pmtu_disc
+# Then check pod veth interfaces:
+kubectl exec -n kube-system ds/cilium -- ip link show cilium_vxlan
+# Should show: mtu 1370 — if 1500, MTU fix not applied
+
+# 3. Check IP fragmentation counters (high numbers = problem)
+talosctl -n <node-ip> read /proc/net/snmp | grep -E "^Ip:"
+# Look for: FragOKs > 0, ReasmFails > 0 (fragmentation occurring)
+
+# 4. Check Helm values actually deployed
+helm get values cilium -n kube-system
+# Look for: MTU: 1370 (uppercase) — not mtu: 1370 (lowercase)
+```
+
+**Resolution**:
+
+In `terraform/01-infrastructure/cilium-values.yaml`, use **uppercase** `MTU`:
+
+```yaml
+# CORRECT (uppercase — matches Helm chart definition)
+MTU: 1370
+
+# WRONG (lowercase — silently ignored by Helm)
+mtu: 1370
+```
+
+After fixing, destroy and re-bootstrap the cluster. Verify with `helm get values cilium -n kube-system`.
+
+**Prevention**:
+
+- Always check `helm show values cilium/cilium --version <version> | grep -i mtu` to verify
+  the exact key name when upgrading Cilium versions
+- The overhead calculation (VXLAN 50 + WireGuard 80 = 130, so 1500 - 130 = 1370) is documented
+  in the values file comments
+
+**Reference**: See `investigations/2026-02-11-bootstrap-cross-node-and-kyverno/diary.md` for
+full investigation timeline and packet capture analysis.
+
+**Historical Occurrence**:
+
+- 2026-02-11: Bootstrap stalled at 18/64 Ready for >20 minutes due to webhook timeouts.
+  Root cause: `mtu: 1370` (lowercase) in cilium-values.yaml was silently ignored.
+  Fix: Changed to `MTU: 1370` (uppercase). Commit bff6255.
+
 ### Zombie Kubelet (Containerd Crash Recovery Failure)
 
 **Symptoms**:

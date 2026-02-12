@@ -157,6 +157,9 @@ Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
   - Handles Let's Encrypt DNS-01 challenges to obtain SSL certs
   - CoreDNS forwards allegedly.works zone to PowerDNS ClusterIP for internal resolution
 - Cilium: `kubeProxyReplacement: true` with privileged port protection enabled
+- Cilium MTU: `MTU: 1370` (uppercase key required — Helm is case-sensitive).
+  Accounts for double encapsulation: VXLAN (50 bytes) + WireGuard/KubeSpan (80 bytes).
+  Without this, cross-node packets fragment and drop intermittently.
 - KubeSpan: WireGuard mesh connects VPS and Proxmox nodes
 
 - Terraform → Image Factory API → Custom QCOW2 with META key 10 → VMs with static IPs (no DHCP)
