@@ -640,7 +640,7 @@ This ensures the documentation serves both as operational procedures (docs/boots
 
 @docs/troubleshooting.md
 
-@docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md
+@docs/lessons_learned/2025-11-28-eso-password-generator-desync.md
 
 ## Troubleshooting Priority
 

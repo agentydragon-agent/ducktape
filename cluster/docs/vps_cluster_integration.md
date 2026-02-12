@@ -1,96 +1,78 @@
 # VPS Cluster Integration
 
-**Status**: Phase 1 complete, services pending
+**Status**: Fully integrated hybrid cluster (VPS + Proxmox)
 
-## Current Architecture
+## Architecture
 
 ```text
-Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
-              ├── 2 Talos controllers (etcd majority)
-              ├── Hetzner Cloud CSI for storage
-              └── KubeSpan mesh (WireGuard) → Home (Proxmox, pending)
-                                                   └── Workers with ZFS storage
+Internet → VPS (2x Hetzner CPX31)
+              ├── 2 Talos control-plane nodes (public IPs)
+              ├── ingress-nginx + PowerDNS (hostNetwork)
+              ├── Hetzner Cloud CSI (Flux-managed)
+              └── KubeSpan mesh (WireGuard) → Home Proxmox (atlas)
+                                                  ├── 1 Talos control-plane (10.2.1.1)
+                                                  └── 1 Talos worker (10.2.2.1)
+                                                      └── Proxmox CSI (ZFS storage)
 ```
 
-**Implemented**:
+## Nodes
 
-- 2x Hetzner CPX31 VPS nodes (`talos-vps-0`, `talos-vps-1`)
-- Both nodes are control-plane with Talos v1.12.3, Kubernetes v1.35.1
-- Cilium CNI with VXLAN tunnel mode (cross-node connectivity verified)
-- KubeSpan mesh working - WireGuard handshakes verified
-- Hetzner Cloud CSI for block storage
-- Talos machine secrets persisted in bootstrap/persistent-auth layer
+| Node               | Location | Role          | IP            |
+| ------------------ | -------- | ------------- | ------------- |
+| talos-vps-cp-0     | Hetzner  | control-plane | (new on boot) |
+| talos-vps-cp-1     | Hetzner  | control-plane | (new on boot) |
+| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1      |
+| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1      |
 
-**Pending**:
+## Networking
 
-- Home Proxmox node(s) not yet added
-- Services not deployed (Flux, Vault, Authentik, etc.)
+### KubeSpan (WireGuard Mesh)
 
-## Networking: KubeSpan
+Talos-native WireGuard mesh connecting VPS and home nodes.
 
-Talos native WireGuard mesh connecting VPS ↔ home nodes.
+- Enabled in Talos machine config (`machine.network.kubespan.enabled: true`)
+- Discovery via `discovery.talos.dev`
+- Machine secrets regenerated per lifecycle (fresh `cluster.id` prevents stale peers)
+- Requires UDP 51820 open on all nodes
 
-**Why KubeSpan**: Native to Talos, no external dependencies, automatic mesh with integrated discovery.
+### Cilium CNI
 
-**Configuration** (in Talos machine config):
+- VXLAN tunnel mode (VPS nodes not on same L2)
+- `MTU: 1370` (uppercase key, case-sensitive) — accounts for VXLAN (50) + WireGuard (80) overhead
+- `kubeProxyReplacement: true`
 
-```yaml
-machine:
-  network:
-    kubespan:
-      enabled: true
-cluster:
-  discovery:
-    enabled: true
+### Ingress
+
+```text
+Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → backend services
+Internet → VPS public IP:53  → PowerDNS (hostNetwork) → DNS responses
 ```
 
-**Requirements**: UDP 51820 open on all nodes.
+DNS returns two A records (both VPS IPs) for failover.
 
-**Debugging**: See `docs/troubleshooting.md` → KubeSpan section.
+## Storage
 
-## Storage Strategy
+| Provisioner          | Location | Default | Management                         |
+| -------------------- | -------- | ------- | ---------------------------------- |
+| `proxmox-csi-retain` | Proxmox  | Yes     | Flux (k8s/storage/)                |
+| `hcloud-volumes`     | Hetzner  | No      | Flux (k8s/hcloud-csi/)             |
+| `local-path`         | Any node | No      | Flux (k8s/local-path-provisioner/) |
 
-| Location | Provisioner       | Services                              |
-| -------- | ----------------- | ------------------------------------- |
-| VPS      | Hetzner Cloud CSI | Vault, Authentik, DNS, cert-manager   |
-| Home     | Proxmox CSI (ZFS) | Harbor, Gitea, Loki, media, Nix cache |
-
-**Rationale**: VPS for always-on critical path, home for storage-heavy workloads.
+**Strategy**: Proxmox for storage-heavy workloads (Harbor, Gitea, Loki, media, Nix cache).
+VPS for always-on critical-path services. `local-path` for simple storage (Vault Raft, Headscale).
 
 ## Failure Modes
 
-| Scenario        | Cluster       | Ingress | Notes                             |
-| --------------- | ------------- | ------- | --------------------------------- |
-| Single VPS down | ✅ 2/3 quorum | ✅      | Pod anti-affinity recommended     |
-| Both VPS down   | ❌ 1/3 only   | ❌      | Home pods continue but unmanaged  |
-| Home down       | ✅ 2/3 quorum | ✅      | SSO/internal services unavailable |
+| Scenario        | Cluster    | Ingress | Notes                                 |
+| --------------- | ---------- | ------- | ------------------------------------- |
+| Single VPS down | 2/3 quorum | Works   | DNS failover to other VPS             |
+| Both VPS down   | 1/3 only   | Down    | Home pods continue but cluster frozen |
+| Home down       | 2/3 quorum | Works   | Proxmox storage workloads unavailable |
 
-## Remaining Work
+## Decisions
 
-### Infrastructure
-
-- [ ] Add home Proxmox node(s) as workers
-- [ ] Deploy Proxmox CSI for home storage
-- [ ] Verify KubeSpan mesh VPS ↔ home
-
-### Services
-
-- [ ] Flux CD with Sealed Secrets
-- [ ] Vault with Raft HA
-- [ ] Authentik (identity provider)
-- [ ] Ingress (nginx or Gateway API)
-- [ ] PowerDNS, cert-manager
-- [ ] Harbor, Gitea, observability stack
-
-### Backup (not yet configured)
-
-- [ ] rclone with Google Drive for terraform state
-- [ ] Encrypted backup script
-- [ ] Document restore procedure
-
-## Decisions Made
-
-1. **2x Hetzner CPX31** - 4 vCPU, 8GB RAM, 160GB NVMe, ~€30/month total
-2. **Controller placement: 2 VPS + 1 home** - Survives home outage
-3. **KubeSpan over Tailscale** - Native to Talos, simpler
-4. **Cilium VXLAN** - Required for cross-VPS networking (not same L2)
+1. **2x Hetzner CPX31** — 4 vCPU, 8GB RAM, 160GB NVMe, ~EUR 30/month total
+2. **Controller placement: 2 VPS + 1 home** — survives home outage, etcd majority on VPS
+3. **KubeSpan over Tailscale** — native to Talos, no external dependencies
+4. **Cilium VXLAN** — required for cross-VPS networking (nodes not on same L2)
+5. **Hetzner CSI via Flux** — API token secret created by infrastructure terraform, chart managed by Flux

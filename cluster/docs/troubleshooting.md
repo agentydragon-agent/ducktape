@@ -71,14 +71,7 @@ After fixing, destroy and re-bootstrap the cluster. Verify with `helm get values
 - The overhead calculation (VXLAN 50 + WireGuard 80 = 130, so 1500 - 130 = 1370) is documented
   in the values file comments
 
-**Reference**: See `investigations/2026-02-11-mtu-cross-node-bootstrap/lessons-learned.md` for
-root cause analysis, diagnostic checklist, and key lessons.
-
-**Historical Occurrence**:
-
-- 2026-02-11: Bootstrap stalled at 18/64 Ready for >20 minutes due to webhook timeouts.
-  Root cause: `mtu: 1370` (lowercase) in cilium-values.yaml was silently ignored.
-  Fix: Changed to `MTU: 1370` (uppercase). Commit bff6255.
+**Lessons Learned**: See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>
 
 ### Zombie Kubelet (Containerd Crash Recovery Failure)
 
@@ -137,10 +130,7 @@ talosctl -n <node-ip> events | grep kubelet
 - Ensure workers have explicit `dhcp: false` in machine config
 - Fix tf-runner crashloop to prevent container churn that triggers the issue
 
-**Historical Occurrence**:
-
-- 2025-11-17: worker0 - containerd crashed with exit status 2, left kubelet PID 89823 orphaned
-- 2025-12-28: worker1 - same pattern, root cause identified as dual-IP + container churn
+**Lessons Learned**: See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>
 
 ### Worker Dual-IP Assignment (DHCP + Static IP Conflict)
 
@@ -319,11 +309,7 @@ kubectl get terraform -n flux-system -o name | xargs -I {} kubectl patch {} -p '
 time or `time.Now().Add(-cr.CAValidityDuration)` instead of `time.Now()`, so
 startup GC only deletes genuinely expired secrets, not all existing ones.
 
-**Historical Occurrence**:
-
-- 2025-11-19: All Terraform resources affected after investigating Kagent SSO issue
-- Multiple runner pods stuck in CrashLoopBackOff for ~30 minutes
-- Required controller restart to recover
+**Lessons Learned**: See <lessons_learned/2025-11-19-tofu-controller-tls-cache-desync.md>
 
 ### ESO Password Generator Desynchronization (SSO Authentication Failures)
 
@@ -427,11 +413,7 @@ spec:
 - Correct pattern: `k8s/applications/gitea/secrets.yaml` (lines 38-60)
 - Terraform blueprint: `terraform/gitops/sso/gitea/main.tf`
 
-**Historical Occurrence**:
-
-- 2025-11-28: Harbor and Vault ExternalSecrets using Password generators
-- Caused authentication failures for Harbor OIDC and vault-oidc-auth Terraform
-- Fixed in commit 05b5e5e by replacing generators with Vault data sources
+**Lessons Learned**: See <lessons_learned/2025-11-28-eso-password-generator-desync.md>
 
 ## 🚨 Fast Path Health Checks
 
@@ -707,6 +689,8 @@ done
 ### DNS & Certificate Manager
 
 #### PowerDNS Zone Replication (AXFR)
+
+**Lessons Learned**: See <lessons_learned/2025-11-20-axfr-zone-transfer-failures.md>
 
 **Architecture**:
 

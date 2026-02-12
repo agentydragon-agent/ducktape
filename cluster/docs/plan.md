@@ -59,7 +59,7 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
   (1) `install.remediation.retries: 3` on all HelmReleases,
   (2) Kyverno HA (3 replicas on control plane nodes),
   (3) ClusterIP readiness gate in bootstrap script.
-  See <../investigations/2026-02-11-mtu-cross-node-bootstrap/lessons-learned.md>
+  See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>
 
 ### TODO
 
@@ -324,7 +324,7 @@ Also fixed: external-dns Reloader annotation, cert-manager ClusterIssuer `apiKey
 **Warning**: Three generators use 24h refresh intervals. These will regenerate daily,
 causing desynchronization if pods aren't restarted. Migrate to Vault SSOT or increase to 8760h.
 
-See `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md` for detailed analysis.
+See <lessons_learned/2025-11-28-eso-password-generator-desync.md> for detailed analysis.
 
 ---
 
@@ -658,7 +658,7 @@ See **DNS Architecture** section below for details.
 
 **Firewall**: UDP 8472 required for VXLAN overlay
 
-See <../investigations/2026-02-11-mtu-cross-node-bootstrap/lessons-learned.md>
+See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>
 for network stack diagrams and diagnostic checklist.
 
 ### KubePrism for Cluster Endpoint
@@ -755,7 +755,7 @@ for network stack diagrams and diagnostic checklist.
 
 - **Bootstrap Procedures**: `docs/bootstrap.md`
 - **Troubleshooting**: `docs/troubleshooting.md`
-- **Secret Sync Analysis**: `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md`
+- **Secret Sync Analysis**: <lessons_learned/2025-11-28-eso-password-generator-desync.md>
 
 ---
 

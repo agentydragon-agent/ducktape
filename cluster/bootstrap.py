@@ -270,8 +270,8 @@ def verify_clusterip_routing(v1: client.CoreV1Api, timeout: int = 300, interval:
     causing webhook timeouts and DNS failures.
 
     On 2026-02-11, this exact gap caused Kyverno webhook timeouts that
-    permanently blocked 49 kustomizations. See investigations/2026-02-11-
-    mtu-cross-node-bootstrap/lessons-learned.md for the full analysis.
+    permanently blocked 49 kustomizations. See docs/lessons_learned/
+    2026-02-11-cilium-mtu-cross-node-packet-loss.md for the full analysis.
 
     WHAT WE TEST: Creates a busybox pod on each node and runs nslookup
     against kubernetes.default.svc.cluster.local. This exercises:
