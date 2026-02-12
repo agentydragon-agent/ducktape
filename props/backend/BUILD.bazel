@@ -2,6 +2,8 @@
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("//tools/testing:docker.bzl", "docker_py_test")
@@ -54,7 +56,7 @@ py_library(
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
-        "//props/db/sync",
+        "//props/db/sync:model_metadata",
         "//props/orchestration:agent_registry",
         "//props/orchestration:grader_supervisor",
         "@pypi//aiodocker",
@@ -212,12 +214,43 @@ py_image_layer(
     binary = ":backend_bin",
 )
 
+pkg_files(
+    name = "frontend_html_files",
+    srcs = ["//props/frontend:index.html"],
+    prefix = "/frontend",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "frontend_bundle_files",
+    srcs = ["//props/frontend:bundle"],
+    prefix = "/frontend/dist",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "frontend_assets",
+    srcs = [
+        ":frontend_bundle_files",
+        ":frontend_html_files",
+    ],
+)
+
 oci_image(
     name = "image",
     base = "@debian_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("backend_bin") + ["serve"],
+    entrypoint = py_image_entrypoint("backend_bin") + [
+        "serve",
+        "--host",
+        "0.0.0.0",
+        "--static-dir",
+        "/frontend",
+    ],
     env = py_image_env(),
-    tars = [":layers"],
+    tars = [
+        ":layers",
+        ":frontend_assets",
+    ],
 )
 
 oci_load(

@@ -11,6 +11,11 @@ exports_files([
     "tsconfig.json",
 ])
 
+exports_files(
+    ["index.html"],
+    visibility = ["//props/backend:__pkg__"],
+)
+
 # Source files for the frontend
 _SRCS = glob([
     "src/**/*.ts",
@@ -88,10 +93,14 @@ js_run_binary(
         "esbuild.config.mjs",
         ":generate_schema",
     ],
-    outs = ["dist/main.js"],
+    outs = [
+        "dist/main.css",
+        "dist/main.js",
+    ],
     args = ["dist"],
     chdir = package_name(),
     tool = ":build_bundle",
+    visibility = ["//props/backend:__pkg__"],
 )
 
 # Svelte-check (type checking)

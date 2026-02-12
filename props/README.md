@@ -53,16 +53,20 @@ cd props
 # 1. Allow direnv (generates PGPASSWORD, sets env vars)
 direnv allow
 
-# 2. Build and load backend image
+# 2. Build and load backend image (includes frontend)
 bazelisk run //props/backend:load
 
-# 3. Start infrastructure
+# 3. Start infrastructure (postgres, registry, backend+frontend)
 docker compose up -d
 
 # 4. Initialize database (runs migrations, syncs specimens)
+# The backend will fail until this completes (missing tables).
 bazelisk run //props/cli -- db recreate
 
-# 5. Push agent images to registry
+# 5. Restart backend (picks up the now-initialized database)
+docker compose restart backend
+
+# 6. Push agent images to registry
 bazelisk run //props/agents/critic:push
 bazelisk run //props/agents/grader:push
 bazelisk run //props/agents/critic_dev/improve:push
@@ -75,15 +79,21 @@ bazelisk run //props/agents/critic_dev/optimize:push
 docker compose up -d                       # Start infrastructure
 docker compose down                        # Stop infrastructure
 docker compose logs -f postgres            # View logs
-bazelisk run //props/frontend:dev          # Frontend + backend with watch
-bazelisk test //props/...                  # Run all tests
 bazelisk build --config=check //props/...  # Lint + typecheck
+```
+
+For frontend hot-reload during development, use `frontend:dev` instead of the
+compose backend (starts its own backend + esbuild watch):
+
+```bash
+docker compose up -d postgres registry     # Infra only (no backend)
+bazelisk run //props/frontend:dev          # Frontend :5173 + backend :8000
 ```
 
 ### Service URLs
 
-- Frontend: <http://localhost:5173>
-- Backend API: <http://localhost:8000> — see <docs/backend_api.md> for endpoint reference
+- Dashboard: <http://localhost:8000> (frontend + API, same origin)
+- Backend API: <http://localhost:8000/api/> — see <docs/backend_api.md> for endpoint reference
 - PostgreSQL: localhost:5433
 - Registry: localhost:5000 (direct, for debugging)
 

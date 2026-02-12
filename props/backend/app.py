@@ -32,7 +32,7 @@ from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
 from props.db.database import Database
-from props.db.sync.sync import sync_model_metadata_with_session
+from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.grader_supervisor import GraderSupervisor
 

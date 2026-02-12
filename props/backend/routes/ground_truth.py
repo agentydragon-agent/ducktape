@@ -176,8 +176,9 @@ def list_snapshots(admin_db: AdminDb) -> SnapshotsListResponse:
         )
 
 
-@router.get("/snapshots/{snapshot_slug:path}")
-def get_snapshot_detail(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> SnapshotDetailResponse:
+@router.get("/snapshots/{org}/{snapshot_date}")
+def get_snapshot_detail(org: str, snapshot_date: str, admin_db: AdminDb) -> SnapshotDetailResponse:
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get detailed snapshot info with all TPs and FPs."""
     with admin_db.session() as session:
         snapshot = _get_snapshot_or_404(session, snapshot_slug)
@@ -301,8 +302,9 @@ class FileTreeResponse(BaseModel):
     tree: list[FileTreeNode]
 
 
-@router.get("/snapshots/{snapshot_slug:path}/tree")
-def get_snapshot_tree(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> FileTreeResponse:
+@router.get("/snapshots/{org}/{snapshot_date}/tree")
+def get_snapshot_tree(org: str, snapshot_date: str, admin_db: AdminDb) -> FileTreeResponse:
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get directory tree with issue occurrence counts."""
     with admin_db.session() as session:
         _get_snapshot_or_404(session, snapshot_slug)
@@ -414,8 +416,9 @@ class FileContentResponse(BaseModel):
     line_count: int
 
 
-@router.get("/snapshots/{snapshot_slug:path}/files/{file_path:path}")
-def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str, admin_db: AdminDb) -> FileContentResponse:
+@router.get("/snapshots/{org}/{snapshot_date}/files/{file_path:path}")
+def get_snapshot_file(org: str, snapshot_date: str, file_path: str, admin_db: AdminDb) -> FileContentResponse:
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get file content from snapshot tar archive."""
     with admin_db.session() as session:
         snapshot = _get_snapshot_or_404(session, snapshot_slug)
@@ -475,8 +478,9 @@ class ClustersListResponse(BaseModel):
     clusters: list[ClusterResponse]
 
 
-@router.get("/snapshots/{snapshot_slug:path}/clusters")
-def list_clusters(snapshot_slug: SnapshotSlug, admin_db: AdminDb) -> ClustersListResponse:
+@router.get("/snapshots/{org}/{snapshot_date}/clusters")
+def list_clusters(org: str, snapshot_date: str, admin_db: AdminDb) -> ClustersListResponse:
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """List all issue clusters for a snapshot with members."""
     with admin_db.session() as session:
         _get_snapshot_or_404(session, snapshot_slug)

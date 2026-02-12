@@ -25,12 +25,13 @@
   }
   let { slug, initialSnapshot, initialTree }: Props = $props();
 
-  // Parse the slug into components
+  // Parse the slug into components.
+  // Snapshot slugs are "org/date" (2 parts), optionally followed by issueId/occurrenceId.
   const parsedSlug = $derived.by(() => {
     const parts = slug.split("/");
-    const snapshotSlug = parts[0];
-    const issueId = parts.length >= 3 ? parts[1] : undefined;
-    const occurrenceId = parts.length >= 3 ? parts[2] : undefined;
+    const snapshotSlug = parts.slice(0, 2).join("/");
+    const issueId = parts.length >= 4 ? parts[2] : undefined;
+    const occurrenceId = parts.length >= 4 ? parts[3] : undefined;
     return { snapshotSlug, issueId, occurrenceId };
   });
 
