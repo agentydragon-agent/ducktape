@@ -40,6 +40,9 @@ spec:
   # - https://github.com/bank-vaults/vault-operator/blob/main/deploy/examples/cr-raft.yaml
   # - https://banzaicloud.com/docs/bank-vaults/operator/
   config:
+    # Required since Vault 1.20: must be set explicitly (no longer defaults to false)
+    # Safe on Talos: no swap, memory-backed tmpfs for secrets
+    disable_mlock: true
     storage:
       raft:
         path: "/vault/file"

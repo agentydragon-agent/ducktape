@@ -262,17 +262,19 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
 def verify_clusterip_routing(v1: client.CoreV1Api, timeout: int = 300, interval: int = 10) -> None:
     """Verify ClusterIP routing works from a pod on every node.
 
-    Cilium agent health probes pass before its BPF service maps are fully
-    populated (typically a 3-10s gap). During this window, ClusterIP routing
-    silently fails — webhook calls, DNS lookups, and all service-to-service
-    traffic using ClusterIP will time out.
+    WHY THIS GATE EXISTS: The preceding _check_cilium_health() only verifies
+    the Cilium agent-to-agent health mesh (ICMP/HTTP between cilium pods).
+    That passes BEFORE Cilium's BPF service maps are populated — there's a
+    3-10s gap where Cilium reports healthy but ClusterIP routing silently
+    fails. Without this gate, Flux would deploy services into that window,
+    causing webhook timeouts and DNS failures.
 
-    This caused Kyverno webhook timeouts during bootstrap that permanently
-    blocked 49 kustomizations (see investigations/2026-02-11-kyverno-webhook-
-    timeout-bootstrap/findings.md).
+    On 2026-02-11, this exact gap caused Kyverno webhook timeouts that
+    permanently blocked 49 kustomizations. See investigations/2026-02-11-
+    kyverno-webhook-timeout-bootstrap/findings.md for the full analysis.
 
-    We test by creating a busybox pod on each node and running nslookup against
-    the kubernetes.default.svc name. This exercises:
+    WHAT WE TEST: Creates a busybox pod on each node and runs nslookup
+    against kubernetes.default.svc.cluster.local. This exercises:
       1. ClusterIP routing to kube-dns (same BPF maps as all other ClusterIPs)
       2. CoreDNS serving DNS queries
       3. The kubernetes service being registered in DNS
@@ -382,9 +384,10 @@ def _wait_for_pods_running(v1: client.CoreV1Api, namespace: str, pod_names: list
 def _probe_clusterip_from_pod(v1: client.CoreV1Api, namespace: str, pod_name: str) -> bool:
     """DNS-resolve kubernetes.default.svc from inside a pod.
 
-    Uses nslookup which exercises the full ClusterIP path: pod sends DNS query
-    to kube-dns ClusterIP (10.96.0.10) → Cilium BPF routes it → CoreDNS
-    responds. If BPF service maps aren't populated yet, the query times out.
+    Uses nslookup with the FQDN (busybox nslookup ignores resolv.conf search
+    domains). Exercises the full ClusterIP path: pod sends DNS query to
+    kube-dns ClusterIP (10.96.0.10) → Cilium BPF routes it → CoreDNS responds.
+    If BPF service maps aren't populated yet, the query times out.
     """
     try:
         resp = stream(
@@ -394,7 +397,7 @@ def _probe_clusterip_from_pod(v1: client.CoreV1Api, namespace: str, pod_name: st
             command=[
                 "sh",
                 "-c",
-                "nslookup kubernetes.default.svc > /dev/null 2>&1 && echo PROBE_OK || echo PROBE_FAIL",
+                "nslookup kubernetes.default.svc.cluster.local > /dev/null 2>&1 && echo PROBE_OK || echo PROBE_FAIL",
             ],
             stderr=True,
             stdin=False,
