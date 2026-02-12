@@ -62,9 +62,6 @@ spec:
               mountPath: /app/config.json
               subPath: config.json
               readOnly: true
-          env:
-            - name: NGINX_ENVSUBST_OUTPUT_DIR
-              value: "/tmp"
           resources:
             requests:
               cpu: 50m
@@ -85,8 +82,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           securityContext:
-            runAsNonRoot: true
-            runAsUser: 101
             allowPrivilegeEscalation: false
       volumes:
         - name: config
