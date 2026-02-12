@@ -102,7 +102,7 @@ def create_session(user_id: int) -> str:
     # Session expires in 24 hours
     store_session(user_id, token, expires=86400)
     return token`,
-  line_count: 21,
+  line_count: 22,
 };
 
 // TPs: Real security issues

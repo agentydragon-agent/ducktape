@@ -22,7 +22,9 @@ from props.backend.auth import (
     ACL_CAN_PUSH_REGISTRY,
     ACL_CAN_PUSH_TAGS,
     ACL_CAN_READ_REGISTRY,
+    AnonymousCaller,
     Auth,
+    CallerType,
     get_caller_type,
     has_access,
 )
@@ -163,15 +165,22 @@ async def v2_check(auth: Auth) -> Response:
     return Response(content=b"{}", status_code=200, headers=_OCI_VERSION_HEADER)
 
 
+def _deny(caller: CallerType, action: str) -> HTTPException:
+    """Return 401 for anonymous callers (triggers auth challenge), 403 for authenticated."""
+    if isinstance(caller, AnonymousCaller):
+        return HTTPException(status_code=401, headers={"WWW-Authenticate": 'Basic realm="props"'})
+    return HTTPException(status_code=403, detail=f"{caller} not allowed to {action}")
+
+
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
 async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
     """Push a manifest — records agent definition on success."""
     caller, agent_run_id = get_caller_type(auth, admin_db)
     if not has_access(caller, ACL_CAN_PUSH_REGISTRY):
-        raise HTTPException(status_code=403, detail=f"{caller} not allowed to push to registry")
+        raise _deny(caller, "push to registry")
 
     if not is_digest(ref) and not has_access(caller, ACL_CAN_PUSH_TAGS):
-        raise HTTPException(status_code=403, detail=f"{caller} not allowed to push by tag")
+        raise _deny(caller, "push by tag")
 
     body = await request.body()
     response = await _proxy_to_upstream(request)
@@ -201,7 +210,7 @@ async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: Admi
     caller, _ = get_caller_type(auth, admin_db)
     if request.method in ("GET", "HEAD"):
         if not has_access(caller, ACL_CAN_READ_REGISTRY):
-            raise HTTPException(status_code=403, detail=f"{caller} not allowed to read from registry")
+            raise _deny(caller, "read from registry")
     elif not has_access(caller, ACL_CAN_PUSH_REGISTRY):
-        raise HTTPException(status_code=403, detail=f"{caller} not allowed to push to registry")
+        raise _deny(caller, "push to registry")
     return await _proxy_to_upstream(request)

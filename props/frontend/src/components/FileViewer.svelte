@@ -40,7 +40,12 @@
     targetOccurrenceId = null,
   }: Props = $props();
 
-  const lines = $derived(file.content.split("\n"));
+  const lines = $derived.by(() => {
+    const raw = file.content.split("\n");
+    // Remove trailing empty string from trailing newline (most source files end with \n)
+    if (raw.length > 1 && raw[raw.length - 1] === "") return raw.slice(0, -1);
+    return raw;
+  });
   const language = $derived(detectLanguage(file.path));
   const highlightedLines = $derived(highlightLines(lines, language));
 
@@ -110,8 +115,9 @@
         }
       } else {
         for (const range of ranges) {
-          const startIdx = range.start_line;
-          const endIdx = range.end_line ?? range.start_line;
+          // Convert 1-based line numbers to 0-based array indices
+          const startIdx = range.start_line - 1;
+          const endIdx = (range.end_line ?? range.start_line) - 1;
           for (let i = startIdx; i <= endIdx; i++) {
             const existing = map.get(i) || [];
             map.set(i, [...existing, issue]);
@@ -132,7 +138,8 @@
       if (ranges) {
         for (const range of ranges) {
           if (range.note) {
-            const endIdx = range.end_line ?? range.start_line;
+            // Convert 1-based line number to 0-based array index
+            const endIdx = (range.end_line ?? range.start_line) - 1;
             const existing = map.get(endIdx) || [];
             map.set(endIdx, [...existing, { issue, range }]);
           }
@@ -235,7 +242,7 @@
           {#each lineIssues as issue (getIssueKey(issue))}
             {@const issueRanges = getRangesForFile(issue, file.path)}
             {@const isFirstLine =
-              !issueRanges || issueRanges.length === 0 ? idx === 0 : issueRanges.some((r) => r.start_line === idx)}
+              !issueRanges || issueRanges.length === 0 ? idx === 0 : issueRanges.some((r) => r.start_line === idx + 1)}
             {#if isFirstLine}
               {@const issueKey = getIssueKey(issue)}
               {@const isExpanded = expandedIssues.has(issueKey)}

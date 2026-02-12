@@ -66,7 +66,10 @@ bazelisk run //props/cli -- db recreate
 # 5. Restart backend (picks up the now-initialized database)
 docker compose restart backend
 
-# 6. Push agent images to registry
+# 6. Log in to registry proxy (uses Postgres admin creds, stored in Docker config)
+echo "$PGPASSWORD" | docker login localhost:8000 -u "$PGUSER" --password-stdin
+
+# 7. Push agent images to registry
 bazelisk run //props/agents/critic:push
 bazelisk run //props/agents/grader:push
 bazelisk run //props/agents/critic_dev/improve:push
