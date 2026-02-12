@@ -14,4 +14,4 @@ spec:
     - name: authentik-namespace
     - name: external-secrets-config
     - name: vault
-    - name: sso-secrets # authentik-bootstrap ExternalSecret reads kv/sso/client-secrets from Vault
+    - name: authentik-token # authentik-bootstrap ExternalSecret reads kv/sso/client-secrets from Vault

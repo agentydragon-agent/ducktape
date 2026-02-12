@@ -29,6 +29,6 @@ spec:
   dependsOn:
     - name: authentik-namespace
     - name: authentik-secrets
-    - name: sso-secrets # Wait for API token generation in Vault
+    - name: authentik-token # Wait for API token generation in Vault
     - name: cert-manager # Wait for cert-manager for TLS certificates
     - name: ingress-nginx # Wait for ingress controller for external access

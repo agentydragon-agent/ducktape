@@ -119,14 +119,6 @@ spec:
         allowFrom: "0.0.0.0/0"
       backend: "gmysql"
 
-    # External Secret integration - use our chart's built-in ESO support
-    externalSecret:
-      enabled: true
-      secretStore:
-        name: vault-backend
-        kind: ClusterSecretStore
-      secretName: powerdns-api-key
-
     # MariaDB subchart - database backend with auto-schema-init
     mariadb:
       enabled: true

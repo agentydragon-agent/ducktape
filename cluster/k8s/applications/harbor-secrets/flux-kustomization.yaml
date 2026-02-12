@@ -11,7 +11,14 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: harbor-admin
+      namespace: flux-system
   dependsOn:
     - name: harbor-namespace
     - name: external-secrets-config
     - name: cert-manager
+    - name: core # tofu-controller CRD
+    - name: vault-token # Vault auth for Terraform

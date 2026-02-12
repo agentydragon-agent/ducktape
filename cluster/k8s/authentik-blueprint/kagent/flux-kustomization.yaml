@@ -13,5 +13,5 @@ spec:
     name: flux-system
   dependsOn:
     - name: core # Wait for tofu-controller to install Terraform CRD
-    - name: sso-secrets
+    - name: authentik-token
     - name: authentik-blueprint-users

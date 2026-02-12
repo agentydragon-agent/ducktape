@@ -73,12 +73,9 @@ Several kustomization names are confusing or overly generic:
   kustomizations or at minimum renaming to `cluster-controllers`.
 - **`monitoring-stack`** → just kube-prometheus-stack HelmRelease + a dashboard.
   Rename to `kube-prometheus` or `prometheus-grafana`.
-- **`authentik-secrets`** vs **`sso-secrets`** — confusing naming. `sso-secrets` is
-  a tofu-controller Terraform that generates the Authentik API token and stores it in
-  Vault. `authentik-secrets` deploys ExternalSecrets that read from Vault into k8s
-  Secrets for Authentik pods. The names don't convey the generate-vs-consume
-  distinction. Consider renaming to e.g. `sso-secret-generation` (Terraform) and
-  `authentik-external-secrets` (ESO consumers), or collapsing if the layering permits.
+- ~~**`authentik-secrets`** vs **`sso-secrets`**~~ — **DONE**: `sso-secrets` split into
+  per-service Terraform modules (`powerdns-api-key`, `authentik-token`, `harbor-admin`)
+  each with isolated state. Renamed to `authentik-token` kustomization.
 
 ---
 
@@ -314,25 +311,27 @@ After cluster is stable, can reduce `refreshInterval` to 24h-168h.
 Replace ESO Password generators with Vault KV sources. Terraform generates once → stores in Vault →
 ESO reads stable value.
 
-**ESO Password generators to migrate**:
+**Migrated to Vault SSOT** (per-service Terraform modules with isolated state):
 
-| File                                                       | Secret                                      | Notes                       |
-| ---------------------------------------------------------- | ------------------------------------------- | --------------------------- |
-| `k8s/powerdns/externalsecret-api-key.yaml`                 | PowerDNS API key                            | Breaks cert-manager webhook |
-| `k8s/authentik/postgres-external-secret.yaml`              | PostgreSQL password                         | Init-time persistence       |
-| `k8s/authentik/admin-password-external-secret.yaml`        | Admin password                              |                             |
-| `k8s/authentik/secret-key-external-secret.yaml`            | Secret key                                  |                             |
-| `k8s/authentik-blueprint/users/password-secret.yaml`       | User password                               |                             |
-| `k8s/applications/gitea/secrets.yaml`                      | Admin password                              |                             |
-| `k8s/applications/matrix/secrets.yaml`                     | 3 secrets (signing, registration, macaroon) |                             |
-| `k8s/monitoring-stack/admin-password-external-secret.yaml` | Grafana admin                               |                             |
+| Secret                | Terraform module                     | Vault path              | Status  |
+| --------------------- | ------------------------------------ | ----------------------- | ------- |
+| PowerDNS API key      | `terraform/gitops/powerdns-api-key/` | `kv/powerdns/api-key`   | ✅ Done |
+| Authentik API token   | `terraform/gitops/authentik-token/`  | `kv/sso/client-secrets` | ✅ Done |
+| Harbor admin password | `terraform/gitops/harbor-admin/`     | `kv/harbor/admin`       | ✅ Done |
 
-**Implementation**:
+Also fixed: external-dns Reloader annotation, cert-manager ClusterIssuer `apiKeySecretRef` namespace.
 
-1. Create `terraform/gitops/secrets/` module with `random_password` resources
-2. Store in Vault KV at `kv/cluster/{service}/{secret}`
-3. Update ExternalSecrets to use `remoteRef` instead of `generatorRef`
-4. Remove Password generator resources
+**ESO Password generators still to migrate**:
+
+| File                                                               | Secret                                      | Notes                 |
+| ------------------------------------------------------------------ | ------------------------------------------- | --------------------- |
+| `k8s/authentik-secrets/postgres-external-secret.yaml`              | PostgreSQL password                         | Init-time persistence |
+| `k8s/authentik-secrets/admin-password-external-secret.yaml`        | Admin password                              |                       |
+| `k8s/authentik-secrets/secret-key-external-secret.yaml`            | Secret key                                  |                       |
+| `k8s/authentik-blueprint/users/password-secret.yaml`               | User password                               |                       |
+| `k8s/applications/gitea-secrets/secrets.yaml`                      | Admin password                              |                       |
+| `k8s/applications/matrix-secrets/secrets.yaml`                     | 3 secrets (signing, registration, macaroon) |                       |
+| `k8s/monitoring-stack-secrets/admin-password-external-secret.yaml` | Grafana admin                               |                       |
 
 See `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md` for detailed analysis.
 

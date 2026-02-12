@@ -1,27 +1,26 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: sso-secrets
+  name: authentik-token
   namespace: flux-system
 spec:
   interval: 15m0s
-  path: ./cluster/k8s/sso-secrets
+  path: ./cluster/k8s/authentik-token
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
   timeout: 10m0s
   wait: true
-  # Health check ensures Terraform has successfully applied SSO secrets to Vault
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
-      name: sso-secrets
+      name: authentik-token
       namespace: flux-system
   dependsOn:
-    - name: core # Wait for tofu-controller to install Terraform CRD
+    - name: core # tofu-controller CRD
       namespace: flux-system
-    - name: vault-token # Wait for Vault token to be available for Terraform authentication
+    - name: vault-token # Vault auth for Terraform
       namespace: flux-system
-    - name: external-secrets-config # Wait for ESO to be configured
+    - name: external-secrets-config
       namespace: flux-system

@@ -36,7 +36,7 @@ resources:
   - authentik-namespace/flux-kustomization.yaml
   - authentik/flux-kustomization.yaml
   - authentik-secrets/flux-kustomization.yaml
-  - sso-secrets/flux-kustomization.yaml
+  - authentik-token/flux-kustomization.yaml
   - harbor-namespace/flux-kustomization.yaml
   - applications/harbor/flux-kustomization.yaml
   - applications/harbor-secrets/flux-kustomization.yaml

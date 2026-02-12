@@ -25,6 +25,7 @@ spec:
               apiKeySecretRef:
                 name: powerdns-api-key
                 key: powerdns_api_key
+                namespace: cert-manager
         selector:
           dnsZones:
             - "allegedly.works"
