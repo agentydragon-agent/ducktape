@@ -1,5 +1,5 @@
 # Proxmox Home Nodes
-# 1x controlplane (talos-pve-cp-0) + 1x worker (talos-pve-worker-0) on home Proxmox (atlas)
+# 1x controlplane (talos-pve-cp-0) on home Proxmox (atlas), 24 GB RAM
 # Uses KubeSpan for mesh networking with VPS nodes
 
 # ============================================================================
@@ -102,8 +102,8 @@ resource "proxmox_virtual_environment_vm" "talos" {
   }
 
   memory {
-    dedicated = 12 * 1024                                       # 12GB max
-    floating  = each.value.type == "controlplane" ? 4096 : 6144 # 4GB controllers, 6GB workers
+    dedicated = 24 * 1024 # 24GB (consolidated from cp + worker)
+    floating  = 4096      # 4GB minimum
   }
 
   vga {

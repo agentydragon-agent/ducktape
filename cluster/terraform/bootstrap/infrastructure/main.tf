@@ -1,5 +1,5 @@
 # LAYER 1: HYBRID INFRASTRUCTURE
-# 4-node Talos cluster: 2x Hetzner VPS (controlplane) + 2x Proxmox home (1 cp + 1 worker)
+# 3-node Talos cluster: 2x Hetzner VPS (controlplane) + 1x Proxmox home (controlplane)
 # Machine secrets generated fresh per lifecycle (prevents stale KubeSpan discovery)
 
 # ============================================================================
@@ -33,11 +33,11 @@ locals {
   }
 
   # Node topology - Proxmox nodes
-  # Using VM IDs 10000/10100 to avoid conflicts with existing cluster (1500-2002)
-  # Controlplanes use "cp" suffix, pure workers use "worker" prefix
+  # Using VM IDs 10000+ to avoid conflicts with existing cluster (1500-2002)
+  # Worker disabled: its 12 GB RAM reassigned to controlplane (24 GB total)
   proxmox_nodes = {
-    pve_cp0     = { name = "talos-pve-cp-0", type = "controlplane", vm_id = 10000, ip = "10.2.1.1" }
-    pve_worker0 = { name = "talos-pve-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
+    pve_cp0 = { name = "talos-pve-cp-0", type = "controlplane", vm_id = 10000, ip = "10.2.1.1" }
+    # pve_worker0 = { name = "talos-pve-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
   }
 
   # Proxmox network configuration
