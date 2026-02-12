@@ -71,8 +71,6 @@ bazelisk run //props/agents/critic_dev/optimize:push
 
 ## Development
 
-**Build system:** Bazel (see root AGENTS.md).
-
 ```bash
 docker compose up -d                       # Start infrastructure
 docker compose down                        # Stop infrastructure
@@ -126,37 +124,12 @@ The props system evaluates LLM critic agents through a fitness-based selection p
 
 For detailed information on training strategies and per-file examples, see [Training Strategy](docs/training_strategy.md).
 
-## Usage Workflow
+Grading is handled automatically by snapshot graders.
 
-### 1. Run Critic on a Specimen
+## Specimen Inspection
 
-Run critic agent to find issues in a specimen:
-
-```bash
-# Run critic with a specific definition
-props run ducktape/2025-11-20-00 --definition-id critic
-
-# Run with a different model
-props run ducktape/2025-11-20-00 --definition-id critic --model gpt-4o
-
-# Filter to specific files
-props run ducktape/2025-11-20-00 --definition-id critic --files src/foo.py src/bar.py
-```
-
-This:
-
-- Loads the specimen from the database
-- Runs the critic agent (Docker-based)
-- Stores the critique in the database
-- Returns the agent_run_id for grading
-
-### 2. Grading
-
-Grading is handled automatically by snapshot graders. Use the frontend UI (`POST /api/runs/validation`) to trigger validation runs on specific definitions.
-
-### Specimen Inspection
-
-Specimen source code is stored in PostgreSQL and fetched by agent init scripts at runtime. To inspect specimen files, query the database directly or use the sync'd specimens repository.
+Specimen source code is stored in PostgreSQL and fetched by agent init scripts at runtime.
+To inspect specimen files, query the database directly or use the sync'd specimens repository.
 
 ## GitHub Copilot Agent Setup
 
@@ -166,7 +139,6 @@ GitHub Copilot agents working on the props codebase should use the automated env
 
 - `ADGN_PROPS_SPECIMENS_ROOT`: Points to in-repo test fixtures for CI/testing
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`: PostgreSQL connection
-- `AGENT_PGHOST`: PostgreSQL host for agent containers
 - `PROPS_REGISTRY_PROXY_HOST`, `PROPS_REGISTRY_PROXY_PORT`: Registry proxy config
 - `PROPS_DOCKER_NETWORK`: Docker network for agent containers (props-agents)
 - `PROPS_E2E_HOST_HOSTNAME`: Host network address for containers (172.17.0.1)

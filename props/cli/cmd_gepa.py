@@ -11,18 +11,21 @@ from rich.console import Console
 
 from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client
-from props.cli import common_options as opt
 from props.core.agent_workspace import WorkspaceManager
 from props.core.gepa.gepa_adapter import optimize_with_gepa
 from props.db.database import Database
+
+OPT_OPTIMIZER_MODEL = typer.Option("gpt-5.1", help="Model for critic developer agent")
+OPT_CRITIC_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for critic execution")
+OPT_GRADER_MODEL = typer.Option("gpt-5.1-mini", help="Model for grader execution")
 
 
 @async_run
 async def cmd_gepa(
     ctx: typer.Context,
-    critic_model: str = opt.OPT_CRITIC_MODEL,
-    grader_model: str = opt.OPT_GRADER_MODEL,
-    reflection_model: str = opt.OPT_OPTIMIZER_MODEL,
+    critic_model: str = OPT_CRITIC_MODEL,
+    grader_model: str = OPT_GRADER_MODEL,
+    reflection_model: str = OPT_OPTIMIZER_MODEL,
     initial_prompt: Annotated[
         str | None, typer.Option(help="Initial prompt (ignored if warm-start loads historical data)")
     ] = None,

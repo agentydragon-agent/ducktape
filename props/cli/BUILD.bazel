@@ -4,20 +4,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 # =============================================================================
-# Leaf modules (minimal deps)
-# =============================================================================
-
-py_library(
-    name = "common_options",
-    srcs = ["common_options.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "@pypi//typer_slim",
-    ],
-)
-
-# =============================================================================
 # Subcommand modules
 # =============================================================================
 
@@ -42,7 +28,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":common_options",
         "//cli_util:decorators",
         "//openai_utils:client_factory",
         "//props/core:agent_workspace",
