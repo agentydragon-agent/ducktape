@@ -29,10 +29,27 @@
    dig @8.8.8.8 SOA _acme-challenge.vault.allegedly.works
    ```
 
+### Suspended Kustomizations
+
+TODO: Unsuspend these when ready to deploy:
+
+- **Matrix**: `matrix`, `matrix-namespace`, `matrix-secrets`, `authentik-blueprint-matrix-provider`, `authentik-blueprint-matrix-secret`
+- **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `authentik-blueprint-gitea-provider`, `authentik-blueprint-gitea-secret`
+- **BuildBuddy executor**: `buildbuddy-executor`
+- **Nix cache**: `nix-cache`
+- **Harbor**: `harbor`, `harbor-namespace`, `harbor-secrets`, `harbor-proxy-cache`, `authentik-blueprint-harbor-provider`, `authentik-blueprint-harbor-secret`
+- **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
+- **Headscale**: `headscale`
+- **Website**: `website`
+
 ### Known Issues to Watch
 
 - **BuildBuddy executor** `Failed` — pinned to Proxmox nodes, may need resource adjustment
-- **Kyverno webhook timeouts** — may be cross-node networking transient
+- **Kyverno webhook timeouts** — confirmed reproducing across bootstraps. Root cause:
+  cross-node TLS handshakes fail during early bootstrap (KubeSpan+VXLAN not yet stable)
+  combined with Flux default `install.remediation.retries: 0` making failures permanent.
+  **Fix needed**: add `install.remediation.retries: 3` to all HelmReleases.
+  See <../investigations/2026-02-11-kyverno-webhook-timeout-bootstrap/findings.md>
 
 ---
 

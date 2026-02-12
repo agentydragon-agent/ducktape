@@ -4,6 +4,7 @@ metadata:
   name: kagent
   namespace: flux-system
 spec:
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/kagent
   prune: true
