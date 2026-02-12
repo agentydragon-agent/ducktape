@@ -15,6 +15,9 @@ metadata:
   namespace: matrix
 spec:
   interval: 15m
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: matrix-synapse

@@ -16,6 +16,9 @@ metadata:
 spec:
   interval: 15m
   timeout: 15m # Extended timeout for Gitea deployment (PostgreSQL + PVC binding + init containers)
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: gitea

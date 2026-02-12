@@ -30,6 +30,9 @@ metadata:
 spec:
   interval: 15m
   timeout: 15m
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: buildbuddy-executor

@@ -6,6 +6,9 @@ metadata:
   namespace: powerdns-operator
 spec:
   interval: 30m
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: powerdns-operator

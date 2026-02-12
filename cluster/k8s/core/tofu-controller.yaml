@@ -7,6 +7,8 @@ spec:
   interval: 15m
   install:
     crds: Create
+    remediation:
+      retries: 3
   upgrade:
     crds: CreateReplace
   chart:

@@ -14,6 +14,10 @@
    lifecycle prevents stale KubeSpan discovery entries from previous incarnations.
 3. **HostnameConfig conflict fixed** — removed explicit HostnameConfig from VPS
    config patches (hcloud platform auto-sets hostname from server name).
+4. **Install retries on all HelmReleases** — `install.remediation.retries: 3` on
+   all 27 HelmReleases to prevent transient failures from permanently blocking bootstrap.
+5. **Kyverno HA** — admission controller runs 3 replicas spread across control plane
+   nodes with topology constraints, eliminating cross-node webhook calls during bootstrap.
 
 ### What to Verify After Next Bootstrap
 
@@ -45,9 +49,10 @@ TODO: Unsuspend these when ready to deploy:
 ### Known Issues to Watch
 
 - **BuildBuddy executor** `Failed` — pinned to Proxmox nodes, may need resource adjustment
-- **Kyverno webhook timeouts** — confirmed reproducing across bootstraps. Root cause:
-  cross-node TLS handshakes fail during early bootstrap (KubeSpan+VXLAN not yet stable)
-  combined with Flux default `install.remediation.retries: 0` making failures permanent.
+- **Kyverno webhook timeouts** — fix applied, pending verification. Two mitigations:
+  (1) `install.remediation.retries: 3` on all 27 HelmReleases so transient failures retry,
+  (2) Kyverno admission controller HA (3 replicas on control plane nodes) so every
+  API server has a local webhook pod without cross-node hops.
   **Fix needed**: add `install.remediation.retries: 3` to all HelmReleases.
   See <../investigations/2026-02-11-kyverno-webhook-timeout-bootstrap/findings.md>
 

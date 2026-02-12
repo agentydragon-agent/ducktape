@@ -15,6 +15,9 @@ metadata:
   namespace: local-path-storage
 spec:
   interval: 30m
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: local-path-provisioner

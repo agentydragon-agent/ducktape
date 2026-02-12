@@ -6,6 +6,9 @@ metadata:
 spec:
   interval: 30m
   timeout: 10m # Prometheus stack upgrades can be slow
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: kube-prometheus-stack

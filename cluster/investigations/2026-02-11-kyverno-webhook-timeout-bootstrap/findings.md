@@ -1,7 +1,7 @@
 # Investigation: Kyverno Webhook Timeout During Bootstrap
 
 **Date**: 2026-02-11
-**Status**: Root cause identified, fix NOT yet applied (still reproducing as of 2026-02-11)
+**Status**: Root cause identified, fix applied (pending verification on next bootstrap)
 
 ## Summary
 
@@ -113,15 +113,26 @@ done
 
 ### Declarative: Add install retries to all HelmReleases
 
-**Status**: NOT YET APPLIED. Issue confirmed reproducing on subsequent bootstraps.
+**Status**: ✅ APPLIED. All 27 HelmReleases now have `install.remediation.retries: 3`.
 
 Set `install.remediation.retries: 3` on every HelmRelease so transient webhook timeouts
 during bootstrap don't cause permanent failure. With 3 retries and the default
 `retryInterval: 10s`, Helm will retry for ~40 seconds before giving up — enough time
 for cross-node networking to stabilize.
 
-Only `k8s/cert-manager-config/base/powerdns-webhook.yaml` currently has this setting.
-All other HelmReleases use the Flux default of `retries: 0`.
+### Declarative: Kyverno HA on control plane nodes
+
+**Status**: ✅ APPLIED. Admission controller now runs 3 replicas on control plane nodes.
+
+Kyverno admission controller configured with:
+
+- `replicas: 3` (one per control plane node)
+- `nodeSelector: node-role.kubernetes.io/control-plane`
+- `tolerations` for control plane NoSchedule taint
+- `topologySpreadConstraints` for hard one-per-node spreading
+
+This ensures every API server has a local Kyverno pod to call, eliminating
+the cross-node hop that caused TLS handshake failures during bootstrap.
 
 ## Lessons
 

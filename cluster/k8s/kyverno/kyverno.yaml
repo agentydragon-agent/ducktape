@@ -23,6 +23,9 @@ metadata:
 spec:
   targetNamespace: kyverno
   interval: 15m
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: kyverno
@@ -33,8 +36,25 @@ spec:
         namespace: flux-system
   values:
     # Admission controller configuration
+    # HA: one replica per control-plane node (3 nodes = 3 replicas).
+    # Ensures the webhook is reachable from every API server without
+    # cross-node hops that can fail during early bootstrap.
     admissionController:
-      replicas: 1
+      replicas: 3
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: admission-controller
+              app.kubernetes.io/instance: kyverno
       resources:
         limits:
           cpu: 500m

@@ -5,6 +5,9 @@ metadata:
   namespace: loki
 spec:
   interval: 30m
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: loki-stack

@@ -18,6 +18,9 @@ metadata:
   namespace: kube-system
 spec:
   interval: 30m
+  install:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: reloader

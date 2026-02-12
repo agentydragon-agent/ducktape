@@ -26,6 +26,8 @@ spec:
   install:
     timeout: 10m
     crds: CreateReplace
+    remediation:
+      retries: 3
   upgrade:
     timeout: 10m
     crds: CreateReplace
