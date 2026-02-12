@@ -18,6 +18,15 @@
    all 27 HelmReleases to prevent transient failures from permanently blocking bootstrap.
 5. **Kyverno HA** — admission controller runs 3 replicas spread across control plane
    nodes with topology constraints, eliminating cross-node webhook calls during bootstrap.
+6. **ClusterIP readiness gate** — bootstrap script verifies ClusterIP routing from
+   every node before deploying Flux (closes the Cilium health-vs-BPF-maps gap).
+7. **Vault `disable_mlock: true`** — required since Vault 1.20 (no longer defaults).
+   Safe on Talos (no swap).
+8. **`authentik-secrets` missing dependency on `sso-secrets`** — `authentik-bootstrap`
+   ExternalSecret reads `kv/sso/client-secrets` from Vault, but that path is created
+   by `sso-secrets` Terraform. Without the dependency, both kustomizations start in
+   parallel after `external-secrets-config` is Ready, and the ExternalSecret fails
+   with "Secret does not exist" because the Terraform hasn't populated Vault yet.
 
 ### What to Verify After Next Bootstrap
 
@@ -49,12 +58,27 @@ TODO: Unsuspend these when ready to deploy:
 ### Known Issues to Watch
 
 - **BuildBuddy executor** `Failed` — pinned to Proxmox nodes, may need resource adjustment
-- **Kyverno webhook timeouts** — fix applied, pending verification. Two mitigations:
-  (1) `install.remediation.retries: 3` on all 27 HelmReleases so transient failures retry,
-  (2) Kyverno admission controller HA (3 replicas on control plane nodes) so every
-  API server has a local webhook pod without cross-node hops.
-  **Fix needed**: add `install.remediation.retries: 3` to all HelmReleases.
+- **Kyverno webhook timeouts** — verified fixed. Three mitigations working together:
+  (1) `install.remediation.retries: 3` on all HelmReleases,
+  (2) Kyverno HA (3 replicas on control plane nodes),
+  (3) ClusterIP readiness gate in bootstrap script.
   See <../investigations/2026-02-11-kyverno-webhook-timeout-bootstrap/findings.md>
+
+### TODO: Rename Vague Kustomizations
+
+Several kustomization names are confusing or overly generic:
+
+- **`core`** → contains sealed-secrets, tofu-controller, coredns-custom, reloader.
+  These are unrelated controllers bundled together. Consider splitting into individual
+  kustomizations or at minimum renaming to `cluster-controllers`.
+- **`monitoring-stack`** → just kube-prometheus-stack HelmRelease + a dashboard.
+  Rename to `kube-prometheus` or `prometheus-grafana`.
+- **`authentik-secrets`** vs **`sso-secrets`** — confusing naming. `sso-secrets` is
+  a tofu-controller Terraform that generates the Authentik API token and stores it in
+  Vault. `authentik-secrets` deploys ExternalSecrets that read from Vault into k8s
+  Secrets for Authentik pods. The names don't convey the generate-vs-consume
+  distinction. Consider renaming to e.g. `sso-secret-generation` (Terraform) and
+  `authentik-external-secrets` (ESO consumers), or collapsing if the layering permits.
 
 ---
 
