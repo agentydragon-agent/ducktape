@@ -10,6 +10,7 @@ Multi-layer deployment with persistent auth separation:
 """
 
 import argparse
+import contextlib
 import json
 import logging
 import os
@@ -156,6 +157,7 @@ def deploy_infrastructure() -> None:
         log.info("  %s: %s", node.metadata.name, "Ready" if ready else "NotReady")
 
     wait_for_convergence(v1)
+    verify_clusterip_routing(v1)
     log.info("Infrastructure layer ready")
 
 
@@ -255,6 +257,156 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
                         )
                         return False
     return True
+
+
+def verify_clusterip_routing(v1: client.CoreV1Api, timeout: int = 300, interval: int = 10) -> None:
+    """Verify ClusterIP routing works from a pod on every node.
+
+    Cilium agent health probes pass before its BPF service maps are fully
+    populated (typically a 3-10s gap). During this window, ClusterIP routing
+    silently fails — webhook calls, DNS lookups, and all service-to-service
+    traffic using ClusterIP will time out.
+
+    This caused Kyverno webhook timeouts during bootstrap that permanently
+    blocked 49 kustomizations (see investigations/2026-02-11-kyverno-webhook-
+    timeout-bootstrap/findings.md).
+
+    We test by creating a busybox pod on each node and running nslookup against
+    the kubernetes.default.svc name. This exercises:
+      1. ClusterIP routing to kube-dns (same BPF maps as all other ClusterIPs)
+      2. CoreDNS serving DNS queries
+      3. The kubernetes service being registered in DNS
+    All three are prerequisites for services to function after Flux deploys.
+    """
+    nodes = v1.list_node().items
+    node_names = [n.metadata.name for n in nodes]
+
+    log.info("Verifying ClusterIP routing from %d nodes...", len(node_names))
+
+    namespace = "default"
+    pod_map: dict[str, str] = {}  # node_name -> pod_name
+
+    for node_name in node_names:
+        pod_name = f"clusterip-test-{node_name}"
+        pod_map[node_name] = pod_name
+        pod = client.V1Pod(
+            metadata=client.V1ObjectMeta(name=pod_name, labels={"app": "bootstrap-clusterip-test"}),
+            spec=client.V1PodSpec(
+                node_selector={"kubernetes.io/hostname": node_name},
+                # Tolerate all taints so we schedule on control-plane nodes too.
+                tolerations=[client.V1Toleration(operator="Exists")],
+                containers=[client.V1Container(name="probe", image="busybox:1.37", command=["sleep", "300"])],
+                restart_policy="Never",
+                termination_grace_period_seconds=0,
+                # Auto-kill after 5 min even if cleanup doesn't run (e.g. SIGKILL).
+                active_deadline_seconds=300,
+            ),
+        )
+        _create_pod_replacing_existing(v1, namespace, pod)
+
+    try:
+        _wait_for_pods_running(v1, namespace, list(pod_map.values()))
+
+        deadline = time.monotonic() + timeout
+        while True:
+            failed = [
+                node_name
+                for node_name, pod_name in pod_map.items()
+                if not _probe_clusterip_from_pod(v1, namespace, pod_name)
+            ]
+
+            if not failed:
+                break
+
+            if time.monotonic() > deadline:
+                raise SystemExit(f"ClusterIP routing failed from {', '.join(failed)} after {timeout}s")
+
+            log.info(
+                "  ClusterIP unreachable from %d/%d nodes (%s) — retrying in %ds",
+                len(failed),
+                len(node_names),
+                ", ".join(failed),
+                interval,
+            )
+            time.sleep(interval)
+    finally:
+        for pod_name in pod_map.values():
+            with contextlib.suppress(ApiException):
+                v1.delete_namespaced_pod(pod_name, namespace, grace_period_seconds=0)
+
+    log.info("ClusterIP routing verified from all %d nodes", len(node_names))
+
+
+def _create_pod_replacing_existing(v1: client.CoreV1Api, namespace: str, pod: client.V1Pod) -> None:
+    """Create a pod, deleting any leftover from a previous bootstrap attempt."""
+    name = pod.metadata.name
+    try:
+        v1.create_namespaced_pod(namespace, pod)
+    except ApiException as e:
+        if e.status != 409:
+            raise
+        v1.delete_namespaced_pod(name, namespace, grace_period_seconds=0)
+        for _ in range(60):
+            try:
+                v1.read_namespaced_pod(name, namespace)
+                time.sleep(1)
+            except ApiException as read_err:
+                if read_err.status == 404:
+                    break
+                raise
+        v1.create_namespaced_pod(namespace, pod)
+
+
+def _wait_for_pods_running(v1: client.CoreV1Api, namespace: str, pod_names: list[str], timeout: int = 120) -> None:
+    """Wait for all named pods to reach Running phase."""
+    deadline = time.monotonic() + timeout
+    while True:
+        not_running = []
+        for name in pod_names:
+            try:
+                pod = v1.read_namespaced_pod(name, namespace)
+                if pod.status.phase != "Running":
+                    not_running.append(f"{name}={pod.status.phase}")
+            except ApiException:
+                not_running.append(f"{name}=Unknown")
+
+        if not not_running:
+            return
+
+        if time.monotonic() > deadline:
+            raise SystemExit(f"ClusterIP test pods not Running after {timeout}s: {', '.join(not_running)}")
+
+        time.sleep(5)
+
+
+def _probe_clusterip_from_pod(v1: client.CoreV1Api, namespace: str, pod_name: str) -> bool:
+    """DNS-resolve kubernetes.default.svc from inside a pod.
+
+    Uses nslookup which exercises the full ClusterIP path: pod sends DNS query
+    to kube-dns ClusterIP (10.96.0.10) → Cilium BPF routes it → CoreDNS
+    responds. If BPF service maps aren't populated yet, the query times out.
+    """
+    try:
+        resp = stream(
+            v1.connect_get_namespaced_pod_exec,
+            pod_name,
+            namespace,
+            command=[
+                "sh",
+                "-c",
+                "nslookup kubernetes.default.svc > /dev/null 2>&1 && echo PROBE_OK || echo PROBE_FAIL",
+            ],
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False,
+            _preload_content=False,
+        )
+        resp.run_forever(timeout=15)
+        stdout = resp.read_channel(STDOUT_CHANNEL)
+        return "PROBE_OK" in stdout
+    except ApiException:
+        return False
 
 
 class KustomizationPhase(StrEnum):

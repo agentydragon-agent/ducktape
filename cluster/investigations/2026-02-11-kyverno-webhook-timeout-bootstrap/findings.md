@@ -134,6 +134,53 @@ Kyverno admission controller configured with:
 This ensures every API server has a local Kyverno pod to call, eliminating
 the cross-node hop that caused TLS handshake failures during bootstrap.
 
+## Additional Mitigation: ClusterIP Readiness Gate in Bootstrap Script
+
+### Problem
+
+Cilium agent health probes pass before BPF service maps are fully populated.
+During this 3-10s gap, ClusterIP routing silently fails. The existing
+`_check_cilium_health()` in `bootstrap.py` verifies the Cilium health mesh
+(ICMP/HTTP between agents) but does NOT verify that ClusterIP service routing
+works from the pod network on every node.
+
+### Options Considered
+
+1. **Bootstrap script: probe ClusterIP before deploying Flux** — Create a test
+   pod on each node, probe the kubernetes service ClusterIP. Simple, tests the
+   real datapath, no cluster-side changes.
+
+2. **Bootstrap script: `cilium bpf lb list` check** — Exec into cilium agents
+   and verify BPF load-balancer entries exist. Checks the mechanism directly
+   but requires checking every node and parsing CLI output.
+
+3. **Bootstrap script: `cilium connectivity test --test cluster-ip`** — Official
+   connectivity suite. Thorough but slow (~60-90s, deploys test workloads).
+
+4. **Fixed delay after Cilium install** — Trivially simple but unreliable
+   (wastes time when fast, insufficient when slow).
+
+5. **Flux-side: Cilium readiness Job as kustomization dependency** — Declarative
+   but the Job itself needs ClusterIP to pull images (chicken-and-egg for private
+   registries). Adds permanent cluster resources for a bootstrap-only concern.
+
+6. **Init containers on critical early HelmReleases** — Self-healing on every
+   restart, but invasive to Helm values and only protects individual components.
+
+### Decision
+
+**Option 1: per-node pod probe in bootstrap script.** Creates a busybox pod on
+each node, runs `nslookup kubernetes.default.svc` (which exercises ClusterIP
+routing to kube-dns and DNS resolution), retries until all nodes pass. Runs
+after Cilium health check, before Flux deployment.
+
+Why `nslookup` instead of raw TCP: it tests both ClusterIP routing (to the
+kube-dns ClusterIP) and DNS resolution (CoreDNS serving) in one command. Both
+are prerequisites for any service-to-service communication. The same Cilium BPF
+maps serve all ClusterIPs, so if kube-dns works, all services work.
+
+**Status**: ✅ APPLIED in `bootstrap.py` as `verify_clusterip_routing()`.
+
 ## Lessons
 
 1. **Kyverno with failurePolicy: Fail is a bootstrap hazard** — it registers webhooks
@@ -142,3 +189,6 @@ the cross-node hop that caused TLS handshake failures during bootstrap.
    failure becomes permanent
 3. **Cross-node networking through KubeSpan+VXLAN needs ~3-5 minutes to fully stabilize**
    after bootstrap; services deployed in this window are at risk
+4. **Cilium health != ClusterIP readiness** — Cilium's health mesh (agent-to-agent
+   ICMP/HTTP) can report healthy before BPF service maps are populated. Bootstrap
+   scripts must verify actual ClusterIP routing, not just agent health.
