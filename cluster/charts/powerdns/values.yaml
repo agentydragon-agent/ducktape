@@ -134,12 +134,16 @@ podSecurityContext:
     type: RuntimeDefault
 
 # Network configuration
+# hostNetwork: true is required when using Cilium CNI — Cilium's BPF hostPort
+# implementation intercepts ALL traffic to 0.0.0.0:<port>, including loopback,
+# which breaks Talos's dns-resolve-cache at 127.0.0.53:53.
+# With hostNetwork, Linux socket priority handles coexistence:
+#   127.0.0.53:53 (Talos DNS) wins over 0.0.0.0:53 (PowerDNS) for loopback traffic.
 hostNetwork: false
 dnsPolicy: ClusterFirst
 
-# HostPort configuration (preferred over hostNetwork)
-# Cilium handles hostPort binding at eBPF level, allowing non-root pods
-# to bind privileged ports via Cilium's privileged socket operations
+# HostPort configuration — DO NOT use with Cilium CNI on nodes that have
+# Talos dns-resolve-cache (127.0.0.53:53). See hostNetwork comment above.
 hostPort:
   enabled: false
   dnsPort: 53

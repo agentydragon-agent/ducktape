@@ -25,14 +25,22 @@ spec:
       tag: "4.9"
       pullPolicy: IfNotPresent
 
-    # hostPort mode: Cilium handles port binding at eBPF level
-    # Allows non-root pods to bind privileged ports via Cilium's privileged operations
-    # Better security than hostNetwork (pod stays in its network namespace)
-    hostNetwork: false
-    dnsPolicy: ClusterFirst
+    # hostNetwork mode: pod runs in the host network namespace.
+    # Why not hostPort? Cilium implements hostPort via BPF rules on 0.0.0.0:<port>,
+    # which intercepts ALL port 53 traffic on the node — including containerd's
+    # queries to Talos DNS proxy at 127.0.0.53:53, breaking image pulls for any
+    # registry (ghcr.io, docker.io, etc.) since PowerDNS is authoritative-only.
+    #
+    # With hostNetwork, PowerDNS binds 0.0.0.0:53 directly in the host namespace.
+    # Linux socket priority ensures coexistence with Talos DNS proxy:
+    #   - 127.0.0.53:53 (specific bind) → Talos dns-resolve-cache (upstream resolvers)
+    #   - 0.0.0.0:53 (wildcard bind)    → PowerDNS (authoritative for allegedly.works)
+    # The kernel routes to the most-specific matching socket, so host-level DNS
+    # (used by containerd for image pulls) is unaffected.
+    hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
     hostPort:
-      enabled: true
-      dnsPort: 53
+      enabled: false
 
     # Only run on Hetzner VPS nodes (which have public IPs)
     nodeSelector:
@@ -48,9 +56,11 @@ spec:
         effect: "NoSchedule"
 
     # DaemonSet: runs one pod per matching node (no replicaCount needed)
-    # Reloader: auto-restart pods when secrets change
     podAnnotations:
       reloader.stakater.com/auto: "true"
+      # Skip Cilium transparent DNS proxy — PowerDNS is authoritative, not a client.
+      # Cilium's DNS proxy with 10s linger timeout breaks AXFR zone transfers.
+      io.cilium.proxy.denylist: "53/TCP,53/UDP"
 
     # Service configuration - ClusterIP for internal access
     # Fixed clusterIP allows CoreDNS to forward allegedly.works zone reliably
