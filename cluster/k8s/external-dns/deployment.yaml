@@ -33,6 +33,9 @@ spec:
             # Both Hetzner VPS IPs for DNS failover (ingress runs on both via hostNetwork)
             - --default-targets=5.78.43.147
             - --default-targets=5.78.106.249
+            # Required since external-dns v0.15+: without this, ingress ClusterIP
+            # overrides default-targets, creating internal A records in public DNS
+            - --force-default-targets
           env:
             - name: PDNS_API_KEY
               valueFrom:

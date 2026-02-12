@@ -442,35 +442,8 @@ running state.
 
 **Proxmox Host:** `ssh root@atlas` - No password required (SSH keys configured)
 
-**VPS (Public DNS):** `ssh root@agentydragon.com` - Runs PowerDNS secondary for public DNS
-
-### VPS PowerDNS Access
-
-The VPS runs PowerDNS in a Docker container as a secondary DNS server via AXFR from the cluster.
-
-**Check zone contents:**
-
-```bash
-ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works"
-```
-
-**Grep for specific records:**
-
-```bash
-ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works | grep loki"
-```
-
-**Check container status:**
-
-```bash
-ssh root@agentydragon.com "docker ps | grep pdns"
-```
-
-**View container logs:**
-
-```bash
-ssh root@agentydragon.com "docker logs powerdns --tail 50"
-```
+**Note:** The legacy VPS at `agentydragon.com` is separate infrastructure not involved in this cluster.
+It will eventually be replaced once this cluster handles all production services (see `docs/plan.md`).
 
 ## Talos CLI Access
 

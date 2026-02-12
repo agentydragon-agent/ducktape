@@ -6,14 +6,14 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - VMs:
   - Run Talos, configured and bootstrapped with Terraform.
   - Disks are pre-baked per-node from Image Factory with static IPs and Tailscale + QEMU guest agent
-- VPS forwards traffic to cluster through Tailscale mesh.
+- VPS nodes (Hetzner) serve public traffic directly via hostNetwork (ingress-nginx, PowerDNS).
 - CNI: Cilium with Talos-specific security configuration
 - Sealed-secrets: Automatic keypair persistence via terraform state for turnkey GitOps
 
 ## Prerequisites
 
 - **Proxmox credentials**: Create Proxmox terraform + CSI users (tokens managed in terraform state)
-- **SSH access**: `root@atlas` (Proxmox) and `root@agentydragon.com` (Headscale server) for credential generation
+- **SSH access**: `root@atlas` (Proxmox host) for credential generation
 - See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md#credential-setup) for detailed setup instructions
 
 ## direnv
@@ -208,7 +208,9 @@ See: <https://letsencrypt.org/docs/rate-limits/>
 
 - direnv configured in cluster directory
 - VM hosting: Proxmox host `atlas` with SSH access
+- VPS hosting: Hetzner Cloud account with API token (for VPS control-plane nodes)
 - GitHub for Flux
-- VPS: nginx proxy and PowerDNS for external connectivity, configured in `~/code/ducktape` repo:
-  - nginx: `ansible/nginx_sites/`
-  - PowerDNS: `ansible/host_vars/vps/powerdns.yml`
+
+**Note:** The legacy VPS at `agentydragon.com` (ansible-managed) is separate infrastructure not
+involved in this cluster. It will eventually be replaced once the cluster handles all production
+services (see `docs/plan.md` Phase 3: Production Cutover).

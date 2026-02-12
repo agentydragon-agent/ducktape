@@ -688,34 +688,32 @@ done
 
 ### DNS & Certificate Manager
 
-#### PowerDNS Zone Replication (AXFR)
+#### PowerDNS
 
-**Lessons Learned**: See <lessons_learned/2025-11-20-axfr-zone-transfer-failures.md>
+PowerDNS runs directly in the Kubernetes cluster on VPS nodes with `hostNetwork: true`,
+binding to public IPs. There is no separate secondary DNS server or AXFR replication.
 
-**Architecture**:
-
-- Primary: Cluster PowerDNS (10.2.3.3) - authoritative source
-- Secondary: VPS PowerDNS (ns1.agentydragon.com) - public-facing
-- Replication: AXFR over Tailscale VPN
-
-**Check zone replication status**:
+**Check PowerDNS status**:
 
 ```bash
-# Verify VPS has zone data
-ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works"
+# Check PowerDNS pods
+kubectl get pods -n dns-system -l app.kubernetes.io/name=powerdns
 
-# Manually trigger zone transfer
-ssh root@agentydragon.com "docker exec powerdns pdns_control retrieve allegedly.works"
+# Check PowerDNS logs
+kubectl logs -n dns-system deployment/powerdns --tail=50
 
-# Verify NS records are correct
-dig @ns1.agentydragon.com allegedly.works NS
+# Verify zone contents
+kubectl exec -n dns-system deployment/powerdns -- pdnsutil list-zone allegedly.works
+
+# Verify NS records resolve
+dig @ns1.allegedly.works allegedly.works NS
+dig @ns2.allegedly.works allegedly.works NS
 ```
 
-**Common issues**:
-
-- **VPS not fetching zone**: Check `secondary=yes` in VPS PowerDNS config
-- **Tailscale route not working**: Verify routes advertised and enabled in Headscale
-- **Old NS records cached**: Wait for TTL expiry (check with `dig allegedly.works NS`)
+**Historical note**: The old architecture used AXFR replication from cluster PowerDNS to a
+separate Docker-based PowerDNS on the legacy VPS at `agentydragon.com`. This was replaced
+by the current architecture where VPS nodes are Kubernetes nodes running PowerDNS directly.
+See <lessons_learned/2025-11-20-axfr-zone-transfer-failures.md> for historical context.
 
 #### cert-manager DNS-01 Validation
 
