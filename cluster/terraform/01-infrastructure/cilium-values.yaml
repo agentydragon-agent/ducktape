@@ -29,7 +29,7 @@ cgroup:
 # Required: Account for double encapsulation (VXLAN + KubeSpan WireGuard)
 # eth0 MTU (1500) - VXLAN overhead (50) - WireGuard overhead (80) = 1370
 # Without this, packets >1370 bytes fragment at the WireGuard interface.
-mtu: 1370
+MTU: 1370
 
 # Observability (optional, not networking-critical)
 hubble:

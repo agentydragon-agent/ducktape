@@ -1,7 +1,7 @@
 # Bootstrap Cross-Node Convergence and Kyverno Webhook Timeouts
 
 **Date**: 2026-02-11, continued 2026-02-10
-**Status**: VPS DNS fix committed, awaiting full destroy → bootstrap (Proxmox unreachable, need home network)
+**Status**: Bootstrap stalled at ~18/64 Ready. VXLAN packet drops from vps-cp-0 causing webhook timeouts. MTU mismatch suspected.
 
 ## Problem
 
@@ -396,6 +396,215 @@ plan ready if HostDNS still fails.
 pod packet >1370 bytes silently fragments at the KubeSpan WireGuard interface.
 This likely contributed to the intermittent TCP failures and slow convergence
 observed during bootstrap.
+
+### Bootstrap After Secrets Refactoring (2026-02-11 ~19:40-20:15 UTC)
+
+Context: Secrets migration completed (per-service Vault-backed modules replacing
+centralized `sso-secrets`). Cilium already stripped to Talos-recommended defaults +
+`mtu: 1370` + hubble from earlier in the day. Full destroy → bootstrap.
+
+**Two prior bootstrap attempts failed before reaching Flux:**
+
+1. `tofu validate` failed in 01-infrastructure — missing required providers (needed `tofu init`)
+2. `tofu apply` failed — inconsistent dependency lock file (needed `tofu init -upgrade`)
+
+**Third attempt** reached Flux and deployed kustomizations. Stalled at **~18-20/64 Ready**.
+
+**New Terraform modules succeeded**: `authentik-token` Ready at 20:10:01,
+`powerdns-secrets` Ready at 20:10:11 (the modules we just created in the refactoring).
+
+#### Symptom: Webhook Timeouts Block Convergence
+
+Three kustomizations stuck:
+
+| Kustomization              | Error                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `vault-token`              | `failed calling webhook "validate.external-secrets.io": context deadline exceeded` |
+| `monitoring-stack-secrets` | Same ESO webhook timeout                                                           |
+| `kyverno-policies`         | `failed calling webhook "validate.kyverno.svc-fail": context deadline exceeded`    |
+
+These are **admission webhook** timeouts during kustomize-controller dry-run.
+kustomize-controller submits resources to the API server with dry-run flag;
+API server calls admission webhooks; webhooks don't respond in time.
+
+- ESO webhook: `failurePolicy: Fail`, `timeoutSeconds: 5`
+- Kyverno policy webhook: `failurePolicy: Fail`, `timeoutSeconds: 10`
+
+#### Key Finding: All Failures From vps-cp-0 Only
+
+Checked API server audit logs on ALL 3 control plane nodes:
+
+| Node           | IP           | Webhook timeout errors                       |
+| -------------- | ------------ | -------------------------------------------- |
+| talos-vps-cp-0 | 5.78.106.249 | **Many** (dozens)                            |
+| talos-vps-cp-1 | 5.78.43.147  | **Zero**                                     |
+| talos-pve-cp-0 | 10.2.1.1     | Early kyverno only (failOpen during startup) |
+
+kustomize-controller runs on talos-pve-worker-0 and uses KubePrism
+(`localhost:7445`) to distribute requests across API servers. When KubePrism
+routes to vps-cp-0's API server, webhook calls from that API server fail.
+
+#### Cilium BPF Service Map: Correctly Populated
+
+Checked `cilium-dbg service list` on ALL 4 nodes. All have identical 95
+service entries. Both ESO webhook and Kyverno ClusterIPs present with correct
+backend pod IPs. **Not a service programming issue.**
+
+#### Resources: Not Constrained
+
+vps-cp-0: 8% CPU, 34% memory. No pressure.
+
+#### Direct Connectivity Measurements from vps-cp-0
+
+Deployed test pod (`curlimages/curl`) with `nodeSelector` pinned to vps-cp-0.
+Measured ClusterIP → webhook pod connectivity:
+
+**ESO webhook (10.107.232.172:443) — pod on talos-vps-cp-1:**
+
+```text
+attempt  1: 0.010s
+attempt  2: 0.647s
+attempt  3: 3.161s
+attempt  4: 0.227s
+attempt  5: 1.475s
+attempt  6: 1.492s
+attempt  7: 0.228s
+attempt  8: 5.002s TIMEOUT (connect=0.000)  ← TCP SYN lost
+attempt  9: 0.011s
+attempt 10: 0.224s
+```
+
+**Kyverno webhook (10.98.75.10:443) — pods on vps-cp-0 + pve-cp-0 + vps-cp-1:**
+
+```text
+attempt  1: 0.009s  (local pod)
+attempt  2: 5.002s TIMEOUT (connect=0.000)  ← TCP SYN lost
+attempt  3: 5.002s TIMEOUT (connect=0.000)  ← TCP SYN lost
+attempt  4: 0.410s  (cross-node)
+attempt  5: 5.002s TIMEOUT (connect=0.000)  ← TCP SYN lost
+attempt  6: 0.008s  (local pod)
+attempt  7: 0.106s  (cross-node)
+attempt  8: 0.007s  (local pod)
+attempt  9: 0.232s  (cross-node)
+attempt 10: 0.009s  (local pod)
+```
+
+**Critical observation**: `connect=0.000` on all failures means the TCP SYN
+packet never received a SYN-ACK. The connection attempt was not slow — it was
+completely dropped. VXLAN packets from vps-cp-0 are intermittently lost.
+
+Fast responses (~0.008s) = local pod on same node.
+Moderate responses (0.1-0.6s) = cross-node via VXLAN/KubeSpan.
+Timeouts (5.002s) = cross-node where VXLAN packet was dropped entirely.
+
+**Failure rate**: ~10-30% of cross-node connections from vps-cp-0 timeout.
+
+#### Webhook Pod Placement
+
+| Webhook                | Pod node                     | Pod IP                                 |
+| ---------------------- | ---------------------------- | -------------------------------------- |
+| ESO webhook            | talos-vps-cp-1               | 10.244.2.121                           |
+| Kyverno admission (×3) | vps-cp-0, pve-cp-0, vps-cp-1 | 10.244.0.74, 10.244.1.242, 10.244.2.52 |
+| kustomize-controller   | talos-pve-worker-0           | 10.244.3.23                            |
+
+#### MTU Mismatch Suspected
+
+Interface MTUs on vps-cp-0:
+
+| Interface    | MTU       | Expected |
+| ------------ | --------- | -------- |
+| eth0         | 1500      | 1500     |
+| cilium_vxlan | 1452      | **1370** |
+| kubespan     | 1420      | 1420     |
+| pod veths    | 1480-1500 | 1370     |
+| lo           | 65536     | —        |
+
+**Problem**: `cilium_vxlan` MTU is 1452, but `kubespan` MTU is 1420. Packets
+encapsulated by VXLAN (up to 1452+50=1502 outer) exceed KubeSpan's 1420 MTU.
+The kernel must fragment at the WireGuard interface, and fragments can be
+silently dropped by middleboxes or reassembly failures.
+
+Despite setting `mtu: 1370` in Cilium Helm values, the `cilium_vxlan` interface
+shows 1452. This suggests the MTU setting may not have been applied correctly,
+or the interface MTU calculation differs from expected (`1370 + 50 VXLAN overhead
+
+- 32 VXLAN header = 1452`?). Needs further investigation.
+
+Conntrack: 6524/262144 — healthy, not a conntrack exhaustion issue.
+
+#### Leading Hypothesis
+
+VXLAN packets from vps-cp-0 that exceed the KubeSpan WireGuard interface MTU
+(1420) are being fragmented. IP fragments traversing the internet between
+Hetzner VPS and home Proxmox are intermittently dropped (common behavior for
+UDP fragments traversing NAT/middleboxes). This causes ~10-30% of cross-node
+TCP connections from vps-cp-0 to fail completely at the SYN level.
+
+The fact that vps-cp-0 is the ONLY affected API server (vps-cp-1 has zero
+webhook timeouts) is unexplained by this theory alone — both VPS nodes should
+have identical MTU configuration. Possible explanations:
+
+1. Different VXLAN tunnel paths (vps-cp-0 → Proxmox vs vps-cp-1 → Proxmox may
+   traverse different internet paths with different fragment handling)
+2. Asymmetric load — vps-cp-0 may have been handling more cross-node webhook
+   calls by chance during the observation window
+3. Different pod placement causing different cross-node patterns
+
+#### Root Cause Found: `mtu` vs `MTU` (case sensitivity)
+
+Cilium Helm chart 1.16.5 defines the MTU key as **`MTU`** (uppercase). Our
+`cilium-values.yaml` had **`mtu`** (lowercase). Helm values are case-sensitive,
+so the setting was silently ignored. Verified:
+
+- `helm show values cilium/cilium --version 1.16.5` shows `MTU: 0`
+- `helm get values cilium -n kube-system` shows `mtu: 1370` (user-supplied)
+- `cilium-config` ConfigMap has **no** `mtu` key
+- All pod veths, `cilium_vxlan`, `cilium_host` have MTU **1500** (auto-detected)
+
+**IP fragmentation statistics confirm the problem:**
+
+| Counter        | vps-cp-0 | vps-cp-1 |
+| -------------- | -------- | -------- |
+| FragOKs        | 16,458   | 8,170    |
+| FragFails      | 23       | 45       |
+| FragCreates    | 32,566   | 16,222   |
+| ReasmReqds     | 69,556   | 50,717   |
+| ReasmOKs       | 34,500   | 25,149   |
+| **ReasmFails** | **556**  | **419**  |
+
+Both nodes are heavily fragmenting (16K+ events on vps-cp-0). Hundreds of
+reassembly failures on both — fragments lost in transit between VPS and Proxmox.
+
+**Why vps-cp-0 appeared worse than vps-cp-1**: Both nodes fragment equally.
+The asymmetry in webhook timeouts is likely due to which API server the
+kustomize-controller happened to reach via KubePrism during the observation
+window — not a per-node networking difference.
+
+**Packet size calculation:**
+
+```text
+Pod MTU (current):     1500  ← WRONG, should be 1370
++ VXLAN overhead:      +  50  (outer IPv4: 20 + UDP: 8 + VXLAN: 8 + inner Eth: 14)
+= Outer IP packet:     1550
+→ kubespan MTU:        1420  (1500 - 80 WireGuard/IPv6 overhead)
+→ 1550 > 1420:         MUST FRAGMENT every large cross-node packet
++ WireGuard overhead:  +  80  (outer IPv6: 40 + UDP: 8 + WG header: 32)
+= Wire packet:         1500  per fragment (fits eth0)
+
+With fix (MTU 1370):
+Pod sends:             1370
++ VXLAN:               +  50  = 1420  (fits kubespan exactly)
++ WireGuard:           +  80  = 1500  (fits eth0 exactly)
+→ Zero fragmentation
+```
+
+**Fix**: Changed `mtu: 1370` to `MTU: 1370` in `cilium-values.yaml`.
+
+Sources:
+
+- [Cilium 1.16 Helm Reference](https://docs.cilium.io/en/v1.16/helm-reference/) — `MTU` key definition
+- [VXLAN overhead breakdown](https://packetpushers.net/blog/vxlan-udp-ip-ethernet-bandwidth-overheads/) — 50 bytes
+- [WireGuard header sizes](https://lists.zx2c4.com/pipermail/wireguard/2017-December/002201.html) — 60 IPv4 / 80 IPv6
 
 ### Source Code References
 

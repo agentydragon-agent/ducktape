@@ -172,7 +172,8 @@ This causes:
 - Potential failures with middleboxes that drop fragments
 - Intermittent TCP issues under load (reassembly buffer exhaustion)
 
-**Fix**: Set `mtu: 1370` in Cilium Helm values.
+**Fix**: Set `MTU: 1370` in Cilium Helm values. Note: the Helm key is **uppercase** `MTU`,
+not `mtu` — Helm values are case-sensitive and `mtu` is silently ignored.
 
 ```text
 Pod MTU = 1370
@@ -267,7 +268,8 @@ cgroup:
 # Required: Account for double encapsulation (VXLAN + KubeSpan WireGuard)
 # eth0 MTU (1500) - VXLAN overhead (50) - WireGuard overhead (80) = 1370
 # Without this, packets >1370 bytes fragment at the WireGuard interface.
-mtu: 1370
+# NOTE: Key must be UPPERCASE 'MTU' — lowercase 'mtu' is silently ignored by Cilium chart.
+MTU: 1370
 
 # Observability (optional, not networking-critical)
 hubble:
@@ -419,7 +421,7 @@ interaction issues separately from the DNS question.
 | Remove `hostServices`                    | Low — redundant with kubeProxyReplacement             | kubeProxyReplacement already handles it                                  |
 | Remove `bpf.hostLegacyRouting`           | Medium — this was the HostDNS workaround              | Not needed without bpf.masquerade; fallback plan ready                   |
 | Remove `l2announcements`                 | Low — no LoadBalancer services currently depend on it | If needed later, re-add                                                  |
-| Set `mtu: 1370`                          | Low — strictly more correct than auto-detect          | Prevents fragmentation that was silently occurring                       |
+| Set `MTU: 1370`                          | Low — strictly more correct than auto-detect          | Prevents fragmentation that was silently occurring                       |
 | Revert `forwardKubeDNSToHost` to default | Medium — previously broken                            | Previously broken DUE TO non-default Cilium; diagnostic step 3 validates |
 | Remove explicit `nameservers`            | Medium — DHCP dependency                              | Hetzner DHCP is reliable; fallback plan ready                            |
 
