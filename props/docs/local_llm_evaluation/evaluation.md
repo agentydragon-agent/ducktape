@@ -9,8 +9,8 @@ See <benchmarks.md> for model performance data on this environment.
 
 - Claude Code web session with `claude_hooks` (provides podman, `/dev/shm`,
   insecure-registry entries, `DOCKER_HOST` env var)
-- Enough free RAM for the model (see table below) plus ~2 GiB for PostgreSQL,
-  registry, and backend containers
+- Enough free RAM for the model + KV cache (see memory estimates below) plus
+  ~2 GiB for PostgreSQL, registry, and backend containers
 
 ## Tested Models
 
@@ -22,6 +22,31 @@ See <benchmarks.md> for model performance data on this environment.
 **Recommendation**: Qwen3-8B fits comfortably in the 21 GiB environment and
 leaves headroom for all services. gpt-oss-20b is faster at generation but
 tight on RAM.
+
+## Memory Estimates (Qwen3-8B)
+
+Model weights: ~4.7 GB. Process overhead (compute buffers, allocator): ~3.5 GB.
+The remaining budget goes to the KV cache, whose size depends on context length
+and cache quantization (`-ctk`/`-ctv` flags).
+
+Qwen3-8B KV cache: 36 layers, 8 GQA heads, 128 head dim.
+
+| `--ctx-size` | KV (f16) | KV (q8_0) | KV (q4_0) | Total (q4_0) |
+| -----------: | -------: | --------: | --------: | -----------: |
+|         4096 |  0.56 GB |   0.28 GB |   0.14 GB |       8.3 GB |
+|         8192 |  1.12 GB |   0.56 GB |   0.28 GB |       8.5 GB |
+|        16384 |  2.25 GB |   1.12 GB |   0.56 GB |       8.8 GB |
+|        32768 |  4.50 GB |   2.25 GB |   1.12 GB |       9.3 GB |
+
+With q4_0 KV cache (`-ctk q4_0 -ctv q4_0`), the full 32K native context fits
+comfortably under the 15 GB `process_api` kill threshold (~9.3 GB measured).
+The critic agent's system prompt and tool definitions consume ~2K tokens, so
+4096 total context is too small for useful code analysis. **Use 32768** (the
+model's full native context window).
+
+> **TODO**: Explore extending beyond 32K with RoPE scaling (`--rope-freq-scale`,
+> `--rope-freq-base`) or YaRN. Qwen3-8B may support longer contexts with
+> appropriate scaling, and the RAM budget allows it at q4_0.
 
 ## Step 1: Download llama-server
 
@@ -64,7 +89,8 @@ LD_LIBRARY_PATH="/tmp/benchmark/llama-b7993" \
   nohup /tmp/benchmark/llama-b7993/llama-server \
     --model "$MODEL_FILE" \
     --host 127.0.0.1 --port 11434 \
-    --ctx-size 4096 --parallel 1 \
+    --ctx-size 32768 --parallel 1 \
+    -ctk q4_0 -ctv q4_0 \
     --jinja \
     --no-warmup --cache-ram 0 \
     > /dev/shm/llama.log 2>&1 &
@@ -74,6 +100,12 @@ Wait for the health endpoint: `curl -s http://127.0.0.1:11434/health`
 
 **Key flags**:
 
+- `--ctx-size 32768` — Qwen3-8B's full native context window. The critic
+  agent's system prompt + tool definitions consume ~2K tokens; 4096 is too
+  small for useful code analysis. 32K fits in ~9.3 GB with q4_0 KV cache.
+- `-ctk q4_0 -ctv q4_0` — quantize the KV cache to 4-bit. Reduces KV cache
+  memory by 4x vs the default f16, enabling larger context windows within the
+  RAM budget.
 - `--jinja` — enables chat template processing; required for tool calling
   (Qwen3-8B). Harmless for models that don't use it.
 - `--no-warmup --cache-ram 0` — skip KV cache pre-allocation to save RAM.
@@ -179,22 +211,42 @@ TMPDIR=/dev/shm \
 - `PROPS_REGISTRY_UPSTREAM_URL` — forwards to upstream `registry:2` on port 5000
 - `TMPDIR=/dev/shm` — prevents image layer downloads from filling root `/tmp`
 
-The backend logs an admin token on startup.
+The backend logs an admin token on startup — a base64-encoded
+`username:password` string (e.g., `cG9zdGdyZXM6cHJvcHMt...`). This token is
+used for all authenticated API calls.
+
+**Auth format**: The backend accepts both `Bearer` and `Basic` schemes with
+the same payload — base64 of `username:password`:
+
+```bash
+# Both of these work:
+-H "Authorization: Bearer $ADMIN_TOKEN"
+-H "Authorization: Basic $ADMIN_TOKEN"
+```
+
+The `Bearer` scheme is used for API calls (curl, OpenAI SDK). The `Basic`
+scheme is used by OCI/Docker tooling (crane, docker push/pull).
 
 ## Step 9: Build and Push Critic Image
 
 Push through the backend's registry proxy (port 8000), not directly to the
 upstream registry (port 5000). The proxy records `agent_definitions` in the DB.
 
+The push uses HTTP Basic auth. Set up a Docker config for crane:
+
 ```bash
 export TMPDIR=/dev/shm
 ADMIN_TOKEN="<from backend startup logs>"
-bazel run //props/agents/critic:push -- \
-  --repository localhost:8000/critic --tag latest
-```
 
-The push requires HTTP Basic auth (username `admin`, password is the admin
-token).
+# Create Docker config for crane auth
+mkdir -p /tmp/crane-config
+echo "{\"auths\":{\"localhost:8000\":{\"auth\":\"$ADMIN_TOKEN\"}}}" \
+  > /tmp/crane-config/config.json
+
+DOCKER_CONFIG=/tmp/crane-config \
+  bazel run //props/agents/critic:push -- \
+    --repository localhost:8000/critic --tag latest --insecure
+```
 
 Pre-pull the image in podman to avoid timeout issues:
 
