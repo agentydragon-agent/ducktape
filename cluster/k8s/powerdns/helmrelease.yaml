@@ -81,22 +81,24 @@ spec:
         type: ClusterIP
         clusterIP: "10.96.53.53"
 
-    # Security context override for hostNetwork port 53 binding.
-    # The chart default has allowPrivilegeEscalation: false, which sets no_new_privs
-    # on the process. With no_new_privs, containerd does NOT set ambient capabilities.
-    # The entrypoint shell gets NET_BIND_SERVICE in its effective set (set by runtime),
-    # but when it exec's pdns_server, capability inheritance drops it:
-    #   P'(effective) = {} ← pdns_server can't bind port 53
-    # Setting allowPrivilegeEscalation: true allows ambient capabilities to carry
-    # through exec, so pdns_server inherits NET_BIND_SERVICE.
+    # Security context: must run as root for hostNetwork port 53 binding.
+    # Verified via /proc/PID/status: containerd/runc does NOT populate the
+    # effective capability set for non-root processes, even with
+    # allowPrivilegeEscalation:true and NET_BIND_SERVICE in the bounding set.
+    # Actual process state: CapEff=0, CapBnd=0x400 — bind() returns EACCES.
+    # For root, the kernel automatically sets effective caps from bounding set
+    # after exec, so NET_BIND_SERVICE works.
     securityContext:
-      runAsNonRoot: true
-      runAsUser: 953
-      runAsGroup: 953
-      allowPrivilegeEscalation: true
+      runAsNonRoot: false
+      runAsUser: 0
+      runAsGroup: 0
+      allowPrivilegeEscalation: false
       capabilities:
         add: ["NET_BIND_SERVICE"]
         drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+    podSecurityContext:
       seccompProfile:
         type: RuntimeDefault
 
