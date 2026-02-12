@@ -103,7 +103,7 @@ resource "proxmox_virtual_environment_vm" "talos" {
 
   memory {
     dedicated = 24 * 1024 # 24GB (consolidated from cp + worker)
-    floating  = 4096      # 4GB minimum
+    floating  = 12 * 1024 # 12GB minimum
   }
 
   vga {
