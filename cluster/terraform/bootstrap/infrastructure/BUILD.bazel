@@ -1,0 +1,42 @@
+# Terraform validation for infrastructure layer
+# rules_tf handles hermetic linting (tflint) and validation (tofu validate)
+# using providers pre-fetched at Bazel fetch time via the mirror dict in MODULE.bazel.
+
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+exports_files(["cilium-values.yaml"])
+
+# Provider versions for this layer — must match required_providers in terraform.tf
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "hcloud": "hetznercloud/hcloud:~>1.45",
+        "helm": "hashicorp/helm:~>3.1.0",
+        "kubernetes": "hashicorp/kubernetes:~>2.38.0",
+        "local": "hashicorp/local:~>2.5.0",
+        "null": "hashicorp/null:~>3.2.0",
+        "proxmox": "bpg/proxmox:~>0.91.0",
+        "random": "hashicorp/random:~>3.7.0",
+        "talos": "siderolabs/talos:~>0.9.0",
+        "tls": "hashicorp/tls:~>4.1.0",
+    },
+    tf_version = "1.9.8",
+)
+
+# Terraform module linting (tflint) and validation (tofu validate), both hermetic.
+# Providers are served from the Bazel-cached mirror (see MODULE.bazel tf.download).
+tf_module(
+    name = "infrastructure",
+    providers = [
+        "hcloud",
+        "helm",
+        "kubernetes",
+        "local",
+        "null",
+        "proxmox",
+        "random",
+        "talos",
+        "tls",
+    ],
+    providers_versions = ":providers",
+)

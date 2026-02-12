@@ -218,7 +218,7 @@ rolling restarts of Deployments/StatefulSets/DaemonSets when values change.
 Installation:
 
 ```yaml
-# k8s/core/reloader.yaml
+# k8s/reloader/reloader.yaml
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -392,7 +392,7 @@ Files updated:
 
 #### Stage 1: Reloader Deployment (TODO)
 
-1. Add Reloader HelmRelease to `k8s/core/reloader.yaml`
+1. Add Reloader HelmRelease to `k8s/reloader/reloader.yaml`
 
 2. Add annotations to deployments:
 
@@ -412,7 +412,7 @@ Files updated:
 1. Create Terraform module for secret generation:
 
    ```text
-   terraform/gitops/secrets/
+   terraform/gitops/<service>/
    ├── main.tf           # Vault KV secrets
    ├── passwords.tf      # random_password resources
    └── outputs.tf        # Secret paths

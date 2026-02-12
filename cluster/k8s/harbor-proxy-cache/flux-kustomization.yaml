@@ -14,5 +14,5 @@ spec:
   timeout: 10m0s
   wait: true
   dependsOn:
-    - name: core # Wait for tofu-controller to install Terraform CRD
+    - name: tofu-controller
     - name: harbor # Wait for Harbor to be deployed

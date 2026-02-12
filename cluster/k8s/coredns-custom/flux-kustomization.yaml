@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: coredns-custom
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./cluster/k8s/coredns-custom
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 5m
+  wait: true
+  dependsOn:
+    - name: powerdns # CoreDNS forwards allegedly.works to PowerDNS ClusterIP

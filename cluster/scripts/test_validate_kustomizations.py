@@ -246,15 +246,10 @@ class TestRequiredDependencies:
                 depends_on=[DependsOn(name="vault")],
             ),
             "ingress-nginx": FluxKustomization(
-                name="ingress-nginx",
-                file_path=Path("./k8s/ingress-nginx"),
-                depends_on=[DependsOn(name="cert-manager"), DependsOn(name="metallb-config")],
+                name="ingress-nginx", file_path=Path("./k8s/ingress-nginx"), depends_on=[DependsOn(name="cert-manager")]
             ),
             "vault": FluxKustomization(name="vault", file_path=Path("./k8s/vault"), depends_on=[]),
             "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager"), depends_on=[]),
-            "metallb-config": FluxKustomization(
-                name="metallb-config", file_path=Path("./k8s/metallb-config"), depends_on=[]
-            ),
         }
         errors = check_required_dependencies(kustomizations)
         # Should have no errors about authentik
@@ -316,8 +311,7 @@ class TestCrdToOperatorMapping:
         assert CRD_TO_OPERATOR["ExternalSecret"] == "external-secrets-operator"
         assert CRD_TO_OPERATOR["Certificate"] == "cert-manager"
         assert CRD_TO_OPERATOR["ClusterPolicy"] == "kyverno"
-        assert CRD_TO_OPERATOR["IPAddressPool"] == "metallb"
-        assert CRD_TO_OPERATOR["Terraform"] == "core"
+        assert CRD_TO_OPERATOR["Terraform"] == "tofu-controller"
 
 
 class TestParseK8sResource:

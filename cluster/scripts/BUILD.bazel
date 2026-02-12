@@ -22,12 +22,6 @@ exports_files([
     "validate_helm_templates.py",
 ])
 
-py_library(
-    name = "runfiles_util",
-    srcs = ["runfiles_util.py"],
-    deps = ["@rules_python//python/runfiles"],
-)
-
 # Validate all kustomization directories can build, check CRD layering,
 # dependency graph, and flux build
 py_binary(
@@ -38,7 +32,7 @@ py_binary(
         "@multitool//tools/kustomize",
     ],
     deps = [
-        ":runfiles_util",
+        "//bazel_util:runfiles",
         "//bazel_util:workspace",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -53,7 +47,7 @@ py_binary(
         "@multitool//tools/kubeseal",
         "@multitool//tools/tofu",
     ],
-    deps = [":runfiles_util"],
+    deps = ["//bazel_util:runfiles"],
 )
 
 # Validate Helm templates can render
@@ -61,10 +55,10 @@ py_binary(
     name = "validate_helm_templates",
     srcs = ["validate_helm_templates.py"],
     data = [
-        "//cluster/terraform/01-infrastructure:cilium-values.yaml",
+        "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
         "@multitool//tools/helm",
     ],
-    deps = [":runfiles_util"],
+    deps = ["//bazel_util:runfiles"],
 )
 
 # Library for validate_kustomizations (for testing)
@@ -76,7 +70,7 @@ py_library(
         "@multitool//tools/kustomize",
     ],
     deps = [
-        ":runfiles_util",
+        "//bazel_util:runfiles",
         "//bazel_util:workspace",
         "@pypi//pydantic",
         "@pypi//pyyaml",

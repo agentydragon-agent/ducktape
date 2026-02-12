@@ -15,7 +15,7 @@ This is automated via tofu-controller reading VPS IPs from a ConfigMap and manag
 ## Architecture
 
 ```text
-terraform/01-infrastructure
+terraform/bootstrap/infrastructure
 ├── Creates VPS nodes (hcloud_server.vps)
 └── Creates ConfigMap "cluster-info" with VPS IPs
          │
@@ -101,14 +101,14 @@ aws route53 list-hosted-zones --query "HostedZones[?Name=='allegedly.works.'].Id
 
 ## Files
 
-| File                                             | Purpose                                   |
-| ------------------------------------------------ | ----------------------------------------- |
-| `terraform/01-infrastructure/cluster-info.tf`    | Creates ConfigMap with VPS IPs            |
-| `terraform/gitops/dns-records/main.tf`           | Terraform for Route 53 + PowerDNS records |
-| `terraform/gitops/dns-records/variables.tf`      | Variables for dns-records module          |
-| `k8s/dns-automation/aws-credentials-sealed.yaml` | SealedSecret with AWS credentials         |
-| `k8s/dns-automation/dns-records-tf.yaml`         | Terraform CRD for tofu-controller         |
-| `k8s/dns-automation/flux-kustomization.yaml`     | Flux Kustomization                        |
+| File                                                 | Purpose                                   |
+| ---------------------------------------------------- | ----------------------------------------- |
+| `terraform/bootstrap/infrastructure/cluster-info.tf` | Creates ConfigMap with VPS IPs            |
+| `terraform/gitops/dns-records/main.tf`               | Terraform for Route 53 + PowerDNS records |
+| `terraform/gitops/dns-records/variables.tf`          | Variables for dns-records module          |
+| `k8s/dns-automation/aws-credentials-sealed.yaml`     | SealedSecret with AWS credentials         |
+| `k8s/dns-automation/dns-records-tf.yaml`             | Terraform CRD for tofu-controller         |
+| `k8s/dns-automation/flux-kustomization.yaml`         | Flux Kustomization                        |
 
 ## Secrets
 
@@ -123,7 +123,7 @@ Stored as SealedSecret in `k8s/dns-automation/aws-credentials-sealed.yaml`:
 **To re-seal** (if credentials need rotation):
 
 ```bash
-cd terraform/00-persistent-auth
+cd terraform/bootstrap/persistent-auth
 kubectl create secret generic aws-route53-credentials \
   --namespace=flux-system \
   --from-literal=AWS_ACCESS_KEY_ID=<new-key-id> \
@@ -141,7 +141,7 @@ Consumed from existing `powerdns-api-key` secret (reflected to flux-system by Re
 ## Dependencies
 
 ```text
-core (tofu-controller)
+tofu-controller
     ↓
 powerdns (API endpoint running)
     ↓

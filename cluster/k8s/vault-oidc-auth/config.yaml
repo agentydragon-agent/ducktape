@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/vault-oidc-auth
+  path: ./cluster/terraform/gitops/vault-oidc-auth
   sourceRef:
     kind: GitRepository
     name: flux-system

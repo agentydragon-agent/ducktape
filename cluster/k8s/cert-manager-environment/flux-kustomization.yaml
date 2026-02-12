@@ -17,6 +17,8 @@ spec:
       namespace: flux-system
     - name: cert-manager-trust # Wait for trust-manager CRDs (Bundle)
       namespace: flux-system
+    - name: reflector # powerdns-api-key reflected from dns-system to cert-manager
+      namespace: flux-system
   # Verify ClusterIssuer is created
   healthChecks:
     - apiVersion: cert-manager.io/v1

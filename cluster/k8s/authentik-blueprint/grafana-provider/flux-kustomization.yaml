@@ -18,7 +18,7 @@ spec:
       name: grafana-sso
       namespace: flux-system
   dependsOn:
-    - name: core # Wait for tofu-controller to install Terraform CRD
+    - name: tofu-controller
       namespace: flux-system
     - name: authentik
       namespace: flux-system

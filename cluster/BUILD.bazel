@@ -6,8 +6,8 @@ py_library(
     name = "bootstrap_lib",
     srcs = ["bootstrap.py"],
     deps = [
+        "//bazel_util:runfiles",
         "//bazel_util:workspace",
-        "//cluster/scripts:runfiles_util",
         "@pypi//kubernetes",
         "@pypi//pydantic",
         "@pypi//pygit2",

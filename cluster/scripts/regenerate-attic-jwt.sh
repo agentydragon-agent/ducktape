@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLUSTER_DIR="$(dirname "$SCRIPT_DIR")"
 OUTPUT_FILE="$CLUSTER_DIR/k8s/applications/nix-cache/jwt-token-sealed.yaml"
-PERSISTENT_AUTH_DIR="$CLUSTER_DIR/terraform/00-persistent-auth"
+PERSISTENT_AUTH_DIR="$CLUSTER_DIR/terraform/bootstrap/persistent-auth"
 
 # Generate token: 48 alphanumeric chars (~285 bits entropy), base64 encoded for Attic
 RAW_TOKEN=$(openssl rand -base64 36 | tr -dc 'a-zA-Z0-9' | head -c 48)

@@ -5,21 +5,8 @@ Operational procedures for day-to-day cluster management, scaling, maintenance, 
 ## Essential Operations
 
 ```bash
-# Check cluster health
-kubectl get nodes -o wide
-
-# Check Flux status
-flux get all
-
 # Force reconciliation
 flux reconcile helmrelease sealed-secrets
-
-# Check MetalLB LoadBalancer services
-kubectl get svc --all-namespaces -o wide | grep LoadBalancer
-
-# Check MetalLB status
-kubectl get pods -n metallb-system
-kubectl get ipaddresspools -n metallb-system
 
 # Check PowerDNS
 kubectl get pods -n dns-system
@@ -304,11 +291,6 @@ authentication failures. Consider filing upstream issue if this becomes frequent
 **Symptoms**: DNS queries fail, cert-manager DNS-01 challenges fail
 **Root Causes & Solutions**:
 
-1. **VIP Not Assigned to PowerDNS Service**:
-   - **Symptom**: `kubectl get svc -n dns-system` shows `<pending>` for EXTERNAL-IP
-   - **Solution**: Check MetalLB configuration and pod status
-   - **Fix**: Verify MetalLB speaker pods running, check IPAddressPool config
-
 2. **Zone Not Replicating to VPS (AXFR Failure)**:
    - **Symptom**: `dig @ns1.agentydragon.com allegedly.works SOA` shows old/missing data
    - **Check**: `ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works"`
@@ -332,26 +314,6 @@ allegedly.works @ NS 3600 "ns1.agentydragon.com."`
    - **Solution**: Check PowerDNS pod logs and API service
    - **Fix**: Verify PowerDNS API key secret exists in cert-manager namespace (reflector copies from dns-system)
 
-### MetalLB LoadBalancer Issues
-
-**Symptoms**: LoadBalancer services stuck in Pending, no external IP assigned
-**Root Causes & Solutions**:
-
-1. **MetalLB Speaker Pods Not Running**:
-   - **Symptom**: `kubectl get pods -n metallb-system` shows speaker pods failing
-   - **Solution**: Check for CNI issues, node network configuration
-   - **Fix**: Restart MetalLB components after resolving network issues
-
-2. **IP Pool Conflicts**:
-   - **Symptom**: Some services get IPs while others don't
-   - **Solution**: Check IPAddressPool configuration for overlaps
-   - **Fix**: Ensure pool ranges don't conflict and specify correct pools in service annotations
-
-3. **L2 Advertisement Issues**:
-   - **Symptom**: External IP assigned but not reachable from outside cluster
-   - **Solution**: Check L2Advertisement configuration and ARP tables
-   - **Fix**: Verify L2Advertisement covers all required IPAddressPools
-
 ## Reference Information
 
 ### Node Assignments (4-node Hybrid Cluster)
@@ -369,16 +331,6 @@ allegedly.works @ NS 3600 "ns1.agentydragon.com."`
 | ------------------ | ----- | ---------- | ------------ |
 | talos-pve-cp-0     | 10000 | 10.2.1.1   | Controlplane |
 | talos-pve-worker-0 | 10100 | 10.2.2.1   | Worker       |
-
-### MetalLB VIP Assignments (Proxmox Network)
-
-| Service      | IP Address  | Pool          | Purpose                     |
-| ------------ | ----------- | ------------- | --------------------------- |
-| **Ingress**  | 10.2.3.2    | ingress-pool  | NGINX Ingress (home access) |
-| **PowerDNS** | 10.2.3.3    | dns-pool      | DNS server (home access)    |
-| **Services** | 10.2.3.4-20 | services-pool | Harbor, Gitea, etc.         |
-
-**Note**: VPS nodes use Hetzner public IPs directly for ingress. MetalLB VIPs are for home network access only.
 
 ## Security Configuration
 

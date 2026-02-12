@@ -23,7 +23,7 @@ spec:
       allowSnippetAnnotations: true
 
       # hostNetwork mode: bind directly to VPS public IPs on ports 80/443
-      # This allows serving public traffic without MetalLB (which only works on home network)
+      # This allows serving public traffic directly on VPS public IPs
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
 

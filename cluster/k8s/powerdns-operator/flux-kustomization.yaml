@@ -13,6 +13,7 @@ spec:
     name: flux-system
   dependsOn:
     - name: powerdns
+    - name: reflector # powerdns-api-key reflected from dns-system to powerdns-operator
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

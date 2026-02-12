@@ -24,17 +24,17 @@
 
 **When the user says "bootstrap the cluster", "tear down the cluster", "recreate the cluster", or similar phrases:**
 
-### DEFAULT SCOPE: Layer 01 (Infrastructure) and above
+### DEFAULT SCOPE: Infrastructure and above
 
-- `terraform destroy` in `terraform/01-infrastructure/` (VMs)
+- `terraform destroy` in `terraform/bootstrap/infrastructure/` (VMs)
 - `bazel run //cluster:bootstrap` (recreates VMs, installs Talos, deploys services)
-- Layers affected: 01-infrastructure, 02-services, 03-configuration
+- Layers affected: `bootstrap/infrastructure`, `bootstrap/flux`, `gitops/`
 
-### EXCLUDED BY DEFAULT: Layer 00 (Persistent Auth)
+### EXCLUDED BY DEFAULT: Persistent Auth
 
-- `terraform/00-persistent-auth/` is NOT destroyed unless explicitly stated
+- `terraform/bootstrap/persistent-auth/` is NOT destroyed unless explicitly stated
 - Includes: Sealed secrets keypair, CSI tokens, Nix signing keys, JWT tokens, Flux deploy key
-- NOTE: Talos machine secrets are NOT in layer 00 — they live in layer 01 (fresh per lifecycle)
+- NOTE: Talos machine secrets are NOT in persistent-auth — they live in `bootstrap/infrastructure` (fresh per lifecycle)
 - These persist in terraform state across cluster lifecycles
 - Only destroy when user explicitly says "including persistent auth" or "from scratch"
 
@@ -47,10 +47,10 @@
 
 **EXAMPLES:**
 
-- ✅ "bootstrap the cluster" → Start from layer 01 (VMs)
-- ✅ "tear down and recreate" → Destroy VMs, keep layer 00
-- ✅ "full teardown including persistent auth" → Destroy everything including layer 00
-- ✅ "bootstrap from scratch" → Destroy everything, regenerate all secrets
+- "bootstrap the cluster" → Start from infrastructure (VMs)
+- "tear down and recreate" → Destroy VMs, keep persistent-auth
+- "full teardown including persistent auth" → Destroy everything including persistent-auth
+- "bootstrap from scratch" → Destroy everything, regenerate all secrets
 
 ## TASK DELEGATION AND PARALLELIZATION
 
@@ -185,19 +185,19 @@ After investigating and fixing:
 
 ## ⚠️ CRITICAL: PERSISTENT AUTH PROTECTION
 
-**AI agents and automated processes MUST NEVER destroy the persistent auth layer (00-persistent-auth) without
+**AI agents and automated processes MUST NEVER destroy the persistent auth layer (`bootstrap/persistent-auth`) without
 explicit user authorization.**
 
 **FORBIDDEN OPERATIONS:**
 
-- `cd terraform/00-persistent-auth && terraform destroy`
+- `cd terraform/bootstrap/persistent-auth && terraform destroy`
 - Any command that would destroy CSI tokens or sealed secrets keypair
 - "Clean slate" operations that include persistent auth
 
 **PERMITTED OPERATIONS:**
 
-- VM lifecycle: `cd terraform/01-infrastructure && terraform destroy && terraform apply`
-- Services reset: Layers 02-services, 03-configuration
+- VM lifecycle: `cd terraform/bootstrap/infrastructure && terraform destroy && terraform apply`
+- Services reset: `bootstrap/flux`, `gitops/`
 - Selective bootstrap: `bazel run //cluster:bootstrap -- --start-from=infrastructure`
 
 **RATIONALE:** The persistent auth layer contains:
@@ -332,7 +332,7 @@ bazel run //cluster:bootstrap
 **Pattern Structure:**
 
 1. **Provider Blueprint** (`authentik-blueprint-{app}-provider`)
-   - Lives in `terraform/03-configuration/authentik-blueprints/`
+   - Lives in `terraform/gitops/sso/`
    - Creates OIDC application in Authentik (authentik namespace)
    - Generates client ID and client secret
    - No dependency on target application namespace existing
@@ -352,7 +352,7 @@ bazel run //cluster:bootstrap
 ## Example: Gitea SSO Integration
 
 ```text
-terraform/03-configuration/authentik-blueprints/gitea-provider.yaml
+terraform/gitops/sso/gitea/
   ↓ (creates OIDC app in Authentik, stores credentials in Vault)
 k8s/gitea/ namespace creation by Flux
   ↓
@@ -398,11 +398,10 @@ kubectl get externalsecret -n gitea
 
 ### Bootstrap Script Features
 
-- **🔍 Preflight validation**: Git clean + pre-commit + terraform validate
-- **⚡ Native provider deployment**: Talos → Cilium → Flux → Applications
-- **🛡️ Terraform state keypair persistence**: Sealed secrets work across destroy/apply
-- **📊 Clear progress reporting**: Phase-by-phase status updates
-- **❌ Fail-fast behavior**: Stops immediately on any validation failure
+- Preflight validation: Git clean + pre-commit + terraform validate
+- Native provider deployment: Talos → Cilium → Flux → Applications
+- Sealed secrets work across destroy/apply
+- Stops immediately on any validation failure
 
 ### Usage
 
@@ -481,12 +480,12 @@ ssh root@agentydragon.com "docker logs powerdns --tail 50"
 
 ## Working Directory
 
-- Terraform layers:
-  - `terraform/00-persistent-auth/` - Proxmox credentials, CSI tokens, sealed secrets keypair
-  - `terraform/01-infrastructure/` - VMs, Talos, Cilium CNI
-  - `terraform/02-services/` - Flux, core services, applications
-  - `terraform/03-configuration/` - DNS, SSO configuration
-- GitOps terraform: `terraform/gitops/` (tofu-controller managed)
+- Terraform bootstrap layers (manual, local state, sequential):
+  - `terraform/bootstrap/persistent-auth/` - Proxmox credentials, CSI tokens, sealed secrets keypair
+  - `terraform/bootstrap/infrastructure/` - VMs, Talos, Cilium CNI
+  - `terraform/bootstrap/flux/` - Flux, core services, applications
+- GitOps terraform (tofu-controller, k8s state):
+  - `terraform/gitops/` - DNS records, SSO, Vault OIDC, secrets, service configs
 - VM IDs: 1500-1502 (controlplane0-2), 2000-2001 (worker0-1)
 - Node IPs: 10.0.1.x (controllers), 10.0.2.x (workers), 10.0.3.x (VIPs)
 
@@ -744,7 +743,7 @@ dependsOn:
 | `Issuer`             | `cert-manager.io`                | `cert-manager`                  |
 | `ClusterPolicy`      | `kyverno.io`                     | `kyverno`                       |
 | `Vault`              | `vault.banzaicloud.com`          | `vault-operator`                |
-| `Terraform`          | `infra.contrib.fluxcd.io`        | `core` (tofu-controller)        |
+| `Terraform`          | `infra.contrib.fluxcd.io`        | `tofu-controller`               |
 
 ### Validation
 

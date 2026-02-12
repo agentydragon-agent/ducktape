@@ -6,7 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/03-configuration/harbor-proxy-cache
+  path: ./cluster/terraform/gitops/harbor-proxy-cache
   sourceRef:
     kind: GitRepository
     name: flux-system

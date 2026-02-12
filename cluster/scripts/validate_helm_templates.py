@@ -12,10 +12,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cluster.scripts.runfiles_util import resolve_path
+from bazel_util.runfiles import get_required_path
 
-_HELM_BIN = resolve_path("multitool/tools/helm/helm")
-_CILIUM_VALUES_RLOCATIONS = ["_main/cluster/terraform/01-infrastructure/cilium-values.yaml"]
+_HELM_BIN = get_required_path("multitool/tools/helm/helm")
+_CILIUM_VALUES_RLOCATIONS = ["_main/cluster/terraform/bootstrap/infrastructure/cilium-values.yaml"]
 
 
 def _get_values_files() -> list[Path]:
@@ -23,7 +23,7 @@ def _get_values_files() -> list[Path]:
     values_files = []
     for rlocation in _CILIUM_VALUES_RLOCATIONS:
         with contextlib.suppress(RuntimeError):
-            values_files.append(resolve_path(rlocation))
+            values_files.append(get_required_path(rlocation))
     return values_files
 
 

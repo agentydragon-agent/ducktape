@@ -24,24 +24,24 @@ per-node image downloads.
 
 #### 1. Added `proxmox_network_config_method` Variable
 
-- File: `terraform/01-infrastructure/variables.tf:64-72`
+- File: `terraform/bootstrap/infrastructure/variables.tf:64-72`
 - Options: `"meta"` (default, current behavior) or `"cloudinit"` (new snippets approach)
 
 #### 2. Conditional Schematic Resources
 
-- File: `terraform/01-infrastructure/proxmox-nodes.tf:14-111`
+- File: `terraform/bootstrap/infrastructure/proxmox-nodes.tf:14-111`
 - META mode: Per-node schematics with IP baked in via META key 0xa
 - CLOUDINIT mode: Single shared schematic with just extensions (no network config)
 
 #### 3. Cloud-Init Network Snippets
 
-- File: `terraform/01-infrastructure/proxmox-nodes.tf:146-172`
+- File: `terraform/bootstrap/infrastructure/proxmox-nodes.tf:146-172`
 - Creates per-node network-config YAML files using netplan v2 format
 - Uploaded to Proxmox `local` datastore as snippets
 
 #### 4. Conditional VM Configuration
 
-- File: `terraform/01-infrastructure/proxmox-nodes.tf:218-246`
+- File: `terraform/bootstrap/infrastructure/proxmox-nodes.tf:218-246`
 - Conditional `import_from` for disk (shared vs per-node image)
 - Dynamic `initialization` block for cloud-init drive (CLOUDINIT mode only)
 
@@ -56,10 +56,10 @@ Cleaned up duplicated Proxmox access configuration:
   - `terraform/terraform.tf`
   - `terraform/modules/` (pve-auth, infrastructure, gitops, dns)
 
-- **Fixed SSH reference** in `terraform/00-persistent-auth/main.tf:56`:
+- **Fixed SSH reference** in `terraform/bootstrap/persistent-auth/main.tf:56`:
   - Changed from `local.proxmox_host` to `local.proxmox_ssh_target`
 
-- **Updated cleanup script** `terraform/01-infrastructure/scripts/cleanup_proxmox_volumes.py:74-75`:
+- **Updated cleanup script** `terraform/bootstrap/infrastructure/scripts/cleanup_proxmox_volumes.py:74-75`:
   - Now accepts FQDN parameter
   - Derives SSH target as `root@{host}` (SSOT pattern)
 
@@ -78,14 +78,14 @@ Cleaned up duplicated Proxmox access configuration:
 The following cluster changes need to be committed before testing:
 
 ```bash
-git add terraform/00-persistent-auth/main.tf \
-        terraform/00-persistent-auth/variables.tf \
-        terraform/01-infrastructure/cilium.tf \
-        terraform/01-infrastructure/main.tf \
-        terraform/01-infrastructure/proxmox-nodes.tf \
-        terraform/01-infrastructure/scripts/cleanup_proxmox_volumes.py \
-        terraform/01-infrastructure/variables.tf \
-        terraform/01-infrastructure/wait-for-k8s-api.sh \
+git add terraform/bootstrap/persistent-auth/main.tf \
+        terraform/bootstrap/persistent-auth/variables.tf \
+        terraform/bootstrap/infrastructure/cilium.tf \
+        terraform/bootstrap/infrastructure/main.tf \
+        terraform/bootstrap/infrastructure/proxmox-nodes.tf \
+        terraform/bootstrap/infrastructure/scripts/cleanup_proxmox_volumes.py \
+        terraform/bootstrap/infrastructure/variables.tf \
+        terraform/bootstrap/infrastructure/wait-for-k8s-api.sh \
         terraform/main.tf terraform/modules/ \
         terraform/outputs.tf terraform/terraform.tf terraform/variables.tf
 
@@ -106,7 +106,7 @@ git commit -m "feat: add cloud-init network config option for Proxmox nodes
 2. **Run full destroy/bootstrap cycle**:
 
    ```bash
-   cd terraform/01-infrastructure
+   cd terraform/bootstrap/infrastructure
    terraform destroy -auto-approve
    bazel run //cluster:bootstrap
    ```
@@ -126,22 +126,22 @@ Set `proxmox_network_config_method = "meta"` to revert to current behavior.
 ### Project Conventions
 
 - See: `@CLAUDE.md` for full cluster instructions
-- Layered terraform: 00-persistent-auth → 01-infrastructure → 02-services → 03-configuration
+- Layered terraform: bootstrap/persistent-auth → bootstrap/infrastructure → bootstrap/flux
 - **Never destroy layer 00** without explicit user authorization
 
 ### Key Files
 
-| File                                             | Purpose                                                |
-| ------------------------------------------------ | ------------------------------------------------------ |
-| `terraform/01-infrastructure/proxmox-nodes.tf`   | All Proxmox node definitions (schematics, images, VMs) |
-| `terraform/01-infrastructure/variables.tf:64-72` | The `proxmox_network_config_method` switch             |
-| `terraform/00-persistent-auth/main.tf`           | SSH target derivation pattern                          |
+| File                                                    | Purpose                                                |
+| ------------------------------------------------------- | ------------------------------------------------------ |
+| `terraform/bootstrap/infrastructure/proxmox-nodes.tf`   | All Proxmox node definitions (schematics, images, VMs) |
+| `terraform/bootstrap/infrastructure/variables.tf:64-72` | The `proxmox_network_config_method` switch             |
+| `terraform/bootstrap/persistent-auth/main.tf`           | SSH target derivation pattern                          |
 
 ### Build/Test
 
 ```bash
 # From cluster directory
-cd terraform/01-infrastructure
+cd terraform/bootstrap/infrastructure
 terraform validate
 terraform plan -var="proxmox_network_config_method=cloudinit"
 ```

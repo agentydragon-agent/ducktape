@@ -19,5 +19,5 @@ spec:
     - name: harbor-namespace
     - name: external-secrets-config
     - name: cert-manager
-    - name: core # tofu-controller CRD
+    - name: tofu-controller
     - name: vault-token # Vault auth for Terraform

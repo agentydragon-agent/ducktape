@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1h
-  path: ./cluster/terraform/authentik-blueprint/users
+  path: ./cluster/terraform/gitops/sso/users
   sourceRef:
     kind: GitRepository
     name: flux-system

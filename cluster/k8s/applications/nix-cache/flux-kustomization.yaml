@@ -16,7 +16,7 @@ spec:
   dependsOn:
     - name: storage # Proxmox CSI
       namespace: flux-system
-    - name: core # sealed-secrets
+    - name: sealed-secrets
       namespace: flux-system
     - name: ingress-nginx
       namespace: flux-system

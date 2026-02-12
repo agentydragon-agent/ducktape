@@ -72,7 +72,7 @@ spec:
         size: 100Gi
         accessMode: ReadWriteOnce
 
-    # Nix signing key (from terraform/00-persistent-auth)
+    # Nix signing key (from terraform/bootstrap/persistent-auth)
     signingKey:
       secretName: nix-cache-signing-key
       mountPath: /var/lib/secrets

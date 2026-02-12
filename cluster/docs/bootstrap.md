@@ -32,7 +32,7 @@ Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
    - Create at: Hetzner Cloud Console → Security → API Tokens
    - Permissions: Read/Write
 
-2. **Proxmox API Token** (managed in 00-persistent-auth layer)
+2. **Proxmox API Token** (managed in persistent-auth layer)
    - User: `terraform@pve`
    - Created automatically by persistent auth terraform
 
@@ -49,7 +49,7 @@ Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
 Run once per environment (survives cluster destroy/recreate):
 
 ```bash
-cd terraform/00-persistent-auth
+cd terraform/bootstrap/persistent-auth
 terraform init && terraform apply
 ```
 
@@ -76,24 +76,19 @@ The bootstrap script executes a 3-phase layered deployment:
 - Pre-commit validation (security, linting)
 - Terraform configuration validation
 
-#### Phase 1: Infrastructure (`terraform/01-infrastructure`)
+#### Phase 1: Infrastructure (`terraform/bootstrap/infrastructure`)
 
 - **Hetzner API** → Creates 2x VPS with Talos ISO
 - **Proxmox API** → Creates 2x VMs with baked Talos images
 - **Talos API** → Bootstraps cluster from first VPS, generates kubeconfig
 - **Kubernetes API** → Installs Cilium CNI, deploys sealed secrets keypair
 
-#### Phase 2: Services (`terraform/02-services`)
+#### Phase 2: Flux (`terraform/bootstrap/flux`)
 
 - **Flux Bootstrap** → Initializes GitOps engine with GitHub
-- **Core Services** → MetalLB, cert-manager, ingress-nginx
+- **Core Services** → cert-manager, ingress-nginx
 - **Storage** → Hetzner CSI (VPS), Proxmox CSI (home)
 - **Platform** → Vault, ESO, Authentik
-
-#### Phase 3: Configuration (`terraform/03-configuration`)
-
-- **PowerDNS API** → DNS zones and records
-- **Service APIs** → SSO providers (Authentik, Harbor, Gitea)
 
 ### Verification
 
@@ -114,31 +109,26 @@ kubectl get storageclass
 
 ## Bootstrap Layer Architecture
 
-**Layer 0: Persistent Auth** (`terraform/00-persistent-auth/`)
+**Layer 0: Persistent Auth** (`terraform/bootstrap/persistent-auth/`)
 
 - Talos machine secrets
 - Proxmox API tokens
 - Sealed secrets keypair
 - Survives cluster destroy/recreate
 
-**Layer 1: Infrastructure** (`terraform/01-infrastructure/`)
+**Layer 1: Infrastructure** (`terraform/bootstrap/infrastructure/`)
 
 - Hetzner VPS nodes (2x CPX31)
 - Proxmox VMs (1x controlplane, 1x worker)
 - Cilium CNI with VXLAN tunnel mode
 - KubeSpan mesh (WireGuard between all nodes)
 
-**Layer 2: Services** (`terraform/02-services/`)
+**Layer 2: Flux** (`terraform/bootstrap/flux/`)
 
 - Flux GitOps
-- Core services (MetalLB, cert-manager, ingress)
+- Core services (cert-manager, ingress)
 - Storage (Hetzner CSI, Proxmox CSI)
 - Platform (Vault, Authentik, Harbor)
-
-**Layer 3: Configuration** (`terraform/03-configuration/`)
-
-- DNS provisioning
-- SSO configuration
 
 ## Networking
 
@@ -170,7 +160,7 @@ Kubeconfig is patched post-bootstrap with real VPS IP for external access.
 
 ## Sealed Secrets Keypair
 
-The keypair persists in terraform state (`00-persistent-auth`):
+The keypair persists in terraform state (`bootstrap/persistent-auth`):
 
 - Generated once, reused across cluster rebuilds
 - All SealedSecrets in git decrypt correctly after recreate

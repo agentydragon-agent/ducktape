@@ -3,12 +3,12 @@
 ## Problem
 
 Gitea SSO configuration via Terraform requires an admin API token. Need declarative token generation
-that survives `terraform destroy && bootstrap.py` cycles.
+that survives destroy/bootstrap cycles.
 
-## Solution: Kubernetes Job with curl API Call
+## Selected approach
 
-**Selected approach**: Deploy a Kubernetes Job that calls Gitea's API to create an admin token using
-BasicAuth with the ESO-generated admin password.
+Deploy a Kubernetes Job that calls Gitea's API to create an admin token using
+BasicAuth with ESO-generated admin password.
 
 ### Why This Approach
 
@@ -40,9 +40,4 @@ Job manifest: `k8s/applications/gitea/admin-token-job.yaml`
 
 Required token scopes: `write:admin`, `write:repository`, `write:user`, `write:organization`
 
-Idempotency: First run creates token (201), subsequent runs skip if exists (API returns 500 for
-duplicate name).
-
-## Status
-
-✅ **COMPLETE** - Users can login to Gitea using Authentik SSO
+Idempotency: First run creates token (201), subsequent runs skip if exists (API returns 500 for duplicate name).

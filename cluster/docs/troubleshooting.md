@@ -52,7 +52,7 @@ helm get values cilium -n kube-system
 
 **Resolution**:
 
-In `terraform/01-infrastructure/cilium-values.yaml`, use **uppercase** `MTU`:
+In `terraform/bootstrap/infrastructure/cilium-values.yaml`, use **uppercase** `MTU`:
 
 ```yaml
 # CORRECT (uppercase — matches Helm chart definition)
@@ -71,8 +71,8 @@ After fixing, destroy and re-bootstrap the cluster. Verify with `helm get values
 - The overhead calculation (VXLAN 50 + WireGuard 80 = 130, so 1500 - 130 = 1370) is documented
   in the values file comments
 
-**Reference**: See `investigations/2026-02-11-bootstrap-cross-node-and-kyverno/diary.md` for
-full investigation timeline and packet capture analysis.
+**Reference**: See `investigations/2026-02-11-mtu-cross-node-bootstrap/lessons-learned.md` for
+root cause analysis, diagnostic checklist, and key lessons.
 
 **Historical Occurrence**:
 
@@ -361,8 +361,8 @@ kubectl get secret <app>-oauth-client-secret -n <namespace> \
   -o jsonpath='{.data.client_secret}' | base64 -d
 
 # 3. Check terraform blueprint generates password and stores in Vault
-grep -A10 "random_password.*client_secret" terraform/authentik-blueprint/<app>/main.tf
-grep -A10 "vault_kv_secret_v2.*oidc" terraform/authentik-blueprint/<app>/main.tf
+grep -A10 "random_password.*client_secret" terraform/gitops/sso/<app>/main.tf
+grep -A10 "vault_kv_secret_v2.*oidc" terraform/gitops/sso/<app>/main.tf
 ```
 
 **Resolution**:
@@ -425,12 +425,12 @@ spec:
 **Reference Implementation**:
 
 - Correct pattern: `k8s/applications/gitea/secrets.yaml` (lines 38-60)
-- Terraform blueprint: `terraform/authentik-blueprint/gitea/main.tf`
+- Terraform blueprint: `terraform/gitops/sso/gitea/main.tf`
 
 **Historical Occurrence**:
 
 - 2025-11-28: Harbor and Vault ExternalSecrets using Password generators
-- Caused authentication failures for Harbor OIDC and vault-oidc-auth terraform
+- Caused authentication failures for Harbor OIDC and vault-oidc-auth Terraform
 - Fixed in commit 05b5e5e by replacing generators with Vault data sources
 
 ## 🚨 Fast Path Health Checks
@@ -503,7 +503,7 @@ kubectl get secret -n csi-proxmox proxmox-csi-plugin
 kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\.yaml}' | base64 -d
 
 # 6. If SealedSecret shows decryption error, regenerate with stable keypair:
-cd terraform/00-persistent-auth
+cd terraform/bootstrap/persistent-auth
 CSI_TOKEN_SECRET=$(terraform output -raw csi_token_secret)
 cat > /tmp/csi-config.yaml << EOF
 clusters:
@@ -572,7 +572,7 @@ with the terraform keypair. No cluster access needed.
 **When to run:**
 
 - Automatically by pre-commit hook and bootstrap.py
-- Manually after `terraform apply` in `00-persistent-auth`
+- Manually after `terraform apply` in `bootstrap/persistent-auth`
 - When debugging SealedSecret decryption failures
 
 ### Keypair Mismatch (Common Failure Mode)
@@ -589,7 +589,7 @@ in terraform state (e.g., after terraform state was recreated).
 **Quick Fix:**
 
 ```bash
-cd terraform/00-persistent-auth && terraform apply
+cd terraform/bootstrap/persistent-auth && terraform apply
 # This re-seals all SealedSecrets with current keypair
 git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ```
@@ -598,7 +598,7 @@ git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 
 ```bash
 # Check if stable keypair exists in terraform state
-cd terraform/00-persistent-auth
+cd terraform/bootstrap/persistent-auth
 terraform output sealed_secrets_cert_pem >/dev/null && echo "✅ Keypair exists in terraform state"
 
 # Check if cluster is using stable keypair (serial numbers should match)
@@ -612,7 +612,7 @@ cd -
 
 ```bash
 # Test if a SealedSecret can be decrypted with stable keypair
-cd terraform/00-persistent-auth
+cd terraform/bootstrap/persistent-auth
 kubectl get sealedsecret <name> -n <namespace> -o yaml | \
 kubeseal --recovery-unseal --recovery-private-key <(terraform output -raw sealed_secrets_private_key_pem)
 # Should output the original secret YAML if working
@@ -690,7 +690,7 @@ done
 
 - **Issue**: SealedSecret decryption failures
 - **Cause**: terraform/storage generating secrets with wrong keypair
-- **Fix**: Always use stable keypair from terraform state (00-persistent-auth) when sealing
+- **Fix**: Always use stable keypair from terraform state (bootstrap/persistent-auth) when sealing
 
 ### Flux CRD Caching
 
@@ -808,7 +808,7 @@ kubectl exec -n nix-cache deployment/harmonia -- df -h /nix/store
 kubectl get secret nix-cache-signing-key -n nix-cache
 
 # Verify key in terraform state
-cd terraform/00-persistent-auth
+cd terraform/bootstrap/persistent-auth
 terraform output nix_signing_public_key
 
 # Get public key for NixOS config
@@ -817,7 +817,7 @@ terraform output -raw nix_signing_public_key | head -1
 cd -
 ```
 
-**If signing key missing**: Re-run `terraform apply` in `terraform/00-persistent-auth`
+**If signing key missing**: Re-run `terraform apply` in `terraform/bootstrap/persistent-auth`
 
 #### Upload Failures from NixOS Host
 

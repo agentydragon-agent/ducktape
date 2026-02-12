@@ -20,5 +20,5 @@ spec:
   dependsOn:
     - name: dns-system-namespace
     - name: external-secrets-config
-    - name: core # tofu-controller CRD
+    - name: tofu-controller
     - name: vault-token # Vault auth for Terraform

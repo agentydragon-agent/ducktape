@@ -5,7 +5,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 15m
-  path: ./cluster/terraform/authentik-blueprint/harbor
+  path: ./cluster/terraform/gitops/sso/harbor
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -61,4 +61,4 @@ spec:
           value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
 
   # Note: harbor_admin_password is read directly via kubernetes_secret data source
-  # from harbor/harbor-admin-initial (see terraform/authentik-blueprint/harbor/harbor-config.tf)
+  # from harbor/harbor-admin-initial (see terraform/gitops/sso/harbor/harbor-config.tf)

@@ -4,7 +4,7 @@
 # Usage: ./scripts/seal-secret.sh <secret.yaml> <output-sealed.yaml>
 #
 # The sealed secrets certificate is read directly from terraform state
-# in 00-persistent-auth (no file materialization needed).
+# in persistent-auth (no file materialization needed).
 #
 # After sealing, you must commit the sealed secret manually:
 #   git add <output-sealed.yaml> && git commit
@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TF_DIR="$REPO_ROOT/terraform/00-persistent-auth"
+TF_DIR="$REPO_ROOT/terraform/bootstrap/persistent-auth"
 
 INPUT_FILE="${1:-}"
 OUTPUT_FILE="${2:-}"
@@ -33,14 +33,14 @@ fi
 # Check if terraform state exists
 if [[ ! -f "$TF_DIR/terraform.tfstate" ]]; then
   echo "❌ No terraform state found at $TF_DIR/terraform.tfstate"
-  echo "   Run 'cd terraform/00-persistent-auth && terraform apply' first"
+  echo "   Run 'cd terraform/bootstrap/persistent-auth && terraform apply' first"
   exit 1
 fi
 
 # Get certificate from terraform state
 CERT=$(cd "$TF_DIR" && terraform output -raw sealed_secrets_cert_pem 2>/dev/null) || {
   echo "❌ Could not read sealed_secrets_cert_pem from terraform state"
-  echo "   Run 'cd terraform/00-persistent-auth && terraform apply' first"
+  echo "   Run 'cd terraform/bootstrap/persistent-auth && terraform apply' first"
   exit 1
 }
 

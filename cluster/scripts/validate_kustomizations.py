@@ -29,13 +29,13 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
-from cluster.scripts.runfiles_util import resolve_path
 
 logger = logging.getLogger(__name__)
 
-_KUSTOMIZE_BIN = resolve_path("multitool/tools/kustomize/kustomize")
-_FLUX_BIN = resolve_path("multitool/tools/flux/flux")
+_KUSTOMIZE_BIN = get_required_path("multitool/tools/kustomize/kustomize")
+_FLUX_BIN = get_required_path("multitool/tools/flux/flux")
 
 
 # ============================================================================
@@ -171,14 +171,10 @@ CRD_TO_OPERATOR: dict[str, str] = {
     # kyverno
     "ClusterPolicy": "kyverno",
     "Policy": "kyverno",
-    # metallb
-    "IPAddressPool": "metallb",
-    "L2Advertisement": "metallb",
-    "BGPAdvertisement": "metallb",
     # vault-operator
     "Vault": "vault-operator",
-    # tofu-controller (in core)
-    "Terraform": "core",
+    # tofu-controller
+    "Terraform": "tofu-controller",
     # powerdns-operator
     "ClusterZone": "powerdns-operator",
     "ClusterRRset": "powerdns-operator",
@@ -194,11 +190,10 @@ OPERATOR_KUSTOMIZATIONS = {
     "cert-manager-environment",
     "kyverno",
     "kyverno-policies",
-    "metallb",
-    "metallb-config",
     "vault-operator",
     "vault",
-    "core",
+    "tofu-controller",
+    "sealed-secrets",
     "powerdns-operator",
     "cluster-ca",  # Uses cert-manager CRDs but is part of cert-manager layer
 }
@@ -518,10 +513,6 @@ def check_required_dependencies(flux_kustomizations: dict[str, FluxKustomization
         "vault": {
             "must_come_before": ["external-secrets-operator", "external-secrets-config"],
             "reason": "Vault must be ready before external-secrets can connect",
-        },
-        "metallb-config": {
-            "must_come_before": ["ingress-nginx"],
-            "reason": "Load balancer needed for ingress controller",
         },
     }
 

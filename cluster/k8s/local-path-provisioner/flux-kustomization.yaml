@@ -12,8 +12,6 @@ spec:
   path: "./cluster/k8s/local-path-provisioner"
   prune: true
   wait: true
-  dependsOn:
-    - name: core
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

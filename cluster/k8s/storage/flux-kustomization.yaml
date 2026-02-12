@@ -13,7 +13,7 @@ spec:
   prune: true
   wait: true
   dependsOn:
-    - name: core # Wait for sealed-secrets CRD and controller to be ready
+    - name: sealed-secrets
   # Note: CNI (Cilium) now managed by Terraform, not Flux
   # Storage components deploy after cluster networking is ready
   # Verify Proxmox CSI controller is ready

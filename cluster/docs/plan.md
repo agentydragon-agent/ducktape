@@ -23,9 +23,9 @@
    every node before deploying Flux (closes the Cilium health-vs-BPF-maps gap).
 7. **Vault `disable_mlock: true`** — required since Vault 1.20 (no longer defaults).
    Safe on Talos (no swap).
-8. **`authentik-secrets` missing dependency on `sso-secrets`** — `authentik-bootstrap`
+8. **`authentik-secrets` missing dependency on `authentik-token`** — `authentik-bootstrap`
    ExternalSecret reads `kv/sso/client-secrets` from Vault, but that path is created
-   by `sso-secrets` Terraform. Without the dependency, both kustomizations start in
+   by `authentik-token` Terraform. Without the dependency, both kustomizations start in
    parallel after `external-secrets-config` is Ready, and the ExternalSecret fails
    with "Secret does not exist" because the Terraform hasn't populated Vault yet.
 
@@ -45,15 +45,11 @@
 
 ### Suspended Kustomizations
 
-TODO: Unsuspend these when ready to deploy:
+These kustomizations have `suspend: true` and need unsuspending when ready to deploy:
 
-- **Matrix**: `matrix`, `matrix-namespace`, `matrix-secrets`, `authentik-blueprint-matrix-provider`, `authentik-blueprint-matrix-secret`
-- **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `authentik-blueprint-gitea-provider`, `authentik-blueprint-gitea-secret`
+- **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
 - **BuildBuddy executor**: `buildbuddy-executor`
 - **Nix cache**: `nix-cache`
-- **Harbor**: `harbor`, `harbor-namespace`, `harbor-secrets`, `harbor-proxy-cache`, `authentik-blueprint-harbor-provider`, `authentik-blueprint-harbor-secret`
-- **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
-- **Headscale**: `headscale`
 - **Website**: `website`
 
 ### Known Issues to Watch
@@ -63,20 +59,11 @@ TODO: Unsuspend these when ready to deploy:
   (1) `install.remediation.retries: 3` on all HelmReleases,
   (2) Kyverno HA (3 replicas on control plane nodes),
   (3) ClusterIP readiness gate in bootstrap script.
-  See <../investigations/2026-02-11-kyverno-webhook-timeout-bootstrap/findings.md>
+  See <../investigations/2026-02-11-mtu-cross-node-bootstrap/lessons-learned.md>
 
-### TODO: Rename Vague Kustomizations
+### TODO
 
-Several kustomization names are confusing or overly generic:
-
-- **`core`** → contains sealed-secrets, tofu-controller, coredns-custom, reloader.
-  These are unrelated controllers bundled together. Consider splitting into individual
-  kustomizations or at minimum renaming to `cluster-controllers`.
-- **`monitoring-stack`** → just kube-prometheus-stack HelmRelease + a dashboard.
-  Rename to `kube-prometheus` or `prometheus-grafana`.
-- ~~**`authentik-secrets`** vs **`sso-secrets`**~~ — **DONE**: `sso-secrets` split into
-  per-service Terraform modules (`powerdns-api-key`, `authentik-token`, `harbor-admin`)
-  each with isolated state. Renamed to `authentik-token` kustomization.
+- Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana` (just kube-prometheus-stack HelmRelease + a dashboard)
 
 ---
 
@@ -324,15 +311,18 @@ Also fixed: external-dns Reloader annotation, cert-manager ClusterIssuer `apiKey
 
 **ESO Password generators still to migrate**:
 
-| File                                                               | Secret                                      | Notes                 |
-| ------------------------------------------------------------------ | ------------------------------------------- | --------------------- |
-| `k8s/authentik-secrets/postgres-external-secret.yaml`              | PostgreSQL password                         | Init-time persistence |
-| `k8s/authentik-secrets/admin-password-external-secret.yaml`        | Admin password                              |                       |
-| `k8s/authentik-secrets/secret-key-external-secret.yaml`            | Secret key                                  |                       |
-| `k8s/authentik-blueprint/users/password-secret.yaml`               | User password                               |                       |
-| `k8s/applications/gitea-secrets/secrets.yaml`                      | Admin password                              |                       |
-| `k8s/applications/matrix-secrets/secrets.yaml`                     | 3 secrets (signing, registration, macaroon) |                       |
-| `k8s/monitoring-stack-secrets/admin-password-external-secret.yaml` | Grafana admin                               |                       |
+| File                                                               | Secret                                      | Refresh | Notes                     |
+| ------------------------------------------------------------------ | ------------------------------------------- | ------- | ------------------------- |
+| `k8s/authentik-secrets/postgres-external-secret.yaml`              | PostgreSQL password                         | 8760h   | Init-time persistence     |
+| `k8s/authentik-secrets/admin-password-external-secret.yaml`        | Admin password                              | 8760h   |                           |
+| `k8s/authentik-secrets/secret-key-external-secret.yaml`            | Secret key                                  | **24h** | Dangerously short refresh |
+| `k8s/authentik-blueprint/users/password-secret.yaml`               | User password                               | 8760h   |                           |
+| `k8s/applications/gitea-secrets/secrets.yaml`                      | Admin password                              | **24h** | Dangerously short refresh |
+| `k8s/applications/matrix-secrets/secrets.yaml`                     | 3 secrets (signing, registration, macaroon) | **24h** | Dangerously short refresh |
+| `k8s/monitoring-stack-secrets/admin-password-external-secret.yaml` | Grafana admin                               | 8760h   |                           |
+
+**Warning**: Three generators use 24h refresh intervals. These will regenerate daily,
+causing desynchronization if pods aren't restarted. Migrate to Vault SSOT or increase to 8760h.
 
 See `docs/archive/SECRET_SYNCHRONIZATION_ANALYSIS.md` for detailed analysis.
 
@@ -348,7 +338,7 @@ workloads deploy.
 
 **Location**: `k8s/kyverno/` (separate from core)
 
-**Dependency chain**: cert-manager → kyverno → core/metrics-server → everything else
+**Dependency chain**: cert-manager → kyverno → sealed-secrets/tofu-controller/metrics-server → everything else
 
 **Current mode**: `validationFailureAction: Audit` - logs violations but doesn't block.
 Change to `Enforce` after validation in live cluster.
@@ -359,7 +349,7 @@ Change to `Enforce` after validation in live cluster.
 
 **Problem**: All cluster ports exposed to 0.0.0.0/0 including K8s API, Talos API, etcd, kubelet.
 
-**Current state** (`terraform/01-infrastructure/main.tf` lines 128-221):
+**Current state** (`terraform/bootstrap/infrastructure/main.tf` lines 128-221):
 
 ```hcl
 # All rules have: source_ips = ["0.0.0.0/0", "::/0"]
@@ -443,7 +433,7 @@ Options:
 
 ### TODO: Terraform State Backup
 
-**Problem**: If `terraform/00-persistent-auth/terraform.tfstate` is lost, all SealedSecrets become
+**Problem**: If `terraform/bootstrap/persistent-auth/terraform.tfstate` is lost, all SealedSecrets become
 undecryptable. This is the single source of truth for the sealed-secrets keypair.
 
 **Current state**: Local file only, no backup.
@@ -668,7 +658,7 @@ See **DNS Architecture** section below for details.
 
 **Firewall**: UDP 8472 required for VXLAN overlay
 
-See <../investigations/2026-02-11-bootstrap-cross-node-and-kyverno/recommendation-minimal-networking.md>
+See <../investigations/2026-02-11-mtu-cross-node-bootstrap/lessons-learned.md>
 for network stack diagrams and diagnostic checklist.
 
 ### KubePrism for Cluster Endpoint

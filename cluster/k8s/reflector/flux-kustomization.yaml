@@ -18,6 +18,3 @@ spec:
       kind: HelmRelease
       name: reflector
       namespace: reflector-system
-  dependsOn:
-    - name: core
-      namespace: flux-system

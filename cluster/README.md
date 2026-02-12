@@ -71,17 +71,17 @@ kubectl get secret agentydragon-user-password -n flux-system -o jsonpath='{.data
 
 ## Secret Management Strategy
 
-**Stable SealedSecret Keypair**: Keypair is generated and stored in terraform state (`terraform/00-persistent-auth/`)
+**Stable SealedSecret Keypair**: Keypair is generated and stored in terraform state (`terraform/bootstrap/persistent-auth/`)
 to ensure SealedSecrets always decrypt correctly across cluster recreations.
 
-**Setup**: Run `terraform apply` in `terraform/00-persistent-auth/` once per environment. The keypair
+**Setup**: Run `terraform apply` in `terraform/bootstrap/persistent-auth/` once per environment. The keypair
 persists in terraform state and survives cluster destroy/recreate cycles.
 
 **Sealing new secrets**:
 
 ```bash
 # Get public cert from terraform state
-cd terraform/00-persistent-auth
+cd terraform/bootstrap/persistent-auth
 terraform output -raw sealed_secrets_cert_pem > /tmp/sealed-secrets.crt
 kubeseal --cert /tmp/sealed-secrets.crt < secret.yaml > sealed-secret.yaml
 ```
@@ -117,20 +117,31 @@ cluster/
 │   └── PLAN.md            # Future roadmap, strategic decisions
 ├── CLAUDE.md, AGENTS.md   # Instructions for AI agents
 ├── terraform/
-│   ├── infrastructure/    # Provisioning from empty Proxmox; boots Talos, Kube, Cilium; hands off to Flux
-│   │   ├── cilium/        # CNI configuration (Terraform-managed, not GitOps)
-│   │   ├── talosconfig    # Creds for node Talos APIs (generated, gitignored)
-│   │   ├── kubeconfig     # Kube config (generated, gitignored)
-│   │   ├── modules/talos-node/ # Reusable Talos node module
-│   │   └── tmp/           # Temporary files (e.g., per-node baked Talos disk images)
-│   └── gitops/            # tofu-controller managed Terraform
-│       ├── authentik/     # Authentik SSO provider configuration
-│       ├── vault/         # Vault configuration
-│       ├── secrets/       # Secret generation
-│       ├── services/      # Service integration configs
-│       └── users/         # User provisioning via Terraform
+│   ├── bootstrap/             # Manual, local state, sequential
+│   │   ├── persistent-auth/   # Proxmox credentials, CSI tokens, sealed secrets keypair
+│   │   ├── infrastructure/    # Provisioning; boots Talos, Kube, Cilium; hands off to Flux
+│   │   │   ├── cilium/        # CNI configuration (Terraform-managed, not GitOps)
+│   │   │   ├── talosconfig    # Creds for node Talos APIs (generated, gitignored)
+│   │   │   ├── kubeconfig     # Kube config (generated, gitignored)
+│   │   │   ├── modules/talos-node/ # Reusable Talos node module
+│   │   │   └── tmp/           # Temporary files (e.g., per-node baked Talos disk images)
+│   │   └── flux/              # Flux bootstrap, core services, applications
+│   └── gitops/                # tofu-controller managed Terraform (k8s state)
+│       ├── authentik-token/   # Authentik API token
+│       ├── dns-records/       # DNS automation
+│       ├── harbor-admin/      # Harbor admin password
+│       ├── harbor-proxy-cache/ # Harbor proxy cache config
+│       ├── powerdns-api-key/  # PowerDNS API key
+│       ├── vault-oidc-auth/   # Vault OIDC authentication
+│       └── sso/               # SSO provider configuration
+│           ├── gitea/, grafana/, harbor/, kagent/
+│           ├── matrix/, users/, vault/
+│           └── ...            # Per-application SSO modules
 ├── k8s/                   # Kubernetes manifests (Flux-managed applications only)
-│   ├── core/              # CRDs and controllers (sealed-secrets, tofu-controller)
+│   ├── sealed-secrets/    # SealedSecrets controller
+│   ├── tofu-controller/   # Terraform CRD controller
+│   ├── reloader/          # Stakater Reloader (auto-restart on secret change)
+│   ├── coredns-custom/    # CoreDNS zone forwarding to PowerDNS
 │   ├── cert-manager/
 │   ├── ingress-nginx/     # HTTP(S) ingress
 │   ├── powerdns/          # DNS server (external)

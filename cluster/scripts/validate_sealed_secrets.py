@@ -13,10 +13,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from cluster.scripts.runfiles_util import resolve_path
+from bazel_util.runfiles import get_required_path
 
-_KUBESEAL_BIN = resolve_path("multitool/tools/kubeseal/kubeseal")
-_TOFU_BIN = resolve_path("multitool/tools/tofu/tofu")
+_KUBESEAL_BIN = get_required_path("multitool/tools/kubeseal/kubeseal")
+_TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
 
 
 def get_repo_root() -> Path:
@@ -73,7 +73,7 @@ def validate_sealed_secret(sealed_secret_path: Path, private_key_path: Path) -> 
 
 def main() -> int:
     repo_root = get_repo_root()
-    tf_dir = repo_root / "terraform" / "00-persistent-auth"
+    tf_dir = repo_root / "terraform" / "bootstrap" / "persistent-auth"
     k8s_dir = repo_root / "k8s"
 
     if not (tf_dir / "terraform.tfstate").exists():

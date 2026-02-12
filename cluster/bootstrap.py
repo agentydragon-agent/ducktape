@@ -6,7 +6,7 @@ Run via: bazel run //cluster:bootstrap
 Multi-layer deployment with persistent auth separation:
   Layer 0: Persistent Auth (CSI tokens, sealed secrets keypair)
   Layer 1: Infrastructure (VMs, Talos, CNI, networking)
-  Layer 2: Services (Deploy via GitOps - Flux handles DNS/SSO automatically)
+  Layer 2: Flux (GitOps bootstrap - Flux handles DNS/SSO automatically)
 """
 
 import argparse
@@ -31,10 +31,10 @@ from kubernetes.stream.ws_client import STDERR_CHANNEL, STDOUT_CHANNEL
 from pydantic import BaseModel
 from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 
+from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
-from cluster.scripts.runfiles_util import resolve_path
 
-_TOFU_BIN = resolve_path("multitool/tools/tofu/tofu")
+_TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
 
 
 SCRIPT_DIR = get_build_workspace_directory() / "cluster"
@@ -47,15 +47,15 @@ log = logging.getLogger(__name__)
 class Layer(IntEnum):
     PERSISTENT_AUTH = 0
     INFRASTRUCTURE = 1
-    SERVICES = 2
+    FLUX = 2
 
     @property
     def tf_dir_name(self) -> str:
-        return ["00-persistent-auth", "01-infrastructure", "02-services"][self.value]
+        return ["persistent-auth", "infrastructure", "flux"][self.value]
 
     @property
     def tf_dir(self) -> Path:
-        return TERRAFORM_DIR / self.tf_dir_name
+        return TERRAFORM_DIR / "bootstrap" / self.tf_dir_name
 
 
 def run(
@@ -271,7 +271,7 @@ def verify_clusterip_routing(v1: client.CoreV1Api, timeout: int = 300, interval:
 
     On 2026-02-11, this exact gap caused Kyverno webhook timeouts that
     permanently blocked 49 kustomizations. See investigations/2026-02-11-
-    kyverno-webhook-timeout-bootstrap/findings.md for the full analysis.
+    mtu-cross-node-bootstrap/lessons-learned.md for the full analysis.
 
     WHAT WE TEST: Creates a busybox pod on each node and runs nslookup
     against kubernetes.default.svc.cluster.local. This exercises:
@@ -661,7 +661,7 @@ def deploy_services() -> None:
     os.environ.setdefault("KUBECONFIG", str(kubeconfig))
 
     log.info("Deploying services (Flux, Authentik, PowerDNS, Harbor, Gitea, Matrix)...")
-    tofu(Layer.SERVICES, "apply", "-auto-approve")
+    tofu(Layer.FLUX, "apply", "-auto-approve")
 
     log.info("Flux deployed. Monitoring kustomization convergence...")
     config.load_kube_config(str(kubeconfig))
@@ -684,7 +684,7 @@ def main() -> None:
 
     root = SCRIPT_DIR.parent
 
-    start_layer = {"infrastructure": Layer.INFRASTRUCTURE, "services": Layer.SERVICES}.get(
+    start_layer = {"infrastructure": Layer.INFRASTRUCTURE, "services": Layer.FLUX}.get(
         args.start_from, Layer.PERSISTENT_AUTH
     )
 

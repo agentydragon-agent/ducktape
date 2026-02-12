@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: hcloud-csi
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/hcloud-csi"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: kyverno
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: hcloud-csi-controller
+      namespace: kube-system
+    - apiVersion: apps/v1
+      kind: DaemonSet
+      name: hcloud-csi-node
+      namespace: kube-system

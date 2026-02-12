@@ -19,7 +19,7 @@ Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
 - Cilium CNI with VXLAN tunnel mode (cross-node connectivity verified)
 - KubeSpan mesh working - WireGuard handshakes verified
 - Hetzner Cloud CSI for block storage
-- Talos machine secrets persisted in 00-persistent-auth layer
+- Talos machine secrets persisted in bootstrap/persistent-auth layer
 
 **Pending**:
 

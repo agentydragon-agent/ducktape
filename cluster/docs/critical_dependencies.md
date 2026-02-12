@@ -70,21 +70,14 @@ The hybrid cluster has a strict dependency chain:
 **Proxmox CSI** (home nodes):
 
 - Check: `kubectl get pods -n csi-proxmox`
-- Requires: Valid Proxmox API token (from 00-persistent-auth)
+- Requires: Valid Proxmox API token (from bootstrap/persistent-auth)
 
 ### Sealed Secrets Keypair
 
-**Current Approach**: Terraform generates stable keypair in 00-persistent-auth layer
+**Current Approach**: Terraform generates stable keypair in bootstrap/persistent-auth layer
 
 **Key Points**:
 
 - Keypair persists across cluster destroy/recreate
 - All SealedSecrets in git must match current keypair
 - Use `./scripts/seal-secret.sh` for new secrets
-
-## Engineering Best Practices
-
-1. **Never disrupt critical services on a running cluster**
-2. **Test changes via destroy/recreate cycle**
-3. **Document circular dependencies and break with proper sequencing**
-4. **Keep persistent auth layer separate from cluster lifecycle**

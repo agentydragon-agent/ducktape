@@ -19,7 +19,7 @@ spec:
       name: authentik-blueprint-matrix
       namespace: flux-system
   dependsOn:
-    - name: core # Wait for tofu-controller to install Terraform CRD
+    - name: tofu-controller
       namespace: flux-system
     - name: authentik # Wait for Authentik to be ready
       namespace: flux-system

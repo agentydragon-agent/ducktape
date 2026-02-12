@@ -62,8 +62,6 @@ service:
     # Using default Cluster mode (SNAT) for Tailscale compatibility
     # externalTrafficPolicy: Local
     annotations: {}
-      # metallb.universe.tf/address-pool: dns-pool
-      # metallb.universe.tf/loadBalancerIPs: 10.0.3.3
 
   # API service (internal)
   api:
