@@ -31,16 +31,28 @@ spec:
     # queries to Talos DNS proxy at 127.0.0.53:53, breaking image pulls for any
     # registry (ghcr.io, docker.io, etc.) since PowerDNS is authoritative-only.
     #
-    # With hostNetwork, PowerDNS binds 0.0.0.0:53 directly in the host namespace.
-    # Linux socket priority ensures coexistence with Talos DNS proxy:
-    #   - 127.0.0.53:53 (specific bind) → Talos dns-resolve-cache (upstream resolvers)
-    #   - 0.0.0.0:53 (wildcard bind)    → PowerDNS (authoritative for allegedly.works)
-    # The kernel routes to the most-specific matching socket, so host-level DNS
-    # (used by containerd for image pulls) is unaffected.
+    # With hostNetwork, PowerDNS binds directly in the host namespace.
+    # Port 53 coexistence with Talos DNS proxy:
+    #   - PowerDNS local-address = node's public IP (via Downward API)
+    #   - Talos dns-resolve-cache binds 127.0.0.53:53 (loopback only)
+    # These are disjoint addresses, so no conflict. Containerd image pulls
+    # go to 127.0.0.53 → Talos DNS → upstream resolvers (Hetzner).
+    # External DNS queries go to <public-ip>:53 → PowerDNS.
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
     hostPort:
       enabled: false
+
+    # Bind PowerDNS to the node's IP only (not 0.0.0.0) to avoid conflicting
+    # with Talos dns-resolve-cache at 127.0.0.53:53.
+    # With hostNetwork: true, status.podIP = node IP.
+    extraEnv:
+      - name: POD_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: PDNS_local_address
+        value: "$(POD_IP)"
 
     # Only run on Hetzner VPS nodes (which have public IPs)
     nodeSelector:

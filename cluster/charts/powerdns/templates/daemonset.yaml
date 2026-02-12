@@ -100,6 +100,11 @@ spec:
           value: {{ $value | quote }}
         {{- end }}
 
+        # Extra env vars (supports valueFrom for Downward API, etc.)
+        {{- with .Values.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
         ports:
         - name: dns-tcp
           containerPort: 53

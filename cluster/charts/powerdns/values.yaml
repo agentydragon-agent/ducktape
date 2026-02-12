@@ -149,6 +149,10 @@ hostPort:
   dnsPort: 53
   # apiPort: 8081  # Uncomment to expose API on host
 
+# Extra env vars (supports valueFrom for Downward API, etc.)
+# Use to set PDNS_local_address to node IP when using hostNetwork: true.
+extraEnv: []
+
 # Node selection (DaemonSet runs one pod per matching node)
 nodeSelector: {}
 tolerations: []
