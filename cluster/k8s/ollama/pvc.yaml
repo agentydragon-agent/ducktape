@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llm-models
+  namespace: ollama
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Proxmox storage on GPU worker node — co-located with GPUs
+  storageClassName: proxmox-csi-retain
+  resources:
+    requests:
+      storage: 200Gi

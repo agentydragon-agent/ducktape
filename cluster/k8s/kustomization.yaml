@@ -57,6 +57,9 @@ resources:
   - applications/buildbuddy-executor/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
   - hubble-ui/flux-kustomization.yaml
+  - ollama-namespace/flux-kustomization.yaml
+  - ollama-secrets/flux-kustomization.yaml
+  - ollama/flux-kustomization.yaml
   - kagent-namespace/flux-kustomization.yaml
   - kagent/flux-kustomization.yaml
   - kagent-secrets/flux-kustomization.yaml

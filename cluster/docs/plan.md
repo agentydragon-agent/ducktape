@@ -80,8 +80,9 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
       Well within rate limits (14 certs vs 50/week limit per registered domain).
 - [ ] **Test all SSO flows** after switching to production LE
 - [ ] **Deploy headscale**, test with a device
-- [ ] **Expose Hubble UI** behind Authentik SSO (`hubble.allegedly.works`, admin-only).
-      Hubble relay + UI are enabled in Cilium values but have no ingress yet.
+- [ ] **Deploy Ollama** — manifests committed, pending bootstrap verification (GPU node + auth proxy).
+- [ ] **Migrate headscale to Helm chart** — currently raw deployment manifests, should use official
+      Helm chart for consistency with other applications.
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 
 ### Known Issues to Watch
@@ -599,8 +600,6 @@ Any single node failure maintains 2/3 quorum.
 
 See **DNS Architecture** section below for details.
 
----
-
 ## 📋 Future Services (Lower Priority)
 
 - [ ] Jellyfin (media streaming)
@@ -608,8 +607,6 @@ See **DNS Architecture** section below for details.
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache
-
----
 
 ## 🔧 Low Priority Improvements
 

@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: ollama
+  labels:
+    app: ollama
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - name: ollama
+              containerPort: 11434
+              protocol: TCP
+          env:
+            - name: OLLAMA_MODELS
+              value: /models
+            - name: OLLAMA_HOST
+              value: 0.0.0.0:11434
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+          resources:
+            requests:
+              nvidia.com/gpu: 2
+              memory: 16Gi
+              cpu: "4"
+            limits:
+              nvidia.com/gpu: 2
+              memory: 28Gi
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          livenessProbe:
+            httpGet:
+              path: /
+              port: ollama
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: ollama
+            initialDelaySeconds: 10
+            periodSeconds: 10
+        - name: auth-proxy
+          image: openresty/openresty:alpine
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          volumeMounts:
+            - name: auth-config
+              mountPath: /usr/local/openresty/nginx/conf/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: api-key
+              mountPath: /etc/ollama-secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: llm-models
+        - name: auth-config
+          configMap:
+            name: ollama-auth-proxy-config
+        - name: api-key
+          secret:
+            secretName: ollama-api-key

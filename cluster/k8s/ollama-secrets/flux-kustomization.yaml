@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ollama-secrets
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/ollama-secrets
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: ollama-api-key
+      namespace: flux-system
+  timeout: 10m
+  dependsOn:
+    - name: ollama-namespace
+    - name: external-secrets-config
+    - name: tofu-controller
+    - name: vault-token
