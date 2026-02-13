@@ -18,15 +18,14 @@ class BuildbuddySetup:
     configured: bool
 
 
-def setup_buildbuddy(project_dir: Path) -> BuildbuddySetup:
-    """Configure BuildBuddy remote cache if BUILDBUDDY_API_KEY is set.
+def setup_buildbuddy(project_dir: Path, *, api_key: str | None = None) -> BuildbuddySetup:
+    """Configure BuildBuddy remote cache.
 
     Writes config to ~/.config/bazel/buildbuddy.bazelrc and ensures
     ~/.bazelrc has the try-import line.
     """
-    api_key = os.environ.get("BUILDBUDDY_API_KEY")
     if not api_key:
-        logger.info("BUILDBUDDY_API_KEY not set, skipping BuildBuddy setup")
+        logger.info("BuildBuddy API key not provided, skipping setup")
         return BuildbuddySetup(configured=False)
 
     script_path = project_dir / "tools" / "setup-buildbuddy.sh"

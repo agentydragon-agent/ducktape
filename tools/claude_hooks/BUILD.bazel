@@ -184,10 +184,7 @@ py_library(
 py_library(
     name = "secrets_setup",
     srcs = ["secrets_setup.py"],
-    data = [
-        "secrets/extra_context.md",
-        "secrets/secrets.env.age",
-    ],
+    data = glob(["secrets/*.age"]),
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pyrage"],
@@ -354,8 +351,7 @@ py_test(
     name = "test_session_start",
     srcs = ["test_session_start.py"],
     data = [
-        "testdata/test_secrets/extra_context.md",
-        "testdata/test_secrets/secrets.env.age",
+        "testdata/test_secrets/test_component.age",
         ":session_start",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",

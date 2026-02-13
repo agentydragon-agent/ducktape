@@ -374,7 +374,11 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings) -> None:
         run_in_thread(precommit_setup.install_precommit, project_dir),
         run_in_thread(nix_setup.install_nix, settings),
         run_in_thread(install_bazelisk_wrapper),
-        run_in_thread(buildbuddy_setup.setup_buildbuddy, project_dir),
+        run_in_thread(
+            lambda: buildbuddy_setup.setup_buildbuddy(
+                project_dir, api_key=secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
+            )
+        ),
         setup_bazel_on_tmpfs(),
         setup_mkcert_with_proxy(),
         return_exceptions=True,

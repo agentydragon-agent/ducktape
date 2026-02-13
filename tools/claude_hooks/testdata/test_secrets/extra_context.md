@@ -1,1 +1,0 @@
-Test secrets decrypted successfully.

@@ -30,7 +30,16 @@ GitHub CI: DUCKTAPE_CI_READ_GITHUB_TOKEN is set (fine-grained PAT for agentydrag
   Note: GitHub API requests frequently get transient 401s from the TLS-inspecting egress proxy. Retry on 401 with backoff (sleep 2-5s between retries). Parse JSON defensively — a 401 returns an empty body.
 % endif
 % if secrets:
-${secrets.extra_context}
+% if "GITHUB_TOKEN" in secrets.env_vars:
+`GITHUB_TOKEN`: GitHub PAT for `agentydragon-agent` bot. Used by `gh` CLI automatically. Supports all read/write operations including push, PR create/update, issue management.
+% endif
+% if "OLLAMA_API_KEY" in secrets.env_vars:
+Ollama: `OLLAMA_BASE_URL` and `OLLAMA_API_KEY` set. OpenAI-compatible LLM inference (2x RTX 5090).
+  Usage: `OpenAI(base_url=os.environ["OLLAMA_BASE_URL"], api_key=os.environ["OLLAMA_API_KEY"])`
+% endif
+% if "BUILDBUDDY_API_KEY" in secrets.env_vars:
+`BUILDBUDDY_API_KEY`: BuildBuddy remote cache/execution key (also configured in ~/.config/bazel/buildbuddy.bazelrc).
+% endif
 % endif
 BuildBuddy: API key in ~/.config/bazel/buildbuddy.bazelrc. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 Setup log: ${log_file}

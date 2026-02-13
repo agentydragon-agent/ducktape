@@ -419,9 +419,6 @@ class TestFullSessionStartHook:
         )
         assert shell_result.stdout.strip() == "test-value-12345"
 
-        # Verify extra context appears in hook stdout
-        assert "Test secrets decrypted successfully." in result.stdout
-
 
 def _can_use_podman() -> bool:
     """Check if podman is available for use.

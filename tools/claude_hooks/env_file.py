@@ -167,7 +167,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
 
     # Age-decrypted secrets (appended verbatim as shell export lines)
     if vars.secrets_exports:
-        exports.extend(["", "# Decrypted secrets (from secrets.env.age)"])
+        exports.extend(["", "# Decrypted secrets (from *.age component files)"])
         exports.append(vars.secrets_exports)
 
     content = "\n".join(exports) + "\n"
