@@ -171,137 +171,19 @@ when ready to deploy these applications.
 
 ---
 
-## 🚨 Minimal Requirements for Go-Live
+## 🚨 Go-Live Checklist
 
-### Public Traffic Routing
+Completed infrastructure: public traffic routing (hostNetwork ingress+DNS), kubectl access,
+DNS automation (Route 53 + PowerDNS via tofu-controller), cert-manager, VPS IP automation.
 
-| Status | ✅ Configured (hostNetwork) |
-| ------ | --------------------------- |
+### Remaining
 
-ingress-nginx and PowerDNS run with `hostNetwork: true`, binding directly to VPS node IPs.
-
-**Traffic flow**:
-
-```text
-Internet → VPS public IP:443 → ingress-nginx pod (hostNetwork) → backend services
-Internet → VPS public IP:53  → PowerDNS pod (hostNetwork) → DNS responses
-```
-
-**Failover via DNS**: DNS returns two A records (both VPS IPs). Modern browsers handle failover automatically.
-
-### Website Hosting
-
-| Status | ✅ Manifests created |
-| ------ | -------------------- |
-
-- [ ] Personal website accessible (test domain first, then `agentydragon.com`)
-- **Current state**: Hakyll-built site, rsync to ansible VPS, served by nginx
-- **Initial implementation**: Simple nginx + static HTML placeholder
-- **Location**: `k8s/applications/website/`
-
-### Atlas Proxmox Access
-
-| Status | ✅ Via Headscale mesh |
-| ------ | --------------------- |
-
-- [ ] Atlas joins headscale mesh
-- Access via tailscale IP: `ssh root@100.64.x.x` or `https://100.64.x.x:8006`
-- No public ingress needed - internal mesh access only
-
-**Dependency**: Requires headscale running first. Once atlas joins the mesh, it's accessible from any device in the tailnet.
-
-**Deferred**: Public DNS access (`atlas.allegedly.works`) is optional - would require proxy pod on Proxmox worker or tailscale on VPS nodes. Not needed for go-live.
-
-### Headscale Server
-
-| Status | ✅ Manifests created |
-| ------ | -------------------- |
-
-- [ ] Headscale server running as cluster workload
-- [ ] Stable public endpoint for Tailscale clients
-- [ ] Persistent storage for database (SQLite on PVC)
-- **Location**: `k8s/applications/headscale/`
-
-**Architecture**: Headscale exposed via public ingress on VPS nodes. Non-cluster devices (laptops, phones, atlas) connect via public DNS.
-
-### kubectl Access
-
-| Status | ✅ Configured |
-| ------ | ------------- |
-
-- [x] Working kubectl access to the cluster
-- Via KUBECONFIG from terraform output
-- direnv auto-exports when in cluster directory
-
----
-
-## ⚠️ Remaining Work Before Bootstrap
-
-### VPS IP Configuration
-
-✅ **Automated via DNS Automation** (tofu-controller)
-
-After cluster boots:
-
-- Route 53 glue records (ns1/ns2.allegedly.works) are created automatically
-- PowerDNS NS A records within zone are created automatically
-- VPS IPs are read from `cluster-info` ConfigMap created by infrastructure terraform
-
-All VPS IP configuration is fully automated via `cluster-info` ConfigMap + Reflector.
-
-### Registrar DNS Configuration
-
-✅ **Route 53 glue records managed by tofu-controller**
-
-NS delegation is configured at Route 53 (zone `Z02901943N8ZFQFOD9P5I`):
-
-- NS records pointing to ns1/ns2.allegedly.works
-- Glue A records automatically updated when VPS IPs change
-
-### PowerDNS Zone
-
-Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/clusterzone.yaml`).
-
-### Deferred
-
-`k8s/applications/atlas-proxy/` - not needed for go-live, atlas access via headscale mesh instead.
-
----
-
-## 📋 Migration Path
-
-### Phase 1: Cluster Bootstrap
-
-1. [ ] Run `bazel run //cluster:bootstrap` to create VPS nodes (new public IPs assigned)
-2. [ ] Verify VPS IPs in ConfigMap:
-   ```bash
-   kubectl get configmap cluster-info -n kube-system -o jsonpath='{.data.vps_nodes}' | jq
-   ```
-3. [x] ~~Update cluster configs with new VPS IPs~~ - **Automated via DNS automation**
-   - Route 53 glue records: tofu-controller creates automatically
-   - PowerDNS NS A records: tofu-controller creates automatically
-   - external-dns `--default-targets`: automated via `cluster-info` ConfigMap + Reflector
-4. [ ] Verify DNS automation applied:
-   ```bash
-   kubectl get terraform dns-records -n flux-system
-   aws route53 list-resource-record-sets --hosted-zone-id Z02901943N8ZFQFOD9P5I \
-     --query "ResourceRecordSets[?Name=='ns1.allegedly.works.']"
-   ```
-5. [ ] Verify DNS resolution: `dig @ns1.allegedly.works allegedly.works`
-6. [ ] Verify certs issue: `kubectl get certificates -A`
-
-### Phase 2: Deploy Missing Services
-
-5. [ ] Deploy headscale, test with a device
-6. [ ] Deploy website, verify accessible
-7. [ ] Configure atlas proxy (update IP)
-8. [ ] Test all services on allegedly.works
-
-### Phase 3: Production Cutover
-
-9. [ ] Migrate Tailscale devices from ansible VPS headscale to cluster headscale
-10. [ ] Update `agentydragon.com` DNS to point to cluster
-11. [ ] Decommission ansible-managed VPS
+- [ ] Deploy headscale, test with a device, join atlas to mesh
+- [ ] Website accessible on test domain, then `agentydragon.com`
+- [ ] Test all services on `allegedly.works`
+- [ ] Migrate Tailscale devices from ansible VPS to cluster headscale
+- [ ] Update `agentydragon.com` DNS to point to cluster
+- [ ] Decommission ansible-managed VPS
 
 ## 🔧 Operational Hardening
 
