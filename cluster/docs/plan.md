@@ -4,70 +4,10 @@
 
 ## 🔥 Immediate Next Steps
 
-**Status**: Cluster torn down. Pending bootstrap with GPU worker node.
-
-### Next: Bootstrap with GPU Worker
-
-GPU worker infrastructure is committed. Before bootstrapping:
-
-1. **Restart wyrm** (manual) — releases GPUs detached in previous session
-2. **Bootstrap**: `bazel run //cluster:bootstrap`
-3. **Verify GPU worker**:
-   ```bash
-   kubectl get nodes -l nvidia.com/gpu=true
-   kubectl get pods -n nvidia-device-plugin
-   kubectl describe node talos-pve-gpu-worker-0 | grep nvidia.com/gpu
-   # Expect: nvidia.com/gpu: 2
-   ```
-
-### Previous Bootstrap Verification (2026-02-12) ✅
-
-All checks passed (pre-GPU worker, 3 nodes):
-
-- **KubeSpan**: All peers "up", unique identities, no duplicates (2 peers per node × 3 nodes)
-- **Nodes**: All 3 Ready (talos-vps-cp-0, talos-vps-cp-1, talos-pve-cp-0)
-- **Kustomizations**: 62/62 non-suspended Ready at revision `f219691f`
-- **Certificates**: All 16 Ready, no pending ACME challenges
-- **Cross-node networking**: VPS↔Proxmox working (KubeSpan mesh healthy)
-
-### Recent Fixes (2026-02-12/13)
-
-1. **Element-web crashloop** — `enableServiceLinks: false` prevents Kubernetes from injecting
-   `ELEMENT_WEB_PORT=tcp://...` which collides with the nginx template variable `${ELEMENT_WEB_PORT}`.
-2. **Harbor proxy cache quay adapter** — Harbor v2.14 doesn't support `quay` as a proxy cache
-   adapter type. Changed to `docker-registry` (Quay.io implements standard Docker V2 API).
-3. **Gitea SSO `x509: certificate signed by unknown authority`** — CA trust bundle was only
-   mounted in init containers (`extraInitVolumeMounts`) but not the main Gitea container.
-   Added `extraContainerVolumeMounts` so `SSL_CERT_FILE` points to a path that actually exists.
-4. **Website unsuspended** — removed `suspend: true` from flux-kustomization manifest.
-5. **Proxmox VM balloon minimum** — increased from 4GB to 12GB (`floating = 12 * 1024`).
-
-### Previous Fixes (2026-02-11)
-
-1. **Cilium stripped to Talos-recommended defaults** + `MTU: 1370` + hubble.
-   Reverted DNS workarounds to defaults. Note: the Helm key is uppercase `MTU`
-   (case-sensitive; lowercase `mtu` is silently ignored).
-2. **Machine secrets moved from layer 00 to layer 01** — fresh `cluster.id` per
-   lifecycle prevents stale KubeSpan discovery entries from previous incarnations.
-3. **HostnameConfig conflict fixed** — removed explicit HostnameConfig from VPS
-   config patches (hcloud platform auto-sets hostname from server name).
-4. **Install retries on all HelmReleases** — `install.remediation.retries: 3` on
-   all 27 HelmReleases to prevent transient failures from permanently blocking bootstrap.
-5. **Kyverno HA** — admission controller runs 3 replicas spread across control plane
-   nodes with topology constraints, eliminating cross-node webhook calls during bootstrap.
-6. **ClusterIP readiness gate** — bootstrap script verifies ClusterIP routing from
-   every node before deploying Flux (closes the Cilium health-vs-BPF-maps gap).
-7. **Vault `disable_mlock: true`** — required since Vault 1.20 (no longer defaults).
-   Safe on Talos (no swap).
-8. **`authentik-secrets` missing dependency on `authentik-token`** — `authentik-bootstrap`
-   ExternalSecret reads `kv/sso/client-secrets` from Vault, but that path is created
-   by `authentik-token` Terraform. Without the dependency, both kustomizations start in
-   parallel after `external-secrets-config` is Ready, and the ExternalSecret fails
-   with "Secret does not exist" because the Terraform hasn't populated Vault yet.
+**Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
+GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090).
 
 ### Suspended Kustomizations
-
-These kustomizations have `suspend: true` and need unsuspending when ready to deploy:
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
 
@@ -80,24 +20,10 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
       Well within rate limits (14 certs vs 50/week limit per registered domain).
 - [ ] **Test all SSO flows** after switching to production LE
 - [ ] **Deploy headscale**, test with a device
-- [ ] **Deploy Ollama** — manifests committed, pending bootstrap verification (GPU node + auth proxy).
-- [ ] **Ollama: investigate Authentik user tokens for per-user auth** — currently uses a single
-      shared API key from Vault. Authentik supports per-user app passwords that can be exchanged
-      for JWTs via `client_credentials` grant. Could replace the static shared key with per-user
-      tokens (similar to how Harbor generates per-user CLI secrets after OIDC login). Requires
-      Authentik proxy provider + long-lived JWTs for OpenAI SDK compatibility (SDK sends static
-      Bearer token, no refresh). See Harbor's pattern: OIDC login → user generates CLI secret.
-- [ ] **Verify NFD + NVIDIA device plugin** — NFD deployed, NVIDIA device plugin uses
-      `nvidia.com/gpu` label (set by Talos machine config). Verify GPUs registered after bootstrap.
-- [x] **Migrate headscale to Helm chart** — switched to `wrenix/headscale` (OCI at
-      `oci://codeberg.org/wrenix/helm-charts`, v1.0.14, app v0.28.0).
+- [ ] **Verify Ollama** — manifests deployed, needs end-to-end test (pull model, query API).
+- [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
+      `client_credentials` JWTs). Currently uses shared API key from Vault.
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
-
-### Known Issues to Watch
-
-- **BuildBuddy executor** — 3 replicas running, connected to `remote.buildbuddy.io`. Container
-  image warmup timed out (non-critical, images pulled on first build).
-- **Kyverno webhook timeouts** — verified fixed (see previous fixes)
 
 ## 🎯 Target Architecture
 
@@ -155,6 +81,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Nix cache      | Binary cache       | -   |
 | BuildBuddy     | Remote build exec  | -   |
 | Headscale      | Tailscale control  | -   |
+| Ollama         | LLM inference      | -   |
 | Website        | Static placeholder | -   |
 
 ## Applications (disabled - need flux-kustomization.yaml)
@@ -191,20 +118,10 @@ All application secrets use Terraform → Vault → ESO pattern. Zero ESO Passwo
 remain. Stakater Reloader restarts pods on secret changes. See
 <lessons_learned/2025-11-28-eso-password-generator-desync.md> for historical context.
 
-### Kyverno GitOps Enforcement
+### Kyverno GitOps Enforcement ✅
 
-**Status**: ✅ Deployed (Audit mode)
-
-Kyverno deployed with `require-gitops` ClusterPolicy. Separated into own kustomization with
-ValidatingWebhookConfiguration health check to ensure webhook is operational before other
-workloads deploy.
-
-**Location**: `k8s/kyverno/` (separate from core)
-
-**Dependency chain**: cert-manager → kyverno → sealed-secrets/tofu-controller/metrics-server → everything else
-
-**Current mode**: `validationFailureAction: Audit` - logs violations but doesn't block.
-Change to `Enforce` after validation in live cluster.
+Deployed in Audit mode. `require-gitops` ClusterPolicy, HA (3 replicas).
+TODO: Switch to `Enforce` after validation.
 
 ### TODO: Firewall Hardening
 
@@ -331,13 +248,6 @@ Add to post-apply hook or document as manual step.
 
 **Reference**: <https://fluxcd.io/flux/guides/webhook-receivers/>
 
-### Flux Reconciliation Failure Alerts
-
-**Status**: ✅ Configured
-
-- ntfy.sh push notifications: `k8s/flux-system/flux-alerts.yaml`
-- Grafana/Prometheus alerting: `k8s/monitoring-stack/flux-prometheus-rule.yaml`
-
 ### TODO: Flux Kustomization Dependency Graph UI
 
 **Priority**: Low
@@ -366,46 +276,18 @@ Protect terraform state with encrypted cloud backup.
 
 **Scope**: `terraform/*/terraform.tfstate` files (contain all secrets)
 
-### GPU Worker Node
+### GPU Worker Node ✅
 
-2x RTX 5090 moved from wyrm VM to a dedicated Talos GPU worker node.
+2x RTX 5090 on dedicated Talos GPU worker node (`talos-pve-gpu-worker-0`). 8 cores, 32GB
+fixed RAM (balloon incompatible with VFIO), NFD + NVIDIA device plugin, Ollama deployed
+with openresty auth proxy at `ollama.allegedly.works`.
 
-**Completed**:
+**TODO**: Revisit virtio-mem when Proxmox adds support (Bugzilla #2949).
 
-- [x] Wyrm VM reconfigured (GPUs detached, RAM reduced to 8GB-64GB balloon)
-- [x] GPU Talos image schematic with NVIDIA extensions (`nvidia-open-gpu-kernel-modules`, `nvidia-container-toolkit`)
-- [x] PCI hardware mappings (`gpu0`, `gpu1`) via Proxmox API token (requires `Mapping.Modify,Mapping.Use`)
-- [x] GPU worker VM: 8 cores, 32GB fixed RAM (balloon incompatible with VFIO), 2x RTX 5090 PCIe passthrough
-- [x] NVIDIA machine config: kernel modules, `bpf_jit_harden`, containerd nvidia runtime, `nvidia.com/gpu` label
-- [x] NVIDIA device plugin DaemonSet (`k8s/nvidia-device-plugin/`)
+### BuildBuddy Remote Executor ✅
 
-**Remaining (Ollama + Auth)**:
-
-- [ ] Create Ollama Deployment with GPU resource request + PVC for models
-- [ ] Add OpenAI-compatible API auth (Bearer token validated by nginx ingress `auth-snippet`,
-      token stored in Vault). This allows using the OpenAI SDK with
-      `base_url="https://ollama.allegedly.works/v1"` and a static API key.
-- [ ] Expose via `ollama.allegedly.works` with TLS
-- [ ] Newer Ollama supports the OpenAI responses API — verify compatibility
-
-**TODO**: Revisit virtio-mem for dynamic memory on GPU VMs (and wyrm) when Proxmox adds support (Bugzilla #2949).
-Currently balloon is incompatible with VFIO — QEMU actively inhibits it (`virtio-balloon.c:69-77`).
-
-### BuildBuddy Remote Executor
-
-Remote build execution via BuildBuddy Cloud.
-
-**Status**: Deployed (pending cluster bring-up for verification)
-
-**Implementation**:
-
-- [x] HelmRelease using official `buildbuddy-executor` chart from `https://helm.buildbuddy.io`
-- [x] API key sealed as SealedSecret, injected via Flux `valuesFrom`
-- [x] Pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`)
-- [x] 2 replicas, 2 CPU / 8Gi limits each
-- [ ] Verify executor connects to BuildBuddy Cloud after cluster bootstrap
-
-**Location**: `k8s/applications/buildbuddy-executor/`
+Deployed and verified. 3 replicas connected to `remote.buildbuddy.io`, pinned to Proxmox nodes.
+Container image warmup timed out on first boot (non-critical, images pulled on first build).
 
 ### Shared PostgreSQL / MariaDB Galera
 
