@@ -5,7 +5,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - Deploy: Single command `bazel run //cluster:bootstrap` (automated layered deployment)
 - VMs:
   - Run Talos, configured and bootstrapped with Terraform.
-  - Disks are pre-baked per-node from Image Factory with static IPs and Tailscale + QEMU guest agent
+  - Proxmox VMs use cloud-init snippets for static IP configuration + QEMU guest agent
 - VPS nodes (Hetzner) serve public traffic directly via hostNetwork (ingress-nginx, PowerDNS).
 - CNI: Cilium with Talos-specific security configuration
 - Sealed-secrets: Automatic keypair persistence via terraform state for turnkey GitOps
@@ -27,9 +27,9 @@ Execute tools like these with the direnv loaded, or use `direnv exec .`.
   - 10.2.0.1: Home router (gateway)
   - 10.2.0.2: Atlas (Proxmox host) - for CSI driver API access
   - 10.2.1.x: Control plane nodes (Proxmox)
-  - 10.2.2.x: Worker nodes (Proxmox)
+  - 10.2.2.x: Worker nodes (Proxmox, currently none)
 - Talos nodes:
-  - Proxmox: talos-pve-cp-0 (10.2.1.1), talos-pve-worker-0 (10.2.2.1)
+  - Proxmox: talos-pve-cp-0 (10.2.1.1)
   - VPS: 2x Hetzner CPX31 (public IPs, hostNetwork for ingress/DNS)
 - Domain: `*.allegedly.works`
   - PowerDNS in k8s has authority on this domain and handles Let's Encrypt DNS-01 challenges
@@ -123,8 +123,7 @@ cluster/
 │   │   │   ├── cilium/        # CNI configuration (Terraform-managed, not GitOps)
 │   │   │   ├── talosconfig    # Creds for node Talos APIs (generated, gitignored)
 │   │   │   ├── kubeconfig     # Kube config (generated, gitignored)
-│   │   │   ├── modules/talos-node/ # Reusable Talos node module
-│   │   │   └── tmp/           # Temporary files (e.g., per-node baked Talos disk images)
+│   │   │   └── talos-machine-secrets.tf  # Machine secrets (ephemeral per lifecycle)
 │   │   └── flux/              # Flux bootstrap, core services, applications
 │   └── gitops/                # tofu-controller managed Terraform (k8s state)
 │       ├── authentik-token/   # Authentik API token
@@ -173,7 +172,7 @@ Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
   Without this, cross-node packets fragment and drop intermittently.
 - KubeSpan: WireGuard mesh connects VPS and Proxmox nodes
 
-- Terraform → Image Factory API → Custom QCOW2 with META key 10 → VMs with static IPs (no DHCP)
+- Terraform → Image Factory API + cloud-init snippets → VMs with static IPs (no DHCP)
 - GitOps flow: Git commit → Flux detects change → applies k8s manifests
 - Deployment path: `k8s/` directory → Flux Kustomizations → HelmReleases → Running pods
 - Secret management: local `kubeseal` → sealed-secrets controller → K8s Secret → Application pods

@@ -90,19 +90,18 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Domain Strategy
 
-| Domain             | Purpose                     | Status                    |
-| ------------------ | --------------------------- | ------------------------- |
-| `allegedly.works`  | Test/staging cluster        | Registered, pending setup |
-| `agentydragon.com` | Production (future cutover) | On ansible VPS            |
+| Domain             | Purpose                     | Status                  |
+| ------------------ | --------------------------- | ----------------------- |
+| `allegedly.works`  | Test/staging cluster        | Active, serving traffic |
+| `agentydragon.com` | Production (future cutover) | On ansible VPS          |
 
 ## Current Nodes
 
-| Node               | Location | Role          | IP            |
-| ------------------ | -------- | ------------- | ------------- |
-| talos-vps-cp-0     | Hetzner  | control-plane | (new on boot) |
-| talos-vps-cp-1     | Hetzner  | control-plane | (new on boot) |
-| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1      |
-| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1      |
+| Node           | Location | Role          | IP            |
+| -------------- | -------- | ------------- | ------------- |
+| talos-vps-cp-0 | Hetzner  | control-plane | (new on boot) |
+| talos-vps-cp-1 | Hetzner  | control-plane | (new on boot) |
+| talos-pve-cp-0 | Proxmox  | control-plane | 10.2.1.1      |
 
 ## Core Services (already configured)
 
@@ -771,7 +770,7 @@ for network stack diagrams and diagnostic checklist.
 
 ## 📊 Cluster Specifications
 
-- **Nodes**: 4 (2 VPS control-plane, 1 Proxmox control-plane, 1 Proxmox worker)
+- **Nodes**: 3 (2 VPS control-plane, 1 Proxmox control-plane)
 - **Talos**: v1.12.3
 - **Kubernetes**: v1.35.1
 - **CNI**: Cilium (VXLAN tunnel mode)

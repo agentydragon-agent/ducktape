@@ -14,11 +14,11 @@ per-node image downloads.
 
 **Expected Improvement:**
 
-| Phase            | META (current)                | Cloud-Init (new) |
-| ---------------- | ----------------------------- | ---------------- |
-| Image download   | 7-9 min × 2 nodes = 14-18 min | 30-60s (once)    |
-| Snippet creation | N/A                           | <1s per node     |
-| **Total**        | 14-18 min                     | ~1 min           |
+| Phase            | META (current)   | Cloud-Init (new) |
+| ---------------- | ---------------- | ---------------- |
+| Image download   | 7-9 min per node | 30-60s (once)    |
+| Snippet creation | N/A              | <1s per node     |
+| **Total**        | 14-18 min        | ~1 min           |
 
 ### Key Changes
 

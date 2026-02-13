@@ -31,7 +31,7 @@
 {{- end }}
 
 4. Test DNS resolution:
-   dig @$SERVICE_IP test-cluster.agentydragon.com
+   dig @$SERVICE_IP allegedly.works
 
 {{- if .Values.externalSecret.enabled }}
 

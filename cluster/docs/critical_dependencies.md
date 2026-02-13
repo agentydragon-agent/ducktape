@@ -5,7 +5,7 @@
 The hybrid cluster has a strict dependency chain:
 
 ```text
-1. Talos OS (base system on all 4 nodes)
+1. Talos OS (base system on all 3 nodes)
    ↓
 2. KubeSpan (WireGuard mesh between VPS ↔ home)
    ↓
@@ -31,14 +31,15 @@ The hybrid cluster has a strict dependency chain:
 
 ### Layer 0: Persistent Auth (run once)
 
-- Talos machine secrets
 - Proxmox API tokens
 - Sealed secrets keypair
+- Nix signing key, Flux deploy key
+- Note: Talos machine secrets are in Layer 1 (fresh per lifecycle)
 
 ### Layer 1: Infrastructure
 
 1. Hetzner VPS nodes created (2x CPX31)
-2. Proxmox VMs created (1x controlplane, 1x worker)
+2. Proxmox VMs created (1x controlplane)
 3. Cluster bootstrapped from first VPS
 4. KubeSpan mesh established
 5. Cilium CNI installed

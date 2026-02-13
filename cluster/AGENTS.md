@@ -459,8 +459,8 @@ It will eventually be replaced once this cluster handles all production services
   - `terraform/bootstrap/flux/` - Flux, core services, applications
 - GitOps terraform (tofu-controller, k8s state):
   - `terraform/gitops/` - DNS records, SSO, Vault OIDC, secrets, service configs
-- VM IDs: 1500-1502 (controlplane0-2), 2000-2001 (worker0-1)
-- Node IPs: 10.0.1.x (controllers), 10.0.2.x (workers), 10.0.3.x (VIPs)
+- VM IDs: 10000 (talos-pve-cp-0). Worker node commented out in terraform.
+- Node IPs: 10.2.1.x (Proxmox controllers), 10.2.2.x (Proxmox workers, currently none)
 
 ## Reference Code Location
 
@@ -479,10 +479,12 @@ Use cloned repos as implementation ground truth.
 
 ## Key Files
 
-- `talos.tf` - Talos machine configurations with Tailscale
-- `proxmox.tf` - VM definitions
+- `hetzner-nodes.tf` - Hetzner VPS node definitions
+- `proxmox-nodes.tf` - Proxmox VM definitions
+- `talos-machine-secrets.tf` - Talos machine secrets (ephemeral per lifecycle)
+- `cilium.tf` - Cilium CNI configuration
 - `variables.tf` - Configuration variables
-- `vault-secrets.tf` - Ansible vault integration via external data source
+- `main.tf` - Providers, firewall rules, Talos bootstrap
 
 ## Project Documentation Strategy
 

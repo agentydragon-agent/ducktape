@@ -30,5 +30,5 @@ else
   echo "Done! Images built locally."
   echo ""
   echo "To push to Harbor, run:"
-  echo "  REGISTRY=harbor.test-cluster.agentydragon.com/agents PUSH=true ./build.sh"
+  echo "  REGISTRY=registry.allegedly.works/agents PUSH=true ./build.sh"
 fi

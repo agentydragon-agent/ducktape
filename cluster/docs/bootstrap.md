@@ -1,6 +1,6 @@
 # Talos Cluster Bootstrap Playbook
 
-Step-by-step instructions for cold-starting the hybrid Talos cluster (2x Hetzner VPS + 2x Proxmox home).
+Step-by-step instructions for cold-starting the hybrid Talos cluster (2x Hetzner VPS + 1x Proxmox home).
 
 ## Architecture Overview
 
@@ -9,18 +9,16 @@ Internet → VPS (2x Hetzner CPX31, Hillsboro OR)
               ├── talos-vps-cp-0 (controlplane, schedulable)
               ├── talos-vps-cp-1 (controlplane, schedulable)
               └── KubeSpan mesh (WireGuard) → Home Proxmox (atlas)
-                                                   ├── talos-pve-cp-0 (controlplane)
-                                                   └── talos-pve-worker-0 (worker)
+                                                   └── talos-pve-cp-0 (controlplane)
 ```
 
-**Node Topology** (4 nodes total):
+**Node Topology** (3 nodes total):
 
-| Node               | Location        | Role         | IP/Access                 |
-| ------------------ | --------------- | ------------ | ------------------------- |
-| talos-vps-cp-0     | Hetzner (hil)   | controlplane | Dynamic (Hetzner assigns) |
-| talos-vps-cp-1     | Hetzner (hil)   | controlplane | Dynamic (Hetzner assigns) |
-| talos-pve-cp-0     | Proxmox (atlas) | controlplane | 10.2.1.1                  |
-| talos-pve-worker-0 | Proxmox (atlas) | worker       | 10.2.2.1                  |
+| Node           | Location        | Role         | IP/Access                 |
+| -------------- | --------------- | ------------ | ------------------------- |
+| talos-vps-cp-0 | Hetzner (hil)   | controlplane | Dynamic (Hetzner assigns) |
+| talos-vps-cp-1 | Hetzner (hil)   | controlplane | Dynamic (Hetzner assigns) |
+| talos-pve-cp-0 | Proxmox (atlas) | controlplane | 10.2.1.1                  |
 
 **etcd Quorum**: 3 controllers (2 VPS + 1 Proxmox) - cluster survives home outage.
 
@@ -55,9 +53,11 @@ terraform init && terraform apply
 
 This creates:
 
-- Talos machine secrets (shared across all nodes)
 - Proxmox API tokens (terraform + CSI)
 - Sealed secrets keypair
+- Nix signing key, Flux deploy key
+
+Note: Talos machine secrets are generated in the infrastructure layer (fresh per lifecycle).
 
 ## Cold-Start Deployment
 
@@ -79,7 +79,7 @@ The bootstrap script executes a 3-phase layered deployment:
 #### Phase 1: Infrastructure (`terraform/bootstrap/infrastructure`)
 
 - **Hetzner API** → Creates 2x VPS with Talos ISO
-- **Proxmox API** → Creates 2x VMs with baked Talos images
+- **Proxmox API** → Creates 1x VM with cloud-init for static IP
 - **Talos API** → Bootstraps cluster from first VPS, generates kubeconfig
 - **Kubernetes API** → Installs Cilium CNI, deploys sealed secrets keypair
 
@@ -93,7 +93,7 @@ The bootstrap script executes a 3-phase layered deployment:
 ### Verification
 
 ```bash
-# Check nodes (all 4 should be Ready)
+# Check nodes (all 3 should be Ready)
 kubectl get nodes -o wide
 
 # Check Flux status
@@ -111,15 +111,15 @@ kubectl get storageclass
 
 **Layer 0: Persistent Auth** (`terraform/bootstrap/persistent-auth/`)
 
-- Talos machine secrets
 - Proxmox API tokens
 - Sealed secrets keypair
-- Survives cluster destroy/recreate
+- Nix signing key, Flux deploy key
+- Survives cluster destroy/recreate (Talos machine secrets are NOT here — they're in Layer 1)
 
 **Layer 1: Infrastructure** (`terraform/bootstrap/infrastructure/`)
 
 - Hetzner VPS nodes (2x CPX31)
-- Proxmox VMs (1x controlplane, 1x worker)
+- Proxmox VMs (1x controlplane)
 - Cilium CNI with VXLAN tunnel mode
 - KubeSpan mesh (WireGuard between all nodes)
 

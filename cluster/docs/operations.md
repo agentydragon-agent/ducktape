@@ -27,16 +27,13 @@ kubeseal --fetch-cert
 ### Controller Node
 
 ```bash
-cd /home/agentydragon/code/cluster/terraform/infrastructure
+cd /home/agentydragon/code/ducktape/cluster/terraform/bootstrap/infrastructure
 
-# Update terraform.tfvars:
-# controller_count = 4
-# worker_count = 3
-
+# Add new node to the `proxmox_nodes` or `hetzner_nodes` locals map
 # Apply changes
 terraform apply
 
-# New workers/controllers will automatically join the cluster
+# New nodes will automatically join the cluster
 # Verify with talosctl get members
 ```
 
@@ -52,7 +49,7 @@ talosctl \
   reboot
 
 # Or force restart via Proxmox
-ssh root@atlas 'qm reboot 1500'
+ssh root@atlas 'qm reboot 10000'
 ```
 
 ### Remove Node
@@ -78,7 +75,7 @@ See `~/.claude/skills/proxmox_vm/vm-screenshot.sh`
 ```bash
 # Interactive console access (from Proxmox host)
 ssh root@atlas
-qm terminal 1500  # controlplane0
+qm terminal 10000  # talos-pve-cp-0
 ```
 
 ## Troubleshooting Common Issues
@@ -190,16 +187,15 @@ kubectl delete certificates --all -A
    - **Solution**: Use worker nodes where ingress pods run
    - **Fix**: Target w0/w1 instead of c0/c1/c2 (controllers)
 
-### Worker Nodes Become NotReady
+### Nodes Become NotReady
 
-**Symptoms**: `kubectl get nodes` shows workers as "NotReady", pods stuck in Pending
+**Symptoms**: `kubectl get nodes` shows nodes as "NotReady", pods stuck in Pending
 **Root Cause**: Kubelet services stuck waiting for volumes to mount (after restarts/updates)
 **Solution**: Restart kubelet services using talosctl
 
 ```bash
-# Restart kubelet on affected nodes
-talosctl -n 10.2.2.1 service kubelet restart  # worker0
-talosctl -n 10.2.2.2 service kubelet restart  # worker1
+# Restart kubelet on affected node
+talosctl -n <node-ip> service kubelet restart
 
 # Verify nodes return to Ready status
 kubectl get nodes
@@ -279,44 +275,26 @@ authentication failures. Consider filing upstream issue if this becomes frequent
 **Root Cause**: Worker nodes NotReady prevents pod scheduling
 **Solution**: Fix underlying node issues first, then Flux recovers automatically
 
-### PowerDNS DNS Delegation Issues
+### PowerDNS DNS Issues
 
-**Architecture**: Secondary Zone via AXFR
-
-- **Primary**: Cluster PowerDNS (10.2.3.3) - authoritative source of truth
-- **Secondary**: VPS PowerDNS (ns1.agentydragon.com) - public-facing nameserver
-- **Replication**: Automatic AXFR zone transfers over Tailscale VPN
-- **Public Delegation**: Route 53 → ns1.agentydragon.com → serves from local zone copy
+**Architecture**: PowerDNS runs directly in the Kubernetes cluster on VPS nodes with `hostNetwork: true`.
+No AXFR replication or secondary DNS server. Nameservers are `ns1.allegedly.works` and `ns2.allegedly.works`.
 
 **Symptoms**: DNS queries fail, cert-manager DNS-01 challenges fail
 **Root Causes & Solutions**:
 
-2. **Zone Not Replicating to VPS (AXFR Failure)**:
-   - **Symptom**: `dig @ns1.agentydragon.com allegedly.works SOA` shows old/missing data
-   - **Check**: `ssh root@agentydragon.com "docker exec powerdns pdnsutil list-zone allegedly.works"`
-   - **Solution**: Verify Tailscale route advertisement and VPS secondary configuration
-   - **Fix**:
-     - Check routes: `ssh root@agentydragon.com "tailscale status"` (should show 10.2.3.0/27)
-     - Verify VPS config: `secondary=yes` in PowerDNS config
-     - Manual transfer: `ssh root@agentydragon.com "docker exec powerdns pdns_control retrieve allegedly.works"`
+1. **PowerDNS Pods Not Running**:
+   - **Check**: `kubectl get pods -n dns-system -l app.kubernetes.io/name=powerdns`
+   - **Solution**: Check pod logs and events
 
-3. **NS Records Point to Wrong Nameserver**:
-   - **Symptom**: cert-manager fails with "no such host" errors for NS records
-   - **Check**: `dig @10.2.3.3 allegedly.works NS` (should return `ns1.agentydragon.com`)
-   - **Solution**: Fix NS records in zone
-   - **Fix**:
-     `kubectl exec -n dns-system deployment/powerdns -- pdnsutil replace-rrset
-allegedly.works @ NS 3600 "ns1.agentydragon.com."`
-   - **Note**: Public DNS will cache old NS records (check TTL with `dig`)
-
-4. **PowerDNS API Not Accessible**:
+2. **PowerDNS API Not Accessible**:
    - **Symptom**: cert-manager fails to create DNS-01 challenge records
    - **Solution**: Check PowerDNS pod logs and API service
    - **Fix**: Verify PowerDNS API key secret exists in cert-manager namespace (reflector copies from dns-system)
 
 ## Reference Information
 
-### Node Assignments (4-node Hybrid Cluster)
+### Node Assignments (3-node Hybrid Cluster)
 
 **Hetzner VPS Nodes** (dynamic IPs assigned by Hetzner):
 
@@ -327,10 +305,9 @@ allegedly.works @ NS 3600 "ns1.agentydragon.com."`
 
 **Proxmox Home Nodes** (static IPs):
 
-| Node               | VM ID | IP Address | Role         |
-| ------------------ | ----- | ---------- | ------------ |
-| talos-pve-cp-0     | 10000 | 10.2.1.1   | Controlplane |
-| talos-pve-worker-0 | 10100 | 10.2.2.1   | Worker       |
+| Node           | VM ID | IP Address | Role         |
+| -------------- | ----- | ---------- | ------------ |
+| talos-pve-cp-0 | 10000 | 10.2.1.1   | Controlplane |
 
 ## Security Configuration
 

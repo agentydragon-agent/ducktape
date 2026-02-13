@@ -10,19 +10,17 @@ Internet → VPS (2x Hetzner CPX31)
               ├── ingress-nginx + PowerDNS (hostNetwork)
               ├── Hetzner Cloud CSI (Flux-managed)
               └── KubeSpan mesh (WireGuard) → Home Proxmox (atlas)
-                                                  ├── 1 Talos control-plane (10.2.1.1)
-                                                  └── 1 Talos worker (10.2.2.1)
+                                                  └── 1 Talos control-plane (10.2.1.1)
                                                       └── Proxmox CSI (ZFS storage)
 ```
 
 ## Nodes
 
-| Node               | Location | Role          | IP            |
-| ------------------ | -------- | ------------- | ------------- |
-| talos-vps-cp-0     | Hetzner  | control-plane | (new on boot) |
-| talos-vps-cp-1     | Hetzner  | control-plane | (new on boot) |
-| talos-pve-cp-0     | Proxmox  | control-plane | 10.2.1.1      |
-| talos-pve-worker-0 | Proxmox  | worker        | 10.2.2.1      |
+| Node           | Location | Role          | IP            |
+| -------------- | -------- | ------------- | ------------- |
+| talos-vps-cp-0 | Hetzner  | control-plane | (new on boot) |
+| talos-vps-cp-1 | Hetzner  | control-plane | (new on boot) |
+| talos-pve-cp-0 | Proxmox  | control-plane | 10.2.1.1      |
 
 ## Networking
 
