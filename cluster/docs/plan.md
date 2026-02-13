@@ -4,18 +4,26 @@
 
 ## 🔥 Immediate Next Steps
 
-**Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
-GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090). Ollama verified end-to-end.
+**Status**: Cluster torn down. Pending bootstrap with Authentik auth fixes.
 
 ### Recent Fixes (2026-02-13)
 
-1. **Proxmox CSI controller on wrong node** — Chart uses top-level `nodeSelector`, not
+1. **Authentik MFA blocking login** — Default authentication flow has an MFA validation stage
+   that rejects users with no enrolled authenticator devices ("Empty response"). Created custom
+   flow without MFA stage via Terraform (`sso/users/main.tf`), set as default via `authentik_brand`.
+2. **Authentik admin password env var wrong** — `authentik-admin-password` ExternalSecret created
+   key `password`, but Authentik expects `AUTHENTIK_BOOTSTRAP_PASSWORD`. Fixed to use direct
+   `secretKey` matching the env var name (consistent with other 3 Authentik ESOs).
+3. **Authentik bootstrap token ESO inconsistency** — Removed unnecessary template from
+   `bootstrap-external-secret.yaml`, now uses direct `secretKey: AUTHENTIK_BOOTSTRAP_TOKEN`
+   (consistent with `secret-key` and `postgres` ESOs).
+4. **Proxmox CSI controller on wrong node** — Chart uses top-level `nodeSelector`, not
    `controller.nodeSelector`. Misplaced key was silently ignored, CSI controller landed on VPS
    where Proxmox API (10.2.0.2:8006) is unreachable. Cascaded to all Proxmox-storage workloads.
-2. **Missing `admin-user`/`username` keys in ESO secrets** — Grafana and Gitea charts expect
+5. **Missing `admin-user`/`username` keys in ESO secrets** — Grafana and Gitea charts expect
    both username and password keys. ESO templates only had password from Vault. Added static
    username fields to ESO `target.template.data`.
-3. **Gitea admin-token Job reads username from secret** — Job now sources `GITEA_ADMIN_USERNAME`
+6. **Gitea admin-token Job reads username from secret** — Job now sources `GITEA_ADMIN_USERNAME`
    from the `gitea-admin-password` secret instead of hardcoding `admin`.
 
 ### Suspended Kustomizations
@@ -24,12 +32,17 @@ GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090). Ollama verified end-to-e
 
 ### Next Actions
 
-- [ ] **Switch cert-manager to production Let's Encrypt** — staging certs break SSO for
-      all services (Gitea, Grafana, Harbor, Matrix) because OIDC discovery hits the ingress
-      which serves untrusted staging certs. Single-line switch in
+- [ ] **Switch cert-manager to production Let's Encrypt** — staging certs work for SSO
+      (LE staging root CA is in the trust bundle via `cluster-ca` staging overlay), but
+      browsers show certificate warnings. Single-line switch in
       `k8s/cert-manager-environment/flux-kustomization.yaml` (change `overlays/staging` → `overlays/production`).
       Well within rate limits (14 certs vs 50/week limit per registered domain).
-- [ ] **Test all SSO flows** after switching to production LE
+- [ ] **Test all SSO flows** — run `scripts/check-authentik-login.py` and test browser login
+- [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
+      in `terraform/gitops/sso/users/main.tf` skips MFA. Add enrollment stage + MFA validation
+      stage back when ready.
+- [ ] **Wire `scripts/check-authentik-login.py` into bootstrap/CI** — currently manual.
+      Consider adding to `bootstrap.py` health checks or as a flux kustomization health check.
 - [ ] **Deploy headscale**, test with a device
 - [x] **Verify Ollama** — 2x RTX 5090 detected (CUDA 12.0, 31.8 GiB each), auth proxy working
       (401 on unauthenticated, 200 with Bearer token), ingress at `ollama.allegedly.works`,
