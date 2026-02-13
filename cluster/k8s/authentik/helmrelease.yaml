@@ -138,8 +138,8 @@ spec:
       auth:
         existingSecret: "authentik-postgres-env"
         secretKeys:
-          adminPasswordKey: "password"
-          userPasswordKey: "password"
+          adminPasswordKey: "AUTHENTIK_POSTGRESQL__PASSWORD"
+          userPasswordKey: "AUTHENTIK_POSTGRESQL__PASSWORD"
 
     # Redis (required for worker message queue)
     redis:
