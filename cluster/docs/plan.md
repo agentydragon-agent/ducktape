@@ -4,7 +4,8 @@
 
 ## 🔥 Immediate Next Steps
 
-**Status**: Cluster torn down. Pending bootstrap with Authentik auth fixes.
+**Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
+Authentik auth fixes committed, pending reconciliation.
 
 ### Recent Fixes (2026-02-13)
 
