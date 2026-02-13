@@ -47,6 +47,7 @@ resources:
   - harbor-proxy-cache/flux-kustomization.yaml
   - gitea-namespace/flux-kustomization.yaml
   - applications/gitea/flux-kustomization.yaml
+  - applications/gitea-admin-token/flux-kustomization.yaml
   - applications/gitea-secrets/flux-kustomization.yaml
   - matrix-namespace/flux-kustomization.yaml
   - applications/matrix/flux-kustomization.yaml

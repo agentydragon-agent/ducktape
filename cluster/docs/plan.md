@@ -36,6 +36,10 @@ GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090). Ollama verified end-to-e
       OpenAI-compatible `/v1/chat/completions` tested with `smollm2:135m`, all 31/31 layers on GPU.
 - [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
       `client_credentials` JWTs). Currently uses shared API key from Vault.
+- [ ] **Consider removing `gitea-admin-token` Job** — originally created for Terraform to
+      configure Gitea OAuth via admin API, but SSO moved to the Authentik blueprint pattern.
+      Nothing currently consumes the token secret. May still be useful for future Gitea API
+      automation (repo/org management).
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 - [ ] **Verify ntfy.sh notifications** — confirm Flux reconciliation failure alerts
       actually arrive on phone via ntfy.sh push notifications.
