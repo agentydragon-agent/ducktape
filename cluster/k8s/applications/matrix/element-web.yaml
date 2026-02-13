@@ -50,6 +50,9 @@ spec:
       labels:
         app: element-web
     spec:
+      # Prevent Kubernetes from injecting ELEMENT_WEB_PORT=tcp://...
+      # which collides with the nginx template variable ${ELEMENT_WEB_PORT}.
+      enableServiceLinks: false
       containers:
         - name: element-web
           image: vectorim/element-web:v1.12.10
