@@ -405,10 +405,13 @@ class TestFullSessionStartHook:
         """Run hook with age key set, verify decrypted secret is visible in env file."""
         # Test keypair (committed in testdata — NOT a real secret)
         test_age_key = "AGE-SECRET-KEY-1DVR9RHP2MVZYD6HE46W4JNWMA673U8FYS00TCLX9VNXCFMQJX5ZQTUEP9E"
-        test_secrets_dir = Path(__file__).parent / "testdata" / "test_secrets"
+
+        # Symlink .claude_hooks/ from testdata into the test project dir (read-only, no copy needed).
+        # Can't point CLAUDE_PROJECT_DIR at runfiles directly because the hook writes to .git/hooks/.
+        test_secrets_src = Path(__file__).parent / "testdata" / "test_secrets" / ".claude_hooks"
+        (isolated_dirs.project / ".claude_hooks").symlink_to(test_secrets_src)
 
         monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_AGE_KEY", test_age_key)
-        monkeypatch.setenv(settings.ENV_PREFIX + "SECRETS_DIR", str(test_secrets_dir))
 
         result = await run_session_start_hook(isolated_dirs.project)
         assert result.returncode == 0, f"Hook failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"

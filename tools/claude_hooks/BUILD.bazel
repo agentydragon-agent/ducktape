@@ -184,7 +184,6 @@ py_library(
 py_library(
     name = "secrets_setup",
     srcs = ["secrets_setup.py"],
-    data = glob(["secrets/*.age"]),
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pyrage"],
@@ -351,7 +350,7 @@ py_test(
     name = "test_session_start",
     srcs = ["test_session_start.py"],
     data = [
-        "testdata/test_secrets/test_component.age",
+        "testdata/test_secrets/.claude_hooks/secrets/test_component.age",
         ":session_start",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",
