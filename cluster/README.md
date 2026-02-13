@@ -25,9 +25,9 @@ Execute tools like these with the direnv loaded, or use `direnv exec .`.
 
 - Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4 bridge)
   - 10.2.0.1: Home router (gateway)
-  - 10.2.0.2: Atlas (Proxmox host) - for CSI driver API access
+  - 10.2.0.2: Atlas (Proxmox host) - **only reachable from Proxmox VLAN** (not from VPS nodes)
   - 10.2.1.x: Control plane nodes (Proxmox)
-  - 10.2.2.x: Worker nodes (Proxmox, currently none)
+  - 10.2.2.x: Worker nodes (Proxmox)
 - Talos nodes:
   - Proxmox: talos-pve-cp-0 (10.2.1.1)
   - VPS: 2x Hetzner CPX31 (public IPs, hostNetwork for ingress/DNS)
@@ -176,6 +176,9 @@ Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
   - Machine secrets regenerated per lifecycle (fresh `cluster.id` prevents stale peers)
   - Requires UDP 51820 open on all nodes
 
+- **Proxmox API reachability**: Atlas (10.2.0.2:8006) is only reachable from the Proxmox VLAN.
+  VPS nodes cannot reach it. Any workload that needs the Proxmox API (e.g., CSI controller)
+  must use `nodeSelector: topology.kubernetes.io/region: proxmox`.
 - Terraform → Image Factory API + cloud-init snippets → VMs with static IPs (no DHCP)
 - GitOps flow: Git commit → Flux detects change → applies k8s manifests
 - Deployment path: `k8s/` directory → Flux Kustomizations → HelmReleases → Running pods
@@ -191,6 +194,10 @@ Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
 
 **Strategy**: Proxmox for storage-heavy workloads (Harbor, Gitea, Loki, media, Nix cache).
 VPS for always-on critical-path services. `local-path` for simple storage (Vault Raft, Headscale).
+
+**Constraint**: Proxmox CSI controller and node plugin are pinned to Proxmox nodes
+(`topology.kubernetes.io/region: proxmox`) because they need to reach the Proxmox API
+at 10.2.0.2:8006, which is only accessible from the VLAN.
 
 ## Failure Modes
 

@@ -464,8 +464,10 @@ It will eventually be replaced once this cluster handles all production services
   - `terraform/bootstrap/flux/` - Flux, core services, applications
 - GitOps terraform (tofu-controller, k8s state):
   - `terraform/gitops/` - DNS records, SSO, Vault OIDC, secrets, service configs
-- VM IDs: 10000 (talos-pve-cp-0). Worker node commented out in terraform.
-- Node IPs: 10.2.1.x (Proxmox controllers), 10.2.2.x (Proxmox workers, currently none)
+- VM IDs: 10000 (talos-pve-cp-0), 10001 (talos-pve-gpu-worker-0)
+- Node IPs: 10.2.1.x (Proxmox controllers), 10.2.2.x (Proxmox workers)
+- **Proxmox API (10.2.0.2:8006) is only reachable from Proxmox VLAN nodes**, not from VPS.
+  Any workload needing Proxmox API access must use `nodeSelector: topology.kubernetes.io/region: proxmox`.
 
 ## Reference Code Location
 
