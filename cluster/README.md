@@ -14,7 +14,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 
 - **Proxmox credentials**: Create Proxmox terraform + CSI users (tokens managed in terraform state)
 - **SSH access**: `root@atlas` (Proxmox host) for credential generation
-- See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md#credential-setup) for detailed setup instructions
+- See [setup instructions](docs/bootstrap.md#credential-setup) for details
 
 ## direnv
 
@@ -170,12 +170,43 @@ Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
 - Cilium MTU: `MTU: 1370` (uppercase key required — Helm is case-sensitive).
   Accounts for double encapsulation: VXLAN (50 bytes) + WireGuard/KubeSpan (80 bytes).
   Without this, cross-node packets fragment and drop intermittently.
-- KubeSpan: WireGuard mesh connects VPS and Proxmox nodes
+- KubeSpan: Talos-native WireGuard mesh connects VPS and Proxmox nodes
+  - Enabled via `machine.network.kubespan.enabled: true` in Talos machine config
+  - Peer discovery via `discovery.talos.dev`
+  - Machine secrets regenerated per lifecycle (fresh `cluster.id` prevents stale peers)
+  - Requires UDP 51820 open on all nodes
 
 - Terraform → Image Factory API + cloud-init snippets → VMs with static IPs (no DHCP)
 - GitOps flow: Git commit → Flux detects change → applies k8s manifests
 - Deployment path: `k8s/` directory → Flux Kustomizations → HelmReleases → Running pods
 - Secret management: local `kubeseal` → sealed-secrets controller → K8s Secret → Application pods
+
+## Storage
+
+| Provisioner          | Location | Default | Management                         |
+| -------------------- | -------- | ------- | ---------------------------------- |
+| `proxmox-csi-retain` | Proxmox  | Yes     | Flux (k8s/storage/)                |
+| `hcloud-volumes`     | Hetzner  | No      | Flux (k8s/hcloud-csi/)             |
+| `local-path`         | Any node | No      | Flux (k8s/local-path-provisioner/) |
+
+**Strategy**: Proxmox for storage-heavy workloads (Harbor, Gitea, Loki, media, Nix cache).
+VPS for always-on critical-path services. `local-path` for simple storage (Vault Raft, Headscale).
+
+## Failure Modes
+
+| Scenario        | Cluster    | Ingress | Notes                                 |
+| --------------- | ---------- | ------- | ------------------------------------- |
+| Single VPS down | 2/3 quorum | Works   | DNS failover to other VPS             |
+| Both VPS down   | 1/3 only   | Down    | Home pods continue but cluster frozen |
+| Home down       | 2/3 quorum | Works   | Proxmox storage workloads unavailable |
+
+## Architecture Decisions
+
+1. **2x Hetzner CPX31** — 4 vCPU, 8GB RAM, 160GB NVMe, ~EUR 30/month total
+2. **Controller placement: 2 VPS + 1 home** — survives home outage, etcd majority on VPS
+3. **KubeSpan over Tailscale** — native to Talos, no external dependencies
+4. **Cilium VXLAN** — required for cross-VPS networking (nodes not on same L2)
+5. **Hetzner CSI via Flux** — API token secret created by infrastructure terraform, chart managed by Flux
 
 ## Let's Encrypt Rate Limits
 
@@ -212,4 +243,4 @@ See: <https://letsencrypt.org/docs/rate-limits/>
 
 **Note:** The legacy VPS at `agentydragon.com` (ansible-managed) is separate infrastructure not
 involved in this cluster. It will eventually be replaced once the cluster handles all production
-services (see `docs/plan.md` Phase 3: Production Cutover).
+services (see <docs/plan.md> Phase 3: Production Cutover).

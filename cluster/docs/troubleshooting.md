@@ -417,14 +417,6 @@ spec:
 
 ## 🚨 Fast Path Health Checks
 
-### Core Cluster Health
-
-```bash
-kubectl get nodes                           # All nodes should be Ready
-kubectl get pods -A | grep -v Running      # Check for non-running pods
-flux get kustomizations                     # Check GitOps status
-```
-
 ### KubeSpan (WireGuard Mesh) - VPS Hybrid Cluster
 
 **Debug commands for KubeSpan mesh connectivity:**
@@ -464,27 +456,14 @@ talosctl -n <node-ip> get affiliates -o yaml
 
 **Common Issues**: SealedSecret decryption failures, authentication errors with misleading messages.
 
+CSI controller logs (`kubectl logs deployment/proxmox-csi-plugin-controller -n csi-proxmox`)
+showing "401 Unauthorized" usually means the token is missing in Proxmox, not an auth config error.
+
 ```bash
-# 1. Check CSI pods status
-kubectl get pods -n csi-proxmox
-
-# 2. Check PVC status (if vault/storage apps are Pending)
-kubectl get pvc -A
-# Look for Pending PVCs
-
-# 3. Check CSI controller logs for auth errors
-kubectl logs deployment/proxmox-csi-plugin-controller -n csi-proxmox --tail=20
-# Look for "401 Unauthorized" - often misleading, usually means missing token in Proxmox
-
-# 4. Check SealedSecret health
-kubectl get sealedsecret -n csi-proxmox
-# STATUS should be empty (success) or show decryption error
-
-# 5. Check if secret was created and has correct content
-kubectl get secret -n csi-proxmox proxmox-csi-plugin
+# Check if secret has correct content
 kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\.yaml}' | base64 -d
 
-# 6. If SealedSecret shows decryption error, regenerate with stable keypair:
+# If SealedSecret shows decryption error, regenerate with stable keypair:
 cd terraform/bootstrap/persistent-auth
 CSI_TOKEN_SECRET=$(terraform output -raw csi_token_secret)
 cat > /tmp/csi-config.yaml << EOF
@@ -510,32 +489,6 @@ cd -
 # 7. Check if CSI token exists in Proxmox (via SSH)
 ssh root@atlas "pveum token list kubernetes-csi@pve"
 # Should show the csi token, if missing need to recreate via infrastructure terraform
-```
-
-### Node Issues
-
-**Worker Node NotReady** (common: kubelet disk detection issues):
-
-```bash
-kubectl describe node <node-name>
-# Look for: "InvalidDiskCapacity" errors in events
-# Fix: Usually resolves on its own, or restart the node VM
-```
-
-### GitOps Issues
-
-**Kustomization stuck/failing**:
-
-```bash
-kubectl describe kustomization <name> -n flux-system
-kubectl logs deployment/kustomize-controller -n flux-system --tail=50
-```
-
-**HelmRelease stuck/failing**:
-
-```bash
-kubectl describe helmrelease <name> -n <namespace>
-kubectl logs deployment/helm-controller -n flux-system --tail=50
 ```
 
 ## 🔧 Stable SealedSecret Keypair Issues
@@ -611,62 +564,7 @@ kubectl create secret generic my-secret --from-literal=key=value \
 git add k8s/path/my-sealed.yaml && git commit
 ```
 
-## 🔄 Common Recovery Actions
-
-### Restart Flux Controllers (for CRD cache issues)
-
-```bash
-kubectl rollout restart deployment/kustomize-controller -n flux-system
-kubectl rollout restart deployment/helm-controller -n flux-system
-```
-
-### Force GitOps Reconciliation
-
-```bash
-kubectl annotate kustomization <name> -n flux-system fluxcd.io/reconcile="$(date +%s)" --overwrite
-```
-
-### Emergency CSI Secret Fix (storage broken)
-
-```bash
-# Delete broken SealedSecret and recreate with stable keypair
-kubectl delete sealedsecret proxmox-csi-plugin -n csi-proxmox
-# Then run the CSI secret regeneration from storage section above
-```
-
 ## 🐛 Known Issues
-
-### RWO Volume + RollingUpdate Deadlock
-
-**Symptoms**: Pod stuck in `Init:Error` or similar, new pod stuck in `Pending` with `Multi-Attach error`.
-
-**Root Cause**: Single-replica Deployments with RWO (ReadWriteOnce) volumes using default `RollingUpdate`
-strategy create deadlocks. RollingUpdate starts new pod before terminating old one, but RWO volumes
-can only attach to one node. Old pod won't release volume until new pod is Ready, new pod can't
-become Ready without volume.
-
-**Solution**: Use `strategy.type: Recreate` for single-replica deployments with RWO volumes:
-
-```yaml
-spec:
-  replicas: 1
-  strategy:
-    type: Recreate # Terminates old pod before creating new one
-```
-
-**When to use Recreate**: Single replica + RWO volume + stateful app (databases, git servers, registries).
-Brief downtime during updates is acceptable tradeoff vs deadlocks requiring manual intervention.
-
-**Audit command** (find affected deployments):
-
-```bash
-for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
-  kubectl get deployment -n $ns -o json | jq -r '
-    .items[] | select(.spec.replicas == 1 and .spec.strategy.type == "RollingUpdate") |
-    select(.spec.template.spec.volumes[]?.persistentVolumeClaim != null) |
-    "\(.metadata.namespace)/\(.metadata.name)"'
-done
-```
 
 ### Proxmox CSI Storage
 
@@ -693,19 +591,13 @@ done
 PowerDNS runs directly in the Kubernetes cluster on VPS nodes with `hostNetwork: true`,
 binding to public IPs. There is no separate secondary DNS server or AXFR replication.
 
-**Check PowerDNS status**:
+**Verify DNS**:
 
 ```bash
-# Check PowerDNS pods
-kubectl get pods -n dns-system -l app.kubernetes.io/name=powerdns
-
-# Check PowerDNS logs
-kubectl logs -n dns-system deployment/powerdns --tail=50
-
-# Verify zone contents
+# Check zone contents
 kubectl exec -n dns-system deployment/powerdns -- pdnsutil list-zone allegedly.works
 
-# Verify NS records resolve
+# Verify NS records resolve externally
 dig @ns1.allegedly.works allegedly.works NS
 dig @ns2.allegedly.works allegedly.works NS
 ```
@@ -716,15 +608,6 @@ by the current architecture where VPS nodes are Kubernetes nodes running PowerDN
 See <lessons_learned/2025-11-20-axfr-zone-transfer-failures.md> for historical context.
 
 #### cert-manager DNS-01 Validation
-
-**Check certificate status**:
-
-```bash
-kubectl get certificates -A
-kubectl get certificaterequests -A
-kubectl get challenges -A
-kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager --tail=50
-```
 
 **Common failures**:
 
@@ -757,86 +640,22 @@ kubectl delete certificaterequest -n <namespace> --all
 
 ### Nix Cache Issues
 
-#### Pod Not Starting
-
-```bash
-kubectl get pods -n nix-cache
-kubectl describe pod -n nix-cache -l app=harmonia
-kubectl logs -n nix-cache deployment/harmonia
-```
-
-**Common issues:**
-
-- **PVC not bound**: Check Proxmox CSI status: `kubectl get pods -n csi-proxmox`
-- **SealedSecret not unsealed**: Check controller: `kubectl get secret nix-cache-signing-key -n nix-cache`
-- **Image pull failure**: Verify image name in deployment.yaml
-
-#### Storage Issues
-
-```bash
-kubectl get pvc -n nix-cache
-kubectl exec -n nix-cache deployment/harmonia -- df -h /nix/store
-```
-
-**Full storage**: If PVC is full, either:
-
-1. Expand PVC: `kubectl edit pvc nix-store -n nix-cache` (increase size)
-2. Implement garbage collection (see plan.md Future Enhancements)
-
 #### Signing Key Issues
 
 ```bash
-# Check secret exists
-kubectl get secret nix-cache-signing-key -n nix-cache
-
 # Verify key in terraform state
 cd terraform/bootstrap/persistent-auth
 terraform output nix_signing_public_key
-
-# Get public key for NixOS config
-terraform output -raw nix_signing_public_key | head -1
 # Output: cache.allegedly.works-1:BASE64KEY
 cd -
 ```
 
 **If signing key missing**: Re-run `terraform apply` in `terraform/bootstrap/persistent-auth`
 
-#### Upload Failures from NixOS Host
+#### In-Cluster Connectivity Test
 
 ```bash
-# On NixOS host, test upload
-nix copy --to https://cache.allegedly.works /nix/store/xxx-hello-xxx --debug
-
-# Check Harmonia logs
-kubectl logs -n nix-cache deployment/harmonia --tail=100
-```
-
-**Common causes:**
-
-1. **Storage full**: Check PVC usage above
-2. **Signing key mismatch**: Verify Harmonia loaded correct key
-3. **Network issues**: Check ingress and certificate
-
-#### HTTPS Access Not Working
-
-```bash
-# Check ingress
-kubectl get ingress -n nix-cache
-kubectl describe ingress harmonia -n nix-cache
-
-# Check certificate
-kubectl get certificate -n nix-cache
-kubectl describe certificate nix-cache-tls -n nix-cache
-
-# Test from inside cluster
 kubectl run -it --rm debug --image=curlimages/curl:latest --restart=Never -- \
   curl http://harmonia.nix-cache.svc.cluster.local:5000/nix-cache-info
-```
-
-**Expected response**:
-
-```text
-StoreDir: /nix/store
-WantMassQuery: 1
-Priority: 30
+# Expected: StoreDir: /nix/store, WantMassQuery: 1, Priority: 30
 ```

@@ -153,5 +153,5 @@ terraform plan -var="proxmox_network_config_method=cloudinit"
 
 ## Related Documentation
 
-- `docs/plan.md` - Cluster roadmap
-- `docs/bootstrap.md` - Bootstrap procedures
+- <plan.md> - Cluster roadmap
+- <bootstrap.md> - Bootstrap procedures

@@ -308,7 +308,7 @@ Applications with SSO in scope must have:
 
 1. **NO imperative patches** - All fixes must be encoded in configuration and committed properly
 2. **Main development loop**: `destroy -> recreate -> check if valid`
-   - See `docs/critical_dependencies.md` for dependency chain and bootstrap order
+   - See `docs/bootstrap.md` for dependency chain and bootstrap order
 3. **Debugging vs. Implementation**:
    - **Debugging**: You CAN tinker with invalid/failed state (kubectl patches, manual commands) to understand what
      broke and learn how to fix declarative config

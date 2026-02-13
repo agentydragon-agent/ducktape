@@ -107,6 +107,24 @@ kubectl get storageclass
 # Should show: hcloud-volumes (VPS), proxmox-csi (home)
 ```
 
+## Dependency Chain
+
+```text
+1. Talos OS (base system on all 3 nodes)
+   ↓
+2. KubeSpan (WireGuard mesh between VPS ↔ home)
+   ↓
+3. Kubernetes API Server
+   ↓
+4. CNI (Cilium with VXLAN tunnel mode)
+   ↓
+5. Sealed Secrets Controller
+   ↓
+6. CSI Drivers (Hetzner CSI for VPS, Proxmox CSI for home)
+   ↓
+7. Application workloads
+```
+
 ## Bootstrap Layer Architecture
 
 **Layer 0: Persistent Auth** (`terraform/bootstrap/persistent-auth/`)
@@ -182,7 +200,7 @@ The keypair persists in terraform state (`bootstrap/persistent-auth`):
 
 ## Troubleshooting
 
-See `docs/troubleshooting.md` for:
+See <troubleshooting.md> for:
 
 - KubeSpan connectivity issues
 - Storage (Hetzner CSI, Proxmox CSI)

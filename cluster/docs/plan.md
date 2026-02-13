@@ -762,8 +762,8 @@ for network stack diagrams and diagnostic checklist.
 
 ## 🔗 Related Documentation
 
-- **Bootstrap Procedures**: `docs/bootstrap.md`
-- **Troubleshooting**: `docs/troubleshooting.md`
+- **Bootstrap Procedures**: <bootstrap.md>
+- **Troubleshooting**: <troubleshooting.md>
 - **Secret Sync Analysis**: <lessons_learned/2025-11-28-eso-password-generator-desync.md>
 
 ---
