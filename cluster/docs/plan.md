@@ -89,10 +89,8 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
       Bearer token, no refresh). See Harbor's pattern: OIDC login → user generates CLI secret.
 - [ ] **Verify NFD + NVIDIA device plugin** — NFD deployed, NVIDIA device plugin uses
       `nvidia.com/gpu` label (set by Talos machine config). Verify GPUs registered after bootstrap.
-- [ ] **Migrate headscale to Helm chart** — use `wrenix/headscale` chart (OCI at
-      `oci://codeberg.org/wrenix/helm-charts`, v1.0.14, app v0.28.0). Actively maintained,
-      supports persistence, monitoring, cert-manager. No official chart exists (declined by
-      upstream). Alternative `gabe565/headscale` is stale (v0.25.0, 1 year old).
+- [x] **Migrate headscale to Helm chart** — switched to `wrenix/headscale` (OCI at
+      `oci://codeberg.org/wrenix/helm-charts`, v1.0.14, app v0.28.0).
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 
 ### Known Issues to Watch

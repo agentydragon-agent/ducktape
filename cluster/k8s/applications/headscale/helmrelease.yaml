@@ -1,0 +1,96 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: wrenix
+  namespace: headscale
+spec:
+  type: oci
+  url: oci://codeberg.org/wrenix/helm-charts
+  interval: 24h
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: headscale
+  namespace: headscale
+spec:
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: headscale
+      version: "1.0.14"
+      sourceRef:
+        kind: HelmRepository
+        name: wrenix
+        namespace: headscale
+  values:
+    headscale:
+      certmanager:
+        enabled: false # TLS terminated by ingress-nginx
+      config:
+        server_url: https://headscale.allegedly.works
+        # TLS terminated at ingress
+        tls_cert_path: ""
+        tls_key_path: ""
+        # DNS
+        dns:
+          magic_dns: true
+          base_domain: tailnet.allegedly.works
+          nameservers:
+            global:
+              - 1.1.1.1
+              - 8.8.8.8
+        # Logging
+        log:
+          format: text
+          level: info
+
+    persistence:
+      enabled: true
+      storageClass: local-path
+      size: 1Gi
+
+    service:
+      type: ClusterIP
+      derp:
+        type: NodePort
+        port: 3478
+
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        cert-manager.io/cluster-issuer: "letsencrypt"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        external-dns.alpha.kubernetes.io/hostname: headscale.allegedly.works
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+        nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+      hosts:
+        - host: headscale.allegedly.works
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: headscale-tls
+          hosts:
+            - headscale.allegedly.works
+
+    nodeSelector:
+      topology.kubernetes.io/region: hetzner
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
