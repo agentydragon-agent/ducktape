@@ -23,7 +23,11 @@ pre-commit: hook environments installing in background (pid ${precommit.pid}). F
 % endif
 % endfor
 % if secrets:
+% if secrets.skipped_files:
+Secrets: ${len(secrets.env_vars)} env var(s) decrypted from age-encrypted component files. Skipped (key mismatch): ${", ".join(secrets.skipped_files)}.
+% else:
 Secrets: ${len(secrets.env_vars)} env var(s) decrypted from age-encrypted component files.
+% endif
 % endif
 BuildBuddy: API key in ~/.config/bazel/buildbuddy.bazelrc. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 Setup log: ${log_file}

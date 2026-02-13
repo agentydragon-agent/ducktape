@@ -33,6 +33,7 @@ class SecretsSetup:
     """Result of secrets decryption."""
 
     env_vars: dict[str, str] = field(default_factory=dict)
+    skipped_files: list[str] = field(default_factory=list)
 
     @property
     def env_exports(self) -> str:
@@ -58,6 +59,7 @@ def setup_secrets(age_key: str | None, secrets_dir: Path) -> SecretsSetup | None
 
     env_vars: dict[str, str] = {}
     decrypted_count = 0
+    skipped_files: list[str] = []
     age_files = sorted(resolved_dir.glob("*.age"))
 
     for age_file in age_files:
@@ -66,6 +68,7 @@ def setup_secrets(age_key: str | None, secrets_dir: Path) -> SecretsSetup | None
         except pyrage.DecryptError as e:
             if "No matching keys found" in str(e):
                 logger.debug("Skipping %s (wrong key)", age_file.name)
+                skipped_files.append(age_file.name)
                 continue
             raise
 
@@ -77,6 +80,24 @@ def setup_secrets(age_key: str | None, secrets_dir: Path) -> SecretsSetup | None
         decrypted_count += 1
         logger.info("Decrypted %s (%d vars)", age_file.name, len(component_vars))
 
-    logger.info("Decrypted %d/%d component files, %d env vars total", decrypted_count, len(age_files), len(env_vars))
+    if decrypted_count == 0 and age_files:
+        logger.warning(
+            "Age key provided but 0/%d files decrypted (all skipped due to key mismatch). Skipped: %s",
+            len(age_files),
+            ", ".join(skipped_files),
+        )
+    elif skipped_files:
+        logger.info(
+            "Decrypted %d/%d component files (%d skipped: %s), %d env vars total",
+            decrypted_count,
+            len(age_files),
+            len(skipped_files),
+            ", ".join(skipped_files),
+            len(env_vars),
+        )
+    else:
+        logger.info(
+            "Decrypted %d/%d component files, %d env vars total", decrypted_count, len(age_files), len(env_vars)
+        )
 
-    return SecretsSetup(env_vars=env_vars)
+    return SecretsSetup(env_vars=env_vars, skipped_files=skipped_files)
