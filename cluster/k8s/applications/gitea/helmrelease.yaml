@@ -97,11 +97,16 @@ spec:
         - name: SSL_CERT_FILE
           value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
 
-    # Mount CA bundle to init containers (configure-gitea needs it for OIDC discovery)
+    # Mount CA bundle (includes Let's Encrypt staging CA when in staging mode)
     extraVolumes:
       - name: cluster-ca
         configMap:
           name: cluster-internal-ca-bundle
+
+    extraContainerVolumeMounts:
+      - name: cluster-ca
+        mountPath: /etc/ssl/certs/cluster-ca
+        readOnly: true
 
     extraInitVolumeMounts:
       - name: cluster-ca
