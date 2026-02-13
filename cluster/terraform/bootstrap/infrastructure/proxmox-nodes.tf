@@ -418,6 +418,7 @@ data "talos_machine_configuration" "proxmox_gpu" {
           extraArgs = {
             provider-id            = "proxmox://cluster/${each.value.vm_id}"
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+            register-with-taints   = "nvidia.com/gpu=true:PreferNoSchedule"
           }
         }
       })

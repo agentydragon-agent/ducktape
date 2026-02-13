@@ -21,6 +21,10 @@ spec:
     spec:
       nodeSelector:
         nvidia.com/gpu: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
       containers:
         - name: ollama
           image: ollama/ollama:latest
