@@ -411,6 +411,11 @@ bazel run //cluster:bootstrap
 
 **That's it.** The script handles everything from validation to complete cluster deployment.
 
+**IMPORTANT: Sandbox mode**: `bazel run //cluster:bootstrap` requires full network access (Bazel module
+resolution, terraform providers, Hetzner API, Proxmox API, etc.). When using the Bash tool, always run
+with `dangerouslyDisableSandbox: true`. Similarly, `terraform destroy` in infrastructure layers requires
+sandbox disabled.
+
 ## Primary Development Loop
 
 Main cycle: **destroy → recreate → check if valid**
@@ -560,16 +565,19 @@ This provides consistent tool versions (nix-managed) and automatic KUBECONFIG/TA
 
 ## Terraform Timeout Configuration
 
-**IMPORTANT**: When running `terraform apply` or `terraform destroy`, always use the Bash tool's `timeout` parameter
-set to 600000ms (10 minutes) to prevent premature timeout during long cluster provisioning operations.
+**IMPORTANT**: When running `terraform apply`, `terraform destroy`, or `bazel run //cluster:bootstrap`, always:
+
+1. Set `dangerouslyDisableSandbox: true` (these commands require full network access)
+2. Set `timeout: 600000` (10 minutes) to prevent premature timeout during long provisioning operations
 
 Example:
 
 ```json
 {
-  "command": "terraform apply -auto-approve",
+  "command": "bazel run //cluster:bootstrap",
   "timeout": 600000,
-  "description": "Apply terraform with maximum timeout"
+  "dangerouslyDisableSandbox": true,
+  "description": "Bootstrap cluster"
 }
 ```
 

@@ -94,8 +94,9 @@ data "external" "pve_persistent_tokens" {
       # Create user if not exists
       pveum user add ${each.value.name} --comment "${each.value.comment}" 2>/dev/null || true
 
-      # Create role if not exists
-      pveum role add ${each.value.role} -privs "${each.value.privs}" 2>/dev/null || true
+      # Create or update role (add then modify to handle both new and existing roles)
+      pveum role add ${each.value.role} -privs "${each.value.privs}" 2>/dev/null || \
+        pveum role modify ${each.value.role} -privs "${each.value.privs}"
 
       # Set ACL permissions
       pveum aclmod / -user ${each.value.name} -role ${each.value.role}

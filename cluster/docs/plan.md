@@ -80,6 +80,8 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
       Well within rate limits (14 certs vs 50/week limit per registered domain).
 - [ ] **Test all SSO flows** after switching to production LE
 - [ ] **Deploy headscale**, test with a device
+- [ ] **Expose Hubble UI** behind Authentik SSO (`hubble.allegedly.works`, admin-only).
+      Hubble relay + UI are enabled in Cilium values but have no ingress yet.
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 
 ### Known Issues to Watch
@@ -542,8 +544,11 @@ Protect terraform state with encrypted cloud backup.
 **Remaining (Ollama + Auth)**:
 
 - [ ] Create Ollama Deployment with GPU resource request + PVC for models
-- [ ] Add auth proxy (ingress + OIDC or API key validation)
+- [ ] Add OpenAI-compatible API auth (Bearer token validated by nginx ingress `auth-snippet`,
+      token stored in Vault). This allows using the OpenAI SDK with
+      `base_url="https://ollama.allegedly.works/v1"` and a static API key.
 - [ ] Expose via `ollama.allegedly.works` with TLS
+- [ ] Newer Ollama supports the OpenAI responses API — verify compatibility
 
 **TODO**: Revisit virtio-mem for dynamic memory on GPU VMs (and wyrm) when Proxmox adds support (Bugzilla #2949).
 Currently balloon is incompatible with VFIO — QEMU actively inhibits it (`virtio-balloon.c:69-77`).
@@ -603,6 +608,61 @@ See **DNS Architecture** section below for details.
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache
+
+---
+
+## 🔧 Low Priority Improvements
+
+### Nix Cache Signing Key → GitOps Terraform
+
+**Status**: Considering
+
+Currently the nix cache signing key lives in Layer 0 (persistent-auth terraform state).
+Consider moving it to a gitops terraform module (like other secrets) so it's generated/stored
+in Vault and read via ESO. This would:
+
+- Remove one item from the "critical to back up" persistent-auth layer
+- Follow the same Vault SSOT pattern as all other application secrets
+- Allow rotation without touching persistent-auth
+
+**Trade-off**: Signing key change invalidates all previously signed store paths in the cache.
+This is acceptable if the cache is treated as ephemeral (can always rebuild from source).
+
+### ReadWriteMany (RWX) Shared Storage
+
+**Status**: Planning
+
+Need shared storage mountable from multiple pods (and ideally via NFS from non-cluster VMs)
+for workloads like LLM model snapshots, media libraries, shared caches.
+
+**Best options for our hybrid VPS+Proxmox architecture:**
+
+| Option                            | RWX | HA  | Complexity | Best for                       |
+| --------------------------------- | --- | --- | ---------- | ------------------------------ |
+| `nfs-subdir-external-provisioner` | Yes | No  | Low        | Simple shared storage from NFS |
+| Rook-Ceph                         | Yes | Yes | High       | Distributed HA storage         |
+| Longhorn                          | No  | Yes | Medium     | Block storage only (no RWX)    |
+| MinIO                             | S3  | Yes | Medium     | Object storage (not POSIX)     |
+| Native Proxmox NFS export         | Yes | No  | Minimal    | Quick and dirty                |
+
+**Recommended approach**: NFS-based provisioner (low complexity, proven). Export NFS from Proxmox
+host or a small NFS VM on atlas. Accessible from VPS pods via KubeSpan mesh.
+
+**Availability zones** (storage placement strategy):
+
+| Zone       | Storage backend   | Use case                         |
+| ---------- | ----------------- | -------------------------------- |
+| Home-only  | Proxmox NFS/CSI   | LLM snapshots, media, Nix cache  |
+| VPS-only   | local-path/hcloud | Vault raft, small critical-path  |
+| Cross-site | NFS via KubeSpan  | Shared config, small shared data |
+
+**Note**: Cross-site NFS via KubeSpan adds latency. Large data (LLM models) should be
+home-only; only small shared data should go cross-site.
+
+- [ ] Export NFS from Proxmox (or create NFS VM on atlas)
+- [ ] Deploy `nfs-subdir-external-provisioner` Helm chart
+- [ ] Create `nfs-shared` StorageClass with RWX access mode
+- [ ] Test cross-site NFS access from VPS pods via KubeSpan
 
 ---
 

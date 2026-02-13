@@ -83,26 +83,28 @@ resource "proxmox_virtual_environment_download_file" "talos_disk_gpu" {
 
 resource "proxmox_virtual_environment_hardware_mapping_pci" "gpu0" {
   name    = "gpu0"
-  comment = "NVIDIA RTX 5090 #0"
+  comment = "NVIDIA RTX 5090 #0 (ZOTAC)"
   map = [
     {
-      id          = "10de:2b85"
-      iommu_group = 14
-      node        = var.proxmox_node_name
-      path        = "0000:01:00.0"
+      id               = "10de:2b85"
+      iommu_group      = 14
+      node             = var.proxmox_node_name
+      path             = "0000:01:00.0"
+      subsystem_id     = "19da:1761"
     },
   ]
 }
 
 resource "proxmox_virtual_environment_hardware_mapping_pci" "gpu1" {
   name    = "gpu1"
-  comment = "NVIDIA RTX 5090 #1"
+  comment = "NVIDIA RTX 5090 #1 (Gigabyte)"
   map = [
     {
-      id          = "10de:2b85"
-      iommu_group = 16
-      node        = var.proxmox_node_name
-      path        = "0000:03:00.0"
+      id               = "10de:2b85"
+      iommu_group      = 16
+      node             = var.proxmox_node_name
+      path             = "0000:03:00.0"
+      subsystem_id     = "1458:416f"
     },
   ]
 }
