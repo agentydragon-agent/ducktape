@@ -210,10 +210,6 @@ Internet → VPS public IP:53  → PowerDNS pod (hostNetwork) → DNS responses
 
 ## ⚠️ Remaining Work Before Bootstrap
 
-### Domain Switchover
-
-✅ **Complete** - All manifests updated from `test-cluster.agentydragon.com` to `allegedly.works`
-
 ### VPS IP Configuration
 
 ✅ **Automated via DNS Automation** (tofu-controller)
@@ -224,9 +220,7 @@ After cluster boots:
 - PowerDNS NS A records within zone are created automatically
 - VPS IPs are read from `cluster-info` ConfigMap created by infrastructure terraform
 
-**Remaining manual step**:
-
-- `k8s/external-dns/deployment.yaml` `--default-targets` - still hardcoded (optional future automation)
+All VPS IP configuration is fully automated via `cluster-info` ConfigMap + Reflector.
 
 ### Registrar DNS Configuration
 
@@ -259,7 +253,7 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 3. [x] ~~Update cluster configs with new VPS IPs~~ - **Automated via DNS automation**
    - Route 53 glue records: tofu-controller creates automatically
    - PowerDNS NS A records: tofu-controller creates automatically
-   - `k8s/external-dns/deployment.yaml` `--default-targets`: still manual (optional)
+   - external-dns `--default-targets`: automated via `cluster-info` ConfigMap + Reflector
 4. [ ] Verify DNS automation applied:
    ```bash
    kubectl get terraform dns-records -n flux-system

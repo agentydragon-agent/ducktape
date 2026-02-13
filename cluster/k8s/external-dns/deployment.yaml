@@ -31,8 +31,9 @@ spec:
             - --log-level=debug
             - --interval=30s
             # Both Hetzner VPS IPs for DNS failover (ingress runs on both via hostNetwork)
-            - --default-targets=5.78.43.147
-            - --default-targets=5.78.106.249
+            # IPs read from cluster-info ConfigMap (populated by infrastructure terraform)
+            - --default-targets=$(VPS_IP_0)
+            - --default-targets=$(VPS_IP_1)
             # Required since external-dns v0.15+: without this, ingress ClusterIP
             # overrides default-targets, creating internal A records in public DNS
             - --force-default-targets
@@ -42,6 +43,16 @@ spec:
                 secretKeyRef:
                   name: powerdns-api-key # Reflector will copy from dns-system
                   key: powerdns_api_key
+            - name: VPS_IP_0
+              valueFrom:
+                configMapKeyRef:
+                  name: cluster-info # Reflector copies from kube-system
+                  key: vps_ip_vps0
+            - name: VPS_IP_1
+              valueFrom:
+                configMapKeyRef:
+                  name: cluster-info # Reflector copies from kube-system
+                  key: vps_ip_vps1
           resources:
             requests:
               memory: "64Mi"
