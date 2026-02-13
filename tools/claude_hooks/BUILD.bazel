@@ -396,6 +396,19 @@ py_test(
 )
 
 py_test(
+    name = "test_secrets_setup",
+    srcs = ["test_secrets_setup.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":secrets_setup",
+        "@pypi//pyrage",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_proxy",
     srcs = ["test_proxy.py"],
     imports = ["../.."],
