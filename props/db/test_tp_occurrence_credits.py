@@ -59,9 +59,11 @@ def test_only_expected_occurrences_included(synced_test_session: Session, exampl
         {"run_id": str(critic_run.agent_run_id)},
     ).fetchall()
 
-    # subtract.py example has 1 TP in expected recall scope
-    assert len(results) == 1, "Should only include occurrence in expected recall scope"
-    assert results[0].tp_id == "tp-001"
+    # subtract.py example has 2 occurrences in expected recall scope:
+    # tp-001/occ-1 (scoped to subtract.py) and tp-006/occ-subtract (scoped to subtract.py)
+    assert len(results) == 2, "Should only include occurrences in expected recall scope"
+    result_pairs = {(r.tp_id, r.occurrence_id) for r in results}
+    assert result_pairs == {("tp-001", "occ-1"), ("tp-006", "occ-subtract")}
 
 
 def test_whole_snapshot_includes_all_occurrences(synced_test_session: Session, test_snapshot):
@@ -86,10 +88,10 @@ def test_whole_snapshot_includes_all_occurrences(synced_test_session: Session, t
         {"run_id": str(critic_run.agent_run_id)},
     ).fetchall()
 
-    # train1 has 5 TPs
-    assert len(results) == 5, f"Should include all 5 occurrences, got {len(results)}"
+    # train1 has 6 TPs with 7 occurrences (tp-006 has 2 occurrences)
+    assert len(results) == 7, f"Should include all 7 occurrences, got {len(results)}"
     tp_ids = {r.tp_id for r in results}
-    assert tp_ids == {"tp-001", "tp-002", "tp-003", "tp-004", "tp-005"}
+    assert tp_ids == {"tp-001", "tp-002", "tp-003", "tp-004", "tp-005", "tp-006"}
 
 
 def test_graded_run_gets_actual_credit(
@@ -207,7 +209,7 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
     # SUM credits per critique: 0.2+0.3+0.4=0.9. Mean across 2 runs: (0.0 + 0.9) / 2 = 0.45
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
     assert abs(avg_caught - 0.45) < 0.01, f"credit_stats.mean should be 0.45, got {avg_caught}"
-    assert result.recall_denominator == 1
+    assert result.recall_denominator == 2
 
 
 def test_aggregated_view_counts_by_status(synced_test_session: Session, example_subtract_orm: Example):
@@ -321,7 +323,7 @@ def test_aggregated_recall_by_example_has_correct_weighting(
     # SUM credits per critique: 0.1+0.2+0.3=0.6. Mean across 2 runs: (0.0 + 0.6) / 2 = 0.3
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
     assert abs(avg_caught - 0.3) < 0.01, f"Expected 0.3, got {avg_caught}"
-    assert result.recall_denominator == 1
+    assert result.recall_denominator == 2
 
 
 def test_occurrence_statistics_has_correct_n_critic_runs(

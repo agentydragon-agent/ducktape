@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from props.core.ids import SnapshotSlug
 from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.db.examples import Example
-from props.db.models import FalsePositiveOccurrenceORM, TruePositiveOccurrenceORM
+from props.db.models import FalsePositiveOccurrenceORM, FileSet, FileSetMember, TruePositiveOccurrenceORM
 
 
 def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> list[tuple[str, str]]:
@@ -72,16 +72,18 @@ def make_fp_occurrence(
 
 @pytest.fixture
 def example_subtract_orm(synced_test_session: Session) -> Example:
-    """ORM Example for subtract.py (single TP occurrence) from git-synced fixture."""
+    """ORM Example for subtract.py file-set from git-synced fixture."""
     slug = SnapshotSlug("test-fixtures/train1")
     example = (
         synced_test_session.query(Example)
-        .filter_by(snapshot_slug=slug)
+        .join(FileSet, (FileSet.snapshot_slug == Example.snapshot_slug) & (FileSet.files_hash == Example.files_hash))
+        .join(FileSetMember)
+        .filter(Example.snapshot_slug == slug)
         .filter(Example.files_hash.isnot(None))
-        .filter(Example.recall_denominator == 1)
+        .filter(FileSetMember.file_path == "subtract.py")
         .first()
     )
-    assert example is not None, "Expected single-file-set example with 1 TP in expected recall scope in train1"
+    assert example is not None, "Expected file-set example for subtract.py in train1"
     return example
 
 
