@@ -29,13 +29,13 @@ spec:
   values:
     # Override default affinity — chart expects NFD label pci-10de.present but
     # NFD v0.17 sets pci-0300_10de.present (with PCI class prefix). Use the
-    # NFD-detected label directly.
+    # Talos machine config label instead (set in proxmox-nodes.tf).
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
           nodeSelectorTerms:
             - matchExpressions:
-                - key: feature.node.kubernetes.io/pci-0300_10de.present
+                - key: nvidia.com/gpu
                   operator: In
                   values:
                     - "true"

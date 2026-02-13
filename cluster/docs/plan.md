@@ -87,10 +87,12 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
       tokens (similar to how Harbor generates per-user CLI secrets after OIDC login). Requires
       Authentik proxy provider + long-lived JWTs for OpenAI SDK compatibility (SDK sends static
       Bearer token, no refresh). See Harbor's pattern: OIDC login → user generates CLI secret.
-- [ ] **Verify NFD + NVIDIA device plugin** — NFD deployed, NVIDIA device plugin now uses
-      default NFD-based affinity (`pci-10de.present`). Verify GPUs registered after reconciliation.
-- [ ] **Migrate headscale to Helm chart** — currently raw deployment manifests, should use official
-      Helm chart for consistency with other applications.
+- [ ] **Verify NFD + NVIDIA device plugin** — NFD deployed, NVIDIA device plugin uses
+      `nvidia.com/gpu` label (set by Talos machine config). Verify GPUs registered after bootstrap.
+- [ ] **Migrate headscale to Helm chart** — use `wrenix/headscale` chart (OCI at
+      `oci://codeberg.org/wrenix/helm-charts`, v1.0.14, app v0.28.0). Actively maintained,
+      supports persistence, monitoring, cert-manager. No official chart exists (declined by
+      upstream). Alternative `gabe565/headscale` is stale (v0.25.0, 1 year old).
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 
 ### Known Issues to Watch
@@ -98,8 +100,6 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
 - **BuildBuddy executor** — 3 replicas running, connected to `remote.buildbuddy.io`. Container
   image warmup timed out (non-critical, images pulled on first build).
 - **Kyverno webhook timeouts** — verified fixed (see previous fixes)
-
----
 
 ## 🎯 Target Architecture
 
@@ -333,16 +333,12 @@ Add to post-apply hook or document as manual step.
 
 **Reference**: <https://fluxcd.io/flux/guides/webhook-receivers/>
 
----
-
 ### Flux Reconciliation Failure Alerts
 
 **Status**: ✅ Configured
 
 - ntfy.sh push notifications: `k8s/flux-system/flux-alerts.yaml`
 - Grafana/Prometheus alerting: `k8s/monitoring-stack/flux-prometheus-rule.yaml`
-
----
 
 ### TODO: Flux Kustomization Dependency Graph UI
 
@@ -355,8 +351,6 @@ Deploy a web UI that visualizes Flux kustomization status and dependency DAG as 
 - **Weave GitOps** — official Flux UI, shows kustomizations, HelmReleases, sources, dependency graph. Helm chart at `oci://ghcr.io/weaveworks/charts/weave-gitops`.
 - **Capacitor** — lighter Flux dashboard, less mature.
 - **Custom Grafana panel** — Flux Prometheus metrics exist but no dependency graph support.
-
----
 
 ## 🔀 Future Directions
 
@@ -506,8 +500,6 @@ home-only; only small shared data should go cross-site.
 - [ ] Create `nfs-shared` StorageClass with RWX access mode
 - [ ] Test cross-site NFS access from VPS pods via KubeSpan
 
----
-
 ## 📐 Architecture Decisions
 
 ### Hybrid VPS + Proxmox
@@ -572,22 +564,22 @@ for network stack diagrams and diagnostic checklist.
 - MariaDB Galera for database redundancy (3-node across VPS + Proxmox)
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────┐
 │  ExternalDNS (watches Ingress → auto-creates A records)    │
 │  powerdns-operator (ClusterZone CRD → manages zones)       │
-└─────────────────────┬───────────────────────────────────────┘
+└─────────────────────┬──────────────────────────────────────┘
                       ↓
-┌─────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────┐
 │  PowerDNS (Deployment, connects to Galera)                 │
-└─────────────────────┬───────────────────────────────────────┘
+└─────────────────────┬──────────────────────────────────────┘
                       ↓
-┌─────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────┐
 │  MariaDB Galera (3-node, synchronous replication)          │
 │  ┌───────────┐  ┌───────────┐  ┌───────────┐               │
-│  │ VPS-0     │◄─►│ VPS-1     │◄─►│ Proxmox   │              │
+│  │ VPS-0     │◄►│ VPS-1     │◄►│ Proxmox   │               │
 │  │ local-path│  │ local-path│  │ local-path│               │
 │  └───────────┘  └───────────┘  └───────────┘               │
-└─────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────┘
 ```
 
 **Benefits**:
@@ -631,15 +623,11 @@ for network stack diagrams and diagnostic checklist.
 - Multiple databases: `vault`, `authentik`, etc.
 - Secrets persist across cluster destroy/recreate
 
----
-
 ## 🔗 Related Documentation
 
 - **Bootstrap Procedures**: <bootstrap.md>
 - **Troubleshooting**: <troubleshooting.md>
 - **Secret Sync Analysis**: <lessons_learned/2025-11-28-eso-password-generator-desync.md>
-
----
 
 ## 📊 Cluster Specifications
 
