@@ -164,7 +164,7 @@ resource "proxmox_virtual_environment_vm" "talos" {
 
   cpu {
     type  = "host"
-    cores = 4
+    cores = 16
   }
 
   memory {
