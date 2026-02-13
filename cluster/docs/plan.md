@@ -24,6 +24,8 @@ GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090).
 - [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
       `client_credentials` JWTs). Currently uses shared API key from Vault.
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
+- [ ] **Verify ntfy.sh notifications** — confirm Flux reconciliation failure alerts
+      actually arrive on phone via ntfy.sh push notifications.
 
 ## 🎯 Target Architecture
 

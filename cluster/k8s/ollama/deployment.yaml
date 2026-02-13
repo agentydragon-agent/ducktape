@@ -39,7 +39,7 @@ spec:
             requests:
               nvidia.com/gpu: 2
               memory: 16Gi
-              cpu: "4"
+              cpu: "2"
             limits:
               nvidia.com/gpu: 2
               memory: 28Gi
