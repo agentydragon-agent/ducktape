@@ -57,6 +57,42 @@ locals {
     [for k, v in hcloud_server.vps : v.ipv4_address],
     [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"]
   )
+
+  # Containerd registry mirrors — pull through Harbor proxy cache.
+  # Harbor runs in-cluster, so mirrors are unavailable during early bootstrap.
+  # Containerd falls back to upstream endpoints when mirror is unreachable.
+  registry_mirrors = {
+    "docker.io" = {
+      endpoints = [
+        "https://registry.allegedly.works/v2/docker-hub-proxy",
+        "https://registry-1.docker.io",
+      ]
+    }
+    "ghcr.io" = {
+      endpoints = [
+        "https://registry.allegedly.works/v2/ghcr-proxy",
+        "https://ghcr.io",
+      ]
+    }
+    "gcr.io" = {
+      endpoints = [
+        "https://registry.allegedly.works/v2/gcr-proxy",
+        "https://gcr.io",
+      ]
+    }
+    "quay.io" = {
+      endpoints = [
+        "https://registry.allegedly.works/v2/quay-proxy",
+        "https://quay.io",
+      ]
+    }
+    "registry.k8s.io" = {
+      endpoints = [
+        "https://registry.allegedly.works/v2/registry-k8s-io-proxy",
+        "https://registry.k8s.io",
+      ]
+    }
+  }
 }
 
 # ============================================================================

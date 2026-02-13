@@ -310,6 +310,9 @@ locals {
           port    = 7445
         }
       }
+      registries = {
+        mirrors = local.registry_mirrors
+      }
     }
     cluster = {
       allowSchedulingOnControlPlanes = true
