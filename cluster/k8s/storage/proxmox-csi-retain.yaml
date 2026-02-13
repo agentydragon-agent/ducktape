@@ -43,6 +43,9 @@ spec:
 
     controller:
       replicaCount: 1
+      # Must run on Proxmox nodes to reach Proxmox API at 10.2.0.2:8006
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           cpu: 50m
