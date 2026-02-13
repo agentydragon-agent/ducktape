@@ -95,11 +95,12 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Current Nodes
 
-| Node           | Location | Role          | IP            |
-| -------------- | -------- | ------------- | ------------- |
-| talos-vps-cp-0 | Hetzner  | control-plane | (new on boot) |
-| talos-vps-cp-1 | Hetzner  | control-plane | (new on boot) |
-| talos-pve-cp-0 | Proxmox  | control-plane | 10.2.1.1      |
+| Node                   | Location | Role          | IP            |
+| ---------------------- | -------- | ------------- | ------------- |
+| talos-vps-cp-0         | Hetzner  | control-plane | (new on boot) |
+| talos-vps-cp-1         | Hetzner  | control-plane | (new on boot) |
+| talos-pve-cp-0         | Proxmox  | control-plane | 10.2.1.1      |
+| talos-pve-gpu-worker-0 | Proxmox  | worker (GPU)  | 10.2.2.1      |
 
 ## Core Services (already configured)
 
@@ -117,6 +118,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | local-path-provisioner | ✅     | Storage for VPS nodes                      |
 | Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)           |
 | DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS |
+| NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes     |
 
 ## Applications (already configured)
 
@@ -510,54 +512,27 @@ Protect terraform state with encrypted cloud backup.
 
 **Scope**: `terraform/*/terraform.tfstate` files (contain all secrets)
 
-### GPU Workloads (Ollama + Auth Proxy)
+### GPU Worker Node
 
-Move GPU from standalone VM (wyrm) to k8s cluster for LLM inference.
+2x RTX 5090 moved from wyrm VM to a dedicated Talos GPU worker node.
 
-**Current State**: RTX 5090 passed through to wyrm VM, Ollama running as systemd service
+**Completed**:
 
-**Target State**: GPU passed to k8s worker node, Ollama in pod with auth proxy
+- [x] Wyrm VM reconfigured (GPUs detached, RAM reduced to 8GB-64GB balloon)
+- [x] GPU Talos image schematic with NVIDIA extensions (`nvidia-open-gpu-kernel-modules`, `nvidia-container-toolkit`)
+- [x] PCI hardware mappings (`gpu0`, `gpu1`) via Proxmox API token (requires `Mapping.Modify,Mapping.Use`)
+- [x] GPU worker VM: 8 cores, 32GB fixed RAM (balloon incompatible with VFIO), 2x RTX 5090 PCIe passthrough
+- [x] NVIDIA machine config: kernel modules, `bpf_jit_harden`, containerd nvidia runtime, `nvidia.com/gpu` label
+- [x] NVIDIA device plugin DaemonSet (`k8s/nvidia-device-plugin/`)
 
-**Architecture**:
+**Remaining (Ollama + Auth)**:
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Internet → Ingress → Auth Proxy → Ollama Pod              │
-│                         ↓                                    │
-│                   API Key Validation                        │
-│                   (nginx/Caddy sidecar)                     │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│  GPU Worker Node (Proxmox VM with PCIe passthrough)         │
-│  - NVIDIA driver + container toolkit                        │
-│  - Node label: nvidia.com/gpu=true                          │
-│  - Talos extension: nvidia-container-toolkit                │
-└─────────────────────────────────────────────────────────────┘
-```
+- [ ] Create Ollama Deployment with GPU resource request + PVC for models
+- [ ] Add auth proxy (ingress + OIDC or API key validation)
+- [ ] Expose via `ollama.allegedly.works` with TLS
 
-**Implementation**:
-
-- [ ] Configure Proxmox VM with GPU passthrough (PCIe device 01:00)
-- [ ] Add Talos nvidia-container-toolkit extension to worker image
-- [ ] Deploy NVIDIA device plugin DaemonSet
-- [ ] Create Ollama Deployment with GPU resource request
-- [ ] Add auth proxy sidecar (nginx with `auth_request` or Caddy with `basicauth`)
-- [ ] Store API keys in Vault, sync via ESO
-- [ ] Expose via Ingress with TLS
-
-**Auth Proxy Options**:
-
-1. **nginx sidecar** - `auth_request` directive validates Bearer token against configmap/secret
-2. **Caddy sidecar** - `basicauth` or forward_auth to validate API key
-3. **oauth2-proxy** - Full OIDC if multi-user access control needed
-
-**Why k8s instead of standalone VM**:
-
-- Unified management (GitOps, monitoring, secrets)
-- Easier scaling (add more GPU nodes)
-- Ingress/TLS handled by existing infrastructure
-- API key rotation via Vault/ESO
+**TODO**: Revisit virtio-mem for dynamic memory on GPU VMs (and wyrm) when Proxmox adds support (Bugzilla #2949).
+Currently balloon is incompatible with VFIO — QEMU actively inhibits it (`virtio-balloon.c:69-77`).
 
 ### BuildBuddy Remote Executor
 

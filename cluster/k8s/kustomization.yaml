@@ -55,6 +55,7 @@ resources:
   - applications/headscale/flux-kustomization.yaml
   - applications/website/flux-kustomization.yaml
   - applications/buildbuddy-executor/flux-kustomization.yaml
+  - nvidia-device-plugin/flux-kustomization.yaml
   - kagent-namespace/flux-kustomization.yaml
   - kagent/flux-kustomization.yaml
   - kagent-secrets/flux-kustomization.yaml

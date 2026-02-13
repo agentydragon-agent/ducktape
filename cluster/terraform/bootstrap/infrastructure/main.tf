@@ -34,10 +34,13 @@ locals {
 
   # Node topology - Proxmox nodes
   # Using VM IDs 10000+ to avoid conflicts with existing cluster (1500-2002)
-  # Worker disabled: its 12 GB RAM reassigned to controlplane (24 GB total)
   proxmox_nodes = {
     pve_cp0 = { name = "talos-pve-cp-0", type = "controlplane", vm_id = 10000, ip = "10.2.1.1" }
-    # pve_worker0 = { name = "talos-pve-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
+  }
+
+  # GPU worker nodes (separate: different image, VFIO passthrough, NVIDIA config)
+  proxmox_gpu_nodes = {
+    pve_gpu_worker0 = { name = "talos-pve-gpu-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
   }
 
   # Proxmox network configuration
@@ -47,7 +50,7 @@ locals {
   bootstrap_node = "vps0"
 
   # Total expected node count (for health checks)
-  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes)
+  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes) + length(local.proxmox_gpu_nodes)
 
   # All controlplane endpoints (for talosconfig) - VPS IPs + Proxmox controlplane IPs
   all_controlplane_ips = concat(
@@ -227,6 +230,7 @@ resource "talos_machine_bootstrap" "cluster" {
   depends_on = [
     talos_machine_configuration_apply.vps,
     talos_machine_configuration_apply.proxmox,
+    talos_machine_configuration_apply.proxmox_gpu,
   ]
 }
 
