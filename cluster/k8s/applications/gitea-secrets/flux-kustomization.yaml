@@ -10,6 +10,13 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: gitea-admin
+      namespace: flux-system
   dependsOn:
     - name: gitea-namespace
     - name: external-secrets-config
+    - name: tofu-controller
+    - name: vault-token

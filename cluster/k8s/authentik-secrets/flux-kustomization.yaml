@@ -10,8 +10,15 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: authentik-passwords
+      namespace: flux-system
   dependsOn:
     - name: authentik-namespace
     - name: external-secrets-config
     - name: vault
-    - name: authentik-token # authentik-bootstrap ExternalSecret reads kv/sso/client-secrets from Vault
+    - name: tofu-controller
+    - name: vault-token
+    - name: authentik-token

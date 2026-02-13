@@ -6,22 +6,18 @@ metadata:
 spec:
   interval: 10m
   timeout: 5m
+  path: "./cluster/k8s/authentik-blueprint/users"
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./cluster/k8s/authentik-blueprint/users"
-  prune: true
-  wait: true
-  # Health check ensures Terraform has provisioned users in Authentik
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
-      name: authentik-blueprint-users
+      name: user-passwords
       namespace: flux-system
   dependsOn:
     - name: tofu-controller
-      namespace: flux-system
-    - name: authentik # Wait for authentik to be ready
-      namespace: flux-system
-    - name: external-secrets-config # Wait for ESO to be configured
-      namespace: flux-system
+    - name: authentik
+    - name: external-secrets-config
+    - name: vault-token

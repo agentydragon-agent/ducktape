@@ -1,0 +1,42 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: gitea-admin
+  namespace: flux-system
+spec:
+  interval: 15m
+  approvePlan: "auto"
+  path: ./cluster/terraform/gitops/gitea-admin
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  runnerPodTemplate:
+    spec:
+      volumes:
+        - name: cluster-ca
+          configMap:
+            name: cluster-internal-ca-bundle
+      volumeMounts:
+        - name: cluster-ca
+          mountPath: /etc/ssl/certs/cluster-ca
+          readOnly: true
+      env:
+        - name: VAULT_CACERT
+          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "gitea-admin"
+        namespace        = "flux-system"
+      }
+  vars:
+    - name: vault_address
+      value: "https://instance.vault.svc.cluster.local:8200"
+  varsFrom:
+    - kind: Secret
+      name: vault-token
+      varsKeys:
+        - vault_token
+      optional: false

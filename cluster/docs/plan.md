@@ -285,47 +285,37 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 **Problem**: ESO Password generators regenerate on every `refreshInterval`. Applications that persist
 credentials (PostgreSQL, Authentik) don't auto-update, causing authentication failures after refresh.
 
-**Current Workaround**: `refreshInterval: 8760h` (1 year) - stops regeneration but prevents rotation.
+**Resolved**: All Password generators replaced with Vault SSOT. ExternalSecrets now read
+stable values from Vault (24h refresh is safe since values don't change).
 
 #### Phase 1: Reloader Adoption ✅ Complete
 
-Stakater Reloader auto-restarts pods when secrets change. All services now have
-`reloader.stakater.com/auto: "true"` annotation (PowerDNS, Grafana, Gitea, Matrix, Vault, Authentik, Nix-cache).
+Stakater Reloader auto-restarts pods when secrets change. All services have
+`reloader.stakater.com/auto: "true"` annotation.
 
-After cluster is stable, can reduce `refreshInterval` to 24h-168h.
+#### Phase 2: Vault SSOT Migration ✅ Complete
 
-**Note**: Reloader handles pod-level secret consumption. Does NOT fix init-time persistence
-(PostgreSQL passwords written to DB on first boot). Phase 2 addresses that.
-
-#### Phase 2: Migrate Password Generators to Vault SSOT
-
-Replace ESO Password generators with Vault KV sources. Terraform generates once → stores in Vault →
+All ESO Password generators replaced with Vault KV sources. Terraform generates once → stores in Vault →
 ESO reads stable value.
 
-**Migrated to Vault SSOT** (per-service Terraform modules with isolated state):
+**All secrets migrated to Vault SSOT** (per-service Terraform modules with isolated state):
 
-| Secret                | Terraform module                     | Vault path              | Status  |
-| --------------------- | ------------------------------------ | ----------------------- | ------- |
-| PowerDNS API key      | `terraform/gitops/powerdns-api-key/` | `kv/powerdns/api-key`   | ✅ Done |
-| Authentik API token   | `terraform/gitops/authentik-token/`  | `kv/sso/client-secrets` | ✅ Done |
-| Harbor admin password | `terraform/gitops/harbor-admin/`     | `kv/harbor/admin`       | ✅ Done |
+| Secret                       | Terraform module                        | Vault path               | Status  |
+| ---------------------------- | --------------------------------------- | ------------------------ | ------- |
+| PowerDNS API key             | `terraform/gitops/powerdns-api-key/`    | `kv/powerdns/api-key`    | ✅ Done |
+| Authentik API token          | `terraform/gitops/authentik-token/`     | `kv/sso/client-secrets`  | ✅ Done |
+| Harbor admin password        | `terraform/gitops/harbor-admin/`        | `kv/harbor/admin`        | ✅ Done |
+| Authentik PostgreSQL pw      | `terraform/gitops/authentik-passwords/` | `kv/authentik/passwords` | ✅ Done |
+| Authentik admin pw           | `terraform/gitops/authentik-passwords/` | `kv/authentik/passwords` | ✅ Done |
+| Authentik secret key         | `terraform/gitops/authentik-passwords/` | `kv/authentik/passwords` | ✅ Done |
+| Gitea admin pw               | `terraform/gitops/gitea-admin/`         | `kv/gitea/admin`         | ✅ Done |
+| Matrix signing/reg/macaroon  | `terraform/gitops/matrix-secrets/`      | `kv/matrix/secrets`      | ✅ Done |
+| Grafana admin pw             | `terraform/gitops/grafana-admin/`       | `kv/grafana/admin`       | ✅ Done |
+| User password (agentydragon) | `terraform/gitops/user-passwords/`      | `kv/users/agentydragon`  | ✅ Done |
+
+Zero ESO Password generators remain. All ExternalSecrets now read stable values from Vault.
 
 Also fixed: external-dns Reloader annotation, cert-manager ClusterIssuer `apiKeySecretRef` namespace.
-
-**ESO Password generators still to migrate**:
-
-| File                                                               | Secret                                      | Refresh | Notes                     |
-| ------------------------------------------------------------------ | ------------------------------------------- | ------- | ------------------------- |
-| `k8s/authentik-secrets/postgres-external-secret.yaml`              | PostgreSQL password                         | 8760h   | Init-time persistence     |
-| `k8s/authentik-secrets/admin-password-external-secret.yaml`        | Admin password                              | 8760h   |                           |
-| `k8s/authentik-secrets/secret-key-external-secret.yaml`            | Secret key                                  | **24h** | Dangerously short refresh |
-| `k8s/authentik-blueprint/users/password-secret.yaml`               | User password                               | 8760h   |                           |
-| `k8s/applications/gitea-secrets/secrets.yaml`                      | Admin password                              | **24h** | Dangerously short refresh |
-| `k8s/applications/matrix-secrets/secrets.yaml`                     | 3 secrets (signing, registration, macaroon) | **24h** | Dangerously short refresh |
-| `k8s/monitoring-stack-secrets/admin-password-external-secret.yaml` | Grafana admin                               | 8760h   |                           |
-
-**Warning**: Three generators use 24h refresh intervals. These will regenerate daily,
-causing desynchronization if pods aren't restarted. Migrate to Vault SSOT or increase to 8760h.
 
 See <lessons_learned/2025-11-28-eso-password-generator-desync.md> for detailed analysis.
 
