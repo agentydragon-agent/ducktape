@@ -52,6 +52,7 @@ resources:
   - applications/matrix/flux-kustomization.yaml
   - applications/matrix-secrets/flux-kustomization.yaml
   - applications/nix-cache/flux-kustomization.yaml
+  - headscale-namespace/flux-kustomization.yaml
   - applications/headscale/flux-kustomization.yaml
   - applications/website/flux-kustomization.yaml
   - applications/buildbuddy-executor/flux-kustomization.yaml

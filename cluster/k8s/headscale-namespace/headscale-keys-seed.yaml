@@ -1,0 +1,11 @@
+# Workaround for https://codeberg.org/wrenix/helm-charts/issues/321
+# The chart's pre-install hook Job expects this Secret to exist before
+# regular resources are created. Flux creates it ahead of the HelmRelease.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: headscale-keys
+  namespace: headscale
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
