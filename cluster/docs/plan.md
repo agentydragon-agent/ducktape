@@ -87,11 +87,8 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
       tokens (similar to how Harbor generates per-user CLI secrets after OIDC login). Requires
       Authentik proxy provider + long-lived JWTs for OpenAI SDK compatibility (SDK sends static
       Bearer token, no refresh). See Harbor's pattern: OIDC login → user generates CLI secret.
-- [ ] **Deploy Node Feature Discovery (NFD)** — auto-detects GPU hardware via PCI scanning,
-      sets `feature.node.kubernetes.io/pci-10de.present=true`. Eliminates manual `nvidia.com/gpu`
-      label in Talos machine config and `affinity: {}` override in NVIDIA device plugin chart.
-      Minimal overhead (~50m CPU, ~300Mi across 4 nodes). Helm chart: `node-feature-discovery`
-      from `https://kubernetes-sigs.github.io/node-feature-discovery/charts`.
+- [ ] **Verify NFD + NVIDIA device plugin** — NFD deployed, NVIDIA device plugin now uses
+      default NFD-based affinity (`pci-10de.present`). Verify GPUs registered after reconciliation.
 - [ ] **Migrate headscale to Helm chart** — currently raw deployment manifests, should use official
       Helm chart for consistency with other applications.
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
@@ -147,6 +144,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | local-path-provisioner | ✅     | Storage for VPS nodes                      |
 | Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)           |
 | DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS |
+| Node Feature Discovery | ✅     | Auto-detects GPU/hardware, provides labels |
 | NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes     |
 
 ## Applications (already configured)

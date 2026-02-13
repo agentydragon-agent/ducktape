@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: nvidia-device-plugin
+  name: node-feature-discovery
   namespace: flux-system
 spec:
   interval: 10m
@@ -9,8 +9,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./cluster/k8s/nvidia-device-plugin"
+  path: "./cluster/k8s/node-feature-discovery"
   prune: true
   wait: true
-  dependsOn:
-    - name: node-feature-discovery
