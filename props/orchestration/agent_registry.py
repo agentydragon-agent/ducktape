@@ -19,8 +19,9 @@ Usage:
         registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
     )
     async with registry:
+        image = await registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
         critic_run_id = await registry.run_critic(
-            image_ref=BUILTIN_TAG,
+            image=image,
             example=example,
             model="gpt-4o",
             timeout_seconds=3600,
@@ -50,11 +51,12 @@ from props.core.agent_types import (
     CriticTypeConfig,
     GraderTypeConfig,
     TargetMetric,
+    TypeConfig,
 )
 from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
-from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig, is_digest
+from props.core.oci_utils import RegistryProxyConfig, is_digest
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, Snapshot
@@ -73,6 +75,17 @@ class BudgetExceededError(Exception):
 
 class ImageResolutionError(Exception):
     """Raised when an image reference cannot be resolved or pulled."""
+
+
+# --- Resolved Image ---
+
+
+@dataclass(frozen=True)
+class ResolvedImage:
+    """Pre-resolved OCI image reference. Use resolve_image() to create."""
+
+    digest: str
+    oci_ref: str
 
 
 # --- Container Result ---
@@ -126,6 +139,16 @@ class AgentRunView:
     model: str
     status: AgentRunStatus
     created_at: datetime
+
+    @classmethod
+    def from_orm(cls, run: AgentRun) -> AgentRunView:
+        return cls(
+            agent_run_id=run.agent_run_id,
+            image_digest=run.image_digest,
+            model=run.model,
+            status=run.status,
+            created_at=run.created_at,
+        )
 
 
 class AgentRegistry:
@@ -230,62 +253,69 @@ class AgentRegistry:
         logger.info(f"Resolved {repository}:{ref} → {digest}")
         return str(digest)
 
-    async def _resolve_image(self, agent_type: AgentType, ref: str) -> tuple[str, str]:
-        """Resolve image ref to (digest, full OCI reference)."""
+    async def resolve_image(self, agent_type: AgentType, ref: str) -> ResolvedImage:
+        """Resolve image tag/digest to a ResolvedImage.
+
+        Raises:
+            ImageResolutionError: If the image cannot be resolved.
+        """
         digest = await self._resolve_image_ref(agent_type, ref)
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
-        return digest, oci_ref
+        return ResolvedImage(digest=digest, oci_ref=oci_ref)
 
-    async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
-        """Run agent container, update DB status, return final status.
-
-        Full lifecycle: resolve image → create DB role → start container →
-        wait for exit → capture logs → update agent_runs status.
-        timeout_seconds=None means no timeout (for long-running agents).
-        """
+    async def _create_container(
+        self, agent_run_id: UUID, *, image: str
+    ) -> tuple[aiodocker.containers.DockerContainer, str]:
+        """Pull image, create DB role, create and start an agent container."""
         image_id = await self._pull_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
 
         creds = await ensure_agent_role(self._db_config, agent_run_id)
         logger.info("Agent role ready: %s", creds.username)
 
-        container = None
+        name = f"agent-{short_uuid(agent_run_id)}"
+
+        # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
+        # accepts Bearer tokens containing base64-encoded username:password.
+        api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
+        env = {
+            **self._agent_base_env,
+            "PGUSER": creds.username,
+            "PGPASSWORD": creds.password,
+            "PROPS_BACKEND_URL": self._backend_url,
+            "OPENAI_BASE_URL": f"{self._backend_url}/v1",
+            "OPENAI_API_KEY": api_key,
+        }
+
+        host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
+        if self._extra_hosts:
+            host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
+
+        container_config = {
+            "Image": image_id,
+            "Env": [f"{k}={v}" for k, v in env.items()],
+            "HostConfig": host_config,
+            "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
+        }
+
+        container = await self._docker_client.containers.create(
+            container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
+            name=name,
+        )
+        logger.info("Created container %s", name)
+
+        await container.start()
+        logger.info("Started container %s", name)
+        return container, name
+
+    async def _run_agent(self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None) -> AgentRunStatus:
+        """Run agent container, update DB status, return final status.
+
+        Full lifecycle: create container → wait for exit → capture logs → update status.
+        timeout_seconds=None means no timeout (for long-running agents).
+        """
+        container, name = await self._create_container(agent_run_id, image=image)
         try:
-            name = f"agent-{short_uuid(agent_run_id)}"
-
-            backend_url = self._backend_url
-            # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
-            # accepts Bearer tokens containing base64-encoded username:password.
-            api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
-            env = {
-                **self._agent_base_env,
-                "PGUSER": creds.username,
-                "PGPASSWORD": creds.password,
-                "PROPS_BACKEND_URL": backend_url,
-                "OPENAI_BASE_URL": f"{backend_url}/v1",
-                "OPENAI_API_KEY": api_key,
-            }
-
-            host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
-            if self._extra_hosts:
-                host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
-
-            container_config = {
-                "Image": image_id,
-                "Env": [f"{k}={v}" for k, v in env.items()],
-                "HostConfig": host_config,
-                "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
-            }
-
-            container = await self._docker_client.containers.create(
-                container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
-                name=name,
-            )
-            logger.info("Created container %s", name)
-
-            await container.start()
-            logger.info("Started container %s", name)
-
             # Wait for container to exit (with optional timeout)
             result: ContainerResult
             try:
@@ -319,12 +349,11 @@ class AgentRegistry:
                 logger.error("Container %s stderr:\n%s", name, result.stderr)
 
         finally:
-            if container is not None:
-                try:
-                    await container.delete(force=True)
-                    logger.info("Deleted container")
-                except Exception as e:
-                    logger.warning("Failed to delete container: %s", e)
+            try:
+                await container.delete(force=True)
+                logger.info("Deleted container")
+            except Exception as e:
+                logger.warning("Failed to delete container: %s", e)
 
         # Determine and persist status
         status = AgentRunStatus.TIMED_OUT if result.timed_out else AgentRunStatus.EXITED
@@ -363,10 +392,39 @@ class AgentRegistry:
                     f"(${status.tree_spent_usd:.2f} spent of ${status.budget_usd:.2f})"
                 )
 
+    def _create_run(
+        self,
+        *,
+        image: ResolvedImage,
+        model: str,
+        type_config: TypeConfig,
+        budget_usd: float,
+        parent_run_id: UUID | None = None,
+        verify_snapshot: SnapshotSlug | None = None,
+    ) -> UUID:
+        """Create an agent_run DB record. Returns agent_run_id."""
+        agent_run_id = uuid4()
+        with self._db.session() as session:
+            if verify_snapshot is not None:
+                session.query(Snapshot).filter_by(slug=verify_snapshot).one()
+            session.add(
+                AgentRun(
+                    agent_run_id=agent_run_id,
+                    image_digest=image.digest,
+                    parent_agent_run_id=parent_run_id,
+                    model=model,
+                    type_config=type_config,
+                    status=AgentRunStatus.IN_PROGRESS,
+                    budget_usd=budget_usd,
+                )
+            )
+            session.commit()
+        return agent_run_id
+
     async def run_critic(
         self,
         *,
-        image_ref: str,
+        image: ResolvedImage,
         example: ExampleSpec,
         model: str,
         timeout_seconds: int,
@@ -377,30 +435,21 @@ class AgentRegistry:
         if parent_run_id is not None:
             self._validate_spawn_budget(parent_run_id, budget_usd)
 
-        agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.CRITIC, image_ref)
-
-        with self._db.session() as session:
-            session.query(Snapshot).filter_by(slug=example.snapshot_slug).one()
-
-            agent_run = AgentRun(
-                agent_run_id=agent_run_id,
-                image_digest=image_digest,
-                parent_agent_run_id=parent_run_id,
-                model=model,
-                type_config=CriticTypeConfig(example=example),
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=budget_usd,
-            )
-            session.add(agent_run)
-            session.commit()
-
-        await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
+        agent_run_id = self._create_run(
+            image=image,
+            model=model,
+            type_config=CriticTypeConfig(example=example),
+            budget_usd=budget_usd,
+            parent_run_id=parent_run_id,
+            verify_snapshot=example.snapshot_slug,
+        )
+        await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
         return agent_run_id
 
     async def run_critic_dev_optimize(
         self,
         *,
+        image: ResolvedImage,
         budget: float,
         optimizer_model: str,
         critic_model: str,
@@ -408,31 +457,21 @@ class AgentRegistry:
         timeout_seconds: int,
     ) -> UUID:
         """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
-        agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
-
-        with self._db.session() as session:
-            type_config = CriticDevOptimizeTypeConfig(
+        agent_run_id = self._create_run(
+            image=image,
+            model=optimizer_model,
+            type_config=CriticDevOptimizeTypeConfig(
                 target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
-            )
-
-            agent_run = AgentRun(
-                agent_run_id=agent_run_id,
-                image_digest=image_digest,
-                model=optimizer_model,
-                type_config=type_config,
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=budget,
-            )
-            session.add(agent_run)
-            session.commit()
-
-        await self._run_agent(agent_run_id, image=image, timeout_seconds=timeout_seconds)
+            ),
+            budget_usd=budget,
+        )
+        await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
         return agent_run_id
 
     async def run_critic_dev_improve(
         self,
         *,
+        image: ResolvedImage,
         examples: list[ExampleSpec],
         baseline_image_digests: list[str],
         budget_usd: float,
@@ -448,39 +487,27 @@ class AgentRegistry:
         if not examples:
             raise ValueError("examples must not be empty")
 
-        run_id = uuid4()
         if output_dir is None:
-            output_dir = Path(tempfile.mkdtemp(prefix=f"improve_agent_{str(run_id)[:8]}_"))
-
+            output_dir = Path(tempfile.mkdtemp(prefix="improve_agent_"))
         output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        image_digest, image = await self._resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
 
         # Resolve baseline refs to digests (tags → sha256:...)
         resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
 
-        type_config = CriticDevImproveTypeConfig(
-            baseline_image_digests=resolved_baselines,
-            allowed_examples=examples,
-            improvement_model=improvement_model,
-            critic_model=critic_model,
+        agent_run_id = self._create_run(
+            image=image,
+            model=improvement_model,
+            type_config=CriticDevImproveTypeConfig(
+                baseline_image_digests=resolved_baselines,
+                allowed_examples=examples,
+                improvement_model=improvement_model,
+                critic_model=critic_model,
+            ),
+            budget_usd=budget_usd,
         )
-
-        with self._db.session() as session:
-            agent_run = AgentRun(
-                agent_run_id=run_id,
-                image_digest=image_digest,
-                model=improvement_model,
-                type_config=type_config,
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=budget_usd,
-            )
-            session.add(agent_run)
-            session.commit()
-
-        await self._run_agent(run_id, image=image, timeout_seconds=timeout_seconds)
-        return run_id
+        await self._run_agent(agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds)
+        return agent_run_id
 
     # --- State Tracking ---
 
@@ -489,103 +516,43 @@ class AgentRegistry:
             db_run = session.get(AgentRun, run_id)
             if not db_run:
                 return None
-            return AgentRunView(
-                agent_run_id=db_run.agent_run_id,
-                image_digest=db_run.image_digest,
-                model=db_run.model,
-                status=db_run.status,
-                created_at=db_run.created_at,
-            )
+            return AgentRunView.from_orm(db_run)
 
     def list_recent(self, limit: int = 50) -> list[AgentRunView]:
         with self._db.session() as session:
             runs = session.query(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit).all()
-            return [
-                AgentRunView(
-                    agent_run_id=r.agent_run_id,
-                    image_digest=r.image_digest,
-                    model=r.model,
-                    status=r.status,
-                    created_at=r.created_at,
-                )
-                for r in runs
-            ]
+            return [AgentRunView.from_orm(r) for r in runs]
 
     async def _start_agent(self, agent_run_id: UUID, *, image: str) -> str:
         """Create and start an agent container, returning the container name.
 
-        Handles image pull, role creation, and container startup. Does NOT
-        wait for the container to exit — caller manages the lifecycle.
+        Does NOT wait for the container to exit — caller manages the lifecycle.
         """
-        image_id = await self._pull_image(image)
-        logger.info("Using image %s from %s", image_id[:19], image)
-
-        creds = await ensure_agent_role(self._db_config, agent_run_id)
-        logger.info("Agent role ready: %s", creds.username)
-
-        name = f"agent-{short_uuid(agent_run_id)}"
-
-        backend_url = self._backend_url
-        api_key = self._db_config.with_user(creds.username, creds.password).basic_auth_token
-        env = {
-            **self._agent_base_env,
-            "PGUSER": creds.username,
-            "PGPASSWORD": creds.password,
-            "PROPS_BACKEND_URL": backend_url,
-            "OPENAI_BASE_URL": f"{backend_url}/v1",
-            "OPENAI_API_KEY": api_key,
-        }
-
-        host_config: dict[str, object] = {"NetworkMode": PROPS_NETWORK_NAME, "AutoRemove": False}
-        if self._extra_hosts:
-            host_config["ExtraHosts"] = [f"{host}:{ip}" for host, ip in self._extra_hosts.items()]
-
-        container_config = {
-            "Image": image_id,
-            "Env": [f"{k}={v}" for k, v in env.items()],
-            "HostConfig": host_config,
-            "Labels": {"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
-        }
-
-        container = await self._docker_client.containers.create(
-            container_config,  # type: ignore[arg-type]  # aiodocker JSONObject
-            name=name,
-        )
-        logger.info("Created container %s", name)
-
-        await container.start()
-        logger.info("Started container %s", name)
+        _, name = await self._create_container(agent_run_id, image=image)
         return name
 
-    async def _create_grader_run(self, snapshot_slug: SnapshotSlug, model: str) -> tuple[UUID, str]:
-        """Create a grader agent_run record and resolve image. Returns (agent_run_id, image_ref)."""
-        agent_run_id = uuid4()
-        image_digest, image = await self._resolve_image(AgentType.GRADER, BUILTIN_TAG)
-
-        with self._db.session() as session:
-            session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-
-            agent_run = AgentRun(
-                agent_run_id=agent_run_id,
-                image_digest=image_digest,
-                model=model,
-                type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
-                status=AgentRunStatus.IN_PROGRESS,
-                budget_usd=10_000.0,
-            )
-            session.add(agent_run)
-            session.commit()
-
-        return agent_run_id, image
-
-    async def run_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> UUID:
+    async def run_snapshot_grader(self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str) -> UUID:
         """Run a snapshot grader. Blocks until it exits."""
-        agent_run_id, image = await self._create_grader_run(snapshot_slug, model)
-        await self._run_agent(agent_run_id, image=image)
+        agent_run_id = self._create_run(
+            image=image,
+            model=model,
+            type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
+            budget_usd=10_000.0,
+            verify_snapshot=snapshot_slug,
+        )
+        await self._run_agent(agent_run_id, image=image.oci_ref)
         return agent_run_id
 
-    async def start_snapshot_grader(self, *, snapshot_slug: SnapshotSlug, model: str) -> GraderHandle:
+    async def start_snapshot_grader(
+        self, *, image: ResolvedImage, snapshot_slug: SnapshotSlug, model: str
+    ) -> GraderHandle:
         """Start a snapshot grader, returning a handle to kill it."""
-        agent_run_id, image = await self._create_grader_run(snapshot_slug, model)
-        container_name = await self._start_agent(agent_run_id, image=image)
+        agent_run_id = self._create_run(
+            image=image,
+            model=model,
+            type_config=GraderTypeConfig(snapshot_slug=snapshot_slug),
+            budget_usd=10_000.0,
+            verify_snapshot=snapshot_slug,
+        )
+        container_name = await self._start_agent(agent_run_id, image=image.oci_ref)
         return GraderHandle(container_name=container_name, docker_client=self._docker_client)

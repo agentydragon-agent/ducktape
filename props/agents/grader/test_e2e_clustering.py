@@ -24,7 +24,7 @@ from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
 from props.db.database import Database
 from props.db.models import AgentRunStatus, IssueCluster, IssueClusterMember, ReportedIssue, ReportedIssueOccurrence
-from props.db.snapshots import DBLocationAnchor
+from props.db.snapshots import LocationAnchor
 from props.testing.assertions import assert_no_pending
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import make_fake_critic_run
@@ -107,7 +107,7 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
                     ReportedIssueOccurrence(
                         agent_run_id=cid,
                         reported_issue_id=issue_name,
-                        locations=[DBLocationAnchor(file="parser.py", start_line=42, end_line=42)],
+                        locations=[LocationAnchor(file="parser.py", start_line=42, end_line=42)],
                     )
                 )
             session.commit()
@@ -119,7 +119,10 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
 
         # Start snapshot grader
         grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=test_snapshot, model=stack.model), name="snapshot-grader"
+            stack.registry.run_snapshot_grader(
+                image=stack.resolved_images["grader"], snapshot_slug=test_snapshot, model=stack.model
+            ),
+            name="snapshot-grader",
         )
 
         # Wait for clustering to complete

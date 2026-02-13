@@ -47,7 +47,7 @@ from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
 from props.core.models.snapshot import BundleFilter, Source
 from props.core.splits import Split
-from props.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
+from props.db.snapshots import LocationAnchor
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -261,23 +261,6 @@ class StrEnumColumn(TypeDecorator[E]):
         if value is None:
             return None
         return self._enum_class(value)
-
-
-class CanonicalIssuesSnapshot(BaseModel):
-    """Snapshot of canonical true positives and false positives at grading time.
-
-    Persisted in GraderRun.canonical_issues_snapshot to track which issues
-    were used when grading a critique. This enables detecting stale grader runs
-    after editing issue files.
-
-    The serialized form is stored as JSONB in the database via PydanticColumn.
-
-    Uses database-specific models (DBTruePositiveIssue, DBKnownFalsePositive)
-    to decouple database persistence from MCP I/O protocol changes.
-    """
-
-    true_positives: list[DBTruePositiveIssue]
-    false_positives: list[DBKnownFalsePositive]
 
 
 class Base(DeclarativeBase):
@@ -788,8 +771,8 @@ class ReportedIssueOccurrence(Base):
     agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, server_default=FetchedValue())
     reported_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 
-    locations: Mapped[list[DBLocationAnchor]] = mapped_column(
-        PydanticColumn(list[DBLocationAnchor]),
+    locations: Mapped[list[LocationAnchor]] = mapped_column(
+        PydanticColumn(list[LocationAnchor]),
         nullable=False,
         comment="1+ location anchors: {file, start_line?, end_line?}",
     )

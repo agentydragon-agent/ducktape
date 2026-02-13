@@ -135,14 +135,21 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
         digests.update(stack.image_digests)
 
+        # Resolve images before starting tasks
+        grader_image_resolved = stack.resolved_images["grader"]
+        opt_image = stack.resolved_images["critic_dev_optimize"]
+
         # Start snapshot grader in background
         grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+            stack.registry.run_snapshot_grader(
+                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
+            )
         )
 
         try:
             # Run critic-dev optimizer
             run_id = await stack.registry.run_critic_dev_optimize(
+                image=opt_image,
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -178,7 +185,7 @@ _CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
     from props.agents.runtime import get_current_agent_run_id
     from props.db.database import Database
     from props.db.models import ReportedIssue, ReportedIssueOccurrence
-    from props.db.snapshots import DBLocationAnchor
+    from props.db.snapshots import LocationAnchor
 
 
     async def main() -> int:
@@ -202,7 +209,7 @@ _CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
             occ = ReportedIssueOccurrence(
                 agent_run_id=agent_run_id,
                 reported_issue_id="custom-test-issue",
-                locations=[DBLocationAnchor(file="test.py", start_line=1, end_line=5)],
+                locations=[LocationAnchor(file="test.py", start_line=1, end_line=5)],
             )
             session.add(occ)
 
@@ -317,12 +324,18 @@ async def test_po_creates_custom_critic_image(
     # No critic mock needed — custom critic bypasses the LLM entirely
     mocks = {ORCHESTRATION_OPTIMIZER_MODEL: optimizer_mock, ORCHESTRATION_GRADER_MODEL: grader_mock}
     async with e2e_stack(mocks, images=[critic_dev_optimize_image, critic_image, grader_image]) as stack:
+        grader_image_resolved = stack.resolved_images["grader"]
+        opt_image = stack.resolved_images["critic_dev_optimize"]
+
         grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL)
+            stack.registry.run_snapshot_grader(
+                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
+            )
         )
 
         try:
             run_id = await stack.registry.run_critic_dev_optimize(
+                image=opt_image,
                 budget=1.0,
                 optimizer_model=ORCHESTRATION_OPTIMIZER_MODEL,
                 critic_model=ORCHESTRATION_CRITIC_MODEL,
@@ -382,8 +395,9 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         yield m.submit(issues_count=0, summary="Push attempt completed (expected to fail)")
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_image]) as stack:
+        critic_image_resolved = stack.resolved_images["critic"]
         run_id = await stack.registry.run_critic(
-            image_ref=stack.image_digests["critic"],
+            image=critic_image_resolved,
             example=all_files_scope,
             model=stack.model,
             timeout_seconds=TEST_TIMEOUT_SECONDS,

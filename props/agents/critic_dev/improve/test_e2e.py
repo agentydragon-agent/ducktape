@@ -101,6 +101,7 @@ async def test_prompt_improve_e2e_creates_package(
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
         result = await stack.registry.run_critic_dev_improve(
+            image=stack.resolved_images["critic_dev_improve"],
             examples=[subtract_file_example],
             baseline_image_digests=[stack.image_digests["critic"]],
             budget_usd=50.0,
@@ -131,6 +132,7 @@ async def test_prompt_improve_e2e_multiple_examples(
 
     async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[critic_dev_improve_image, critic_image]) as stack:
         result = await stack.registry.run_critic_dev_improve(
+            image=stack.resolved_images["critic_dev_improve"],
             examples=allowed_examples,
             baseline_image_digests=[stack.image_digests["critic"]],
             budget_usd=50.0,

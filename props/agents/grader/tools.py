@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from props.db.snapshots import LocationAnchor
 
 # --- Ground truth reference types (discriminated union) ---
 
@@ -100,10 +101,6 @@ class ClusterMemberSpec(OpenAIStrictModeBaseModel):
     rationale: str = Field(..., description="Why this issue belongs to this cluster")
 
 
-class ListClusteringPendingArgs(OpenAIStrictModeBaseModel):
-    run: UUID | None = Field(None, description="Filter to specific critic run ID")
-
-
 class ListClustersArgs(OpenAIStrictModeBaseModel):
     pass
 
@@ -145,12 +142,10 @@ class PendingEdge(BaseModel):
     gt_ref: GTRef
 
 
-class LocationInfo(BaseModel):
-    """Location information for an occurrence."""
+class OccurrenceInfo(BaseModel):
+    """Locations for one occurrence of a critique issue."""
 
-    file: str
-    start_line: int | None
-    end_line: int | None
+    locations: list[LocationAnchor]
 
 
 class IssueDetails(BaseModel):
@@ -159,7 +154,7 @@ class IssueDetails(BaseModel):
     issue_id: str
     critique_run_id: UUID
     rationale: str
-    locations: list[LocationInfo]
+    occurrences: list[OccurrenceInfo]
 
 
 class GTDetails(BaseModel):
@@ -172,14 +167,6 @@ class GTDetails(BaseModel):
 
 
 # --- Clustering result models ---
-
-
-class ClusteringPendingIssue(BaseModel):
-    """A critique issue that needs clustering."""
-
-    critique_run_id: UUID
-    critique_issue_id: str
-    snapshot_slug: str
 
 
 class ClusterMemberInfo(BaseModel):

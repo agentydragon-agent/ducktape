@@ -42,7 +42,7 @@ from props.agents.grader.tools import (
     InsertEdgesArgs,
     IssueDetails,
     ListClustersArgs,
-    LocationInfo,
+    OccurrenceInfo,
     RemoveFromClusterArgs,
     ReportFailureArgs,
     ShowClusterArgs,
@@ -167,17 +167,11 @@ def _create_grader_tool_provider(
                 .all()
             )
 
-            locations = [
-                LocationInfo(file=loc.file, start_line=loc.start_line, end_line=loc.end_line)
-                for occ in occs
-                for loc in occ.locations or []
-            ]
-
             return IssueDetails(
                 issue_id=issue.issue_id,
                 critique_run_id=issue.agent_run_id,
                 rationale=issue.rationale,
-                locations=locations,
+                occurrences=[OccurrenceInfo(locations=list(occ.locations or [])) for occ in occs],
             )
 
     @provider.tool
