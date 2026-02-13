@@ -75,9 +75,12 @@ resource "authentik_flow_stage_binding" "login" {
   order  = 30
 }
 
-resource "authentik_brand" "default" {
+# Domain-matched brand for allegedly.works — Authentik matches brands by domain,
+# so requests to auth.allegedly.works use this brand and its custom flow.
+# The built-in "authentik-default" brand stays as fallback for unmatched domains.
+resource "authentik_brand" "allegedly_works" {
   domain              = "allegedly.works"
-  default             = true
+  default             = false
   flow_authentication = authentik_flow.authentication.uuid
   branding_title      = "allegedly.works"
 }
