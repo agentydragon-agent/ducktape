@@ -50,8 +50,8 @@ spec:
               RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
                 -H "Content-Type: application/json" \
                 -d '{"name":"terraform-admin-token","scopes":["write:admin","write:repository","write:user","write:organization"]}' \
-                -u "admin:${GITEA_ADMIN_PASSWORD}" \
-                "http://gitea-http:3000/api/v1/users/admin/tokens")
+                -u "${GITEA_ADMIN_USERNAME}:${GITEA_ADMIN_PASSWORD}" \
+                "http://gitea-http:3000/api/v1/users/${GITEA_ADMIN_USERNAME}/tokens")
 
               HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
               BODY=$(echo "$RESPONSE" | head -n-1)
@@ -110,6 +110,11 @@ spec:
                 exit 1
               fi
           env:
+            - name: GITEA_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin-password
+                  key: username
             - name: GITEA_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
