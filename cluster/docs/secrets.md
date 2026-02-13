@@ -23,7 +23,7 @@
 
 **Layer 1 — SealedSecrets** (git repo → cluster)
 
-- `k8s/storage/proxmox-csi-sealed.yaml`
+- `k8s/proxmox-csi/proxmox-csi-sealed.yaml`
 - `k8s/applications/nix-cache/signing-key-sealed.yaml`
 - `k8s/applications/nix-cache/jwt-token-sealed.yaml`
 - Sealed with keypair from Layer 0, deployed by Flux, decrypted by sealed-secrets controller
@@ -61,7 +61,7 @@
 
 | File                                                 | Purpose                 | Namespace   |
 | ---------------------------------------------------- | ----------------------- | ----------- |
-| `k8s/storage/proxmox-csi-sealed.yaml`                | CSI driver credentials  | csi-proxmox |
+| `k8s/proxmox-csi/proxmox-csi-sealed.yaml`            | CSI driver credentials  | csi-proxmox |
 | `k8s/applications/nix-cache/signing-key-sealed.yaml` | Nix cache signing       | nix-cache   |
 | `k8s/applications/nix-cache/jwt-token-sealed.yaml`   | Attic JWT token         | nix-cache   |
 | `k8s/dns-automation/aws-credentials-sealed.yaml`     | AWS Route 53 API access | flux-system |
@@ -128,7 +128,7 @@ If keypair mismatch occurs:
 
 ```bash
 cd terraform/bootstrap/persistent-auth && terraform apply
-git add k8s/storage/proxmox-csi-sealed.yaml
+git add k8s/proxmox-csi/proxmox-csi-sealed.yaml
 git commit -m "chore: re-seal secrets with current keypair"
 git push
 ```

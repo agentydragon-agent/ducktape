@@ -17,5 +17,5 @@ spec:
       namespace: loki
   timeout: 10m
   dependsOn:
-    - name: storage
+    - name: proxmox-csi
     - name: ingress-nginx

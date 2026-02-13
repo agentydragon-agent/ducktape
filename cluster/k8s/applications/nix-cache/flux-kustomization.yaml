@@ -13,7 +13,7 @@ spec:
   prune: true
   wait: true
   dependsOn:
-    - name: storage # Proxmox CSI
+    - name: proxmox-csi
       namespace: flux-system
     - name: sealed-secrets
       namespace: flux-system

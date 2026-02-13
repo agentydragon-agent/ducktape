@@ -17,4 +17,4 @@ spec:
       kind: Namespace
       name: monitoring
   dependsOn:
-    - name: storage
+    - name: proxmox-csi

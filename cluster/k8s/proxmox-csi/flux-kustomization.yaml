@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: storage
+  name: proxmox-csi
   namespace: flux-system
 spec:
   interval: 10m
@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./cluster/k8s/storage"
+  path: "./cluster/k8s/proxmox-csi"
   prune: true
   wait: true
   dependsOn:

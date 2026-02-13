@@ -8,7 +8,7 @@ resources:
   - reloader/flux-kustomization.yaml
   - coredns-custom/flux-kustomization.yaml
   - kyverno-policies/flux-kustomization.yaml
-  - storage/flux-kustomization.yaml
+  - proxmox-csi/flux-kustomization.yaml
   - hcloud-csi/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml
   - metrics-server/flux-kustomization.yaml

@@ -160,7 +160,7 @@ EOF
 ${tls_self_signed_cert.sealed_secrets.cert_pem}
 CERTEOF
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
-        --format=yaml < /tmp/proxmox-csi-secret.yaml > ${path.module}/../../../k8s/storage/proxmox-csi-sealed.yaml
+        --format=yaml < /tmp/proxmox-csi-secret.yaml > ${path.module}/../../../k8s/proxmox-csi/proxmox-csi-sealed.yaml
       rm /tmp/sealed-secrets-cert.pem
 
       # Clean up temporary file
@@ -172,7 +172,7 @@ CERTEOF
 }
 
 # NOTE: Auto-commit removed - user must manually commit sealed secrets after terraform apply
-# Run: git add k8s/storage/proxmox-csi-sealed.yaml && git commit -m "chore: update sealed secret"
+# Run: git add k8s/proxmox-csi/proxmox-csi-sealed.yaml && git commit -m "chore: update sealed secret"
 #
 # The seal-secret.sh helper script reads the cert directly from terraform state
 # via `terraform output -raw sealed_secrets_cert_pem`

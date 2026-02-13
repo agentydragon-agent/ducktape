@@ -188,7 +188,7 @@ Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
 
 | Provisioner          | Location | Default | Management                         |
 | -------------------- | -------- | ------- | ---------------------------------- |
-| `proxmox-csi-retain` | Proxmox  | Yes     | Flux (k8s/storage/)                |
+| `proxmox-csi-retain` | Proxmox  | Yes     | Flux (k8s/proxmox-csi/)            |
 | `hcloud-volumes`     | Hetzner  | No      | Flux (k8s/hcloud-csi/)             |
 | `local-path`         | Any node | No      | Flux (k8s/local-path-provisioner/) |
 
