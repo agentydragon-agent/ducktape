@@ -4,11 +4,25 @@
 
 ## 🔥 Immediate Next Steps
 
-**Status**: Cluster running and verified. Bootstrap completed 2026-02-12.
+**Status**: Cluster torn down. Pending bootstrap with GPU worker node.
 
-### Bootstrap Verification (2026-02-13) ✅
+### Next: Bootstrap with GPU Worker
 
-All checks passing:
+GPU worker infrastructure is committed. Before bootstrapping:
+
+1. **Restart wyrm** (manual) — releases GPUs detached in previous session
+2. **Bootstrap**: `bazel run //cluster:bootstrap`
+3. **Verify GPU worker**:
+   ```bash
+   kubectl get nodes -l nvidia.com/gpu=true
+   kubectl get pods -n nvidia-device-plugin
+   kubectl describe node talos-pve-gpu-worker-0 | grep nvidia.com/gpu
+   # Expect: nvidia.com/gpu: 2
+   ```
+
+### Previous Bootstrap Verification (2026-02-12) ✅
+
+All checks passed (pre-GPU worker, 3 nodes):
 
 - **KubeSpan**: All peers "up", unique identities, no duplicates (2 peers per node × 3 nodes)
 - **Nodes**: All 3 Ready (talos-vps-cp-0, talos-vps-cp-1, talos-pve-cp-0)

@@ -36,7 +36,7 @@ EOF
 ${tls_self_signed_cert.sealed_secrets.cert_pem}
 CERTEOF
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
-        --format=yaml < /tmp/nix-cache-signing-key.yaml > ${path.root}/../../k8s/applications/nix-cache/signing-key-sealed.yaml
+        --format=yaml < /tmp/nix-cache-signing-key.yaml > ${path.module}/../../../k8s/applications/nix-cache/signing-key-sealed.yaml
       rm /tmp/sealed-secrets-cert.pem
 
       # Clean up temporary file

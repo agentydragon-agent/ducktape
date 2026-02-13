@@ -159,7 +159,7 @@ EOF
 ${tls_self_signed_cert.sealed_secrets.cert_pem}
 CERTEOF
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
-        --format=yaml < /tmp/proxmox-csi-secret.yaml > ./../../k8s/storage/proxmox-csi-sealed.yaml
+        --format=yaml < /tmp/proxmox-csi-secret.yaml > ${path.module}/../../../k8s/storage/proxmox-csi-sealed.yaml
       rm /tmp/sealed-secrets-cert.pem
 
       # Clean up temporary file
