@@ -296,7 +296,7 @@ Returns NULL for lcb95/ucb95 when n < 2 (insufficient samples for CI).'
             SELECT NOT EXISTS (
                 SELECT 1
                 FROM jsonb_array_elements_text(arr) AS d
-                WHERE NOT is_valid_digest(d)
+                WHERE NOT public.is_valid_digest(d)
             )
         $$
     """)
@@ -493,6 +493,7 @@ Used by reported_issues, reported_issue_occurrences SELECT policies.'
         CREATE FUNCTION is_tp_in_expected_recall_scope(
             p_snapshot_slug text,
             p_tp_id text,
+            p_occurrence_id text,
             p_example_kind example_kind_enum,
             p_files_hash text
         ) RETURNS boolean
@@ -502,11 +503,13 @@ Used by reported_issues, reported_issue_occurrences SELECT policies.'
             SELECT CASE
                 WHEN p_example_kind = 'whole_snapshot' THEN TRUE
                 ELSE EXISTS (
-                    -- Check if any critic_scopes_expected_to_recall entry is a subset of the reviewed scope
+                    -- Check if any critic_scopes_expected_to_recall entry for this occurrence
+                    -- is a subset of the reviewed scope
                     SELECT 1
                     FROM critic_scopes_expected_to_recall csetr
                     WHERE csetr.snapshot_slug = p_snapshot_slug
                       AND csetr.tp_id = p_tp_id
+                      AND csetr.occurrence_id = p_occurrence_id
                       -- All files in this expected recall scope must be in the reviewed scope
                       AND NOT EXISTS (
                           SELECT 1 FROM file_set_members fsm
@@ -525,8 +528,9 @@ Used by reported_issues, reported_issue_occurrences SELECT policies.'
     """)
 
     op.execute("""
-        COMMENT ON FUNCTION is_tp_in_expected_recall_scope(text, text, example_kind_enum, text) IS
+        COMMENT ON FUNCTION is_tp_in_expected_recall_scope(text, text, text, example_kind_enum, text) IS
         'Returns TRUE if this TP occurrence should count toward recall denominator for the given scope.
+Filters by (tp_id, occurrence_id) so only occurrences with matching scopes count.
 For whole-snapshot scope, always returns TRUE.
 NOTE: This determines the recall DENOMINATOR only. Critics CAN find issues outside expected scopes
 (achieving >100%% recall). The match_file_restriction field separately constrains
@@ -765,7 +769,7 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("digest"),
-        sa.CheckConstraint("is_valid_digest(digest)", name="check_digest_format"),
+        sa.CheckConstraint("public.is_valid_digest(digest)", name="check_digest_format"),
         comment="Agent images as OCI digests. Registry proxy writes rows on manifest push.",
     )
 
@@ -845,14 +849,16 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("agent_run_id"),
-        sa.ForeignKeyConstraint(["image_digest"], ["agent_definitions.digest"]),
-        sa.ForeignKeyConstraint(["parent_agent_run_id"], ["agent_runs.agent_run_id"]),
+        sa.ForeignKeyConstraint(["image_digest"], ["agent_definitions.digest"], deferrable=True, initially="DEFERRED"),
+        sa.ForeignKeyConstraint(
+            ["parent_agent_run_id"], ["agent_runs.agent_run_id"], deferrable=True, initially="DEFERRED"
+        ),
         sa.CheckConstraint(
             """(
                 type_config->>'agent_type' <> 'critic_dev_improve'
                 OR (
                     jsonb_array_length(type_config->'baseline_image_digests') > 0
-                    AND all_valid_digests(type_config->'baseline_image_digests')
+                    AND public.all_valid_digests(type_config->'baseline_image_digests')
                 )
             )""",
             name="check_baseline_digests",
@@ -867,13 +873,16 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
         comment="Unified table for all agent runs (critics, graders, optimizers, freeform)",
     )
 
-    # Add FK from agent_definitions to agent_runs (circular reference)
+    # Add FK from agent_definitions to agent_runs (circular reference).
+    # DEFERRABLE so pg_dump data can be restored without ordering issues.
     op.create_foreign_key(
         "fk_agent_definitions_created_by",
         "agent_definitions",
         "agent_runs",
         ["created_by_agent_run_id"],
         ["agent_run_id"],
+        deferrable=True,
+        initially="DEFERRED",
     )
 
     # Snapshot files table - all files in each snapshot for FK validation
@@ -1385,7 +1394,7 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
                 FROM true_positive_occurrences tpo
                 JOIN true_positives t ON tpo.snapshot_slug = t.snapshot_slug AND tpo.tp_id = t.tp_id
                 WHERE t.snapshot_slug = fs.snapshot_slug
-                  AND is_tp_in_expected_recall_scope(fs.snapshot_slug, t.tp_id, 'file_set'::example_kind_enum, fs.files_hash)
+                  AND is_tp_in_expected_recall_scope(fs.snapshot_slug, t.tp_id, tpo.occurrence_id, 'file_set'::example_kind_enum, fs.files_hash)
             ), 0)::integer AS recall_denominator
         FROM file_sets fs
     """)
@@ -1961,7 +1970,7 @@ a critique to an occurrence that could not have been found from those files.'
         )
         WHERE (cr.type_config->>'agent_type') = 'critic'
           AND (cr.type_config->'example'->>'snapshot_slug') = tpo.snapshot_slug
-          AND is_tp_in_expected_recall_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
+          AND is_tp_in_expected_recall_scope(tpo.snapshot_slug, tpo.tp_id, tpo.occurrence_id, ex.example_kind, ex.files_hash)
         GROUP BY cr.agent_run_id, s.split, ex.example_kind, ex.files_hash,
                  tpo.snapshot_slug, tpo.tp_id, tpo.occurrence_id,
                  cr.image_digest, cr.model

@@ -1,0 +1,28 @@
+rationale: "Repeated pattern across files (regression test for occurrence-level scoping).
+
+  This TP has two occurrences in different files. Each occurrence's
+  critic_scopes_expected_to_recall is scoped to only its own file.
+  The recall denominator for each file-set example should count only the
+  occurrence whose scope matches, not both.
+
+  "
+should_flag: true
+occurrences:
+  - occurrence_id: occ-add
+    note: "Occurrence in add.py"
+    files:
+      add.py:
+        - [4, 6]
+    critic_scopes_expected_to_recall:
+      - - add.py
+    match_file_restriction:
+      - add.py
+  - occurrence_id: occ-subtract
+    note: "Occurrence in subtract.py"
+    files:
+      subtract.py:
+        - [4, 6]
+    critic_scopes_expected_to_recall:
+      - - subtract.py
+    match_file_restriction:
+      - subtract.py

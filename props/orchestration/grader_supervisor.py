@@ -1,15 +1,16 @@
-"""Grader supervisor - manages per-snapshot grader container lifecycle.
+"""Grader supervisor — reconciliation-based per-snapshot grader lifecycle.
 
-Supervises one grader container per snapshot:
-- Listens for pg_notify on snapshot_created to spawn new graders
-- Listens for pg_notify on grader_definition_changed to restart all graders
-  when the grader image tag moves (e.g. new image pushed)
-- Tracks running containers via GraderHandle, kills them directly on shutdown/restart
+Maintains the invariant: every snapshot has exactly one running grader
+container, provided a grader image is available in the registry.
 
-Startup sequence:
-1. Lifespan calls start() to set up pg_notify listeners
-2. After uvicorn binds, caller invokes spawn_existing() to start graders
-   for all existing snapshots (avoids chicken-and-egg with registry proxy)
+Reconciliation is triggered by:
+- startup (spawn_existing)
+- pg_notify snapshot_created
+- pg_notify grader_definition_changed (image push)
+
+Each trigger calls reconcile(), which compares desired state (all snapshot
+slugs from DB) against actual state (self._handles) and creates/kills
+containers to converge.
 """
 
 from __future__ import annotations
@@ -44,17 +45,17 @@ logger = logging.getLogger(__name__)
 
 
 class GraderSupervisor:
-    """Manages per-snapshot grader containers.
+    """Manages per-snapshot grader containers via reconciliation.
 
-    Each snapshot gets one long-lived grader container. Graders sleep when
-    no drift and wake on pg_notify. Context exhaustion is handled inside
-    the container via transcript summarization.
+    Each snapshot gets one long-lived grader container. The supervisor
+    maintains a dict of handles and reconciles against the DB snapshot
+    list whenever an event fires (new snapshot, new image, startup).
 
-    Use as async context manager for proper lifecycle:
+    Use as async context manager:
 
         async with GraderSupervisor(...) as gs:
             await gs.spawn_existing()
-            await some_long_running_task()
+            ...
         # gs.shutdown() called automatically
     """
 
@@ -83,81 +84,91 @@ class GraderSupervisor:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
+    # --- Event handlers (thin wrappers that trigger reconcile) ---
+
     def _snapshot_created_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
     ) -> None:
-        """Handle incoming pg_notify notifications for snapshot creation."""
         if self._shutdown:
             return
-
         if not isinstance(payload, str):
             logger.error(f"pg_notify payload is not a string: {type(payload)}")
             return
-
         notification = SnapshotCreatedNotification.model_validate_json(payload)
-
-        slug = notification.snapshot_slug
-        if slug in self._handles:
-            logger.debug(f"Grader for {slug} already running, ignoring notification")
-            return
-
-        logger.info(f"Snapshot created: {slug}, spawning grader")
-        self._launch_background(self._resolve_and_spawn_grader(slug), name=f"grader-spawn-{slug}")
+        logger.info(f"Snapshot created: {notification.snapshot_slug}")
+        self._launch_background(self.reconcile(), name="reconcile-snapshot-created")
 
     def _grader_definition_changed_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
     ) -> None:
-        """Handle grader tag push — restart all graders to pick up the new image."""
         if self._shutdown:
             return
-
         if not isinstance(payload, str):
             logger.error(f"pg_notify payload is not a string: {type(payload)}")
             return
-
         notification = GraderDefinitionChangedNotification.model_validate_json(payload)
         logger.info(f"Grader definition changed: {notification.tag} -> {notification.digest}")
+        self._launch_background(self.reconcile(restart_existing=True), name="reconcile-definition-changed")
 
-        slugs = list(self._handles.keys())
-        self._launch_background(self._restart_all(slugs), name="grader-restart-all")
+    # --- Lifecycle ---
 
     async def start(self) -> None:
-        """Start listening for notifications.
-
-        Sets up pg_notify listeners immediately (during lifespan). Container
-        spawning is deferred until spawn_existing() is called after the HTTP
-        server is ready.
-        """
+        """Start pg_notify listeners. Call spawn_existing() separately after HTTP is ready."""
         await self._start_listener()
 
     async def spawn_existing(self) -> None:
-        """Spawn graders for all existing snapshots.
+        """Initial reconciliation after HTTP server is ready."""
+        await self.reconcile()
 
-        Call after the HTTP server is ready (uvicorn has bound its socket),
-        so that containers can resolve images through the registry proxy.
+    # --- Core reconciliation ---
+
+    async def reconcile(self, *, restart_existing: bool = False) -> None:
+        """Converge actual state toward desired state.
+
+        Desired: one grader per snapshot (if image available).
+        Actual: self._handles.
+
+        If restart_existing is True, kill all tracked graders first (used
+        when the grader image changes).
         """
         if self._shutdown:
             return
 
+        # Resolve image — if unavailable, nothing to do.
         try:
             resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
         except ImageResolutionError:
-            logger.warning("Grader image not available in registry — grader spawning disabled until image is pushed")
+            logger.warning("Grader image not available — skipping reconciliation")
             return
 
+        # Get desired set from DB.
         with self._db.session() as session:
-            snapshots = session.query(Snapshot.slug).all()
-            snapshot_slugs = [s.slug for s in snapshots]
+            desired: set[SnapshotSlug] = {s.slug for s in session.query(Snapshot.slug).all()}
 
-        if snapshot_slugs:
-            logger.info(f"Starting graders for {len(snapshot_slugs)} existing snapshots")
-            for slug in snapshot_slugs:
+        # If image changed, kill everything so containers pick up the new image.
+        if restart_existing:
+            for slug in list(self._handles.keys()):
+                await self._kill_grader(slug)
+
+        # Kill graders for snapshots that no longer exist.
+        for slug in list(self._handles.keys()):
+            if slug not in desired:
+                logger.info(f"Snapshot {slug} removed, killing grader")
+                await self._kill_grader(slug)
+
+        # Spawn missing graders.
+        spawned = 0
+        for slug in desired:
+            if slug not in self._handles:
                 await self._spawn_grader(slug, image=resolved)
-        else:
-            logger.info("No existing snapshots, listening for new ones via pg_notify")
+                spawned += 1
+
+        if spawned or restart_existing:
+            logger.info(f"Reconciled: {len(self._handles)} graders running ({spawned} spawned, {len(desired)} desired)")
+
+    # --- Internal helpers ---
 
     async def _start_listener(self) -> None:
-        """Start listening for snapshot_created and grader_definition_changed notifications."""
         self._listener_conn = await self._db_config.asyncpg_connect()
         await self._listener_conn.add_listener(SNAPSHOT_CREATED_CHANNEL, self._snapshot_created_callback)
         await self._listener_conn.add_listener(
@@ -166,7 +177,6 @@ class GraderSupervisor:
         logger.info(f"Listening on channels '{SNAPSHOT_CREATED_CHANNEL}', '{GRADER_DEFINITION_CHANGED_CHANNEL}'")
 
     async def _stop_listener(self) -> None:
-        """Stop the notification listeners."""
         if self._listener_conn:
             try:
                 await self._listener_conn.remove_listener(SNAPSHOT_CREATED_CHANNEL, self._snapshot_created_callback)
@@ -178,17 +188,7 @@ class GraderSupervisor:
                 logger.warning(f"Error closing listener connection: {e}")
             self._listener_conn = None
 
-    async def _resolve_and_spawn_grader(self, snapshot_slug: SnapshotSlug) -> None:
-        """Resolve grader image and spawn a grader. Used for notification-triggered single spawns."""
-        try:
-            resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
-        except ImageResolutionError:
-            logger.warning(f"Grader image not available for {snapshot_slug}")
-            return
-        await self._spawn_grader(snapshot_slug, image=resolved)
-
     async def _spawn_grader(self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage) -> None:
-        """Start a grader container for a snapshot with a pre-resolved image."""
         try:
             logger.info(f"Starting grader for {snapshot_slug}")
             handle = await self._registry.start_snapshot_grader(
@@ -200,32 +200,15 @@ class GraderSupervisor:
             logger.exception(f"Failed to start grader for {snapshot_slug}")
 
     async def _kill_grader(self, snapshot_slug: SnapshotSlug) -> None:
-        """Kill and remove a grader container."""
         handle = self._handles.pop(snapshot_slug, None)
         if handle:
             await handle.kill()
-
-    async def _restart_all(self, slugs: list[SnapshotSlug]) -> None:
-        """Kill all graders and restart them (e.g. after image update)."""
-        for slug in slugs:
-            await self._kill_grader(slug)
-        try:
-            resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
-        except ImageResolutionError:
-            logger.warning("Grader image not available — skipping restart")
-            return
-        for slug in slugs:
-            await self._spawn_grader(slug, image=resolved)
-        logger.info(f"Restarted {len(slugs)} graders after definition change")
 
     async def shutdown(self) -> None:
         """Kill all grader containers and stop listeners."""
         self._shutdown = True
         logger.info("Shutting down graders...")
-
         await self._stop_listener()
-
         for slug in list(self._handles.keys()):
             await self._kill_grader(slug)
-
         logger.info("All graders stopped")

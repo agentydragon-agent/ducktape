@@ -13,7 +13,7 @@ from props.core.models.examples import ExampleKind, SingleFileSetExample, WholeS
 from props.core.splits import Split
 from props.db.database import Database
 from props.db.examples import Example
-from props.db.models import Snapshot
+from props.db.models import FileSet, FileSetMember, Snapshot
 
 
 def test_generate_examples_train_split(synced_db: Database):
@@ -104,6 +104,90 @@ def test_generate_examples_unique_file_sets(synced_db: Database):
 
         # Total examples = unique file sets + one whole-snapshot
         assert len(examples) == len(file_set_examples) + 1
+
+
+def test_recall_denominator_counts_at_occurrence_level(synced_db: Database):
+    """Regression: recall_denominator must count at the occurrence level, not TP level.
+
+    tp-006 has two occurrences: occ-add (scoped to add.py) and occ-subtract
+    (scoped to subtract.py). The file-set example for add.py should only count
+    occ-add, not both. Before the fix, is_tp_in_expected_recall_scope operated
+    at the TP level, so if any occurrence matched, all occurrences of that TP
+    were counted — inflating recall_denominator.
+    """
+    slug = SnapshotSlug("test-fixtures/train1")
+
+    with synced_db.session() as session:
+        # Find the file-set example containing only subtract.py
+        subtract_fs = (
+            session.query(FileSet)
+            .join(FileSetMember)
+            .filter(FileSet.snapshot_slug == slug, FileSetMember.file_path == "subtract.py")
+            .first()
+        )
+        assert subtract_fs is not None
+
+        # Verify subtract.py is the only file in this set
+        subtract_members = (
+            session.query(FileSetMember.file_path)
+            .filter_by(snapshot_slug=slug, files_hash=subtract_fs.files_hash)
+            .all()
+        )
+        assert [m.file_path for m in subtract_members] == ["subtract.py"]
+
+        subtract_example = (
+            session.query(Example)
+            .filter_by(snapshot_slug=slug, example_kind=ExampleKind.FILE_SET, files_hash=subtract_fs.files_hash)
+            .one()
+        )
+
+        # tp-001 has occ-1 scoped to subtract.py -> counts
+        # tp-006 has occ-subtract scoped to subtract.py -> counts
+        # tp-006 has occ-add scoped to add.py -> must NOT count (different file)
+        # tp-005 has scope [divide.py, subtract.py] -> counts (subtract.py is a subset? no,
+        #   the scope is {divide.py, subtract.py} which is NOT a subset of {subtract.py})
+        # So only tp-001/occ-1 and tp-006/occ-subtract should count = 2
+        assert subtract_example.recall_denominator == 2, (
+            f"subtract.py file-set should have recall_denominator=2 "
+            f"(tp-001/occ-1 + tp-006/occ-subtract), got {subtract_example.recall_denominator}"
+        )
+
+        # Same check for add.py
+        add_fs = (
+            session.query(FileSet)
+            .join(FileSetMember)
+            .filter(FileSet.snapshot_slug == slug, FileSetMember.file_path == "add.py")
+            .first()
+        )
+        assert add_fs is not None
+
+        add_members = (
+            session.query(FileSetMember.file_path).filter_by(snapshot_slug=slug, files_hash=add_fs.files_hash).all()
+        )
+        assert [m.file_path for m in add_members] == ["add.py"]
+
+        add_example = (
+            session.query(Example)
+            .filter_by(snapshot_slug=slug, example_kind=ExampleKind.FILE_SET, files_hash=add_fs.files_hash)
+            .one()
+        )
+
+        # tp-002 has occ-1 scoped to add.py -> counts
+        # tp-004 has occ-1 scoped to [add.py] OR [multiply.py] -> add.py scope is subset -> counts
+        # tp-006 has occ-add scoped to add.py -> counts
+        # tp-006 has occ-subtract scoped to subtract.py -> must NOT count
+        assert add_example.recall_denominator == 3, (
+            f"add.py file-set should have recall_denominator=3 "
+            f"(tp-002/occ-1 + tp-004/occ-1 + tp-006/occ-add), got {add_example.recall_denominator}"
+        )
+
+        # Whole-snapshot should include ALL 7 occurrences (6 TPs, tp-006 has 2)
+        whole_example = (
+            session.query(Example).filter_by(snapshot_slug=slug, example_kind=ExampleKind.WHOLE_SNAPSHOT).one()
+        )
+        assert whole_example.recall_denominator == 7, (
+            f"Whole-snapshot should count all 7 occurrences, got {whole_example.recall_denominator}"
+        )
 
 
 if __name__ == "__main__":
