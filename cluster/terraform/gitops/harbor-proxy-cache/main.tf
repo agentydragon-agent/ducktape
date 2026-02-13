@@ -97,3 +97,22 @@ resource "harbor_project" "k8s_registry_proxy" {
     prevent_destroy = false
   }
 }
+
+# Google Container Registry (GCR) endpoint
+resource "harbor_registry" "gcr" {
+  provider_name = "docker-registry"
+  name          = "gcr"
+  endpoint_url  = "https://gcr.io"
+  description   = "Google Container Registry"
+}
+
+# GCR proxy cache project
+resource "harbor_project" "gcr_proxy" {
+  name        = "gcr-proxy"
+  public      = true
+  registry_id = harbor_registry.gcr.registry_id
+
+  lifecycle {
+    prevent_destroy = false
+  }
+}
