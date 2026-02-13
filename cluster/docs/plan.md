@@ -56,7 +56,6 @@ All checks passing:
 These kustomizations have `suspend: true` and need unsuspending when ready to deploy:
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
-- **BuildBuddy executor**: `buildbuddy-executor`
 - **Nix cache**: `nix-cache`
 
 ### Next Actions
@@ -72,7 +71,7 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
 
 ### Known Issues to Watch
 
-- **BuildBuddy executor** — suspended, pinned to Proxmox nodes, may need resource adjustment
+- **BuildBuddy executor** — pinned to Proxmox nodes, may need resource adjustment
 - **Kyverno webhook timeouts** — verified fixed (see previous fixes)
 
 ---
