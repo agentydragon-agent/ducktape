@@ -81,13 +81,25 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
 - [ ] **Test all SSO flows** after switching to production LE
 - [ ] **Deploy headscale**, test with a device
 - [ ] **Deploy Ollama** — manifests committed, pending bootstrap verification (GPU node + auth proxy).
+- [ ] **Ollama: investigate Authentik user tokens for per-user auth** — currently uses a single
+      shared API key from Vault. Authentik supports per-user app passwords that can be exchanged
+      for JWTs via `client_credentials` grant. Could replace the static shared key with per-user
+      tokens (similar to how Harbor generates per-user CLI secrets after OIDC login). Requires
+      Authentik proxy provider + long-lived JWTs for OpenAI SDK compatibility (SDK sends static
+      Bearer token, no refresh). See Harbor's pattern: OIDC login → user generates CLI secret.
+- [ ] **Deploy Node Feature Discovery (NFD)** — auto-detects GPU hardware via PCI scanning,
+      sets `feature.node.kubernetes.io/pci-10de.present=true`. Eliminates manual `nvidia.com/gpu`
+      label in Talos machine config and `affinity: {}` override in NVIDIA device plugin chart.
+      Minimal overhead (~50m CPU, ~300Mi across 4 nodes). Helm chart: `node-feature-discovery`
+      from `https://kubernetes-sigs.github.io/node-feature-discovery/charts`.
 - [ ] **Migrate headscale to Helm chart** — currently raw deployment manifests, should use official
       Helm chart for consistency with other applications.
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 
 ### Known Issues to Watch
 
-- **BuildBuddy executor** — pinned to Proxmox nodes, may need resource adjustment
+- **BuildBuddy executor** — 3 replicas running, connected to `remote.buildbuddy.io`. Container
+  image warmup timed out (non-critical, images pulled on first build).
 - **Kyverno webhook timeouts** — verified fixed (see previous fixes)
 
 ---

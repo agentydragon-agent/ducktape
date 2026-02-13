@@ -27,9 +27,11 @@ spec:
         name: nvidia
         namespace: nvidia-device-plugin
   values:
-    # Only run on GPU nodes
+    # Only run on GPU nodes (Talos sets this label via machine config)
     nodeSelector:
       nvidia.com/gpu: "true"
+    # Override default affinity (requires NFD labels we don't have)
+    affinity: {}
     # Tolerate GPU node taints if any
     tolerations:
       - key: nvidia.com/gpu
