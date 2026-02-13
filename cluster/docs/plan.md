@@ -1,12 +1,34 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-11
+**Last Updated**: 2026-02-13
 
 ## 🔥 Immediate Next Steps
 
-**Status**: Cluster torn down. Pending bootstrap with fresh machine secrets.
+**Status**: Cluster running and verified. Bootstrap completed 2026-02-12.
 
-### Recent Fixes (2026-02-11)
+### Bootstrap Verification (2026-02-13) ✅
+
+All checks passing:
+
+- **KubeSpan**: All peers "up", unique identities, no duplicates (2 peers per node × 3 nodes)
+- **Nodes**: All 3 Ready (talos-vps-cp-0, talos-vps-cp-1, talos-pve-cp-0)
+- **Kustomizations**: 62/62 non-suspended Ready at revision `f219691f`
+- **Certificates**: All 16 Ready, no pending ACME challenges
+- **Cross-node networking**: VPS↔Proxmox working (KubeSpan mesh healthy)
+
+### Recent Fixes (2026-02-12/13)
+
+1. **Element-web crashloop** — `enableServiceLinks: false` prevents Kubernetes from injecting
+   `ELEMENT_WEB_PORT=tcp://...` which collides with the nginx template variable `${ELEMENT_WEB_PORT}`.
+2. **Harbor proxy cache quay adapter** — Harbor v2.14 doesn't support `quay` as a proxy cache
+   adapter type. Changed to `docker-registry` (Quay.io implements standard Docker V2 API).
+3. **Gitea SSO `x509: certificate signed by unknown authority`** — CA trust bundle was only
+   mounted in init containers (`extraInitVolumeMounts`) but not the main Gitea container.
+   Added `extraContainerVolumeMounts` so `SSL_CERT_FILE` points to a path that actually exists.
+4. **Website unsuspended** — removed `suspend: true` from flux-kustomization manifest.
+5. **Proxmox VM balloon minimum** — increased from 4GB to 12GB (`floating = 12 * 1024`).
+
+### Previous Fixes (2026-02-11)
 
 1. **Cilium stripped to Talos-recommended defaults** + `MTU: 1370` + hubble.
    Reverted DNS workarounds to defaults. Note: the Helm key is uppercase `MTU`
@@ -29,20 +51,6 @@
    parallel after `external-secrets-config` is Ready, and the ExternalSecret fails
    with "Secret does not exist" because the Terraform hasn't populated Vault yet.
 
-### What to Verify After Next Bootstrap
-
-1. **Unique KubeSpan identities** — each node has distinct peer address:
-   ```bash
-   talosctl -n <vps-ip> -e <vps-ip> get kubespanpeerstatuses
-   # Expect: exactly 3 peers, all "up", no duplicates
-   ```
-2. **Cross-node networking** — VPS↔Proxmox connectivity works
-3. **Full convergence** — all kustomizations Ready
-4. **cert-manager challenges resolve**:
-   ```bash
-   dig @8.8.8.8 SOA _acme-challenge.vault.allegedly.works
-   ```
-
 ### Suspended Kustomizations
 
 These kustomizations have `suspend: true` and need unsuspending when ready to deploy:
@@ -50,20 +58,22 @@ These kustomizations have `suspend: true` and need unsuspending when ready to de
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
 - **BuildBuddy executor**: `buildbuddy-executor`
 - **Nix cache**: `nix-cache`
-- **Website**: `website`
+
+### Next Actions
+
+- [ ] **Switch cert-manager to production Let's Encrypt** — staging certs break SSO for
+      all services (Gitea, Grafana, Harbor, Matrix) because OIDC discovery hits the ingress
+      which serves untrusted staging certs. Single-line switch in
+      `k8s/cert-manager-environment/flux-kustomization.yaml` (change `overlays/staging` → `overlays/production`).
+      Well within rate limits (14 certs vs 50/week limit per registered domain).
+- [ ] **Test all SSO flows** after switching to production LE
+- [ ] **Deploy headscale**, test with a device
+- [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
 
 ### Known Issues to Watch
 
-- **BuildBuddy executor** `Failed` — pinned to Proxmox nodes, may need resource adjustment
-- **Kyverno webhook timeouts** — verified fixed. Three mitigations working together:
-  (1) `install.remediation.retries: 3` on all HelmReleases,
-  (2) Kyverno HA (3 replicas on control plane nodes),
-  (3) ClusterIP readiness gate in bootstrap script.
-  See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>
-
-### TODO
-
-- Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana` (just kube-prometheus-stack HelmRelease + a dashboard)
+- **BuildBuddy executor** — suspended, pinned to Proxmox nodes, may need resource adjustment
+- **Kyverno webhook timeouts** — verified fixed (see previous fixes)
 
 ---
 
