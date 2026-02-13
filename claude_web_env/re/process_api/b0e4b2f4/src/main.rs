@@ -142,7 +142,7 @@ async fn detect_container_name() -> Option<String> {
 }
 
 /// Check if an IP address is a local/loopback address.
-fn is_local_ip(addr: &IpAddr) -> bool {
+pub fn is_local_ip(addr: &IpAddr) -> bool {
     match addr {
         IpAddr::V4(v4) => v4.is_loopback() || v4.is_unspecified(),
         IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
@@ -167,8 +167,8 @@ async fn main() {
     let cli = Cli::parse();
 
     // Log version info
-    log::info!("[INFO] process_api release process_api_2026-02-02-04-57");
-    log::info!("[INFO] process_api package version 0.1.0");
+    log::info!("[INFO] process_api release: process_api_2026-02-02-04-57");
+    log::info!("[INFO] process_api package version: 0.1.0");
 
     // Broadcast channel for shutdown signaling
     let (shutdown_tx, _) = broadcast::channel::<()>(16);
@@ -225,16 +225,18 @@ async fn main() {
 
         let shutdown_tx_clone = shutdown_tx.clone();
         let shutdown_rx = shutdown_tx.subscribe();
-        let proc_map_clone = proc_map.clone();
         let container_name_clone = container_name.clone();
+        let proc_map_clone = proc_map.clone();
+        let controller_clone = controller.clone();
 
         tokio::spawn(async move {
             control_server::start_control_server(
                 addr,
                 shutdown_tx_clone,
-                proc_map_clone,
                 container_name_clone,
                 shutdown_rx,
+                proc_map_clone,
+                controller_clone,
             )
             .await;
         });
@@ -246,7 +248,7 @@ async fn main() {
         tokio::spawn(async move {
             match tokio::signal::ctrl_c().await {
                 Ok(()) => {
-                    log::info!("Caught signal SIGINT!");
+                    log::info!("[DEBUG] Received SIGINT, initiating shutdown");
                     let _ = shutdown_tx_clone.send(());
                 }
                 Err(e) => {
@@ -288,9 +290,14 @@ async fn main() {
     // Bind the main WebSocket listener
     // Decompiled from 0x13f6a0..0x13faff  (1119 bytes)
     // Xrefs: "main.rsFailed to bind"
+    // Log blocked IPs if configured
+    if cli.block_local_connections {
+        log::info!("[SECURITY] Blocking connections from local IPs: 127.0.0.1, ::1, 0.0.0.0, ::");
+    }
+
     let listener = match TcpListener::bind(&cli.addr).await {
         Ok(l) => {
-            log::info!("Listening on: {}", cli.addr);
+            log::info!("Listening on: {} with web socket buffer size of {}", cli.addr, cli.max_ws_buffer_size);
             l
         }
         Err(e) => {
@@ -300,6 +307,7 @@ async fn main() {
     };
 
     let mut shutdown_rx = shutdown_tx.subscribe();
+    log::debug!("[DEBUG] got shutdown channel rx");
 
     // Main WebSocket accept loop
     loop {
@@ -354,6 +362,7 @@ async fn main() {
             }
             _ = shutdown_rx.recv() => {
                 log::info!("[INFO] Received shutdown signal, exiting main loop");
+                log::info!("Performing graceful shutdown...");
                 break;
             }
         }
@@ -374,5 +383,6 @@ async fn main() {
         state::remove_process(&proc_map, &process_id);
     }
 
+    log::info!("All connections and monitors closed, shutting down");
     log::info!("[INFO] process_api shutdown complete");
 }
