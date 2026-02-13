@@ -56,7 +56,6 @@ All checks passing:
 These kustomizations have `suspend: true` and need unsuspending when ready to deploy:
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
-- **Nix cache**: `nix-cache`
 
 ### Next Actions
 
