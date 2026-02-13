@@ -5,7 +5,18 @@
 ## 🔥 Immediate Next Steps
 
 **Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
-GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090).
+GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090). Ollama verified end-to-end.
+
+### Recent Fixes (2026-02-13)
+
+1. **Proxmox CSI controller on wrong node** — Chart uses top-level `nodeSelector`, not
+   `controller.nodeSelector`. Misplaced key was silently ignored, CSI controller landed on VPS
+   where Proxmox API (10.2.0.2:8006) is unreachable. Cascaded to all Proxmox-storage workloads.
+2. **Missing `admin-user`/`username` keys in ESO secrets** — Grafana and Gitea charts expect
+   both username and password keys. ESO templates only had password from Vault. Added static
+   username fields to ESO `target.template.data`.
+3. **Gitea admin-token Job reads username from secret** — Job now sources `GITEA_ADMIN_USERNAME`
+   from the `gitea-admin-password` secret instead of hardcoding `admin`.
 
 ### Suspended Kustomizations
 
@@ -20,7 +31,9 @@ GPU worker verified: `nvidia.com/gpu: 2` (2x RTX 5090).
       Well within rate limits (14 certs vs 50/week limit per registered domain).
 - [ ] **Test all SSO flows** after switching to production LE
 - [ ] **Deploy headscale**, test with a device
-- [ ] **Verify Ollama** — manifests deployed, needs end-to-end test (pull model, query API).
+- [x] **Verify Ollama** — 2x RTX 5090 detected (CUDA 12.0, 31.8 GiB each), auth proxy working
+      (401 on unauthenticated, 200 with Bearer token), ingress at `ollama.allegedly.works`,
+      OpenAI-compatible `/v1/chat/completions` tested with `smollm2:135m`, all 31/31 layers on GPU.
 - [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
       `client_credentials` JWTs). Currently uses shared API key from Vault.
 - [ ] Rename `monitoring-stack` → `kube-prometheus` or `prometheus-grafana`
@@ -513,7 +526,7 @@ for network stack diagrams and diagnostic checklist.
 
 ## 📊 Cluster Specifications
 
-- **Nodes**: 3 (2 VPS control-plane, 1 Proxmox control-plane)
+- **Nodes**: 4 (2 VPS control-plane, 1 Proxmox control-plane, 1 Proxmox GPU worker)
 - **Talos**: v1.12.3
 - **Kubernetes**: v1.35.1
 - **CNI**: Cilium (VXLAN tunnel mode)
