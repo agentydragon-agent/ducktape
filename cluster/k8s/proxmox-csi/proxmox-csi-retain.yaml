@@ -41,18 +41,18 @@ spec:
         annotations:
           storageclass.kubernetes.io/is-default-class: "true"
 
+    # Controller Deployment must run on Proxmox nodes to reach Proxmox API at 10.2.0.2:8006.
+    # Note: top-level nodeSelector (not controller.nodeSelector) — chart uses top-level for the controller pod.
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
     controller:
       replicaCount: 1
-      # Must run on Proxmox nodes to reach Proxmox API at 10.2.0.2:8006
-      nodeSelector:
-        topology.kubernetes.io/region: proxmox
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
-          memory: 256Mi
+      plugin:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
 
     node:
       enableTopology: true
