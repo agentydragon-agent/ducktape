@@ -27,11 +27,20 @@ spec:
         name: ananace-charts
         namespace: matrix
   valuesFrom:
-    # Inject complete OIDC provider configuration from Vault (via ExternalSecret)
-    # Secret contains values.yaml with proper config.extraConfig.oidc_providers structure
+    # OIDC provider configuration from Vault
     - kind: Secret
       name: matrix-oidc-config
       valuesKey: values.yaml
+    # Macaroon secret key from Vault (injected into config.macaroonSecretKey)
+    - kind: Secret
+      name: synapse-macaroon-secret
+      valuesKey: macaroon_secret_key
+      targetPath: config.macaroonSecretKey
+    # Registration shared secret from Vault (injected into config.registrationSharedSecret)
+    - kind: Secret
+      name: synapse-registration-secret
+      valuesKey: registration_shared_secret
+      targetPath: config.registrationSharedSecret
   values:
     # Synapse image configuration
     image:
@@ -72,23 +81,16 @@ spec:
 
     # Synapse configuration via extraConfig
     config:
-      # Enable registration (initially disabled, can be enabled later)
       enableRegistration: false
-
-      # Report stats to matrix.org (optional)
       reportStats: false
+      # macaroonSecretKey and registrationSharedSecret injected via valuesFrom
 
-      # Let the chart auto-generate these secrets
-      # macaroonSecretKey and registrationSharedSecret will be generated automatically
-
-    # Signing key - let the chart generate it
+    # Signing key from Vault (disable chart auto-generation)
     signingkey:
       job:
-        enabled: true
-
-    # OIDC configuration injected via valuesFrom from matrix-oidc-config secret
-    # Terraform stores structured JSON in Vault (single source of truth)
-    # ExternalSecret templates into config.extraConfig.oidc_providers structure
+        enabled: false
+      existingSecret: synapse-signing-key
+      existingSecretKey: signing.key
 
     # Service configuration
     service:
@@ -145,12 +147,13 @@ spec:
         initdb:
           args: "--locale=C"
 
-    # Enable Redis (required by chart even for single-instance setup)
+    # Redis (required by chart even for single-instance setup)
     redis:
       enabled: true
       auth:
         enabled: true
-        password: "matrix-redis-password-change-me"
+        existingSecret: synapse-redis-password
+        existingSecretPasswordKey: redis-password
       master:
         persistence:
           enabled: false
