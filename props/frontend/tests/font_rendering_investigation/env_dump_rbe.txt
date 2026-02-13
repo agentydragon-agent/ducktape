@@ -1,0 +1,189 @@
+========== ENVIRONMENT ==========
+HOSTNAME=a133f7a44eff
+KERNEL=6.16.10-200.fc42.x86_64
+KERNEL_FULL=Linux a133f7a44eff 6.16.10-200.fc42.x86_64 #1 SMP PREEMPT_DYNAMIC Thu Oct  2 19:23:55 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+GLIBC=GNU C Library (Ubuntu GLIBC 2.39-0ubuntu8.4) stable release version 2.39.
+
+========== CPU ==========
+model name	: AMD EPYC 9575F 64-Core Processor
+cpu family	: 26
+model		: 2
+stepping	: 1
+flags=avx avx2 avx512_bf16 avx512_bitalg avx512_vbmi2 avx512_vnni avx512_vp2intersect avx512_vpopcntdq avx512bw avx512cd avx512dq avx512f avx512ifma avx512vbmi avx512vl avx_vnni f16c fma sse sse2 sse4_1 sse4_2 sse4a
+
+========== FPU / MXCSR ==========
+MXCSR=0x1f80
+  FZ (flush-to-zero)       = 0
+  RC (rounding control)    = 0 (round-to-nearest)
+  PM (precision mask)      = 1
+  UM (underflow mask)      = 1
+  OM (overflow mask)       = 1
+  ZM (divide-by-zero mask) = 1
+  DM (denormal mask)       = 1
+  IM (invalid-op mask)     = 1
+  DAZ (denormals-are-zero) = 0
+x87_FPU_CW=0x037f
+  PC (precision)  = 3 (extended 64-bit)
+  RC (rounding)   = 0 (round-to-nearest)
+fegetround()=0 (FE_TONEAREST)
+
+========== FONTCONFIG ENV ==========
+FONTCONFIG_FILE=/buildbuddy-execroot/bazel-out/k8-fastbuild/bin/props/frontend/dump_font_rendering_state.runfiles/_main/props/frontend/tests/fonts/fonts.conf
+FONTCONFIG_FILE_EXISTS=yes
+FONTCONFIG_PATH=<unset>
+FONTCONFIG_SYSROOT=<unset>
+FC_DEBUG=<unset>
+
+========== FREETYPE ENV ==========
+FREETYPE_PROPERTIES=cff:no-stem-darkening=1
+
+========== FONTCONFIG QUERY: Inter 12px ==========
+
+========== FONTCONFIG QUERY: sans-serif 16px ==========
+
+========== SYSTEM FONT DIRS ==========
+/usr/share/fonts/truetype/
+Total fonts: 8
+
+========== /etc/fonts/ CONFIG ==========
+total 12
+drwxr-xr-x. 4 root root   56 Feb  4 01:00 .
+drwxr-xr-x. 1 root root   98 Feb  4 01:00 ..
+drwxr-xr-x. 2 root root 4096 Feb  4 01:00 conf.avail
+drwxr-xr-x. 2 root root 4096 Feb  4 01:00 conf.d
+-rw-r--r--. 1 root root 2940 Feb  4 01:00 fonts.conf
+
+--- /etc/fonts/fonts.conf md5 ---
+9632eb1c8b4d81e0e300cd733a4beefe  /etc/fonts/fonts.conf
+
+--- /etc/fonts/conf.d/ entries ---
+10-hinting-slight.conf
+10-scale-bitmap-fonts.conf
+10-sub-pixel-rgb.conf
+10-yes-antialias.conf
+11-lcdfilter-default.conf
+20-unhint-small-dejavu-lgc-sans-mono.conf
+20-unhint-small-dejavu-lgc-sans.conf
+20-unhint-small-dejavu-lgc-serif.conf
+20-unhint-small-dejavu-sans-mono.conf
+20-unhint-small-dejavu-sans.conf
+20-unhint-small-dejavu-serif.conf
+20-unhint-small-vera.conf
+30-metric-aliases.conf
+40-nonlatin.conf
+45-generic.conf
+45-latin.conf
+48-spacing.conf
+49-sansserif.conf
+50-user.conf
+51-local.conf
+57-dejavu-sans-mono.conf
+57-dejavu-sans.conf
+57-dejavu-serif.conf
+58-dejavu-lgc-sans-mono.conf
+58-dejavu-lgc-sans.conf
+58-dejavu-lgc-serif.conf
+60-generic.conf
+60-latin.conf
+65-fonts-persian.conf
+65-nonlatin.conf
+69-unifont.conf
+70-no-bitmaps-except-emoji.conf
+80-delicious.conf
+90-synthetic.conf
+README
+
+========== SHARED LIBRARIES (font-relevant) ==========
+libc.so.6: size=2125328 md5=322a201a92c7d698255513be320065ad
+libm.so.6: size=952616 md5=04e9d3fefab43d6664f5de40077ef95d
+libexpat.so.1: size=17 md5=c4968aeef1a9d66ecba7261972f3b1b1
+libfreetype.so.6: size=21 md5=5991960fcc92fd6ba7be881cfc02ea26
+libfontconfig.so.1: size=23 md5=d2f9f598c6bad661607a202d45d574e0
+
+========== CHROME BINARY ==========
+path=/buildbuddy-execroot/bazel-out/k8-fastbuild/bin/props/frontend/dump_font_rendering_state.runfiles/_main/../rules_playwright++playwright+playwright_browsers/browsers/ubuntu24.04-x64/chromium_headless_shell-1155/chrome-linux/headless_shell
+size=289696264
+md5=d7da8ad2d7f2e11f281112cb8c6309df
+
+--- ldd (dynamic deps) ---
+	/lib64/ld-linux-x86-64.so.2 (0x00007f7be1c1f000)
+	libX11.so.6 => /lib/x86_64-linux-gnu/libX11.so.6 (0x00007f7bd6f60000)
+	libXau.so.6 => /lib/x86_64-linux-gnu/libXau.so.6 (0x00007f7bd67fb000)
+	libXcomposite.so.1 => /lib/x86_64-linux-gnu/libXcomposite.so.1 (0x00007f7be1b2a000)
+	libXdamage.so.1 => /lib/x86_64-linux-gnu/libXdamage.so.1 (0x00007f7be1b25000)
+	libXdmcp.so.6 => /lib/x86_64-linux-gnu/libXdmcp.so.6 (0x00007f7bd67f3000)
+	libXext.so.6 => /lib/x86_64-linux-gnu/libXext.so.6 (0x00007f7be1b0f000)
+	libXfixes.so.3 => /lib/x86_64-linux-gnu/libXfixes.so.3 (0x00007f7bd6f58000)
+	libXi.so.6 => /lib/x86_64-linux-gnu/libXi.so.6 (0x00007f7bd6826000)
+	libXrandr.so.2 => /lib/x86_64-linux-gnu/libXrandr.so.2 (0x00007f7bd6f4b000)
+	libXrender.so.1 => /lib/x86_64-linux-gnu/libXrender.so.1 (0x00007f7bd681a000)
+	libasound.so.2 => /lib/x86_64-linux-gnu/libasound.so.2 (0x00007f7bd6d95000)
+	libatk-1.0.so.0 => /lib/x86_64-linux-gnu/libatk-1.0.so.0 (0x00007f7bd730f000)
+	libatk-bridge-2.0.so.0 => /lib/x86_64-linux-gnu/libatk-bridge-2.0.so.0 (0x00007f7bd72d3000)
+	libatspi.so.0 => /lib/x86_64-linux-gnu/libatspi.so.0 (0x00007f7bd709d000)
+	libblkid.so.1 => /lib/x86_64-linux-gnu/libblkid.so.1 (0x00007f7bd6553000)
+	libbsd.so.0 => /lib/x86_64-linux-gnu/libbsd.so.0 (0x00007f7bd653d000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f7bd6a6c000)
+	libcap.so.2 => /lib/x86_64-linux-gnu/libcap.so.2 (0x00007f7bd67e6000)
+	libdbus-1.so.3 => /lib/x86_64-linux-gnu/libdbus-1.so.3 (0x00007f7bd7339000)
+	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f7be1c0c000)
+	libdrm.so.2 => /lib/x86_64-linux-gnu/libdrm.so.2 (0x00007f7bd6801000)
+	libexpat.so.1 => /lib/x86_64-linux-gnu/libexpat.so.1 (0x00007f7bd70d7000)
+	libffi.so.8 => /lib/x86_64-linux-gnu/libffi.so.8 (0x00007f7bd69c4000)
+	libgbm.so.1 => /lib/x86_64-linux-gnu/libgbm.so.1 (0x00007f7bd6f44000)
+	libgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007f7bd6c7e000)
+	libgcrypt.so.20 => /lib/x86_64-linux-gnu/libgcrypt.so.20 (0x00007f7bd669e000)
+	libgio-2.0.so.0 => /lib/x86_64-linux-gnu/libgio-2.0.so.0 (0x00007f7bd7103000)
+	libglib-2.0.so.0 => /lib/x86_64-linux-gnu/libglib-2.0.so.0 (0x00007f7bd74b7000)
+	libgmodule-2.0.so.0 => /lib/x86_64-linux-gnu/libgmodule-2.0.so.0 (0x00007f7bd68d1000)
+	libgobject-2.0.so.0 => /lib/x86_64-linux-gnu/libgobject-2.0.so.0 (0x00007f7be1ba4000)
+	libgpg-error.so.0 => /lib/x86_64-linux-gnu/libgpg-error.so.0 (0x00007f7bd6516000)
+	liblz4.so.1 => /lib/x86_64-linux-gnu/liblz4.so.1 (0x00007f7bd667a000)
+	liblzma.so.5 => /lib/x86_64-linux-gnu/liblzma.so.5 (0x00007f7bd6648000)
+	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f7bd6cac000)
+	libmd.so.0 => /lib/x86_64-linux-gnu/libmd.so.0 (0x00007f7bd6507000)
+	libmount.so.1 => /lib/x86_64-linux-gnu/libmount.so.1 (0x00007f7bd6866000)
+	libnspr4.so => /lib/x86_64-linux-gnu/libnspr4.so (0x00007f7be1b31000)
+	libnss3.so => /lib/x86_64-linux-gnu/libnss3.so (0x00007f7bd7388000)
+	libnssutil3.so => /lib/x86_64-linux-gnu/libnssutil3.so (0x00007f7be1b70000)
+	libpcre2-8.so.0 => /lib/x86_64-linux-gnu/libpcre2-8.so.0 (0x00007f7bd69d2000)
+	libplc4.so => /lib/x86_64-linux-gnu/libplc4.so (0x00007f7bd69bd000)
+	libplds4.so => /lib/x86_64-linux-gnu/libplds4.so (0x00007f7bd69b8000)
+	libpthread.so.0 => /lib/x86_64-linux-gnu/libpthread.so.0 (0x00007f7be1c07000)
+	libselinux.so.1 => /lib/x86_64-linux-gnu/libselinux.so.1 (0x00007f7bd6839000)
+	libsystemd.so.0 => /lib/x86_64-linux-gnu/libsystemd.so.0 (0x00007f7bd68d8000)
+	libudev.so.1 => /lib/x86_64-linux-gnu/libudev.so.1 (0x00007f7bd6e9f000)
+	libxcb.so.1 => /lib/x86_64-linux-gnu/libxcb.so.1 (0x00007f7bd6f1b000)
+	libxkbcommon.so.0 => /lib/x86_64-linux-gnu/libxkbcommon.so.0 (0x00007f7bd6ed2000)
+	libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x00007f7bd68b3000)
+	libzstd.so.1 => /lib/x86_64-linux-gnu/libzstd.so.1 (0x00007f7bd658e000)
+	linux-vdso.so.1 (0x00007f7be1c1d000)
+
+--- Chrome version ---
+Chromium 133.0.6943.16
+
+--- Chrome font log (--vmodule) ---
+[0213/104047.858353:VERBOSE1:vaapi_wrapper.cc(1556)] GetHandle(): Either VADisplayStateSingleton::PreSandboxInitialization() hasn't been called or that method failed to find a suitable render node
+
+========== LOCALE ==========
+LANG=
+LANGUAGE=
+LC_CTYPE="POSIX"
+LC_NUMERIC="POSIX"
+LC_TIME="POSIX"
+LC_COLLATE="POSIX"
+LC_MONETARY="POSIX"
+LC_MESSAGES="POSIX"
+LC_PAPER="POSIX"
+LC_NAME="POSIX"
+LC_ADDRESS="POSIX"
+LC_TELEPHONE="POSIX"
+LC_MEASUREMENT="POSIX"
+LC_IDENTIFICATION="POSIX"
+LC_ALL=
+
+========== /proc/self/maps (vdso + heap) ==========
+55ea8da16000-55ea8da37000 rw-p 00000000 00:00 0                          [heap]
+7f51ca89b000-7f51ca89d000 r-xp 00000000 00:00 0                          [vdso]
+
+========== DONE ==========
