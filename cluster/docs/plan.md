@@ -303,50 +303,13 @@ Create zone for `allegedly.works` in PowerDNS (update `k8s/powerdns-zones/cluste
 10. [ ] Update `agentydragon.com` DNS to point to cluster
 11. [ ] Decommission ansible-managed VPS
 
----
-
 ## 🔧 Operational Hardening
 
-### ESO Password Generator Volatility Fix
+### Secrets: Vault SSOT ✅ Complete
 
-**Problem**: ESO Password generators regenerate on every `refreshInterval`. Applications that persist
-credentials (PostgreSQL, Authentik) don't auto-update, causing authentication failures after refresh.
-
-**Resolved**: All Password generators replaced with Vault SSOT. ExternalSecrets now read
-stable values from Vault (24h refresh is safe since values don't change).
-
-#### Phase 1: Reloader Adoption ✅ Complete
-
-Stakater Reloader auto-restarts pods when secrets change. All services have
-`reloader.stakater.com/auto: "true"` annotation.
-
-#### Phase 2: Vault SSOT Migration ✅ Complete
-
-All ESO Password generators replaced with Vault KV sources. Terraform generates once → stores in Vault →
-ESO reads stable value.
-
-**All secrets migrated to Vault SSOT** (per-service Terraform modules with isolated state):
-
-| Secret                       | Terraform module                        | Vault path               | Status  |
-| ---------------------------- | --------------------------------------- | ------------------------ | ------- |
-| PowerDNS API key             | `terraform/gitops/powerdns-api-key/`    | `kv/powerdns/api-key`    | ✅ Done |
-| Authentik API token          | `terraform/gitops/authentik-token/`     | `kv/sso/client-secrets`  | ✅ Done |
-| Harbor admin password        | `terraform/gitops/harbor-admin/`        | `kv/harbor/admin`        | ✅ Done |
-| Authentik PostgreSQL pw      | `terraform/gitops/authentik-passwords/` | `kv/authentik/passwords` | ✅ Done |
-| Authentik admin pw           | `terraform/gitops/authentik-passwords/` | `kv/authentik/passwords` | ✅ Done |
-| Authentik secret key         | `terraform/gitops/authentik-passwords/` | `kv/authentik/passwords` | ✅ Done |
-| Gitea admin pw               | `terraform/gitops/gitea-admin/`         | `kv/gitea/admin`         | ✅ Done |
-| Matrix signing/reg/macaroon  | `terraform/gitops/matrix-secrets/`      | `kv/matrix/secrets`      | ✅ Done |
-| Grafana admin pw             | `terraform/gitops/grafana-admin/`       | `kv/grafana/admin`       | ✅ Done |
-| User password (agentydragon) | `terraform/gitops/user-passwords/`      | `kv/users/agentydragon`  | ✅ Done |
-
-Zero ESO Password generators remain. All ExternalSecrets now read stable values from Vault.
-
-Also fixed: external-dns Reloader annotation, cert-manager ClusterIssuer `apiKeySecretRef` namespace.
-
-See <lessons_learned/2025-11-28-eso-password-generator-desync.md> for detailed analysis.
-
----
+All application secrets use Terraform → Vault → ESO pattern. Zero ESO Password generators
+remain. Stakater Reloader restarts pods on secret changes. See
+<lessons_learned/2025-11-28-eso-password-generator-desync.md> for historical context.
 
 ### Kyverno GitOps Enforcement
 
@@ -362,8 +325,6 @@ workloads deploy.
 
 **Current mode**: `validationFailureAction: Audit` - logs violations but doesn't block.
 Change to `Enforce` after validation in live cluster.
-
----
 
 ### TODO: Firewall Hardening
 
@@ -415,8 +376,6 @@ rule {
 }
 ```
 
----
-
 ### TODO: Remote Proxmox API Access
 
 **Current state**: Proxmox API only reachable via VLAN IP (10.2.0.2) from home network.
@@ -432,8 +391,6 @@ Options:
 2. **Tailscale on Proxmox VLAN** - Route 10.2.0.0/16 via Tailscale for remote access
 3. **Keep as-is** - Accept that Proxmox provisioning requires home network
 
----
-
 ### TODO: Multi-Endpoint Kubeconfig via DNS
 
 **Current state**: `local_file.kubeconfig` points to a single VPS IP (the bootstrap node). If that node is down, `kubectl` can't connect.
@@ -448,8 +405,6 @@ Options:
 2. Change `local_file.kubeconfig` to use `https://api.allegedly.works:6443`
 3. Bootstrap still needs direct IP for initial kubeconfig (before DNS is available)
 4. Post-bootstrap step: regenerate kubeconfig with DNS name once DNS is live
-
----
 
 ### TODO: Terraform State Backup
 
@@ -480,8 +435,6 @@ echo "Backed up to $BACKUP_DIR"
 ```
 
 Add to post-apply hook or document as manual step.
-
----
 
 ### TODO: GitHub Webhook for Instant Reconciliation
 
