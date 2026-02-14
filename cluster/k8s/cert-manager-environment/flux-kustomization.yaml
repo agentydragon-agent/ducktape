@@ -9,7 +9,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./cluster/k8s/cert-manager-environment/overlays/staging"
+  path: "./cluster/k8s/cert-manager-environment/overlays/production"
   prune: true
   wait: true
   dependsOn:
