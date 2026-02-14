@@ -21,7 +21,7 @@ To provide Claude with kubectl access:
 
 ```bash
 # Create ServiceAccount token (1 year validity)
-kubectl create token claude-readonly -n default --duration=8760h > /tmp/claude-token.txt
+kubectl create token claude-code-web -n default --duration=8760h > /tmp/claude-token.txt
 
 # Get cluster info
 CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')
@@ -44,12 +44,12 @@ clusters:
 contexts:
 - context:
     cluster: $CLUSTER_NAME
-    user: claude-readonly
+    user: claude-code-web
     namespace: default
-  name: claude-readonly
-current-context: claude-readonly
+  name: claude-code-web
+current-context: claude-code-web
 users:
-- name: claude-readonly
+- name: claude-code-web
   user:
     token: $(cat /tmp/claude-token.txt)
 EOF
@@ -96,7 +96,7 @@ The `kubeconfig_setup.py` module automatically:
 
 ## Permissions
 
-The `claude-readonly` ServiceAccount has:
+The `claude-code-web` ServiceAccount has:
 
 **claude-sandbox namespace (full access):**
 
