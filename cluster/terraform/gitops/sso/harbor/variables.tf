@@ -27,5 +27,11 @@ variable "vault_token" {
   sensitive   = true
 }
 
+variable "rotation_version" {
+  description = "Bump to trigger secret rotation"
+  type        = string
+  default     = "1"
+}
+
 # Note: harbor_admin_password is read directly from kubernetes_secret data source
 # See harbor-config.tf for implementation

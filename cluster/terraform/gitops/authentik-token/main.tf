@@ -36,6 +36,7 @@ resource "random_password" "authentik_api_token" {
 resource "vault_kv_secret_v2" "authentik_api_token" {
   mount = "kv"
   name  = "sso/client-secrets"
+  cas   = 0
 
   data_json = jsonencode({
     authentik_api_token = random_password.authentik_api_token.result

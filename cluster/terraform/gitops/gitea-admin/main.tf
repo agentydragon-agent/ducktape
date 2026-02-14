@@ -35,6 +35,7 @@ resource "random_password" "admin_password" {
 resource "vault_kv_secret_v2" "gitea_admin" {
   mount = "kv"
   name  = "gitea/admin"
+  cas   = 0
 
   data_json = jsonencode({
     admin_password = random_password.admin_password.result

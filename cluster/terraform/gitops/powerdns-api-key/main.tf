@@ -35,6 +35,7 @@ resource "random_password" "powerdns_api_key" {
 resource "vault_kv_secret_v2" "powerdns_api_key" {
   mount = "kv"
   name  = "powerdns/api-key"
+  cas   = 0
 
   data_json = jsonencode({
     api_key = random_password.powerdns_api_key.result

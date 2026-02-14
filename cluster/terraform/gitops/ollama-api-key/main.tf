@@ -26,6 +26,7 @@ provider "vault" {
 resource "random_password" "api_key" {
   length  = 48
   special = false
+  keepers = { rotation_version = var.rotation_version }
 
   lifecycle {
     ignore_changes = [length, special]
@@ -39,8 +40,4 @@ resource "vault_kv_secret_v2" "ollama_api_key" {
   data_json = jsonencode({
     api_key = random_password.api_key.result
   })
-
-  lifecycle {
-    ignore_changes = [data_json]
-  }
 }

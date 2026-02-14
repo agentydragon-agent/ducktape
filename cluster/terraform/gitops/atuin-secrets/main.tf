@@ -35,6 +35,7 @@ resource "random_password" "postgres_password" {
 resource "vault_kv_secret_v2" "atuin_secrets" {
   mount = "kv"
   name  = "atuin/secrets"
+  cas   = 0
 
   data_json = jsonencode({
     postgres_password = random_password.postgres_password.result

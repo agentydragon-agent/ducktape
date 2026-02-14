@@ -45,6 +45,7 @@ provider "vault" {
 resource "random_password" "harbor_client_secret" {
   length  = 32
   special = false
+  keepers = { rotation_version = var.rotation_version }
 
   lifecycle {
     ignore_changes = [length, special]
@@ -60,10 +61,6 @@ resource "vault_kv_secret_v2" "harbor_oidc" {
     client_id     = "harbor"
     client_secret = random_password.harbor_client_secret.result
   })
-
-  lifecycle {
-    ignore_changes = [data_json]
-  }
 }
 
 # Create Authentik application for Harbor

@@ -415,6 +415,68 @@ spec:
 
 **Lessons Learned**: See <lessons_learned/2025-11-28-eso-password-generator-desync.md>
 
+### Authentik API Token 403 (Vault Version Desync)
+
+**Symptoms**:
+
+- All tofu-controller Terraform resources using Authentik API return 403
+- `authentik-blueprint-users`, `authentik-blueprint-gitea`, etc. stuck reconciling
+- Cascading failures: SSO provider blueprints can't create/update OIDC applications
+
+**Root Cause**:
+
+Terraform runner crash during `authentik-token` module → state lost → tofu-controller
+retries with fresh state → `random_password` generates new token → overwrites Vault.
+Authentik DB has the original token (write-once via `state: created`), but Vault (and
+thus K8s secrets via ESO) has the new one.
+
+**Diagnosis**:
+
+```bash
+# 1. Check Authentik API with current token
+TOKEN=$(kubectl get secret authentik-api-token -n flux-system \
+  -o jsonpath='{.data.authentik_token}' | base64 -d)
+kubectl exec -n authentik deployment/authentik-server -- \
+  curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer $TOKEN" http://localhost:9000/api/v3/core/groups/
+# 403 = token mismatch
+
+# 2. Check Vault secret version history
+ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
+  -o jsonpath='{.data.vault-root}' | base64 -d)
+kubectl exec -n vault instance-0 -c vault -- sh -c \
+  "VAULT_ADDR=https://127.0.0.1:8200 VAULT_CACERT=/vault/tls/ca.crt \
+   VAULT_TOKEN=$ROOT_TOKEN vault kv metadata get kv/sso/client-secrets"
+# Multiple versions = overwrite occurred
+
+# 3. Check Terraform resource status
+kubectl get terraform -n flux-system | grep -v Applied
+```
+
+**Resolution**:
+
+```bash
+# Roll Vault back to version 1 (the token Authentik DB recognizes)
+ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
+  -o jsonpath='{.data.vault-root}' | base64 -d)
+kubectl exec -n vault instance-0 -c vault -- sh -c \
+  "VAULT_ADDR=https://127.0.0.1:8200 VAULT_CACERT=/vault/tls/ca.crt \
+   VAULT_TOKEN=$ROOT_TOKEN vault kv rollback -version=1 kv/sso/client-secrets"
+
+# Force ESO re-sync
+kubectl annotate externalsecret authentik-api-token -n flux-system \
+  force-sync=$(date +%s) --overwrite
+
+# Force reconcile stuck Terraform resources
+kubectl annotate terraform -n flux-system --all \
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
+```
+
+**Prevention**: `cas = 0` on all write-once `vault_kv_secret_v2` resources prevents
+silent overwrites when TF state is lost.
+
+**Lessons Learned**: See <lessons_learned/2026-02-13-authentik-token-vault-overwrite.md>
+
 ## 🚨 Fast Path Health Checks
 
 ### KubeSpan (WireGuard Mesh) - VPS Hybrid Cluster

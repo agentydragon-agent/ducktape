@@ -26,6 +26,7 @@ provider "vault" {
 resource "random_password" "admin_password" {
   length  = 32
   special = false
+  keepers = { rotation_version = var.rotation_version }
 
   lifecycle {
     ignore_changes = [length, special]
@@ -39,8 +40,4 @@ resource "vault_kv_secret_v2" "grafana_admin" {
   data_json = jsonencode({
     admin_password = random_password.admin_password.result
   })
-
-  lifecycle {
-    ignore_changes = [data_json]
-  }
 }

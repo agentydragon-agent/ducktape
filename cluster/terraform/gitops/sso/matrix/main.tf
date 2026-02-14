@@ -36,6 +36,7 @@ provider "vault" {
 resource "random_password" "matrix_client_secret" {
   length  = 32
   special = false
+  keepers = { rotation_version = var.rotation_version }
 
   lifecycle {
     ignore_changes = [length, special]
@@ -51,10 +52,6 @@ resource "vault_kv_secret_v2" "matrix_oidc" {
     client_id     = "matrix"
     client_secret = random_password.matrix_client_secret.result
   })
-
-  lifecycle {
-    ignore_changes = [data_json]
-  }
 }
 
 # Create Authentik application for Matrix

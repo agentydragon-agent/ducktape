@@ -35,6 +35,7 @@ resource "random_password" "harbor_admin" {
 resource "vault_kv_secret_v2" "harbor_admin_password" {
   mount = "kv"
   name  = "harbor/admin"
+  cas   = 0
 
   data_json = jsonencode({
     password = random_password.harbor_admin.result

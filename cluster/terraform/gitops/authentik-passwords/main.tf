@@ -53,6 +53,7 @@ resource "random_password" "secret_key" {
 resource "vault_kv_secret_v2" "authentik_passwords" {
   mount = "kv"
   name  = "authentik/passwords"
+  cas   = 0
 
   data_json = jsonencode({
     postgres_password = random_password.postgres_password.result

@@ -26,3 +26,9 @@ variable "matrix_url" {
   type        = string
   default     = "https://matrix.allegedly.works"
 }
+
+variable "rotation_version" {
+  description = "Bump to trigger secret rotation"
+  type        = string
+  default     = "1"
+}

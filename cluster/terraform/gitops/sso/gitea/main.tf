@@ -37,6 +37,7 @@ provider "vault" {
 resource "random_password" "gitea_client_secret" {
   length  = 32
   special = false
+  keepers = { rotation_version = var.rotation_version }
 
   lifecycle {
     ignore_changes = [length, special]
@@ -52,10 +53,6 @@ resource "vault_kv_secret_v2" "gitea_oidc" {
     client_id     = "gitea"
     client_secret = random_password.gitea_client_secret.result
   })
-
-  lifecycle {
-    ignore_changes = [data_json]
-  }
 }
 
 # Create Authentik application for Gitea
