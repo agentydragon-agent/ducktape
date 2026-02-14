@@ -5,7 +5,6 @@ metadata:
   namespace: website
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    cert-manager.io/cluster-issuer: "letsencrypt"
     # For test domain initially - update to agentydragon.com for production cutover
     external-dns.alpha.kubernetes.io/hostname: www.allegedly.works
 spec:

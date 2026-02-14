@@ -184,6 +184,34 @@ The keypair persists in terraform state (`bootstrap/persistent-auth`):
 - All SealedSecrets in git decrypt correctly after recreate
 - No manual re-sealing needed
 
+## Let's Encrypt Issuer Toggle
+
+The cluster has two always-present ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`).
+A single ConfigMap controls which one is active:
+
+```yaml
+# k8s/cert-manager-issuer-config/configmap.yaml
+data:
+  LETSENCRYPT_ISSUER: letsencrypt-prod # or letsencrypt-staging
+```
+
+**How it works:**
+
+- cert-manager's `ingressShim.defaultIssuerName` is set to `${LETSENCRYPT_ISSUER}` via Flux
+  `postBuild.substituteFrom` — all Ingresses with TLS sections get certs automatically
+- Harbor's explicit Certificate uses `${LETSENCRYPT_ISSUER}` in `issuerRef.name`
+- The trust-manager Bundle includes `${LETSENCRYPT_ISSUER}-root-ca` — in prod mode this adds
+  the ISRG Root X1 (harmless, already in system trust), in staging mode it adds the Pretend
+  Pear X1 (required for pods to trust staging certs)
+- No per-service `cert-manager.io/cluster-issuer` annotations needed
+
+**Switching:**
+
+1. Edit `LETSENCRYPT_ISSUER` in `k8s/cert-manager-issuer-config/configmap.yaml`
+2. Commit and push
+3. Flux propagates: cert-manager restarts with new default issuer, trust bundle updates,
+   all certificates re-issue from the new issuer
+
 ## External Connectivity
 
 ### DNS Delegation

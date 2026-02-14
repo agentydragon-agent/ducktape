@@ -26,5 +26,9 @@ spec:
       kind: Deployment
       name: cert-manager-webhook
       namespace: cert-manager
-  # No dependencies - cert-manager core can start independently
-  # PowerDNS is only needed when ClusterIssuers actually try to do DNS-01 challenges
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
+  dependsOn:
+    - name: cert-manager-issuer-config

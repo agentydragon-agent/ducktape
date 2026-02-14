@@ -33,7 +33,8 @@ Execute tools like these with the direnv loaded, or use `direnv exec .`.
   - VPS: 2x Hetzner CPX31 (public IPs, hostNetwork for ingress/DNS)
 - Domain: `*.allegedly.works`
   - PowerDNS in k8s has authority on this domain and handles Let's Encrypt DNS-01 challenges
-  - cert-manager provisions Let's Encrypt certs
+  - cert-manager provisions Let's Encrypt certs via dual ClusterIssuers (`letsencrypt-prod`,
+    `letsencrypt-staging`), selected by a single ConfigMap toggle
 - HTTPS chain: Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → backend pods
 
 ## Services
@@ -226,7 +227,8 @@ at 10.2.0.2:8006, which is only accessible from the VLAN.
 - No overrides available
 - **Problem**: Each `terraform destroy && bazel run //cluster:bootstrap` cycle requests fresh certificates
 
-**Current**: Production Let's Encrypt. Rate limits apply (5 duplicate certs/week per domain).
+**Current**: Production Let's Encrypt (controlled by `k8s/cert-manager-issuer-config/configmap.yaml`).
+Rate limits apply (5 duplicate certs/week per domain).
 
 **If rate limited**: cert-manager will auto-retry on exponential backoff after the limit expires.
 To force immediate retry after reset:

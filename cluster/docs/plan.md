@@ -10,12 +10,18 @@ Gitea SSO tested and working.
 
 ### Recent Fixes (2026-02-13)
 
-1. **Authentik MFA blocking login** — Custom flow without MFA stage via Terraform
+1. **Dual ClusterIssuer with single-toggle switching** — Two always-present ClusterIssuers
+   (`letsencrypt-prod`, `letsencrypt-staging`). Active issuer selected by a single ConfigMap
+   (`k8s/cert-manager-issuer-config/configmap.yaml`). cert-manager's `ingressShim.defaultIssuerName`
+   auto-issues certs for all Ingresses without per-service annotations. Trust bundle also follows
+   the toggle via `${LETSENCRYPT_ISSUER}-root-ca` naming convention. Removed all
+   `cert-manager.io/cluster-issuer` annotations and flattened cert-manager overlay directories.
+2. **Authentik MFA blocking login** — Custom flow without MFA stage via Terraform
    (`sso/users/main.tf`), domain-matched `authentik_brand`.
-2. **Authentik ESO key naming** — All 4 Authentik ExternalSecrets now use direct `secretKey`
+3. **Authentik ESO key naming** — All 4 Authentik ExternalSecrets now use direct `secretKey`
    matching the env var name (`AUTHENTIK_BOOTSTRAP_PASSWORD`, `AUTHENTIK_BOOTSTRAP_TOKEN`, etc.).
-3. **Proxmox CSI `nodeSelector`** — chart uses top-level key, not `controller.nodeSelector`.
-4. **ESO username keys** — Grafana/Gitea charts expect both username+password; added static
+4. **Proxmox CSI `nodeSelector`** — chart uses top-level key, not `controller.nodeSelector`.
+5. **ESO username keys** — Grafana/Gitea charts expect both username+password; added static
    username fields to ESO templates.
 
 ### Suspended Kustomizations
@@ -24,7 +30,10 @@ Gitea SSO tested and working.
 
 ### Next Actions
 
-- [x] **Switch cert-manager to production Let's Encrypt** — done, real certs issued.
+- [x] **Switch cert-manager to production Let's Encrypt** — done via dual-issuer toggle.
+      Single ConfigMap in `k8s/cert-manager-issuer-config/` controls active issuer.
+      `ingressShim.defaultIssuerName` auto-covers all Ingresses. Trust bundle follows via
+      `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 - [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
       Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
@@ -76,7 +85,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | ---------------------- | ------ | ------------------------------------------ |
 | Flux CD                | ✅     | GitOps                                     |
 | ingress-nginx          | ✅     | hostNetwork on VPS nodes                   |
-| cert-manager           | ✅     | DNS-01 via PowerDNS                        |
+| cert-manager           | ✅     | DNS-01 via PowerDNS, dual-issuer toggle    |
 | PowerDNS               | ✅     | hostNetwork on VPS nodes                   |
 | Vault                  | ✅     | With OIDC auth                             |
 | Authentik              | ✅     | SSO provider                               |

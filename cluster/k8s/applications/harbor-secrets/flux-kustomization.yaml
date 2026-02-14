@@ -10,6 +10,10 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
@@ -19,5 +23,6 @@ spec:
     - name: harbor-namespace
     - name: external-secrets-config
     - name: cert-manager
+    - name: cert-manager-issuer-config
     - name: tofu-controller
     - name: vault-token # Vault auth for Terraform

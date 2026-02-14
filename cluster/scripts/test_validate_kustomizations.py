@@ -127,7 +127,7 @@ class TestCrdLayeringCheck:
             apiVersion: cert-manager.io/v1
             kind: ClusterIssuer
             metadata:
-              name: letsencrypt
+              name: letsencrypt-prod
         """)
         # cert-manager-config/base is nested under cert-manager-config which is in OPERATOR_KUSTOMIZATIONS
         path = Path("/k8s/cert-manager-config/base/kustomization.yaml")

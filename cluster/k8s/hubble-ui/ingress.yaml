@@ -5,7 +5,6 @@ metadata:
   name: hubble-ui
   namespace: kube-system
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     # Authentik forward auth (embedded outpost)
     nginx.ingress.kubernetes.io/auth-url: "http://authentik-server.authentik/outpost.goauthentik.io/auth/nginx"

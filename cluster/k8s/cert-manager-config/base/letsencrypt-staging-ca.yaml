@@ -1,6 +1,6 @@
 ---
-# Let's Encrypt Staging Root CA
-# Required for applications to trust staging certificates
+# Let's Encrypt Staging Root CA (Pretend Pear X1)
+# Included in trust bundle when LETSENCRYPT_ISSUER=letsencrypt-staging.
 # Source: https://letsencrypt.org/docs/staging-environment/
 apiVersion: v1
 kind: Secret

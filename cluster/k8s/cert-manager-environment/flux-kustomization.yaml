@@ -9,19 +9,28 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./cluster/k8s/cert-manager-environment/overlays/production"
+  path: "./cluster/k8s/cert-manager-environment"
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
-    - name: cert-manager # Wait for cert-manager CRDs (ClusterIssuer)
+    - name: cert-manager
       namespace: flux-system
-    - name: cert-manager-trust # Wait for trust-manager CRDs (Bundle)
+    - name: cert-manager-trust
       namespace: flux-system
-    - name: reflector # powerdns-api-key reflected from dns-system to cert-manager
+    - name: reflector
       namespace: flux-system
-  # Verify ClusterIssuer is created
+    - name: cert-manager-issuer-config
+      namespace: flux-system
   healthChecks:
     - apiVersion: cert-manager.io/v1
       kind: ClusterIssuer
-      name: letsencrypt
+      name: letsencrypt-prod
+      namespace: ""
+    - apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      name: letsencrypt-staging
       namespace: ""

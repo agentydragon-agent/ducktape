@@ -1,18 +1,15 @@
 ---
-# Staging overlay: Use Let's Encrypt staging server to avoid rate limits
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: letsencrypt
+  name: letsencrypt-prod
 spec:
   acme:
-    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    server: https://acme-v02.api.letsencrypt.org/directory
     email: agentydragon@gmail.com
     privateKeySecretRef:
-      name: letsencrypt-key
+      name: letsencrypt-prod-key
     solvers:
-      # DNS-01 solver for all test-cluster subdomains
-      # HTTP-01 doesn't work because VPS only routes HTTPS via SNI passthrough
       - dns01:
           webhook:
             groupName: acme.zacharyseguin.ca
@@ -22,6 +19,7 @@ spec:
               apiKeySecretRef:
                 name: powerdns-api-key
                 key: powerdns_api_key
+                namespace: cert-manager
         selector:
           dnsZones:
             - "allegedly.works"

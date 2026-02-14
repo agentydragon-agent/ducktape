@@ -4,7 +4,6 @@ metadata:
   name: ollama
   namespace: ollama
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"

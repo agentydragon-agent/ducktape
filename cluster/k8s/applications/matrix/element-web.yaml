@@ -116,7 +116,6 @@ metadata:
   name: element-web
   namespace: matrix
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   ingressClassName: nginx

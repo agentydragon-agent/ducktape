@@ -45,6 +45,9 @@ spec:
     - secret:
         name: cluster-root-ca-secret
         key: ca.crt
+    - secret:
+        name: "${LETSENCRYPT_ISSUER}-root-ca"
+        key: ca.crt
   target:
     configMap:
       key: ca-certificates.crt

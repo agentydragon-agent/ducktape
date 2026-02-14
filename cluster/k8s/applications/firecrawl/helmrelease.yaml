@@ -125,7 +125,6 @@ spec:
       enabled: true
       className: "nginx"
       annotations:
-        cert-manager.io/cluster-issuer: "letsencrypt"
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
         nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Allow large file uploads for scraping
       hosts:

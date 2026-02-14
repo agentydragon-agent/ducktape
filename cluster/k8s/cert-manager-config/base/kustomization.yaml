@@ -1,6 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - clusterissuer.yaml
+  - clusterissuer-prod.yaml
+  - clusterissuer-staging.yaml
+  - letsencrypt-prod-ca.yaml
+  - letsencrypt-staging-ca.yaml
   - powerdns-webhook.yaml
   - powerdns-webhook-rbac.yaml
