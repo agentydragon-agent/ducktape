@@ -20,7 +20,7 @@ ingress:
 
 # Props config.toml content (mounted as ConfigMap)
 config:
-  backend_url: "http://props-backend:8000"
+  backend_url: "http://props:8000"
   grader_model: ""
   agent_env:
     PGHOST: "props-postgresql"
@@ -29,12 +29,27 @@ config:
   executor:
     type: "kubernetes"
     namespace: "props"
+  # Upstream LLM providers (rendered as [upstreams.<name>] in config.toml)
+  upstreams: {}
+  # Model definitions (rendered as [[models]] in config.toml)
+  models: []
 
 # Extra environment variables for the backend container
 extraEnv: {}
 
 # OpenAI API key (stored in the chart-managed secret)
 openaiApiKey: ""
+
+# Reference pre-existing secrets instead of chart-managed ones.
+# When set, the chart skips creating its own secret and reads env vars
+# from the named secrets.
+existingSecrets: {}
+  # openaiApiKey:
+  #   name: "props-openai-api-key"
+  #   key: "api-key"
+  # ollamaApiKey:
+  #   name: "props-ollama-api-key"
+  #   key: "api-key"
 
 resources:
   requests:
