@@ -273,6 +273,21 @@ jobs:
           )" \
             dist/*.whl
 
+      - name: Bump settings.json to new release tag
+        run: |
+          TAG="claude-hooks-${{ env.SHORT_SHA }}"
+          sed -i "s|claude-hooks-[a-f0-9]\{8\}|${TAG}|g" .claude/settings.json
+          if git diff --quiet .claude/settings.json; then
+            echo "No change needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin ${{ github.ref_name }}
+          git add .claude/settings.json
+          git commit -m "chore: bump claude-hooks to ${TAG}"
+          git push origin HEAD:${{ github.ref_name }}
+
       - uses: ./.github/actions/bazel-repo-cache-save
         if: always()
         with:
