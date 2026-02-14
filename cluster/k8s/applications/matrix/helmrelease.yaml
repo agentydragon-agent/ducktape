@@ -105,6 +105,7 @@ spec:
       enabled: true
       className: "nginx"
       annotations:
+        cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
         # Increase body size for media uploads
         nginx.ingress.kubernetes.io/proxy-body-size: "50m"

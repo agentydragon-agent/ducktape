@@ -12,6 +12,10 @@ spec:
     name: flux-system
   timeout: 10m0s
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   # Health checks ensure Authentik is fully operational before dependents start
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -27,6 +31,7 @@ spec:
       name: authentik-worker
       namespace: authentik
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: authentik-namespace
     - name: authentik-secrets
     - name: authentik-token # Wait for API token generation in Vault

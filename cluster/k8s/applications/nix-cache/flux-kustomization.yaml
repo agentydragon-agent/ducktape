@@ -12,7 +12,13 @@ spec:
   path: "./cluster/k8s/applications/nix-cache"
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
+    - name: cert-manager-issuer-config
+      namespace: flux-system
     - name: proxmox-csi
       namespace: flux-system
     - name: sealed-secrets

@@ -16,6 +16,10 @@ spec:
   path: "./cluster/k8s/vault-ingress"
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   # Health check on the Certificate auto-created by cert-manager from Ingress annotation.
   # cert-manager retries DNS-01 challenges until PowerDNS is ready — no explicit
   # powerdns dependency needed. 15m timeout covers worst-case DNS resolution.
@@ -25,6 +29,7 @@ spec:
       name: vault-ingress-tls
       namespace: vault
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: vault # Core Vault must be ready first
     - name: ingress-nginx
     - name: cert-manager-environment

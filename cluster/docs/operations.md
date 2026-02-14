@@ -68,34 +68,34 @@ qm terminal 10000  # talos-pve-cp-0
 
 ## Switching Let's Encrypt Environment (Staging ↔ Production)
 
-The cluster uses kustomize overlays to switch between Let's Encrypt staging and production environments.
-
-**Current configuration**: Check `k8s/cert-manager-environment/flux-kustomization.yaml`
+A single ConfigMap controls which Let's Encrypt issuer is active cluster-wide:
 
 ```yaml
-spec:
-  path: "./k8s/cert-manager-environment/overlays/staging"     # staging (fake certs, high rate limits)
-  # OR
-  path: "./k8s/cert-manager-environment/overlays/production"  # production (real certs, strict rate limits)
+# k8s/cert-manager-issuer-config/configmap.yaml
+data:
+  LETSENCRYPT_ISSUER: letsencrypt-prod # or letsencrypt-staging
 ```
 
-**To switch environments**:
+Both ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`) are always deployed.
+The ConfigMap selects which one is used via Flux `postBuild.substituteFrom`.
 
-1. Edit the path in `k8s/cert-manager-environment/flux-kustomization.yaml`
-1. Commit and push the change
-1. Wait for Flux to reconcile, or force it:
+**How switching works:**
 
-```bash
-flux reconcile source git flux-system
-flux reconcile kustomization cert-manager-environment
-```
+Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation,
+substituted by Flux from the ConfigMap. When the toggle flips:
 
-1. Delete existing certificates to trigger re-issuance with new issuer:
+1. Flux re-renders all Ingresses with the new annotation value
+2. cert-manager detects annotation change, updates each Certificate's `issuerRef`
+3. cert-manager re-issues all certificates from the new issuer
+4. Trust bundle switches automatically (`${LETSENCRYPT_ISSUER}-root-ca`)
 
-```bash
-kubectl delete certificates --all -A
-# Certificates will be automatically recreated by cert-manager
-```
+**To switch:**
+
+1. Edit `LETSENCRYPT_ISSUER` in `k8s/cert-manager-issuer-config/configmap.yaml`
+2. Commit and push
+3. Wait for Flux to reconcile (or force: `flux reconcile source git flux-system`)
+
+No manual certificate deletion needed — cert-manager handles re-issuance automatically.
 
 **Environment differences**:
 

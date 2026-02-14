@@ -16,6 +16,11 @@ spec:
       name: loki-stack
       namespace: loki
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: proxmox-csi
     - name: ingress-nginx

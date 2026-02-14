@@ -5,6 +5,7 @@ metadata:
   name: loki
   namespace: loki
   annotations:
+    cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     # Authentik forward auth
     nginx.ingress.kubernetes.io/auth-url: "http://authentik-server.authentik/outpost.goauthentik.io/auth/nginx"

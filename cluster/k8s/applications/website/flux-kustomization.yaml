@@ -12,6 +12,11 @@ spec:
   path: "./cluster/k8s/applications/website"
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: ingress-nginx
     - name: cert-manager-environment

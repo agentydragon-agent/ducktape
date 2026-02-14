@@ -12,7 +12,12 @@ spec:
   path: "./cluster/k8s/applications/headscale"
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: headscale-namespace
     - name: ingress-nginx
     - name: cert-manager-environment

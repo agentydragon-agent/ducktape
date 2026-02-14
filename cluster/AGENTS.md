@@ -745,6 +745,11 @@ The check detects:
 2. **Create flux-kustomization.yaml** with `dependsOn: external-secrets-operator`
 3. **Create main `{app}/` directory** for HelmRelease only
 4. **Add `dependsOn: {app}-secrets`** to the main flux-kustomization.yaml
+5. **Add cert-manager issuer toggle** if the app has an Ingress with TLS:
+   - Add `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation to the Ingress
+   - Add `postBuild.substituteFrom` referencing `cert-manager-issuer-config` ConfigMap
+   - Add `dependsOn: cert-manager-issuer-config` to the flux-kustomization.yaml
+   - This ensures the app's certificate switches when the global LE toggle is flipped
 
 ### Symptoms of Violation
 

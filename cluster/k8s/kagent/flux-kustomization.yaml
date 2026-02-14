@@ -11,7 +11,12 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: kagent-namespace
     - name: kagent-secrets
     - name: ingress-nginx

@@ -12,10 +12,11 @@ Gitea SSO tested and working.
 
 1. **Dual ClusterIssuer with single-toggle switching** — Two always-present ClusterIssuers
    (`letsencrypt-prod`, `letsencrypt-staging`). Active issuer selected by a single ConfigMap
-   (`k8s/cert-manager-issuer-config/configmap.yaml`). cert-manager's `ingressShim.defaultIssuerName`
-   auto-issues certs for all Ingresses without per-service annotations. Trust bundle also follows
-   the toggle via `${LETSENCRYPT_ISSUER}-root-ca` naming convention. Removed all
-   `cert-manager.io/cluster-issuer` annotations and flattened cert-manager overlay directories.
+   (`k8s/cert-manager-issuer-config/configmap.yaml`). Every Ingress has
+   `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation substituted by Flux,
+   so flipping the toggle re-issues all certificates. Trust bundle also follows the toggle
+   via `${LETSENCRYPT_ISSUER}-root-ca` naming convention (staging CA only trusted in staging
+   mode). `ingressShim.defaultIssuerName` kept as fallback.
 2. **Authentik MFA blocking login** — Custom flow without MFA stage via Terraform
    (`sso/users/main.tf`), domain-matched `authentik_brand`.
 3. **Authentik ESO key naming** — All 4 Authentik ExternalSecrets now use direct `secretKey`
@@ -32,8 +33,9 @@ Gitea SSO tested and working.
 
 - [x] **Switch cert-manager to production Let's Encrypt** — done via dual-issuer toggle.
       Single ConfigMap in `k8s/cert-manager-issuer-config/` controls active issuer.
-      `ingressShim.defaultIssuerName` auto-covers all Ingresses. Trust bundle follows via
-      `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
+      Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation
+      (Flux-substituted), so flipping the toggle re-issues all certs. Trust bundle follows
+      via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 - [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
       Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow

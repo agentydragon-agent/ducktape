@@ -197,20 +197,20 @@ data:
 
 **How it works:**
 
-- cert-manager's `ingressShim.defaultIssuerName` is set to `${LETSENCRYPT_ISSUER}` via Flux
-  `postBuild.substituteFrom` — all Ingresses with TLS sections get certs automatically
+- Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation,
+  substituted by Flux from the ConfigMap via `postBuild.substituteFrom`
+- cert-manager's `ingressShim.defaultIssuerName` also set to `${LETSENCRYPT_ISSUER}` as fallback
 - Harbor's explicit Certificate uses `${LETSENCRYPT_ISSUER}` in `issuerRef.name`
 - The trust-manager Bundle includes `${LETSENCRYPT_ISSUER}-root-ca` — in prod mode this adds
   the ISRG Root X1 (harmless, already in system trust), in staging mode it adds the Pretend
   Pear X1 (required for pods to trust staging certs)
-- No per-service `cert-manager.io/cluster-issuer` annotations needed
 
 **Switching:**
 
 1. Edit `LETSENCRYPT_ISSUER` in `k8s/cert-manager-issuer-config/configmap.yaml`
 2. Commit and push
-3. Flux propagates: cert-manager restarts with new default issuer, trust bundle updates,
-   all certificates re-issue from the new issuer
+3. Flux re-renders all Ingresses with new annotation value, cert-manager detects the change
+   and re-issues all certificates from the new issuer. Trust bundle updates automatically.
 
 ## External Connectivity
 

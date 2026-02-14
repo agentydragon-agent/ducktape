@@ -12,7 +12,12 @@ spec:
   path: "./cluster/k8s/applications/atuin"
   prune: true
   wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: atuin-namespace
     - name: atuin-secrets
     - name: ingress-nginx

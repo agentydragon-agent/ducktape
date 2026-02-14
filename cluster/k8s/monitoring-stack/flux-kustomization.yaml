@@ -16,7 +16,12 @@ spec:
       name: kube-prometheus-stack
       namespace: monitoring
   timeout: 10m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cert-manager-issuer-config
   dependsOn:
+    - name: cert-manager-issuer-config
     - name: monitoring-namespace
     - name: ingress-nginx
     - name: cert-manager-environment
