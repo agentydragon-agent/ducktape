@@ -74,6 +74,16 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 # Helm chart packaging (rules_helm)
 bazel_dep(name = "rules_helm", version = "0.21.0")
 
+# Fix: helm_import_repository returns chart_name/version derived from url in
+# its canonical dict, causing spurious DEBUG messages. The rule forbids setting
+# those attrs alongside url, so the suggestion is unfollowable.
+single_version_override(
+    module_name = "rules_helm",
+    patch_strip = 1,
+    patches = ["//third_party/rules_helm:canonical-return.patch"],
+    version = "0.21.0",
+)
+
 helm = use_extension("@rules_helm//helm:extensions.bzl", "helm")
 helm.toolchain(
     name = "helm_toolchains",

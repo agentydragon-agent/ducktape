@@ -1,0 +1,25 @@
+--- a/helm/private/import.bzl
++++ b/helm/private/import.bzl
+@@ -191,14 +191,17 @@
+         repository_name = repository_ctx.name,
+     ))
+
+-    return {
+-        "chart_name": chart_name,
++    canonical = {
+         "name": repository_ctx.name,
+-        "repository": repository_ctx.attr.repository,
+         "sha256": result.sha256,
+-        "url": chart_url,
+-        "version": chart_version,
+     }
++    if repository_ctx.attr.url:
++        canonical["url"] = repository_ctx.attr.url
++    else:
++        canonical["chart_name"] = chart_name
++        canonical["repository"] = repository_ctx.attr.repository
++        canonical["version"] = chart_version
++    return canonical
+
+ helm_import_repository = repository_rule(
+     implementation = _helm_import_repository_impl,

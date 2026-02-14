@@ -1,0 +1,4 @@
+exports_files(
+    ["canonical-return.patch"],
+    visibility = ["//visibility:public"],
+)
