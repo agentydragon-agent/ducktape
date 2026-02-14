@@ -131,6 +131,20 @@ when ready to deploy these applications.
 - [ ] Update `agentydragon.com` DNS to point to cluster
 - [ ] Decommission ansible-managed VPS
 
+### Headscale Bootstrap DNS Workaround
+
+**Context**: Tailscale's bootstrap DNS (via DERP servers) only resolves `tailscale.com`
+domains. With headscale using `agentydragon.com`, clients can't resolve the control
+server on boot (chicken-and-egg: DNS is set to 100.100.100.100 which requires the
+tunnel to be up first).
+
+**Workaround**: Static `/etc/hosts` entry on atlas pointing `agentydragon.com`
+to the VPS IP. Managed in `ansible/atlas.yaml` (atlas-specific, not in the role).
+
+**When VPS changes**: Must re-run ansible on all tailscale clients to update the IP.
+Eventually `agentydragon.com` will have multiple IPs (cluster VPS nodes) — the hosts
+entry will need to list all of them or use a single stable entry point.
+
 ---
 
 ## 🔧 Operational Hardening

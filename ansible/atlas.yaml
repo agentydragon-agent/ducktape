@@ -8,6 +8,9 @@
     docker_state: absent # Proxmox host doesn't need Docker
     skip_ubuntu_ppas: true # Debian-based Proxmox can't use Ubuntu PPAs
     include_heavy_dev_packages: false
+    # Headscale server for /etc/hosts bootstrap entry (see tailscale task below)
+    headscale_server_hostname: "agentydragon.com"
+    headscale_server_ip: "172.235.48.86"
   remote_user: root
 
   tasks:
@@ -152,6 +155,19 @@
     - name: Install resolvconf for Tailscale MagicDNS integration
       ansible.builtin.apt:
         name: resolvconf
+        state: present
+      tags: [tailscale, dns]
+
+    # Headscale bootstrap DNS workaround: Tailscale's bootstrap DNS (DERP servers)
+    # only resolves tailscale.com domains. With headscale using agentydragon.com,
+    # clients can't resolve the control server on boot (DNS set to 100.100.100.100
+    # which requires the tunnel to be up first). Static /etc/hosts entry fixes this.
+    # See cluster/docs/plan.md "Headscale Bootstrap DNS Workaround" for details.
+    - name: Add headscale server to /etc/hosts for bootstrap DNS
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '.*\s+{{ headscale_server_hostname }}$'
+        line: "{{ headscale_server_ip }} {{ headscale_server_hostname }}"
         state: present
       tags: [tailscale, dns]
 
