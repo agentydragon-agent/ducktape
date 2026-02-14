@@ -6,4 +6,4 @@ metadata:
 data:
   # Single toggle for Let's Encrypt issuer selection.
   # Change to "letsencrypt-staging" for development (avoids rate limits).
-  LETSENCRYPT_ISSUER: letsencrypt-prod
+  LETSENCRYPT_ISSUER: letsencrypt-staging

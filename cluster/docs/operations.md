@@ -97,6 +97,10 @@ substituted by Flux from the ConfigMap. When the toggle flips:
 
 No manual certificate deletion needed — cert-manager handles re-issuance automatically.
 
+**Rate limit warning:** Each switch re-issues all certificates — cert-manager does not cache
+previous certs. A prod→staging→prod round-trip costs 2 production certificate requests per
+domain. Let's Encrypt allows 5 duplicate certs per domain per week, so avoid rapid toggling.
+
 **Environment differences**:
 
 | Environment    | ACME Server                          | Rate Limits       | Certificate Trust     |
