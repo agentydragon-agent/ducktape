@@ -24,11 +24,7 @@ Gitea SSO tested and working.
 
 ### Next Actions
 
-- [ ] **Switch cert-manager to production Let's Encrypt** — staging certs work for SSO
-      (LE staging root CA is in the trust bundle via `cluster-ca` staging overlay), but
-      browsers show certificate warnings. Single-line switch in
-      `k8s/cert-manager-environment/flux-kustomization.yaml` (change `overlays/staging` → `overlays/production`).
-      Well within rate limits (14 certs vs 50/week limit per registered domain).
+- [x] **Switch cert-manager to production Let's Encrypt** — done, real certs issued.
 - [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
       Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
@@ -60,10 +56,10 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Domain Strategy
 
-| Domain             | Purpose                     | Status                  |
-| ------------------ | --------------------------- | ----------------------- |
-| `allegedly.works`  | Test/staging cluster        | Active, serving traffic |
-| `agentydragon.com` | Production (future cutover) | On ansible VPS          |
+| Domain             | Purpose                      | Status                  |
+| ------------------ | ---------------------------- | ----------------------- |
+| `allegedly.works`  | Test cluster (prod LE certs) | Active, serving traffic |
+| `agentydragon.com` | Production (future cutover)  | On ansible VPS          |
 
 ## Current Nodes
 

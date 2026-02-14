@@ -226,11 +226,7 @@ at 10.2.0.2:8006, which is only accessible from the VLAN.
 - No overrides available
 - **Problem**: Each `terraform destroy && bazel run //cluster:bootstrap` cycle requests fresh certificates
 
-**For Development/Testing**: Use Let's Encrypt **staging environment**
-
-- Staging limit: 30,000 certificates per week (vs production's 5)
-- Certificates are untrusted (browser warnings) but functional
-- Switch to production once deployment is stable
+**Current**: Production Let's Encrypt. Rate limits apply (5 duplicate certs/week per domain).
 
 **If rate limited**: cert-manager will auto-retry on exponential backoff after the limit expires.
 To force immediate retry after reset:
