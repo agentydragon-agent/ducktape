@@ -1,6 +1,0 @@
-apiVersion: v2
-name: common-lib
-description: Shared library helpers for Ducktape Kubernetes workloads
-type: library
-version: 0.1.1
-appVersion: "0.0.0"

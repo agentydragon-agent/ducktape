@@ -1,5 +1,0 @@
-base: {}
-
-timescaledb: {}
-
-grafana-operator: {}

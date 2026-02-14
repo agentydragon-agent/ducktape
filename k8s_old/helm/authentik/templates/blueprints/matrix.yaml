@@ -1,2 +1,0 @@
-# Authentik Blueprint for Matrix Synapse OIDC Provider
-{{ include "common.blueprintConfigMapFromFile" (dict "context" . "name" "authentik-blueprints-matrix" "filename" "matrix.yaml" "file" "blueprints/matrix.yaml") }}

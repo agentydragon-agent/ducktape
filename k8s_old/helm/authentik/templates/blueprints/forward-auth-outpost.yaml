@@ -1,2 +1,0 @@
-# Authentik Blueprint to attach forward-auth providers to the embedded outpost
-{{ include "common.blueprintConfigMapFromFile" (dict "context" . "name" "authentik-blueprints-forward-auth" "filename" "forward-auth-outpost.yaml" "file" "blueprints/forward-auth-outpost.yaml") }}

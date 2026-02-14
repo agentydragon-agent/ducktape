@@ -1,2 +1,0 @@
-# Authentik Blueprint for Gitea OAuth2 Provider
-{{ include "common.blueprintConfigMapFromFile" (dict "context" . "name" "authentik-blueprints-gitea" "filename" "gitea.yaml" "file" "blueprints/gitea.yaml") }}

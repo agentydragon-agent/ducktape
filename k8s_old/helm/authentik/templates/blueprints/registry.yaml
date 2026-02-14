@@ -1,2 +1,0 @@
-# Authentik Blueprint for Container Registry forward-auth
-{{ include "common.blueprintConfigMapFromFile" (dict "context" . "name" "authentik-blueprints-registry" "filename" "registry.yaml" "file" "blueprints/registry.yaml") }}
