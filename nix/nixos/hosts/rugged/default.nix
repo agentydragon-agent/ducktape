@@ -46,6 +46,10 @@
 
   # Services (tailscale enabled via dev-workstation.nix)
   services = {
+    avahi = {
+      enable = true;
+      nssmdns4 = true; # mDNS resolution for .local hostnames (printers, etc.)
+    };
     blueman.enable = true;
     fwupd.enable = true; # Firmware updates
     printing.enable = true;
