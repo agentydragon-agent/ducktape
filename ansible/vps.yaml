@@ -37,7 +37,6 @@
   roles:
     - role: common
     - role: system_inspection_nopasswd
-    # - cli    # <- TODO:  needs ducktape, etc
 
   tasks:
     - name: Apply PowerDNS role
@@ -287,15 +286,6 @@
         trilium_server_state: absent
       tags: [trilium]
 
-    - name: Bazel remote cache
-      ansible.builtin.include_role:
-        name: bazel_cache
-        apply:
-          tags: bazel-remote-cache
-      vars:
-        bazel_cache_state: absent
-      tags: [bazel-remote-cache]
-
     - name: Start and enable nginx
       ansible.builtin.service:
         name: nginx
@@ -362,23 +352,6 @@
     #        version: devel
     #        accept_hostkey: true
     #        depth: 1  # Shallow clone for speed
-
-    # Apply CLI role (outside the block so tags work independently)
-    # TODO: make this work sanely
-    # - name: Apply CLI role
-    #   ansible.builtin.import_role:
-    #     name: cli
-    #   vars:
-    #     cli_user: agentydragon
-    #   tags: [dotfiles]
-    #   # CLI role tasks that need root will handle their own become
-
-    - name: Install shared development environment for agentydragon
-      ansible.builtin.import_role:
-        name: dev_env
-      vars:
-        dev_env_user: agentydragon
-      tags: [dev_env]
 
     # TODO: configure - plus for remote desktop
     # - name: Configure Authentik

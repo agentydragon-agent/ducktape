@@ -1,3 +1,0 @@
----
-- name: Include tasks based on enabled state
-  ansible.builtin.include_tasks: "{{ 'enabled.yml' if firecrawl_enable else 'disabled.yml' }}"

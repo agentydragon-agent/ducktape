@@ -1,4 +1,0 @@
-- name: Regenerate locales
-  ansible.builtin.command: locale-gen
-  listen: Regenerate locales
-  changed_when: true

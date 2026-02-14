@@ -5,31 +5,23 @@
     - vars/common_vars.yml
   vars:
     rcup_computer: agentydragon
-    firecrawl_enable: false
   # TODO: vars_files: agentydragon_gitlab_token.yml
   remote_user: "{{ my_user }}"
 
   roles:
     - role: nix
     - role: docker
-    # - role: cli
     # - role: gui
     # - role: laptop
     # - role: scanbox
     - role: system_inspection_nopasswd
     - role: tailscale_client
-    - role: k3s_client
 
   tasks:
     - name: Install CUDA (NVidia-specific)
       become: true
       ansible.builtin.apt:
         pkg: system76-cuda-latest
-
-    - name: Install shared development environment
-      ansible.builtin.import_role:
-        name: dev_env
-      tags: [dev_env]
 
     # TODO: does not seem to work. getting this on trying to suspend, plus freeze:
     #   usb usb-port14: disabled by hub (EMI?), re-enabling...

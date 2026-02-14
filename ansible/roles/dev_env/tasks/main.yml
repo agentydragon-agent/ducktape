@@ -1,8 +1,0 @@
----
-# Development environment setup - imports common development tools and services
-
-# Import firecrawl for all dev environments
-- name: Import firecrawl role
-  ansible.builtin.import_role:
-    name: firecrawl
-  tags: [firecrawl]

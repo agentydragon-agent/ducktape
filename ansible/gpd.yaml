@@ -8,7 +8,6 @@
   remote_user: "{{ my_user }}"
 
   roles:
-    - role: cli
     - role: legacy_cli
     - role: gui
     - role: legacy_gui
@@ -17,8 +16,6 @@
       tags: [wireguard, wireguard_uninstall]
     - role: tailscale_client
       tags: [tailscale]
-    - role: k3s_client
-      tags: [k3s_client]
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.
 
@@ -47,8 +44,3 @@
         owner: root
         group: root
         mode: "0644"
-
-    - name: Install shared development environment
-      ansible.builtin.import_role:
-        name: dev_env
-      tags: [dev_env]

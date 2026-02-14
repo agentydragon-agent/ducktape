@@ -22,9 +22,7 @@ dependencies:
 
   - role: anki
     tags: [anki]
-  # Fonts managed by Nix home-manager (legacy: nerd_fonts -> legacy_nerd_fonts)
-  - role: legacy_nerd_fonts
-    become: true # needed to write fonts system-wide
+  # Fonts managed by Nix home-manager
   # gnome-terminal-solarized now managed by Nix: nix/home/modules/solarized.nix
   - role: timekpr
   # - role: google_drive_client  # Temporarily disabled for wyrm

@@ -1,8 +1,0 @@
-# Defaults for k3s_registries role
-
-# Canonical registry host to reference in image names
-k3s_registries_registry_host: "registry.local"
-
-# Endpoint pointing to the in-cluster registry service (ClusterIP)
-# This should resolve within k3s nodes via cluster DNS
-k3s_registries_registry_endpoint: "http://registry.registry.svc.cluster.local:5000"

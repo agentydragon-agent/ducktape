@@ -23,11 +23,6 @@
       become: true
 
   roles:
-    - role: cli
-
-    - role: dev_env
-      tags: [dev_env]
-
     - role: golang
       tags: [golang, go]
       vars:
@@ -38,8 +33,6 @@
     # dev-ml migrated to Nix (renamed to dev-ml_nix_migrated)
     - role: tailscale_client
       tags: [tailscale]
-    - role: k3s_client
-      tags: [k3s_client]
     # - role: nvidia-guest
     #   tags: [nvidia, gpu]
     #   vars:
@@ -206,9 +199,6 @@
       become: true
       tags: [nvidia, podman, gpu]
       changed_when: true
-
-    # pnpm is installed in dev_env-user.yml via github_release_install
-    # Configuration is managed via dotfiles/npmrc
 
     - name: Create pip cache directory on tankshare
       ansible.builtin.file:

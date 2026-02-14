@@ -1,4 +1,11 @@
 ---
+- name: Set zsh as login shell
+  become: true
+  ansible.builtin.user:
+    name: "{{ my_user }}"
+    shell: /bin/zsh
+  tags: [zsh]
+
 - name: Get raw dpkg architecture
   ansible.builtin.command: dpkg --print-architecture
   register: common_raw_dpkg_arch
