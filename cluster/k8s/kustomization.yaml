@@ -57,6 +57,9 @@ resources:
   - applications/nix-cache/flux-kustomization.yaml
   - headscale-namespace/flux-kustomization.yaml
   - applications/headscale/flux-kustomization.yaml
+  - atuin-namespace/flux-kustomization.yaml
+  - atuin-secrets/flux-kustomization.yaml
+  - applications/atuin/flux-kustomization.yaml
   - applications/website/flux-kustomization.yaml
   - applications/buildbuddy-executor/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
