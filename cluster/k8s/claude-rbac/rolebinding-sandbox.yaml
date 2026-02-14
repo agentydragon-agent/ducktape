@@ -9,5 +9,5 @@ roleRef:
   name: claude-sandbox-admin
 subjects:
   - kind: ServiceAccount
-    name: claude-readonly
+    name: claude-code-web
     namespace: default
