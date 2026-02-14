@@ -668,6 +668,7 @@ in
     enable = true;
 
     # .zshenv content (loaded for all zsh invocations, including scripts)
+    # TODO: Source nix-daemon.sh here for non-login shells (mosh). See nix/TODO.md.
     envExtra = "skip_global_compinit=1";
 
     # No auto-correction
@@ -803,7 +804,7 @@ in
     keyMode = "vi"; # Vi mode keys
     clock24 = true;
     prefix = "C-b";
-    # terminal = "tmux-256color";  # Better terminal type for modern tmux
+    terminal = "tmux-256color"; # Better terminal type for modern tmux
 
     # Plugins from TPM configuration
     plugins = with pkgs.tmuxPlugins; [
@@ -888,8 +889,7 @@ in
       # tmux-continuum settings
       set -g @continuum-restore 'on'
 
-      # Force proper terminal and enable true color support
-      set -g default-terminal "tmux-256color"
+      # Enable true color support for xterm-256color terminals
       set -ag terminal-overrides ",xterm-256color:RGB"
 
       # Enable hyperlink support (OSC 8) for clickable links in terminal
