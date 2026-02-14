@@ -1,0 +1,15 @@
+# Placeholder — seal with: scripts/seal-secret.sh props props-openai-api-key api-key <value>
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: props-openai-api-key
+  namespace: props
+spec:
+  encryptedData:
+    api-key: REPLACE_ME
+  template:
+    metadata:
+      name: props-openai-api-key
+      namespace: props
+    type: Opaque

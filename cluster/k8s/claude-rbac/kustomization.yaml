@@ -7,3 +7,5 @@ resources:
   - limitrange.yaml
   - role-sandbox.yaml
   - rolebinding-sandbox.yaml
+  - role-props-reader.yaml
+  - rolebinding-props-reader.yaml

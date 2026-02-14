@@ -39,6 +39,10 @@ spec:
             {{- if .Values.registry.enabled }}
             - name: PROPS_REGISTRY_UPSTREAM_URL
               value: http://{{ include "props.fullname" . }}-registry:{{ .Values.registry.service.port }}
+            - name: PROPS_REGISTRY_HOST
+              value: {{ include "props.fullname" . }}
+            - name: PROPS_REGISTRY_PORT
+              value: {{ .Values.service.port | quote }}
             {{- end }}
             {{- if .Values.postgresql.enabled }}
             - name: PGHOST
@@ -60,9 +64,22 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
+                  {{- with (dig "openaiApiKey" nil .Values.existingSecrets) }}
+                  name: {{ .name }}
+                  key: {{ .key }}
+                  {{- else }}
                   name: {{ include "props.fullname" . }}
                   key: openai-api-key
+                  {{- end }}
                   optional: true
+            {{- with (dig "ollamaApiKey" nil .Values.existingSecrets) }}
+            - name: OLLAMA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .name }}
+                  key: {{ .key }}
+                  optional: true
+            {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/props

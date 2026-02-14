@@ -20,3 +20,19 @@ data:
     {{- range $key, $value := .Values.config.executor }}
     {{ $key }} = {{ $value | quote }}
     {{- end }}
+    {{- range $name, $upstream := .Values.config.upstreams }}
+
+    [upstreams.{{ $name }}]
+    url = {{ $upstream.url | quote }}
+    api_key_env = {{ $upstream.api_key_env | quote }}
+    {{- end }}
+    {{- range .Values.config.models }}
+
+    [[models]]
+    name = {{ .name | quote }}
+    upstream = {{ .upstream | quote }}
+    upstream_model = {{ .upstream_model | quote }}
+    input_usd_per_1m_tokens = {{ .input_usd_per_1m_tokens }}
+    output_usd_per_1m_tokens = {{ .output_usd_per_1m_tokens }}
+    context_window_tokens = {{ .context_window_tokens }}
+    {{- end }}

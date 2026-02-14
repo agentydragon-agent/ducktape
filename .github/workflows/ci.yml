@@ -142,6 +142,10 @@ jobs:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
     uses: ./.github/workflows/rbe-image.yml
+  props-backend-image:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-backend-image')
+    uses: ./.github/workflows/props-backend-image.yml
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
