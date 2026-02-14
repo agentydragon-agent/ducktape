@@ -335,30 +335,6 @@
                  - Or use GitHub CLI: gh auth login
             success_msg: "SSH key is set up for agentydragon user"
 
-    #    - name: Create code directory
-    #      become: true
-    #      become_user: agentydragon
-    #      ansible.builtin.file:
-    #        path: "/home/agentydragon/code"
-    #        state: directory
-    #        mode: '0755'
-
-    #    - name: Clone ducktape repository
-    #      become: true
-    #      become_user: agentydragon
-    #      ansible.builtin.git:
-    #        repo: git@github.com:agentydragon/ducktape.git
-    #        dest: "{{ cli_ducktape_path }}"
-    #        version: devel
-    #        accept_hostkey: true
-    #        depth: 1  # Shallow clone for speed
-
-    # TODO: configure - plus for remote desktop
-    # - name: Configure Authentik
-    #   ansible.builtin.include_role:
-    #     name: authentik
-    #   tags: [authentik]
-
   handlers:
     - name: Restart systemd-resolved
       ansible.builtin.systemd:
