@@ -43,6 +43,7 @@ gatewayAPI:
         topology.kubernetes.io/region: hetzner
 
 # Standalone Envoy DaemonSet (separate from cilium-agent) for cleaner lifecycle.
+# NET_ADMIN + SYS_ADMIN required for Cilium datapath integration (BPF).
 # NET_BIND_SERVICE required for binding privileged ports (80, 443) in hostNetwork mode.
 envoy:
   enabled: true
@@ -50,6 +51,8 @@ envoy:
     capabilities:
       keepCapNetBindService: true
       envoy:
+        - NET_ADMIN
+        - SYS_ADMIN
         - NET_BIND_SERVICE
 
 # Mutual authentication via SPIRE (SPIFFE Runtime Environment)
