@@ -498,6 +498,9 @@ in
       scrcpy # Android screen mirroring
       virt-viewer # SPICE/VNC viewer for virtual machines (Proxmox viewer)
 
+      # Learning
+      anki
+
       # GNOME utilities
       gnome-tweaks
       dconf-editor

@@ -20,8 +20,6 @@ dependencies:
         # (timer/stopwatch/Pomodoro/alarms/todo)
         - id: 6003
 
-  - role: anki
-    tags: [anki]
   # Fonts managed by Nix home-manager
   # gnome-terminal-solarized now managed by Nix: nix/home/modules/solarized.nix
   - role: timekpr

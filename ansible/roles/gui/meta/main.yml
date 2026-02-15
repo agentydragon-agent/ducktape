@@ -1,8 +1,6 @@
 dependencies:
   - role: common
   # petermosmans.customize-gnome moved to legacy_without_home_manager/gui role
-  - role: anki
-    tags: [anki]
   # Fonts managed by Nix home-manager
   # gnome-terminal-solarized moved to legacy_without_home_manager/gui role
   - role: timekpr
