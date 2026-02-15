@@ -3,7 +3,12 @@
 ## Rendered by session_start hook if .claude_hooks/templates/context.mako exists.
 % if secrets:
 % if "GITHUB_TOKEN" in secrets.env_vars:
-`GITHUB_TOKEN`: Full-access GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically. Supports all read/write operations including push, PR create/update, issue management.
+`GITHUB_TOKEN`: GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically.
+  **PR workflow** (two options — the bot is NOT a collaborator on `agentydragon/ducktape`):
+  Option A (origin, via Claude proxy): `git push -u origin <branch>`, then `gh pr create --repo agentydragon/ducktape --head <branch-name> --base devel`.
+    The `origin` remote pushes to `agentydragon/ducktape` through the Claude Code integration proxy.
+  Option B (fork): `git remote add fork https://github.com/agentydragon-agent/ducktape.git` (if not already configured),
+    `git push fork <branch>`, then `gh pr create --repo agentydragon/ducktape --head agentydragon-agent:<branch-name> --base devel`.
 % endif
 % if "OLLAMA_API_KEY" in secrets.env_vars:
 Ollama: `OLLAMA_BASE_URL` and `OLLAMA_API_KEY` set. OpenAI-compatible LLM inference (2x RTX 5090).
