@@ -31,6 +31,24 @@
   when: ansible_os_family == "Debian"
   tags: [tailscale, install]
 
+- name: Prevent NetworkManager from managing tailscale0
+  ansible.builtin.copy:
+    dest: /etc/NetworkManager/conf.d/99-tailscale-unmanaged.conf
+    content: |
+      # Prevent NM from managing the Tailscale tun interface.
+      # Without this, NM auto-assumes tailscale0 and on NM restart
+      # pushes empty DNS config to systemd-resolved, overwriting
+      # Tailscale's MagicDNS settings (100.100.100.100).
+      [keyfile]
+      unmanaged-devices=interface-name:tailscale0
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  when: ansible_os_family == "Debian"
+  notify: restart NetworkManager
+  tags: [tailscale, install]
+
 - name: Start and enable tailscaled service
   ansible.builtin.systemd:
     name: tailscaled
