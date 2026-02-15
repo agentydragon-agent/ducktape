@@ -46,19 +46,20 @@ spec:
     storage:
       raft:
         path: "/vault/file"
+    # TLS disabled — Gateway terminates TLS, KubeSpan encrypts inter-node traffic.
+    # TODO: Re-enable listener TLS once Cilium supports BackendTLSPolicy
+    # (https://github.com/cilium/cilium/issues/31352)
     listener:
       tcp:
         address: "0.0.0.0:8200"
         cluster_address: "0.0.0.0:8201"
-        tls_cert_file: /vault/tls/server.crt
-        tls_key_file: /vault/tls/server.key
-        tls_client_ca_file: /vault/tls/ca.crt
+        tls_disable: true
     # Required addresses for Raft cluster communication
     # References: https://github.com/bank-vaults/vault-operator/blob/main/deploy/examples/
     # api_addr: External address for client requests (load-balanced service)
     # cluster_addr: Pod-specific address for Raft protocol - Bank-Vaults template syntax
-    api_addr: "https://instance.vault.svc.cluster.local:8200"
-    cluster_addr: "https://${.Env.POD_NAME}.vault.svc.cluster.local:8201"
+    api_addr: "http://instance.vault.svc.cluster.local:8200"
+    cluster_addr: "http://${.Env.POD_NAME}.vault.svc.cluster.local:8201"
     ui: true
 
   # Automatic unsealing using Kubernetes secrets

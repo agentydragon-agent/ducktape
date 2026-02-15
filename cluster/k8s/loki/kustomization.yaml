@@ -4,4 +4,6 @@ resources:
   - namespace.yaml
   - helmrepository.yaml
   - helmrelease.yaml
-  - ingress.yaml
+  # External access handled by Authentik proxy outpost (authentik-blueprint/loki/).
+  # Traffic flows: Gateway → ak-outpost-loki-outpost (auth) → loki-stack backend.
+  # Grafana accesses Loki internally via cluster service (unaffected).

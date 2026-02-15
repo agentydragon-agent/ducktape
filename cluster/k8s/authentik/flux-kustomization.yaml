@@ -36,4 +36,4 @@ spec:
     - name: authentik-secrets
     - name: authentik-token # Wait for API token generation in Vault
     - name: cert-manager # Wait for cert-manager for TLS certificates
-    - name: ingress-nginx # Wait for ingress controller for external access
+    - name: gateway # Wait for Gateway API for external access

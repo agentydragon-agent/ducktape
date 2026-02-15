@@ -18,5 +18,5 @@ spec:
         name: cert-manager-issuer-config
   dependsOn:
     - name: cert-manager-issuer-config
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager-environment

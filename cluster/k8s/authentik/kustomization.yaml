@@ -4,3 +4,4 @@ resources:
   - helmrelease.yaml
   - authentik-host-configmap.yaml
   - token-secret.yaml
+  - httproute.yaml

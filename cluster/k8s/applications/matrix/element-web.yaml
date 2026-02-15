@@ -108,30 +108,3 @@ spec:
       name: http
   selector:
     app: element-web
----
-# Ingress for Element web client
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: element-web
-  namespace: matrix
-  annotations:
-    cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-spec:
-  ingressClassName: nginx
-  tls:
-    - hosts:
-        - chat.allegedly.works
-      secretName: element-web-tls
-  rules:
-    - host: chat.allegedly.works
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: element-web
-                port:
-                  name: http

@@ -20,6 +20,6 @@ spec:
     - name: cert-manager-issuer-config
     - name: atuin-namespace
     - name: atuin-secrets
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager-environment
     - name: proxmox-csi

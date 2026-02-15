@@ -33,6 +33,8 @@ spec:
     extraArgs:
       - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53
       - --dns01-recursive-nameservers-only
+      # Gateway API support (beta since v1.15, enabled by default — explicit for clarity)
+      - --feature-gates=ExperimentalGatewayAPISupport=true
 
     # Enable metrics
     prometheus:

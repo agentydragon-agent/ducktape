@@ -25,7 +25,7 @@ spec:
   dependsOn:
     - name: cert-manager-issuer-config
     - name: gitea-namespace
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager
     - name: vault
     - name: gitea-secrets

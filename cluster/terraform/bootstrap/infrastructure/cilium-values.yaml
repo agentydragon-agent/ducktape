@@ -31,6 +31,44 @@ cgroup:
 # Without this, packets >1370 bytes fragment at the WireGuard interface.
 MTU: 1370
 
+# Gateway API: replaces ingress-nginx (retired March 2026)
+# Reuses per-node Envoy DaemonSet — zero additional controllers.
+# hostNetwork binds ports 80/443 directly on VPS nodes (same as ingress-nginx did).
+gatewayAPI:
+  enabled: true
+  hostNetwork:
+    enabled: true
+    nodes:
+      matchLabels:
+        topology.kubernetes.io/region: hetzner
+
+# Standalone Envoy DaemonSet (separate from cilium-agent) for cleaner lifecycle.
+# NET_BIND_SERVICE required for binding privileged ports (80, 443) in hostNetwork mode.
+envoy:
+  enabled: true
+  securityContext:
+    capabilities:
+      keepCapNetBindService: true
+      envoy:
+        - NET_BIND_SERVICE
+
+# Mutual authentication via SPIRE (SPIFFE Runtime Environment)
+# Adds per-service cryptographic identity (X.509 SVIDs) without a full service mesh.
+# SPIRE server + agent are installed as part of the Cilium deployment.
+# Traffic is not blocked in test mode — only logged for observability.
+# Switch CiliumNetworkPolicy authentication.mode from "test" to "required" to enforce.
+authentication:
+  mutual:
+    spire:
+      enabled: true
+      install:
+        enabled: true
+        server:
+          # SPIRE server stores registration entries and signing keys.
+          # emptyDir is fine for test mode; add PVC for production persistence.
+          dataStorage:
+            enabled: false
+
 # Observability (optional, not networking-critical)
 hubble:
   enabled: true

@@ -123,9 +123,9 @@ spec:
         port: 2222
         nodePort: 30501
 
-    # Ingress configuration
+    # Ingress disabled — traffic routed via Gateway API HTTPRoute
     ingress:
-      enabled: true
+      enabled: false
       className: "nginx"
       annotations:
         cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"

@@ -5,3 +5,4 @@ namespace: props
 
 resources:
   - helmrelease.yaml
+  - httproute.yaml

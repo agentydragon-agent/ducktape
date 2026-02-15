@@ -86,7 +86,7 @@ The bootstrap script executes a 3-phase layered deployment:
 #### Phase 2: Flux (`terraform/bootstrap/flux`)
 
 - **Flux Bootstrap** → Initializes GitOps engine with GitHub
-- **Core Services** → cert-manager, ingress-nginx
+- **Core Services** → cert-manager, Cilium Gateway API
 - **Storage** → Hetzner CSI (VPS), Proxmox CSI (home)
 - **Platform** → Vault, ESO, Authentik
 
@@ -220,11 +220,12 @@ data:
 2. PowerDNS runs on VPS nodes (public IPs)
 3. cert-manager uses DNS-01 challenges
 
-### Ingress
+### Ingress (Gateway API)
 
-- ingress-nginx on VPS nodes (hostNetwork or NodePort)
-- VPS public IPs receive HTTPS traffic directly
-- No nginx proxy layer needed (VPS nodes are in the cluster)
+- Cilium Gateway API with Envoy DaemonSet (hostNetwork on VPS nodes)
+- VPS public IPs receive HTTPS traffic directly on ports 80/443
+- Gateway terminates TLS using wildcard cert (`*.allegedly.works`)
+- HTTPRoutes in each application namespace route to backend services
 
 ## Troubleshooting
 

@@ -19,6 +19,6 @@ spec:
   dependsOn:
     - name: cert-manager-issuer-config
     - name: headscale-namespace
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager-environment
     - name: local-path-provisioner

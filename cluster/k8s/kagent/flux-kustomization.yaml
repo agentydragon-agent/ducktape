@@ -19,6 +19,6 @@ spec:
     - name: cert-manager-issuer-config
     - name: kagent-namespace
     - name: kagent-secrets
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager-environment
     - name: authentik-blueprint-kagent # SSO configuration and outpost

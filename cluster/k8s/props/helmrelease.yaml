@@ -58,8 +58,9 @@ spec:
         persistence:
           enabled: true
           size: 10Gi
+    # Ingress disabled — traffic routed via Gateway API HTTPRoute
     ingress:
-      enabled: true
+      enabled: false
       className: nginx
       annotations:
         cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"

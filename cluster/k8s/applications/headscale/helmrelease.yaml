@@ -30,7 +30,7 @@ spec:
   values:
     headscale:
       certmanager:
-        enabled: false # TLS terminated by ingress-nginx
+        enabled: false # TLS terminated at Gateway
       config:
         server_url: https://headscale.allegedly.works
         # TLS terminated at ingress
@@ -60,8 +60,9 @@ spec:
         type: NodePort
         port: 3478
 
+    # Ingress disabled — traffic routed via Gateway API HTTPRoute
     ingress:
-      enabled: true
+      enabled: false
       className: nginx
       annotations:
         cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"

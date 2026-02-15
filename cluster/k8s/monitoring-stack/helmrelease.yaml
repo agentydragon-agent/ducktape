@@ -90,8 +90,9 @@ spec:
       defaultDashboardsEnabled: true
       defaultDashboardsTimezone: UTC
 
+      # Ingress disabled — traffic routed via Gateway API HTTPRoute
       ingress:
-        enabled: true
+        enabled: false
         ingressClassName: nginx
         annotations:
           cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"

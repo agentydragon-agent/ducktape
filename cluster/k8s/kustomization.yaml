@@ -22,7 +22,8 @@ resources:
   - cert-manager/flux-kustomization.yaml
   - cert-manager-trust/flux-kustomization.yaml
   - cert-manager-environment/flux-kustomization.yaml
-  - ingress-nginx/flux-kustomization.yaml
+  - gateway-namespace/flux-kustomization.yaml
+  - gateway/flux-kustomization.yaml
   - dns-system-namespace/flux-kustomization.yaml
   - powerdns/flux-kustomization.yaml
   - powerdns-secrets/flux-kustomization.yaml
@@ -85,4 +86,6 @@ resources:
   - authentik-blueprint/grafana-secret/flux-kustomization.yaml
   - authentik-blueprint/grafana-provider/flux-kustomization.yaml
   - authentik-blueprint/kagent/flux-kustomization.yaml
+  - authentik-blueprint/hubble/flux-kustomization.yaml
+  - authentik-blueprint/loki/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml

@@ -23,7 +23,7 @@ spec:
   dependsOn:
     - name: cert-manager-issuer-config
     - name: monitoring-namespace
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager-environment
     - name: monitoring-stack-secrets
     - name: authentik-blueprint-grafana-secret

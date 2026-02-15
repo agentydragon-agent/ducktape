@@ -6,4 +6,4 @@ resources:
   - postgres-service.yaml
   - deployment.yaml
   - service.yaml
-  - ingress.yaml
+  - httproute.yaml

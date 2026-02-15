@@ -7,9 +7,26 @@
 #
 # Infrastructure layer management - prevents GitOps circular dependencies.
 
-resource "null_resource" "cilium_bootstrap" {
+# Gateway API CRDs must be installed before Cilium so that Cilium can register
+# as a GatewayClass provider. CRDs are not bundled in the Cilium Helm chart.
+# See: https://github.com/cilium/cilium/issues/39843
+resource "null_resource" "gateway_api_crds" {
   depends_on = [
     null_resource.wait_for_k8s_api,
+    local_file.kubeconfig,
+  ]
+
+  provisioner "local-exec" {
+    environment = {
+      KUBECONFIG = local_file.kubeconfig.filename
+    }
+    command = "kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml"
+  }
+}
+
+resource "null_resource" "cilium_bootstrap" {
+  depends_on = [
+    null_resource.gateway_api_crds,
     local_file.kubeconfig,
   ]
 

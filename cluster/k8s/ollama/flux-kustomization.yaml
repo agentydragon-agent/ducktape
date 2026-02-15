@@ -19,6 +19,6 @@ spec:
     - name: cert-manager-issuer-config
     - name: ollama-namespace
     - name: ollama-secrets
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager-environment
     - name: nvidia-device-plugin

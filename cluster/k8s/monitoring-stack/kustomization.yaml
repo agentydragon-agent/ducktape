@@ -4,3 +4,4 @@ resources:
   - helmrepository.yaml
   - helmrelease.yaml
   - dashboards/harbor-dashboard.yaml
+  - grafana-httproute.yaml

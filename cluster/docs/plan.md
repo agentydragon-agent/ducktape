@@ -36,6 +36,10 @@ Gitea SSO tested and working.
       Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation
       (Flux-substituted), so flipping the toggle re-issues all certs. Trust bundle follows
       via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
+- [x] **Migrate from ingress-nginx to Cilium Gateway API** — completed. Cilium Gateway API
+      with Envoy DaemonSet (hostNetwork on VPS nodes). Wildcard cert for `*.allegedly.works`.
+      Loki/Hubble use Authentik proxy outposts (proxy mode) for OIDC auth. Vault accepts HTTP
+      internally (BackendTLSPolicy not yet in Cilium). ingress-nginx removed.
 - [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
       Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
@@ -86,7 +90,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Component              | Status | Notes                                      |
 | ---------------------- | ------ | ------------------------------------------ |
 | Flux CD                | ✅     | GitOps                                     |
-| ingress-nginx          | ✅     | hostNetwork on VPS nodes                   |
+| Cilium Gateway API     | ✅     | Envoy hostNetwork on VPS nodes             |
 | cert-manager           | ✅     | DNS-01 via PowerDNS, dual-issuer toggle    |
 | PowerDNS               | ✅     | hostNetwork on VPS nodes                   |
 | Vault                  | ✅     | With OIDC auth                             |
@@ -99,6 +103,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS |
 | Node Feature Discovery | ✅     | Auto-detects GPU/hardware, provides labels |
 | NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes     |
+| Cilium Mutual Auth     | 🟡     | SPIRE deployed, test-mode policies TODO    |
 
 ## Applications (already configured)
 
@@ -162,6 +167,26 @@ remain. Stakater Reloader restarts pods on secret changes. See
 Deployed in Audit mode. `require-gitops` ClusterPolicy, HA (3 replicas).
 TODO: Switch to `Enforce` after validation.
 
+### Cilium Mutual Authentication (SPIRE)
+
+Enabled in test mode via `cilium-values.yaml`. SPIRE server + agent installed as part of
+Cilium deployment. Provides per-service cryptographic identity (X.509 SVIDs) at L3/L4
+without a full service mesh. KubeSpan encrypts inter-node traffic; mutual auth adds
+intra-node pod-to-pod identity verification.
+
+**Current state**: SPIRE infrastructure deployed. No CiliumNetworkPolicies with
+`authentication.mode` yet — all traffic is unauthenticated (default).
+
+- [ ] **Create test-mode CiliumNetworkPolicies** for sensitive services (Vault, Authentik,
+      PostgreSQL backends). Use `authentication.mode: "test"` to log authentication
+      attempts without blocking traffic. Monitor via Hubble.
+- [ ] **Switch to `authentication.mode: "required"`** for sensitive services after validating
+      test mode shows no false negatives. This blocks unauthenticated pod-to-pod traffic.
+- [ ] **SPIRE server persistent storage** — currently uses emptyDir. Add PVC
+      (local-path on VPS) so registration entries survive restarts.
+- [ ] **Expand to all namespaces** — default-deny mutual auth cluster-wide after
+      per-service validation.
+
 ### TODO: Firewall Hardening
 
 All Hetzner firewall rules currently allow `0.0.0.0/0`. Keep 80/443/53 public; restrict
@@ -193,6 +218,57 @@ on push. See <https://fluxcd.io/flux/guides/webhook-receivers/>.
 
 Low priority. Weave GitOps or Capacitor for visualizing kustomization DAG.
 
+### TODO: Back Up persistent-auth Terraform State
+
+`persistent-auth/terraform.tfstate` is local-only SSOT for sealed-secrets keypair, CSI
+tokens, Nix signing key. Minimum: rclone to encrypted cloud storage. Better: S3 backend
+with OpenTofu native state encryption + versioning.
+
+### TODO: Deploy etcd Backup
+
+Deploy [talos-backup](https://github.com/siderolabs/talos-backup) CronJob with age
+encryption to S3. Covers cluster state loss if 2/3 control-plane nodes fail simultaneously.
+
+### TODO: Deploy Velero for PVC Backup
+
+Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). Critical application data
+currently has no backup strategy. Velero integrates with Proxmox CSI and Hetzner CSI.
+
+### TODO: Default-Deny Cilium Network Policies
+
+All pods can currently communicate freely. Deploy default-deny `CiliumNetworkPolicy` per
+namespace. Use Hubble to observe traffic flows first, then generate baseline allow-rules.
+
+### TODO: Pod Security Standards
+
+Apply `restricted` PSS labels to application namespaces. System namespaces (`kube-system`,
+`csi-proxmox`, `cilium`) keep `privileged`. Start with `warn` mode, promote to `enforce`.
+
+### TODO: Kyverno Audit → Enforce
+
+Switch `require-gitops` ClusterPolicy from Audit to Enforce mode after validation.
+
+### TODO: ResourceQuota + LimitRange per Namespace
+
+Prevent resource contention. Set default CPU/memory requests+limits via LimitRange.
+Set namespace-level quotas via ResourceQuota.
+
+### TODO: Alertmanager → ntfy Bridge
+
+Deploy [alertmanager-ntfy](https://github.com/alexbakker/alertmanager-ntfy) for structured
+alert routing with severity levels, action buttons (create silence, open Prometheus URL).
+
+### TODO: SLO Definitions
+
+Deploy Pyrra or Sloth for declarative SLO management. Start with: ingress availability
+(99.5%), DNS availability (99.9%), Vault availability (99.9%). Auto-generates multi-window,
+multi-burn-rate alerts (Google SRE methodology).
+
+### TODO: Image Registry Allowlist
+
+Kyverno policy restricting container images to known registries: `ghcr.io`, `docker.io`,
+`registry.allegedly.works`, `quay.io`. Blocks unknown/untrusted registries.
+
 ## 🔀 Future Directions
 
 ### GPU Worker Node ✅
@@ -203,6 +279,18 @@ TODO: Revisit virtio-mem when Proxmox adds support (Bugzilla #2949).
 ### BuildBuddy Remote Executor ✅
 
 3 replicas on Proxmox, connected to `remote.buildbuddy.io`.
+
+### Service Mesh (Future)
+
+If Cilium mutual auth proves insufficient (need L7 policies, traffic splitting, retries,
+circuit breakers), consider a full service mesh. Options:
+
+- **Cilium Service Mesh** — native integration, no sidecars (eBPF-based L7 proxy). Natural
+  evolution from current Cilium setup. Still maturing.
+- **Istio ambient mode** — ztunnel (per-node L4) + waypoint proxies (per-service L7).
+  No sidecars. Most mature option but heavier footprint.
+
+Not needed while Cilium mutual auth + Gateway API cover the use cases.
 
 ### Shared PostgreSQL / MariaDB Galera
 
@@ -217,8 +305,24 @@ PostgreSQL for multiple services.
 - [ ] Paperless-ngx (document management)
 - [ ] Syncthing (file sync)
 - [ ] Bazel Remote Cache
+- [ ] Grafana Tempo (distributed tracing, natural fit with Grafana + Loki)
+- [ ] Capacitor (Flux dependency DAG visualization, lightweight single pod)
+- [ ] Tetragon (eBPF runtime security enforcement, complements Cilium)
+- [ ] Flagger (progressive delivery / canary analysis for deployments)
 
 ## 🔧 Low Priority Improvements
+
+### cosign Image Signing
+
+Sign container images in CI with cosign (keyless via GitHub Actions OIDC). Verify via
+Kyverno `verifyImages` policies. Blocks unsigned images from deploying.
+
+### BackendTLSPolicy for Internal HTTPS
+
+Cilium doesn't yet support `BackendTLSPolicy` (Gateway API GA since v1.4.0). Track
+upstream [cilium#31352](https://github.com/cilium/cilium/issues/31352). When supported,
+re-enable HTTPS between gateway and backends (Vault, etc.) instead of HTTP for internal
+traffic.
 
 ### Nix Cache Signing Key → GitOps Terraform
 

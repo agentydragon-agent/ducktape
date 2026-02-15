@@ -23,7 +23,7 @@ spec:
       namespace: flux-system
     - name: sealed-secrets
       namespace: flux-system
-    - name: ingress-nginx
+    - name: gateway
       namespace: flux-system
     - name: cert-manager
       namespace: flux-system

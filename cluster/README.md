@@ -6,7 +6,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - VMs:
   - Run Talos, configured and bootstrapped with Terraform.
   - Proxmox VMs use cloud-init snippets for static IP configuration + QEMU guest agent
-- VPS nodes (Hetzner) serve public traffic directly via hostNetwork (ingress-nginx, PowerDNS).
+- VPS nodes (Hetzner) serve public traffic directly via hostNetwork (Cilium Gateway API, PowerDNS).
 - CNI: Cilium with Talos-specific security configuration
 - Sealed-secrets: Automatic keypair persistence via terraform state for turnkey GitOps
 
@@ -35,7 +35,7 @@ Execute tools like these with the direnv loaded, or use `direnv exec .`.
   - PowerDNS in k8s has authority on this domain and handles Let's Encrypt DNS-01 challenges
   - cert-manager provisions Let's Encrypt certs via dual ClusterIssuers (`letsencrypt-prod`,
     `letsencrypt-staging`), selected by a single ConfigMap toggle
-- HTTPS chain: Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → backend pods
+- HTTPS chain: Internet → VPS public IP:443 → Cilium Envoy (hostNetwork, Gateway API) → backend pods
 
 ## Services
 
@@ -51,7 +51,7 @@ Deployed services accessible via `*.allegedly.works`:
 - **Headscale**: <https://headscale.allegedly.works> (Tailscale coordination)
 - **Website**: <https://www.allegedly.works> (placeholder)
 
-All traffic routes: Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → Services
+All traffic routes: Internet → VPS public IP:443 → Cilium Envoy (Gateway API) → Services
 
 ### User Management
 
@@ -143,7 +143,7 @@ cluster/
 │   ├── reloader/          # Stakater Reloader (auto-restart on secret change)
 │   ├── coredns-custom/    # CoreDNS zone forwarding to PowerDNS
 │   ├── cert-manager/
-│   ├── ingress-nginx/     # HTTP(S) ingress
+│   ├── gateway/           # Cilium Gateway API (HTTPS ingress)
 │   ├── powerdns/          # DNS server (external)
 │   ├── vault/, external-secrets/  # Secret synchronization
 │   ├── authentik/         # Identity and SSO provider
@@ -160,7 +160,7 @@ cluster/
 
 ### Network Architecture
 
-Internet → VPS public IP:443 → ingress-nginx (hostNetwork) → backend pods
+Internet → VPS public IP:443 → Cilium Envoy (hostNetwork, Gateway API) → backend pods
 Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
 
 - DNS:

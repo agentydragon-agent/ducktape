@@ -41,9 +41,9 @@ spec:
       type: ClusterIP
       port: 8080
 
-    # Ingress with cert-manager and external-dns
+    # Ingress disabled — traffic routed via Gateway API HTTPRoute
     ingress:
-      enabled: true
+      enabled: false
       className: nginx
       annotations:
         cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"

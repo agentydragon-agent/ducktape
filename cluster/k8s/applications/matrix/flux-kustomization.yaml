@@ -25,7 +25,7 @@ spec:
   dependsOn:
     - name: cert-manager-issuer-config
     - name: matrix-namespace
-    - name: ingress-nginx
+    - name: gateway
     - name: cert-manager
     - name: authentik-blueprint-matrix-provider # Wait for Authentik OIDC application to be created
     - name: matrix-secrets
