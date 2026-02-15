@@ -4,6 +4,10 @@
 # Non-Bazel tasks (ansible-lint, nix-flake-check, pre-commit) remain in GitHub Actions.
 #
 # BuildBuddy docs: https://www.buildbuddy.io/docs/workflows-config/
+#
+# RBE is NOT auto-enabled by BuildBuddy Workflows (only remote cache + BES are).
+# We pass --config=rbe (defined in .bazelrc) to enable remote execution.
+# See: https://www.buildbuddy.io/docs/rbe-setup/
 
 actions:
   - name: "CI"
@@ -20,12 +24,12 @@ actions:
     # like ghcr.io/agentydragon/rbe-worker. RBE workers still use the custom image.
     container_image: "ubuntu-24.04"
 
-    # Bazel commands run sequentially. Each uses RBE via setup-buildbuddy.sh config.
     bazel_commands:
       # 1. Run all tests (excluding live OpenAI API tests)
       - >
         test
         --keep_going
+        --config=rbe
         --build_metadata=ROLE=ci
         --build_metadata=TAGS=test
         --test_tag_filters=-live_openai_api
@@ -39,6 +43,7 @@ actions:
       - >
         build
         --keep_going
+        --config=rbe
         --config=check
         --strategy=mypy=local
         --build_metadata=ROLE=ci
@@ -60,10 +65,12 @@ actions:
     bazel_commands:
       # Build all wheel targets for potential release
       # These are built but not published (GitHub Actions handles publishing)
-      - build //gnome_terminal_profile_switcher:wheel
-      - build //ducktape:wheel
-      - build //headscale_cleanup:wheel
-      - build //tools/claude_hooks:wheel
+      - >
+        build --config=rbe
+        //gnome_terminal_profile_switcher:wheel
+        //ducktape:wheel
+        //headscale_cleanup:wheel
+        //tools/claude_hooks:wheel
 
   # Build container images (OCI images built with Bazel)
   - name: "Build Container Images"
@@ -80,5 +87,7 @@ actions:
     bazel_commands:
       # Build OCI images for potential release
       # These are built but not pushed to GHCR (GitHub Actions handles pushing)
-      - build //props/backend:image
-      - build //agent_server:image
+      - >
+        build --config=rbe
+        //props/backend:image
+        //agent_server:image
