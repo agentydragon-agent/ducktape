@@ -60,7 +60,9 @@ actions:
     bazel_commands:
       # Build all wheel targets for potential release
       # These are built but not published (GitHub Actions handles publishing)
-      - build //gnome_terminal_profile_switcher:wheel
+      # Note: gnome_terminal_profile_switcher:wheel excluded - requires C++ toolchain
+      # and system libraries (libgirepository1.0-dev, libdbus-1-dev) not available
+      # in stock Ubuntu image. Tagged 'manual' in BUILD file.
       - build //ducktape:wheel
       - build //headscale_cleanup:wheel
       - build //tools/claude_hooks:wheel
