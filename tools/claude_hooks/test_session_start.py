@@ -203,6 +203,14 @@ def _setup_hook_env(
     mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
     monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
 
+    # Remove BuildBuddy API key so the nested session_start hook doesn't
+    # run setup-buildbuddy.sh. On BuildBuddy CI runners this key is set at
+    # the runner level; if inherited, the hook writes a ~/.bazelrc with
+    # try-import of buildbuddy.bazelrc, causing the nested bazel to attempt
+    # grpcs connections to remote.buildbuddy.io through the MockEgressProxy
+    # (which can't forward them), failing with exit code 38.
+    monkeypatch.delenv("BUILDBUDDY_API_KEY", raising=False)
+
     if not install_podman:
         monkeypatch.setenv(settings.ENV_INSTALL_PODMAN, "0")
 
