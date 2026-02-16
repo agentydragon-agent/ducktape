@@ -6,10 +6,6 @@ terraform {
       source  = "goauthentik/authentik"
       version = "~> 2025.12.0"
     }
-    harbor = {
-      source  = "goharbor/harbor"
-      version = "~> 3.11"
-    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.38.0"

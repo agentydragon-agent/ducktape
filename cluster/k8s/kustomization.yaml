@@ -81,6 +81,7 @@ resources:
   - authentik-blueprint/matrix-secret/flux-kustomization.yaml
   - authentik-blueprint/harbor-provider/flux-kustomization.yaml
   - authentik-blueprint/harbor-secret/flux-kustomization.yaml
+  - harbor-oidc-config/flux-kustomization.yaml
   - authentik-blueprint/vault/flux-kustomization.yaml
   - authentik-blueprint/users/flux-kustomization.yaml
   - authentik-blueprint/grafana-secret/flux-kustomization.yaml

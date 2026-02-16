@@ -11,7 +11,7 @@ variable "authentik_token" {
 }
 
 variable "harbor_url" {
-  description = "Harbor server URL"
+  description = "Harbor server URL (for OIDC redirect URI)"
   type        = string
   default     = "https://registry.allegedly.works"
 }
@@ -32,6 +32,3 @@ variable "rotation_version" {
   type        = string
   default     = "1"
 }
-
-# Note: harbor_admin_password is read directly from kubernetes_secret data source
-# See harbor-config.tf for implementation

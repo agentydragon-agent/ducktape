@@ -5,8 +5,9 @@
 ## 🔥 Immediate Next Steps
 
 **Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
-80/87 kustomizations Ready (4 suspended Kagent, 3 blocked by dependency chain).
-Cilium Gateway API serving HTTPS traffic. Authentik auth verified.
+~84/87 kustomizations Ready (3 Harbor-related still converging).
+Cilium Gateway API serving HTTPS traffic. DNS automation fully working.
+Authentik auth verified.
 
 ### Recent Fixes (2026-02-16)
 
@@ -27,6 +28,11 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
    `gateway.networking.k8s.io` resources + namespaces. Added
    `external-dns.alpha.kubernetes.io/target` annotation on Gateway via Flux postBuild
    substitution from `cluster-info` ConfigMap (new `vps_ips_csv` key).
+6. **dns-records terraform idempotency** — Route 53 glue records now use
+   `allow_overwrite = true` (upsert across cluster lifecycles). Domain registration
+   uses declarative `import` block + `lifecycle { ignore_changes }` for non-nameserver
+   attributes (transfer lock, contacts, privacy). IAM policy slimmed from
+   `route53domains:*` to 4 specific actions (see `docs/iam-policy-route53.json`).
 
 ### Recent Fixes (2026-02-13)
 
@@ -58,10 +64,9 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 - [x] **Migrate from ingress-nginx to Cilium Gateway API** — completed 2026-02-16.
       See Recent Fixes above.
-- [ ] **Fix `dns-records` terraform** — Route 53 NS glue records already exist from
-      prior lifecycle (state lost on cluster recreate). Terraform tries create-not-import.
-      Also missing `route53domains:EnableDomainTransferLock` IAM permission. Records work
-      via external-dns but Route 53 glue records aren't terraform-managed currently.
+- [x] **Fix `dns-records` terraform** — Added `allow_overwrite` for glue records,
+      `import` block for domain registration, `lifecycle { ignore_changes }` for
+      non-nameserver attributes. IAM policy minimized to 4 actions. Applied successfully.
 - [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
       Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
