@@ -53,15 +53,18 @@ provider "powerdns" {
 }
 
 # Route 53 glue records (at registrar level)
+# allow_overwrite: records persist in AWS across cluster destroy/recreate cycles
+# (tofu-controller state is lost but Route 53 records remain)
 resource "aws_route53_record" "ns_glue" {
   for_each = local.ns_records
   #checkov:skip=CKV2_AWS_23:Glue records point to external Hetzner VPS servers, not AWS resources
 
-  zone_id = var.route53_zone_id
-  name    = "${each.value.ns_name}.${local.domain}"
-  type    = "A"
-  ttl     = 300
-  records = [each.value.ip]
+  zone_id         = var.route53_zone_id
+  name            = "${each.value.ns_name}.${local.domain}"
+  type            = "A"
+  ttl             = 300
+  records         = [each.value.ip]
+  allow_overwrite = true
 }
 
 # PowerDNS NS A records (within the zone)
@@ -73,6 +76,13 @@ resource "powerdns_record" "ns" {
   type    = "A"
   ttl     = 3600
   records = [each.value.ip]
+}
+
+# Import: domain registration persists across cluster lifecycles.
+# Declarative import is idempotent — no-op when already in state.
+import {
+  to = aws_route53domains_registered_domain.allegedly_works
+  id = "allegedly.works"
 }
 
 # Update registered domain nameservers to point to our PowerDNS
