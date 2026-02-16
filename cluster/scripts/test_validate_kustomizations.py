@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from textwrap import dedent
 
@@ -14,9 +15,14 @@ from cluster.scripts.validate_kustomizations import (
     CRD_TO_OPERATOR,
     DependsOn,
     FluxKustomization,
+    HealthCheck,
+    K8sResource,
     KustomizeBuildResult,
+    KustomizeFile,
+    ParsedCluster,
     build_dependency_graph,
     check_crd_layering,
+    check_helmrelease_health_checks,
     check_required_dependencies,
     find_cycles,
     parse_flux_kustomization,
@@ -349,6 +355,65 @@ class TestParseK8sResource:
         """Returns None for document without kind."""
         doc = {"apiVersion": "v1", "metadata": {"name": "test"}}
         assert parse_k8s_resource(doc) is None
+
+
+MakeCluster = Callable[..., ParsedCluster]
+
+
+class TestHelmReleaseHealthChecks:
+    """Tests for HelmRelease healthChecks validation."""
+
+    @pytest.fixture
+    def repo_root(self, tmp_path: Path) -> Path:
+        (tmp_path / "cluster" / "k8s").mkdir(parents=True)
+        return tmp_path
+
+    @pytest.fixture
+    def k8s_dir(self, repo_root: Path) -> Path:
+        return repo_root / "cluster" / "k8s"
+
+    @pytest.fixture
+    def make_cluster(self, k8s_dir: Path) -> MakeCluster:
+        def _make(*, has_healthcheck: bool, has_helmrelease: bool = True) -> ParsedCluster:
+            hr_file = k8s_dir / "test-app" / "helmrelease.yaml"
+            kust_file = k8s_dir / "test-app" / "kustomization.yaml"
+            flux_file = k8s_dir / "test-app" / "flux-kustomization.yaml"
+
+            return ParsedCluster(
+                kustomize_files={kust_file: KustomizeFile(path=kust_file, resources=[hr_file])},
+                flux_kustomizations={
+                    "test-app": FluxKustomization(
+                        name="test-app",
+                        file_path=flux_file,
+                        path="./cluster/k8s/test-app",
+                        healthChecks=[HealthCheck(kind="HelmRelease", name="test-app", namespace="test-app")]
+                        if has_healthcheck
+                        else [],
+                    )
+                },
+                source_resources={hr_file: [K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2")]}
+                if has_helmrelease
+                else {},
+            )
+
+        return _make
+
+    def test_no_error_with_healthcheck(self, k8s_dir: Path, repo_root: Path, make_cluster: MakeCluster) -> None:
+        """Kustomization with HelmRelease and healthChecks passes."""
+        cluster = make_cluster(has_healthcheck=True)
+        assert check_helmrelease_health_checks(cluster, k8s_dir, repo_root) == []
+
+    def test_error_without_healthcheck(self, k8s_dir: Path, repo_root: Path, make_cluster: MakeCluster) -> None:
+        """Kustomization with HelmRelease but no healthChecks reports error."""
+        errors = check_helmrelease_health_checks(make_cluster(has_healthcheck=False), k8s_dir, repo_root)
+        assert len(errors) == 1
+        assert "test-app" in errors[0]
+        assert "healthChecks" in errors[0]
+
+    def test_no_error_without_helmrelease(self, k8s_dir: Path, repo_root: Path, make_cluster: MakeCluster) -> None:
+        """Kustomization without HelmRelease does not trigger error."""
+        cluster = make_cluster(has_healthcheck=False, has_helmrelease=False)
+        assert check_helmrelease_health_checks(cluster, k8s_dir, repo_root) == []
 
 
 if __name__ == "__main__":

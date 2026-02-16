@@ -9,6 +9,7 @@ Checks:
 4. Orphaned files: YAML files must be referenced by a kustomization.yaml
 5. Dependency graph: No circular dependencies, required dependencies present
 6. Flux build: Validates flux can build the complete kustomization tree
+7. HelmRelease healthChecks: Flux kustomizations deploying HelmReleases must have healthChecks
 
 See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 
@@ -60,6 +61,16 @@ class KustomizeFile(BaseModel):
     patches: list[Path] = []  # Resolved absolute paths (from patches: and patchesStrategicMerge:)
 
 
+class HealthCheck(BaseModel):
+    """Flux Kustomization health check reference."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str = ""
+    name: str = ""
+    namespace: str = ""
+
+
 class FluxKustomization(BaseModel):
     """Parsed flux-kustomization.yaml Kustomization CR."""
 
@@ -69,6 +80,7 @@ class FluxKustomization(BaseModel):
     file_path: Path
     spec_path: str = Field(default="", alias="path")
     depends_on: list[DependsOn] = Field(default=[], alias="dependsOn")
+    health_checks: list[HealthCheck] = Field(default=[], alias="healthChecks")
 
 
 class K8sMetadata(BaseModel):
@@ -152,6 +164,10 @@ class ParsedCluster(BaseModel):
 # Constants
 # ============================================================================
 
+
+# Flux kustomization spec.path values are relative to the git repo root.
+# k8s_dir sits at this subpath within the repo.
+_K8S_SUBPATH = Path("cluster/k8s")
 
 # Map CRD kinds to their operator Kustomization names
 CRD_TO_OPERATOR: dict[str, str] = {
@@ -572,6 +588,35 @@ def validate_external_secrets_dependencies(cluster: ParsedCluster, k8s_dir: Path
     return errors
 
 
+def _kust_deploys_helmrelease(kust: KustomizeFile, source_resources: dict[Path, list[K8sResource]]) -> bool:
+    """Check if a kustomization references any HelmRelease resources."""
+    return any(
+        resource.kind == "HelmRelease"
+        for resource_path in kust.resources
+        for resource in source_resources.get(resource_path, [])
+    )
+
+
+def _resolve_flux_kust_dir(flux_kust: FluxKustomization, repo_root: Path) -> Path | None:
+    """Resolve flux kustomization spec_path to an absolute directory path."""
+    if not flux_kust.spec_path:
+        return None
+    return (repo_root / flux_kust.spec_path.removeprefix("./")).resolve()
+
+
+def check_helmrelease_health_checks(cluster: ParsedCluster, k8s_dir: Path, repo_root: Path) -> list[str]:
+    """Check that flux kustomizations deploying HelmReleases have healthChecks."""
+    return [
+        f"{name}: deploys a HelmRelease but has no healthChecks for it. "
+        f"Add healthChecks with kind: HelmRelease to {flux_kust.file_path.relative_to(k8s_dir)}."
+        for name, flux_kust in cluster.flux_kustomizations.items()
+        if (kust_dir := _resolve_flux_kust_dir(flux_kust, repo_root))
+        if (kust := cluster.kustomize_files.get(kust_dir / "kustomization.yaml"))
+        if _kust_deploys_helmrelease(kust, cluster.source_resources)
+        if not any(hc.kind == "HelmRelease" for hc in flux_kust.health_checks)
+    ]
+
+
 def validate_dependencies(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     """Validate GitOps dependency graph."""
     errors = []
@@ -674,7 +719,8 @@ async def main() -> int:
     parser.add_argument("--skip-dependencies", action="store_true", help="Skip dependency graph validation")
     args = parser.parse_args()
 
-    root = args.root or (get_build_workspace_directory() / "cluster" / "k8s")
+    workspace = get_build_workspace_directory()
+    root = args.root or (workspace / _K8S_SUBPATH)
 
     # Parse all files once
     cluster = parse_cluster(root)
@@ -713,6 +759,9 @@ async def main() -> int:
     # Validate dependencies
     if not args.skip_dependencies:
         global_errors.extend(validate_dependencies(cluster, root))
+
+    # Validate HelmRelease healthChecks
+    global_errors.extend(check_helmrelease_health_checks(cluster, root, workspace))
 
     # Validate flux build
     if not args.skip_flux_build:
