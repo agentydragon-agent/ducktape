@@ -26,6 +26,7 @@ import logging
 import subprocess
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
@@ -221,93 +222,73 @@ OPERATOR_KUSTOMIZATIONS = {
 # ============================================================================
 
 
-def parse_k8s_resource(doc: dict) -> K8sResource | None:
-    """Parse a single YAML document into a K8sResource."""
-    if not doc or not isinstance(doc, dict):
-        return None
-    if not doc.get("kind"):
-        return None
-    return K8sResource.model_validate(doc)
+def _is_k8s_resource_doc(doc: object) -> bool:
+    """Check if a YAML document looks like a K8s resource (dict with kind)."""
+    return isinstance(doc, dict) and bool(doc.get("kind"))
+
+
+def parse_k8s_resources(docs: Iterable[object]) -> list[K8sResource]:
+    """Parse an iterable of YAML documents into K8s resources, skipping non-resource documents."""
+    return [K8sResource.model_validate(doc) for doc in docs if _is_k8s_resource_doc(doc)]
 
 
 def parse_kustomize_file(kust_file: Path) -> KustomizeFile | None:
-    """Parse a kustomization.yaml file."""
-    try:
-        with kust_file.open() as f:
-            doc = yaml.safe_load(f)
-            if not doc:
-                return None
+    """Parse a kustomization.yaml file. Returns None only for empty files."""
+    with kust_file.open() as f:
+        doc = yaml.safe_load(f)
+        if not doc:
+            return None
 
-            resources: list[Path] = []
-            patches: list[Path] = []
+        resources: list[Path] = []
+        patches: list[Path] = []
 
-            # Parse resources:
-            for resource in doc.get("resources", []):
-                resource_path = (kust_file.parent / resource).resolve()
-                resources.append(resource_path)
+        # Parse resources:
+        for resource in doc.get("resources", []):
+            resource_path = (kust_file.parent / resource).resolve()
+            resources.append(resource_path)
 
-            # Parse patches: (new format with path key)
-            for patch in doc.get("patches", []):
-                if isinstance(patch, dict) and "path" in patch:
-                    patch_path = (kust_file.parent / patch["path"]).resolve()
-                    patches.append(patch_path)
+        # Parse patches: (new format with path key)
+        for patch in doc.get("patches", []):
+            if isinstance(patch, dict) and "path" in patch:
+                patch_path = (kust_file.parent / patch["path"]).resolve()
+                patches.append(patch_path)
 
-            # Parse patchesStrategicMerge: (legacy format)
-            for patch in doc.get("patchesStrategicMerge", []):
-                if isinstance(patch, str):
-                    patch_path = (kust_file.parent / patch).resolve()
-                    patches.append(patch_path)
+        # Parse patchesStrategicMerge: (legacy format)
+        for patch in doc.get("patchesStrategicMerge", []):
+            if isinstance(patch, str):
+                patch_path = (kust_file.parent / patch).resolve()
+                patches.append(patch_path)
 
-            return KustomizeFile(path=kust_file, resources=resources, patches=patches)
-
-    except (yaml.YAMLError, OSError) as e:
-        logger.debug("Failed to parse kustomization %s: %s", kust_file, e)
-        return None
+        return KustomizeFile(path=kust_file, resources=resources, patches=patches)
 
 
 def parse_flux_kustomization(flux_file: Path) -> list[FluxKustomization]:
     """Parse a flux-kustomization.yaml file (may contain multiple documents)."""
     results = []
-    try:
-        with flux_file.open() as f:
-            docs = list(yaml.safe_load_all(f))
-            for doc in docs:
-                if not doc:
-                    continue
-                if doc.get("kind") != "Kustomization":
-                    continue
-                if not doc.get("apiVersion", "").startswith("kustomize.toolkit.fluxcd.io"):
-                    continue
+    with flux_file.open() as f:
+        for doc in yaml.safe_load_all(f):
+            if not doc:
+                continue
+            if doc.get("kind") != "Kustomization":
+                continue
+            if not doc.get("apiVersion", "").startswith("kustomize.toolkit.fluxcd.io"):
+                continue
 
-                metadata = doc.get("metadata", {}) or {}
-                name = metadata.get("name", "")
-                if not name:
-                    continue
+            metadata = doc.get("metadata", {}) or {}
+            name = metadata.get("name", "")
+            if not name:
+                continue
 
-                spec = doc.get("spec", {}) or {}
-                results.append(FluxKustomization.model_validate({"name": name, "file_path": flux_file, **spec}))
-
-    except (yaml.YAMLError, OSError) as e:
-        logger.debug("Failed to parse flux kustomization %s: %s", flux_file, e)
+            spec = doc.get("spec", {}) or {}
+            results.append(FluxKustomization.model_validate({"name": name, "file_path": flux_file, **spec}))
 
     return results
 
 
-def parse_yaml_file(yaml_file: Path) -> list[K8sResource]:
+def parse_k8s_resource_file(yaml_file: Path) -> list[K8sResource]:
     """Parse a YAML file and extract all K8s resources."""
-    resources = []
-    try:
-        with yaml_file.open() as f:
-            docs = list(yaml.safe_load_all(f))
-            for doc in docs:
-                resource = parse_k8s_resource(doc)
-                if resource:
-                    resources.append(resource)
-    except (yaml.YAMLError, OSError) as e:
-        # YAML files might contain Go templating - warn but continue
-        logger.debug("Failed to parse %s: %s", yaml_file, e)
-
-    return resources
+    with yaml_file.open() as f:
+        return parse_k8s_resources(yaml.safe_load_all(f))
 
 
 def parse_cluster(k8s_dir: Path) -> ParsedCluster:
@@ -338,7 +319,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
 
         # Parse other YAML files for K8s resources
         else:
-            resources = parse_yaml_file(yaml_file)
+            resources = parse_k8s_resource_file(yaml_file)
             if resources:
                 cluster.source_resources[yaml_file] = resources
 
@@ -352,31 +333,23 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
 
 async def run_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult:
     """Run kustomize build and parse the output."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            _KUSTOMIZE_BIN,
-            "build",
-            kustomization_path.parent,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
+    proc = await asyncio.create_subprocess_exec(
+        _KUSTOMIZE_BIN,
+        "build",
+        kustomization_path.parent,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
 
-        if proc.returncode != 0:
-            return KustomizeBuildResult(kustomization_path=kustomization_path, success=False, error=stderr.decode())
+    if proc.returncode != 0:
+        return KustomizeBuildResult(kustomization_path=kustomization_path, success=False, error=stderr.decode())
 
-        # Parse the output once
-        resources = []
-        output = stdout.decode()
-        for doc in yaml.safe_load_all(output):
-            resource = parse_k8s_resource(doc)
-            if resource:
-                resources.append(resource)
+    # Parse the output once
+    output = stdout.decode()
+    resources = parse_k8s_resources(yaml.safe_load_all(output))
 
-        return KustomizeBuildResult(kustomization_path=kustomization_path, success=True, resources=resources)
-
-    except Exception as e:
-        return KustomizeBuildResult(kustomization_path=kustomization_path, success=False, error=str(e))
+    return KustomizeBuildResult(kustomization_path=kustomization_path, success=True, resources=resources)
 
 
 # ============================================================================
@@ -405,11 +378,8 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
             continue
 
         if yaml_file not in referenced:
-            try:
-                relative = yaml_file.relative_to(k8s_dir)
-                errors.append(f"Orphaned file not referenced by any kustomization: {relative}")
-            except ValueError:
-                errors.append(f"Orphaned file: {yaml_file}")
+            relative = yaml_file.relative_to(k8s_dir)
+            errors.append(f"Orphaned file not referenced by any kustomization: {relative}")
 
     return errors
 
@@ -571,13 +541,10 @@ def validate_external_secrets_dependencies(cluster: ParsedCluster, k8s_dir: Path
     for file_path, resources in cluster.source_resources.items():
         for resource in resources:
             if resource.kind == "ExternalSecret" and resource.api_version.startswith("external-secrets.io"):
-                try:
-                    relative = file_path.relative_to(k8s_dir)
-                    service_name = relative.parts[0] if relative.parts else None
-                    if service_name:
-                        services_with_external_secrets.add(service_name)
-                except ValueError:
-                    pass
+                relative = file_path.relative_to(k8s_dir)
+                service_name = relative.parts[0] if relative.parts else None
+                if service_name:
+                    services_with_external_secrets.add(service_name)
 
     # Check dependencies
     for service in services_with_external_secrets:
@@ -693,10 +660,8 @@ def validate_flux_build(k8s_dir: Path) -> list[str]:
     errors = []
     resource_counts: Counter[str] = Counter()
 
-    for doc in yaml.safe_load_all(result.stdout):
-        resource = parse_k8s_resource(doc)
-        if resource:
-            resource_counts[resource.kind] += 1
+    for resource in parse_k8s_resources(yaml.safe_load_all(result.stdout)):
+        resource_counts[resource.kind] += 1
 
     if resource_counts.get("Kustomization", 0) == 0:
         errors.append("No Flux Kustomization resources found in flux build output")

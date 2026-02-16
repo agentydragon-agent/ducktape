@@ -25,18 +25,15 @@ from cluster.scripts.validate_kustomizations import (
     check_required_dependencies,
     find_cycles,
     parse_flux_kustomization,
-    parse_k8s_resource,
+    parse_k8s_resources,
 )
 
 
 def make_build_result(path: Path, yaml_output: str) -> KustomizeBuildResult:
     """Create a KustomizeBuildResult from YAML output."""
-    resources = []
-    for doc in yaml.safe_load_all(yaml_output):
-        resource = parse_k8s_resource(doc)
-        if resource:
-            resources.append(resource)
-    return KustomizeBuildResult(kustomization_path=path, success=True, resources=resources)
+    return KustomizeBuildResult(
+        kustomization_path=path, success=True, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output))
+    )
 
 
 class TestCrdLayeringCheck:
@@ -319,14 +316,13 @@ class TestCrdToOperatorMapping:
         assert CRD_TO_OPERATOR["Terraform"] == "tofu-controller"
 
 
-class TestParseK8sResource:
-    """Tests for K8sResource parsing."""
+class TestParseK8sResources:
+    """Tests for K8s resource parsing and filtering."""
 
     def test_parses_basic_resource(self) -> None:
         """Parses basic K8s resource."""
         doc = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "test-cm", "namespace": "default"}}
-        resource = parse_k8s_resource(doc)
-        assert resource is not None
+        [resource] = parse_k8s_resources([doc])
         assert resource.kind == "ConfigMap"
         assert resource.api_version == "v1"
         assert resource.name == "test-cm"
@@ -340,20 +336,20 @@ class TestParseK8sResource:
             "metadata": {"name": "test-hr"},
             "spec": {"chart": {"spec": {"version": "1.2.3"}}},
         }
-        resource = parse_k8s_resource(doc)
-        assert resource is not None
+        [resource] = parse_k8s_resources([doc])
         assert resource.kind == "HelmRelease"
         assert resource.chart_version == "1.2.3"
 
-    def test_returns_none_for_empty_doc(self) -> None:
-        """Returns None for empty document."""
-        assert parse_k8s_resource({}) is None
-        assert parse_k8s_resource(None) is None  # type: ignore[arg-type]
-
-    def test_returns_none_for_missing_kind(self) -> None:
-        """Returns None for document without kind."""
-        doc = {"apiVersion": "v1", "metadata": {"name": "test"}}
-        assert parse_k8s_resource(doc) is None
+    def test_skips_empty_and_non_resource_docs(self) -> None:
+        """Filters out empty documents and documents without kind."""
+        docs = [
+            None,
+            {},
+            {"apiVersion": "v1", "metadata": {"name": "test"}},
+            {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "real"}},
+        ]
+        [resource] = parse_k8s_resources(docs)
+        assert resource.name == "real"
 
 
 def _make_cluster(
@@ -396,36 +392,37 @@ class TestControllerResourceHealthChecks:
     def k8s_dir(self, repo_root: Path) -> Path:
         return repo_root / "cluster" / "k8s"
 
-    def test_no_error_with_helmrelease_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
-        """HelmRelease with matching healthCheck passes."""
-        cluster = _make_cluster(k8s_dir, health_check_kind="HelmRelease")
-        assert check_controller_resource_health_checks(cluster, k8s_dir, repo_root) == []
-
-    def test_error_without_helmrelease_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
-        """HelmRelease without healthCheck reports error."""
-        errors = check_controller_resource_health_checks(_make_cluster(k8s_dir), k8s_dir, repo_root)
-        assert len(errors) == 1
-        assert "HelmRelease" in errors[0]
-
-    def test_no_error_with_terraform_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
-        """Terraform CR with matching healthCheck passes."""
+    @pytest.mark.parametrize(
+        ("resource_kind", "resource_api_version", "health_check_kind"),
+        [
+            ("HelmRelease", "helm.toolkit.fluxcd.io/v2", "HelmRelease"),
+            ("Terraform", "infra.contrib.fluxcd.io/v1alpha2", "Terraform"),
+        ],
+    )
+    def test_no_error_with_matching_healthcheck(
+        self, k8s_dir: Path, repo_root: Path, resource_kind: str, resource_api_version: str, health_check_kind: str
+    ) -> None:
+        """Controller resource with matching healthCheck passes."""
         cluster = _make_cluster(
             k8s_dir,
-            resource_kind="Terraform",
-            resource_api_version="infra.contrib.fluxcd.io/v1alpha2",
-            health_check_kind="Terraform",
+            resource_kind=resource_kind,
+            resource_api_version=resource_api_version,
+            health_check_kind=health_check_kind,
         )
         assert check_controller_resource_health_checks(cluster, k8s_dir, repo_root) == []
 
-    def test_error_without_terraform_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
-        """Terraform CR without healthCheck reports error."""
-        errors = check_controller_resource_health_checks(
-            _make_cluster(k8s_dir, resource_kind="Terraform", resource_api_version="infra.contrib.fluxcd.io/v1alpha2"),
-            k8s_dir,
-            repo_root,
-        )
+    @pytest.mark.parametrize(
+        ("resource_kind", "resource_api_version"),
+        [("HelmRelease", "helm.toolkit.fluxcd.io/v2"), ("Terraform", "infra.contrib.fluxcd.io/v1alpha2")],
+    )
+    def test_error_without_healthcheck(
+        self, k8s_dir: Path, repo_root: Path, resource_kind: str, resource_api_version: str
+    ) -> None:
+        """Controller resource without healthCheck reports error."""
+        cluster = _make_cluster(k8s_dir, resource_kind=resource_kind, resource_api_version=resource_api_version)
+        errors = check_controller_resource_health_checks(cluster, k8s_dir, repo_root)
         assert len(errors) == 1
-        assert "Terraform" in errors[0]
+        assert resource_kind in errors[0]
 
     def test_no_error_for_plain_resources(self, k8s_dir: Path, repo_root: Path) -> None:
         """Kustomization with only plain resources (ConfigMap, etc.) needs no healthCheck."""
