@@ -30,7 +30,7 @@ spec:
     - name: harbor_url
       value: "https://registry.allegedly.works"
     - name: vault_address
-      value: "https://instance.vault.svc.cluster.local:8200"
+      value: "http://instance.vault.svc.cluster.local:8200"
 
   # Get secrets from Kubernetes secrets
   varsFrom:
@@ -44,21 +44,6 @@ spec:
       varsKeys:
         - vault_token
       optional: false
-
-  # Configure runner to trust cluster CA
-  runnerPodTemplate:
-    spec:
-      volumes:
-        - name: cluster-ca
-          configMap:
-            name: cluster-internal-ca-bundle
-      volumeMounts:
-        - name: cluster-ca
-          mountPath: /etc/ssl/certs/cluster-ca
-          readOnly: true
-      env:
-        - name: VAULT_CACERT
-          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
 
   # Note: harbor_admin_password is read directly via kubernetes_secret data source
   # from harbor/harbor-admin-initial (see terraform/gitops/sso/harbor/harbor-config.tf)
