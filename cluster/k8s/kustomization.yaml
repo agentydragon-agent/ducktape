@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - flux-system/gotk-sync.yaml
+  - flux-system/
   - kyverno/flux-kustomization.yaml
   - sealed-secrets/flux-kustomization.yaml
   - tofu-controller/flux-kustomization.yaml

@@ -12,3 +12,4 @@ patches:
         path: /spec/sparseCheckout
         value:
           - cluster/
+          - props/helm/
