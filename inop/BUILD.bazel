@@ -114,6 +114,7 @@ py_test(
 
 py_test(
     name = "test_file_truncation",
+    size = "medium",
     srcs = ["test_file_truncation.py"],
     data = ["@tiktoken_o200k_base//file"],
     requires_docker = True,

@@ -358,6 +358,7 @@ py_test(
 
 py_test(
     name = "test_session_start",
+    size = "medium",
     srcs = ["test_session_start.py"],
     data = [
         "testdata/test_secrets/.claude_hooks/secrets/test_component.age",

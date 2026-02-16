@@ -156,6 +156,7 @@ py_binary(
 
 py_test(
     name = "test_e2e",
+    size = "medium",
     srcs = ["test_e2e.py"],
     data = [
         "//props/agents/critic:image",

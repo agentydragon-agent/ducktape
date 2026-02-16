@@ -31,6 +31,7 @@ py_python3_symlink(
 
 py_test(
     name = "test_e2e",
+    size = "medium",
     srcs = ["test_e2e.py"],
     data = [
         ":image",
