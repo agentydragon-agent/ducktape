@@ -16,6 +16,10 @@ spec:
       kind: Terraform
       name: user-passwords
       namespace: flux-system
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: authentik-blueprint-users
+      namespace: flux-system
   dependsOn:
     - name: tofu-controller
     - name: authentik

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
 from pathlib import Path
 from textwrap import dedent
 
@@ -21,8 +20,8 @@ from cluster.scripts.validate_kustomizations import (
     KustomizeFile,
     ParsedCluster,
     build_dependency_graph,
+    check_controller_resource_health_checks,
     check_crd_layering,
-    check_helmrelease_health_checks,
     check_required_dependencies,
     find_cycles,
     parse_flux_kustomization,
@@ -357,11 +356,36 @@ class TestParseK8sResource:
         assert parse_k8s_resource(doc) is None
 
 
-MakeCluster = Callable[..., ParsedCluster]
+def _make_cluster(
+    k8s_dir: Path,
+    *,
+    resource_kind: str = "HelmRelease",
+    resource_api_version: str = "helm.toolkit.fluxcd.io/v2",
+    health_check_kind: str | None = None,
+) -> ParsedCluster:
+    """Build a minimal ParsedCluster with one resource and optional healthCheck."""
+    resource_file = k8s_dir / "test-app" / "resource.yaml"
+    kust_file = k8s_dir / "test-app" / "kustomization.yaml"
+    flux_file = k8s_dir / "test-app" / "flux-kustomization.yaml"
+
+    return ParsedCluster(
+        kustomize_files={kust_file: KustomizeFile(path=kust_file, resources=[resource_file])},
+        flux_kustomizations={
+            "test-app": FluxKustomization(
+                name="test-app",
+                file_path=flux_file,
+                path="./cluster/k8s/test-app",
+                healthChecks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")]
+                if health_check_kind
+                else [],
+            )
+        },
+        source_resources={resource_file: [K8sResource(kind=resource_kind, apiVersion=resource_api_version)]},
+    )
 
 
-class TestHelmReleaseHealthChecks:
-    """Tests for HelmRelease healthChecks validation."""
+class TestControllerResourceHealthChecks:
+    """Tests for controller resource (HelmRelease, Terraform) healthChecks validation."""
 
     @pytest.fixture
     def repo_root(self, tmp_path: Path) -> Path:
@@ -372,48 +396,41 @@ class TestHelmReleaseHealthChecks:
     def k8s_dir(self, repo_root: Path) -> Path:
         return repo_root / "cluster" / "k8s"
 
-    @pytest.fixture
-    def make_cluster(self, k8s_dir: Path) -> MakeCluster:
-        def _make(*, has_healthcheck: bool, has_helmrelease: bool = True) -> ParsedCluster:
-            hr_file = k8s_dir / "test-app" / "helmrelease.yaml"
-            kust_file = k8s_dir / "test-app" / "kustomization.yaml"
-            flux_file = k8s_dir / "test-app" / "flux-kustomization.yaml"
+    def test_no_error_with_helmrelease_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
+        """HelmRelease with matching healthCheck passes."""
+        cluster = _make_cluster(k8s_dir, health_check_kind="HelmRelease")
+        assert check_controller_resource_health_checks(cluster, k8s_dir, repo_root) == []
 
-            return ParsedCluster(
-                kustomize_files={kust_file: KustomizeFile(path=kust_file, resources=[hr_file])},
-                flux_kustomizations={
-                    "test-app": FluxKustomization(
-                        name="test-app",
-                        file_path=flux_file,
-                        path="./cluster/k8s/test-app",
-                        healthChecks=[HealthCheck(kind="HelmRelease", name="test-app", namespace="test-app")]
-                        if has_healthcheck
-                        else [],
-                    )
-                },
-                source_resources={hr_file: [K8sResource(kind="HelmRelease", apiVersion="helm.toolkit.fluxcd.io/v2")]}
-                if has_helmrelease
-                else {},
-            )
-
-        return _make
-
-    def test_no_error_with_healthcheck(self, k8s_dir: Path, repo_root: Path, make_cluster: MakeCluster) -> None:
-        """Kustomization with HelmRelease and healthChecks passes."""
-        cluster = make_cluster(has_healthcheck=True)
-        assert check_helmrelease_health_checks(cluster, k8s_dir, repo_root) == []
-
-    def test_error_without_healthcheck(self, k8s_dir: Path, repo_root: Path, make_cluster: MakeCluster) -> None:
-        """Kustomization with HelmRelease but no healthChecks reports error."""
-        errors = check_helmrelease_health_checks(make_cluster(has_healthcheck=False), k8s_dir, repo_root)
+    def test_error_without_helmrelease_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
+        """HelmRelease without healthCheck reports error."""
+        errors = check_controller_resource_health_checks(_make_cluster(k8s_dir), k8s_dir, repo_root)
         assert len(errors) == 1
-        assert "test-app" in errors[0]
-        assert "healthChecks" in errors[0]
+        assert "HelmRelease" in errors[0]
 
-    def test_no_error_without_helmrelease(self, k8s_dir: Path, repo_root: Path, make_cluster: MakeCluster) -> None:
-        """Kustomization without HelmRelease does not trigger error."""
-        cluster = make_cluster(has_healthcheck=False, has_helmrelease=False)
-        assert check_helmrelease_health_checks(cluster, k8s_dir, repo_root) == []
+    def test_no_error_with_terraform_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
+        """Terraform CR with matching healthCheck passes."""
+        cluster = _make_cluster(
+            k8s_dir,
+            resource_kind="Terraform",
+            resource_api_version="infra.contrib.fluxcd.io/v1alpha2",
+            health_check_kind="Terraform",
+        )
+        assert check_controller_resource_health_checks(cluster, k8s_dir, repo_root) == []
+
+    def test_error_without_terraform_healthcheck(self, k8s_dir: Path, repo_root: Path) -> None:
+        """Terraform CR without healthCheck reports error."""
+        errors = check_controller_resource_health_checks(
+            _make_cluster(k8s_dir, resource_kind="Terraform", resource_api_version="infra.contrib.fluxcd.io/v1alpha2"),
+            k8s_dir,
+            repo_root,
+        )
+        assert len(errors) == 1
+        assert "Terraform" in errors[0]
+
+    def test_no_error_for_plain_resources(self, k8s_dir: Path, repo_root: Path) -> None:
+        """Kustomization with only plain resources (ConfigMap, etc.) needs no healthCheck."""
+        cluster = _make_cluster(k8s_dir, resource_kind="ConfigMap", resource_api_version="v1")
+        assert check_controller_resource_health_checks(cluster, k8s_dir, repo_root) == []
 
 
 if __name__ == "__main__":

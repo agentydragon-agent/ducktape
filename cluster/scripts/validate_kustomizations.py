@@ -9,7 +9,8 @@ Checks:
 4. Orphaned files: YAML files must be referenced by a kustomization.yaml
 5. Dependency graph: No circular dependencies, required dependencies present
 6. Flux build: Validates flux can build the complete kustomization tree
-7. HelmRelease healthChecks: Flux kustomizations deploying HelmReleases must have healthChecks
+7. Controller resource healthChecks: Flux kustomizations deploying HelmReleases or Terraform CRs
+   must have healthChecks for them
 
 See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 
@@ -588,10 +589,10 @@ def validate_external_secrets_dependencies(cluster: ParsedCluster, k8s_dir: Path
     return errors
 
 
-def _kust_deploys_helmrelease(kust: KustomizeFile, source_resources: dict[Path, list[K8sResource]]) -> bool:
-    """Check if a kustomization references any HelmRelease resources."""
+def _kust_deploys_kind(kind: str, kust: KustomizeFile, source_resources: dict[Path, list[K8sResource]]) -> bool:
+    """Check if a kustomization references any resources of the given kind."""
     return any(
-        resource.kind == "HelmRelease"
+        resource.kind == kind
         for resource_path in kust.resources
         for resource in source_resources.get(resource_path, [])
     )
@@ -604,16 +605,22 @@ def _resolve_flux_kust_dir(flux_kust: FluxKustomization, repo_root: Path) -> Pat
     return (repo_root / flux_kust.spec_path.removeprefix("./")).resolve()
 
 
-def check_helmrelease_health_checks(cluster: ParsedCluster, k8s_dir: Path, repo_root: Path) -> list[str]:
-    """Check that flux kustomizations deploying HelmReleases have healthChecks."""
+# Resource kinds that have async reconciliation and need healthChecks
+# to surface their status through the parent Kustomization.
+_HEALTH_CHECK_REQUIRED_KINDS = ["HelmRelease", "Terraform"]
+
+
+def check_controller_resource_health_checks(cluster: ParsedCluster, k8s_dir: Path, repo_root: Path) -> list[str]:
+    """Check that flux kustomizations deploying controller-reconciled resources have healthChecks."""
     return [
-        f"{name}: deploys a HelmRelease but has no healthChecks for it. "
-        f"Add healthChecks with kind: HelmRelease to {flux_kust.file_path.relative_to(k8s_dir)}."
+        f"{name}: deploys a {kind} but has no healthChecks for it. "
+        f"Add healthChecks with kind: {kind} to {flux_kust.file_path.relative_to(k8s_dir)}."
         for name, flux_kust in cluster.flux_kustomizations.items()
         if (kust_dir := _resolve_flux_kust_dir(flux_kust, repo_root))
         if (kust := cluster.kustomize_files.get(kust_dir / "kustomization.yaml"))
-        if _kust_deploys_helmrelease(kust, cluster.source_resources)
-        if not any(hc.kind == "HelmRelease" for hc in flux_kust.health_checks)
+        for kind in _HEALTH_CHECK_REQUIRED_KINDS
+        if _kust_deploys_kind(kind, kust, cluster.source_resources)
+        if not any(hc.kind == kind for hc in flux_kust.health_checks)
     ]
 
 
@@ -760,8 +767,8 @@ async def main() -> int:
     if not args.skip_dependencies:
         global_errors.extend(validate_dependencies(cluster, root))
 
-    # Validate HelmRelease healthChecks
-    global_errors.extend(check_helmrelease_health_checks(cluster, root, workspace))
+    # Validate controller resource healthChecks (HelmRelease, Terraform)
+    global_errors.extend(check_controller_resource_health_checks(cluster, root, workspace))
 
     # Validate flux build
     if not args.skip_flux_build:
