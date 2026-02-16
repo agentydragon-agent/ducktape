@@ -41,7 +41,7 @@ resource "harbor_project" "dockerhub_proxy" {
 
 # GitHub Container Registry (GHCR) endpoint
 resource "harbor_registry" "ghcr" {
-  provider_name = "github-ghcr"
+  provider_name = "github"
   name          = "ghcr"
   endpoint_url  = "https://ghcr.io"
   description   = "GitHub Container Registry"
@@ -98,7 +98,7 @@ resource "harbor_project" "k8s_registry_proxy" {
 
 # Google Container Registry (GCR) endpoint
 resource "harbor_registry" "gcr" {
-  provider_name = "google-gcr"
+  provider_name = "google"
   name          = "gcr"
   endpoint_url  = "https://gcr.io"
   description   = "Google Container Registry"
