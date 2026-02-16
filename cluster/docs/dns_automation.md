@@ -32,45 +32,16 @@ tofu-controller (in-cluster)
 
 ### IAM Policy: `Route53-allegedly-works-glue-records`
 
-Minimal scope policy for Route 53 record and domain nameserver management:
+Minimal scope policy for Route 53 record and domain nameserver management.
+See <iam-policy-route53.json> for the full policy document.
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "ManageGlueRecords",
-      "Effect": "Allow",
-      "Action": [
-        "route53:ChangeResourceRecordSets",
-        "route53:GetHostedZone",
-        "route53:ListResourceRecordSets",
-        "route53:GetChange"
-      ],
-      "Resource": ["arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I", "arn:aws:route53:::change/*"]
-    },
-    {
-      "Sid": "ListZones",
-      "Effect": "Allow",
-      "Action": "route53:ListHostedZones",
-      "Resource": "*"
-    },
-    {
-      "Sid": "ManageDomainNameservers",
-      "Effect": "Allow",
-      "Action": [
-        "route53domains:GetDomainDetail",
-        "route53domains:UpdateDomainNameservers",
-        "route53domains:EnableDomainAutoRenew",
-        "route53domains:DisableDomainAutoRenew",
-        "route53domains:EnableDomainTransferLock",
-        "route53domains:DisableDomainTransferLock",
-        "route53domains:ListTagsForDomain"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
+**To apply the policy:**
+
+```bash
+aws iam create-policy-version \
+  --policy-arn arn:aws:iam::327403706765:policy/Route53-allegedly-works-glue-records \
+  --policy-document file://docs/iam-policy-route53.json \
+  --set-as-default
 ```
 
 **Note**: Root/admin AWS credentials are only needed once to create the IAM user, policy, and access key. After that, the `cluster-dns-manager` credentials are self-sufficient.
