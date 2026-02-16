@@ -59,8 +59,9 @@ resource "harbor_project" "ghcr_proxy" {
 }
 
 # Quay.io registry endpoint
+# Uses docker-registry adapter: quay adapter doesn't support proxy cache
 resource "harbor_registry" "quay" {
-  provider_name = "quay"
+  provider_name = "docker-registry"
   name          = "quay"
   endpoint_url  = "https://quay.io"
   description   = "Quay.io Container Registry"
