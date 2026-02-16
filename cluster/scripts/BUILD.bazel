@@ -1,93 +1,12 @@
 # gazelle:ignore
-# Cluster validation scripts
-#
-# These scripts validate cluster configuration via pre-commit hooks.
-# Binaries (kustomize, flux, kubeseal, helm, tofu) are managed via rules_multitool.
-#
-# Usage:
-#   bazel run //cluster/scripts:validate_kustomizations
-#   bazel run //cluster/scripts:validate_sealed_secrets
-#   bazel run //cluster/scripts:validate_helm_templates
+# Cluster utility scripts (non-validation).
+# Validators are in //cluster/scripts/validate_cluster/.
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/testing:defs.bzl", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary")
 
-package(default_visibility = [
-    "//cluster:__subpackages__",
-    "//tools/precommit:__pkg__",
-])
-
-exports_files([
-    "validate_kustomizations.py",
-    "validate_sealed_secrets.py",
-    "validate_helm_templates.py",
-])
-
-# Validate all kustomization directories can build, check CRD layering,
-# dependency graph, and flux build
+# Verify Authentik authentication works end-to-end
 py_binary(
-    name = "validate_kustomizations",
-    srcs = ["validate_kustomizations.py"],
-    data = [
-        "@multitool//tools/flux",
-        "@multitool//tools/kustomize",
-    ],
-    deps = [
-        "//bazel_util:runfiles",
-        "//bazel_util:workspace",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-# Validate SealedSecrets can be decrypted with terraform keypair
-py_binary(
-    name = "validate_sealed_secrets",
-    srcs = ["validate_sealed_secrets.py"],
-    data = [
-        "@multitool//tools/kubeseal",
-        "@multitool//tools/tofu",
-    ],
-    deps = ["//bazel_util:runfiles"],
-)
-
-# Validate Helm templates can render
-py_binary(
-    name = "validate_helm_templates",
-    srcs = ["validate_helm_templates.py"],
-    data = [
-        "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
-        "@multitool//tools/helm",
-    ],
-    deps = ["//bazel_util:runfiles"],
-)
-
-# Library for validate_kustomizations (for testing)
-py_library(
-    name = "validate_kustomizations_lib",
-    srcs = ["validate_kustomizations.py"],
-    data = [
-        "@multitool//tools/flux",
-        "@multitool//tools/kustomize",
-    ],
-    deps = [
-        "//bazel_util:runfiles",
-        "//bazel_util:workspace",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-# Tests for validate_kustomizations
-py_test(
-    name = "test_validate_kustomizations",
-    srcs = ["test_validate_kustomizations.py"],
-    data = glob(["testdata/**"]),
-    deps = [
-        ":validate_kustomizations_lib",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
+    name = "check_authentik_login",
+    srcs = ["check_authentik_login.py"],
+    imports = ["../.."],
 )

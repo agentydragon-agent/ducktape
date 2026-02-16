@@ -2,29 +2,22 @@
 
 Uses kubeseal --recovery-unseal (works offline, no cluster needed).
 
-Run via Bazel: bazel run //cluster/scripts:validate_sealed_secrets
+Run via Bazel: bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
+
+TODO: Make this a separate pre-commit hook with trigger pattern ``*sealed*.yaml``
+under ``cluster/k8s/`` and ``cluster/terraform/bootstrap/persistent-auth/``.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from bazel_util.runfiles import get_required_path
-
-_KUBESEAL_BIN = get_required_path("multitool/tools/kubeseal/kubeseal")
-_TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
-
-
-def get_repo_root() -> Path:
-    """Get the cluster repository root directory."""
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-    if workspace:
-        return Path(workspace) / "cluster"
-    return Path(__file__).parent.parent
+from bazel_util.workspace import get_build_workspace_directory
+from cluster.scripts.validate_cluster.cluster import _K8S_SUBPATH
 
 
 def get_private_key_from_terraform(tf_dir: Path) -> str | None:
@@ -33,8 +26,9 @@ def get_private_key_from_terraform(tf_dir: Path) -> str | None:
     if not state_file.exists():
         return None
 
+    tofu_bin = get_required_path("multitool/tools/tofu/tofu")
     result = subprocess.run(
-        [_TOFU_BIN, "output", "-raw", "sealed_secrets_private_key_pem"],
+        [tofu_bin, "output", "-raw", "sealed_secrets_private_key_pem"],
         check=False,
         cwd=tf_dir,
         capture_output=True,
@@ -49,19 +43,17 @@ def find_sealed_secrets(k8s_dir: Path) -> list[Path]:
     """Find all SealedSecret YAML files."""
     sealed_secrets = []
     for yaml_file in k8s_dir.rglob("*sealed*.yaml"):
-        try:
-            content = yaml_file.read_text()
-            if "kind: SealedSecret" in content:
-                sealed_secrets.append(yaml_file)
-        except OSError:
-            continue
+        content = yaml_file.read_text()
+        if "kind: SealedSecret" in content:
+            sealed_secrets.append(yaml_file)
     return sealed_secrets
 
 
 def validate_sealed_secret(sealed_secret_path: Path, private_key_path: Path) -> tuple[bool, str]:
     """Validate a single SealedSecret can be decrypted."""
+    kubeseal_bin = get_required_path("multitool/tools/kubeseal/kubeseal")
     result = subprocess.run(
-        [_KUBESEAL_BIN, "--recovery-unseal", "--recovery-private-key", private_key_path],
+        [kubeseal_bin, "--recovery-unseal", "--recovery-private-key", private_key_path],
         check=False,
         stdin=sealed_secret_path.open("rb"),
         capture_output=True,
@@ -72,9 +64,10 @@ def validate_sealed_secret(sealed_secret_path: Path, private_key_path: Path) -> 
 
 
 def main() -> int:
-    repo_root = get_repo_root()
-    tf_dir = repo_root / "terraform" / "bootstrap" / "persistent-auth"
-    k8s_dir = repo_root / "k8s"
+    workspace = get_build_workspace_directory()
+    cluster_root = workspace / "cluster"
+    tf_dir = cluster_root / "terraform" / "bootstrap" / "persistent-auth"
+    k8s_dir = workspace / _K8S_SUBPATH
 
     if not (tf_dir / "terraform.tfstate").exists():
         print(f"⚠️  No terraform state found at {tf_dir}/terraform.tfstate")

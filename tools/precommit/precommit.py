@@ -64,11 +64,9 @@ def is_test_file(p: Path) -> bool:
     return p.suffix == ".py" and "test_" in p.name
 
 
-def is_cluster_k8s(p: Path) -> bool:
-    return p.is_relative_to("cluster/k8s") and p.suffix in (".yaml", ".yml")
-
-
-def is_cluster_terraform_cilium(p: Path) -> bool:
+def is_cluster_validated(p: Path) -> bool:
+    if p.is_relative_to("cluster/k8s") and p.suffix in (".yaml", ".yml"):
+        return True
     return p.is_relative_to("cluster/terraform") and "cilium" in p.parts
 
 
@@ -155,20 +153,20 @@ async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Reposito
             run_pytest_main_check(files, repo_root),
             run_terraform_centralization_check(files),
             run_filename_convention_check(repo),
-            # Unified cluster validation: kustomize build, CRD layering, dependencies
+            # Unified cluster validation: kustomize + helm + CRD layering + deps
             # Skip flux build in pre-commit (flaky when run in parallel) - CI runs it in isolation
             run_subprocess_validation(
                 "cluster-validate",
-                "_main/cluster/scripts/validate_kustomizations",
+                "_main/cluster/scripts/validate_cluster/validate_cluster",
                 files,
-                is_cluster_k8s,
+                is_cluster_validated,
                 extra_args=["--skip-flux-build"],
             ),
             run_subprocess_validation(
-                "helm-validate", "_main/cluster/scripts/validate_helm_templates", files, is_cluster_terraform_cilium
-            ),
-            run_subprocess_validation(
-                "sealed-secrets", "_main/cluster/scripts/validate_sealed_secrets", files, is_sealed_secret
+                "sealed-secrets",
+                "_main/cluster/scripts/validate_cluster/validate_sealed_secrets",
+                files,
+                is_sealed_secret,
             ),
         )
     )
