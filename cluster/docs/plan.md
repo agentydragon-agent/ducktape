@@ -1,12 +1,32 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-13
+**Last Updated**: 2026-02-16
 
 ## 🔥 Immediate Next Steps
 
 **Status**: Cluster running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
-76/76 non-suspended kustomizations Ready. Authentik auth verified (both `agentydragon` and `akadmin`).
-Gitea SSO tested and working.
+80/87 kustomizations Ready (4 suspended Kagent, 3 blocked by dependency chain).
+Cilium Gateway API serving HTTPS traffic. Authentik auth verified.
+
+### Recent Fixes (2026-02-16)
+
+1. **Cilium Gateway API migration complete** — Replaced ingress-nginx with Cilium
+   Gateway API. Single `cluster-gateway` Gateway with wildcard + apex HTTPS listeners,
+   HTTP→HTTPS redirect. Per-service HTTPRoutes in each app namespace. ingress-nginx
+   directory deleted.
+2. **Vault internal HTTPS→HTTP** — TLS now terminates at Gateway. All internal Vault
+   URLs switched from `https://` to `http://` (ESO config, 16 tofu-controller specs).
+   Removed `VAULT_CACERT`, `SSL_CERT_FILE` env vars and CA volume mounts.
+3. **Gateway API CRDs: experimental channel** — Cilium 1.16.x requires TLSRoute CRD,
+   only in experimental channel. Standard channel caused `"Required GatewayAPI resources
+are not found"`. Added `kubectl wait --for=condition=Established` before Cilium install.
+4. **cert-manager Gateway API enablement** — `--feature-gates=ExperimentalGatewayAPISupport`
+   obsolete since cert-manager v1.15. `gateway-shim` controller was silently disabled.
+   Switched to `config.enableGatewayAPI: true`. Wildcard + apex certs now auto-issued.
+5. **external-dns Gateway API** — Added `--source=gateway-httproute`, RBAC for
+   `gateway.networking.k8s.io` resources + namespaces. Added
+   `external-dns.alpha.kubernetes.io/target` annotation on Gateway via Flux postBuild
+   substitution from `cluster-info` ConfigMap (new `vps_ips_csv` key).
 
 ### Recent Fixes (2026-02-13)
 
@@ -36,10 +56,12 @@ Gitea SSO tested and working.
       Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation
       (Flux-substituted), so flipping the toggle re-issues all certs. Trust bundle follows
       via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
-- [x] **Migrate from ingress-nginx to Cilium Gateway API** — completed. Cilium Gateway API
-      with Envoy DaemonSet (hostNetwork on VPS nodes). Wildcard cert for `*.allegedly.works`.
-      Loki/Hubble use Authentik proxy outposts (proxy mode) for OIDC auth. Vault accepts HTTP
-      internally (BackendTLSPolicy not yet in Cilium). ingress-nginx removed.
+- [x] **Migrate from ingress-nginx to Cilium Gateway API** — completed 2026-02-16.
+      See Recent Fixes above.
+- [ ] **Fix `dns-records` terraform** — Route 53 NS glue records already exist from
+      prior lifecycle (state lost on cluster recreate). Terraform tries create-not-import.
+      Also missing `route53domains:EnableDomainTransferLock` IAM permission. Records work
+      via external-dns but Route 53 glue records aren't terraform-managed currently.
 - [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
       Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
@@ -87,23 +109,23 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Core Services (already configured)
 
-| Component              | Status | Notes                                      |
-| ---------------------- | ------ | ------------------------------------------ |
-| Flux CD                | ✅     | GitOps                                     |
-| Cilium Gateway API     | ✅     | Envoy hostNetwork on VPS nodes             |
-| cert-manager           | ✅     | DNS-01 via PowerDNS, dual-issuer toggle    |
-| PowerDNS               | ✅     | hostNetwork on VPS nodes                   |
-| Vault                  | ✅     | With OIDC auth                             |
-| Authentik              | ✅     | SSO provider                               |
-| External Secrets       | ✅     | Vault integration                          |
-| Monitoring             | ✅     | Prometheus/Grafana/Loki                    |
-| Proxmox CSI            | ✅     | Storage for home nodes                     |
-| local-path-provisioner | ✅     | Storage for VPS nodes                      |
-| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)           |
-| DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS |
-| Node Feature Discovery | ✅     | Auto-detects GPU/hardware, provides labels |
-| NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes     |
-| Cilium Mutual Auth     | 🟡     | SPIRE deployed, test-mode policies TODO    |
+| Component              | Status | Notes                                       |
+| ---------------------- | ------ | ------------------------------------------- |
+| Flux CD                | ✅     | GitOps                                      |
+| Cilium Gateway API     | ✅     | Envoy hostNetwork on VPS nodes              |
+| cert-manager           | ✅     | DNS-01 via PowerDNS, dual-issuer toggle     |
+| PowerDNS               | ✅     | hostNetwork on VPS nodes                    |
+| Vault                  | ✅     | With OIDC auth                              |
+| Authentik              | ✅     | SSO provider                                |
+| External Secrets       | ✅     | Vault integration                           |
+| Monitoring             | ✅     | Prometheus/Grafana/Loki                     |
+| Proxmox CSI            | ✅     | Storage for home nodes                      |
+| local-path-provisioner | ✅     | Storage for VPS nodes                       |
+| Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)            |
+| DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS  |
+| Node Feature Discovery | ✅     | Auto-detects GPU/hardware, provides labels  |
+| NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes      |
+| Cilium Mutual Auth     | ⏸️     | SPIRE disabled (bootstrap timeout on Talos) |
 
 ## Applications (already configured)
 
@@ -167,25 +189,15 @@ remain. Stakater Reloader restarts pods on secret changes. See
 Deployed in Audit mode. `require-gitops` ClusterPolicy, HA (3 replicas).
 TODO: Switch to `Enforce` after validation.
 
-### Cilium Mutual Authentication (SPIRE)
+### Cilium Mutual Authentication (SPIRE) — Paused
 
-Enabled in test mode via `cilium-values.yaml`. SPIRE server + agent installed as part of
-Cilium deployment. Provides per-service cryptographic identity (X.509 SVIDs) at L3/L4
-without a full service mesh. KubeSpan encrypts inter-node traffic; mutual auth adds
-intra-node pod-to-pod identity verification.
+SPIRE is disabled in `cilium-values.yaml` — install times out during bootstrap on Talos
+(SPIRE pods never become ready). KubeSpan provides inter-node encryption. Revisit when
+SPIRE/Talos compatibility improves.
 
-**Current state**: SPIRE infrastructure deployed. No CiliumNetworkPolicies with
-`authentication.mode` yet — all traffic is unauthenticated (default).
-
-- [ ] **Create test-mode CiliumNetworkPolicies** for sensitive services (Vault, Authentik,
-      PostgreSQL backends). Use `authentication.mode: "test"` to log authentication
-      attempts without blocking traffic. Monitor via Hubble.
-- [ ] **Switch to `authentication.mode: "required"`** for sensitive services after validating
-      test mode shows no false negatives. This blocks unauthenticated pod-to-pod traffic.
-- [ ] **SPIRE server persistent storage** — currently uses emptyDir. Add PVC
-      (local-path on VPS) so registration entries survive restarts.
-- [ ] **Expand to all namespaces** — default-deny mutual auth cluster-wide after
-      per-service validation.
+- [ ] **Investigate SPIRE timeout** — determine root cause of SPIRE pod startup failure
+      on Talos. May require Talos-specific securityContext or init container changes.
+- [ ] Once SPIRE works: create test-mode CiliumNetworkPolicies, then promote to required.
 
 ### TODO: Firewall Hardening
 
@@ -404,7 +416,7 @@ for declarative zone/record management.
 
 | Location | Services                                       | Rationale                            |
 | -------- | ---------------------------------------------- | ------------------------------------ |
-| VPS      | Vault, Authentik, Ingress, DNS, cert-manager   | Always-on, critical path             |
+| VPS      | Vault, Authentik, Gateway, DNS, cert-manager   | Always-on, critical path             |
 | Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
 
 #### Shared PostgreSQL Option
