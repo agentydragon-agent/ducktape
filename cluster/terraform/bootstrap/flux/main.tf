@@ -53,6 +53,7 @@ resource "flux_bootstrap_git" "cluster" {
             path: /spec/sparseCheckout
             value:
               - cluster/
+              - props/helm/
   EOT
 }
 
