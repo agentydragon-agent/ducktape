@@ -63,6 +63,8 @@ Minimal scope policy for Route 53 record and domain nameserver management:
         "route53domains:UpdateDomainNameservers",
         "route53domains:EnableDomainAutoRenew",
         "route53domains:DisableDomainAutoRenew",
+        "route53domains:EnableDomainTransferLock",
+        "route53domains:DisableDomainTransferLock",
         "route53domains:ListTagsForDomain"
       ],
       "Resource": "*"
@@ -72,11 +74,6 @@ Minimal scope policy for Route 53 record and domain nameserver management:
 ```
 
 **Note**: Root/admin AWS credentials are only needed once to create the IAM user, policy, and access key. After that, the `cluster-dns-manager` credentials are self-sufficient.
-
-<!-- TODO: Consider reducing route53domains permissions. The aws_route53domains_registered_domain
-     resource requires GetDomainDetail, EnableDomainAutoRenew, DisableDomainAutoRenew, and
-     ListTagsForDomain even though we only need UpdateDomainNameservers. Could potentially
-     use a null_resource with local-exec to call AWS CLI directly for minimal permissions. -->
 
 ### IAM User: `cluster-dns-manager`
 
