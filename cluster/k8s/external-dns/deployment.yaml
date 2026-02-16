@@ -23,6 +23,7 @@ spec:
           image: registry.k8s.io/external-dns/external-dns:v0.20.0
           args:
             - --source=ingress
+            - --source=gateway-httproute
             - --provider=pdns
             - --pdns-server=http://powerdns-api.dns-system:8081
             - --pdns-api-key=$(PDNS_API_KEY)
