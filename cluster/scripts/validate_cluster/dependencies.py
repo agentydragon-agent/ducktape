@@ -3,29 +3,34 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 from cluster.scripts.validate_cluster.cluster import ParsedCluster
 from cluster.scripts.validate_cluster.flux import FluxKustomization
 
-_DEPENDENCY_RULES: dict[str, dict[str, object]] = {
-    "external-secrets-config": {
-        "must_come_before": ["authentik", "gitea", "harbor", "powerdns", "matrix"],
-        "reason": "Applications need external-secrets ClusterSecretStore to sync secrets from Vault",
-    },
-    "cert-manager": {
-        "must_come_before": ["ingress-nginx", "authentik", "gitea", "harbor"],
-        "reason": "TLS certificates required for ingress and applications",
-    },
-    "ingress-nginx": {
-        "must_come_before": ["authentik", "gitea", "harbor", "matrix"],
-        "reason": "Applications need ingress controller for external access",
-    },
-    "vault": {
-        "must_come_before": ["external-secrets-operator", "external-secrets-config"],
-        "reason": "Vault must be ready before external-secrets can connect",
-    },
-}
+
+@dataclass
+class _DependencyRule:
+    prerequisite: str
+    must_come_before: list[str]
+    reason: str
+
+
+_DEPENDENCY_RULES: list[_DependencyRule] = [
+    # external-secrets-config ordering is enforced dynamically by validate_external_secrets_dependencies().
+    # vault → external-secrets ordering is enforced by CRD layering checks in checks.py.
+    _DependencyRule(
+        prerequisite="cert-manager",
+        must_come_before=["gateway", "authentik", "gitea", "harbor"],
+        reason="TLS certificates required for gateway and applications",
+    ),
+    _DependencyRule(
+        prerequisite="gateway",
+        must_come_before=["authentik", "gitea", "harbor", "matrix"],
+        reason="Applications need gateway for external access",
+    ),
+]
 
 
 def build_dependency_graph(flux_kustomizations: dict[str, FluxKustomization]) -> dict[str, list[str]]:
@@ -84,16 +89,18 @@ def check_required_dependencies(flux_kustomizations: dict[str, FluxKustomization
         visited.add(to_kust)
         return any(has_dependency_path(from_kust, dep, visited) for dep in depends_on_map.get(to_kust, []))
 
-    for prereq, rule in _DEPENDENCY_RULES.items():
-        if prereq not in flux_kustomizations:
-            continue
-        for dependent in rule["must_come_before"]:
+    for rule in _DEPENDENCY_RULES:
+        if rule.prerequisite not in flux_kustomizations:
+            raise ValueError(f"Dependency rule references unknown kustomization: {rule.prerequisite}")
+        for dependent in rule.must_come_before:
             if dependent not in flux_kustomizations:
                 continue
-            if prereq not in depends_on_map.get(dependent, []):
-                has_transitive = any(has_dependency_path(prereq, dep) for dep in depends_on_map.get(dependent, []))
+            if rule.prerequisite not in depends_on_map.get(dependent, []):
+                has_transitive = any(
+                    has_dependency_path(rule.prerequisite, dep) for dep in depends_on_map.get(dependent, [])
+                )
                 if not has_transitive:
-                    errors.append(f"{dependent} should depend on {prereq} ({rule['reason']})")
+                    errors.append(f"{dependent} should depend on {rule.prerequisite} ({rule.reason})")
 
     return errors
 

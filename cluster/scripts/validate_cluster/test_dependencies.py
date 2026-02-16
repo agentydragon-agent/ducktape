@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from cluster.scripts.validate_cluster.dependencies import (
@@ -57,15 +58,16 @@ class TestRequiredDependencies:
     """Tests for required dependency checking."""
 
     def test_detects_missing_dependency(self) -> None:
-        """Detects when required dependency is missing."""
+        """Detects when authentik is missing cert-manager dependency."""
         kustomizations = {
             "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"), depends_on=[]),
-            "external-secrets-config": FluxKustomization(
-                name="external-secrets-config", file_path=Path("./k8s/external-secrets"), depends_on=[]
+            "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager"), depends_on=[]),
+            "gateway": FluxKustomization(
+                name="gateway", file_path=Path("./k8s/gateway"), depends_on=[DependsOn(name="cert-manager")]
             ),
         }
         errors = check_required_dependencies(kustomizations)
-        matching = [e for e in errors if "authentik" in e and "external-secrets-config" in e]
+        matching = [e for e in errors if "authentik" in e and "cert-manager" in e]
         assert len(matching) > 0
 
     def test_accepts_valid_dependencies(self) -> None:
@@ -74,22 +76,24 @@ class TestRequiredDependencies:
             "authentik": FluxKustomization(
                 name="authentik",
                 file_path=Path("./k8s/authentik"),
-                depends_on=[DependsOn(name="external-secrets-config"), DependsOn(name="ingress-nginx")],
+                depends_on=[DependsOn(name="gateway"), DependsOn(name="cert-manager")],
             ),
-            "external-secrets-config": FluxKustomization(
-                name="external-secrets-config",
-                file_path=Path("./k8s/external-secrets"),
-                depends_on=[DependsOn(name="vault")],
+            "gateway": FluxKustomization(
+                name="gateway", file_path=Path("./k8s/gateway"), depends_on=[DependsOn(name="cert-manager")]
             ),
-            "ingress-nginx": FluxKustomization(
-                name="ingress-nginx", file_path=Path("./k8s/ingress-nginx"), depends_on=[DependsOn(name="cert-manager")]
-            ),
-            "vault": FluxKustomization(name="vault", file_path=Path("./k8s/vault"), depends_on=[]),
             "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager"), depends_on=[]),
         }
         errors = check_required_dependencies(kustomizations)
         authentik_errors = [e for e in errors if "authentik" in e]
         assert len(authentik_errors) == 0
+
+    def test_raises_on_unknown_prerequisite(self) -> None:
+        """Raises ValueError when a rule references a kustomization not in the cluster."""
+        kustomizations = {
+            "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"), depends_on=[])
+        }
+        with pytest.raises(ValueError, match="unknown kustomization: cert-manager"):
+            check_required_dependencies(kustomizations)
 
 
 if __name__ == "__main__":
