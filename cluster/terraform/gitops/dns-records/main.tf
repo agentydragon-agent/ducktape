@@ -97,4 +97,14 @@ resource "aws_route53domains_registered_domain" "allegedly_works" {
       glue_ips = [name_server.value.ip]
     }
   }
+
+  # Only manage nameservers. Ignoring other attributes avoids IAM permissions
+  # for transfer lock, auto-renew, contacts, and privacy management.
+  lifecycle {
+    ignore_changes = [
+      transfer_lock, auto_renew,
+      admin_contact, billing_contact, registrant_contact, tech_contact,
+      admin_privacy, billing_privacy, registrant_privacy, tech_privacy,
+    ]
+  }
 }

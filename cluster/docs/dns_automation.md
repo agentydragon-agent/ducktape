@@ -35,6 +35,11 @@ tofu-controller (in-cluster)
 Minimal scope policy for Route 53 record and domain nameserver management.
 See <iam-policy-route53.json> for the full policy document.
 
+The `route53domains` actions are scoped to nameserver management only. Other domain
+attributes (transfer lock, auto-renew, contacts, privacy) are managed via AWS console
+and ignored in Terraform via `lifecycle { ignore_changes }`. AWS Route 53 Domains
+doesn't support resource-level ARNs, so `Resource: "*"` is unavoidable.
+
 **To apply the policy:**
 
 ```bash
