@@ -97,8 +97,10 @@ resource "harbor_project" "k8s_registry_proxy" {
 }
 
 # Google Container Registry (GCR) endpoint
+# Uses docker-registry adapter: google-gcr adapter's health check fails
+# (GCR deprecated in favor of Artifact Registry)
 resource "harbor_registry" "gcr" {
-  provider_name = "google"
+  provider_name = "docker-registry"
   name          = "gcr"
   endpoint_url  = "https://gcr.io"
   description   = "Google Container Registry"
