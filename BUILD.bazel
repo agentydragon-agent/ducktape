@@ -137,6 +137,7 @@ platform(
         # to avoid duplicate-key crash when --config=rbe is expanded twice
         # (e.g., both buildbuddy.bazelrc and auth-proxy/bazelrc enable it).
         "test.init-dockerd": "true",
+        "EstimatedComputeUnits": "3",
     },
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
