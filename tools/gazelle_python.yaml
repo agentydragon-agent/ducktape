@@ -344,6 +344,7 @@ manifest:
     packaging: packaging
     pandas: pandas
     pandocfilters: pandocfilters
+    paramiko: paramiko
     parso: parso
     passlib: passlib
     pathable: pathable
@@ -412,6 +413,7 @@ manifest:
     python_socks: python_socks
     pythonjsonlogger: python_json_logger
     pytimeparse: pytimeparse
+    pytz: pytz
     rdflib: rdflib
     reaktiv: reaktiv
     redis: redis
@@ -460,7 +462,7 @@ manifest:
     supervisor: supervisor
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     termcolor: termcolor
     terminado: terminado
@@ -560,4 +562,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: c62fd1d0e902697b8c5d91a4e7e131e2eb402abb18463549d0f718db660c49a6
+integrity: 707cbce97956f39b12dae8529ad61a9ec34eb234e529162d6c7e1bd77f8f90c5
