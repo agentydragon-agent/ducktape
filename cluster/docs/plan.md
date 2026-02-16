@@ -77,6 +77,11 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 - [ ] **Deploy headscale**, test with a device
 - [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
       `client_credentials` JWTs). Currently uses shared API key from Vault.
+- [ ] **Harbor terraform: switch to robot accounts** — Currently uses admin database
+      auth (UserID 1 always works regardless of auth mode). Switch to Harbor robot
+      accounts for least-privilege. Needs: create robot account with admin scope,
+      store credentials in Vault, update `harbor-proxy-cache` and `harbor-oidc-config`
+      terraform modules to use robot account instead of admin password.
 - [ ] **Consider removing `gitea-admin-token` Job** — originally created for Terraform to
       configure Gitea OAuth via admin API, but SSO moved to the Authentik blueprint pattern.
       Nothing currently consumes the token secret. May still be useful for future Gitea API

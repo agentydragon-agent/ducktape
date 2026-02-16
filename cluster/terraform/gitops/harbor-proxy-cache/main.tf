@@ -41,7 +41,7 @@ resource "harbor_project" "dockerhub_proxy" {
 
 # GitHub Container Registry (GHCR) endpoint
 resource "harbor_registry" "ghcr" {
-  provider_name = "github"
+  provider_name = "github-ghcr"
   name          = "ghcr"
   endpoint_url  = "https://ghcr.io"
   description   = "GitHub Container Registry"
@@ -59,10 +59,8 @@ resource "harbor_project" "ghcr_proxy" {
 }
 
 # Quay.io registry endpoint
-# Harbor v2.14 doesn't support "quay" as a proxy cache adapter type.
-# Quay.io implements the standard Docker V2 registry API.
 resource "harbor_registry" "quay" {
-  provider_name = "docker-registry"
+  provider_name = "quay"
   name          = "quay"
   endpoint_url  = "https://quay.io"
   description   = "Quay.io Container Registry"
@@ -100,7 +98,7 @@ resource "harbor_project" "k8s_registry_proxy" {
 
 # Google Container Registry (GCR) endpoint
 resource "harbor_registry" "gcr" {
-  provider_name = "docker-registry"
+  provider_name = "google-gcr"
   name          = "gcr"
   endpoint_url  = "https://gcr.io"
   description   = "Google Container Registry"
