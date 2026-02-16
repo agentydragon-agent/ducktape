@@ -45,7 +45,6 @@ from props.core.agent_types import (
 )
 from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
-from props.core.models.snapshot import BundleFilter, Source
 from props.core.splits import Split
 from props.db.snapshots import LocationAnchor
 
@@ -285,8 +284,6 @@ class Snapshot(Base):
     slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(nullable=False)
     content: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, comment="tar archive of source code")
-    source: Mapped[Source | None] = mapped_column(PydanticColumn(Source), nullable=True, comment="provenance")
-    bundle: Mapped[BundleFilter | None] = mapped_column(PydanticColumn(BundleFilter), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -647,7 +644,7 @@ class FileSet(Base):
 
     # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship()
-    members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all, delete-orphan")
+    members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all")
 
 
 class FileSetMember(Base):

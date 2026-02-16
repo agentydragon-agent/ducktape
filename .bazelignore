@@ -20,10 +20,6 @@ cluster/.direnv
 wt/.direnv
 props/.direnv
 
-# Specimens - frozen code snapshots contain BUILD.bazel files that
-# would create spurious Bazel packages. Test reads from source tree.
-props/specimens
-
 # Investigations - no BUILD files
 investigations
 

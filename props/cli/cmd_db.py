@@ -13,68 +13,76 @@ from rich.table import Table
 
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
-from props.db.sync.sync import FullSyncResult, sync_all
+from props.db.sync.sync import SpecimenBundle, sync_metadata, sync_specimen
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
 
 
-def recreate_database_and_sync(db: Database, *, use_staged: bool = False) -> FullSyncResult:
-    """Recreate database from scratch (destructive). Drops all, creates fresh schema, syncs all data."""
-    # Recreate schema (tables, RLS, roles)
-    db.recreate()
-
-    # Sync all data sources into fresh database
-    with db.session() as session:
-        return sync_all(session, use_staged=use_staged)
-
-
-def print_sync_result(console: Console, result: FullSyncResult) -> None:
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Type", style="cyan")
-    table.add_column("Stats")
-    table.add_row("Snapshots", result.snapshot_stats.summary_text)
-    table.add_row("Issues", result.issue_stats.summary_text)
-    table.add_row("Snapshot files", result.snapshot_file_stats.summary_text)
-    table.add_row("File sets", result.file_set_stats.summary_text)
-    table.add_row("Model metadata", result.model_metadata_stats.summary_text)
-    console.print(table)
-
-
 def cmd_sync(
     ctx: typer.Context,
-    use_staged: bool = typer.Option(
-        False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
-    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without committing (rollback after sync)"),
 ) -> None:
-    """Sync snapshots, issues, files, file sets, model metadata, and agent definitions from source to DB."""
+    """Sync model metadata and other non-specimen data to database.
+
+    Note: This does NOT sync specimens. Use 'props db sync-specimen' for specimens.
+    """
     db: Database = ctx.obj
     console = Console()
     with db.session() as session:
-        result = sync_all(session, use_staged=use_staged, dry_run=dry_run)
+        result = sync_metadata(session, dry_run=dry_run)
     if dry_run:
         console.print("[yellow]DRY-RUN:[/yellow] Validation passed, no changes committed")
-    print_sync_result(console, result)
+
+    console.print(f"Model metadata: {result.model_metadata_stats.summary_text}")
+
+
+# Typer Option defaults must not be created in function signatures (ruff B008)
+SYNC_SPECIMEN_CODE_TAR_OPT = typer.Option(..., "--code-tar", help="Path to uncompressed code tar")
+SYNC_SPECIMEN_DATA_YAML_OPT = typer.Option(
+    ..., "--data-yaml", help="Path to merged data YAML (snapshot_slug + split + issues)"
+)
+
+
+def cmd_sync_specimen(
+    ctx: typer.Context, code_tar: Path = SYNC_SPECIMEN_CODE_TAR_OPT, data_yaml: Path = SYNC_SPECIMEN_DATA_YAML_OPT
+) -> None:
+    """Sync a specimen from bundle artifacts (code tar + data YAML).
+
+    The code tar must be an uncompressed tar file containing the code/ directory.
+    The data YAML must have {snapshot_slug, split, issues} structure.
+    The snapshot slug is read from the data YAML.
+
+    Example:
+        props db sync-specimen \\
+            --code-tar bazel-bin/props/specimens/ducktape/2026-01-17-00/specimen_code.tar \\
+            --data-yaml bazel-bin/props/specimens/ducktape/2026-01-17-00/specimen_data.yaml
+    """
+    db: Database = ctx.obj
+    console = Console()
+
+    # Create bundle (reads slug from data YAML)
+    bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
+
+    console.print(f"Syncing {bundle.slug} from bundle artifacts...")
+    with db.session() as session:
+        sync_specimen(session, bundle)
+        session.commit()
+
+    console.print("[green]✓[/green] Sync completed successfully")
 
 
 def cmd_db_recreate(
-    ctx: typer.Context,
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
-    use_staged: bool = typer.Option(
-        False, "--use-staged", help="Read agent definitions from staged files instead of HEAD"
-    ),
+    ctx: typer.Context, yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")
 ) -> None:
     """Recreate database from scratch (destructive - drops all tables/views/policies).
 
     This command will:
-    1. Ensure database exists (eval_results)
+    1. Ensure database exists
     2. Drop all existing schema objects (tables, views, RLS policies, functions)
     3. Run Alembic migrations to recreate schema
-    4. Sync all data from filesystem (snapshots, issues, files, file sets, model metadata, agent definitions)
 
-    Note: Temporary database users are created per-agent instead of a shared agent_user role.
-          Schema creation (step 3) runs all Alembic migrations, which define tables, views, RLS, etc.
+    Note: This does NOT sync specimens. Use 'props db sync-specimen' to sync individual specimens.
 
     Requires database connection configured via environment variables (postgres superuser).
     """
@@ -90,13 +98,12 @@ def cmd_db_recreate(
     db: Database = ctx.obj
     ensure_database_exists(db.config, db.config.database, drop_existing=False)
 
-    # Connect and recreate (includes full sync)
+    # Recreate schema only (no sync)
     console = Console()
     console.print("Recreating database schema...")
-    result = recreate_database_and_sync(db, use_staged=use_staged)
-    console.print("✓ Database recreated:")
-
-    print_sync_result(console, result)
+    db.recreate()
+    console.print("✓ Database schema recreated")
+    console.print("\nTo sync specimens, use: props db sync-specimen --code-tar <tar> --data-yaml <yaml>")
 
 
 def get_default_backup_dir() -> Path:
@@ -217,6 +224,7 @@ def cmd_db_list_backups() -> None:
 
 # Register commands
 db_app.command("sync")(cmd_sync)
+db_app.command("sync-specimen")(cmd_sync_specimen)
 db_app.command("recreate")(cmd_db_recreate)
 db_app.command("backup")(cmd_db_backup)
 db_app.command("restore")(cmd_db_restore)
