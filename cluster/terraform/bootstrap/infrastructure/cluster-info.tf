@@ -6,11 +6,12 @@ resource "kubernetes_config_map" "cluster_info" {
     name      = "cluster-info"
     namespace = "kube-system"
     annotations = {
-      # Reflector copies to external-dns namespace for --default-targets env vars
+      # Reflector copies to external-dns (--default-targets env vars)
+      # and flux-system (Flux postBuild substituteFrom for Gateway annotation)
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "external-dns"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "external-dns,flux-system"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "external-dns"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "external-dns,flux-system"
     }
   }
 
@@ -23,6 +24,10 @@ resource "kubernetes_config_map" "cluster_info" {
           name = v.name
         }
       })
+      # JSON list of VPS IPs
+      vps_ips = jsonencode([for k, v in hcloud_server.vps : v.ipv4_address])
+      # Comma-separated for Flux postBuild substitution (Gateway target annotation)
+      vps_ips_csv = join(",", [for k, v in hcloud_server.vps : v.ipv4_address])
     },
     # Flat keys for direct env var injection (e.g., external-dns --default-targets)
     { for k, v in hcloud_server.vps : "vps_ip_${k}" => v.ipv4_address },

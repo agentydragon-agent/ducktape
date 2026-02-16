@@ -5,6 +5,7 @@ metadata:
   namespace: gateway-system
   annotations:
     cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
+    external-dns.alpha.kubernetes.io/target: "${vps_ips_csv}"
 spec:
   gatewayClassName: cilium
   listeners:
