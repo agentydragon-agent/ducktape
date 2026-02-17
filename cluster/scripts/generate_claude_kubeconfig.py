@@ -3,7 +3,7 @@
 Creates a ServiceAccount token for claude-code-web, builds a kubeconfig,
 and age-encrypts it to .claude_hooks/secrets/kubeconfig.age.
 
-Run via: bazel run //cluster:generate_claude_kubeconfig
+Run via: bazel run //cluster/scripts:generate_claude_kubeconfig
 """
 
 import logging

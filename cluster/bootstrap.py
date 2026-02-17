@@ -33,7 +33,7 @@ from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 
 from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
-from cluster.generate_claude_kubeconfig import generate
+from cluster.scripts.generate_claude_kubeconfig import generate
 
 _TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
 
