@@ -87,7 +87,7 @@ def setup_docker_config(settings: HookSettings, tmpfs_root: Path | None) -> tupl
     }
 
     config_path = docker_dir / "daemon.json"
-    write_config(config_path, json.dumps(daemon_config, indent=2), "daemon.json")
+    write_config(config_path, json.dumps(daemon_config, indent=2), "daemon.json", canary=False)
 
     return config_path, driver
 
