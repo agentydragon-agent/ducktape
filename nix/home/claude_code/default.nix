@@ -252,6 +252,13 @@ let
     "json.schemastore.org"
     "www.schemastore.org"
     "code.claude.com" # Claude Code documentation
+    "app.buildbuddy.io" # BuildBuddy remote build UI
+    "remote.buildbuddy.io" # BuildBuddy remote execution/cache
+    "bcr.bazel.build" # Bazel Central Registry
+    "github.com" # GitHub repos and downloads
+    "raw.githubusercontent.com" # GitHub raw file access
+    "release-assets.githubusercontent.com" # GitHub release downloads
+    "files.pythonhosted.org" # PyPI wheel downloads
   ]
   ++ cfg.extraAllowedWebFetchDomains;
 

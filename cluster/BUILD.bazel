@@ -12,6 +12,8 @@ py_library(
         "@pypi//kubernetes",
         "@pypi//pydantic",
         "@pypi//pygit2",
+        "@pypi//pyrage",
+        "@pypi//pyyaml",
         "@pypi//tenacity",
     ],
 )
