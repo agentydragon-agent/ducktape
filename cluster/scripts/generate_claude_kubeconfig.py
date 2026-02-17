@@ -44,7 +44,9 @@ def generate(root: Path) -> None:
     log.info("Creating 1-year token for %s/%s", SA_NAMESPACE, SERVICE_ACCOUNT)
     v1 = client.CoreV1Api()
     token_request = client.AuthenticationV1TokenRequest(
-        spec=client.V1TokenRequestSpec(expiration_seconds=TOKEN_EXPIRY_SECONDS)
+        spec=client.V1TokenRequestSpec(
+            audiences=["https://kubernetes.default.svc"], expiration_seconds=TOKEN_EXPIRY_SECONDS
+        )
     )
     resp = v1.create_namespaced_service_account_token(SERVICE_ACCOUNT, SA_NAMESPACE, token_request)
     token = resp.status.token
