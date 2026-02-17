@@ -40,8 +40,10 @@ spec:
           upstream: "ollama"
           upstream_model: "gpt-oss-20b"
           input_usd_per_1m_tokens: 0
+          cached_input_usd_per_1m_tokens: 0
           output_usd_per_1m_tokens: 0
           context_window_tokens: 131072
+          max_output_tokens: 131072
     existingSecrets:
       openaiApiKey:
         name: "props-openai-api-key"
