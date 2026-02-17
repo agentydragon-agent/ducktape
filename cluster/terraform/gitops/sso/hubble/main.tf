@@ -79,6 +79,6 @@ resource "authentik_outpost" "hubble" {
 
   config = jsonencode({
     authentik_host         = var.authentik_url
-    authentik_host_browser = ""
+    authentik_host_browser = "https://auth.allegedly.works"
   })
 }

@@ -85,6 +85,6 @@ resource "authentik_outpost" "kagent" {
   # Configure authentik_host for OAuth redirects (fixes http://0.0.0.0:9000 issue)
   config = jsonencode({
     authentik_host         = var.authentik_url
-    authentik_host_browser = ""
+    authentik_host_browser = "https://auth.allegedly.works"
   })
 }
