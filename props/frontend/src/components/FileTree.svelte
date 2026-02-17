@@ -15,13 +15,11 @@
   let expanded = $state(new SvelteSet<string>());
 
   function toggleExpand(path: string) {
-    const newSet = new SvelteSet(expanded);
-    if (newSet.has(path)) {
-      newSet.delete(path);
+    if (expanded.has(path)) {
+      expanded.delete(path);
     } else {
-      newSet.add(path);
+      expanded.add(path);
     }
-    expanded = newSet;
   }
 </script>
 

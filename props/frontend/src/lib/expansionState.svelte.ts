@@ -15,31 +15,24 @@ export function createExpansionState() {
       return expanded.has(id);
     },
     toggle(id: string) {
-      const newSet = new SvelteSet(expanded);
-      if (newSet.has(id)) {
-        newSet.delete(id);
+      if (expanded.has(id)) {
+        expanded.delete(id);
       } else {
-        newSet.add(id);
+        expanded.add(id);
       }
-      expanded = newSet;
     },
     expand(id: string) {
-      if (!expanded.has(id)) {
-        expanded = new SvelteSet([...expanded, id]);
-      }
+      expanded.add(id);
     },
     collapse(id: string) {
-      if (expanded.has(id)) {
-        const newSet = new SvelteSet(expanded);
-        newSet.delete(id);
-        expanded = newSet;
-      }
+      expanded.delete(id);
     },
     expandAll(ids: string[]) {
-      expanded = new SvelteSet(ids);
+      expanded.clear();
+      for (const id of ids) expanded.add(id);
     },
     collapseAll() {
-      expanded = new SvelteSet();
+      expanded.clear();
     },
   };
 }

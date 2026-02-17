@@ -35,7 +35,10 @@
   const kinds: ExampleKind[] = ["whole_snapshot", "file_set"];
   const metricsPerKind = 5; // Recall, Runs, Zero, Done, Stalled
 
-  // Create DataTable with sortable columns
+  // Sort state tracked outside DataTable so it survives data changes
+  let sortColumn = $state("valid_whole_snapshot_recall");
+  let sortDirection: "asc" | "desc" = $state("desc");
+
   const table = $derived(
     new DataTable({
       data: definitions,
@@ -53,16 +56,23 @@
           }))
         ),
       ],
-      initialSort: "valid_whole_snapshot_recall",
-      initialSortDirection: "desc",
+      initialSort: sortColumn,
+      initialSortDirection: sortDirection,
     })
   );
 
+  function handleSort(columnId: string) {
+    if (sortColumn === columnId) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc";
+    } else {
+      sortColumn = columnId;
+      sortDirection = "asc";
+    }
+  }
+
   function getSortIndicator(columnId: string): string {
-    const state = table.getSortState(columnId);
-    if (state === "asc") return " ↑";
-    if (state === "desc") return " ↓";
-    return "";
+    if (sortColumn !== columnId) return "";
+    return sortDirection === "asc" ? " ↑" : " ↓";
   }
 </script>
 
@@ -74,14 +84,14 @@
         <th
           rowspan="3"
           class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 align-bottom"
-          onclick={() => table.toggleSort("image_digest")}
+          onclick={() => handleSort("image_digest")}
         >
           Definition{getSortIndicator("image_digest")}
         </th>
         <th
           rowspan="3"
           class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 align-bottom"
-          onclick={() => table.toggleSort("created_at")}
+          onclick={() => handleSort("created_at")}
         >
           Age{getSortIndicator("created_at")}
         </th>
@@ -103,7 +113,7 @@
             <th
               colspan={metricsPerKind}
               class="px-2 py-1 text-center border-l border-gray-200 cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort(colId)}
+              onclick={() => handleSort(colId)}
             >
               {kind} <span class="text-gray-400 font-normal">(n={count})</span>{getSortIndicator(colId)}
             </th>

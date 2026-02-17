@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, getContext } from "svelte";
-  import { goto, resolve } from "$lib/router";
+  import { goto } from "$lib/router";
   import type { RunModalPrefill } from "$lib/types";
   import { fetchOverview, type OverviewResponse } from "$lib/api/client";
   import DefinitionsTable from "$components/stats/DefinitionsTable.svelte";

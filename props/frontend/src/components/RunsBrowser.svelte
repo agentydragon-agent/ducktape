@@ -91,7 +91,10 @@
     }
   }
 
-  // DataTable for sorting
+  // Sort state tracked outside DataTable so it survives data changes
+  let sortColumn = $state("created_at");
+  let sortDirection: "asc" | "desc" = $state("desc");
+
   const table = $derived(
     new DataTable({
       data: runs,
@@ -103,16 +106,23 @@
         { id: "status", key: "status", name: "Status", sortable: true },
         { id: "created_at", key: "created_at", name: "Created", sortable: true },
       ],
-      initialSort: "created_at",
-      initialSortDirection: "desc",
+      initialSort: sortColumn,
+      initialSortDirection: sortDirection,
     })
   );
 
+  function handleSort(columnId: string) {
+    if (sortColumn === columnId) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc";
+    } else {
+      sortColumn = columnId;
+      sortDirection = "asc";
+    }
+  }
+
   function getSortIndicator(columnId: string): string {
-    const state = table.getSortState(columnId);
-    if (state === "asc") return " ↑";
-    if (state === "desc") return " ↓";
-    return "";
+    if (sortColumn !== columnId) return "";
+    return sortDirection === "asc" ? " ↑" : " ↓";
   }
 
   // Rows are clickable via RunIdLink inside each row
@@ -195,32 +205,23 @@
       <table class="min-w-full text-sm">
         <thead>
           <tr class="border-b border-gray-300">
-            <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort("agent_run_id")}
-            >
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("agent_run_id")}>
               ID{getSortIndicator("agent_run_id")}
             </th>
-            <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort("image_digest")}
-            >
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("image_digest")}>
               Definition{getSortIndicator("image_digest")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("split")}>
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("split")}>
               Split{getSortIndicator("split")}
             </th>
             <th class="px-3 py-2 text-left"> Example </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("model")}>
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("model")}>
               Model{getSortIndicator("model")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("status")}>
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("status")}>
               Status{getSortIndicator("status")}
             </th>
-            <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort("created_at")}
-            >
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("created_at")}>
               Created{getSortIndicator("created_at")}
             </th>
           </tr>

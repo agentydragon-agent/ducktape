@@ -117,7 +117,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
         srcs = code_srcs,
         strip_prefix = code_strip_prefix,
         out = name + "_code.tar",
-        visibility = ["//props/backend:__pkg__"],
+        visibility = ["//props:__subpackages__"],
     )
 
     create_data_blob(
@@ -126,7 +126,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
         snapshot_slug = slug,
         split = split,
         out = name + "_data.yaml",
-        visibility = ["//props/backend:__pkg__"],
+        visibility = ["//props:__subpackages__"],
     )
 
     # Per-specimen test

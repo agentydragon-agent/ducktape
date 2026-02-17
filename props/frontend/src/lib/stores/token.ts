@@ -15,9 +15,12 @@ export function getToken(): string | null {
   return localStorage.getItem(STORAGE_KEY);
 }
 
+let authFailureHandled = false;
+
 export function setToken(token: string): void {
   localStorage.setItem(STORAGE_KEY, token);
   needsToken.set(false);
+  authFailureHandled = false;
 }
 
 export function clearToken(): void {
@@ -40,5 +43,7 @@ export function captureTokenFromUrl(): void {
 
 /** Signal that auth failed (401) - shows paste-token UI if no token stored. */
 export function onAuthFailed(): void {
+  if (authFailureHandled) return;
+  authFailureHandled = true;
   clearToken();
 }

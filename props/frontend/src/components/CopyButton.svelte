@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { Copy, Check } from "lucide-svelte";
   import { toast } from "svelte-sonner";
 
@@ -11,18 +12,24 @@
   let { text, label = "Copy", successMessage = "Copied to clipboard" }: Props = $props();
 
   let copied = $state(false);
+  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(text);
       copied = true;
       toast.success(successMessage);
-      setTimeout(() => (copied = false), 2000);
+      if (copyTimeout) clearTimeout(copyTimeout);
+      copyTimeout = setTimeout(() => (copied = false), 2000);
     } catch (err) {
       toast.error("Failed to copy to clipboard");
       console.error("Copy failed:", err);
     }
   }
+
+  onDestroy(() => {
+    if (copyTimeout) clearTimeout(copyTimeout);
+  });
 </script>
 
 <button

@@ -135,7 +135,7 @@ class DefinitionDetailResponse(BaseModel):
 @router.get("/definitions/{image_digest}")
 def get_definition_detail(image_digest: str, agent_db: AgentDb) -> DefinitionDetailResponse:
     with agent_db.session() as session:
-        definition = session.query(AgentDefinition).filter_by(id=image_digest).first()
+        definition = session.query(AgentDefinition).filter_by(digest=image_digest).first()
         if not definition:
             raise HTTPException(status_code=404, detail=f"Definition not found: {image_digest}")
 

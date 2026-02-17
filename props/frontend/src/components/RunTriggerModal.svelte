@@ -80,11 +80,17 @@
     }
   });
 
+  let prefillApplied = false;
+
   $effect(() => {
-    if (prefill) {
+    if (open && prefill && !prefillApplied) {
+      prefillApplied = true;
       if (prefill.definitionId) selectedDefinition = prefill.definitionId;
       if (prefill.split) selectedSplit = prefill.split;
       if (prefill.kind) selectedKind = prefill.kind;
+    }
+    if (!open) {
+      prefillApplied = false;
     }
   });
 

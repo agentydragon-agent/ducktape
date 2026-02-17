@@ -16,6 +16,7 @@ from props.backend.routes import stats
 from props.core.models.examples import ExampleSpec
 from props.db.database import Database
 from props.db.models import AgentRun
+from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
 pytestmark = [pytest.mark.integration]
 
@@ -30,6 +31,44 @@ def stats_client(synced_db: Database) -> TestClient:
     # RLS scoping is tested separately in test_split_based_rls.
     app.dependency_overrides[get_agent_db] = lambda: synced_db
     return TestClient(app, raise_server_exceptions=False)
+
+
+# --- /definitions/{image_digest} ---
+
+
+def test_definition_detail_not_found(stats_client: TestClient) -> None:
+    """Returns 404 for nonexistent digest."""
+    resp = stats_client.get("/api/stats/definitions/sha256:" + "f" * 64)
+    assert resp.status_code == 404
+
+
+def test_definition_detail_returns_definition(stats_client: TestClient, synced_db: Database) -> None:
+    """Returns definition metadata for a known digest."""
+    with synced_db.session() as session:
+        ensure_fake_agent_definitions(session)
+        session.commit()
+
+    resp = stats_client.get(f"/api/stats/definitions/{FAKE_CRITIC_DIGEST}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["image_digest"] == FAKE_CRITIC_DIGEST
+    assert body["agent_type"] == "critic"
+    assert "created_at" in body
+    assert "stats" in body
+    assert "examples" in body
+
+
+def test_definition_detail_with_runs(
+    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
+) -> None:
+    """Returns stats and examples when runs exist for the definition."""
+    resp = stats_client.get(f"/api/stats/definitions/{FAKE_CRITIC_DIGEST}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["image_digest"] == FAKE_CRITIC_DIGEST
+    # With runs, we should have stats populated
+    assert isinstance(body["stats"], dict)
+    assert isinstance(body["examples"], list)
 
 
 # --- /occurrences ---

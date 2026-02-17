@@ -152,13 +152,11 @@
   let expandedIssues = $state(new SvelteSet<string>());
 
   function toggleIssue(id: string) {
-    const newSet = new SvelteSet(expandedIssues);
-    if (newSet.has(id)) {
-      newSet.delete(id);
+    if (expandedIssues.has(id)) {
+      expandedIssues.delete(id);
     } else {
-      newSet.add(id);
+      expandedIssues.add(id);
     }
-    expandedIssues = newSet;
   }
 
   function getIssueKey(issue: IssueMarker): string {
