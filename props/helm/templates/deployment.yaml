@@ -9,7 +9,6 @@ spec:
   selector:
     matchLabels:
       {{- include "props.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: backend
   template:
     metadata:
       annotations:
