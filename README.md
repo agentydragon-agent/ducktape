@@ -25,7 +25,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 | `ansible/`      | System configuration             |
 | `docker/`       | Container images                 |
 | `dotfiles/`     | Shell configs, scripts           |
-| `props/`        | Properties/specimens             |
+| `props/`        | LLM critic eval system           |
 
 ### Less Active
 

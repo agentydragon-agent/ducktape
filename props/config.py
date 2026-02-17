@@ -108,6 +108,7 @@ class PropsConfig(BaseModel):
     models: list[CustomModelConfig] = []
     executor: ExecutorConfig = Field(default_factory=DockerExecutorConfig)
     auto_migrate: bool = False
+    auto_sync_specimens: bool = False
 
 
 def load_config(path: Path) -> PropsConfig:

@@ -27,17 +27,11 @@
   const exampleKind = $derived((queryParams.get("example_kind") ?? "whole_snapshot") as ExampleKind);
   const filesHash = $derived(queryParams.get("files_hash"));
 
-  async function loadData() {
-    if (!snapshotSlug) {
-      error = "Missing snapshot_slug parameter";
-      loading = false;
-      return;
-    }
-
+  async function loadData(slug: string, kind: ExampleKind, hash: string | null) {
     loading = true;
     error = null;
     try {
-      example = await fetchExampleDetail(snapshotSlug, exampleKind, filesHash);
+      example = await fetchExampleDetail(slug, kind, hash);
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load example";
     } finally {
@@ -45,10 +39,13 @@
     }
   }
 
-  // $effect runs immediately on mount and re-runs when snapshotSlug changes
+  // $effect runs immediately on mount and re-runs when any query param changes
   $effect(() => {
     if (snapshotSlug && !initialData) {
-      loadData();
+      loadData(snapshotSlug, exampleKind, filesHash);
+    } else if (!snapshotSlug) {
+      error = "Missing snapshot_slug parameter";
+      loading = false;
     }
   });
 </script>

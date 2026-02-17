@@ -52,26 +52,23 @@
     critique: Link,
   } as const;
 
-  // Target kind to color mapping
-  const TARGET_COLORS = {
-    tp: "green",
-    fp: "red",
+  // Static color classes for grading edge targets — Tailwind scanner needs literal strings
+  const TARGET_STYLES = {
+    tp: {
+      bg: "bg-green-50",
+      border: "border-green-200",
+      iconColor: "text-green-600",
+      textColor: "text-green-700",
+      creditColor: "text-green-600",
+    },
+    fp: {
+      bg: "bg-red-50",
+      border: "border-red-200",
+      iconColor: "text-red-600",
+      textColor: "text-red-700",
+      creditColor: "text-red-600",
+    },
   } as const;
-
-  // Helper to create color classes for a given base color
-  const colorClasses = (color: string, creditColor?: string) => ({
-    bg: `bg-${color}-50`,
-    border: `border-${color}-200`,
-    iconColor: `text-${color}-600`,
-    textColor: `text-${color}-700`,
-    creditColor: creditColor ?? `text-${color}-600`,
-  });
-
-  // Helper to create grading edge styling from base color and label
-  const createTargetStyling = (baseColor: string, label: string, creditColor?: string) => ({
-    ...colorClasses(baseColor, creditColor),
-    label,
-  });
 
   // Get label for grading edge target
   const getTargetLabel = (target: { kind: "tp" | "fp"; tp_id?: string; fp_id?: string; occurrence_id?: string }) => {
@@ -145,7 +142,7 @@
       {#if allLocations.length > 1}
         <div>
           <div class="text-xs font-medium text-gray-600 mb-1">All locations:</div>
-          {#each allLocations as loc (`${loc.file}-${loc.start_line}`)}
+          {#each allLocations as loc, i (`${loc.file}-${loc.start_line}-${i}`)}
             <div class="font-mono text-xs text-gray-700">
               {formatLocationAnchor(loc)}
               {#if loc.note}
@@ -164,20 +161,20 @@
               {@const target = edge.target}
               {#if target.credit > 0}
                 {@const TargetIcon = ICONS[target.kind]}
-                {@const targetStyling = createTargetStyling(TARGET_COLORS[target.kind], getTargetLabel(target))}
-                <div class="text-xs p-1.5 rounded border {targetStyling.bg} {targetStyling.border}">
+                {@const ts = TARGET_STYLES[target.kind]}
+                <div class="text-xs p-1.5 rounded border {ts.bg} {ts.border}">
                   <div class="flex items-center gap-2">
-                    <TargetIcon size={12} class={targetStyling.iconColor} />
+                    <TargetIcon size={12} class={ts.iconColor} />
                     <span class="font-mono">
                       {#if snapshotSlug && target.kind === "tp" && target.tp_id && target.occurrence_id}
                         <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
                       {:else if snapshotSlug && target.kind === "fp" && target.fp_id && target.occurrence_id}
                         <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
                       {:else}
-                        <span class={targetStyling.textColor}>{targetStyling.label}</span>
+                        <span class={ts.textColor}>{getTargetLabel(target)}</span>
                       {/if}
                     </span>
-                    <span class="{targetStyling.creditColor} font-medium">(+{target.credit.toFixed(2)})</span>
+                    <span class="{ts.creditColor} font-medium">(+{target.credit.toFixed(2)})</span>
                   </div>
                   {#if edge.rationale}
                     <div class="text-gray-600 mt-1">{edge.rationale}</div>

@@ -33,6 +33,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import upgrade_database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
+from props.db.sync.sync import SpecimenBundle, sync_specimen
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.executor_factory import create_executor
 from props.orchestration.grader_supervisor import GraderSupervisor
@@ -60,6 +61,30 @@ class BackendDeps:
     port: int = 8000
 
 
+SPECIMENS_DIR = Path("/specimens")
+
+
+def _sync_all_specimens(db: Database) -> None:
+    """Scan /specimens/ directory and sync each specimen to the database."""
+    if not SPECIMENS_DIR.exists():
+        logger.warning(f"Specimens directory {SPECIMENS_DIR} not found, skipping sync")
+        return
+
+    synced = 0
+    for data_yaml in sorted(SPECIMENS_DIR.rglob("specimen_data.yaml")):
+        code_tar = data_yaml.parent / "specimen_code.tar"
+        if not code_tar.exists():
+            logger.warning(f"Missing code tar for {data_yaml}, skipping")
+            continue
+        bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
+        with db.session() as session:
+            sync_specimen(session, bundle)
+            session.commit()
+        synced += 1
+
+    logger.info(f"Synced {synced} specimens from {SPECIMENS_DIR}")
+
+
 def _make_lifespan(deps: BackendDeps):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -78,6 +103,9 @@ def _make_lifespan(deps: BackendDeps):
             stats = sync_model_metadata_with_session(session, deps.config)
             if stats.added or stats.deleted:
                 logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
+
+        if deps.config.auto_sync_specimens:
+            _sync_all_specimens(db)
 
         executor = await create_executor(deps.config.executor, db_config)
         logger.info("Using %s executor", deps.config.executor.type)

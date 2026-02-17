@@ -61,17 +61,3 @@ export function parseParams(pattern: string, path: string): Record<string, strin
   });
   return params;
 }
-
-// Route matching helper
-export function matchRoute(
-  routes: Array<{ pattern: string; component: unknown }>,
-  path: string
-): { component: unknown; params: Record<string, string> } | null {
-  for (const route of routes) {
-    const params = parseParams(route.pattern, path);
-    if (params !== null) {
-      return { component: route.component, params };
-    }
-  }
-  return null;
-}

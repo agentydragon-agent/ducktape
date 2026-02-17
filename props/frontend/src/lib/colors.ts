@@ -22,22 +22,47 @@ export function splitBadgeClass(split: string): string {
   }
 }
 
-/** Generate color scheme for an issue type based on base color */
-function colorScheme(color: string) {
-  return {
-    bg: `bg-${color}-50`,
-    border: `border-${color}-200`,
-    borderLeft: `border-l-4 border-${color}-500`,
-    headerBg: `bg-${color}-100`,
-    text: `text-${color}-600`,
-    textDark: `text-${color}-700`,
-  } as const;
+export interface IssueColorScheme {
+  bg: string;
+  border: string;
+  borderLeft: string;
+  headerBg: string;
+  text: string;
+  textDark: string;
 }
 
-/** Color scheme for issue types (TP, FP, critique) */
-export const issueColors = {
-  tp: colorScheme("green"),
-  fp: colorScheme("red"),
-  critique: colorScheme("blue"),
-  critiqueFp: colorScheme("orange"),
-} as const;
+/** Color schemes for issue types — static class names for Tailwind scanner */
+export const issueColors: Record<string, IssueColorScheme> = {
+  tp: {
+    bg: "bg-green-50",
+    border: "border-green-200",
+    borderLeft: "border-l-4 border-green-500",
+    headerBg: "bg-green-100",
+    text: "text-green-600",
+    textDark: "text-green-700",
+  },
+  fp: {
+    bg: "bg-red-50",
+    border: "border-red-200",
+    borderLeft: "border-l-4 border-red-500",
+    headerBg: "bg-red-100",
+    text: "text-red-600",
+    textDark: "text-red-700",
+  },
+  critique: {
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    borderLeft: "border-l-4 border-blue-500",
+    headerBg: "bg-blue-100",
+    text: "text-blue-600",
+    textDark: "text-blue-700",
+  },
+  critiqueFp: {
+    bg: "bg-orange-50",
+    border: "border-orange-200",
+    borderLeft: "border-l-4 border-orange-500",
+    headerBg: "bg-orange-100",
+    text: "text-orange-600",
+    textDark: "text-orange-700",
+  },
+};

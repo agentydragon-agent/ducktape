@@ -1,5 +1,6 @@
 """Bazel rules for specimen tar generation and testing."""
 
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("//tools/testing:defs.bzl", "py_test")
 
 def _create_code_tar_impl(ctx):
@@ -116,6 +117,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
         srcs = code_srcs,
         strip_prefix = code_strip_prefix,
         out = name + "_code.tar",
+        visibility = ["//props/backend:__pkg__"],
     )
 
     create_data_blob(
@@ -124,6 +126,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
         snapshot_slug = slug,
         split = split,
         out = name + "_data.yaml",
+        visibility = ["//props/backend:__pkg__"],
     )
 
     # Per-specimen test
@@ -155,4 +158,17 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
             "@pypi//sqlalchemy",
             "@pypi//testcontainers",
         ],
+    )
+
+def specimen_pkg_files(name, slug, specimen_package, visibility = None):
+    """Create pkg_files placing a specimen's artifacts under /specimens/{slug}/."""
+    pkg_files(
+        name = name,
+        srcs = [
+            specimen_package + ":specimen_code_tar",
+            specimen_package + ":specimen_data_blob",
+        ],
+        prefix = "/specimens/" + slug,
+        strip_prefix = strip_prefix.files_only(),
+        visibility = visibility,
     )

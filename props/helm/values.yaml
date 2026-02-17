@@ -77,6 +77,17 @@ registry:
     size: 50Gi
     storageClassName: ""
 
+# PostgreSQL backup CronJob
+backup:
+  enabled: false
+  schedule: "0 3 * * *"
+  retention:
+    days: 7
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""
+
 # PostgreSQL subchart configuration
 # The bitnami subchart auto-generates and manages its own password secret.
 postgresql:

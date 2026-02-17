@@ -144,6 +144,49 @@ Grading is handled automatically by snapshot graders.
 Specimen source code is stored in PostgreSQL and fetched by agent init scripts at runtime.
 To inspect specimen files, query the database directly or use the sync'd specimens repository.
 
+## Cluster Deployment
+
+Props runs in the Talos k8s cluster via a Helm chart (`props/helm/`), deployed by Flux from `cluster/k8s/props/helmrelease.yaml`.
+
+### Components
+
+| Component  | Image/Chart                             | Storage          |
+| ---------- | --------------------------------------- | ---------------- |
+| Backend    | `ghcr.io/agentydragon/props-backend`    | —                |
+| PostgreSQL | Bitnami subchart                        | 10Gi proxmox-csi |
+| Registry   | `registry:2` (OCI proxy behind backend) | 50Gi proxmox-csi |
+| Backup     | CronJob using Bitnami PG image          | 5Gi proxmox-csi  |
+
+All pods run on Proxmox nodes (`nodeSelector: topology.kubernetes.io/region: proxmox`).
+
+### OCI Image
+
+The backend OCI image (`//props/backend:image`) bundles:
+
+- Python backend + frontend assets
+- All specimen artifacts (code tars + data YAMLs) at `/specimens/{slug}/`
+
+Built by Bazel, pushed to GHCR by CI.
+
+### Startup Behavior
+
+Controlled by `PropsConfig` toggles in `config.toml` (mounted via ConfigMap):
+
+- `auto_migrate: true` — runs Alembic migrations on boot
+- `auto_sync_specimens: true` — scans `/specimens/` and syncs all specimens to PostgreSQL
+
+### PostgreSQL Backup
+
+A daily CronJob (`backup.enabled: true`) runs `pg_dump | gzip` to a PVC, with configurable retention (`backup.retention.days`). Manual trigger:
+
+```bash
+kubectl create job --from=cronjob/props-backup props-backup-test -n props
+```
+
+### Registry Proxy
+
+The backend authenticates OCI requests against PostgreSQL and proxies `/v2/*` to the internal `registry:2`. CI pushes agent images via `docker login props.allegedly.works`. The registry is configured with `REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative URLs (required for external clients going through the Gateway API proxy).
+
 ## GitHub Copilot Agent Setup
 
 GitHub Copilot agents working on the props codebase should use the automated environment setup configured in `.github/workflows/copilot-setup-steps.yml`. This workflow sets up:

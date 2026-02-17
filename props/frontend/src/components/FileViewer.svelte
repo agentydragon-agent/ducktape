@@ -275,7 +275,7 @@
 
           <!-- Location notes (show after the last line of each location with a note) -->
           {@const locationNotes = lineToLocationNotes.get(idx) || []}
-          {#each locationNotes as { loc, issue } (`${getIssueKey(issue)}-${loc.start_line}`)}
+          {#each locationNotes as { loc, issue }, i (`${getIssueKey(issue)}-${loc.start_line}-${i}`)}
             <tr>
               <td colspan="2" class="px-4 py-0.5">
                 <div class="text-xs italic text-gray-600 bg-gray-50 border-l-2 border-gray-300 px-2 py-1 rounded-r">

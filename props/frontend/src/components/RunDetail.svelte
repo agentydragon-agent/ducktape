@@ -102,23 +102,24 @@
     const edges = getAggregatedEdges(run);
     if (edges.length === 0) return null;
 
-    const tp_count = edges.filter((e) => e.target.kind === "tp").length;
-    const fp_count = edges.filter((e) => e.target.kind === "fp").length;
+    const tp_count = edges.filter((e) => e.target.kind === "tp" && e.target.credit > 0).length;
+    const fp_count = edges.filter((e) => e.target.kind === "fp" && e.target.credit > 0).length;
     const total_credit = edges.filter((e) => e.target.kind === "tp").reduce((sum, e) => sum + e.target.credit, 0);
 
-    // Recall denominator needs to come from example - we'll pass it separately
     return { tp_count, fp_count, total_credit };
   }
 
-  // Load run data
-  async function loadData() {
+  // Load run data. snapshotLoaded=true skips re-fetching snapshot+files during polling.
+  async function loadData(snapshotLoaded = false) {
     try {
       run = await fetchRun(runId);
 
-      // Load snapshot data for critic runs with reported issues
-      const reportedIssues = getReportedIssues(run);
-      if (getAgentType(run) === "critic" && reportedIssues.length > 0) {
-        await loadSnapshotData(run);
+      // Load snapshot data for critic runs with reported issues (only on initial load)
+      if (!snapshotLoaded) {
+        const reportedIssues = getReportedIssues(run);
+        if (getAgentType(run) === "critic" && reportedIssues.length > 0) {
+          await loadSnapshotData(run);
+        }
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load run";
@@ -218,7 +219,7 @@
     pollInterval = setInterval(() => {
       if (run?.status === "in_progress" && !polling) {
         polling = true;
-        loadData().finally(() => {
+        loadData(true).finally(() => {
           polling = false;
         });
       }

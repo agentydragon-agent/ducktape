@@ -6,6 +6,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+load("//props/specimens:defs.bzl", "specimen_pkg_files")
 load("//tools/testing:defs.bzl", "py_test")
 
 # =============================================================================
@@ -57,6 +58,7 @@ py_library(
         "//props/db:config",
         "//props/db:database",
         "//props/db:setup",
+        "//props/db/sync",
         "//props/db/sync:model_metadata",
         "//props/orchestration:agent_registry",
         "//props/orchestration:executor_factory",
@@ -240,6 +242,40 @@ pkg_tar(
     ],
 )
 
+# =============================================================================
+# Specimen assets (bundled at /specimens/{slug}/ in the image)
+# =============================================================================
+
+_SPECIMENS = [
+    ("crush/2025-08-30-internal_db", "//props/specimens/crush/2025-08-30-internal_db"),
+    ("ducktape/2025-09-03-00", "//props/specimens/ducktape/2025-09-03-00"),
+    ("ducktape/2025-11-20-00", "//props/specimens/ducktape/2025-11-20-00"),
+    ("ducktape/2025-11-20-01", "//props/specimens/ducktape/2025-11-20-01"),
+    ("ducktape/2025-11-21-00", "//props/specimens/ducktape/2025-11-21-00"),
+    ("ducktape/2025-11-22-00", "//props/specimens/ducktape/2025-11-22-00"),
+    ("ducktape/2025-11-22-01", "//props/specimens/ducktape/2025-11-22-01"),
+    ("ducktape/2025-11-22-02", "//props/specimens/ducktape/2025-11-22-02"),
+    ("ducktape/2025-11-26-00", "//props/specimens/ducktape/2025-11-26-00"),
+    ("ducktape/2025-12-04-00", "//props/specimens/ducktape/2025-12-04-00"),
+    ("ducktape/2026-01-17-00", "//props/specimens/ducktape/2026-01-17-00"),
+    ("ducktape/2026-01-29-00", "//props/specimens/ducktape/2026-01-29-00"),
+    ("ducktape_llm_common/2026-01-03-00", "//props/specimens/ducktape_llm_common/2026-01-03-00"),
+    ("gmail-archiver/2025-12-17-00", "//props/specimens/gmail-archiver/2025-12-17-00"),
+    ("misc/2025-08-29-pyright_watch_report", "//props/specimens/misc/2025-08-29-pyright_watch_report"),
+    ("wt/2025-01-03-00", "//props/specimens/wt/2025-01-03-00"),
+]
+
+[specimen_pkg_files(
+    name = "specimen_files_" + slug.replace("/", "_").replace("-", "_"),
+    slug = slug,
+    specimen_package = pkg,
+) for slug, pkg in _SPECIMENS]
+
+pkg_tar(
+    name = "specimen_assets",
+    srcs = [":specimen_files_" + slug.replace("/", "_").replace("-", "_") for slug, _ in _SPECIMENS],
+)
+
 oci_image(
     name = "image",
     base = "@debian_slim_linux_amd64",
@@ -254,6 +290,7 @@ oci_image(
     tars = [
         ":layers",
         ":frontend_assets",
+        ":specimen_assets",
     ],
 )
 

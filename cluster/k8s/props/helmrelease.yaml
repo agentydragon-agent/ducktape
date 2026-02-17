@@ -26,6 +26,7 @@ spec:
       pullPolicy: Always
     config:
       auto_migrate: true
+      auto_sync_specimens: true
       backend_url: "http://props:8000"
       grader_model: ""
       agent_env:
@@ -83,6 +84,15 @@ spec:
         - hosts:
             - props.allegedly.works
           secretName: props-tls
+    backup:
+      enabled: true
+      schedule: "0 3 * * *"
+      retention:
+        days: 7
+      persistence:
+        enabled: true
+        size: 5Gi
+        storageClassName: proxmox-csi-retain
     registry:
       enabled: true
       persistence:

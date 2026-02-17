@@ -63,6 +63,10 @@
   async function loadData() {
     loading = true;
     error = null;
+    // Reset stale data from previous snapshot
+    occurrenceStats = [];
+    clusters = [];
+    selectedFile = null;
     try {
       const [snapshotData, treeData] = await Promise.all([
         fetchSnapshotDetail(parsedSlug.snapshotSlug),
@@ -145,6 +149,8 @@
     return `${window.location.origin}${hashPath}`;
   }
 
+  let pendingScrollTarget: string | null = $state(null);
+
   function findAndNavigateToOccurrence(issueId: string, occurrenceId: string, filePath?: string) {
     if (!snapshot) return;
     const snap = snapshot; // Capture for closure
@@ -160,12 +166,8 @@
             handleFileClick(fileToLoad);
             expandedIssues.expand(issueId);
             activeTab = "files";
-            setTimeout(() => {
-              document.getElementById(`${issueId}-${occurrenceId}`)?.scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-              });
-            }, 100);
+            // Defer scroll until file finishes loading and renders
+            pendingScrollTarget = `${issueId}-${occurrenceId}`;
             return true;
           }
         }
@@ -175,6 +177,21 @@
 
     searchInIssues(snap.true_positives) || searchInIssues(snap.false_positives);
   }
+
+  // Scroll to target after file finishes loading
+  $effect(() => {
+    if (pendingScrollTarget && selectedFile && !loadingFile) {
+      const target = pendingScrollTarget;
+      pendingScrollTarget = null;
+      // Use tick to wait for DOM update after state change
+      requestAnimationFrame(() => {
+        document.getElementById(target)?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      });
+    }
+  });
 
   // Handle deep linking via route params
   $effect(() => {
@@ -287,7 +304,8 @@
                         {#each tp.occurrences as occ (occ.occurrence_id)}
                           <div
                             id="{tp.tp_id}-{occ.occurrence_id}"
-                            class="bg-white border rounded p-2 mt-1 {parsedSlug.occurrenceId === occ.occurrence_id
+                            class="bg-white border rounded p-2 mt-1 {parsedSlug.issueId === tp.tp_id &&
+                            parsedSlug.occurrenceId === occ.occurrence_id
                               ? 'ring-2 ring-blue-500'
                               : ''}"
                           >
@@ -369,7 +387,8 @@
                         {#each fp.occurrences as occ (occ.occurrence_id)}
                           <div
                             id="{fp.fp_id}-{occ.occurrence_id}"
-                            class="bg-white border rounded p-2 mt-1 {parsedSlug.occurrenceId === occ.occurrence_id
+                            class="bg-white border rounded p-2 mt-1 {parsedSlug.issueId === fp.fp_id &&
+                            parsedSlug.occurrenceId === occ.occurrence_id
                               ? 'ring-2 ring-blue-500'
                               : ''}"
                           >
