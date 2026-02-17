@@ -24,9 +24,6 @@ from enum import IntEnum, StrEnum
 from pathlib import Path
 
 import pygit2
-import pyrage
-import pyrage.x25519
-import yaml
 from kubernetes import client, config
 from kubernetes.client import ApiException
 from kubernetes.stream import stream
@@ -36,7 +33,7 @@ from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 
 from bazel_util.runfiles import get_required_path
 from bazel_util.workspace import get_build_workspace_directory
-from tools.claude_hooks.kubeconfig_setup import KubeconfigSecret
+from cluster.generate_claude_kubeconfig import generate
 
 _TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
 
@@ -658,49 +655,6 @@ def monitor_flux_convergence(
         time.sleep(poll_interval.total_seconds())
 
 
-def generate_claude_kubeconfig(root: Path) -> None:
-    """Generate age-encrypted kubeconfig for Claude Code sessions.
-
-    Creates a ServiceAccount token for claude-code-web, builds a kubeconfig,
-    and age-encrypts it to .claude_hooks/secrets/kubeconfig.age.
-    """
-    recipients_file = root / ".claude_hooks" / "secrets" / "recipients.txt"
-    output_file = root / ".claude_hooks" / "secrets" / "kubeconfig.age"
-
-    if not recipients_file.exists():
-        log.warning("No recipients.txt found at %s, skipping Claude kubeconfig generation", recipients_file)
-        return
-
-    log.info("Generating Claude kubeconfig...")
-
-    v1 = client.CoreV1Api()
-
-    # Create a 1-year token for the claude-code-web ServiceAccount
-    token_request = client.AuthenticationV1TokenRequest(
-        spec=client.V1TokenRequestSpec(expiration_seconds=365 * 24 * 3600)
-    )
-    resp = v1.create_namespaced_service_account_token("claude-code-web", "default", token_request)
-    token = resp.status.token
-
-    # Read cluster CA from the admin kubeconfig; use DNS endpoint for the server
-    admin_kubeconfig_path = Layer.INFRASTRUCTURE.tf_dir / "kubeconfig"
-    admin_kubeconfig = yaml.safe_load(admin_kubeconfig_path.read_text())
-    ca_data = admin_kubeconfig["clusters"][0]["cluster"]["certificate-authority-data"]
-    server = "https://api.allegedly.works:6443"
-
-    secret = KubeconfigSecret(server=server, ca_b64=ca_data, token=token)
-    secret_json = secret.model_dump_json()
-
-    # Encrypt with age using the public key from recipients.txt
-    recipient_str = recipients_file.read_text().strip()
-    recipient = pyrage.x25519.Recipient.from_str(recipient_str)
-    encrypted = pyrage.encrypt(secret_json.encode(), [recipient])
-    output_file.write_bytes(encrypted)
-
-    log.info("Claude kubeconfig written to %s", output_file.relative_to(root))
-    log.info("Commit the updated kubeconfig.age to complete the update")
-
-
 def deploy_services() -> None:
     log.info("Layer 2: Services")
 
@@ -714,7 +668,7 @@ def deploy_services() -> None:
     config.load_kube_config(str(kubeconfig))
     monitor_flux_convergence()
 
-    generate_claude_kubeconfig(SCRIPT_DIR.parent)
+    generate(SCRIPT_DIR.parent)
 
     log.info("Bootstrap complete - all kustomizations converged.")
     print(f"\nAccess cluster: export KUBECONFIG='{kubeconfig}'")

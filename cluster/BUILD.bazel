@@ -4,16 +4,33 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/testing:defs.bzl", "py_test")
 
 py_library(
-    name = "bootstrap_lib",
-    srcs = ["bootstrap.py"],
+    name = "generate_claude_kubeconfig_lib",
+    srcs = ["generate_claude_kubeconfig.py"],
     deps = [
-        "//bazel_util:runfiles",
         "//bazel_util:workspace",
         "//tools/claude_hooks:kubeconfig_setup",
         "@pypi//kubernetes",
+        "@pypi//pyrage",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "generate_claude_kubeconfig",
+    main_module = "cluster.generate_claude_kubeconfig",
+    deps = [":generate_claude_kubeconfig_lib"],
+)
+
+py_library(
+    name = "bootstrap_lib",
+    srcs = ["bootstrap.py"],
+    deps = [
+        ":generate_claude_kubeconfig_lib",
+        "//bazel_util:runfiles",
+        "//bazel_util:workspace",
+        "@pypi//kubernetes",
         "@pypi//pydantic",
         "@pypi//pygit2",
-        "@pypi//pyrage",
         "@pypi//pyyaml",
         "@pypi//tenacity",
     ],
