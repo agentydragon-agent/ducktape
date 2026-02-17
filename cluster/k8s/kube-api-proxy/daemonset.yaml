@@ -9,6 +9,8 @@ spec:
       app: kube-api-proxy
   template:
     metadata:
+      annotations:
+        reloader.stakater.com/auto: "true"
       labels:
         app: kube-api-proxy
     spec:
