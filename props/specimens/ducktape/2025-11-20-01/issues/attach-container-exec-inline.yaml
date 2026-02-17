@@ -11,3 +11,7 @@ occurrences:
         - [22, 22]
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/mcp/runtime/server.py
+      - - adgn/src/adgn/mcp/exec/docker/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/runtime/server.py
+      - adgn/src/adgn/mcp/exec/docker/server.py

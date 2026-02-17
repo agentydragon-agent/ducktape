@@ -1,13 +1,8 @@
 rationale: |
-  Policy proposal_id (models.py:149) database column is int, but all APIs
-  accept str and convert with try/except int() at runtime. 13 locations have
-  identical conversion logic.
-
-  Using domain types provides:
-  - Type safety: can't mix different ID types
-  - Semantic clarity: not just any string/int, but specific identifier
-  - No runtime conversions/validation
-  - Clear type contracts in signatures
+  Policy proposal_id is int in the database (models.py:149), but all API layers use str
+  and convert with try/except int() at runtime. 13 locations have identical conversion
+  logic. Use one consistent int-like type throughout — e.g., `ProposalId = NewType("ProposalId", int)` —
+  and eliminate the str-to-int conversions.
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
@@ -17,6 +12,8 @@ occurrences:
     note: Database model uses int for proposal_id
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/persist/models.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/models.py
   - occurrence_id: occ-1
     files:
       adgn/src/adgn/agent/persist/sqlite.py:
@@ -31,6 +28,8 @@ occurrences:
     note: SQLite layer converts str to int with try/except
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/persist/sqlite.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/sqlite.py
   - occurrence_id: occ-2
     files:
       adgn/src/adgn/agent/persist/__init__.py:
@@ -45,6 +44,8 @@ occurrences:
     note: Protocol interface uses str return/param types
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/persist/__init__.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/__init__.py
   - occurrence_id: occ-3
     files:
       adgn/src/adgn/agent/approvals.py:

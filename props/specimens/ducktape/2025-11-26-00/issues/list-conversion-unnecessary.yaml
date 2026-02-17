@@ -21,3 +21,5 @@ occurrences:
           - 194
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/mcp/resources/server.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/resources/server.py
