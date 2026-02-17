@@ -17,6 +17,7 @@ spec:
         kind: GitRepository
         name: attic-chart
         namespace: nix-cache
+      reconcileStrategy: Revision
       interval: 15m
   # Inject JWT token from SealedSecret
   valuesFrom:

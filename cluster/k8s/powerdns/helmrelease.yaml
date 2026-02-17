@@ -17,6 +17,7 @@ spec:
         kind: GitRepository
         name: powerdns-chart
         namespace: dns-system
+      reconcileStrategy: Revision
       interval: 15m
   values:
     # Image configuration - using pschiffe/pdns-mysql with auto-init
