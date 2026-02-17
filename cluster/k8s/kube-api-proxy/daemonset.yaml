@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-api-proxy
+  namespace: kube-api-proxy
+spec:
+  selector:
+    matchLabels:
+      app: kube-api-proxy
+  template:
+    metadata:
+      labels:
+        app: kube-api-proxy
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        topology.kubernetes.io/region: hetzner
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:alpine
+          ports:
+            - containerPort: 16443
+              hostPort: 16443
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: kube-api-proxy-config
+        - name: tls
+          secret:
+            secretName: kube-api-proxy-tls

@@ -20,13 +20,13 @@ logger = logging.getLogger(__name__)
 class KubeconfigSecret(BaseModel):
     """Typed kubeconfig secret stored in kubeconfig.age.
 
-    JSON format (produced by model_dump()):
-        {"type": "kubeconfig", "server": "...", "ca_b64": "...", "token": "..."}
+    The API endpoint uses a publicly-trusted TLS certificate (via kube-api-proxy),
+    so no cluster CA is needed. The proxy CA (if behind a TLS-inspecting proxy)
+    is injected separately by setup_kubeconfig().
     """
 
     type: Literal["kubeconfig"] = "kubeconfig"
     server: str
-    ca_b64: str  # base64-encoded cluster CA certificate PEM
     token: str
 
 
@@ -35,21 +35,20 @@ def setup_kubeconfig(
 ) -> Path:
     """Build and write a kubeconfig from typed secret fields.
 
-    If proxy_ca_pem is provided (TLS-inspecting proxy detected), it is appended
-    to the cluster CA so kubectl trusts both the proxy and the cluster's own CA.
+    The API endpoint has a publicly-trusted TLS cert, so no cluster CA is needed.
+    If proxy_ca_pem is provided (TLS-inspecting proxy), it is set as the CA so
+    kubectl trusts the proxy's certificate.
 
     Sets env_vars["KUBECONFIG"] so the path is exported to the shell session.
     """
-    cluster_ca_pem = base64.b64decode(secret.ca_b64).decode()
-    combined_ca_pem = cluster_ca_pem + proxy_ca_pem if proxy_ca_pem else cluster_ca_pem
-    combined_ca_b64 = base64.b64encode(combined_ca_pem.encode()).decode()
+    cluster_config: dict[str, str] = {"server": secret.server}
+    if proxy_ca_pem:
+        cluster_config["certificate-authority-data"] = base64.b64encode(proxy_ca_pem.encode()).decode()
 
     kubeconfig = {
         "apiVersion": "v1",
         "kind": "Config",
-        "clusters": [
-            {"cluster": {"certificate-authority-data": combined_ca_b64, "server": secret.server}, "name": "cluster"}
-        ],
+        "clusters": [{"cluster": cluster_config, "name": "cluster"}],
         "contexts": [
             {
                 "context": {"cluster": "cluster", "namespace": "claude-sandbox", "user": "claude-code-web"},

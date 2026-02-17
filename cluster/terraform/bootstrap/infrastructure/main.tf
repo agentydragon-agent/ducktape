@@ -156,6 +156,14 @@ resource "hcloud_firewall" "talos" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
+  # Kubernetes API proxy (publicly-trusted TLS)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "16443"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
   # Talos API
   rule {
     direction  = "in"

@@ -28,14 +28,14 @@ to the shell — they are consumed internally by the hook.
 ```json
 {
   "type": "kubeconfig",
-  "server": "https://allegedly.works:6443",
-  "ca_b64": "<base64-encoded cluster CA PEM>",
+  "server": "https://api.allegedly.works:16443",
   "token": "<ServiceAccount token>"
 }
 ```
 
-The hook builds a kubeconfig YAML from these fields, injecting the Anthropic TLS proxy CA
-alongside the cluster CA so kubectl works through the TLS-inspecting proxy.
+The API endpoint uses a publicly-trusted TLS certificate (via kube-api-proxy), so no
+cluster CA is needed. If behind a TLS-inspecting proxy, the hook injects the proxy CA
+into the kubeconfig so kubectl trusts the proxy's certificate.
 
 ## Kubeconfig Setup
 

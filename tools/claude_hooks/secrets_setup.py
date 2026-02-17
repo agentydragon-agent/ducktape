@@ -7,7 +7,7 @@ HookSettings. Each file decrypts to either:
       {"OLLAMA_API_KEY": "...", "OLLAMA_BASE_URL": "..."}
 
 - A typed secret with a "type" discriminator (new format):
-      {"type": "kubeconfig", "server": "...", "ca_b64": "...", "token": "..."}
+      {"type": "kubeconfig", "server": "...", "token": "..."}
 
 Flat secrets are merged into env_vars (exported to shell). Typed secrets are
 parsed into dedicated fields on SecretsSetup and never exported to the shell.

@@ -127,20 +127,13 @@ def test_kubeconfig_typed_secret(
 ) -> None:
     """Typed kubeconfig secret is parsed into secrets.kubeconfig, not env_vars."""
     identity, recipient = age_keypair
-    payload = {
-        "type": "kubeconfig",
-        "server": "https://allegedly.works:6443",
-        "ca_b64": "dGVzdC1jYQ==",
-        "token": "my-token",
-    }
+    payload = {"type": "kubeconfig", "server": "https://allegedly.works:16443", "token": "my-token"}
     (secrets_dir / "kubeconfig.age").write_bytes(_encrypt_json(payload, recipient))
 
     result = setup_secrets(age_key=str(identity), secrets_dir=secrets_dir)
 
     assert result is not None
-    assert result.kubeconfig == KubeconfigSecret(
-        server="https://allegedly.works:6443", ca_b64="dGVzdC1jYQ==", token="my-token"
-    )
+    assert result.kubeconfig == KubeconfigSecret(server="https://allegedly.works:16443", token="my-token")
     # Not exported to shell
     assert "KUBE" not in result.env_vars
 
@@ -151,7 +144,7 @@ def test_kubeconfig_secret_not_in_env_exports(
     """Kubeconfig secret combined with flat secrets: only flat vars exported."""
     identity, recipient = age_keypair
     (secrets_dir / "a.age").write_bytes(
-        _encrypt_json({"type": "kubeconfig", "server": "https://k8s", "ca_b64": "Y2E=", "token": "tok"}, recipient)
+        _encrypt_json({"type": "kubeconfig", "server": "https://k8s", "token": "tok"}, recipient)
     )
     (secrets_dir / "b.age").write_bytes(_encrypt_json({"API_KEY": "secret"}, recipient))
 
@@ -167,7 +160,7 @@ def test_duplicate_kubeconfig_raises(
 ) -> None:
     """Two kubeconfig secrets in the same secrets dir raises an error."""
     identity, recipient = age_keypair
-    kube_payload = {"type": "kubeconfig", "server": "https://k8s", "ca_b64": "Y2E=", "token": "tok"}
+    kube_payload = {"type": "kubeconfig", "server": "https://k8s", "token": "tok"}
     (secrets_dir / "a.age").write_bytes(_encrypt_json(kube_payload, recipient))
     (secrets_dir / "b.age").write_bytes(_encrypt_json(kube_payload, recipient))
 

@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pyrage
 import pyrage.x25519
-import yaml
 from kubernetes import client, config
 
 from bazel_util.workspace import get_build_workspace_directory
@@ -21,7 +20,7 @@ from tools.claude_hooks.kubeconfig_setup import KubeconfigSecret
 logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 log = logging.getLogger(__name__)
 
-SERVER = "https://api.allegedly.works:6443"
+SERVER = "https://api.allegedly.works:16443"
 SERVICE_ACCOUNT = "claude-code-web"
 SA_NAMESPACE = "default"
 TOKEN_EXPIRY_SECONDS = 365 * 24 * 3600  # 1 year
@@ -51,10 +50,8 @@ def generate(root: Path) -> None:
     resp = v1.create_namespaced_service_account_token(SERVICE_ACCOUNT, SA_NAMESPACE, token_request)
     token = resp.status.token
 
-    admin_kubeconfig = yaml.safe_load(Path(kubeconfig_path).read_text())
-    ca_data = admin_kubeconfig["clusters"][0]["cluster"]["certificate-authority-data"]
-
-    secret = KubeconfigSecret(server=SERVER, ca_b64=ca_data, token=token)
+    # No internal CA needed — the proxy uses a publicly-trusted LE certificate.
+    secret = KubeconfigSecret(server=SERVER, token=token)
 
     recipient_str = recipients_file.read_text().strip()
     recipient = pyrage.x25519.Recipient.from_str(recipient_str)

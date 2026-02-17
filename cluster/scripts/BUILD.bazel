@@ -14,7 +14,6 @@ py_library(
         "//tools/claude_hooks:kubeconfig_setup",
         "@pypi//kubernetes",
         "@pypi//pyrage",
-        "@pypi//pyyaml",
     ],
 )
 

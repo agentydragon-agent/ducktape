@@ -39,7 +39,7 @@ Secrets: ${len(secrets.env_vars)} env var(s) decrypted from age-encrypted compon
 Secrets: ${len(secrets.env_vars)} env var(s) decrypted from age-encrypted component files.
 % endif
 % if secrets.kubeconfig:
-`kubectl`: configured for `${secrets.kubeconfig.server}`, namespace `claude-sandbox` (full admin), read-only in `props`. Proxy CA injected.
+`kubectl`: configured for `${secrets.kubeconfig.server}`, namespace `claude-sandbox` (full admin), read-only in `props`.
 % endif
 % endif
 BuildBuddy: API key in ~/.config/bazel/buildbuddy.bazelrc. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
