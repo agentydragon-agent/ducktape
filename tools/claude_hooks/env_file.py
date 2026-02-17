@@ -79,9 +79,8 @@ class EnvVars:
     # Nix paths
     nix_paths: list[Path]
 
-    # Podman/Docker
-    docker_host: str | None
-    podman_env: dict[str, str] | None  # CONTAINERS_CONF, CONTAINERS_STORAGE_CONF, etc.
+    # Podman/Docker environment variables (e.g., DOCKER_HOST, DOCKER_CERT_PATH)
+    docker_env: dict[str, str] | None
 
     # Session metadata
     hook_timestamp: datetime
@@ -150,12 +149,9 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(_exports_from_dict(no_proxy_override))
 
     # Docker/Podman configuration
-    if vars.docker_host or vars.podman_env:
-        exports.extend(["", "# Podman/Docker configuration"])
-        if vars.docker_host:
-            exports.extend(_exports_from_dict({"DOCKER_HOST": vars.docker_host}))
-        if vars.podman_env:
-            exports.extend(_exports_from_dict(vars.podman_env))
+    if vars.docker_env:
+        exports.extend(["", "# Docker/Podman configuration"])
+        exports.extend(_exports_from_dict(vars.docker_env))
 
     # mkcert localhost TLS certificate
     if vars.mkcert_cert and vars.mkcert_key:

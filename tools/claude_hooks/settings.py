@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
+from typing import Literal
 
 from platformdirs import user_cache_dir, user_config_dir
 from pydantic import Field
@@ -39,9 +40,10 @@ ENV_AUTH_PROXY_DIR = _env_name("auth_proxy_dir")
 ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
 ENV_PODMAN_DIR = _env_name("podman_dir")
 ENV_PODMAN_SOCKET = _env_name("podman_socket")
+ENV_DOCKER_DIR = _env_name("docker_dir")
 ENV_INSTALL_BAZELISK = _env_name("install_bazelisk")
 ENV_INSTALL_NIX = _env_name("install_nix")
-ENV_INSTALL_PODMAN = _env_name("install_podman")
+ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
 ENV_USE_WHEEL = _env_name("use_wheel")
 
@@ -64,6 +66,7 @@ class HookSettings(BaseSettings):
     auth_proxy_dir: Path | None = Field(default=None, description="Override auth proxy cache directory")
     podman_dir: Path | None = Field(default=None, description="Override podman config directory")
     podman_socket: Path | None = Field(default=None, description="Override podman socket path")
+    docker_dir: Path | None = Field(default=None, description="Override docker config directory")
 
     # Port overrides
     supervisor_port: int | None = Field(default=None, description="Override supervisor TCP port")
@@ -73,7 +76,9 @@ class HookSettings(BaseSettings):
     install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
     install_nix: bool = Field(default=False, description="Install nix package manager")
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
-    install_podman: bool = Field(default=True, description="Set up podman container runtime")
+    container_runtime: Literal["podman", "docker", "none"] = Field(
+        default="docker", description="Container runtime to set up (podman, docker, or none)"
+    )
     system_bazel: Path | None = Field(
         default=None, description="Path to system bazel (used when install_bazelisk=False)"
     )
@@ -171,3 +176,9 @@ class HookSettings(BaseSettings):
         Session-specific files (bazelrc, bin wrappers) are stored here.
         """
         return env_file_path.parent
+
+    def get_docker_dir(self) -> Path:
+        """Get Docker configuration directory."""
+        if self.docker_dir is not None:
+            return self.docker_dir
+        return self.get_cache_dir() / "docker"
