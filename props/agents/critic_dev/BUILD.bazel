@@ -113,13 +113,21 @@ py_library(
 )
 
 py_library(
+    name = "display",
+    srcs = ["display.py"],
+    imports = ["../../.."],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//rich"],
+)
+
+py_library(
     name = "cli_helpers",
     srcs = ["cli_helpers.py"],
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":display",
         "//props/core:agent_types",
-        "//props/core:display",
         "//props/core:ids",
         "//props/db:database",
         "//props/db:models",
@@ -135,8 +143,8 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":cli_helpers",
+        ":display",
         "//props/agents:runtime",
-        "//props/core:display",
         "//props/db:database",
         "@pypi//rich",
         "@pypi//sqlalchemy",

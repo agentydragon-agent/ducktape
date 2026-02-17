@@ -29,10 +29,6 @@ py_library(
     srcs = ["display.py"],
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/db:models",
-        "@pypi//rich",
-    ],
 )
 
 py_library(

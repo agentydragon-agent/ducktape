@@ -25,7 +25,6 @@ py_library(
         "//agent_core:events",
         "//openai_utils:model",
         "//props/core:agent_types",
-        "//props/core:display",
         "//props/core:splits",
         "//props/db:database",
         "//props/db:examples",

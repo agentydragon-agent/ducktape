@@ -15,8 +15,8 @@ from rich.console import Console
 from sqlalchemy import text
 
 from props.agents.critic_dev.cli_helpers import show_execution_traces, show_grading_summary, show_run_status
+from props.agents.critic_dev.display import ColumnDef, build_table_from_schema, fmt_float, fmt_model, fmt_pct
 from props.agents.runtime import get_current_agent_run_id
-from props.core.display import ColumnDef, build_table_from_schema, fmt_float, fmt_model, fmt_pct
 from props.db.database import Database
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
