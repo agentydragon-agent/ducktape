@@ -11,3 +11,11 @@ spec:
     kind: GitRepository
     name: flux-system
   timeout: 2m
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: claude-sandbox
+    - apiVersion: v1
+      kind: ServiceAccount
+      name: claude-code-web
+      namespace: default

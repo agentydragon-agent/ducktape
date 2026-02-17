@@ -52,7 +52,7 @@ def setup_kubeconfig(
         ],
         "contexts": [
             {
-                "context": {"cluster": "cluster", "namespace": "default", "user": "claude-code-web"},
+                "context": {"cluster": "cluster", "namespace": "claude-sandbox", "user": "claude-code-web"},
                 "name": "claude-code-web",
             }
         ],
