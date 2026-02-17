@@ -15,7 +15,9 @@ on:
   workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Use hardcoded name to avoid deadlock when called via workflow_call
+  # (${{ github.workflow }} resolves to caller's name, colliding with CI's group)
+  group: props-backend-image-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
