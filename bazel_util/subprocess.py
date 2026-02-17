@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -62,32 +64,47 @@ async def async_run_python_module(
     return await asyncio.create_subprocess_exec(*cmd, env=python_env(inherit=inherit_env), **kwargs)
 
 
-def generate_shell_wrapper(module: str, *, extra_lines: str = "") -> str:
+def exports_from_dict(env: Mapping[str, str | Path]) -> list[str]:
+    """Generate shell export lines from an env var mapping.
+
+    Values are shell-escaped with shlex.quote() to handle special characters.
+    Accepts both str and Path values.
+    """
+    return [f"export {name}={shlex.quote(str(value))}" for name, value in env.items()]
+
+
+def generate_shell_wrapper(module: str, *, baked_env: dict[str, str] | None = None, extra_lines: str = "") -> str:
     """Generate a ``#!/bin/sh`` script that invokes ``sys.executable -m <module>``.
 
-    The wrapper bakes the current PYTHONPATH into the script so the subprocess
-    can find packages without leaking PYTHONPATH into every child process via
-    a shared env file.
+    Bakes PYTHONPATH (and any additional ``baked_env`` entries) into the script so
+    subprocesses can find packages without leaking state via a shared env file.
 
     Args:
         module: Python module path (e.g. ``"tools.claude_hooks.bazel_wrapper"``).
-        extra_lines: Additional shell lines inserted before the ``exec``.
+        baked_env: Extra env vars to export before the exec (merged after PYTHONPATH).
+        extra_lines: Raw shell lines inserted after exports and before the ``exec``
+                     (use for dynamic expressions like ``$(...)``).
     """
     pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
-    parts = ["#!/bin/sh", f'export PYTHONPATH="{pythonpath}"']
+    env = {"PYTHONPATH": pythonpath}
+    if baked_env:
+        env.update(baked_env)
+    parts = ["#!/bin/sh", *exports_from_dict(env)]
     if extra_lines:
         parts.append(extra_lines)
     parts.append(f'exec "{sys.executable}" -m {module} "$@"')
     return "\n".join(parts) + "\n"
 
 
-def write_shell_wrapper(path: Path, module: str, *, extra_lines: str = "") -> Path:
+def write_shell_wrapper(
+    path: Path, module: str, *, baked_env: dict[str, str] | None = None, extra_lines: str = ""
+) -> Path:
     """Write a shell wrapper script and make it executable.
 
     See :func:`generate_shell_wrapper` for argument docs.
     Returns *path* for chaining.
     """
-    content = generate_shell_wrapper(module, extra_lines=extra_lines)
+    content = generate_shell_wrapper(module, baked_env=baked_env, extra_lines=extra_lines)
     path.write_text(content)
     path.chmod(0o755)
     return path
