@@ -54,7 +54,6 @@ from props.core.agent_types import (
     TargetMetric,
     TypeConfig,
 )
-from props.core.display import short_uuid
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleSpec
 from props.core.oci_utils import RegistryProxyConfig, is_digest
@@ -219,7 +218,7 @@ class AgentRegistry:
         creds = await ensure_agent_role(self._db_config, agent_run_id)
         logger.info("Agent role ready: %s", creds.username)
 
-        name = f"agent-{short_uuid(agent_run_id)}"
+        name = f"agent-{str(agent_run_id)[:8]}"
 
         # OpenAI SDK sends api_key as Bearer token. The backend auth middleware
         # accepts Bearer tokens containing base64-encoded username:password.

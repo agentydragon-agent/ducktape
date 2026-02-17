@@ -55,7 +55,6 @@ py_library(
         ":agent_credentials",
         ":executor",
         "//props/core:agent_types",
-        "//props/core:display",
         "//props/core:ids",
         "//props/core:oci_utils",
         "//props/core/models:examples",
