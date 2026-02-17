@@ -63,6 +63,13 @@ spec:
       name: server
       replicas: 1
 
+      # Allow 20 min for DB migrations on first boot (default 10 min).
+      # If the startup probe kills the pod mid-migration, the PostgreSQL
+      # connection stays idle-in-transaction and blocks the next attempt.
+      startupProbe:
+        failureThreshold: 120
+        periodSeconds: 10
+
       # Load ESO-generated secret key via envFrom (plus all global secrets)
       envFrom:
         - configMapRef:
@@ -140,6 +147,12 @@ spec:
         secretKeys:
           adminPasswordKey: "AUTHENTIK_POSTGRESQL__PASSWORD"
           userPasswordKey: "AUTHENTIK_POSTGRESQL__PASSWORD"
+      primary:
+        # Kill connections idle in a transaction for >60s. Prevents stale
+        # locks from a killed authentik pod blocking the next pod's migrations.
+        extendedConfiguration: |
+          max_connections = 500
+          idle_in_transaction_session_timeout = '60s'
 
     # Redis (required for worker message queue)
     redis:
