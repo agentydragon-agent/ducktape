@@ -316,6 +316,7 @@ locals {
     }
     cluster = {
       allowSchedulingOnControlPlanes = true
+      apiServer                      = { certSANs = ["api.${var.cluster_domain}"] }
       discovery                      = { enabled = true }
       network                        = { cni = { name = "none" } }
       proxy                          = { disabled = true }

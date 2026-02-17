@@ -682,12 +682,11 @@ def generate_claude_kubeconfig(root: Path) -> None:
     resp = v1.create_namespaced_service_account_token("claude-code-web", "default", token_request)
     token = resp.status.token
 
-    # Read cluster CA and server from the admin kubeconfig
+    # Read cluster CA from the admin kubeconfig; use DNS endpoint for the server
     admin_kubeconfig_path = Layer.INFRASTRUCTURE.tf_dir / "kubeconfig"
     admin_kubeconfig = yaml.safe_load(admin_kubeconfig_path.read_text())
-    cluster_info = admin_kubeconfig["clusters"][0]["cluster"]
-    server = cluster_info["server"]
-    ca_data = cluster_info["certificate-authority-data"]
+    ca_data = admin_kubeconfig["clusters"][0]["cluster"]["certificate-authority-data"]
+    server = "https://api.allegedly.works:6443"
 
     # Build a minimal kubeconfig
     kubeconfig = {

@@ -78,6 +78,15 @@ resource "powerdns_record" "ns" {
   records = [each.value.ip]
 }
 
+# Kubernetes API endpoint (round-robin to all VPS control-plane nodes)
+resource "powerdns_record" "api" {
+  zone    = "${local.domain}."
+  name    = "api.${local.domain}."
+  type    = "A"
+  ttl     = 300
+  records = [for k, v in local.vps_nodes : v.ip]
+}
+
 # Import: domain registration persists across cluster lifecycles.
 # Declarative import is idempotent — no-op when already in state.
 import {

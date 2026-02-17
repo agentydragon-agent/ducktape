@@ -150,6 +150,9 @@ data "talos_machine_configuration" "vps" {
         # Each VPS controlplane node consumes a whole VPS instance, so we need
         # to allow scheduling workloads on them to utilize the VPS resources
         allowSchedulingOnControlPlanes = true
+        apiServer = {
+          certSANs = ["api.${var.cluster_domain}"]
+        }
         discovery = {
           enabled = true
         }
