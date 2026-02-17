@@ -14,3 +14,5 @@ occurrences:
           - 65
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/mcp_bridge/cli.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/cli.py
