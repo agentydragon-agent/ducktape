@@ -31,7 +31,6 @@ py_library(
     deps = [
         "//cli_util:decorators",
         "//openai_utils:client_factory",
-        "//props/core:agent_workspace",
         "//props/core/gepa:gepa_adapter",
         "//props/db:database",
         "@pypi//rich",

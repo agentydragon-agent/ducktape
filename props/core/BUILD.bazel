@@ -58,14 +58,6 @@ py_library(
 )
 
 py_library(
-    name = "agent_workspace",
-    srcs = ["agent_workspace.py"],
-    imports = ["../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = ["@pypi//platformdirs"],
-)
-
-py_library(
     name = "eval_api_models",
     srcs = ["eval_api_models.py"],
     imports = ["../.."],
@@ -106,17 +98,6 @@ py_test(
         ":oci_utils",
         "//props/core/models:examples",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_agent_workspace",
-    srcs = ["test_agent_workspace.py"],
-    imports = ["../.."],
-    deps = [
-        ":agent_workspace",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
