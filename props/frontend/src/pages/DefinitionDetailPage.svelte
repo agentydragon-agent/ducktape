@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import DefinitionDetail from "$components/DefinitionDetail.svelte";
   import { fetchDefinitionDetail, type DefinitionDetailResponse } from "$lib/api/client";
 
@@ -24,11 +23,7 @@
     }
   }
 
-  onMount(() => {
-    loadData();
-  });
-
-  // Reload when definitionId changes
+  // $effect runs immediately on mount and re-runs when definitionId changes
   $effect(() => {
     if (definitionId) {
       loadData();

@@ -18,6 +18,8 @@ spec:
       reconcileStrategy: Revision
       interval: 5m
   values:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
     image:
       repository: ghcr.io/agentydragon/props-backend
       tag: latest
@@ -59,8 +61,11 @@ spec:
         database: eval_results
         username: postgres
       primary:
+        nodeSelector:
+          topology.kubernetes.io/region: proxmox
         persistence:
           enabled: true
+          storageClass: proxmox-csi-retain
           size: 10Gi
     # Ingress disabled — traffic routed via Gateway API HTTPRoute
     ingress:
@@ -82,4 +87,5 @@ spec:
       enabled: true
       persistence:
         enabled: true
+        storageClassName: proxmox-csi-retain
         size: 50Gi

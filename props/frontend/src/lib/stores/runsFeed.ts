@@ -17,6 +17,8 @@ export const activeJobs = derived(jobs, ($jobs) => $jobs.filter((j) => j.status 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let started = false;
+let reconnectDelay = 1000; // Start at 1s, increase on failures
+const MAX_RECONNECT_DELAY = 30000;
 
 function getWsUrl(): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -41,6 +43,7 @@ function doConnect() {
 
   ws.onopen = () => {
     connected.set(true);
+    reconnectDelay = 1000; // Reset backoff on successful connection
   };
 
   ws.onmessage = (event) => {
@@ -56,9 +59,14 @@ function doConnect() {
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     connected.set(false);
     ws = null;
+    // Don't reconnect on auth failures (4001) or policy violations (1008)
+    if (event.code === 4001 || event.code === 1008) {
+      console.warn("WebSocket closed due to auth failure, not reconnecting");
+      return;
+    }
     scheduleReconnect();
   };
 
@@ -72,7 +80,9 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     doConnect();
-  }, 3000);
+  }, reconnectDelay);
+  // Exponential backoff: double delay each time, cap at MAX_RECONNECT_DELAY
+  reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
 }
 
 /** Start the WebSocket connection. Safe to call multiple times. */

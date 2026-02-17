@@ -170,7 +170,7 @@
   function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
     if (!snapshotSlug) return undefined;
     const routePath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}?file=${encodeURIComponent(file.path)}`;
-    return `${window.location.origin}/${resolve(routePath)}`;
+    return `${window.location.origin}${resolve(routePath)}`;
   }
 
   const tpCount = $derived(allIssues.filter((i) => i.kind === "tp").length);

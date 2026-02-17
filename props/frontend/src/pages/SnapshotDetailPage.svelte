@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { pathname, resolve } from "$lib/router";
   import { toast } from "svelte-sonner";
   import { splitBadgeClass } from "$lib/colors";
@@ -72,20 +71,30 @@
       snapshot = snapshotData;
       tree = treeData;
       // Fetch occurrence stats and clusters (non-blocking)
-      fetchOccurrenceStats(parsedSlug.snapshotSlug).then(
+      // Capture slug to guard against stale responses if the user navigates away
+      const currentSlug = parsedSlug.snapshotSlug;
+      fetchOccurrenceStats(currentSlug).then(
         (data) => {
-          occurrenceStats = data.occurrences;
+          if (parsedSlug.snapshotSlug === currentSlug) {
+            occurrenceStats = data.occurrences;
+          }
         },
         (e) => {
-          toast.error(e instanceof Error ? e.message : "Failed to load occurrence stats");
+          if (parsedSlug.snapshotSlug === currentSlug) {
+            toast.error(e instanceof Error ? e.message : "Failed to load occurrence stats");
+          }
         }
       );
-      fetchSnapshotClusters(parsedSlug.snapshotSlug).then(
+      fetchSnapshotClusters(currentSlug).then(
         (data) => {
-          clusters = data.clusters;
+          if (parsedSlug.snapshotSlug === currentSlug) {
+            clusters = data.clusters;
+          }
         },
         (e) => {
-          toast.error(e instanceof Error ? e.message : "Failed to load clusters");
+          if (parsedSlug.snapshotSlug === currentSlug) {
+            toast.error(e instanceof Error ? e.message : "Failed to load clusters");
+          }
         }
       );
     } catch (e) {
@@ -95,15 +104,9 @@
     }
   }
 
-  onMount(() => {
-    if (!initialSnapshot) {
-      loadData();
-    }
-  });
-
-  // Reload when slug changes
+  // $effect runs immediately on mount and re-runs when snapshotSlug changes
   $effect(() => {
-    if (parsedSlug.snapshotSlug) {
+    if (parsedSlug.snapshotSlug && !initialSnapshot) {
       loadData();
     }
   });
@@ -137,9 +140,9 @@
     const routePath = `/snapshots/${parsedSlug.snapshotSlug}/${issueId}/${occurrenceId}`;
     const hashPath = resolve(routePath);
     if (filePath) {
-      return `${window.location.origin}/${hashPath}?file=${encodeURIComponent(filePath)}`;
+      return `${window.location.origin}${hashPath}?file=${encodeURIComponent(filePath)}`;
     }
-    return `${window.location.origin}/${hashPath}`;
+    return `${window.location.origin}${hashPath}`;
   }
 
   function findAndNavigateToOccurrence(issueId: string, occurrenceId: string, filePath?: string) {
@@ -445,7 +448,7 @@
                           <div class="bg-white border rounded p-2 mt-1">
                             <div class="flex items-center gap-2 text-xs">
                               <a
-                                href="#{resolve(`/runs/${member.critique_run_id}`)}"
+                                href={resolve(`/runs/${member.critique_run_id}`)}
                                 class="font-mono text-blue-600 hover:underline"
                               >
                                 {member.critique_run_id.slice(0, 8)}

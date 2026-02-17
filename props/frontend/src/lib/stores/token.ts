@@ -6,7 +6,10 @@ import { writable } from "svelte/store";
 
 const STORAGE_KEY = "props_admin_token";
 
-export const needsToken = writable(false);
+// Initialize based on whether a token already exists in localStorage.
+// This prevents the app from rendering the main UI (and firing API calls)
+// before onMount has a chance to set needsToken=true.
+export const needsToken = writable(!localStorage.getItem(STORAGE_KEY));
 
 export function getToken(): string | null {
   return localStorage.getItem(STORAGE_KEY);

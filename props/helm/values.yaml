@@ -59,6 +59,8 @@ resources:
     memory: 1Gi
     cpu: 1000m
 
+nodeSelector: {}
+
 podAnnotations: {}
 
 # OCI container registry for agent images
@@ -73,6 +75,7 @@ registry:
   persistence:
     enabled: true
     size: 50Gi
+    storageClassName: ""
 
 # PostgreSQL subchart configuration
 # The bitnami subchart auto-generates and manages its own password secret.

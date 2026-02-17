@@ -150,12 +150,7 @@
     const config = criticRun.type_config as CriticTypeConfig;
     let snapshotSlug: string;
 
-    // Extract snapshot slug from example
-    if (config.example.kind === "whole_snapshot") {
-      snapshotSlug = config.example.snapshot_slug;
-    } else {
-      snapshotSlug = config.example.snapshot_slug;
-    }
+    snapshotSlug = config.example.snapshot_slug;
 
     loadingSnapshot = true;
     try {
@@ -210,6 +205,8 @@
     }
   }
 
+  let polling = false;
+
   onMount(() => {
     loadData().then(() => {
       // Load LLM requests after run data is loaded (LLM tab is default)
@@ -217,10 +214,13 @@
         loadLLMRequests();
       }
     });
-    // Poll while in progress
+    // Poll while in progress, guarding against overlapping calls
     pollInterval = setInterval(() => {
-      if (run?.status === "in_progress") {
-        loadData();
+      if (run?.status === "in_progress" && !polling) {
+        polling = true;
+        loadData().finally(() => {
+          polling = false;
+        });
       }
     }, 1000);
   });
@@ -289,7 +289,7 @@
 
     <!-- Type-specific inputs -->
     <div class="px-4 py-2 border-b bg-gray-50 flex-shrink-0 text-sm">
-      {#if getAgentType(run) === "critic"}}
+      {#if getAgentType(run) === "critic"}
         {@const config = run.type_config as CriticTypeConfig}
         {@const resolvedFiles = getResolvedFiles(run)}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
@@ -355,27 +355,11 @@
     {#if getAgentType(run) === "critic"}
       {@const gs = computeGradingSummary(run)}
       {#if gs}
-        {@const recall_denominator = 0}
-        {@const recall = recall_denominator > 0 ? gs.total_credit / recall_denominator : null}
-        {@const recallColor =
-          recall == null
-            ? "text-gray-400"
-            : recall >= 0.7
-              ? "text-green-600"
-              : recall >= 0.4
-                ? "text-yellow-600"
-                : "text-red-600"}
         <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
           <div class="flex flex-wrap gap-x-6 gap-y-1">
             <span>
               <span class="text-gray-500">Credit:</span>
-              <span class="ml-1 font-medium {recallColor}">
-                {gs.total_credit.toFixed(1)}{#if recall_denominator > 0}
-                  / {recall_denominator} expected{/if}
-              </span>
-              {#if recall != null}
-                <span class="text-gray-400 text-xs">({(recall * 100).toFixed(0)}%)</span>
-              {/if}
+              <span class="ml-1 font-medium">{gs.total_credit.toFixed(1)}</span>
             </span>
             <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
             <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>

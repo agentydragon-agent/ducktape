@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { pathname } from "$lib/router";
   import ExampleDetail from "$components/ExampleDetail.svelte";
   import { fetchExampleDetail, type ExampleDetailResponse, type ExampleKind } from "$lib/api/client";
@@ -46,15 +45,9 @@
     }
   }
 
-  onMount(() => {
-    if (!initialData) {
-      loadData();
-    }
-  });
-
-  // Reload when params change
+  // $effect runs immediately on mount and re-runs when snapshotSlug changes
   $effect(() => {
-    if (snapshotSlug) {
+    if (snapshotSlug && !initialData) {
       loadData();
     }
   });

@@ -26,6 +26,12 @@
   let showRunModal = $state(false);
   let modalPrefill: ModalPrefill | undefined = $state(undefined);
   let tokenInput = $state("");
+  let usernameInput = $state("");
+  let passwordInput = $state("");
+
+  // Disable the other mode when one has input
+  let tokenHasInput = $derived(tokenInput.trim().length > 0);
+  let credsHasInput = $derived(usernameInput.trim().length > 0 || passwordInput.length > 0);
 
   function handleOpenRunModal(prefill?: ModalPrefill) {
     modalPrefill = prefill;
@@ -40,13 +46,22 @@
   // Expose modal functions to child components
   setContext("runModal", { open: handleOpenRunModal });
 
-  function handleTokenSubmit() {
-    const trimmed = tokenInput.trim();
-    if (trimmed) {
-      setToken(trimmed);
+  function handleLogin() {
+    const token = tokenInput.trim();
+    const user = usernameInput.trim();
+    const pass = passwordInput;
+
+    if (token) {
+      setToken(token);
       tokenInput = "";
-      startFeed();
+    } else if (user && pass) {
+      setToken(btoa(`${user}:${pass}`));
+      usernameInput = "";
+      passwordInput = "";
+    } else {
+      return;
     }
+    startFeed();
   }
 
   onMount(() => {
@@ -112,20 +127,45 @@
   <div class="min-h-screen bg-gray-50 flex items-center justify-center">
     <div class="bg-white rounded-lg shadow-md p-8 max-w-md w-full">
       <h1 class="text-xl font-bold mb-2">Props</h1>
-      <p class="text-gray-600 text-sm mb-4">Paste the admin token from the backend console output to sign in.</p>
       <form
         onsubmit={(e: SubmitEvent) => {
           e.preventDefault();
-          handleTokenSubmit();
+          handleLogin();
         }}
-        class="flex gap-2"
+        class="flex flex-col gap-3"
       >
-        <input
-          type="text"
-          bind:value={tokenInput}
-          placeholder="Admin token"
-          class="flex-1 px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div class="flex flex-col gap-2 transition-opacity {tokenHasInput ? 'opacity-40' : ''}">
+          <input
+            type="text"
+            bind:value={usernameInput}
+            placeholder="Username"
+            autocomplete="username"
+            disabled={tokenHasInput}
+            class="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          />
+          <input
+            type="password"
+            bind:value={passwordInput}
+            placeholder="Password"
+            autocomplete="current-password"
+            disabled={tokenHasInput}
+            class="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex-1 border-t border-gray-200"></div>
+          <span class="text-xs text-gray-400">or token</span>
+          <div class="flex-1 border-t border-gray-200"></div>
+        </div>
+        <div class="transition-opacity {credsHasInput ? 'opacity-40' : ''}">
+          <input
+            type="text"
+            bind:value={tokenInput}
+            placeholder="base64 token"
+            disabled={credsHasInput}
+            class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          />
+        </div>
         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">
           Sign in
         </button>

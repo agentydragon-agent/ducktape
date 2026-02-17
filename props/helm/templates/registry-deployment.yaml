@@ -50,6 +50,10 @@ spec:
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         {{- if .Values.registry.persistence.enabled }}
         - name: data

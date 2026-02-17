@@ -35,16 +35,26 @@
   let coverage: CoverageResponse | null = $state(null);
   let analysisLoading = $state(false);
 
+  let analysisRequestId = 0;
+
   async function loadAnalysis(split: "valid" | "train") {
+    const requestId = ++analysisRequestId;
     analysisLoading = true;
     try {
       const [dist, cov] = await Promise.all([fetchDistributions(split), fetchCoverage(split)]);
-      distributions = dist;
-      coverage = cov;
+      // Guard against stale responses from rapid split switching
+      if (requestId === analysisRequestId) {
+        distributions = dist;
+        coverage = cov;
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load analysis");
+      if (requestId === analysisRequestId) {
+        toast.error(e instanceof Error ? e.message : "Failed to load analysis");
+      }
     } finally {
-      analysisLoading = false;
+      if (requestId === analysisRequestId) {
+        analysisLoading = false;
+      }
     }
   }
 
@@ -130,7 +140,7 @@
               color="rgb(59, 130, 246)"
             />
             <DistributionChart
-              values={distributions.tp_count_values.map((v) => v)}
+              values={distributions.tp_count_values}
               title="TP Occurrence Count Distribution"
               numBuckets={8}
               valueFormat={(v) => `${v.toFixed(0)}`}

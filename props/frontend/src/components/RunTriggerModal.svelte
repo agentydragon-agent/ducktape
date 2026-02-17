@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { untrack } from "svelte";
   import { toast } from "svelte-sonner";
   import { resolve } from "$lib/router";
   import {
@@ -57,18 +57,26 @@
   let impCriticModel: string = $state("gpt-5.1-codex-mini");
   let impTimeout: number = $state(3600);
 
-  onMount(async () => {
-    try {
-      const result = await fetchDefinitions("critic");
-      definitions = result.definitions;
-      if (definitions.length > 0 && !selectedDefinition) {
-        selectedDefinition = definitions[0].image_digest;
-      }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Failed to load definitions";
-      toast.error(message);
-    } finally {
-      loadingDefinitions = false;
+  let definitionsFetched = false;
+
+  // Fetch definitions on first open, not on mount
+  $effect(() => {
+    if (open && !definitionsFetched) {
+      definitionsFetched = true;
+      untrack(async () => {
+        try {
+          const result = await fetchDefinitions("critic");
+          definitions = result.definitions;
+          if (definitions.length > 0 && !selectedDefinition) {
+            selectedDefinition = definitions[0].image_digest;
+          }
+        } catch (e) {
+          const message = e instanceof Error ? e.message : "Failed to load definitions";
+          toast.error(message);
+        } finally {
+          loadingDefinitions = false;
+        }
+      });
     }
   });
 
