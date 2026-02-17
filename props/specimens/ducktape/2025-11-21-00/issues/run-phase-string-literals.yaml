@@ -1,17 +1,9 @@
 rationale: |
-  Lines 284-294 assign `run_phase` using string literals ("idle", "waiting_approval",
-  "sampling") instead of a proper enum, losing type safety and enabling typos.
+  `run_phase` is assigned using string literals ("idle", "waiting_approval",
+  "sampling") instead of a proper enum. Inconsistent with other status fields
+  (AgentMode, ServerStatus, ProposalStatus, etc. all use enums).
 
-  Problems: No type safety (typos like "wating_approval" won't be caught), no
-  exhaustiveness checking, no IDE autocomplete, magic strings scattered across code,
-  hard to discover valid values, inconsistent with other status fields (AgentMode,
-  ServerStatus, ProposalStatus, etc. use enums).
-
-  Define a RunPhase StrEnum with IDLE/WAITING_APPROVAL/SAMPLING values and use it
-  throughout. Update the Pydantic model to type run_phase as RunPhase instead of str.
-  Benefits: type-safe phase values, IDE autocomplete, single source of truth,
-  self-documenting, consistent with codebase patterns, easier refactoring, validation
-  at Pydantic boundary.
+  Define a `RunPhase` StrEnum and use it throughout.
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
@@ -27,3 +19,5 @@ occurrences:
           - 294
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
