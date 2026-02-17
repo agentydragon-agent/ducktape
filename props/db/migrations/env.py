@@ -1,6 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import create_engine
 
 # Import models for autogenerate support
 from props.db.config import DatabaseConfig
@@ -54,29 +55,28 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    Expects a connection to be passed via config.attributes['connection'].
-    This is set by session.py's _create_schema() for programmatic usage.
-
-    CLI usage (alembic upgrade head) is NOT supported - use session.py instead.
+    Supports two modes:
+    - Programmatic: connection passed via config.attributes['connection']
+      (used by upgrade_database() in setup.py)
+    - CLI: creates engine from PG* environment variables
+      (used by `alembic upgrade head`)
     """
-    # Get connection passed programmatically (e.g., from session.py)
     connection = config.attributes.get("connection", None)
 
-    if connection is None:
-        raise RuntimeError(
-            "No connection provided to env.py. "
-            "Alembic migrations must be run programmatically, not via CLI. "
-            "Use: db = Database(config); db.recreate()"
-        )
-
-    # Configure context with the provided connection
-    context.configure(connection=connection, target_metadata=target_metadata)
-
-    with context.begin_transaction():
-        context.run_migrations()
+    if connection is not None:
+        # Programmatic usage (from setup.py)
+        context.configure(connection=connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+    else:
+        # CLI usage — create engine from environment
+        db_config = DatabaseConfig()
+        engine = create_engine(db_config.url)
+        with engine.connect() as conn:
+            context.configure(connection=conn, target_metadata=target_metadata)
+            with context.begin_transaction():
+                context.run_migrations()
+        engine.dispose()
 
 
 if context.is_offline_mode():

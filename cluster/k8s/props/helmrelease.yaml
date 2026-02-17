@@ -23,6 +23,7 @@ spec:
       tag: latest
       pullPolicy: Always
     config:
+      auto_migrate: true
       backend_url: "http://props:8000"
       grader_model: ""
       agent_env:

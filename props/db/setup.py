@@ -83,18 +83,34 @@ def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, d
         engine.dispose()
 
 
+def upgrade_database(engine: Engine) -> None:
+    """Run Alembic migrations to HEAD (idempotent, non-destructive).
+
+    Safe to call on every startup — Alembic checks the alembic_version table
+    and only applies pending migrations.
+    """
+    with tracer.start_as_current_span("upgrade_database"):
+        logger.info("Running Alembic migrations...")
+        config = Config()
+        config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+
+        with engine.begin() as conn:
+            config.attributes["connection"] = conn
+            command.upgrade(config, "head")
+
+        logger.info("Alembic migrations complete")
+
+
 def recreate_database(engine: Engine) -> None:
-    """Recreate database from scratch (drop all + schema + RLS).
+    """Recreate database from scratch (drop all + migrate).
 
-    This is destructive: drops all existing tables, views, and policies.
-
-    Args:
-        engine: SQLAlchemy engine (must be connected as postgres superuser)
+    This is destructive: drops all existing tables, views, and policies,
+    then runs all migrations from scratch. For tests only.
     """
     with tracer.start_as_current_span("recreate_database"):
         logger.info("Recreating database from scratch...")
         _drop_all(engine)
-        _create_schema(engine)
+        upgrade_database(engine)
         logger.info("Database recreation complete")
 
 
@@ -117,20 +133,3 @@ def _drop_all(engine: Engine) -> None:
         logger.info("Public schema dropped and recreated")
     else:
         logger.debug("No tables to drop")
-
-
-def _create_schema(engine: Engine) -> None:
-    """Create tables + RLS policies + views via Alembic migrations (single source of truth).
-
-    The squashed migration 20251214000000_initial_schema_squashed.py contains ALL schema:
-    tables, enums, RLS function, RLS policies, grants, and views. No ORM create_all needed.
-    """
-    logger.info("Running Alembic migrations...")
-    config = Config()
-    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-
-    with engine.begin() as conn:
-        config.attributes["connection"] = conn
-        command.upgrade(config, "head")
-
-    logger.info("Schema creation complete")

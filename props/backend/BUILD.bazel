@@ -56,6 +56,7 @@ py_library(
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
+        "//props/db:setup",
         "//props/db/sync:model_metadata",
         "//props/orchestration:agent_registry",
         "//props/orchestration:executor_factory",
