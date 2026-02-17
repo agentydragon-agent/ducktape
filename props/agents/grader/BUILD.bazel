@@ -256,6 +256,7 @@ py_test(
 
 py_test(
     name = "test_e2e_clustering",
+    size = "medium",
     srcs = ["test_e2e_clustering.py"],
     data = [
         ":image",
