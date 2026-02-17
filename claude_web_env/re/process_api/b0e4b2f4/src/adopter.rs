@@ -23,10 +23,11 @@
 //!             "[DEBUG] Found new zombie for tracked orphan ), will reap in next iteration"
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 use tokio::sync::broadcast;
 
@@ -177,17 +178,14 @@ async fn adopt_orphans(
             Ok(status) => {
                 if status.contains("State:\tZ") {
                     // Zombie process - track it for reaping in the next iteration
-                    if !tracked_zombies.contains_key(&pid) {
+                    if let Entry::Vacant(e) = tracked_zombies.entry(pid) {
                         log::debug!(
                             "[DEBUG] Found new zombie for tracked orphan (PID {pid}), will reap in next iteration"
                         );
-                        tracked_zombies.insert(
+                        e.insert(TrackedZombie {
                             pid,
-                            TrackedZombie {
-                                pid,
-                                first_seen: Instant::now(),
-                            },
-                        );
+                            first_seen: Instant::now(),
+                        });
                     }
                     continue;
                 }
