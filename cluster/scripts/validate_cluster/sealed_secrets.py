@@ -1,4 +1,4 @@
-"""Validate all SealedSecrets can be decrypted with terraform keypair.
+"""Validate all SealedSecrets can be decrypted with OpenTofu keypair.
 
 Uses kubeseal --recovery-unseal (works offline, no cluster needed).
 
@@ -20,8 +20,8 @@ from bazel_util.workspace import get_build_workspace_directory
 from cluster.scripts.validate_cluster.cluster import _K8S_SUBPATH
 
 
-def get_private_key_from_terraform(tf_dir: Path) -> str | None:
-    """Extract sealed_secrets_private_key_pem from terraform state."""
+def get_private_key_from_tofu(tf_dir: Path) -> str | None:
+    """Extract sealed_secrets_private_key_pem from tofu state."""
     state_file = tf_dir / "terraform.tfstate"
     if not state_file.exists():
         return None
@@ -35,7 +35,7 @@ def get_private_key_from_terraform(tf_dir: Path) -> str | None:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"Could not read sealed_secrets_private_key_pem from terraform state: {result.stderr}")
+        raise RuntimeError(f"Could not read sealed_secrets_private_key_pem from tofu state: {result.stderr}")
     return result.stdout
 
 
@@ -70,13 +70,13 @@ def main() -> int:
     k8s_dir = workspace / _K8S_SUBPATH
 
     if not (tf_dir / "terraform.tfstate").exists():
-        print(f"⚠️  No terraform state found at {tf_dir}/terraform.tfstate")
+        print(f"⚠️  No tofu state found at {tf_dir}/terraform.tfstate")
         print("   Skipping SealedSecret validation (state not initialized)")
         return 0
 
-    private_key = get_private_key_from_terraform(tf_dir)
+    private_key = get_private_key_from_tofu(tf_dir)
     if not private_key:
-        print("⚠️  Could not read private key from terraform state")
+        print("⚠️  Could not read private key from tofu state")
         print(f"   Run 'tofu apply' in {tf_dir} first")
         return 1
 
@@ -102,7 +102,7 @@ def main() -> int:
 
         if failed > 0:
             print()
-            print("ERROR: Some SealedSecrets cannot be decrypted with the terraform keypair")
+            print("ERROR: Some SealedSecrets cannot be decrypted with the tofu keypair")
             print(f"Run 'cd {tf_dir} && tofu apply' to re-seal")
             return 1
 

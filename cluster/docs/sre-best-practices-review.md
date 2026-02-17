@@ -415,7 +415,7 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 | #   | Item                                                  | Risk                                | Effort |
 | --- | ----------------------------------------------------- | ----------------------------------- | ------ |
 | 1   | **Migrate off ingress-nginx** to Gateway API (Cilium) | Service disruption after March 2026 | Large  |
-| 2   | **Back up persistent-auth terraform state**           | Unrecoverable secret loss           | Small  |
+| 2   | **Back up persistent-auth tofu state**                | Unrecoverable secret loss           | Small  |
 
 ### P1 — Do Soon (High Value)
 

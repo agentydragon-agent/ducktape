@@ -123,7 +123,7 @@ def preflight(root: Path) -> None:
     run(["pre-commit", "run", "--files", *files], cwd=root)
 
     for layer in Layer:
-        log.info("Validating terraform layer: %s", layer.tf_dir_name)
+        log.info("Validating tofu layer: %s", layer.tf_dir_name)
         tofu(layer, "validate")
 
 

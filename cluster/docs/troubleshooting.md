@@ -171,7 +171,7 @@ Workers were missing explicit network interface configuration:
 
 **Resolution**:
 
-Fixed in terraform by adding explicit interface config for workers:
+Fixed in OpenTofu by adding explicit interface config for workers:
 
 ```yaml
 machine:
@@ -183,7 +183,7 @@ machine:
 
 For existing clusters, either:
 
-1. Re-run `terraform apply` (requires cluster recreate)
+1. Re-run `tofu apply` (requires cluster recreate)
 2. Manually patch via talosctl:
 
    ```bash
@@ -527,7 +527,7 @@ kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\
 
 # If SealedSecret shows decryption error, regenerate with stable keypair:
 cd terraform/bootstrap/persistent-auth
-CSI_TOKEN_SECRET=$(terraform output -raw csi_token_secret)
+CSI_TOKEN_SECRET=$(tofu output -raw csi_token_secret)
 cat > /tmp/csi-config.yaml << EOF
 clusters:
 - insecure: false
@@ -542,7 +542,7 @@ kubectl create secret generic proxmox-csi-plugin \
   --namespace=csi-proxmox \
   --from-file=config.yaml=/tmp/csi-config.yaml \
   --dry-run=client -o yaml | \
-kubeseal --cert <(terraform output -raw sealed_secrets_cert_pem) \
+kubeseal --cert <(tofu output -raw sealed_secrets_cert_pem) \
   --format=yaml | kubectl apply -f -
 
 rm /tmp/csi-config.yaml
@@ -550,7 +550,7 @@ cd -
 
 # 7. Check if CSI token exists in Proxmox (via SSH)
 ssh root@atlas "pveum token list kubernetes-csi@pve"
-# Should show the csi token, if missing need to recreate via infrastructure terraform
+# Should show the csi token, if missing need to recreate via infrastructure tofu
 ```
 
 ## 🔧 Stable SealedSecret Keypair Issues
@@ -564,12 +564,12 @@ bazel run //cluster/scripts:validate_sealed_secrets
 ```
 
 This uses `kubeseal --recovery-unseal` to verify each SealedSecret in the repo can be decrypted
-with the terraform keypair. No cluster access needed.
+with the tofu keypair. No cluster access needed.
 
 **When to run:**
 
 - Automatically by pre-commit hook and bootstrap.py
-- Manually after `terraform apply` in `bootstrap/persistent-auth`
+- Manually after `tofu apply` in `bootstrap/persistent-auth`
 - When debugging SealedSecret decryption failures
 
 ### Keypair Mismatch (Common Failure Mode)
@@ -581,12 +581,12 @@ with the terraform keypair. No cluster access needed.
 - Pods pending due to missing secrets
 
 **Cause:** SealedSecrets in git were sealed with a different keypair than what's currently
-in terraform state (e.g., after terraform state was recreated).
+in tofu state (e.g., after tofu state was recreated).
 
 **Quick Fix:**
 
 ```bash
-cd terraform/bootstrap/persistent-auth && terraform apply
+cd terraform/bootstrap/persistent-auth && tofu apply
 # This re-seals all SealedSecrets with current keypair
 git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ```
@@ -594,14 +594,14 @@ git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ### Keypair Verification
 
 ```bash
-# Check if stable keypair exists in terraform state
+# Check if stable keypair exists in tofu state
 cd terraform/bootstrap/persistent-auth
-terraform output sealed_secrets_cert_pem >/dev/null && echo "✅ Keypair exists in terraform state"
+tofu output sealed_secrets_cert_pem >/dev/null && echo "✅ Keypair exists in tofu state"
 
 # Check if cluster is using stable keypair (serial numbers should match)
 kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
   base64 -d | openssl x509 -text -noout | grep -A2 "Serial Number"
-terraform output -raw sealed_secrets_cert_pem | openssl x509 -text -noout | grep -A2 "Serial Number"
+tofu output -raw sealed_secrets_cert_pem | openssl x509 -text -noout | grep -A2 "Serial Number"
 cd -
 ```
 
@@ -611,7 +611,7 @@ cd -
 # Test if a SealedSecret can be decrypted with stable keypair
 cd terraform/bootstrap/persistent-auth
 kubectl get sealedsecret <name> -n <namespace> -o yaml | \
-kubeseal --recovery-unseal --recovery-private-key <(terraform output -raw sealed_secrets_private_key_pem)
+kubeseal --recovery-unseal --recovery-private-key <(tofu output -raw sealed_secrets_private_key_pem)
 # Should output the original secret YAML if working
 cd -
 ```
@@ -631,8 +631,8 @@ git add k8s/path/my-sealed.yaml && git commit
 ### Proxmox CSI Storage
 
 - **Issue**: SealedSecret decryption failures
-- **Cause**: terraform/storage generating secrets with wrong keypair
-- **Fix**: Always use stable keypair from terraform state (bootstrap/persistent-auth) when sealing
+- **Cause**: OpenTofu generating secrets with wrong keypair
+- **Fix**: Always use stable keypair from tofu state (bootstrap/persistent-auth) when sealing
 
 ### Flux CRD Caching
 
@@ -680,14 +680,14 @@ See <lessons_learned/2025-11-20-axfr-zone-transfer-failures.md> for historical c
    - **Fix**: Wait for DNS cache expiry (typically 1 hour from NS change)
 
 2. **"webhook call failed"**
-   - **Check**: PowerDNS webhook pod running: `kubectl get pods -n cert-manager -l app.kubernetes.io/name=cert-manager-webhook-powerdns`
+   - **Check**: PowerDNS webhook pod running: `kubectl get pods -n cert-manager -l app.kubernetes.io/instance=pdns-webhook`
    - **Check**: PowerDNS API accessible:
-     `kubectl exec -n cert-manager deployment/cert-manager-webhook-powerdns -- wget -O-
+     `kubectl exec -n cert-manager deployment/pdns-webhook -- wget -O-
 http://powerdns-api.dns-system:8081/api/v1/servers`
 
 3. **Challenge TXT record not created**
    - **Check**: PowerDNS logs: `kubectl logs -n dns-system deployment/powerdns`
-   - **Check**: Webhook logs: `kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager-webhook-powerdns`
+   - **Check**: Webhook logs: `kubectl logs -n cert-manager -l app.kubernetes.io/instance=pdns-webhook`
    - **Verify**: API key secret exists: `kubectl get secret powerdns-api-key -n cert-manager`
 
 **Force certificate retry**:
@@ -705,14 +705,14 @@ kubectl delete certificaterequest -n <namespace> --all
 #### Signing Key Issues
 
 ```bash
-# Verify key in terraform state
+# Verify key in tofu state
 cd terraform/bootstrap/persistent-auth
-terraform output nix_signing_public_key
+tofu output nix_signing_public_key
 # Output: cache.allegedly.works-1:BASE64KEY
 cd -
 ```
 
-**If signing key missing**: Re-run `terraform apply` in `terraform/bootstrap/persistent-auth`
+**If signing key missing**: Re-run `tofu apply` in `terraform/bootstrap/persistent-auth`
 
 #### In-Cluster Connectivity Test
 

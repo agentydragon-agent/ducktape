@@ -218,7 +218,7 @@ VXLAN (8472) to admin IPs and inter-node CIDRs.
 ### TODO: Remote Proxmox API Access
 
 Proxmox API only reachable from home network (10.2.0.2:8006). CSI works (pods on Proxmox),
-but `terraform apply` requires home network. Options: split CSI/provisioning hosts, add
+but `tofu apply` requires home network. Options: split CSI/provisioning hosts, add
 Tailscale route, or accept limitation.
 
 ### TODO: Multi-Endpoint Kubeconfig via DNS

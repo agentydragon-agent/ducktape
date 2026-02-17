@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Cleanup Proxmox volumes for retained PVs during terraform destroy.
+Cleanup Proxmox volumes for retained PVs during tofu destroy.
 
 Strategy:
 1. Query Kubernetes for Proxmox CSI PV volume handles

@@ -37,7 +37,7 @@ See <iam-policy-route53.json> for the full policy document.
 
 The `route53domains` actions are scoped to nameserver management only. Other domain
 attributes (transfer lock, auto-renew, contacts, privacy) are managed via AWS console
-and ignored in Terraform via `lifecycle { ignore_changes }`. AWS Route 53 Domains
+and ignored in OpenTofu via `lifecycle { ignore_changes }`. AWS Route 53 Domains
 doesn't support resource-level ARNs, so `Resource: "*"` is unavoidable.
 
 **To apply the policy:**
@@ -74,14 +74,14 @@ aws route53 list-hosted-zones --query "HostedZones[?Name=='allegedly.works.'].Id
 
 ## Files
 
-| File                                                 | Purpose                                   |
-| ---------------------------------------------------- | ----------------------------------------- |
-| `terraform/bootstrap/infrastructure/cluster-info.tf` | Creates ConfigMap with VPS IPs            |
-| `terraform/gitops/dns-records/main.tf`               | Terraform for Route 53 + PowerDNS records |
-| `terraform/gitops/dns-records/variables.tf`          | Variables for dns-records module          |
-| `k8s/dns-automation/aws-credentials-sealed.yaml`     | SealedSecret with AWS credentials         |
-| `k8s/dns-automation/dns-records-tf.yaml`             | Terraform CRD for tofu-controller         |
-| `k8s/dns-automation/flux-kustomization.yaml`         | Flux Kustomization                        |
+| File                                                 | Purpose                                  |
+| ---------------------------------------------------- | ---------------------------------------- |
+| `terraform/bootstrap/infrastructure/cluster-info.tf` | Creates ConfigMap with VPS IPs           |
+| `terraform/gitops/dns-records/main.tf`               | OpenTofu for Route 53 + PowerDNS records |
+| `terraform/gitops/dns-records/variables.tf`          | Variables for dns-records module         |
+| `k8s/dns-automation/aws-credentials-sealed.yaml`     | SealedSecret with AWS credentials        |
+| `k8s/dns-automation/dns-records-tf.yaml`             | Terraform CRD for tofu-controller        |
+| `k8s/dns-automation/flux-kustomization.yaml`         | Flux Kustomization                       |
 
 ## Secrets
 
@@ -103,7 +103,7 @@ kubectl create secret generic aws-route53-credentials \
   --from-literal=AWS_SECRET_ACCESS_KEY=<new-secret> \
   --from-literal=AWS_REGION=us-east-1 \
   --dry-run=client -o yaml | \
-kubeseal --cert <(terraform output -raw sealed_secrets_cert_pem) \
+kubeseal --cert <(tofu output -raw sealed_secrets_cert_pem) \
   --format=yaml > ../../k8s/dns-automation/aws-credentials-sealed.yaml
 ```
 

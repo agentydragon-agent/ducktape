@@ -49,7 +49,7 @@ per-node image downloads.
 
 Cleaned up duplicated Proxmox access configuration:
 
-- **Deleted old monolithic terraform** (via `git rm`):
+- **Deleted old monolithic OpenTofu** (via `git rm`):
   - `terraform/main.tf`
   - `terraform/variables.tf`
   - `terraform/outputs.tf`
@@ -95,7 +95,7 @@ git commit -m "feat: add cloud-init network config option for Proxmox nodes
 - Implement conditional schematic resources (per-node vs shared)
 - Create cloud-init network snippets for CLOUDINIT mode
 - Add dynamic initialization block for cloud-init CD
-- Delete old monolithic terraform structure (modules/*, main.tf)
+- Delete old monolithic OpenTofu structure (modules/*, main.tf)
 - Fix SSOT: use proxmox_api_host FQDN consistently
 - Update cleanup_proxmox_volumes.py to use FQDN parameter"
 ```
@@ -107,7 +107,7 @@ git commit -m "feat: add cloud-init network config option for Proxmox nodes
 
    ```bash
    cd terraform/bootstrap/infrastructure
-   terraform destroy -auto-approve
+   tofu destroy -auto-approve
    bazel run //cluster:bootstrap
    ```
 
@@ -126,7 +126,7 @@ Set `proxmox_network_config_method = "meta"` to revert to current behavior.
 ### Project Conventions
 
 - See: `@CLAUDE.md` for full cluster instructions
-- Layered terraform: bootstrap/persistent-auth → bootstrap/infrastructure → bootstrap/flux
+- Layered OpenTofu: bootstrap/persistent-auth → bootstrap/infrastructure → bootstrap/flux
 - **Never destroy layer 00** without explicit user authorization
 
 ### Key Files
@@ -142,8 +142,8 @@ Set `proxmox_network_config_method = "meta"` to revert to current behavior.
 ```bash
 # From cluster directory
 cd terraform/bootstrap/infrastructure
-terraform validate
-terraform plan -var="proxmox_network_config_method=cloudinit"
+tofu validate
+tofu plan -var="proxmox_network_config_method=cloudinit"
 ```
 
 ### Important References
