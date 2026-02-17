@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { Chart, Tooltip, LinearScale } from "chart.js";
   import { MatrixController, MatrixElement } from "chartjs-chart-matrix";
+  import { formatDigest } from "../../lib/formatters";
 
   Chart.register(MatrixController, MatrixElement, Tooltip, LinearScale);
 
@@ -88,7 +89,7 @@
                 const ex = examples[d.x];
                 const slug = ex.snapshot_slug.length > 20 ? ex.snapshot_slug.slice(0, 20) + "…" : ex.snapshot_slug;
                 return [
-                  `Def: ${def.image_digest.slice(0, 12)}`,
+                  `Def: ${formatDigest(def.image_digest)}`,
                   `Example: ${slug}`,
                   `Recall: ${(d.v * 100).toFixed(1)}%`,
                   d.best ? "★ Best on this example" : "",
@@ -115,7 +116,7 @@
             ticks: {
               callback: (val: any) => {
                 const def = definitions[Math.round(val)];
-                return def ? def.image_digest.slice(0, 8) : "";
+                return def ? formatDigest(def.image_digest) : "";
               },
               autoSkip: false,
               font: { family: "monospace", size: 10 },
@@ -159,7 +160,7 @@
     <div class="flex flex-col justify-around text-xs text-gray-600 font-mono" style="min-width: 100px;">
       {#each definitions as def}
         <div class="flex items-center gap-1 truncate" title={def.image_digest}>
-          {def.image_digest.slice(0, 8)} ({def.best_on_count})
+          {formatDigest(def.image_digest)} ({def.best_on_count})
         </div>
       {/each}
     </div>

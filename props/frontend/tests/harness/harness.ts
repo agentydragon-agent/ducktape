@@ -11,6 +11,8 @@ import LLMRequestViewer from "../../src/components/LLMRequestViewer.svelte";
 import DistributionChart from "../../src/components/stats/DistributionChart.svelte";
 import CoverageHeatmap from "../../src/components/stats/CoverageHeatmap.svelte";
 import OccurrenceStats from "../../src/components/stats/OccurrenceStats.svelte";
+import RunsBrowser from "../../src/components/RunsBrowser.svelte";
+import SnapshotDetailPage from "../../src/pages/SnapshotDetailPage.svelte";
 
 // --- Mock Data for Pages ---
 
@@ -345,6 +347,159 @@ const mockOccurrenceStatsData = [
   },
 ];
 
+// Mock runs data for RunsBrowser
+const mockRuns = [
+  {
+    agent_run_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+    type_config: {
+      agent_type: "critic" as const,
+      example: { kind: "whole_snapshot" as const, snapshot_slug: "vuln-app-v1", files_hash: null },
+    },
+    model: "gpt-5.1-codex-mini",
+    status: "exited" as const,
+    created_at: "2025-01-20T10:00:00Z",
+    updated_at: "2025-01-20T10:05:00Z",
+    split: "valid" as const,
+  },
+  {
+    agent_run_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+    type_config: {
+      agent_type: "critic" as const,
+      example: { kind: "file_set" as const, snapshot_slug: "auth-service", files_hash: "abc123" },
+    },
+    model: "gpt-5.1",
+    status: "in_progress" as const,
+    created_at: "2025-01-20T11:00:00Z",
+    updated_at: "2025-01-20T11:00:30Z",
+    split: "train" as const,
+  },
+  {
+    agent_run_id: "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    image_digest: "sha256:bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee555f",
+    type_config: { agent_type: "grader" as const, snapshot_slug: "vuln-app-v1" },
+    model: "gpt-5.1-codex-mini",
+    status: "exited" as const,
+    created_at: "2025-01-20T10:10:00Z",
+    updated_at: "2025-01-20T10:12:00Z",
+    split: "valid" as const,
+  },
+  {
+    agent_run_id: "d4e5f6a7-b8c9-0123-defa-234567890123",
+    image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+    type_config: {
+      agent_type: "critic" as const,
+      example: { kind: "whole_snapshot" as const, snapshot_slug: "auth-service", files_hash: null },
+    },
+    model: "gpt-5.1-codex-mini",
+    status: "timed_out" as const,
+    created_at: "2025-01-19T08:00:00Z",
+    updated_at: "2025-01-19T09:00:00Z",
+    split: "valid" as const,
+  },
+  {
+    agent_run_id: "e5f6a7b8-c9d0-1234-efab-345678901234",
+    image_digest: "sha256:ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee555fff666a",
+    type_config: { agent_type: "critic_dev_optimize" as const },
+    model: "gpt-5.1",
+    status: "exited" as const,
+    created_at: "2025-01-18T14:00:00Z",
+    updated_at: "2025-01-18T15:30:00Z",
+    split: null,
+  },
+];
+
+// Mock snapshot detail data for SnapshotDetailPage
+const mockSnapshotDetail = {
+  slug: "vuln-app-v1",
+  split: "valid" as const,
+  created_at: "2025-01-15T10:30:00Z",
+  true_positives: [
+    {
+      tp_id: "weak-hash-algorithm",
+      rationale: "MD5 is cryptographically broken and should not be used for password hashing.",
+      occurrences: [
+        {
+          occurrence_id: "occ-md5-usage",
+          note: "Direct MD5 usage for password hashing",
+          locations: [{ file: "src/auth/login.py", start_line: 5, end_line: 7 }],
+          critic_scopes_expected_to_recall: [["security", "cryptography"]],
+        },
+      ],
+    },
+    {
+      tp_id: "sql-injection",
+      rationale: "User input directly interpolated into SQL query without parameterization.",
+      occurrences: [
+        {
+          occurrence_id: "occ-login-query",
+          note: "String formatting in SQL query",
+          locations: [{ file: "src/db/queries.py", start_line: 12, end_line: 15 }],
+          critic_scopes_expected_to_recall: [["security", "injection"]],
+        },
+      ],
+    },
+  ],
+  false_positives: [
+    {
+      fp_id: "hardcoded-expiry",
+      rationale: "Session expiry of 86400 seconds is a reasonable default.",
+      occurrences: [
+        {
+          occurrence_id: "occ-expiry-value",
+          note: "Reasonable default, not a magic number",
+          locations: [{ file: "src/auth/login.py", start_line: 19, end_line: 20 }],
+          relevant_files: ["src/config/settings.py"],
+        },
+      ],
+    },
+  ],
+};
+
+const mockFileTree = {
+  tree: [
+    {
+      path: "src",
+      name: "src",
+      is_dir: true,
+      tp_count: 2,
+      fp_count: 1,
+      children: [
+        {
+          path: "src/auth",
+          name: "auth",
+          is_dir: true,
+          tp_count: 1,
+          fp_count: 1,
+          children: [
+            { path: "src/auth/login.py", name: "login.py", is_dir: false, tp_count: 1, fp_count: 1, children: null },
+            {
+              path: "src/auth/session.py",
+              name: "session.py",
+              is_dir: false,
+              tp_count: 0,
+              fp_count: 0,
+              children: null,
+            },
+          ],
+        },
+        {
+          path: "src/db",
+          name: "db",
+          is_dir: true,
+          tp_count: 1,
+          fp_count: 0,
+          children: [
+            { path: "src/db/queries.py", name: "queries.py", is_dir: false, tp_count: 1, fp_count: 0, children: null },
+          ],
+        },
+      ],
+    },
+    { path: "README.md", name: "README.md", is_dir: false, tp_count: 0, fp_count: 0, children: null },
+  ],
+};
+
 // --- Page Scenarios ---
 
 const pages: Record<string, { component: any; props: Record<string, unknown> }> = {
@@ -428,6 +583,25 @@ const pages: Record<string, { component: any; props: Record<string, unknown> }> 
     component: OccurrenceStats,
     props: {
       occurrences: mockOccurrenceStatsData,
+    },
+  },
+
+  // Runs browser with mock data (no API calls)
+  RunsBrowser: {
+    component: RunsBrowser,
+    props: {
+      initialRuns: mockRuns,
+      initialTotalCount: mockRuns.length,
+    },
+  },
+
+  // Snapshot detail page with ground truth (files tab, TPs, FPs)
+  SnapshotDetail: {
+    component: SnapshotDetailPage,
+    props: {
+      slug: "vuln-app-v1",
+      initialSnapshot: mockSnapshotDetail,
+      initialTree: mockFileTree,
     },
   },
 };

@@ -178,6 +178,19 @@ py_test(
 )
 
 py_library(
+    name = "model_metadata",
+    srcs = ["model_metadata.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:deps",
+        "//props/db:models",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "stats",
     srcs = ["stats.py"],
     imports = ["../../.."],

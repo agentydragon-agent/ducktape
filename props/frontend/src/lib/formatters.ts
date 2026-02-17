@@ -73,6 +73,15 @@ export function formatFilesHash(hash: string): string {
   return hash.slice(0, 8);
 }
 
+/** Format an OCI image digest for display (sha256:abcdef12... → sha256:abcdef12). */
+export function formatDigest(digest: string): string {
+  const prefix = "sha256:";
+  if (digest.startsWith(prefix)) {
+    return prefix + digest.slice(prefix.length, prefix.length + 8);
+  }
+  return digest.length > 16 ? digest.slice(0, 16) : digest;
+}
+
 /** Truncate text with ellipsis. */
 export function truncateText(text: string, maxLength: number = 100): string {
   return text.length > maxLength ? text.slice(0, maxLength) + "..." : text;

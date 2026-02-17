@@ -28,13 +28,19 @@
     initialSplit?: Split;
     initialKind?: ExampleKind;
     onTriggerRun?: (_: RunTrigger) => void;
+    initialRuns?: RunInfo[];
+    initialTotalCount?: number;
   }
-  let { initialDefinitionId, initialSplit, initialKind, onTriggerRun }: Props = $props();
+  let { initialDefinitionId, initialSplit, initialKind, onTriggerRun, initialRuns, initialTotalCount }: Props =
+    $props();
 
   // State
-  let runs: RunInfo[] = $state([]);
-  let totalCount = $state(0);
-  let loading = $state(true);
+  // svelte-ignore state_referenced_locally
+  let runs: RunInfo[] = $state(initialRuns ?? []);
+  // svelte-ignore state_referenced_locally
+  let totalCount = $state(initialTotalCount ?? 0);
+  // svelte-ignore state_referenced_locally
+  let loading = $state(!initialRuns);
   let offset = $state(0);
   const limit = 50;
 
@@ -128,7 +134,7 @@
   // Rows are clickable via RunIdLink inside each row
 
   onMount(() => {
-    loadRuns();
+    if (!initialRuns) loadRuns();
   });
 
   // Pagination info

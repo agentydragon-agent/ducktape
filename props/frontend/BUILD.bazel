@@ -129,6 +129,7 @@ _HARNESS_SRCS = glob([
     "tests/harness/**/*.ts",
     "tests/harness/**/*.html",
     "src/components/**/*.svelte",
+    "src/pages/**/*.svelte",
     "src/lib/**/*.ts",
     "src/lib/**/*.svelte",
     "src/**/*.css",

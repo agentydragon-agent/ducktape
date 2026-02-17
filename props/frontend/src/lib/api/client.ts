@@ -264,6 +264,16 @@ export async function fetchSnapshotClusters(snapshotSlug: string): Promise<Clust
   return authedFetch(`/api/gt/snapshots/${snapshotSlug}/clusters`);
 }
 
+// --- Model metadata ---
+
+export type ModelMetadataInfo = components["schemas"]["ModelMetadataInfo"];
+
+export async function fetchModelMetadata() {
+  const { data, error } = await api.GET("/api/model_metadata");
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch model metadata"));
+  return data;
+}
+
 // --- Stats: occurrence stats, distributions, coverage ---
 
 export type OccurrenceStatsRow = components["schemas"]["OccurrenceStatsRow"];

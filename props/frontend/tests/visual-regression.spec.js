@@ -69,6 +69,12 @@ const scenarios = [
 
   // Occurrence stats table
   { page: "OccurrenceStatsTable" },
+
+  // Runs browser with mock data
+  { page: "RunsBrowser" },
+
+  // Snapshot detail page with ground truth
+  { page: "SnapshotDetail" },
 ];
 
 const CONTENT_TYPES = {
