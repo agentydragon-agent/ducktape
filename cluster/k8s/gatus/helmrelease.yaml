@@ -75,3 +75,28 @@ spec:
           interval: 60s
           conditions:
             - "[STATUS] == 200"
+
+        - name: Matrix SSO
+          group: sso
+          url: https://matrix.allegedly.works/_matrix/client/v3/login
+          interval: 120s
+          conditions:
+            - "[STATUS] == 200"
+            - "[BODY].flows[0].type == m.login.sso"
+
+        - name: Harbor OIDC redirect
+          group: sso
+          url: https://registry.allegedly.works/c/oidc/login
+          client:
+            follow-redirects: false
+          interval: 120s
+          conditions:
+            - "[STATUS] == 302"
+            - "[HEADER].Location startsWith https://auth.allegedly.works/"
+
+        - name: Vault
+          group: core
+          url: https://vault.allegedly.works/v1/sys/health
+          interval: 60s
+          conditions:
+            - "[STATUS] == any(200, 429)"

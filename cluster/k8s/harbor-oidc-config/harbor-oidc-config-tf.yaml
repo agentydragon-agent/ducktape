@@ -23,7 +23,7 @@ spec:
 
   vars:
     - name: authentik_url
-      value: "http://authentik-server.authentik:80"
+      value: "https://auth.allegedly.works"
     - name: harbor_url
       value: "http://harbor-core.harbor:80"
     - name: vault_address
