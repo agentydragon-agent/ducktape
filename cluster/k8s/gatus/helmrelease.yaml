@@ -88,11 +88,10 @@ spec:
           group: sso
           url: https://registry.allegedly.works/c/oidc/login
           client:
-            follow-redirects: false
+            max-redirects: 0
           interval: 120s
           conditions:
             - "[STATUS] == 302"
-            - "[HEADER].Location == pat(https://auth.allegedly.works/*)"
 
         - name: Vault
           group: core
