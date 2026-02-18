@@ -13,10 +13,35 @@ should_flag: true
 occurrences:
   - occurrence_id: occ-0
     files:
+      adgn/src/adgn/agent/persist/__init__.py:
+        - [63, 63] # PolicyStatus enum definition
+        - [85, 85] # PolicyProposal.status typed as ProposalStatus
+      adgn/src/adgn/agent/models/proposal_status.py:
+        - [6, 6] # ProposalStatus enum definition
+      adgn/src/adgn/agent/persist/models.py:
+        - [152, 152] # ORM column: status: Mapped[str] (untyped)
       adgn/src/adgn/agent/persist/sqlite.py:
-        - - 303
-          - 308
-        - - 321
-          - 321
+        - [192, 192] # read: PolicyStatus.ACTIVE
+        - [207, 213] # write: PolicyStatus.SUPERSEDED/ACTIVE
+        - [231, 231] # write: ProposalStatus.PENDING
+        - [242, 242] # read: ProposalStatus.PENDING/APPROVED/REJECTED
+        - [301, 306] # write: PolicyStatus.SUPERSEDED/ACTIVE
+        - [321, 321] # write: ProposalStatus.REJECTED
+      adgn/src/adgn/agent/server/app.py:
+        - [285, 285] # read: ProposalStatus(rec.status)
+      adgn/src/adgn/agent/server/runtime.py:
+        - [292, 292] # read: ProposalStatus(raw)
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/persist/sqlite.py
+      - - adgn/src/adgn/agent/persist/__init__.py
+      - - adgn/src/adgn/agent/models/proposal_status.py
+      - - adgn/src/adgn/agent/persist/models.py
+      - - adgn/src/adgn/agent/server/app.py
+      - - adgn/src/adgn/agent/server/runtime.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/persist/__init__.py
+      - adgn/src/adgn/agent/models/proposal_status.py
+      - adgn/src/adgn/agent/persist/models.py
+      - adgn/src/adgn/agent/persist/sqlite.py
+      - adgn/src/adgn/agent/server/app.py
+      - adgn/src/adgn/agent/server/runtime.py

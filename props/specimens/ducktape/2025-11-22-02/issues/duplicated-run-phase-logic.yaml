@@ -33,3 +33,5 @@ occurrences:
           - 304
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/mcp_bridge/server.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/server.py

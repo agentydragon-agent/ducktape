@@ -14,6 +14,8 @@ occurrences:
     note: "YAML policy schema rendered as markdown nested list instead of fenced yaml code block"
     critic_scopes_expected_to_recall:
       - [sandboxed_jupyter/docs/TODO-SANDBOX.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO-SANDBOX.md
 
   - occurrence_id: occ-1
     files:
@@ -22,6 +24,8 @@ occurrences:
     note: "Directory tree rendered as markdown nested list instead of fenced code block"
     critic_scopes_expected_to_recall:
       - [sandboxed_jupyter/docs/TODO-SANDBOX.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO-SANDBOX.md
 
   - occurrence_id: occ-2
     files:
@@ -34,6 +38,8 @@ occurrences:
     note: "Code tokens as plain text throughout (file-read*, JUPYTER_*, env vars, config keys)"
     critic_scopes_expected_to_recall:
       - [sandboxed_jupyter/docs/TODO-SANDBOX.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO-SANDBOX.md
 
   - occurrence_id: occ-3
     files:
@@ -44,3 +50,5 @@ occurrences:
     note: "Code tokens as plain text (file-read*, mach-lookup/system-socket, /tmp, mcpServers)"
     critic_scopes_expected_to_recall:
       - [sandboxed_jupyter/docs/TODO.md]
+    match_file_restriction:
+      - sandboxed_jupyter/docs/TODO.md

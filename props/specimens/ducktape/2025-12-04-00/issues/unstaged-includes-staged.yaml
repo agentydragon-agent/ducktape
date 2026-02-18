@@ -21,3 +21,7 @@ occurrences:
     files:
       adgn/src/adgn/git_commit_ai/editor_template.py:
         - [46, 56]
+    critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/git_commit_ai/editor_template.py
+    match_file_restriction:
+      - adgn/src/adgn/git_commit_ai/editor_template.py

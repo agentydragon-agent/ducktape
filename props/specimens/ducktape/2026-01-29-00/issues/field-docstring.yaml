@@ -11,3 +11,5 @@ occurrences:
         - [35, 42]
     critic_scopes_expected_to_recall:
       - [mcp_infra/flat_tool.py]
+    match_file_restriction:
+      - mcp_infra/flat_tool.py

@@ -16,6 +16,8 @@ occurrences:
     note: "Main ToolInput with MCP fields and extra='allow'"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_code_api.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_code_api.py
 
   - occurrence_id: occ-1
     files:
@@ -24,3 +26,5 @@ occurrences:
     note: "Duplicate ToolInput for file manipulation tools"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter/models.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter/models.py

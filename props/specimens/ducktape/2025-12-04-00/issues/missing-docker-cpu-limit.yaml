@@ -1,28 +1,15 @@
 rationale: |
-  Docker containers created by ContainerOptions and _build_host_config() do not
-  specify CPU limits. While the containers are otherwise well-isolated, it would be
-  healthy to set explicit CPU constraints to prevent a single container from
-  monopolizing CPU resources.
-
-  Setting CPU limits helps:
-  - Ensure fair resource sharing when multiple containers run concurrently
-  - Make performance characteristics more predictable
-  - Prevent accidental CPU exhaustion from runaway processes
-
-  Docker supports NanoCpus (fractional CPUs, e.g., 1.5 CPUs = 1500000000 nanocpus)
-  and CpuQuota/CpuPeriod in HostConfig. A reasonable default could be 2 CPUs for
-  agent runtime containers and 1 CPU for critics/graders.
-
-  Example addition to _build_host_config():
-    host_config["NanoCpus"] = opts.nano_cpus or (2 * 1_000_000_000)  # 2 CPUs default
+  Docker containers created by `ContainerOptions` and `_build_host_config()` set
+  memory limits but no CPU limits. A runaway process in one container can
+  monopolize all host CPUs. Add explicit CPU constraints (e.g., `NanoCpus`).
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
     files:
       adgn/src/adgn/mcp/_shared/container_session.py:
-        - - 99
-          - 129
-        - - 52
-          - 61
+        - [52, 61]
+        - [99, 129]
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/mcp/_shared/container_session.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/_shared/container_session.py

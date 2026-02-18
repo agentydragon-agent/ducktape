@@ -14,6 +14,8 @@ occurrences:
     note: "BaseResponse has manual aliases: stop_reason='stopReason', suppress_output='suppressOutput'"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_code_api.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_code_api.py
   - occurrence_id: occ-1
     files:
       ducktape_llm_common/claude_linter/models.py:
@@ -23,3 +25,5 @@ occurrences:
     note: "HookResponse, PatchLine, ToolResponse all have manual camelCase aliases"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter/models.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter/models.py

@@ -31,3 +31,5 @@ occurrences:
           - 332
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/openai_utils/model.py
+    match_file_restriction:
+      - adgn/src/adgn/openai_utils/model.py

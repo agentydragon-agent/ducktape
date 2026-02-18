@@ -42,3 +42,20 @@ occurrences:
           - 267
     critic_scopes_expected_to_recall:
       - - internal/lsp/transport.go
+    match_file_restriction:
+      # Core LSP package (transport, client, protocol handling)
+      - internal/lsp/transport.go
+      - internal/lsp/client.go
+      - internal/lsp/handlers.go
+      - internal/lsp/methods.go
+      - internal/lsp/diagnostics_wait.go
+      - internal/lsp/protocol.go
+      # App-level LSP lifecycle and events
+      - internal/app/lsp.go
+      - internal/app/lsp_events.go
+      # LLM tools that trigger concurrent LSP writes
+      - internal/llm/tools/diagnostics.go
+      - internal/llm/tools/edit.go
+      - internal/llm/tools/multiedit.go
+      - internal/llm/tools/view.go
+      - internal/llm/tools/write.go

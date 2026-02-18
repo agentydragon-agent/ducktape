@@ -411,6 +411,25 @@ occurrences:
 - **Omit** for issues not bound to specific files, or when you haven't determined the valid reporting scope
 - **Set** when you know the specific file(s) where the issue should be reported
 
+### Dead Code Note
+
+For dead code issues, `match_file_restriction` is typically the dead file itself — the issue _is_ in that file regardless of how it's detected. However, `critic_scopes_expected_to_recall` may include other files: when existing code duplicates logic that the dead helper would simplify, a reviewer of those files could discover the dead code by searching for existing helpers. The two fields diverge in this case:
+
+```yaml
+# Dead helper that would DRY up existing code
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      utils/format_helpers.py:
+        - [1, 30]
+    note: "Dead helper; cli.py lines 80-95 duplicate this formatting logic"
+    critic_scopes_expected_to_recall:
+      - [utils/format_helpers.py] # Direct detection
+      - [cli.py] # Reviewer would search for helpers, find this dead one
+    match_file_restriction:
+      - utils/format_helpers.py # Issue is in the dead file
+```
+
 ## Detection Standard (`critic_scopes_expected_to_recall`)
 
 The key question for `critic_scopes_expected_to_recall`: **"If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"**

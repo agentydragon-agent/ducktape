@@ -18,3 +18,9 @@ occurrences:
         - [145, 145]
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter_v2/linters/python_formatter.py]
+      - [ducktape_llm_common/claude_linter_v2/checker.py]
+      - [ducktape_llm_common/claude_linter_v2/hooks/handler.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter_v2/linters/python_formatter.py
+      - ducktape_llm_common/claude_linter_v2/checker.py
+      - ducktape_llm_common/claude_linter_v2/hooks/handler.py

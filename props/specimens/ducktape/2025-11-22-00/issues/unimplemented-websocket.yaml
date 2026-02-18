@@ -22,34 +22,60 @@ occurrences:
     files:
       adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte:
         - [85, 85]
-    note: Creates MCP client to list agents; should use shared client from store/context
+    note: "Creates MCP client to list agents"
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+      - - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
+      - - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
+      - - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+      - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
+      - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
+      - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
   - occurrence_id: occ-1
     files:
       adgn/src/adgn/agent/web/src/components/ChatPane.svelte:
-        - - 87
-          - 91
-        - - 124
-          - 128
-    note: |-
-      Creates TWO separate clients in same component: chat-pane-client (line 87-91) for listing,
-      chat-pane-abort-client (line 124-128) for aborting. Worst offender - not even reusing its own client
+        - [87, 91]
+        - [124, 128]
+    note: "Creates TWO separate clients: chat-pane-client (87-91) and chat-pane-abort-client (124-128)"
     critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
       - - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
+      - - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
+      - - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+      - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
+      - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
+      - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
   - occurrence_id: occ-2
     files:
       adgn/src/adgn/agent/web/src/components/MessageComposer.svelte:
-        - [16, 20]
-    note: Creates new MCP client per message send operation; should use shared client
+        - [28, 32]
+    note: "Creates new MCP client per message send"
     critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+      - - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
       - - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
+      - - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+      - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
+      - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
+      - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
   - occurrence_id: occ-3
     files:
       adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte:
-        - [69, 71]
-    note: |-
-      Creates separate client targeting /api/mcp (non-existent endpoint). Violates 2-level compositor architecture.
-      User suggests: delete component or expose agent-global resource through compositor
+        - [69, 74]
+    note: "Creates client targeting /api/mcp (non-existent endpoint)"
     critic_scopes_expected_to_recall:
+      - - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+      - - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
+      - - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
       - - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte
+    match_file_restriction:
+      - adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte
+      - adgn/src/adgn/agent/web/src/components/ChatPane.svelte
+      - adgn/src/adgn/agent/web/src/components/MessageComposer.svelte
+      - adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte

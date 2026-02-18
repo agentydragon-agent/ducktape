@@ -11,3 +11,4 @@ Note: If an issue doesn't exactly match a canonical slug, or combines multiple t
 - `misplaced-default.yaml` - default value at wrong layer (inner layer has default that should only exist at entrypoint/CLI, or duplicates higher-level default)
 - `early-bailout.yaml` - nested if-block should use early return/bailout pattern for flatter control flow
 - `trivial-wrapper.yaml` - function so trivial it should be inlined (e.g., `fn x(a) { return a.b; }`); not for functions serving as decoupling layers
+- `useless-fast-path-check.yaml` - guard clause that returns early for empty input/no-op case, but the subsequent code already handles that case naturally (e.g., empty loop). Remove unless the skipped body is genuinely expensive

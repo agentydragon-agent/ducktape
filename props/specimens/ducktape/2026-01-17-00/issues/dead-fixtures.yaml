@@ -82,6 +82,8 @@ occurrences:
     note: "`patch_fake_editor` — no test uses it"
     critic_scopes_expected_to_recall:
       - [git_commit_ai/conftest.py]
+    match_file_restriction:
+      - git_commit_ai/conftest.py
   - occurrence_id: occ-9
     files:
       llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py:
@@ -93,6 +95,8 @@ occurrences:
       latter depends on former
     critic_scopes_expected_to_recall:
       - [llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py]
+    match_file_restriction:
+      - llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py
   - occurrence_id: occ-10
     files:
       wt/testing/conftest.py:
@@ -100,3 +104,5 @@ occurrences:
     note: "`TestData` fixture — no test uses it"
     critic_scopes_expected_to_recall:
       - [wt/testing/conftest.py]
+    match_file_restriction:
+      - wt/testing/conftest.py

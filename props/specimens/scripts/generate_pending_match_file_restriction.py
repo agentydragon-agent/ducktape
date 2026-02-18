@@ -222,10 +222,6 @@ PRIORITY_ORDER: dict[str, int] = {
     "ducktape/2025-11-20-00|proposal-id-type-mismatch.yaml|occ-0": Difficulty.MEDIUM_EACH_OWN_FILE,
     "ducktape/2025-11-20-00|proposal-id-type-mismatch.yaml|occ-1": Difficulty.MEDIUM_EACH_OWN_FILE,
     "ducktape/2025-11-20-00|proposal-id-type-mismatch.yaml|occ-2": Difficulty.MEDIUM_EACH_OWN_FILE,
-    # === SKIP (P9999): Cross-file implications, should NOT set field ===
-    **{
-        f"crush/2025-08-30-internal_db|facade-law-of-demeter.yaml|occ-{i}": Difficulty.SKIP_CROSS_FILE for i in range(3)
-    },
 }
 
 
@@ -266,6 +262,10 @@ def scan_specimens(specimens_root: Path) -> ScanResult:
     result = ScanResult()
 
     for issue_path in sorted(specimens_root.rglob("issues/*.yaml")):
+        # Skip testdata fixtures nested inside specimen code/ directories
+        rel = issue_path.relative_to(specimens_root)
+        if "code" in rel.parts:
+            continue
         # Skip pyright_watch_report (single-file snapshot)
         if "pyright_watch_report" in str(issue_path):
             continue

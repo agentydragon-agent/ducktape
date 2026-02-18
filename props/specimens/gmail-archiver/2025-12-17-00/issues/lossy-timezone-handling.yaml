@@ -23,6 +23,10 @@ occurrences:
     note: "parse_anthem_eob + AnthemEobPlanner.plan"
     critic_scopes_expected_to_recall:
       - [gmail_archiver/planners/anthem_eob.py]
+    match_file_restriction:
+      - gmail_archiver/planners/anthem_eob.py
+      - gmail_archiver/models.py
+      - gmail_archiver/gmail_client.py
   - occurrence_id: occ-1
     files:
       gmail_archiver/planners/anthem_reimbursement.py:
@@ -31,6 +35,10 @@ occurrences:
     note: "parse_anthem_reimbursement + AnthemReimbursementPlanner.plan"
     critic_scopes_expected_to_recall:
       - [gmail_archiver/planners/anthem_reimbursement.py]
+    match_file_restriction:
+      - gmail_archiver/planners/anthem_reimbursement.py
+      - gmail_archiver/models.py
+      - gmail_archiver/gmail_client.py
   - occurrence_id: occ-2
     files:
       gmail_archiver/planners/square.py:
@@ -38,3 +46,21 @@ occurrences:
     note: "parse_square email_date handling"
     critic_scopes_expected_to_recall:
       - [gmail_archiver/planners/square.py]
+    match_file_restriction:
+      - gmail_archiver/planners/square.py
+      - gmail_archiver/models.py
+      - gmail_archiver/gmail_client.py
+  - occurrence_id: occ-3
+    files:
+      gmail_archiver/models.py:
+        - [23, 23]
+    note: >-
+      `GmailMessage.date` is `str` instead of `datetime`. Forces every planner
+      to independently parse the Date header with its own format string and
+      timezone handling. Should be `datetime` (parsed once at construction in
+      gmail_client.py) or planners should use `internal_date` instead.
+    critic_scopes_expected_to_recall:
+      - [gmail_archiver/models.py]
+    match_file_restriction:
+      - gmail_archiver/models.py
+      - gmail_archiver/gmail_client.py

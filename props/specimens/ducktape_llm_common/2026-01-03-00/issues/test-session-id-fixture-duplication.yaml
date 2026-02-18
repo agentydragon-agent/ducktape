@@ -17,3 +17,5 @@ occurrences:
     note: "session_id fixtures should be shared in conftest.py"
     critic_scopes_expected_to_recall:
       - [tests/claude_linter_v2/test_mcp_tools.py]
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py

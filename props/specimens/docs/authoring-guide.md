@@ -313,6 +313,16 @@ Examples:
   - The file IS the problem (broken promise), not just "unused affordance"
   - Contrast with: Tests not using `server.py` fixture → fixture is fine, tests are the problem
 
+**Dead code with potential callers:**
+
+Dead code issues have two possible fixes: (1) delete the dead code, or (2) wire it up where it should be used. When existing code _should_ be calling the dead helper (i.e., there's duplicated/manual logic that the helper would simplify), the dead code is also detectable from those caller files — a reviewer seeing the manual logic would search for existing helpers and discover the unused one.
+
+- Dead helper with no plausible callers → detect from the dead file only
+- Dead helper that would DRY up existing code → detect from both the dead file AND files that should call it
+- `match_file_restriction` still includes only the dead file (the issue _is_ in the dead file), but `critic_scopes_expected_to_recall` can include caller files as alternative detection scopes
+
+When the plausible fix is "wire it up," note this in the occurrence's `note` field so graders understand the dual-fix nature (e.g., "Dead helper; `cli.py` lines 80-95 duplicate this logic and should call it instead").
+
 ### 5. Setting `graders_match_only_if_reported_on` (Optional)
 
 **Purpose:** This field is a grading optimization. When set, critiques that report issues only in files OUTSIDE this set are skipped during matching (assumed non-match without semantic comparison).
