@@ -79,9 +79,13 @@ spec:
     existingSecretAdminPassword: "harbor-admin-initial"
     existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
 
-    # Core services
+    # Pin all components to Proxmox — PVCs use proxmox-csi-retain and
+    # cross-site latency (VPS↔Proxmox via KubeSpan) causes liveness probe
+    # timeouts when core/nginx are on VPS but database/redis are on Proxmox.
     core:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           memory: 256Mi
@@ -90,9 +94,10 @@ spec:
           memory: 512Mi
           cpu: 500m
 
-    # Registry configuration
     registry:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           memory: 256Mi
@@ -101,10 +106,11 @@ spec:
           memory: 512Mi
           cpu: 200m
 
-    # PostgreSQL database
     database:
       type: internal
       internal:
+        nodeSelector:
+          topology.kubernetes.io/region: proxmox
         password: "changeit"
         resources:
           requests:
@@ -114,10 +120,11 @@ spec:
             memory: 512Mi
             cpu: 200m
 
-    # Redis cache
     redis:
       type: internal
       internal:
+        nodeSelector:
+          topology.kubernetes.io/region: proxmox
         resources:
           requests:
             memory: 256Mi
@@ -126,9 +133,10 @@ spec:
             memory: 512Mi
             cpu: 200m
 
-    # Trivy vulnerability scanner
     trivy:
       enabled: true
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           cpu: 200m
@@ -141,9 +149,10 @@ spec:
     notary:
       enabled: false
 
-    # Job service
     jobservice:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           memory: 256Mi
@@ -152,9 +161,10 @@ spec:
           memory: 512Mi
           cpu: 200m
 
-    # Portal (web UI)
     portal:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           memory: 256Mi
@@ -185,9 +195,14 @@ spec:
           prometheus: kube-prometheus-stack
         interval: 30s
 
-    # Harbor exporter for Prometheus metrics
+    nginx:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+
     exporter:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           memory: 128Mi
