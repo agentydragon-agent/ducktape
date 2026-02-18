@@ -11,9 +11,9 @@ spec:
     name: flux-system
     namespace: flux-system
 
-  # Wait for Authentik OIDC provider to be created
+  # Wait for Vault OIDC client secret to be synced from Vault via ESO
   dependsOn:
-    - name: authentik-blueprint-vault
+    - name: authentik-blueprint-vault-secret
       namespace: flux-system
 
   # Use in-cluster service account

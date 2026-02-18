@@ -68,7 +68,6 @@ spec:
           topology.kubernetes.io/region: proxmox
         persistence:
           enabled: true
-          storageClass: proxmox-csi-retain
           size: 10Gi
     # Ingress disabled — traffic routed via Gateway API HTTPRoute
     ingress:

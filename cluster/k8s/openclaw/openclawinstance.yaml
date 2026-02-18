@@ -50,8 +50,9 @@ spec:
         cpu: "1000m"
         memory: "2Gi"
 
-  nodeSelector:
-    topology.kubernetes.io/region: proxmox
+  availability:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
 
   security:
     rbac:
