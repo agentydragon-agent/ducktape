@@ -29,6 +29,8 @@ spec:
         # 2. trustedProxies limits header trust to the pod CIDR (Talos default).
         trustedProxies:
           - "10.244.0.0/16"
+        controlUi:
+          dangerouslyDisableDeviceAuth: true
         auth:
           mode: "trusted-proxy"
           # WORKAROUND: Dummy token prevents the operator's

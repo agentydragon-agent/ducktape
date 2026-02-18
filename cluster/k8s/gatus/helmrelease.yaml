@@ -53,7 +53,13 @@ spec:
         cpu: 200m
         memory: 128Mi
 
+    # TODO: Consider consolidating the many per-app PostgreSQL instances
+    # in the cluster into a shared instance, and using postgres backend.
     config:
+      storage:
+        type: sqlite
+        path: /data/gatus.db
+
       endpoints:
         - name: Website
           group: core
