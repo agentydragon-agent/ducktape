@@ -51,6 +51,13 @@ data:
           stage: !Find [authentik_stages_user_login.userloginstage, [name, default-authentication-login]]
           order: 30
 
+      # Grafana Admins group (referenced by Grafana OIDC role_attribute_path)
+      - model: authentik_core.group
+        id: grafana-admins
+        state: present
+        identifiers:
+          name: Grafana Admins
+
       # Admin user
       - model: authentik_core.user
         state: present
@@ -62,6 +69,7 @@ data:
           password: !Env USER_PASSWORD
           groups:
             - !Find [authentik_core.group, [name, authentik Admins]]
+            - !KeyOf grafana-admins
 
       # Domain-matched brand for allegedly.works
       - model: authentik_brands.brand
